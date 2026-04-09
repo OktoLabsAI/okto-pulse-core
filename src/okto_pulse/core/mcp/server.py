@@ -1,0 +1,8151 @@
+"""MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import uvicorn
+from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+from okto_pulse.core.infra.config import get_mcp_settings, get_settings
+from okto_pulse.core.infra.permissions import Permissions, check_permission
+from okto_pulse.core.services.main import (
+    AgentService,
+    AttachmentService,
+    BoardService,
+    CardService,
+    CommentService,
+    GuidelineService,
+    IdeationQAService,
+    IdeationService,
+    QAService,
+    RefinementKnowledgeService,
+    RefinementQAService,
+    RefinementService,
+    SpecKnowledgeService,
+    SpecQAService,
+    SpecService,
+    SpecSkillService,
+)
+
+
+import uuid as _uuid
+
+
+def _trs_to_objects(trs: list[str] | None) -> list | None:
+    """Convert TR strings to objects with IDs for task linkage traceability."""
+    if not trs:
+        return None
+    return [
+        {"id": f"tr_{_uuid.uuid4().hex[:8]}", "text": tr, "linked_task_ids": []}
+        if isinstance(tr, str) else tr
+        for tr in trs
+    ]
+
+
+def _load_instructions() -> str:
+    """Load agent instructions. Prefers mounted volume (live-editable), falls back to bundled copy."""
+    here = Path(__file__).parent
+    for candidate in [
+        Path("/app/prompts/agent_system_prompt.md"),
+        here / "agent_instructions.md",
+    ]:
+        if candidate.exists():
+            return candidate.read_text(encoding="utf-8")
+    return ""
+
+
+# Initialize MCP server
+mcp = FastMCP(
+    name=get_settings().mcp_server_name,
+    version=get_settings().mcp_server_version,
+    instructions=_load_instructions(),
+)
+
+# Settings
+mcp_settings = get_mcp_settings()
+settings = get_settings()
+
+# ============================================================================
+# SESSION-BASED AUTH (API key extracted from request)
+# ============================================================================
+
+# Global: the active api_key set during the most recent connection.
+# Simple and reliable — no contextvar propagation issues.
+_active_api_key: str | None = None
+
+
+class ApiKeySessionMiddleware:
+    """ASGI middleware that extracts api_key from query param or header."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] == "http":
+            request = Request(scope)
+            # Extract API key from query param, X-API-Key header, or Authorization Bearer
+            global _active_api_key
+            api_key = (
+                request.query_params.get("api_key")
+                or request.headers.get("x-api-key", "")
+                or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            )
+            if api_key:
+                _active_api_key = api_key
+
+        await self.app(scope, receive, send)
+
+
+# ============================================================================
+# AUTH HELPERS (tools call these instead of passing api_key)
+# ============================================================================
+
+
+# Session factory registration for MCP server
+_mcp_session_factory = None
+
+
+def register_session_factory(factory):
+    """Register the database session factory for MCP operations."""
+    global _mcp_session_factory
+    _mcp_session_factory = factory
+
+
+def get_db_for_mcp():
+    """Get database session for MCP operations."""
+    if _mcp_session_factory is None:
+        raise RuntimeError("Session factory not registered. Call register_session_factory() first.")
+    return _mcp_session_factory()
+
+
+class AgentContext:
+    """Context for authenticated agent."""
+
+    def __init__(
+        self,
+        agent_id: str,
+        agent_name: str,
+        board_id: str,
+        permissions: list[str] | None,
+    ):
+        self.agent_id = agent_id
+        self.agent_name = agent_name
+        self.board_id = board_id
+        self.permissions = permissions
+
+
+async def _get_authenticated_agent():
+    """Get the agent authenticated via the active API key from the request."""
+    api_key = _active_api_key
+    if not api_key:
+        return None
+    async with get_db_for_mcp() as db:
+        service = AgentService(db)
+        agent = await service.get_agent_by_key(api_key)
+        await db.commit()
+        return agent
+
+
+async def _get_agent_ctx(board_id: str) -> AgentContext | None:
+    """Authenticate agent from active API key and verify board access."""
+    api_key = _active_api_key
+    if not api_key:
+        return None
+    async with get_db_for_mcp() as db:
+        service = AgentService(db)
+        agent = await service.get_agent_by_key(api_key)
+        if not agent:
+            return None
+        if not await service.agent_has_board_access(agent.id, board_id):
+            return None
+        await db.commit()
+        return AgentContext(
+            agent_id=agent.id,
+            agent_name=agent.name,
+            board_id=board_id,
+            permissions=agent.permissions,
+        )
+
+
+async def _log_card_activity(
+    db, board_id: str, card_id: str, action: str, ctx: AgentContext, details: dict | None = None
+) -> None:
+    """Log card-level activity from an MCP agent."""
+    board_service = BoardService(db)
+    await board_service._log_activity(
+        board_id=board_id, card_id=card_id,
+        action=action, actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+        details=details,
+    )
+
+
+def _auth_error() -> str:
+    return json.dumps({"error": "Authentication failed or board access denied"})
+
+
+def _perm_error(msg: str) -> str:
+    return json.dumps({"error": msg})
+
+
+# ============================================================================
+# AGENT PROFILE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_get_my_profile() -> str:
+    """
+    Get the authenticated agent's own profile including identity, description, objective, and permissions.
+    No parameters needed — the agent is identified by the API key in the MCP connection.
+
+    Returns:
+        JSON with agent profile details
+    """
+    agent = await _get_authenticated_agent()
+    if not agent:
+        return json.dumps({"error": "Authentication failed"})
+
+    return json.dumps(
+        {
+            "id": agent.id,
+            "name": agent.name,
+            "description": agent.description,
+            "objective": agent.objective,
+            "is_active": agent.is_active,
+            "permissions": agent.permissions,
+            "created_at": agent.created_at.isoformat(),
+            "last_used_at": (
+                agent.last_used_at.isoformat() if agent.last_used_at else None
+            ),
+        },
+        default=str,
+    )
+
+
+@mcp.tool()
+async def okto_pulse_update_my_profile(
+    description: str = "",
+    objective: str = "",
+) -> str:
+    """
+    Update the authenticated agent's own description and/or objective.
+    No board_id needed — this updates the global agent profile.
+
+    Args:
+        description: New description (optional, empty = no change)
+        objective: New objective (optional, empty = no change)
+
+    Returns:
+        JSON with updated profile
+    """
+    agent = await _get_authenticated_agent()
+    if not agent:
+        return json.dumps({"error": "Authentication failed"})
+
+    perm_err = check_permission(agent.permissions, Permissions.SELF_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = AgentService(db)
+        agent = await service.get_agent(agent.id)
+
+        if not agent:
+            return json.dumps({"error": "Agent not found"})
+
+        if description:
+            agent.description = description
+        if objective:
+            agent.objective = objective
+
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "profile": {
+                    "id": agent.id,
+                    "name": agent.name,
+                    "description": agent.description,
+                    "objective": agent.objective,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_my_boards() -> str:
+    """
+    List all boards the authenticated agent has access to.
+    No parameters needed — the agent is identified by the API key in the MCP connection.
+
+    Returns:
+        JSON with agent identity and list of boards
+    """
+    agent = await _get_authenticated_agent()
+    if not agent:
+        return json.dumps({"error": "Authentication failed"})
+
+    async with get_db_for_mcp() as db:
+        service = AgentService(db)
+        boards = await service.list_boards_for_agent(agent.id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "agent_id": agent.id,
+                "agent_name": agent.name,
+                "boards": [
+                    {
+                        "id": b.id,
+                        "name": b.name,
+                        "description": b.description,
+                    }
+                    for b in boards
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_my_mentions(board_id: str, include_seen: str = "false") -> str:
+    """
+    List comments and Q&A items where you are mentioned via @name.
+    By default only returns UNSEEN mentions. Use include_seen="true" to get all.
+
+    Args:
+        board_id: Board ID to search within
+        include_seen: "true" to include already-seen mentions (default "false")
+
+    Returns:
+        JSON with unseen mentions, each with an item_id you can pass to mark_as_seen
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from sqlalchemy import select, or_
+
+    from okto_pulse.core.models.db import AgentSeenItem, Card, Comment, Ideation, IdeationQAItem, QAItem, Refinement, RefinementQAItem, Spec, SpecQAItem
+
+    mention_pattern = f"%@{ctx.agent_name}%"
+    show_all = include_seen.lower() == "true"
+
+    async with get_db_for_mcp() as db:
+        # Get set of seen item IDs for this agent
+        seen_ids: set[str] = set()
+        if not show_all:
+            seen_query = select(AgentSeenItem.item_id).where(
+                AgentSeenItem.agent_id == ctx.agent_id
+            )
+            seen_ids = {r[0] for r in (await db.execute(seen_query)).all()}
+
+        # Search comments on cards
+        comment_query = (
+            select(Comment, Card.title)
+            .join(Card, Card.id == Comment.card_id)
+            .where(Card.board_id == board_id)
+            .where(Comment.content.ilike(mention_pattern))
+            .order_by(Comment.created_at.desc())
+        )
+        comment_results = (await db.execute(comment_query)).all()
+
+        # Search QA on cards
+        qa_query = (
+            select(QAItem, Card.title)
+            .join(Card, Card.id == QAItem.card_id)
+            .where(Card.board_id == board_id)
+            .where(
+                or_(
+                    QAItem.question.ilike(mention_pattern),
+                    QAItem.answer.ilike(mention_pattern),
+                )
+            )
+            .order_by(QAItem.created_at.desc())
+        )
+        qa_results = (await db.execute(qa_query)).all()
+
+        # Search QA on specs
+        spec_qa_query = (
+            select(SpecQAItem, Spec.title)
+            .join(Spec, Spec.id == SpecQAItem.spec_id)
+            .where(Spec.board_id == board_id)
+            .where(
+                or_(
+                    SpecQAItem.question.ilike(mention_pattern),
+                    SpecQAItem.answer.ilike(mention_pattern),
+                )
+            )
+            .order_by(SpecQAItem.created_at.desc())
+        )
+        spec_qa_results = (await db.execute(spec_qa_query)).all()
+
+        # Search QA on ideations
+        ideation_qa_query = (
+            select(IdeationQAItem, Ideation.title)
+            .join(Ideation, Ideation.id == IdeationQAItem.ideation_id)
+            .where(Ideation.board_id == board_id)
+            .where(
+                or_(
+                    IdeationQAItem.question.ilike(mention_pattern),
+                    IdeationQAItem.answer.ilike(mention_pattern),
+                )
+            )
+            .order_by(IdeationQAItem.created_at.desc())
+        )
+        ideation_qa_results = (await db.execute(ideation_qa_query)).all()
+
+        # Search QA on refinements
+        refinement_qa_query = (
+            select(RefinementQAItem, Refinement.title)
+            .join(Refinement, Refinement.id == RefinementQAItem.refinement_id)
+            .where(Refinement.board_id == board_id)
+            .where(
+                or_(
+                    RefinementQAItem.question.ilike(mention_pattern),
+                    RefinementQAItem.answer.ilike(mention_pattern),
+                )
+            )
+            .order_by(RefinementQAItem.created_at.desc())
+        )
+        refinement_qa_results = (await db.execute(refinement_qa_query)).all()
+        await db.commit()
+
+        mentions = []
+        for comment, card_title in comment_results:
+            if not show_all and comment.id in seen_ids:
+                continue
+            mentions.append({
+                "type": "comment",
+                "item_id": comment.id,
+                "card_id": comment.card_id,
+                "card_title": card_title,
+                "content": comment.content,
+                "author": comment.author_id,
+                "created_at": comment.created_at.isoformat(),
+            })
+        for qa, card_title in qa_results:
+            if not show_all and qa.id in seen_ids:
+                continue
+            mentions.append({
+                "type": "qa",
+                "item_id": qa.id,
+                "card_id": qa.card_id,
+                "card_title": card_title,
+                "question": qa.question,
+                "answer": qa.answer,
+                "asked_by": qa.asked_by,
+                "created_at": qa.created_at.isoformat(),
+            })
+        for spec_qa, spec_title in spec_qa_results:
+            if not show_all and spec_qa.id in seen_ids:
+                continue
+            mentions.append({
+                "type": "spec_qa",
+                "item_id": spec_qa.id,
+                "spec_id": spec_qa.spec_id,
+                "spec_title": spec_title,
+                "question": spec_qa.question,
+                "question_type": spec_qa.question_type,
+                "choices": spec_qa.choices,
+                "answer": spec_qa.answer,
+                "selected": spec_qa.selected,
+                "asked_by": spec_qa.asked_by,
+                "created_at": spec_qa.created_at.isoformat(),
+            })
+        for ideation_qa, ideation_title in ideation_qa_results:
+            if not show_all and ideation_qa.id in seen_ids:
+                continue
+            mentions.append({
+                "type": "ideation_qa",
+                "item_id": ideation_qa.id,
+                "ideation_id": ideation_qa.ideation_id,
+                "ideation_title": ideation_title,
+                "question": ideation_qa.question,
+                "question_type": ideation_qa.question_type,
+                "choices": ideation_qa.choices,
+                "answer": ideation_qa.answer,
+                "selected": ideation_qa.selected,
+                "asked_by": ideation_qa.asked_by,
+                "created_at": ideation_qa.created_at.isoformat(),
+            })
+        for refinement_qa, refinement_title in refinement_qa_results:
+            if not show_all and refinement_qa.id in seen_ids:
+                continue
+            mentions.append({
+                "type": "refinement_qa",
+                "item_id": refinement_qa.id,
+                "refinement_id": refinement_qa.refinement_id,
+                "refinement_title": refinement_title,
+                "question": refinement_qa.question,
+                "question_type": refinement_qa.question_type,
+                "choices": refinement_qa.choices,
+                "answer": refinement_qa.answer,
+                "selected": refinement_qa.selected,
+                "asked_by": refinement_qa.asked_by,
+                "created_at": refinement_qa.created_at.isoformat(),
+            })
+
+        mentions.sort(key=lambda m: m["created_at"], reverse=True)
+
+        return json.dumps(
+            {
+                "agent_name": ctx.agent_name,
+                "unseen_count": len(mentions),
+                "filter": "unseen_only" if not show_all else "all",
+                "mentions": mentions,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_mark_as_seen(board_id: str, item_ids: str) -> str:
+    """
+    Mark one or more items as seen so they won't appear in list_my_mentions.
+    Use this after processing mentions to avoid seeing them again.
+
+    Args:
+        board_id: Board ID (for access verification)
+        item_ids: Comma-separated item IDs to mark as seen (from list_my_mentions item_id field)
+
+    Returns:
+        JSON with count of newly marked items
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from okto_pulse.core.models.db import AgentSeenItem, Comment, IdeationQAItem, QAItem, RefinementQAItem, SpecQAItem
+
+    ids = [i.strip() for i in item_ids.split(",") if i.strip()]
+    if not ids:
+        return json.dumps({"error": "No item_ids provided"})
+
+    async with get_db_for_mcp() as db:
+        marked = 0
+        for item_id in ids:
+            # Check if already seen
+            existing = await db.execute(
+                select(AgentSeenItem).where(
+                    AgentSeenItem.agent_id == ctx.agent_id,
+                    AgentSeenItem.item_id == item_id,
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+            seen = AgentSeenItem(
+                agent_id=ctx.agent_id,
+                item_type="mention",
+                item_id=item_id,
+            )
+            db.add(seen)
+            marked += 1
+        await db.commit()
+
+        # Log activity for affected cards and specs
+        if marked > 0:
+            comment_result = await db.execute(
+                select(Comment.card_id).where(Comment.id.in_(ids)).distinct()
+            )
+            qa_result = await db.execute(
+                select(QAItem.card_id).where(QAItem.id.in_(ids)).distinct()
+            )
+            card_ids = set(
+                row[0] for row in comment_result.fetchall()
+            ) | set(
+                row[0] for row in qa_result.fetchall()
+            )
+            for card_id in card_ids:
+                await _log_card_activity(db, board_id, card_id, "items_seen", ctx, {"item_count": marked})
+
+            # Log spec Q&A seen
+            spec_qa_result = await db.execute(
+                select(SpecQAItem.spec_id).where(SpecQAItem.id.in_(ids)).distinct()
+            )
+            spec_ids = {row[0] for row in spec_qa_result.fetchall()}
+            if spec_ids:
+                board_service = BoardService(db)
+                for spec_id in spec_ids:
+                    await board_service._log_activity(
+                        board_id=board_id, action="spec_qa_seen",
+                        actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+                        details={"spec_id": spec_id, "item_count": marked},
+                    )
+
+            # Log ideation Q&A seen
+            ideation_qa_result = await db.execute(
+                select(IdeationQAItem.ideation_id).where(IdeationQAItem.id.in_(ids)).distinct()
+            )
+            ideation_ids = {row[0] for row in ideation_qa_result.fetchall()}
+            if ideation_ids:
+                board_service = BoardService(db)
+                for ideation_id in ideation_ids:
+                    await board_service._log_activity(
+                        board_id=board_id, action="ideation_qa_seen",
+                        actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+                        details={"ideation_id": ideation_id, "item_count": marked},
+                    )
+
+            # Log refinement Q&A seen
+            refinement_qa_result = await db.execute(
+                select(RefinementQAItem.refinement_id).where(RefinementQAItem.id.in_(ids)).distinct()
+            )
+            refinement_ids = {row[0] for row in refinement_qa_result.fetchall()}
+            if refinement_ids:
+                board_service = BoardService(db)
+                for refinement_id in refinement_ids:
+                    await board_service._log_activity(
+                        board_id=board_id, action="refinement_qa_seen",
+                        actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+                        details={"refinement_id": refinement_id, "item_count": marked},
+                    )
+            await db.commit()
+
+        return json.dumps(
+            {"success": True, "marked_count": marked, "total_requested": len(ids)}
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_unseen_summary(board_id: str) -> str:
+    """
+    Quick summary of unseen mentions and activity for the agent on this board.
+    Use this to check if there's anything new without fetching full details.
+
+    Args:
+        board_id: Board ID
+
+    Returns:
+        JSON with counts of unseen mentions and recent activity
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from sqlalchemy import func as sqla_func
+    from sqlalchemy import or_, select
+
+    from okto_pulse.core.models.db import (
+        ActivityLog,
+        AgentSeenItem,
+        Card,
+        Comment,
+        Ideation,
+        IdeationQAItem,
+        QAItem,
+        Refinement,
+        RefinementQAItem,
+        Spec,
+        SpecQAItem,
+    )
+
+    mention_pattern = f"%@{ctx.agent_name}%"
+
+    async with get_db_for_mcp() as db:
+        # Get seen IDs
+        seen_query = select(AgentSeenItem.item_id).where(
+            AgentSeenItem.agent_id == ctx.agent_id
+        )
+        seen_ids = {r[0] for r in (await db.execute(seen_query)).all()}
+
+        # Count comment mentions
+        comment_query = (
+            select(sqla_func.count())
+            .select_from(Comment)
+            .join(Card, Card.id == Comment.card_id)
+            .where(Card.board_id == board_id)
+            .where(Comment.content.ilike(mention_pattern))
+        )
+        total_comment_mentions = (await db.execute(comment_query)).scalar() or 0
+
+        # Count card QA mentions
+        qa_query = (
+            select(sqla_func.count())
+            .select_from(QAItem)
+            .join(Card, Card.id == QAItem.card_id)
+            .where(Card.board_id == board_id)
+            .where(
+                or_(
+                    QAItem.question.ilike(mention_pattern),
+                    QAItem.answer.ilike(mention_pattern),
+                )
+            )
+        )
+        total_qa_mentions = (await db.execute(qa_query)).scalar() or 0
+
+        # Count spec QA mentions
+        spec_qa_query = (
+            select(sqla_func.count())
+            .select_from(SpecQAItem)
+            .join(Spec, Spec.id == SpecQAItem.spec_id)
+            .where(Spec.board_id == board_id)
+            .where(
+                or_(
+                    SpecQAItem.question.ilike(mention_pattern),
+                    SpecQAItem.answer.ilike(mention_pattern),
+                )
+            )
+        )
+        total_spec_qa_mentions = (await db.execute(spec_qa_query)).scalar() or 0
+
+        # Count ideation QA mentions
+        ideation_qa_query = (
+            select(sqla_func.count())
+            .select_from(IdeationQAItem)
+            .join(Ideation, Ideation.id == IdeationQAItem.ideation_id)
+            .where(Ideation.board_id == board_id)
+            .where(
+                or_(
+                    IdeationQAItem.question.ilike(mention_pattern),
+                    IdeationQAItem.answer.ilike(mention_pattern),
+                )
+            )
+        )
+        total_ideation_qa_mentions = (await db.execute(ideation_qa_query)).scalar() or 0
+
+        # Count refinement QA mentions
+        refinement_qa_query = (
+            select(sqla_func.count())
+            .select_from(RefinementQAItem)
+            .join(Refinement, Refinement.id == RefinementQAItem.refinement_id)
+            .where(Refinement.board_id == board_id)
+            .where(
+                or_(
+                    RefinementQAItem.question.ilike(mention_pattern),
+                    RefinementQAItem.answer.ilike(mention_pattern),
+                )
+            )
+        )
+        total_refinement_qa_mentions = (await db.execute(refinement_qa_query)).scalar() or 0
+
+        # Recent activity count (last 24h)
+        from datetime import timedelta
+
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        activity_query = (
+            select(sqla_func.count())
+            .select_from(ActivityLog)
+            .where(
+                ActivityLog.board_id == board_id,
+                ActivityLog.created_at >= recent_cutoff,
+            )
+        )
+        recent_activity = (await db.execute(activity_query)).scalar() or 0
+        await db.commit()
+
+        total_mentions = total_comment_mentions + total_qa_mentions + total_spec_qa_mentions + total_ideation_qa_mentions + total_refinement_qa_mentions
+        unseen_mentions = total_mentions - len(seen_ids)
+        if unseen_mentions < 0:
+            unseen_mentions = 0
+
+        return json.dumps(
+            {
+                "board_id": board_id,
+                "unseen_mentions": unseen_mentions,
+                "total_mentions": total_mentions,
+                "seen_count": len(seen_ids),
+                "recent_activity_24h": recent_activity,
+            }
+        )
+
+
+# ============================================================================
+# BOARD TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_get_board(board_id: str) -> str:
+    """
+    Get board details with all cards and agents.
+
+    Args:
+        board_id: Board ID to retrieve
+
+    Returns:
+        JSON string with board details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = BoardService(db)
+        board = await service.get_board(board_id)
+        await db.commit()
+
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        agent_service = AgentService(db)
+        board_agents = await agent_service.list_agents_for_board(board_id)
+
+        spec_service = SpecService(db)
+        board_specs = await spec_service.list_specs(board_id)
+
+        ideation_service = IdeationService(db)
+        board_ideations = await ideation_service.list_ideations(board_id)
+
+        return json.dumps(
+            {
+                "id": board.id,
+                "name": board.name,
+                "description": board.description,
+                "owner_id": board.owner_id,
+                "created_at": board.created_at.isoformat(),
+                "updated_at": board.updated_at.isoformat(),
+                "ideations": [
+                    {
+                        "id": i.id,
+                        "title": i.title,
+                        "status": i.status.value,
+                        "complexity": i.complexity.value if i.complexity else None,
+                        "version": i.version,
+                        "labels": i.labels,
+                    }
+                    for i in board_ideations
+                ],
+                "specs": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "status": s.status.value,
+                        "version": s.version,
+                        "labels": s.labels,
+                    }
+                    for s in board_specs
+                ],
+                "cards": [
+                    {
+                        "id": c.id,
+                        "title": c.title,
+                        "description": c.description,
+                        "status": c.status.value,
+                        "position": c.position,
+                        "assignee_id": c.assignee_id,
+                        "spec_id": c.spec_id,
+                        "due_date": (
+                            c.due_date.isoformat() if c.due_date else None
+                        ),
+                        "labels": c.labels,
+                    }
+                    for c in board.cards
+                ],
+                "agents": [
+                    {
+                        "id": a.id,
+                        "name": a.name,
+                        "description": a.description,
+                        "is_active": a.is_active,
+                    }
+                    for a in board_agents
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_agents(board_id: str) -> str:
+    """
+    List all agents registered on the board.
+
+    Args:
+        board_id: Board ID
+
+    Returns:
+        JSON array of agents
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = AgentService(db)
+        agents = await service.list_agents(board_id)
+        await db.commit()
+
+        return json.dumps(
+            [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "description": a.description,
+                    "objective": a.objective,
+                    "is_active": a.is_active,
+                    "created_at": a.created_at.isoformat(),
+                    "last_used_at": (
+                        a.last_used_at.isoformat() if a.last_used_at else None
+                    ),
+                }
+                for a in agents
+            ],
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_board_members(board_id: str) -> str:
+    """
+    List all members of the board (owner + agents).
+
+    Args:
+        board_id: Board ID
+
+    Returns:
+        JSON with owner info and agents list
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        board_service = BoardService(db)
+        board = await board_service.get_board(board_id)
+        await db.commit()
+
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        agent_service = AgentService(db)
+        board_agents = await agent_service.list_agents_for_board(board_id)
+
+        return json.dumps(
+            {
+                "owner": {"id": board.owner_id, "type": "user"},
+                "agents": [
+                    {
+                        "id": a.id,
+                        "name": a.name,
+                        "description": a.description,
+                        "objective": a.objective,
+                        "is_active": a.is_active,
+                        "type": "agent",
+                    }
+                    for a in board_agents
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_activity_log(
+    board_id: str, limit: int = 50, offset: int = 0, action: str = "", card_id: str = ""
+) -> str:
+    """
+    Get the activity log (history) for the board with optional filtering and pagination.
+
+    Args:
+        board_id: Board ID
+        limit: Maximum number of entries to return (default 50, max 200)
+        offset: Skip first N entries (default 0)
+        action: Filter by action type (optional) — e.g. card_created, card_moved, spec_updated
+        card_id: Filter by card ID (optional) — only activities for this card
+
+    Returns:
+        JSON array of activity log entries
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    limit = min(limit, 200)
+
+    from sqlalchemy import select
+
+    from okto_pulse.core.models.db import ActivityLog
+
+    async with get_db_for_mcp() as db:
+        query = select(ActivityLog).where(ActivityLog.board_id == board_id)
+        if action:
+            query = query.where(ActivityLog.action == action)
+        if card_id:
+            query = query.where(ActivityLog.card_id == card_id)
+        query = query.order_by(ActivityLog.created_at.desc()).offset(offset).limit(limit)
+        result = await db.execute(query)
+        logs = list(result.scalars().all())
+        await db.commit()
+
+        return json.dumps(
+            [
+                {
+                    "id": log.id,
+                    "action": log.action,
+                    "actor_type": log.actor_type,
+                    "actor_id": log.actor_id,
+                    "actor_name": log.actor_name,
+                    "card_id": log.card_id,
+                    "details": log.details,
+                    "created_at": log.created_at.isoformat(),
+                }
+                for log in logs
+            ],
+            default=str,
+        )
+
+
+# ============================================================================
+# CARD TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_create_card(
+    board_id: str,
+    title: str,
+    spec_id: str,
+    description: str = "",
+    details: str = "",
+    status: str = "not_started",
+    priority: str = "none",
+    assignee_id: str = "",
+    labels: str = "",
+    test_scenario_ids: str = "",
+    card_type: str = "normal",
+    origin_task_id: str = "",
+    severity: str = "",
+    expected_behavior: str = "",
+    observed_behavior: str = "",
+    steps_to_reproduce: str = "",
+    action_plan: str = "",
+) -> str:
+    """
+    Create a new card on the board. Every card MUST be linked to a spec.
+
+    Args:
+        board_id: Board ID
+        title: Card title
+        spec_id: REQUIRED — Spec ID to link this card to. The spec must be in 'done' status.
+            For bug cards, this is auto-resolved from the origin task if not provided.
+        description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
+        details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.
+        status: Card status - one of: not_started, started, in_progress, on_hold, done, cancelled
+        priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
+        assignee_id: User ID to assign (optional)
+        labels: Comma-separated labels (optional)
+        test_scenario_ids: Comma-separated test scenario IDs to link this card to (optional). When provided, automatically creates bidirectional links between the card and the scenarios. For test cards, this is MANDATORY.
+        card_type: Card type - "normal" (default) or "bug". Bug cards require origin_task_id, severity, expected_behavior, observed_behavior.
+        origin_task_id: REQUIRED for bug cards — ID of the task that originated the bug. The spec is auto-resolved from this task.
+        severity: REQUIRED for bug cards — one of: critical, major, minor
+        expected_behavior: REQUIRED for bug cards — what should happen
+        observed_behavior: REQUIRED for bug cards — what actually happens
+        steps_to_reproduce: Steps to reproduce the bug (optional)
+        action_plan: Plan for fixing the bug (optional)
+
+    Returns:
+        JSON with created card details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.db import Board, CardPriority, CardStatus
+    from okto_pulse.core.models.schemas import CardCreate
+
+    try:
+        card_status = CardStatus(status)
+    except ValueError:
+        return json.dumps(
+            {
+                "error": f"Invalid status. Must be one of: {[s.value for s in CardStatus]}"
+            }
+        )
+
+    try:
+        card_priority = CardPriority(priority)
+    except ValueError:
+        return json.dumps(
+            {
+                "error": f"Invalid priority. Must be one of: {[p.value for p in CardPriority]}"
+            }
+        )
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        # Normalize escaped newlines (MCP clients may send \\n instead of real newlines)
+        _desc = description.replace("\\n", "\n") if description else None
+        _details = details.replace("\\n", "\n") if details else None
+
+        scenario_ids_list = [s.strip() for s in test_scenario_ids.split(",") if s.strip()] if test_scenario_ids else None
+
+        # Enforce max scenarios per card from board settings
+        if scenario_ids_list:
+            board_obj = await db.get(Board, board_id)
+            max_per_card = (board_obj.settings or {}).get("max_scenarios_per_card", 3) if board_obj else 3
+            if len(scenario_ids_list) > max_per_card:
+                return json.dumps({
+                    "error": f"Cannot link {len(scenario_ids_list)} scenarios to a single card. "
+                    f"Board limit is {max_per_card} scenarios per card. "
+                    f"Create separate test cards for better traceability."
+                })
+
+        card_create = CardCreate(
+            title=title,
+            description=_desc,
+            details=_details,
+            status=card_status,
+            priority=card_priority,
+            assignee_id=assignee_id or None,
+            labels=labels.split(",") if labels else None,
+            spec_id=spec_id,
+            test_scenario_ids=scenario_ids_list,
+            card_type=card_type or "normal",
+            origin_task_id=origin_task_id or None,
+            severity=severity or None,
+            expected_behavior=expected_behavior.replace("\\n", "\n") if expected_behavior else None,
+            observed_behavior=observed_behavior.replace("\\n", "\n") if observed_behavior else None,
+            steps_to_reproduce=steps_to_reproduce.replace("\\n", "\n") if steps_to_reproduce else None,
+            action_plan=action_plan.replace("\\n", "\n") if action_plan else None,
+        )
+
+        try:
+            card = await service.create_card(
+                board_id, ctx.agent_id, card_create, skip_ownership_check=True
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+
+        if not card:
+            return json.dumps({"error": "Failed to create card"})
+
+        # Bidirectional link: update scenarios' linked_task_ids
+        if scenario_ids_list:
+            spec_service = SpecService(db)
+            spec_obj = await spec_service.get_spec(spec_id)
+            if spec_obj and spec_obj.test_scenarios:
+                scenarios = list(spec_obj.test_scenarios)
+                changed = False
+                for sc in scenarios:
+                    if sc.get("id") in scenario_ids_list:
+                        task_ids = list(sc.get("linked_task_ids") or [])
+                        if card.id not in task_ids:
+                            task_ids.append(card.id)
+                            sc["linked_task_ids"] = task_ids
+                            changed = True
+                if changed:
+                    from okto_pulse.core.models.schemas import SpecUpdate as SU
+                    await spec_service.update_spec(spec_id, ctx.agent_id, SU(test_scenarios=scenarios))
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id,
+            card_id=card.id,
+            action="card_created",
+            actor_type="agent",
+            actor_id=ctx.agent_id,
+            actor_name=ctx.agent_name,
+            details={"title": title, "status": status, "priority": priority},
+        )
+        await db.commit()
+
+        resp_card = {
+            "id": card.id,
+            "title": card.title,
+            "description": card.description,
+            "status": card.status.value,
+            "priority": card.priority.value,
+            "position": card.position,
+            "card_type": getattr(card, "card_type", "normal"),
+        }
+        if getattr(card, "card_type", "normal") == "bug":
+            resp_card.update({
+                "origin_task_id": card.origin_task_id,
+                "severity": getattr(card, "severity", None),
+                "expected_behavior": card.expected_behavior,
+                "observed_behavior": card.observed_behavior,
+                "spec_id": card.spec_id,
+            })
+
+        return json.dumps({"success": True, "card": resp_card}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
+    """
+    Get detailed card information including attachments, Q&A, and comments.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+
+    Returns:
+        JSON with full card details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        await db.commit()
+
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        return json.dumps(
+            {
+                "id": card.id,
+                "board_id": card.board_id,
+                "spec_id": card.spec_id,
+                "title": card.title,
+                "description": card.description,
+                "details": card.details,
+                "status": card.status.value,
+                "priority": card.priority.value,
+                "position": card.position,
+                "assignee_id": card.assignee_id,
+                "created_by": card.created_by,
+                "created_at": card.created_at.isoformat(),
+                "updated_at": card.updated_at.isoformat(),
+                "due_date": (
+                    card.due_date.isoformat() if card.due_date else None
+                ),
+                "labels": card.labels or [],
+                "attachments": [
+                    {
+                        "id": a.id,
+                        "filename": a.original_filename,
+                        "mime_type": a.mime_type,
+                        "size": a.size,
+                        "uploaded_by": a.uploaded_by,
+                    }
+                    for a in card.attachments
+                ],
+                "qa_items": [
+                    {
+                        "id": q.id,
+                        "question": q.question,
+                        "answer": q.answer,
+                        "asked_by": q.asked_by,
+                        "answered_by": q.answered_by,
+                    }
+                    for q in card.qa_items
+                ],
+                "comments": [
+                    {
+                        "id": c.id,
+                        "content": c.content,
+                        "author_id": c.author_id,
+                        "created_at": c.created_at.isoformat(),
+                    }
+                    for c in card.comments
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_task_context(
+    board_id: str,
+    card_id: str,
+    include_knowledge: str = "true",
+    include_mockups: str = "true",
+    include_qa: str = "true",
+    include_comments: str = "true",
+) -> str:
+    """
+    Get the FULL execution context for a task card. Aggregates the card data with
+    all relevant spec information: functional requirements, technical requirements,
+    acceptance criteria, test scenarios, business rules, API contracts, knowledge
+    base entries, screen mockups, Q&A, and comments.
+
+    **Always call this before starting work on a task** — it provides everything
+    an agent needs to understand what to build, how to test it, and what rules apply.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        include_knowledge: Include spec knowledge base entries (default "true")
+        include_mockups: Include screen mockups from card and spec (default "true")
+        include_qa: Include Q&A items from card and spec (default "true")
+        include_comments: Include card comments (default "true")
+
+    Returns:
+        JSON with complete task context: card details + spec requirements + linked artifacts
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
+    _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
+    _inc_qa = include_qa.lower() in ("true", "1", "yes")
+    _inc_comments = include_comments.lower() in ("true", "1", "yes")
+
+    async with get_db_for_mcp() as db:
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        await db.commit()
+
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        result: dict = {
+            "card": {
+                "id": card.id,
+                "title": card.title,
+                "description": card.description,
+                "details": card.details,
+                "status": card.status.value,
+                "priority": card.priority.value,
+                "assignee_id": card.assignee_id,
+                "labels": card.labels or [],
+                "card_type": card.card_type.value if card.card_type else "normal",
+                "test_scenario_ids": card.test_scenario_ids or [],
+                "due_date": card.due_date.isoformat() if card.due_date else None,
+                "created_by": card.created_by,
+                "created_at": card.created_at.isoformat(),
+            },
+        }
+
+        # Bug card fields
+        if card.card_type and card.card_type.value == "bug":
+            result["card"]["severity"] = card.severity.value if card.severity else None
+            result["card"]["origin_task_id"] = card.origin_task_id
+            result["card"]["expected_behavior"] = card.expected_behavior
+            result["card"]["observed_behavior"] = card.observed_behavior
+            result["card"]["steps_to_reproduce"] = card.steps_to_reproduce
+            result["card"]["action_plan"] = card.action_plan
+            result["card"]["linked_test_task_ids"] = card.linked_test_task_ids or []
+
+        if _inc_mockups and card.screen_mockups:
+            result["card"]["screen_mockups"] = card.screen_mockups
+
+        if _inc_qa:
+            result["card"]["qa_items"] = [
+                {
+                    "id": q.id,
+                    "question": q.question,
+                    "answer": q.answer,
+                    "asked_by": q.asked_by,
+                    "answered_by": q.answered_by,
+                }
+                for q in card.qa_items
+            ]
+
+        if _inc_comments:
+            result["card"]["comments"] = [
+                {
+                    "id": c.id,
+                    "content": c.content,
+                    "author_id": c.author_id,
+                    "created_at": c.created_at.isoformat(),
+                }
+                for c in card.comments
+            ]
+
+        # Dependencies
+        deps = await card_service.get_dependencies(card_id)
+        await db.commit()
+        if deps:
+            result["card"]["depends_on"] = [
+                {"id": d.id, "title": d.title, "status": d.status.value}
+                for d in deps
+            ]
+
+        # Spec context (the core of task context)
+        if card.spec_id:
+            spec_service = SpecService(db)
+            spec = await spec_service.get_spec(card.spec_id)
+            await db.commit()
+
+            if spec:
+                spec_data: dict = {
+                    "id": spec.id,
+                    "title": spec.title,
+                    "description": spec.description,
+                    "context": spec.context,
+                    "status": spec.status.value,
+                    "functional_requirements": spec.functional_requirements or [],
+                    "technical_requirements": spec.technical_requirements or [],
+                    "acceptance_criteria": spec.acceptance_criteria or [],
+                    "test_scenarios": spec.test_scenarios or [],
+                    "business_rules": spec.business_rules or [],
+                    "api_contracts": spec.api_contracts or [],
+                }
+
+                if _inc_mockups and spec.screen_mockups:
+                    spec_data["screen_mockups"] = spec.screen_mockups
+
+                if _inc_qa:
+                    spec_data["qa_items"] = [
+                        {
+                            "id": q.id,
+                            "question": q.question,
+                            "answer": q.answer,
+                            "asked_by": q.asked_by,
+                            "answered_by": q.answered_by,
+                        }
+                        for q in (spec.qa_items or [])
+                    ]
+
+                if _inc_kb:
+                    spec_data["knowledge_bases"] = [
+                        {
+                            "id": kb.id,
+                            "title": kb.title,
+                            "content": kb.content,
+                            "source_type": kb.source_type,
+                        }
+                        for kb in (spec.knowledge_bases or [])
+                    ]
+
+                result["spec"] = spec_data
+
+                # Filter test scenarios relevant to this card
+                if card.test_scenario_ids and spec.test_scenarios:
+                    result["my_test_scenarios"] = [
+                        ts for ts in spec.test_scenarios
+                        if ts.get("id") in card.test_scenario_ids
+                    ]
+
+        return json.dumps(result, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_get_task_conclusions(board_id: str, card_id: str) -> str:
+    """
+    Get the conclusions of a completed task card. Conclusions describe what was done,
+    the root cause (for bugs), decisions made, and any relevant notes.
+
+    Useful for:
+    - Understanding what was done in a previous task before starting related work
+    - Bug triage — understanding root cause and fix approach
+    - Knowledge transfer between agents or team members
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+
+    Returns:
+        JSON with card title, status, conclusions, and bug details if applicable
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        await db.commit()
+
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        result: dict = {
+            "id": card.id,
+            "title": card.title,
+            "status": card.status.value,
+            "card_type": card.card_type.value if card.card_type else "normal",
+            "conclusions": card.conclusions or [],
+        }
+
+        if card.card_type and card.card_type.value == "bug":
+            result["severity"] = card.severity.value if card.severity else None
+            result["expected_behavior"] = card.expected_behavior
+            result["observed_behavior"] = card.observed_behavior
+            result["steps_to_reproduce"] = card.steps_to_reproduce
+            result["action_plan"] = card.action_plan
+
+        if not card.conclusions:
+            result["note"] = "No conclusions recorded. Conclusions are required when moving a card to 'done'."
+
+        return json.dumps(result, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_update_card(
+    board_id: str,
+    card_id: str,
+    title: str = "",
+    description: str = "",
+    details: str = "",
+    priority: str = "",
+    assignee_id: str = "",
+    labels: str = "",
+    test_scenario_ids: str = "",
+    severity: str = "",
+    expected_behavior: str = "",
+    observed_behavior: str = "",
+    steps_to_reproduce: str = "",
+    action_plan: str = "",
+    linked_test_task_ids: str = "",
+) -> str:
+    """
+    Update card details.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        title: New title (optional, empty = no change)
+        description: New description (optional)
+        details: New details (optional)
+        priority: New priority - one of: none, low, medium, high, very_high, critical (optional, empty = no change)
+        assignee_id: New assignee (optional)
+        labels: New comma-separated labels (optional)
+        test_scenario_ids: Comma-separated test scenario IDs to associate with this card (optional). Use okto_pulse_link_task_to_scenario for bidirectional linking.
+        severity: Bug severity - one of: critical, major, minor (optional, bug cards only)
+        expected_behavior: Expected behavior description (optional, bug cards only)
+        observed_behavior: Observed behavior description (optional, bug cards only)
+        steps_to_reproduce: Steps to reproduce the bug (optional, bug cards only)
+        action_plan: Plan for fixing the bug (optional, bug cards only)
+        linked_test_task_ids: Comma-separated test task card IDs linked to this bug (optional, bug cards only)
+
+    Returns:
+        JSON with updated card details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.db import CardPriority
+    from okto_pulse.core.models.schemas import CardUpdate
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        update_data = {}
+        if title:
+            update_data["title"] = title
+        if description:
+            update_data["description"] = description.replace("\\n", "\n")
+        if details:
+            update_data["details"] = details.replace("\\n", "\n")
+        if priority:
+            try:
+                update_data["priority"] = CardPriority(priority)
+            except ValueError:
+                return json.dumps(
+                    {
+                        "error": f"Invalid priority. Must be one of: {[p.value for p in CardPriority]}"
+                    }
+                )
+        if assignee_id:
+            update_data["assignee_id"] = assignee_id
+        if labels:
+            update_data["labels"] = labels.split(",")
+        if test_scenario_ids:
+            update_data["test_scenario_ids"] = [
+                s.strip() for s in test_scenario_ids.split(",") if s.strip()
+            ]
+        if severity:
+            update_data["severity"] = severity
+        if expected_behavior:
+            update_data["expected_behavior"] = expected_behavior.replace("\\n", "\n")
+        if observed_behavior:
+            update_data["observed_behavior"] = observed_behavior.replace("\\n", "\n")
+        if steps_to_reproduce:
+            update_data["steps_to_reproduce"] = steps_to_reproduce.replace("\\n", "\n")
+        if action_plan:
+            update_data["action_plan"] = action_plan.replace("\\n", "\n")
+        if linked_test_task_ids:
+            update_data["linked_test_task_ids"] = [
+                s.strip() for s in linked_test_task_ids.split(",") if s.strip()
+            ]
+
+        card_update = CardUpdate(**update_data)
+        updated = await service.update_card(card_id, ctx.agent_id, card_update)
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id,
+            card_id=card_id,
+            action="card_updated",
+            actor_type="agent",
+            actor_id=ctx.agent_id,
+            actor_name=ctx.agent_name,
+            details=update_data,
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "card": {
+                    "id": updated.id,
+                    "title": updated.title,
+                    "status": updated.status.value,
+                    "priority": updated.priority.value,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_move_card(
+    board_id: str,
+    card_id: str,
+    status: str,
+    position: int = -1,
+    conclusion: str = "",
+    completeness: int = -1,
+    completeness_justification: str = "",
+    drift: int = -1,
+    drift_justification: str = "",
+) -> str:
+    """
+    Move a card to a different column/position on the board.
+    Moving to 'done' REQUIRES a conclusion, completeness, and drift — all with justifications.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        status: New status - one of: not_started, started, in_progress, on_hold, done, cancelled
+        position: New position in column (-1 = end of column)
+        conclusion: REQUIRED when status='done'. Detailed summary of changes, files modified, decisions, test results, and follow-ups. Supports Markdown and Mermaid diagrams (```mermaid code blocks).
+        completeness: REQUIRED when status='done'. 0-100, how much of the planned work was actually implemented. 100 = fully complete, 0 = nothing delivered. Use -1 when not moving to done.
+        completeness_justification: REQUIRED when status='done'. Explains why the completeness score is what it is. E.g. "All planned endpoints implemented and tested" or "Deferred pagination to follow-up card".
+        drift: REQUIRED when status='done'. 0-100, how much the implementation deviated from the original plan. 0 = exactly as planned, 100 = completely different approach. Use -1 when not moving to done.
+        drift_justification: REQUIRED when status='done'. Explains what caused deviation from the original plan. E.g. "No deviation" or "Had to switch from REST to WebSocket due to real-time requirements discovered during implementation".
+
+    Returns:
+        JSON with updated card details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_MOVE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.db import CardStatus
+    from okto_pulse.core.models.schemas import CardMove
+
+    try:
+        card_status = CardStatus(status)
+    except ValueError:
+        return json.dumps(
+            {
+                "error": f"Invalid status. Must be one of: {[s.value for s in CardStatus]}"
+            }
+        )
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        move_data = CardMove(
+            status=card_status,
+            position=position if position >= 0 else None,
+            conclusion=conclusion.replace("\\n", "\n") if conclusion else None,
+            completeness=completeness if completeness >= 0 else None,
+            completeness_justification=completeness_justification or None,
+            drift=drift if drift >= 0 else None,
+            drift_justification=drift_justification or None,
+        )
+
+        try:
+            updated = await service.move_card(
+                card_id, ctx.agent_id, move_data, ctx.agent_name
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e), "blocked_by_dependencies": True})
+
+        if not updated:
+            return json.dumps({"error": "Failed to move card"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id,
+            card_id=card_id,
+            action="card_moved",
+            actor_type="agent",
+            actor_id=ctx.agent_id,
+            actor_name=ctx.agent_name,
+            details={"status": status, "position": position},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "card": {
+                    "id": updated.id,
+                    "title": updated.title,
+                    "status": updated.status.value,
+                    "position": updated.position,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_card(board_id: str, card_id: str) -> str:
+    """
+    Delete a card from the board.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id,
+            card_id=card_id,
+            action="card_deleted",
+            actor_type="agent",
+            actor_id=ctx.agent_id,
+            actor_name=ctx.agent_name,
+            details={"title": card.title},
+        )
+
+        deleted = await service.delete_card(card_id, ctx.agent_id)
+        await db.commit()
+
+        return json.dumps({"success": deleted})
+
+
+@mcp.tool()
+async def okto_pulse_add_card_dependency(
+    board_id: str, card_id: str, depends_on_id: str
+) -> str:
+    """
+    Add a dependency: card_id cannot advance until depends_on_id is done/cancelled.
+    Circular dependencies are blocked automatically.
+
+    Args:
+        board_id: Board ID
+        card_id: The card that will be blocked
+        depends_on_id: The card it depends on
+
+    Returns:
+        JSON with success or error
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        dep = await service.add_dependency(card_id, depends_on_id)
+        if not dep:
+            return json.dumps(
+                {"error": "Dependência circular detectada ou auto-referência"}
+            )
+        await db.commit()
+        return json.dumps(
+            {
+                "success": True,
+                "card_id": card_id,
+                "depends_on_id": depends_on_id,
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_remove_card_dependency(
+    board_id: str, card_id: str, depends_on_id: str
+) -> str:
+    """
+    Remove a dependency between two cards.
+
+    Args:
+        board_id: Board ID
+        card_id: The card that has the dependency
+        depends_on_id: The card it depended on
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        removed = await service.remove_dependency(card_id, depends_on_id)
+        await db.commit()
+        return json.dumps({"success": removed})
+
+
+@mcp.tool()
+async def okto_pulse_get_card_dependencies(board_id: str, card_id: str) -> str:
+    """
+    List cards that this card depends on and cards that depend on it.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+
+    Returns:
+        JSON with depends_on (blockers) and dependents (blocked by this card)
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        deps = await service.get_dependencies(card_id)
+        dependents = await service.get_dependents(card_id)
+        deps_met, blocking = await service.check_dependencies_met(card_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "card_id": card_id,
+                "can_advance": deps_met,
+                "blocking_titles": blocking,
+                "depends_on": [
+                    {"id": d.id, "title": d.title, "status": d.status.value}
+                    for d in deps
+                ],
+                "dependents": [
+                    {"id": d.id, "title": d.title, "status": d.status.value}
+                    for d in dependents
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_cards_by_status(
+    board_id: str,
+    status: str = "",
+    spec_id: str = "",
+    priority: str = "",
+    assignee_id: str = "",
+    offset: int = 0,
+    limit: int = 50,
+) -> str:
+    """
+    List cards on the board with optional filters and pagination.
+
+    Args:
+        board_id: Board ID
+        status: Filter by status (optional, empty = all). Use "open" for cards NOT in done/cancelled.
+        spec_id: Filter by spec ID (optional) — only cards linked to this spec
+        priority: Filter by priority (optional) — one of: none, low, medium, high, very_high, critical
+        assignee_id: Filter by assignee (optional)
+        offset: Skip first N cards (default 0)
+        limit: Max cards to return (default 50, max 200)
+
+    Returns:
+        JSON with filtered/paginated cards and summary counts
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    limit = min(limit, 200)
+
+    async with get_db_for_mcp() as db:
+        service = BoardService(db)
+        board = await service.get_board(board_id)
+        await db.commit()
+
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        cards = board.cards
+        total_all = len(cards)
+
+        if status == "open":
+            cards = [c for c in cards if c.status.value not in ("done", "cancelled")]
+        elif status:
+            cards = [c for c in cards if c.status.value == status]
+        if spec_id:
+            cards = [c for c in cards if c.spec_id == spec_id]
+        if priority:
+            cards = [c for c in cards if c.priority.value == priority]
+        if assignee_id:
+            cards = [c for c in cards if c.assignee_id == assignee_id]
+
+        sorted_cards = sorted(cards, key=lambda x: (x.status.value, x.position))
+        total_filtered = len(sorted_cards)
+        paginated = sorted_cards[offset:offset + limit]
+
+        return json.dumps(
+            {
+                "total_all": total_all,
+                "filtered_count": total_filtered,
+                "offset": offset,
+                "limit": limit,
+                "cards": [
+                    {
+                        "id": c.id,
+                        "title": c.title,
+                        "description": c.description,
+                        "status": c.status.value,
+                        "priority": c.priority.value,
+                        "position": c.position,
+                        "assignee_id": c.assignee_id,
+                        "spec_id": c.spec_id,
+                        "test_scenario_ids": c.test_scenario_ids,
+                        "due_date": (
+                            c.due_date.isoformat() if c.due_date else None
+                        ),
+                        "labels": c.labels or [],
+                    }
+                    for c in paginated
+                ],
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# Q&A TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_ask_question(board_id: str, card_id: str, question: str) -> str:
+    """
+    Add a question to a card's Q&A board.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        question: Question text
+
+    Returns:
+        JSON with Q&A item details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import QACreate
+
+    async with get_db_for_mcp() as db:
+        service = QAService(db)
+        qa = await service.create_question(
+            card_id, ctx.agent_id, QACreate(question=question)
+        )
+        if not qa:
+            return json.dumps(
+                {"error": "Failed to create question (card not found)"}
+            )
+        await _log_card_activity(
+            db, board_id, card_id, "question_added", ctx,
+            {"question": question[:100]},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "asked_by": qa.asked_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_answer_question(
+    board_id: str, qa_id: str, answer: str
+) -> str:
+    """
+    Answer a question on a card's Q&A board.
+
+    Args:
+        board_id: Board ID
+        qa_id: Q&A item ID
+        answer: Answer text
+
+    Returns:
+        JSON with updated Q&A details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_ANSWER)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import QAAnswer
+
+    async with get_db_for_mcp() as db:
+        service = QAService(db)
+        qa = await service.answer_question(
+            qa_id, ctx.agent_id, QAAnswer(answer=answer)
+        )
+        if not qa:
+            return json.dumps(
+                {"error": "Failed to answer question (not found)"}
+            )
+        await _log_card_activity(
+            db, board_id, qa.card_id, "question_answered", ctx,
+            {"qa_id": qa_id, "answer": answer[:100]},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "answer": qa.answer,
+                    "answered_by": qa.answered_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_question(board_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from a card.
+
+    Args:
+        board_id: Board ID
+        qa_id: Q&A item ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = QAService(db)
+        deleted = await service.delete_question(qa_id)
+        await db.commit()
+
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        return json.dumps({"success": True})
+
+
+# ============================================================================
+# COMMENT TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_add_comment(board_id: str, card_id: str, content: str) -> str:
+    """
+    Add a comment to a card.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        content: Comment text. Supports Markdown and Mermaid diagrams (```mermaid code blocks).
+
+    Returns:
+        JSON with comment details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.COMMENTS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import CommentCreate
+
+    async with get_db_for_mcp() as db:
+        service = CommentService(db)
+        comment = await service.create_comment(
+            card_id, ctx.agent_id, CommentCreate(content=content)
+        )
+        if not comment:
+            return json.dumps(
+                {"error": "Failed to create comment (card not found)"}
+            )
+        await _log_card_activity(
+            db, board_id, card_id, "comment_added", ctx,
+            {"content": content[:100]},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "comment": {
+                    "id": comment.id,
+                    "content": comment.content,
+                    "author_id": comment.author_id,
+                    "created_at": comment.created_at.isoformat(),
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_add_choice_comment(
+    board_id: str,
+    card_id: str,
+    question: str,
+    options: str,
+    comment_type: str = "choice",
+    allow_free_text: str = "false",
+) -> str:
+    """
+    Add a choice board (poll) to a card. Responders can select from the options.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        question: The question or prompt text displayed above the options
+        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        comment_type: "choice" for single-select (default) or "multi_choice" for multi-select
+        allow_free_text: "true" to allow a free-text response in addition to selections
+
+    Returns:
+        JSON with the created choice comment
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.COMMENTS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import uuid as _uuid
+
+    from okto_pulse.core.models.schemas import ChoiceOption, CommentCreate
+
+    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    if not option_labels:
+        return json.dumps({"error": "At least one option is required"})
+
+    choice_list = [
+        ChoiceOption(id=f"opt_{i}", label=label)
+        for i, label in enumerate(option_labels)
+    ]
+
+    async with get_db_for_mcp() as db:
+        service = CommentService(db)
+        data = CommentCreate(
+            content=question,
+            comment_type=comment_type if comment_type in ("choice", "multi_choice") else "choice",
+            choices=choice_list,
+            allow_free_text=allow_free_text.lower() == "true",
+        )
+        comment = await service.create_comment(card_id, ctx.agent_id, data)
+        if not comment:
+            return json.dumps({"error": "Failed to create choice comment (card not found)"})
+
+        await _log_card_activity(
+            db, board_id, card_id, "choice_comment_added", ctx,
+            {"question": question[:100], "option_count": len(choice_list), "type": comment_type},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "comment": {
+                    "id": comment.id,
+                    "comment_type": comment.comment_type,
+                    "content": comment.content,
+                    "choices": comment.choices,
+                    "allow_free_text": comment.allow_free_text,
+                    "responses": [],
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_respond_to_choice(
+    board_id: str,
+    comment_id: str,
+    selected: str,
+    free_text: str = "",
+) -> str:
+    """
+    Respond to a choice board comment by selecting one or more options.
+
+    Args:
+        board_id: Board ID
+        comment_id: Comment ID of the choice board
+        selected: Comma-separated option IDs to select (e.g. "opt_0,opt_2")
+        free_text: Optional free-text response (only if allow_free_text is enabled)
+
+    Returns:
+        JSON with the updated comment including all responses
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    selected_ids = [s.strip() for s in selected.split(",") if s.strip()]
+    if not selected_ids:
+        return json.dumps({"error": "At least one selection is required"})
+
+    async with get_db_for_mcp() as db:
+        service = CommentService(db)
+        comment = await service.respond_to_choice(
+            comment_id=comment_id,
+            responder_id=ctx.agent_id,
+            responder_name=ctx.agent_name,
+            selected=selected_ids,
+            free_text=free_text or None,
+        )
+        if not comment:
+            return json.dumps({"error": "Choice comment not found or invalid selection"})
+
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "comment": {
+                    "id": comment.id,
+                    "comment_type": comment.comment_type,
+                    "content": comment.content,
+                    "choices": comment.choices,
+                    "responses": comment.responses,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_choice_responses(board_id: str, comment_id: str) -> str:
+    """
+    Get all responses for a choice board comment.
+
+    Args:
+        board_id: Board ID
+        comment_id: Comment ID of the choice board
+
+    Returns:
+        JSON with the choice options and all responses
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.models.db import Comment as CommentModel
+
+    async with get_db_for_mcp() as db:
+        comment = await db.get(CommentModel, comment_id)
+        await db.commit()
+
+        if not comment or comment.comment_type == "text":
+            return json.dumps({"error": "Choice comment not found"})
+
+        return json.dumps(
+            {
+                "id": comment.id,
+                "comment_type": comment.comment_type,
+                "question": comment.content,
+                "choices": comment.choices,
+                "allow_free_text": comment.allow_free_text,
+                "responses": comment.responses or [],
+                "response_count": len(comment.responses or []),
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_comments(board_id: str, card_id: str) -> str:
+    """
+    List all comments on a card.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+
+    Returns:
+        JSON array of comments
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        await db.commit()
+
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        result = []
+        for c in card.comments:
+            item: dict = {
+                "id": c.id,
+                "content": c.content,
+                "author_id": c.author_id,
+                "comment_type": getattr(c, "comment_type", "text") or "text",
+                "created_at": c.created_at.isoformat(),
+                "updated_at": c.updated_at.isoformat(),
+            }
+            if item["comment_type"] != "text":
+                item["choices"] = getattr(c, "choices", None)
+                item["responses"] = getattr(c, "responses", None) or []
+                item["allow_free_text"] = getattr(c, "allow_free_text", False)
+            result.append(item)
+        return json.dumps(result, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_update_comment(
+    board_id: str, comment_id: str, content: str
+) -> str:
+    """
+    Update the agent's own comment.
+
+    Args:
+        board_id: Board ID
+        comment_id: Comment ID
+        content: New comment text
+
+    Returns:
+        JSON with updated comment
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.COMMENTS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import CommentUpdate
+
+    async with get_db_for_mcp() as db:
+        service = CommentService(db)
+        comment = await service.update_comment(
+            comment_id, ctx.agent_id, CommentUpdate(content=content)
+        )
+
+        if not comment:
+            return json.dumps(
+                {"error": "Comment not found or not owned by this agent"}
+            )
+
+        await _log_card_activity(
+            db, board_id, comment.card_id, "comment_updated", ctx,
+            {"content": content[:100]},
+        )
+        await db.commit()
+        await db.refresh(comment)
+
+        return json.dumps(
+            {
+                "success": True,
+                "comment": {
+                    "id": comment.id,
+                    "content": comment.content,
+                    "updated_at": (
+                        comment.updated_at.isoformat()
+                        if comment.updated_at
+                        else None
+                    ),
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_comment(board_id: str, comment_id: str) -> str:
+    """
+    Delete the agent's own comment.
+
+    Args:
+        board_id: Board ID
+        comment_id: Comment ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.COMMENTS_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = CommentService(db)
+        # Get card_id before deleting
+        from okto_pulse.core.models.db import Comment as CommentModel
+        comment_obj = await db.get(CommentModel, comment_id)
+        card_id = comment_obj.card_id if comment_obj else None
+
+        deleted = await service.delete_comment(comment_id, ctx.agent_id)
+        if not deleted:
+            return json.dumps(
+                {"error": "Comment not found or not owned by this agent"}
+            )
+
+        if card_id:
+            await _log_card_activity(
+                db, board_id, card_id, "comment_deleted", ctx,
+            )
+        await db.commit()
+
+        return json.dumps({"success": True})
+
+
+# ============================================================================
+# ATTACHMENT TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_upload_attachment(
+    board_id: str,
+    card_id: str,
+    filename: str,
+    content_base64: str,
+    mime_type: str = "application/octet-stream",
+) -> str:
+    """
+    Upload a file attachment to a card.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        filename: Original filename
+        content_base64: File content encoded as base64
+        mime_type: MIME type of the file
+
+    Returns:
+        JSON with attachment details
+    """
+    import base64
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.ATTACHMENTS_UPLOAD)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    try:
+        content = base64.b64decode(content_base64)
+    except Exception as e:
+        return json.dumps({"error": f"Invalid base64 content: {str(e)}"})
+
+    async with get_db_for_mcp() as db:
+        service = AttachmentService(db)
+
+        attachment = await service.upload_attachment(
+            card_id=card_id,
+            user_id=ctx.agent_id,
+            filename=filename,
+            content=content,
+            mime_type=mime_type,
+        )
+        await db.commit()
+
+        if not attachment:
+            return json.dumps(
+                {"error": "Failed to upload attachment (card not found)"}
+            )
+
+        return json.dumps(
+            {
+                "success": True,
+                "attachment": {
+                    "id": attachment.id,
+                    "filename": attachment.original_filename,
+                    "mime_type": attachment.mime_type,
+                    "size": attachment.size,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_attachments(board_id: str, card_id: str) -> str:
+    """
+    List all attachments on a card.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+
+    Returns:
+        JSON array of attachments
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        await db.commit()
+
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        return json.dumps(
+            [
+                {
+                    "id": a.id,
+                    "filename": a.original_filename,
+                    "mime_type": a.mime_type,
+                    "size": a.size,
+                    "uploaded_by": a.uploaded_by,
+                    "created_at": a.created_at.isoformat(),
+                }
+                for a in card.attachments
+            ],
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_attachment(board_id: str, attachment_id: str) -> str:
+    """
+    Delete an attachment.
+
+    Args:
+        board_id: Board ID
+        attachment_id: Attachment ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.ATTACHMENTS_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = AttachmentService(db)
+        deleted = await service.delete_attachment(attachment_id)
+        await db.commit()
+
+        if not deleted:
+            return json.dumps({"error": "Attachment not found"})
+
+        return json.dumps({"success": True})
+
+
+# ============================================================================
+# IDEATION TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_create_ideation(
+    board_id: str,
+    title: str,
+    description: str = "",
+    problem_statement: str = "",
+    proposed_approach: str = "",
+    assignee_id: str = "",
+    labels: str = "",
+) -> str:
+    """
+    Create a new ideation on the board. Ideations are the starting point — raw ideas that may be
+    evaluated, refined into refinements, and eventually derived into specs.
+
+    Args:
+        board_id: Board ID
+        title: Ideation title
+        description: High-level description of the idea (optional)
+        problem_statement: What problem does this idea solve? (optional)
+        proposed_approach: How might this be implemented? (optional)
+        assignee_id: User/agent ID to assign (optional)
+        labels: Comma-separated labels (optional)
+
+    Returns:
+        JSON with created ideation details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import IdeationCreate
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        ideation_data = IdeationCreate(
+            title=title,
+            description=description.replace("\\n", "\n") if description else None,
+            problem_statement=problem_statement.replace("\\n", "\n") if problem_statement else None,
+            proposed_approach=proposed_approach.replace("\\n", "\n") if proposed_approach else None,
+            assignee_id=assignee_id or None,
+            labels=labels.split(",") if labels else None,
+        )
+
+        ideation = await service.create_ideation(
+            board_id, ctx.agent_id, ideation_data, skip_ownership_check=True
+        )
+        await db.commit()
+
+        if not ideation:
+            return json.dumps({"error": "Failed to create ideation"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "ideation": {
+                    "id": ideation.id,
+                    "title": ideation.title,
+                    "status": ideation.status.value,
+                    "version": ideation.version,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
+    """
+    Get full details of an ideation including its refinements, specs, and Q&A items.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+
+    Returns:
+        JSON with ideation details and linked entities
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        ideation = await service.get_ideation(ideation_id)
+        await db.commit()
+
+        if not ideation or ideation.board_id != board_id:
+            return json.dumps({"error": "Ideation not found"})
+
+        return json.dumps(
+            {
+                "id": ideation.id,
+                "board_id": ideation.board_id,
+                "title": ideation.title,
+                "description": ideation.description,
+                "problem_statement": ideation.problem_statement,
+                "proposed_approach": ideation.proposed_approach,
+                "scope_assessment": ideation.scope_assessment,
+                "complexity": ideation.complexity.value if ideation.complexity else None,
+                "status": ideation.status.value,
+                "version": ideation.version,
+                "assignee_id": ideation.assignee_id,
+                "created_by": ideation.created_by,
+                "created_at": ideation.created_at.isoformat(),
+                "updated_at": ideation.updated_at.isoformat(),
+                "labels": ideation.labels,
+                "refinements": [
+                    {
+                        "id": r.id,
+                        "title": r.title,
+                        "status": r.status.value,
+                        "version": r.version,
+                    }
+                    for r in ideation.refinements
+                ],
+                "specs": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "status": s.status.value,
+                    }
+                    for s in ideation.specs
+                ],
+                "qa_items": [
+                    {
+                        "id": q.id,
+                        "question": q.question,
+                        "question_type": q.question_type,
+                        "choices": q.choices,
+                        "answer": q.answer,
+                        "selected": q.selected,
+                        "asked_by": q.asked_by,
+                        "answered_by": q.answered_by,
+                    }
+                    for q in ideation.qa_items
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_ideations(
+    board_id: str, status: str = "", offset: int = 0, limit: int = 50
+) -> str:
+    """
+    List ideations for a board with optional filtering and pagination.
+
+    Args:
+        board_id: Board ID
+        status: Filter by status (optional) — one of: draft, review, approved, evaluating, done, cancelled
+        offset: Skip first N ideations (default 0)
+        limit: Max ideations to return (default 50, max 200)
+
+    Returns:
+        JSON with filtered/paginated ideations
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    limit = min(limit, 200)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        ideations = await service.list_ideations(board_id, status or None)
+        await db.commit()
+
+        total = len(ideations)
+        paginated = ideations[offset:offset + limit]
+
+        return json.dumps(
+            {
+                "board_id": board_id,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "ideations": [
+                    {
+                        "id": i.id,
+                        "title": i.title,
+                        "description": i.description,
+                        "problem_statement": i.problem_statement,
+                        "complexity": i.complexity.value if i.complexity else None,
+                        "status": i.status.value,
+                        "version": i.version,
+                        "assignee_id": i.assignee_id,
+                        "labels": i.labels,
+                        "created_at": i.created_at.isoformat(),
+                        "updated_at": i.updated_at.isoformat(),
+                    }
+                    for i in paginated
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_update_ideation(
+    board_id: str,
+    ideation_id: str,
+    title: str = "",
+    description: str = "",
+    problem_statement: str = "",
+    proposed_approach: str = "",
+    assignee_id: str = "",
+    labels: str = "",
+) -> str:
+    """
+    Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        title: New title (optional, empty = no change)
+        description: New description (optional, empty = no change)
+        problem_statement: New problem statement (optional, empty = no change)
+        proposed_approach: New proposed approach (optional, empty = no change)
+        assignee_id: New assignee (optional, empty = no change)
+        labels: Comma-separated labels (optional, empty = no change)
+
+    Returns:
+        JSON with updated ideation details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import IdeationUpdate
+
+    update_kwargs: dict[str, Any] = {}
+    if title:
+        update_kwargs["title"] = title
+    if description:
+        update_kwargs["description"] = description.replace("\\n", "\n")
+    if problem_statement:
+        update_kwargs["problem_statement"] = problem_statement.replace("\\n", "\n")
+    if proposed_approach:
+        update_kwargs["proposed_approach"] = proposed_approach.replace("\\n", "\n")
+    if assignee_id:
+        update_kwargs["assignee_id"] = assignee_id
+    if labels:
+        update_kwargs["labels"] = labels.split(",")
+
+    if not update_kwargs:
+        return json.dumps({"error": "No fields to update"})
+
+    ideation_update = IdeationUpdate(**update_kwargs)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        ideation = await service.update_ideation(ideation_id, ctx.agent_id, ideation_update)
+        await db.commit()
+
+        if not ideation:
+            return json.dumps({"error": "Ideation not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "ideation": {
+                    "id": ideation.id,
+                    "title": ideation.title,
+                    "status": ideation.status.value,
+                    "version": ideation.version,
+                    "complexity": ideation.complexity.value if ideation.complexity else None,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str) -> str:
+    """
+    Change an ideation's status (draft -> review -> approved -> evaluating -> done).
+
+    Allowed transitions:
+    - draft → review, cancelled
+    - review → draft, approved, cancelled
+    - approved → review, evaluating, cancelled
+    - evaluating → approved, done, cancelled
+    - done → draft (new version)
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        status: New status — one of: draft, review, approved, evaluating, done, cancelled
+
+    Returns:
+        JSON with updated ideation status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_MOVE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.db import IdeationStatus
+    from okto_pulse.core.models.schemas import IdeationMove
+
+    try:
+        ideation_status = IdeationStatus(status)
+    except ValueError:
+        return json.dumps(
+            {"error": f"Invalid status. Must be one of: {[s.value for s in IdeationStatus]}"}
+        )
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        ideation = await service.move_ideation(
+            ideation_id, ctx.agent_id, IdeationMove(status=ideation_status), actor_name=ctx.agent_name
+        )
+        await db.commit()
+
+        if not ideation:
+            return json.dumps({"error": "Ideation not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "ideation_id": ideation.id,
+                "from_status": ideation.status.value,
+                "to_status": status,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_ideation(board_id: str, ideation_id: str) -> str:
+    """
+    Delete an ideation. Linked refinements and Q&A are also deleted (cascade).
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        deleted = await service.delete_ideation(ideation_id, ctx.agent_id)
+        await db.commit()
+
+        if not deleted:
+            return json.dumps({"error": "Ideation not found"})
+
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_evaluate_ideation(
+    board_id: str,
+    ideation_id: str,
+    domains: str = "",
+    domains_justification: str = "",
+    ambiguity: str = "",
+    ambiguity_justification: str = "",
+    dependencies: str = "",
+    dependencies_justification: str = "",
+) -> str:
+    """
+    Evaluate an ideation's scope and compute its complexity (small/medium/large).
+    Set scope assessment scores (1-5) for each dimension WITH justification, then the system computes complexity.
+    - Any score >= 3 -> large (needs refinements before spec)
+    - Any score >= 2 -> medium
+    - All scores 1 -> small (can derive spec directly)
+
+    Each score MUST include a justification explaining why that score was given.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        domains: Number of domains/systems affected, 1-5
+        domains_justification: Why this score — which systems are impacted
+        ambiguity: Level of requirement ambiguity, 1-5
+        ambiguity_justification: Why this score — what is unclear or well-defined
+        dependencies: External dependencies/coordination needed, 1-5
+        dependencies_justification: Why this score — what dependencies exist
+
+    Returns:
+        JSON with the computed complexity and scope assessment
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import IdeationUpdate
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+
+        # First, update scope_assessment if any scores provided
+        scope = {}
+        if domains:
+            scope["domains"] = int(domains)
+        if domains_justification:
+            scope["domains_justification"] = domains_justification.replace("\\n", "\n")
+        if ambiguity:
+            scope["ambiguity"] = int(ambiguity)
+        if ambiguity_justification:
+            scope["ambiguity_justification"] = ambiguity_justification.replace("\\n", "\n")
+        if dependencies:
+            scope["dependencies"] = int(dependencies)
+        if dependencies_justification:
+            scope["dependencies_justification"] = dependencies_justification.replace("\\n", "\n")
+
+        if scope:
+            # Merge with existing scope_assessment
+            ideation = await service.get_ideation(ideation_id)
+            if not ideation or ideation.board_id != board_id:
+                return json.dumps({"error": "Ideation not found"})
+
+            existing_scope = ideation.scope_assessment or {}
+            existing_scope.update(scope)
+
+            # Write scope_assessment directly (bypasses draft-only edit guard
+            # since evaluation requires writing scores in 'evaluating' status)
+            from sqlalchemy.orm.attributes import flag_modified
+            ideation.scope_assessment = existing_scope
+            flag_modified(ideation, "scope_assessment")
+
+        # Then evaluate complexity
+        ideation = await service.evaluate_complexity(ideation_id, ctx.agent_id)
+        await db.commit()
+
+        if not ideation:
+            return json.dumps({"error": "Ideation not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "ideation_id": ideation.id,
+                "scope_assessment": ideation.scope_assessment,
+                "complexity": ideation.complexity.value if ideation.complexity else None,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_derive_spec_from_ideation(board_id: str, ideation_id: str) -> str:
+    """
+    Create a spec draft from a DONE ideation. The ideation must be in 'done' status
+    (meaning it has been fully reviewed and snapshotted). The spec will have rich context
+    compiled from the ideation but structured fields (requirements, criteria) left empty
+    for deliberate analysis.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID (must be in 'done' status)
+
+    Returns:
+        JSON with the created spec details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        try:
+            spec = await service.derive_spec(ideation_id, ctx.agent_id, skip_ownership_check=True)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+
+        if not spec:
+            return json.dumps({"error": "Ideation not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "ideation_id": ideation_id,
+                "spec": {
+                    "id": spec.id,
+                    "title": spec.title,
+                    "status": spec.status.value,
+                    "version": spec.version,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_ideation_snapshots(board_id: str, ideation_id: str) -> str:
+    """
+    List all version snapshots of an ideation. Each snapshot is an immutable copy
+    of the ideation's state at the moment it was marked as 'done'.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+
+    Returns:
+        JSON with list of snapshot summaries (version, title, complexity, created_at)
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        snapshots = await service.list_snapshots(ideation_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "ideation_id": ideation_id,
+                "count": len(snapshots),
+                "snapshots": [
+                    {
+                        "version": s.version,
+                        "title": s.title,
+                        "complexity": s.complexity,
+                        "created_by": s.created_by,
+                        "created_at": s.created_at.isoformat(),
+                    }
+                    for s in snapshots
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_ideation_snapshot(board_id: str, ideation_id: str, version: str) -> str:
+    """
+    Get the full immutable snapshot of an ideation at a specific version.
+    Includes all fields as they were when the ideation was marked 'done',
+    plus a snapshot of all Q&A at that point.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        version: Version number to retrieve
+
+    Returns:
+        JSON with complete snapshot including Q&A history
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        snapshot = await service.get_snapshot(ideation_id, int(version))
+        await db.commit()
+
+        if not snapshot:
+            return json.dumps({"error": f"Snapshot v{version} not found"})
+
+        return json.dumps(
+            {
+                "ideation_id": ideation_id,
+                "version": snapshot.version,
+                "title": snapshot.title,
+                "description": snapshot.description,
+                "problem_statement": snapshot.problem_statement,
+                "proposed_approach": snapshot.proposed_approach,
+                "scope_assessment": snapshot.scope_assessment,
+                "complexity": snapshot.complexity,
+                "labels": snapshot.labels,
+                "qa_snapshot": snapshot.qa_snapshot,
+                "created_by": snapshot.created_by,
+                "created_at": snapshot.created_at.isoformat(),
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_ideation_history(board_id: str, ideation_id: str, limit: str = "30") -> str:
+    """
+    Get the detailed change history of an ideation. Shows every modification with field-level diffs,
+    who made the change, and when.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        limit: Maximum number of history entries to return (default 30)
+
+    Returns:
+        JSON with list of history entries, newest first
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        entries = await service.list_history(ideation_id, int(limit))
+        await db.commit()
+
+        return json.dumps(
+            {
+                "ideation_id": ideation_id,
+                "count": len(entries),
+                "history": [
+                    {
+                        "id": e.id,
+                        "action": e.action,
+                        "actor_type": e.actor_type,
+                        "actor_id": e.actor_id,
+                        "actor_name": e.actor_name,
+                        "changes": e.changes,
+                        "summary": e.summary,
+                        "version": e.version,
+                        "created_at": e.created_at.isoformat(),
+                    }
+                    for e in entries
+                ],
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# IDEATION Q&A TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_ask_ideation_question(board_id: str, ideation_id: str, question: str) -> str:
+    """
+    Ask a question on an ideation's Q&A board. Use @Name to direct the question.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        question: Question text (use @Name to mention someone)
+
+    Returns:
+        JSON with Q&A item details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import IdeationQACreate
+
+    async with get_db_for_mcp() as db:
+        service = IdeationQAService(db)
+        qa = await service.create_question(ideation_id, ctx.agent_id, IdeationQACreate(question=question))
+        if not qa:
+            return json.dumps({"error": "Ideation not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="ideation_question_added",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"ideation_id": ideation_id, "question": question[:100]},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "asked_by": qa.asked_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_ask_ideation_choice_question(
+    board_id: str,
+    ideation_id: str,
+    question: str,
+    options: str,
+    question_type: str = "choice",
+    allow_free_text: str = "false",
+) -> str:
+    """
+    Ask a choice question (poll/form) on an ideation's Q&A board.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        question: The question text
+        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        question_type: "choice" for single-select (default) or "multi_choice" for multi-select
+        allow_free_text: "true" to also allow a free-text response alongside selections
+
+    Returns:
+        JSON with Q&A item including choices
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import IdeationQAChoiceOption, IdeationQACreate
+
+    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    if not option_labels:
+        return json.dumps({"error": "At least one option is required"})
+
+    choice_list = [
+        IdeationQAChoiceOption(id=f"opt_{i}", label=label)
+        for i, label in enumerate(option_labels)
+    ]
+
+    async with get_db_for_mcp() as db:
+        service = IdeationQAService(db)
+        data = IdeationQACreate(
+            question=question,
+            question_type=question_type if question_type in ("choice", "multi_choice") else "choice",
+            choices=choice_list,
+            allow_free_text=allow_free_text.lower() == "true",
+        )
+        qa = await service.create_question(ideation_id, ctx.agent_id, data)
+        if not qa:
+            return json.dumps({"error": "Ideation not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="ideation_choice_question_added",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"ideation_id": ideation_id, "question": question[:100], "option_count": len(choice_list)},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "question_type": qa.question_type,
+                    "choices": qa.choices,
+                    "allow_free_text": qa.allow_free_text,
+                    "asked_by": qa.asked_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, qa_id: str, answer: str = "", selected: str = "") -> str:
+    """
+    Answer a question on an ideation's Q&A board.
+    For text questions, provide answer. For choice questions, provide selected option IDs.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID (for context/validation)
+        qa_id: Q&A item ID to answer
+        answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
+        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+
+    Returns:
+        JSON with updated Q&A item
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_ANSWER)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import IdeationQAAnswer
+
+    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+
+    async with get_db_for_mcp() as db:
+        service = IdeationQAService(db)
+        qa = await service.answer_question(
+            qa_id, ctx.agent_id,
+            IdeationQAAnswer(answer=answer or None, selected=selected_list),
+        )
+        if not qa:
+            return json.dumps({"error": "Q&A item not found or invalid selection"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="ideation_question_answered",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"ideation_id": ideation_id, "qa_id": qa_id, "answer": (answer or "")[:100], "selected": selected_list},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "question_type": qa.question_type,
+                    "answer": qa.answer,
+                    "selected": qa.selected,
+                    "asked_by": qa.asked_by,
+                    "answered_by": qa.answered_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_ideation_qa(board_id: str, ideation_id: str) -> str:
+    """
+    List all Q&A items on an ideation. Check this to understand open questions or clarifications.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+
+    Returns:
+        JSON with list of Q&A items
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationQAService(db)
+        items = await service.list_qa(ideation_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "ideation_id": ideation_id,
+                "count": len(items),
+                "qa_items": [
+                    {
+                        "id": qa.id,
+                        "question": qa.question,
+                        "question_type": qa.question_type,
+                        "choices": qa.choices,
+                        "allow_free_text": qa.allow_free_text,
+                        "answer": qa.answer,
+                        "selected": qa.selected,
+                        "asked_by": qa.asked_by,
+                        "answered_by": qa.answered_by,
+                        "created_at": qa.created_at.isoformat(),
+                        "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
+                    }
+                    for qa in items
+                ],
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# REFINEMENT TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_create_refinement(
+    board_id: str,
+    ideation_id: str,
+    title: str,
+    description: str = "",
+    in_scope: str = "",
+    out_of_scope: str = "",
+    analysis: str = "",
+    decisions: str = "",
+    assignee_id: str = "",
+    labels: str = "",
+) -> str:
+    """
+    Create a new refinement for a DONE ideation. The ideation must be in 'done' status
+    (snapshotted) before refinements can be created. If description is not provided,
+    context is compiled from the ideation's problem statement, approach, and Q&A.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID (must be in 'done' status)
+        title: Refinement title
+        description: Description of this refinement aspect (optional — auto-compiled from ideation if empty)
+        in_scope: Pipe-separated list of what IS in scope (e.g. "Auth flow|Token refresh|Session management")
+        out_of_scope: Pipe-separated list of what is NOT in scope (e.g. "UI changes|Email notifications")
+        analysis: Detailed analysis text (optional)
+        decisions: Pipe-separated list of decisions made (e.g. "Use REST API|Cache with Redis") (optional)
+        assignee_id: User/agent ID to assign (optional)
+        labels: Comma-separated labels (optional)
+
+    Returns:
+        JSON with created refinement details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import RefinementCreate
+
+    def _split(val: str, sep: str) -> list[str] | None:
+        if not val:
+            return None
+        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        refinement_data = RefinementCreate(
+            ideation_id=ideation_id,
+            title=title,
+            description=description.replace("\\n", "\n") if description else None,
+            in_scope=_split(in_scope, "|"),
+            out_of_scope=_split(out_of_scope, "|"),
+            analysis=analysis.replace("\\n", "\n") if analysis else None,
+            decisions=_split(decisions, "|"),
+            assignee_id=assignee_id or None,
+            labels=labels.split(",") if labels else None,
+        )
+
+        try:
+            refinement = await service.create_refinement(
+                ideation_id, ctx.agent_id, refinement_data, skip_ownership_check=True
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+
+        if not refinement:
+            return json.dumps({"error": "Failed to create refinement (ideation not found)"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "refinement": {
+                    "id": refinement.id,
+                    "title": refinement.title,
+                    "status": refinement.status.value,
+                    "version": refinement.version,
+                    "ideation_id": refinement.ideation_id,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
+    """
+    Get full details of a refinement including its specs and Q&A items.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+
+    Returns:
+        JSON with refinement details and linked entities
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        refinement = await service.get_refinement(refinement_id)
+        await db.commit()
+
+        if not refinement or refinement.board_id != board_id:
+            return json.dumps({"error": "Refinement not found"})
+
+        return json.dumps(
+            {
+                "id": refinement.id,
+                "ideation_id": refinement.ideation_id,
+                "board_id": refinement.board_id,
+                "title": refinement.title,
+                "description": refinement.description,
+                "in_scope": refinement.in_scope,
+                "out_of_scope": refinement.out_of_scope,
+                "analysis": refinement.analysis,
+                "decisions": refinement.decisions,
+                "status": refinement.status.value,
+                "version": refinement.version,
+                "assignee_id": refinement.assignee_id,
+                "created_by": refinement.created_by,
+                "created_at": refinement.created_at.isoformat(),
+                "updated_at": refinement.updated_at.isoformat(),
+                "labels": refinement.labels,
+                "specs": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "status": s.status.value,
+                    }
+                    for s in refinement.specs
+                ],
+                "qa_items": [
+                    {
+                        "id": q.id,
+                        "question": q.question,
+                        "question_type": q.question_type,
+                        "choices": q.choices,
+                        "answer": q.answer,
+                        "selected": q.selected,
+                        "asked_by": q.asked_by,
+                        "answered_by": q.answered_by,
+                    }
+                    for q in refinement.qa_items
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_refinements(
+    board_id: str, ideation_id: str, status: str = "", offset: int = 0, limit: int = 50
+) -> str:
+    """
+    List refinements for an ideation with optional filtering and pagination.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        status: Filter by status (optional) — one of: draft, in_progress, done, cancelled
+        offset: Skip first N refinements (default 0)
+        limit: Max refinements to return (default 50, max 200)
+
+    Returns:
+        JSON with filtered/paginated refinements
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    limit = min(limit, 200)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        refinements = await service.list_refinements(ideation_id)
+        await db.commit()
+
+        if status:
+            refinements = [r for r in refinements if r.status.value == status]
+
+        total = len(refinements)
+        paginated = refinements[offset:offset + limit]
+
+        return json.dumps(
+            {
+                "ideation_id": ideation_id,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "refinements": [
+                    {
+                        "id": r.id,
+                        "title": r.title,
+                        "description": r.description,
+                        "in_scope": r.in_scope,
+                        "out_of_scope": r.out_of_scope,
+                        "status": r.status.value,
+                        "version": r.version,
+                        "assignee_id": r.assignee_id,
+                        "labels": r.labels,
+                        "created_at": r.created_at.isoformat(),
+                        "updated_at": r.updated_at.isoformat(),
+                    }
+                    for r in paginated
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_update_refinement(
+    board_id: str,
+    refinement_id: str,
+    title: str = "",
+    description: str = "",
+    in_scope: str = "",
+    out_of_scope: str = "",
+    analysis: str = "",
+    decisions: str = "",
+    assignee_id: str = "",
+    labels: str = "",
+) -> str:
+    """
+    Update a refinement's fields. Content changes bump the version. Only non-empty fields are updated.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        title: New title (optional, empty = no change)
+        description: New description (optional, empty = no change)
+        in_scope: Pipe-separated list of in-scope items (optional, empty = no change)
+        out_of_scope: Pipe-separated list of out-of-scope items (optional, empty = no change)
+        analysis: New analysis (optional, empty = no change)
+        decisions: Pipe-separated list of decisions (optional, empty = no change)
+        assignee_id: New assignee (optional, empty = no change)
+        labels: Comma-separated labels (optional, empty = no change)
+
+    Returns:
+        JSON with updated refinement details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import RefinementUpdate
+
+    def _split(val: str, sep: str) -> list[str] | None:
+        if not val:
+            return None
+        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
+
+    update_kwargs: dict[str, Any] = {}
+    if title:
+        update_kwargs["title"] = title
+    if description:
+        update_kwargs["description"] = description.replace("\\n", "\n")
+    if in_scope:
+        update_kwargs["in_scope"] = _split(in_scope, "|")
+    if out_of_scope:
+        update_kwargs["out_of_scope"] = _split(out_of_scope, "|")
+    if analysis:
+        update_kwargs["analysis"] = analysis.replace("\\n", "\n")
+    if decisions:
+        update_kwargs["decisions"] = _split(decisions, "|")
+    if assignee_id:
+        update_kwargs["assignee_id"] = assignee_id
+    if labels:
+        update_kwargs["labels"] = labels.split(",")
+
+    if not update_kwargs:
+        return json.dumps({"error": "No fields to update"})
+
+    refinement_update = RefinementUpdate(**update_kwargs)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        refinement = await service.update_refinement(refinement_id, ctx.agent_id, refinement_update)
+        await db.commit()
+
+        if not refinement:
+            return json.dumps({"error": "Refinement not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "refinement": {
+                    "id": refinement.id,
+                    "title": refinement.title,
+                    "status": refinement.status.value,
+                    "version": refinement.version,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: str) -> str:
+    """
+    Change a refinement's status (draft -> review -> approved -> done).
+
+    Allowed transitions:
+    - draft → review, cancelled
+    - review → draft, approved, cancelled
+    - approved → review, done, cancelled
+    - done → draft (new version)
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        status: New status — one of: draft, review, approved, done, cancelled
+
+    Returns:
+        JSON with updated refinement status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_MOVE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.db import RefinementStatus
+    from okto_pulse.core.models.schemas import RefinementMove
+
+    try:
+        refinement_status = RefinementStatus(status)
+    except ValueError:
+        return json.dumps(
+            {"error": f"Invalid status. Must be one of: {[s.value for s in RefinementStatus]}"}
+        )
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        try:
+            refinement = await service.move_refinement(
+                refinement_id, ctx.agent_id, RefinementMove(status=refinement_status), actor_name=ctx.agent_name
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+
+        if not refinement:
+            return json.dumps({"error": "Refinement not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "refinement_id": refinement.id,
+                "from_status": refinement.status.value,
+                "to_status": status,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_refinement(board_id: str, refinement_id: str) -> str:
+    """
+    Delete a refinement. Linked Q&A items are also deleted (cascade).
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        deleted = await service.delete_refinement(refinement_id, ctx.agent_id)
+        await db.commit()
+
+        if not deleted:
+            return json.dumps({"error": "Refinement not found"})
+
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_derive_spec_from_refinement(board_id: str, refinement_id: str) -> str:
+    """
+    Create a spec draft from a DONE refinement. The refinement must be in 'done' status.
+    Context is compiled from the refinement's scope, analysis, decisions, and Q&A.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID (must be in 'done' status)
+
+    Returns:
+        JSON with the created spec details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        try:
+            spec = await service.derive_spec(refinement_id, ctx.agent_id, skip_ownership_check=True)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+
+        if not spec:
+            return json.dumps({"error": "Refinement not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "refinement_id": refinement_id,
+                "spec": {
+                    "id": spec.id,
+                    "title": spec.title,
+                    "status": spec.status.value,
+                    "version": spec.version,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_refinement_history(board_id: str, refinement_id: str, limit: str = "30") -> str:
+    """
+    Get the detailed change history of a refinement. Shows every modification with field-level diffs,
+    who made the change, and when.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        limit: Maximum number of history entries to return (default 30)
+
+    Returns:
+        JSON with list of history entries, newest first
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        entries = await service.list_history(refinement_id, int(limit))
+        await db.commit()
+
+        return json.dumps(
+            {
+                "refinement_id": refinement_id,
+                "count": len(entries),
+                "history": [
+                    {
+                        "id": e.id,
+                        "action": e.action,
+                        "actor_type": e.actor_type,
+                        "actor_id": e.actor_id,
+                        "actor_name": e.actor_name,
+                        "changes": e.changes,
+                        "summary": e.summary,
+                        "version": e.version,
+                        "created_at": e.created_at.isoformat(),
+                    }
+                    for e in entries
+                ],
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# REFINEMENT Q&A TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_ask_refinement_question(board_id: str, refinement_id: str, question: str) -> str:
+    """
+    Ask a question on a refinement's Q&A board. Use @Name to direct the question.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        question: Question text (use @Name to mention someone)
+
+    Returns:
+        JSON with Q&A item details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import RefinementQACreate
+
+    async with get_db_for_mcp() as db:
+        service = RefinementQAService(db)
+        qa = await service.create_question(refinement_id, ctx.agent_id, RefinementQACreate(question=question))
+        if not qa:
+            return json.dumps({"error": "Refinement not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="refinement_question_added",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"refinement_id": refinement_id, "question": question[:100]},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "asked_by": qa.asked_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_ask_refinement_choice_question(
+    board_id: str,
+    refinement_id: str,
+    question: str,
+    options: str,
+    question_type: str = "choice",
+    allow_free_text: str = "false",
+) -> str:
+    """
+    Ask a choice question (poll/form) on a refinement's Q&A board.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        question: The question text
+        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        question_type: "choice" for single-select (default) or "multi_choice" for multi-select
+        allow_free_text: "true" to also allow a free-text response alongside selections
+
+    Returns:
+        JSON with Q&A item including choices
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import RefinementQAChoiceOption, RefinementQACreate
+
+    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    if not option_labels:
+        return json.dumps({"error": "At least one option is required"})
+
+    choice_list = [
+        RefinementQAChoiceOption(id=f"opt_{i}", label=label)
+        for i, label in enumerate(option_labels)
+    ]
+
+    async with get_db_for_mcp() as db:
+        service = RefinementQAService(db)
+        data = RefinementQACreate(
+            question=question,
+            question_type=question_type if question_type in ("choice", "multi_choice") else "choice",
+            choices=choice_list,
+            allow_free_text=allow_free_text.lower() == "true",
+        )
+        qa = await service.create_question(refinement_id, ctx.agent_id, data)
+        if not qa:
+            return json.dumps({"error": "Refinement not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="refinement_choice_question_added",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"refinement_id": refinement_id, "question": question[:100], "option_count": len(choice_list)},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "question_type": qa.question_type,
+                    "choices": qa.choices,
+                    "allow_free_text": qa.allow_free_text,
+                    "asked_by": qa.asked_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: str, qa_id: str, answer: str = "", selected: str = "") -> str:
+    """
+    Answer a question on a refinement's Q&A board.
+    For text questions, provide answer. For choice questions, provide selected option IDs.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID (for context/validation)
+        qa_id: Q&A item ID to answer
+        answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
+        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+
+    Returns:
+        JSON with updated Q&A item
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_ANSWER)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import RefinementQAAnswer
+
+    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+
+    async with get_db_for_mcp() as db:
+        service = RefinementQAService(db)
+        qa = await service.answer_question(
+            qa_id, ctx.agent_id,
+            RefinementQAAnswer(answer=answer or None, selected=selected_list),
+        )
+        if not qa:
+            return json.dumps({"error": "Q&A item not found or invalid selection"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="refinement_question_answered",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"refinement_id": refinement_id, "qa_id": qa_id, "answer": (answer or "")[:100], "selected": selected_list},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "question_type": qa.question_type,
+                    "answer": qa.answer,
+                    "selected": qa.selected,
+                    "asked_by": qa.asked_by,
+                    "answered_by": qa.answered_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_refinement_qa(board_id: str, refinement_id: str) -> str:
+    """
+    List all Q&A items on a refinement. Check this to understand open questions or clarifications.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+
+    Returns:
+        JSON with list of Q&A items
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementQAService(db)
+        items = await service.list_qa(refinement_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "refinement_id": refinement_id,
+                "count": len(items),
+                "qa_items": [
+                    {
+                        "id": qa.id,
+                        "question": qa.question,
+                        "question_type": qa.question_type,
+                        "choices": qa.choices,
+                        "allow_free_text": qa.allow_free_text,
+                        "answer": qa.answer,
+                        "selected": qa.selected,
+                        "asked_by": qa.asked_by,
+                        "answered_by": qa.answered_by,
+                        "created_at": qa.created_at.isoformat(),
+                        "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
+                    }
+                    for qa in items
+                ],
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# SPEC TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_create_spec(
+    board_id: str,
+    title: str,
+    description: str = "",
+    context: str = "",
+    functional_requirements: str = "",
+    technical_requirements: str = "",
+    acceptance_criteria: str = "",
+    status: str = "draft",
+    assignee_id: str = "",
+    labels: str = "",
+) -> str:
+    """
+    Create a new spec (specification) on the board. Specs define requirements that drive card/task creation.
+    AI agents can create specs to propose work, which can then be reviewed, approved, and derived into cards.
+
+    Args:
+        board_id: Board ID
+        title: Spec title
+        description: High-level summary of what needs to be built (optional). Supports Markdown and Mermaid diagrams.
+        context: Business context — why this spec exists, how it connects to the bigger picture (optional). Supports Markdown and Mermaid diagrams.
+        functional_requirements: Pipe-separated list of functional requirements (e.g. "User can login|User can reset password")
+        technical_requirements: Pipe-separated list of technical constraints (e.g. "Must use OAuth2|Response time < 200ms")
+        acceptance_criteria: Pipe-separated list of acceptance criteria (e.g. "All tests pass|No console errors")
+        status: Spec status — one of: draft, review, approved, in_progress, done, cancelled (default: draft)
+        assignee_id: User/agent ID to assign (optional)
+        labels: Comma-separated labels (optional)
+
+    Returns:
+        JSON with created spec details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.db import SpecStatus
+    from okto_pulse.core.models.schemas import SpecCreate
+
+    try:
+        spec_status = SpecStatus(status)
+    except ValueError:
+        return json.dumps(
+            {"error": f"Invalid status. Must be one of: {[s.value for s in SpecStatus]}"}
+        )
+
+    def _split(val: str, sep: str) -> list[str] | None:
+        if not val:
+            return None
+        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec_data = SpecCreate(
+            title=title,
+            description=description.replace("\\n", "\n") if description else None,
+            context=context.replace("\\n", "\n") if context else None,
+            functional_requirements=_split(functional_requirements, "|"),
+            technical_requirements=_trs_to_objects(_split(technical_requirements, "|")),
+            acceptance_criteria=_split(acceptance_criteria, "|"),
+            status=spec_status,
+            assignee_id=assignee_id or None,
+            labels=labels.split(",") if labels else None,
+        )
+
+        spec = await service.create_spec(
+            board_id, ctx.agent_id, spec_data, skip_ownership_check=True
+        )
+        await db.commit()
+
+        if not spec:
+            return json.dumps({"error": "Failed to create spec"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "spec": {
+                    "id": spec.id,
+                    "title": spec.title,
+                    "status": spec.status.value,
+                    "version": spec.version,
+                    "functional_requirements": spec.functional_requirements,
+                    "technical_requirements": spec.technical_requirements,
+                    "acceptance_criteria": spec.acceptance_criteria,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
+    """
+    Get full details of a spec including its derived cards.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with spec details and linked cards
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        await db.commit()
+
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        return json.dumps(
+            {
+                "id": spec.id,
+                "board_id": spec.board_id,
+                "title": spec.title,
+                "description": spec.description,
+                "context": spec.context,
+                "functional_requirements": spec.functional_requirements,
+                "technical_requirements": spec.technical_requirements,
+                "acceptance_criteria": spec.acceptance_criteria,
+                "status": spec.status.value,
+                "version": spec.version,
+                "assignee_id": spec.assignee_id,
+                "created_by": spec.created_by,
+                "created_at": spec.created_at.isoformat(),
+                "updated_at": spec.updated_at.isoformat(),
+                "labels": spec.labels,
+                "cards": [
+                    {
+                        "id": c.id,
+                        "title": c.title,
+                        "status": c.status.value,
+                        "priority": c.priority.value,
+                        "assignee_id": c.assignee_id,
+                    }
+                    for c in spec.cards
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_specs(
+    board_id: str, status: str = "", offset: int = 0, limit: int = 50
+) -> str:
+    """
+    List specs for a board with optional filtering and pagination.
+
+    Args:
+        board_id: Board ID
+        status: Filter by status (optional) — one of: draft, review, approved, in_progress, done, cancelled
+        offset: Skip first N specs (default 0)
+        limit: Max specs to return (default 50, max 200)
+
+    Returns:
+        JSON with filtered/paginated specs
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    limit = min(limit, 200)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        specs = await service.list_specs(board_id, status or None)
+        await db.commit()
+
+        total = len(specs)
+        paginated = specs[offset:offset + limit]
+
+        return json.dumps(
+            {
+                "board_id": board_id,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "specs": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "description": s.description,
+                        "status": s.status.value,
+                        "version": s.version,
+                        "assignee_id": s.assignee_id,
+                        "labels": s.labels,
+                        "created_at": s.created_at.isoformat(),
+                        "updated_at": s.updated_at.isoformat(),
+                    }
+                    for s in paginated
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_update_spec(
+    board_id: str,
+    spec_id: str,
+    title: str = "",
+    description: str = "",
+    context: str = "",
+    functional_requirements: str = "",
+    technical_requirements: str = "",
+    acceptance_criteria: str = "",
+    assignee_id: str = "",
+    labels: str = "",
+) -> str:
+    """
+    Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
+    Only non-empty fields are updated.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        title: New title (optional, empty = no change)
+        description: New description (optional, empty = no change)
+        context: New context (optional, empty = no change)
+        functional_requirements: Pipe-separated list of functional requirements (optional, empty = no change)
+        technical_requirements: Pipe-separated list of technical constraints (optional, empty = no change)
+        acceptance_criteria: Pipe-separated list of acceptance criteria (optional, empty = no change)
+        assignee_id: New assignee (optional, empty = no change)
+        labels: Comma-separated labels (optional, empty = no change)
+
+    Returns:
+        JSON with updated spec details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import SpecUpdate
+
+    def _split(val: str, sep: str) -> list[str] | None:
+        if not val:
+            return None
+        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
+
+    # Build update data with only non-empty fields
+    update_kwargs: dict[str, Any] = {}
+    if title:
+        update_kwargs["title"] = title
+    if description:
+        update_kwargs["description"] = description.replace("\\n", "\n")
+    if context:
+        update_kwargs["context"] = context.replace("\\n", "\n")
+    if functional_requirements:
+        update_kwargs["functional_requirements"] = _split(functional_requirements, "|")
+    if technical_requirements:
+        update_kwargs["technical_requirements"] = _trs_to_objects(_split(technical_requirements, "|"))
+    if acceptance_criteria:
+        update_kwargs["acceptance_criteria"] = _split(acceptance_criteria, "|")
+    if assignee_id:
+        update_kwargs["assignee_id"] = assignee_id
+    if labels:
+        update_kwargs["labels"] = labels.split(",")
+
+    if not update_kwargs:
+        return json.dumps({"error": "No fields to update"})
+
+    spec_update = SpecUpdate(**update_kwargs)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.update_spec(spec_id, ctx.agent_id, spec_update)
+        await db.commit()
+
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "spec": {
+                    "id": spec.id,
+                    "title": spec.title,
+                    "status": spec.status.value,
+                    "version": spec.version,
+                    "functional_requirements": spec.functional_requirements,
+                    "technical_requirements": spec.technical_requirements,
+                    "acceptance_criteria": spec.acceptance_criteria,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
+    """
+    Change a spec's status (e.g. draft → review → approved → in_progress → done).
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        status: New status — one of: draft, review, approved, in_progress, done, cancelled
+
+    Returns:
+        JSON with updated spec status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_MOVE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.db import SpecStatus
+    from okto_pulse.core.models.schemas import SpecMove
+
+    try:
+        spec_status = SpecStatus(status)
+    except ValueError:
+        return json.dumps(
+            {"error": f"Invalid status. Must be one of: {[s.value for s in SpecStatus]}"}
+        )
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        try:
+            spec = await service.move_spec(
+                spec_id, ctx.agent_id, SpecMove(status=spec_status), actor_name=ctx.agent_name
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "spec_id": spec.id,
+                "from_status": spec.status.value,
+                "to_status": status,
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# TEST SCENARIO TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_add_test_scenario(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    given: str,
+    when: str,
+    then: str,
+    scenario_type: str = "integration",
+    linked_criteria: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Add a test scenario to a spec. Test scenarios translate acceptance criteria into
+    concrete Given/When/Then test plans.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        title: Scenario title (e.g. "Valid OAuth2 token grants access")
+        given: Precondition (e.g. "User has a valid JWT token")
+        when: Action (e.g. "GET /api/v1/boards with Bearer token")
+        then: Expected result (e.g. "Returns 200 with board list")
+        scenario_type: unit | integration | e2e | manual (default: integration)
+        linked_criteria: Pipe-separated INDICES (0-based) of acceptance criteria this scenario validates.
+            Example: "0|2|5" links to the 1st, 3rd, and 6th acceptance criteria.
+            Use okto_pulse_get_spec to see the acceptance_criteria list and their indices.
+        notes: Additional notes or edge cases (optional)
+
+    Returns:
+        JSON with the created scenario including resolved criteria text
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        scenario_id = f"ts_{_uuid.uuid4().hex[:8]}"
+        criteria = spec.acceptance_criteria or []
+
+        # Resolve indices to full acceptance criteria text
+        criteria_list = None
+        if linked_criteria:
+            criteria_list = []
+            for token in linked_criteria.split("|"):
+                token = token.strip()
+                if not token:
+                    continue
+                try:
+                    idx = int(token)
+                    if 0 <= idx < len(criteria):
+                        criteria_list.append(criteria[idx])
+                    else:
+                        return json.dumps({"error": f"Criteria index {idx} out of range (0-{len(criteria)-1})"})
+                except ValueError:
+                    # Fallback: treat as full text match
+                    if token in criteria:
+                        criteria_list.append(token)
+                    else:
+                        return json.dumps({"error": f"Criteria '{token[:50]}...' not found. Use indices (0-{len(criteria)-1}) from acceptance_criteria list."})
+
+        scenario = {
+            "id": scenario_id,
+            "title": title,
+            "linked_criteria": criteria_list,
+            "scenario_type": scenario_type if scenario_type in ("unit", "integration", "e2e", "manual") else "integration",
+            "given": given.replace("\\n", "\n"),
+            "when": when.replace("\\n", "\n"),
+            "then": then.replace("\\n", "\n"),
+            "notes": notes.replace("\\n", "\n") if notes else None,
+            "status": "draft",
+            "linked_task_ids": None,
+        }
+
+        scenarios = list(spec.test_scenarios or [])
+        scenarios.append(scenario)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
+        await db.commit()
+
+        return json.dumps({"success": True, "scenario": scenario}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_test_scenarios(
+    board_id: str,
+    spec_id: str,
+    status: str = "",
+    scenario_type: str = "",
+    linked: str = "",
+    offset: int = 0,
+    limit: int = 50,
+) -> str:
+    """
+    List test scenarios for a spec with coverage information. Supports filtering and pagination.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        status: Filter by scenario status (optional) — one of: draft, ready, automated, passed, failed
+        scenario_type: Filter by type (optional) — one of: unit, integration, e2e, manual
+        linked: Filter by task linkage (optional) — "linked" = only scenarios with tasks, "unlinked" = only scenarios without tasks
+        offset: Skip first N scenarios (default 0)
+        limit: Max scenarios to return (default 50, max 200)
+
+    Returns:
+        JSON with filtered/paginated scenarios and acceptance criteria coverage status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    limit = min(limit, 200)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        await db.commit()
+
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        all_scenarios = spec.test_scenarios or []
+        criteria = spec.acceptance_criteria or []
+
+        # Apply filters
+        filtered = all_scenarios
+        if status:
+            filtered = [s for s in filtered if s.get("status") == status]
+        if scenario_type:
+            filtered = [s for s in filtered if s.get("scenario_type") == scenario_type]
+        if linked == "linked":
+            filtered = [s for s in filtered if s.get("linked_task_ids")]
+        elif linked == "unlinked":
+            filtered = [s for s in filtered if not s.get("linked_task_ids")]
+
+        total_filtered = len(filtered)
+        paginated = filtered[offset:offset + limit]
+
+        # Build coverage map (always from full set)
+        coverage: dict[str, list[str]] = {}
+        for c in criteria:
+            covering = [s["id"] for s in all_scenarios if c in (s.get("linked_criteria") or [])]
+            coverage[c] = covering
+
+        indexed_criteria = [
+            {"index": i, "text": c} for i, c in enumerate(criteria)
+        ]
+
+        return json.dumps(
+            {
+                "spec_id": spec_id,
+                "total_scenarios": len(all_scenarios),
+                "filtered_count": total_filtered,
+                "offset": offset,
+                "limit": limit,
+                "scenarios": paginated,
+                "acceptance_criteria": indexed_criteria,
+                "coverage": {
+                    "total_criteria": len(criteria),
+                    "covered": sum(1 for v in coverage.values() if v),
+                    "uncovered_indices": [i for i, c in enumerate(criteria) if not coverage.get(c)],
+                    "uncovered": [c for c, v in coverage.items() if not v],
+                    "details": {str(i): coverage.get(c, []) for i, c in enumerate(criteria)},
+                },
+                "summary": {
+                    "by_status": {st: sum(1 for s in all_scenarios if s.get("status") == st) for st in ("draft", "ready", "automated", "passed", "failed") if any(s.get("status") == st for s in all_scenarios)},
+                    "by_type": {t: sum(1 for s in all_scenarios if s.get("scenario_type") == t) for t in ("unit", "integration", "e2e", "manual") if any(s.get("scenario_type") == t for s in all_scenarios)},
+                    "linked": sum(1 for s in all_scenarios if s.get("linked_task_ids")),
+                    "unlinked": sum(1 for s in all_scenarios if not s.get("linked_task_ids")),
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_update_test_scenario_status(
+    board_id: str, spec_id: str, scenario_id: str, status: str
+) -> str:
+    """
+    Update the status of a test scenario.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        scenario_id: Test scenario ID (e.g. "ts_abc123")
+        status: New status — one of: draft, ready, automated, passed, failed
+
+    Returns:
+        JSON with updated scenario
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    valid = ("draft", "ready", "automated", "passed", "failed")
+    if status not in valid:
+        return json.dumps({"error": f"Invalid status. Must be one of: {valid}"})
+
+    async with get_db_for_mcp() as db:
+        from sqlalchemy import update as sql_update
+        from okto_pulse.core.models.db import ActivityLog, Spec as SpecModel
+
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        scenarios = list(spec.test_scenarios or [])
+        old_status = None
+        found = False
+        for s in scenarios:
+            if s.get("id") == scenario_id:
+                old_status = s.get("status")
+                s["status"] = status
+                found = True
+                break
+
+        if not found:
+            return json.dumps({"error": f"Scenario '{scenario_id}' not found"})
+
+        # Direct update — no version bump, just persist + log activity
+        await db.execute(
+            sql_update(SpecModel).where(SpecModel.id == spec_id).values(test_scenarios=scenarios)
+        )
+
+        # Log activity (not version change)
+        scenario_title = next((s["title"] for s in scenarios if s["id"] == scenario_id), scenario_id)
+        log = ActivityLog(
+            board_id=spec.board_id,
+            action="test_scenario_status_changed",
+            actor_type="agent",
+            actor_id=ctx.agent_id,
+            actor_name=ctx.agent_name,
+            details={
+                "spec_id": spec_id,
+                "scenario_id": scenario_id,
+                "scenario_title": scenario_title,
+                "from_status": old_status,
+                "to_status": status,
+            },
+        )
+        db.add(log)
+        await db.commit()
+
+        return json.dumps({"success": True, "scenario_id": scenario_id, "old_status": old_status, "new_status": status})
+
+
+@mcp.tool()
+async def okto_pulse_link_task_to_scenario(
+    board_id: str, spec_id: str, scenario_id: str, card_id: str
+) -> str:
+    """
+    Link a card (task) to a test scenario, creating bidirectional traceability.
+    Updates both the scenario's linked_task_ids and the card's test_scenario_ids.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        scenario_id: Test scenario ID
+        card_id: Card ID to link
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        # Update scenario's linked_task_ids
+        scenarios = list(spec.test_scenarios or [])
+        found = False
+        for s in scenarios:
+            if s.get("id") == scenario_id:
+                task_ids = list(s.get("linked_task_ids") or [])
+                if card_id not in task_ids:
+                    task_ids.append(card_id)
+                s["linked_task_ids"] = task_ids
+                found = True
+                break
+
+        if not found:
+            return json.dumps({"error": f"Scenario '{scenario_id}' not found"})
+
+        from okto_pulse.core.models.schemas import SpecUpdate, CardUpdate
+        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
+
+        # Update card's test_scenario_ids (with max limit check)
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if card:
+            existing_ids = list(card.test_scenario_ids or [])
+            if scenario_id not in existing_ids:
+                from okto_pulse.core.models.db import Board as BoardModel
+                board_obj = await db.get(BoardModel, board_id)
+                max_per_card = (board_obj.settings or {}).get("max_scenarios_per_card", 3) if board_obj else 3
+                if len(existing_ids) >= max_per_card:
+                    return json.dumps({
+                        "error": f"Card already has {len(existing_ids)} linked scenarios (board limit: {max_per_card}). "
+                        f"Create a separate test card for better traceability."
+                    })
+                existing_ids.append(scenario_id)
+            await card_service.update_card(card_id, ctx.agent_id, CardUpdate(test_scenario_ids=existing_ids))
+
+        await db.commit()
+
+        return json.dumps({"success": True, "scenario_id": scenario_id, "card_id": card_id})
+
+
+@mcp.tool()
+async def okto_pulse_link_task_to_rule(
+    board_id: str, spec_id: str, rule_id: str, card_id: str
+) -> str:
+    """
+    Link a card (task) to a business rule, creating traceability.
+    Updates the rule's linked_task_ids in the spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        rule_id: Business rule ID (e.g. "br_abc123")
+        card_id: Card ID to link
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        # Verify card exists
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        # Update rule's linked_task_ids
+        rules = list(spec.business_rules or [])
+        found = False
+        for r in rules:
+            if r.get("id") == rule_id:
+                task_ids = list(r.get("linked_task_ids") or [])
+                if card_id not in task_ids:
+                    task_ids.append(card_id)
+                r["linked_task_ids"] = task_ids
+                found = True
+                break
+
+        if not found:
+            return json.dumps({"error": f"Business rule '{rule_id}' not found in spec"})
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        await db.commit()
+
+        return json.dumps({"success": True, "rule_id": rule_id, "card_id": card_id})
+
+
+@mcp.tool()
+async def okto_pulse_link_task_to_contract(
+    board_id: str, spec_id: str, contract_id: str, card_id: str
+) -> str:
+    """
+    Link a card (task) to an API contract, creating traceability.
+    Updates the contract's linked_task_ids in the spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        contract_id: API contract ID (e.g. "api_abc123")
+        card_id: Card ID to link
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        contracts = list(spec.api_contracts or [])
+        found = False
+        for ct in contracts:
+            if ct.get("id") == contract_id:
+                task_ids = list(ct.get("linked_task_ids") or [])
+                if card_id not in task_ids:
+                    task_ids.append(card_id)
+                ct["linked_task_ids"] = task_ids
+                found = True
+                break
+
+        if not found:
+            return json.dumps({"error": f"API contract '{contract_id}' not found in spec"})
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        await db.commit()
+
+        return json.dumps({"success": True, "contract_id": contract_id, "card_id": card_id})
+
+
+@mcp.tool()
+async def okto_pulse_link_task_to_tr(
+    board_id: str, spec_id: str, tr_id: str, card_id: str
+) -> str:
+    """
+    Link a card (task) to a technical requirement, creating traceability.
+    Updates the TR's linked_task_ids in the spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        tr_id: Technical requirement ID (e.g. "tr_abc123")
+        card_id: Card ID to link
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        trs = list(spec.technical_requirements or [])
+        found = False
+        for tr in trs:
+            if isinstance(tr, dict) and tr.get("id") == tr_id:
+                task_ids = list(tr.get("linked_task_ids") or [])
+                if card_id not in task_ids:
+                    task_ids.append(card_id)
+                tr["linked_task_ids"] = task_ids
+                found = True
+                break
+
+        if not found:
+            return json.dumps({
+                "error": f"Technical requirement '{tr_id}' not found in spec. "
+                f"TRs may be in legacy string format — update the spec via "
+                f"okto_pulse_update_spec to convert them to objects with IDs."
+            })
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(technical_requirements=trs))
+        await db.commit()
+
+        return json.dumps({"success": True, "tr_id": tr_id, "card_id": card_id})
+
+
+# ==================== ARCHIVE & RESTORE ====================
+
+
+@mcp.tool()
+async def okto_pulse_archive_tree(
+    board_id: str, entity_type: str, entity_id: str
+) -> str:
+    """
+    Archive an entity and all its descendants in cascade.
+    Saves pre_archive_status before setting archived=true.
+
+    Args:
+        board_id: Board ID
+        entity_type: Type of entity — one of: ideation, refinement, spec
+        entity_id: Entity ID to archive
+
+    Returns:
+        JSON with archived_count per entity type
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.services.main import ArchiveService
+
+    async with get_db_for_mcp() as db:
+        service = ArchiveService(db)
+        try:
+            counts = await service.archive_tree(entity_type, entity_id)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id,
+            card_id=None,
+            action="tree_archived",
+            actor_type="agent",
+            actor_id=ctx.agent_id,
+            actor_name=ctx.agent_name,
+            details={"entity_type": entity_type, "entity_id": entity_id, "counts": counts},
+        )
+        await db.commit()
+
+        return json.dumps({"success": True, "archived_count": counts}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_restore_tree(
+    board_id: str, entity_type: str, entity_id: str
+) -> str:
+    """
+    Restore an archived entity and all its descendants.
+    Returns each entity to its pre_archive_status.
+
+    Args:
+        board_id: Board ID
+        entity_type: Type of entity — one of: ideation, refinement, spec
+        entity_id: Entity ID to restore
+
+    Returns:
+        JSON with restored_count per entity type
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.services.main import ArchiveService
+
+    async with get_db_for_mcp() as db:
+        service = ArchiveService(db)
+        try:
+            counts = await service.restore_tree(entity_type, entity_id)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id,
+            card_id=None,
+            action="tree_restored",
+            actor_type="agent",
+            actor_id=ctx.agent_id,
+            actor_name=ctx.agent_name,
+            details={"entity_type": entity_type, "entity_id": entity_id, "counts": counts},
+        )
+        await db.commit()
+
+        return json.dumps({"success": True, "restored_count": counts}, default=str)
+
+
+# ==================== SPEC-TO-CARD COPY TOOLS ====================
+
+
+@mcp.tool()
+async def okto_pulse_copy_mockups_to_card(
+    board_id: str, spec_id: str, card_id: str, screen_ids: str = ""
+) -> str:
+    """
+    Copy screen mockups from a spec to a card. Use this when creating implementation
+    cards to carry the relevant mockups into the card for the implementer's context.
+
+    Args:
+        board_id: Board ID
+        spec_id: Source spec ID
+        card_id: Target card ID
+        screen_ids: Comma-separated screen IDs to copy (empty = copy ALL mockups from the spec)
+
+    Returns:
+        JSON with count of mockups copied
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        source_mockups = list(spec.screen_mockups or [])
+        if screen_ids:
+            ids = {s.strip() for s in screen_ids.split(",") if s.strip()}
+            source_mockups = [m for m in source_mockups if m.get("id") in ids]
+
+        if not source_mockups:
+            return json.dumps({"error": "No mockups to copy"})
+
+        existing = list(card.screen_mockups or [])
+        existing_ids = {m.get("id") for m in existing}
+        copied = 0
+        for m in source_mockups:
+            if m.get("id") not in existing_ids:
+                existing.append(m)
+                copied += 1
+
+        from okto_pulse.core.models.schemas import CardUpdate
+        await card_service.update_card(card_id, ctx.agent_id, CardUpdate(screen_mockups=existing))
+        await db.commit()
+
+    return json.dumps({"success": True, "copied": copied, "total_on_card": len(existing)})
+
+
+@mcp.tool()
+async def okto_pulse_copy_knowledge_to_card(
+    board_id: str, spec_id: str, card_id: str, knowledge_ids: str = ""
+) -> str:
+    """
+    Copy knowledge base entries from a spec to a card as attachments/comments.
+    Each knowledge base entry is added as a comment on the card with the full content.
+
+    Args:
+        board_id: Board ID
+        spec_id: Source spec ID
+        card_id: Target card ID
+        knowledge_ids: Comma-separated knowledge base IDs to copy (empty = copy ALL)
+
+    Returns:
+        JSON with count of knowledge entries copied
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        # Get spec knowledge bases
+        kbs = await spec_service.list_knowledge(spec_id)
+        if knowledge_ids:
+            ids = {s.strip() for s in knowledge_ids.split(",") if s.strip()}
+            kbs = [kb for kb in kbs if kb.id in ids]
+
+        if not kbs:
+            return json.dumps({"error": "No knowledge bases to copy"})
+
+        from okto_pulse.core.models.db import Comment
+        copied = 0
+        for kb in kbs:
+            comment = Comment(
+                card_id=card_id,
+                author_id=ctx.agent_id,
+                content=f"## KB: {kb.title}\n\n{kb.content}",
+            )
+            db.add(comment)
+            copied += 1
+
+        await db.commit()
+
+    return json.dumps({"success": True, "copied": copied})
+
+
+@mcp.tool()
+async def okto_pulse_copy_qa_to_card(
+    board_id: str, spec_id: str, card_id: str
+) -> str:
+    """
+    Copy answered Q&A items from a spec to a card as a consolidated comment.
+    Only copies Q&As that have been answered — unanswered questions are skipped.
+
+    Args:
+        board_id: Board ID
+        spec_id: Source spec ID
+        card_id: Target card ID
+
+    Returns:
+        JSON with count of Q&A entries copied
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        # Get answered Q&A
+        qa_items = [qa for qa in (spec.qa_items or []) if qa.answer]
+        if not qa_items:
+            return json.dumps({"error": "No answered Q&A to copy"})
+
+        lines = ["## Spec Q&A Context\n"]
+        for qa in qa_items:
+            lines.append(f"**Q:** {qa.question}\n**A:** {qa.answer}\n")
+
+        from okto_pulse.core.models.db import Comment
+        comment = Comment(
+            card_id=card_id,
+            author_id=ctx.agent_id,
+            content="\n".join(lines),
+        )
+        db.add(comment)
+        await db.commit()
+
+    return json.dumps({"success": True, "copied": len(qa_items)})
+
+
+# ==================== ANALYTICS TOOLS ====================
+
+
+@mcp.tool()
+async def okto_pulse_get_analytics(
+    board_id: str,
+    metric_type: str = "overview",
+    from_date: str = "",
+    to_date: str = "",
+) -> str:
+    """
+    Get analytics data for a board. Supports multiple metric types.
+
+    Args:
+        board_id: Board ID
+        metric_type: Type of analytics — one of: overview, funnel, quality, velocity, coverage, agents
+        from_date: Start date filter (ISO format, optional)
+        to_date: End date filter (ISO format, optional)
+
+    Returns:
+        JSON with analytics data for the requested metric type
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.db import (
+        Board, Card, CardStatus, Ideation, Refinement, Spec,
+    )
+    from sqlalchemy import func, select
+
+    def _parse_dt(value: str) -> datetime | None:
+        if not value:
+            return None
+        try:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except (ValueError, TypeError):
+            return None
+
+    dt_from = _parse_dt(from_date)
+    dt_to = _parse_dt(to_date)
+
+    def _is_test(card) -> bool:
+        ids = card.test_scenario_ids
+        return bool(ids and isinstance(ids, list) and len(ids) > 0)
+
+    def _last_conclusion(card) -> dict | None:
+        conclusions = card.conclusions
+        if not conclusions or not isinstance(conclusions, list):
+            return None
+        last = conclusions[-1]
+        return last if isinstance(last, dict) else None
+
+    async with get_db_for_mcp() as db:
+        # Verify board exists
+        board = (await db.execute(select(Board).where(Board.id == board_id))).scalars().first()
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        if metric_type == "overview":
+            # Ideations
+            ideation_q = select(Ideation).where(Ideation.board_id == board_id)
+            if dt_from:
+                ideation_q = ideation_q.where(Ideation.created_at >= dt_from)
+            if dt_to:
+                ideation_q = ideation_q.where(Ideation.created_at <= dt_to)
+            ideations = list((await db.execute(ideation_q)).scalars().all())
+
+            # Specs
+            spec_q = select(Spec).where(Spec.board_id == board_id)
+            if dt_from:
+                spec_q = spec_q.where(Spec.created_at >= dt_from)
+            if dt_to:
+                spec_q = spec_q.where(Spec.created_at <= dt_to)
+            specs = list((await db.execute(spec_q)).scalars().all())
+
+            # Cards
+            card_q = select(Card).where(Card.board_id == board_id)
+            if dt_from:
+                card_q = card_q.where(Card.created_at >= dt_from)
+            if dt_to:
+                card_q = card_q.where(Card.created_at <= dt_to)
+            cards = list((await db.execute(card_q)).scalars().all())
+
+            impl_cards = [c for c in cards if not _is_test(c)]
+            test_cards = [c for c in cards if _is_test(c)]
+            done_cards = [c for c in cards if c.status == CardStatus.DONE]
+
+            comp_vals = []
+            drift_vals = []
+            for c in cards:
+                concl = _last_conclusion(c)
+                if concl and "completeness" in concl:
+                    comp_vals.append(concl["completeness"])
+                if concl and "drift" in concl:
+                    drift_vals.append(concl["drift"])
+
+            funnel = {
+                "ideations": len(ideations),
+                "specs": len(specs),
+                "cards": len(cards),
+                "done": len(done_cards),
+            }
+
+            # Bug metrics
+            bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
+            bugs_open = sum(1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED))
+
+            return json.dumps({
+                "board_id": board_id,
+                "ideation_count": len(ideations),
+                "spec_count": len(specs),
+                "task_count": {
+                    "total": len(cards),
+                    "impl": len(impl_cards),
+                    "tests": len(test_cards),
+                    "bugs": len(bug_cards),
+                },
+                "avg_completeness": round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None,
+                "avg_drift": round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None,
+                "funnel": funnel,
+                "bugs": {
+                    "total": len(bug_cards),
+                    "open": bugs_open,
+                    "done": sum(1 for c in bug_cards if c.status == CardStatus.DONE),
+                    "by_severity": {
+                        "critical": sum(1 for c in bug_cards if getattr(c, "severity", None) == "critical"),
+                        "major": sum(1 for c in bug_cards if getattr(c, "severity", None) == "major"),
+                        "minor": sum(1 for c in bug_cards if getattr(c, "severity", None) == "minor"),
+                    },
+                },
+            }, default=str)
+
+        elif metric_type == "funnel":
+            counts = {}
+            for model, key in [
+                (Ideation, "ideations"),
+                (Refinement, "refinements"),
+                (Spec, "specs"),
+                (Card, "cards"),
+            ]:
+                q = select(func.count(model.id)).where(model.board_id == board_id)
+                if dt_from:
+                    q = q.where(model.created_at >= dt_from)
+                if dt_to:
+                    q = q.where(model.created_at <= dt_to)
+                counts[key] = (await db.execute(q)).scalar() or 0
+
+            done_q = select(func.count(Card.id)).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
+            if dt_from:
+                done_q = done_q.where(Card.created_at >= dt_from)
+            if dt_to:
+                done_q = done_q.where(Card.created_at <= dt_to)
+            counts["done"] = (await db.execute(done_q)).scalar() or 0
+
+            return json.dumps(counts, default=str)
+
+        elif metric_type == "quality":
+            q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
+            if dt_from:
+                q = q.where(Card.created_at >= dt_from)
+            if dt_to:
+                q = q.where(Card.created_at <= dt_to)
+            cards = list((await db.execute(q)).scalars().all())
+
+            result = []
+            for c in cards:
+                concl = _last_conclusion(c)
+                if concl and "completeness" in concl and "drift" in concl:
+                    result.append({
+                        "card_id": c.id,
+                        "title": c.title,
+                        "completeness": concl["completeness"],
+                        "drift": concl["drift"],
+                    })
+            return json.dumps(result, default=str)
+
+        elif metric_type == "velocity":
+            q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
+            if dt_from:
+                q = q.where(Card.created_at >= dt_from)
+            if dt_to:
+                q = q.where(Card.created_at <= dt_to)
+            cards = list((await db.execute(q)).scalars().all())
+
+            from datetime import timedelta
+            now = datetime.now(timezone.utc)
+            buckets: dict[str, dict[str, int]] = {}
+            for i in range(12):
+                ws = now - timedelta(weeks=i)
+                ws = ws - timedelta(days=ws.weekday())
+                key = ws.strftime("%Y-%m-%d")
+                buckets[key] = {"impl": 0, "test": 0}
+
+            for c in cards:
+                if not c.updated_at:
+                    continue
+                updated = c.updated_at
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                ws = updated - timedelta(days=updated.weekday())
+                key = ws.strftime("%Y-%m-%d")
+                if key in buckets:
+                    buckets[key]["test" if _is_test(c) else "impl"] += 1
+
+            velocity = [{"week": k, "impl": v["impl"], "test": v["test"]} for k, v in sorted(buckets.items())]
+            return json.dumps(velocity, default=str)
+
+        elif metric_type == "coverage":
+            spec_q = select(Spec).where(Spec.board_id == board_id)
+            if dt_from:
+                spec_q = spec_q.where(Spec.created_at >= dt_from)
+            if dt_to:
+                spec_q = spec_q.where(Spec.created_at <= dt_to)
+            specs = list((await db.execute(spec_q)).scalars().all())
+
+            result = []
+            for s in specs:
+                ac_list = s.acceptance_criteria or []
+                scenarios = s.test_scenarios or []
+                covered_ac_ids: set[str] = set()
+                status_counts: dict[str, int] = {}
+                for ts in scenarios:
+                    if isinstance(ts, dict):
+                        for crit in (ts.get("linked_criteria") or []):
+                            covered_ac_ids.add(crit)
+                        ts_status = ts.get("status", "unknown")
+                        status_counts[ts_status] = status_counts.get(ts_status, 0) + 1
+                result.append({
+                    "spec_id": s.id,
+                    "title": s.title,
+                    "total_ac": len(ac_list),
+                    "covered_ac": len(covered_ac_ids),
+                    "total_scenarios": len(scenarios),
+                    "scenario_status_counts": status_counts,
+                })
+            return json.dumps(result, default=str)
+
+        elif metric_type == "agents":
+            q = select(Card).where(Card.board_id == board_id)
+            if dt_from:
+                q = q.where(Card.created_at >= dt_from)
+            if dt_to:
+                q = q.where(Card.created_at <= dt_to)
+            cards = list((await db.execute(q)).scalars().all())
+
+            groups: dict[str, list] = {}
+            for c in cards:
+                groups.setdefault(c.created_by, []).append(c)
+
+            result = []
+            for actor_id, actor_cards in groups.items():
+                done = [c for c in actor_cards if c.status == CardStatus.DONE]
+                cv = [_last_conclusion(c) for c in done]
+                comp = [x["completeness"] for x in cv if x and "completeness" in x]
+                dr = [x["drift"] for x in cv if x and "drift" in x]
+                result.append({
+                    "actor_id": actor_id,
+                    "total_cards": len(actor_cards),
+                    "done_cards": len(done),
+                    "avg_completeness": round(sum(comp) / len(comp), 1) if comp else None,
+                    "avg_drift": round(sum(dr) / len(dr), 1) if dr else None,
+                })
+            result.sort(key=lambda x: x["done_cards"], reverse=True)
+            return json.dumps(result, default=str)
+
+        else:
+            return json.dumps({"error": f"Unknown metric_type: {metric_type}. Use one of: overview, funnel, quality, velocity, coverage, agents"})
+
+
+# ============================================================================
+# BUSINESS RULE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_add_business_rule(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    rule: str,
+    when: str,
+    then: str,
+    linked_requirements: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Add a business rule to a spec. Business rules define system behavior constraints
+    using When/Then format.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        title: Rule title (e.g. "Discount cap for non-premium users")
+        rule: The business rule statement
+        when: Condition that triggers the rule
+        then: Expected behavior / outcome
+        linked_requirements: Pipe-separated INDICES (0-based) of functional requirements this rule relates to.
+            Example: "0|2|5" links to the 1st, 3rd, and 6th functional requirement.
+        notes: Additional notes (optional)
+
+    Returns:
+        JSON with the created business rule including resolved requirement text
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        rule_id = f"br_{_uuid.uuid4().hex[:8]}"
+        frs = spec.functional_requirements or []
+
+        req_list = None
+        if linked_requirements:
+            req_list = []
+            for token in linked_requirements.split("|"):
+                token = token.strip()
+                if not token:
+                    continue
+                try:
+                    idx = int(token)
+                    if 0 <= idx < len(frs):
+                        req_list.append(frs[idx])
+                    else:
+                        return json.dumps({"error": f"Requirement index {idx} out of range (0-{len(frs)-1})"})
+                except ValueError:
+                    if token in frs:
+                        req_list.append(token)
+                    else:
+                        return json.dumps({"error": f"Requirement '{token[:50]}...' not found. Use indices (0-{len(frs)-1}) from functional_requirements list."})
+
+        br = {
+            "id": rule_id,
+            "title": title,
+            "rule": rule.replace("\\n", "\n"),
+            "when": when.replace("\\n", "\n"),
+            "then": then.replace("\\n", "\n"),
+            "linked_requirements": req_list,
+            "notes": notes.replace("\\n", "\n") if notes else None,
+        }
+
+        rules = list(spec.business_rules or [])
+        rules.append(br)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        await db.commit()
+
+        return json.dumps({"success": True, "business_rule": br}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_update_business_rule(
+    board_id: str,
+    spec_id: str,
+    rule_id: str,
+    title: str = "",
+    rule: str = "",
+    when: str = "",
+    then: str = "",
+    linked_requirements: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Update an existing business rule on a spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        rule_id: Business rule ID (e.g. "br_abc12345")
+        title: New title (optional, empty = no change)
+        rule: New rule statement (optional)
+        when: New condition (optional)
+        then: New outcome (optional)
+        linked_requirements: Pipe-separated INDICES (0-based) of functional requirements.
+            Pass "CLEAR" to remove all links. Empty = no change.
+        notes: New notes (optional, "CLEAR" to remove)
+
+    Returns:
+        JSON with the updated business rule
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        rules = list(spec.business_rules or [])
+        target = None
+        for r in rules:
+            if r.get("id") == rule_id:
+                target = r
+                break
+        if not target:
+            return json.dumps({"error": f"Business rule '{rule_id}' not found"})
+
+        if title:
+            target["title"] = title
+        if rule:
+            target["rule"] = rule.replace("\\n", "\n")
+        if when:
+            target["when"] = when.replace("\\n", "\n")
+        if then:
+            target["then"] = then.replace("\\n", "\n")
+        if notes == "CLEAR":
+            target["notes"] = None
+        elif notes:
+            target["notes"] = notes.replace("\\n", "\n")
+
+        frs = spec.functional_requirements or []
+        if linked_requirements == "CLEAR":
+            target["linked_requirements"] = None
+        elif linked_requirements:
+            req_list = []
+            for token in linked_requirements.split("|"):
+                token = token.strip()
+                if not token:
+                    continue
+                try:
+                    idx = int(token)
+                    if 0 <= idx < len(frs):
+                        req_list.append(frs[idx])
+                    else:
+                        return json.dumps({"error": f"Requirement index {idx} out of range (0-{len(frs)-1})"})
+                except ValueError:
+                    if token in frs:
+                        req_list.append(token)
+                    else:
+                        return json.dumps({"error": f"Requirement '{token[:50]}...' not found."})
+            target["linked_requirements"] = req_list
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        await db.commit()
+
+        return json.dumps({"success": True, "business_rule": target}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_remove_business_rule(
+    board_id: str,
+    spec_id: str,
+    rule_id: str,
+) -> str:
+    """
+    Remove a business rule from a spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        rule_id: Business rule ID to remove
+
+    Returns:
+        JSON confirmation
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        rules = list(spec.business_rules or [])
+        new_rules = [r for r in rules if r.get("id") != rule_id]
+        if len(new_rules) == len(rules):
+            return json.dumps({"error": f"Business rule '{rule_id}' not found"})
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=new_rules))
+        await db.commit()
+
+        return json.dumps({"success": True, "removed": rule_id, "remaining": len(new_rules)})
+
+
+@mcp.tool()
+async def okto_pulse_list_business_rules(
+    board_id: str,
+    spec_id: str,
+) -> str:
+    """
+    List all business rules for a spec with linked functional requirements resolved as text.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON array of business rules with resolved linked requirements
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        rules = spec.business_rules or []
+        frs = spec.functional_requirements or []
+
+        result = []
+        for r in rules:
+            entry = dict(r)
+            linked = r.get("linked_requirements") or []
+            resolved = []
+            for req_text in linked:
+                if req_text in frs:
+                    idx = frs.index(req_text)
+                    resolved.append(f"[FR-{idx}] {req_text}")
+                else:
+                    resolved.append(req_text)
+            entry["resolved_requirements"] = resolved
+            result.append(entry)
+
+        return json.dumps({
+            "spec_id": spec_id,
+            "total": len(result),
+            "business_rules": result,
+        }, default=str)
+
+
+# ============================================================================
+# API CONTRACT TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_add_api_contract(
+    board_id: str,
+    spec_id: str,
+    method: str,
+    path: str,
+    description: str = "",
+    request_body_json: str = "",
+    response_success_json: str = "",
+    response_errors_json: str = "",
+    linked_requirements: str = "",
+    linked_rules: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Add an API contract to a spec. API contracts define endpoints, request/response
+    shapes, and link to requirements and business rules.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        method: HTTP method or interaction type (GET, POST, PUT, DELETE, PATCH, TOOL, COMPONENT, EVENT)
+        path: Endpoint path or identifier (e.g. "/api/v1/users", "UserProfile component")
+        description: What this endpoint does (optional)
+        request_body_json: JSON string for request body schema (optional). Example: '{"name": "string", "email": "string"}'
+        response_success_json: JSON string for success response schema (optional)
+        response_errors_json: JSON string for error responses array (optional). Example: '[{"status": 400, "detail": "..."}]'
+        linked_requirements: Pipe-separated INDICES (0-based) of functional requirements.
+            Example: "0|2|5"
+        linked_rules: Pipe-separated business rule IDs. Example: "br_abc123|br_def456"
+        notes: Additional notes (optional)
+
+    Returns:
+        JSON with the created API contract
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        contract_id = f"api_{_uuid.uuid4().hex[:8]}"
+        frs = spec.functional_requirements or []
+        existing_rules = spec.business_rules or []
+
+        # Parse JSON strings
+        request_body = None
+        if request_body_json:
+            try:
+                request_body = json.loads(request_body_json)
+            except json.JSONDecodeError as e:
+                return json.dumps({"error": f"Invalid request_body_json: {e}"})
+
+        response_success = None
+        if response_success_json:
+            try:
+                response_success = json.loads(response_success_json)
+            except json.JSONDecodeError as e:
+                return json.dumps({"error": f"Invalid response_success_json: {e}"})
+
+        response_errors = None
+        if response_errors_json:
+            try:
+                response_errors = json.loads(response_errors_json)
+            except json.JSONDecodeError as e:
+                return json.dumps({"error": f"Invalid response_errors_json: {e}"})
+
+        # Resolve linked requirements
+        req_list = None
+        if linked_requirements:
+            req_list = []
+            for token in linked_requirements.split("|"):
+                token = token.strip()
+                if not token:
+                    continue
+                try:
+                    idx = int(token)
+                    if 0 <= idx < len(frs):
+                        req_list.append(frs[idx])
+                    else:
+                        return json.dumps({"error": f"Requirement index {idx} out of range (0-{len(frs)-1})"})
+                except ValueError:
+                    if token in frs:
+                        req_list.append(token)
+                    else:
+                        return json.dumps({"error": f"Requirement '{token[:50]}...' not found."})
+
+        # Resolve linked rules
+        rules_list = None
+        if linked_rules:
+            rule_ids = {r.get("id") for r in existing_rules}
+            rules_list = []
+            for token in linked_rules.split("|"):
+                token = token.strip()
+                if not token:
+                    continue
+                if token in rule_ids:
+                    rules_list.append(token)
+                else:
+                    return json.dumps({"error": f"Business rule '{token}' not found in spec"})
+
+        contract = {
+            "id": contract_id,
+            "method": method.upper(),
+            "path": path,
+            "description": description.replace("\\n", "\n") if description else "",
+            "request_body": request_body,
+            "response_success": response_success,
+            "response_errors": response_errors,
+            "linked_requirements": req_list,
+            "linked_rules": rules_list,
+            "notes": notes.replace("\\n", "\n") if notes else None,
+        }
+
+        contracts = list(spec.api_contracts or [])
+        contracts.append(contract)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        await db.commit()
+
+        return json.dumps({"success": True, "api_contract": contract}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_update_api_contract(
+    board_id: str,
+    spec_id: str,
+    contract_id: str,
+    method: str = "",
+    path: str = "",
+    description: str = "",
+    request_body_json: str = "",
+    response_success_json: str = "",
+    response_errors_json: str = "",
+    linked_requirements: str = "",
+    linked_rules: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Update an existing API contract on a spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        contract_id: API contract ID (e.g. "api_abc12345")
+        method: New HTTP method (optional, empty = no change)
+        path: New path (optional)
+        description: New description (optional, "CLEAR" to remove)
+        request_body_json: New request body JSON (optional, "CLEAR" to remove)
+        response_success_json: New success response JSON (optional, "CLEAR" to remove)
+        response_errors_json: New error responses JSON (optional, "CLEAR" to remove)
+        linked_requirements: Pipe-separated INDICES. "CLEAR" to remove all. Empty = no change.
+        linked_rules: Pipe-separated rule IDs. "CLEAR" to remove all. Empty = no change.
+        notes: New notes (optional, "CLEAR" to remove)
+
+    Returns:
+        JSON with the updated API contract
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        contracts = list(spec.api_contracts or [])
+        target = None
+        for c in contracts:
+            if c.get("id") == contract_id:
+                target = c
+                break
+        if not target:
+            return json.dumps({"error": f"API contract '{contract_id}' not found"})
+
+        if method:
+            target["method"] = method.upper()
+        if path:
+            target["path"] = path
+
+        if description == "CLEAR":
+            target["description"] = ""
+        elif description:
+            target["description"] = description.replace("\\n", "\n")
+
+        if request_body_json == "CLEAR":
+            target["request_body"] = None
+        elif request_body_json:
+            try:
+                target["request_body"] = json.loads(request_body_json)
+            except json.JSONDecodeError as e:
+                return json.dumps({"error": f"Invalid request_body_json: {e}"})
+
+        if response_success_json == "CLEAR":
+            target["response_success"] = None
+        elif response_success_json:
+            try:
+                target["response_success"] = json.loads(response_success_json)
+            except json.JSONDecodeError as e:
+                return json.dumps({"error": f"Invalid response_success_json: {e}"})
+
+        if response_errors_json == "CLEAR":
+            target["response_errors"] = None
+        elif response_errors_json:
+            try:
+                target["response_errors"] = json.loads(response_errors_json)
+            except json.JSONDecodeError as e:
+                return json.dumps({"error": f"Invalid response_errors_json: {e}"})
+
+        if notes == "CLEAR":
+            target["notes"] = None
+        elif notes:
+            target["notes"] = notes.replace("\\n", "\n")
+
+        frs = spec.functional_requirements or []
+        if linked_requirements == "CLEAR":
+            target["linked_requirements"] = None
+        elif linked_requirements:
+            req_list = []
+            for token in linked_requirements.split("|"):
+                token = token.strip()
+                if not token:
+                    continue
+                try:
+                    idx = int(token)
+                    if 0 <= idx < len(frs):
+                        req_list.append(frs[idx])
+                    else:
+                        return json.dumps({"error": f"Requirement index {idx} out of range (0-{len(frs)-1})"})
+                except ValueError:
+                    if token in frs:
+                        req_list.append(token)
+                    else:
+                        return json.dumps({"error": f"Requirement '{token[:50]}...' not found."})
+            target["linked_requirements"] = req_list
+
+        existing_rules = spec.business_rules or []
+        if linked_rules == "CLEAR":
+            target["linked_rules"] = None
+        elif linked_rules:
+            rule_ids = {r.get("id") for r in existing_rules}
+            rules_list = []
+            for token in linked_rules.split("|"):
+                token = token.strip()
+                if not token:
+                    continue
+                if token in rule_ids:
+                    rules_list.append(token)
+                else:
+                    return json.dumps({"error": f"Business rule '{token}' not found in spec"})
+            target["linked_rules"] = rules_list
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        await db.commit()
+
+        return json.dumps({"success": True, "api_contract": target}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_remove_api_contract(
+    board_id: str,
+    spec_id: str,
+    contract_id: str,
+) -> str:
+    """
+    Remove an API contract from a spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        contract_id: API contract ID to remove
+
+    Returns:
+        JSON confirmation
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        contracts = list(spec.api_contracts or [])
+        new_contracts = [c for c in contracts if c.get("id") != contract_id]
+        if len(new_contracts) == len(contracts):
+            return json.dumps({"error": f"API contract '{contract_id}' not found"})
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=new_contracts))
+        await db.commit()
+
+        return json.dumps({"success": True, "removed": contract_id, "remaining": len(new_contracts)})
+
+
+@mcp.tool()
+async def okto_pulse_list_api_contracts(
+    board_id: str,
+    spec_id: str,
+) -> str:
+    """
+    List all API contracts for a spec with linked business rules resolved.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON array of API contracts with resolved linked rules and requirements
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        contracts = spec.api_contracts or []
+        existing_rules = {r.get("id"): r for r in (spec.business_rules or [])}
+        frs = spec.functional_requirements or []
+
+        result = []
+        for c in contracts:
+            entry = dict(c)
+
+            # Resolve linked rules
+            linked_rule_ids = c.get("linked_rules") or []
+            resolved_rules = []
+            for rid in linked_rule_ids:
+                br = existing_rules.get(rid)
+                if br:
+                    resolved_rules.append(f"[{rid}] {br.get('title', '')}")
+                else:
+                    resolved_rules.append(rid)
+            entry["resolved_rules"] = resolved_rules
+
+            # Resolve linked requirements
+            linked_reqs = c.get("linked_requirements") or []
+            resolved_reqs = []
+            for req_text in linked_reqs:
+                if req_text in frs:
+                    idx = frs.index(req_text)
+                    resolved_reqs.append(f"[FR-{idx}] {req_text}")
+                else:
+                    resolved_reqs.append(req_text)
+            entry["resolved_requirements"] = resolved_reqs
+
+            result.append(entry)
+
+        return json.dumps({
+            "spec_id": spec_id,
+            "total": len(result),
+            "api_contracts": result,
+        }, default=str)
+
+
+# ==================== SCREEN MOCKUP TOOLS ====================
+
+
+async def _load_entity_mockups(db, entity_type: str, entity_id: str):
+    """Load an entity and return (entity, screen_mockups, service, update_schema_class) or error string."""
+    if entity_type == "spec":
+        service = SpecService(db)
+        entity = await service.get_spec(entity_id)
+        from okto_pulse.core.models.schemas import SpecUpdate
+        return entity, service, SpecUpdate
+    elif entity_type == "ideation":
+        service = IdeationService(db)
+        entity = await service.get_ideation(entity_id)
+        from okto_pulse.core.models.schemas import IdeationUpdate
+        return entity, service, IdeationUpdate
+    elif entity_type == "refinement":
+        service = RefinementService(db)
+        entity = await service.get_refinement(entity_id)
+        from okto_pulse.core.models.schemas import RefinementUpdate
+        return entity, service, RefinementUpdate
+    elif entity_type == "card":
+        service = CardService(db)
+        entity = await service.get_card(entity_id)
+        from okto_pulse.core.models.schemas import CardUpdate
+        return entity, service, CardUpdate
+    return None, None, None
+
+
+async def _save_entity_mockups(service, entity_type, entity_id, agent_id, screens, UpdateClass):
+    """Save screen_mockups back to the entity."""
+    if entity_type == "spec":
+        await service.update_spec(entity_id, agent_id, UpdateClass(screen_mockups=screens))
+    elif entity_type == "ideation":
+        await service.update_ideation(entity_id, agent_id, UpdateClass(screen_mockups=screens))
+    elif entity_type == "refinement":
+        await service.update_refinement(entity_id, agent_id, UpdateClass(screen_mockups=screens))
+    elif entity_type == "card":
+        await service.update_card(entity_id, agent_id, UpdateClass(screen_mockups=screens))
+
+
+def _sanitize_html(html: str) -> str:
+    import re
+    sanitized = re.sub(r"<script[\s\S]*?</script>", "", html, flags=re.IGNORECASE)
+    sanitized = re.sub(r"\s+on\w+\s*=\s*[\"'][^\"']*[\"']", "", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r"\s+on\w+\s*=\s*\S+", "", sanitized, flags=re.IGNORECASE)
+    return sanitized
+
+
+@mcp.tool()
+async def okto_pulse_add_screen_mockup(
+    board_id: str,
+    entity_id: str,
+    title: str,
+    entity_type: str = "spec",
+    description: str = "",
+    screen_type: str = "page",
+    html_content: str = "",
+) -> str:
+    """
+    Add a screen mockup to any entity (spec, ideation, refinement, or card).
+    Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard.
+
+    Args:
+        board_id: Board ID
+        entity_id: Entity ID (spec, ideation, refinement, or card)
+        title: Screen title (e.g. "Login Page", "Dashboard", "Settings Modal")
+        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+        description: What this screen does and when it appears (optional). Supports Markdown.
+        screen_type: Type of screen — one of: page, modal, drawer, popover, panel (default: page)
+        html_content: HTML+Tailwind markup for the screen mockup. Script tags and on* event attributes are stripped for safety.
+
+    Returns:
+        JSON with created screen including its generated ID
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    if entity_type not in ("spec", "ideation", "refinement", "card"):
+        return json.dumps({"error": f"Invalid entity_type '{entity_type}'. Must be one of: spec, ideation, refinement, card"})
+
+    import hashlib, time
+    screen_id = "sm_" + hashlib.md5(f"{entity_id}{title}{time.time()}".encode()).hexdigest()[:8]
+
+    screen = {
+        "id": screen_id,
+        "title": title,
+        "description": description or None,
+        "screen_type": screen_type,
+        "html_content": _sanitize_html(html_content),
+        "annotations": [],
+        "order": 0,
+    }
+
+    async with get_db_for_mcp() as db:
+        entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
+        if not entity:
+            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+
+        screens = list(entity.screen_mockups or [])
+        screen["order"] = len(screens)
+        screens.append(screen)
+
+        await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
+        await db.commit()
+
+    return json.dumps({"success": True, "entity_type": entity_type, "screen": screen}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_update_screen_mockup(
+    board_id: str,
+    entity_id: str,
+    screen_id: str,
+    entity_type: str = "spec",
+    title: str = "",
+    description: str = "",
+    html_content: str = "",
+    screen_type: str = "",
+) -> str:
+    """
+    Update an existing screen mockup's fields on any entity.
+
+    Args:
+        board_id: Board ID
+        entity_id: Entity ID (spec, ideation, refinement, or card)
+        screen_id: Screen mockup ID to update
+        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+        title: New title (empty = no change)
+        description: New description (empty = no change)
+        html_content: New HTML+Tailwind content (empty = no change). Script tags and on* event attributes are stripped.
+        screen_type: New screen type (empty = no change) — one of: page, modal, drawer, popover, panel
+
+    Returns:
+        JSON with updated screen
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
+        if not entity:
+            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+
+        screens = list(entity.screen_mockups or [])
+        screen = next((s for s in screens if s.get("id") == screen_id), None)
+        if not screen:
+            return json.dumps({"error": f"Screen '{screen_id}' not found"})
+
+        if title:
+            screen["title"] = title
+        if description:
+            screen["description"] = description
+        if screen_type:
+            screen["screen_type"] = screen_type
+        if html_content:
+            screen["html_content"] = _sanitize_html(html_content)
+
+        await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
+        await db.commit()
+
+    return json.dumps({"success": True, "screen": screen}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_annotate_mockup(
+    board_id: str,
+    entity_id: str,
+    screen_id: str,
+    text: str,
+    entity_type: str = "spec",
+) -> str:
+    """
+    Add a design annotation/note to a screen mockup on any entity.
+
+    Args:
+        board_id: Board ID
+        entity_id: Entity ID (spec, ideation, refinement, or card)
+        screen_id: Screen mockup ID
+        text: Annotation text (design note, requirement, constraint)
+        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+
+    Returns:
+        JSON with created annotation
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import hashlib, time
+    ann_id = "an_" + hashlib.md5(f"{screen_id}{text}{time.time()}".encode()).hexdigest()[:8]
+
+    annotation = {
+        "id": ann_id,
+        "text": text,
+        "author_id": ctx.agent_id,
+    }
+
+    async with get_db_for_mcp() as db:
+        entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
+        if not entity:
+            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+
+        screens = list(entity.screen_mockups or [])
+        screen = next((s for s in screens if s.get("id") == screen_id), None)
+        if not screen:
+            return json.dumps({"error": f"Screen '{screen_id}' not found"})
+
+        anns = screen.get("annotations") or []
+        anns.append(annotation)
+        screen["annotations"] = anns
+
+        await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
+        await db.commit()
+
+    return json.dumps({"success": True, "annotation": annotation})
+
+
+@mcp.tool()
+async def okto_pulse_list_screen_mockups(
+    board_id: str, entity_id: str, entity_type: str = "spec",
+    screen_type: str = "", offset: int = 0, limit: int = 50
+) -> str:
+    """
+    List screen mockups for any entity with optional filtering and pagination.
+
+    Args:
+        board_id: Board ID
+        entity_id: Entity ID (spec, ideation, refinement, or card)
+        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+        screen_type: Filter by screen type (optional) — one of: page, modal, drawer, popover, panel
+        offset: Skip first N screens (default 0)
+        limit: Max screens to return (default 50, max 200)
+
+    Returns:
+        JSON with filtered/paginated screens
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    limit = min(limit, 200)
+
+    async with get_db_for_mcp() as db:
+        entity, service, _ = await _load_entity_mockups(db, entity_type, entity_id)
+        if not entity:
+            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+
+        screens = list(entity.screen_mockups or [])
+        if screen_type:
+            screens = [s for s in screens if s.get("screen_type") == screen_type]
+
+        total = len(screens)
+        paginated = screens[offset:offset + limit]
+
+        return json.dumps({
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "screens": paginated,
+        }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_delete_screen_mockup(
+    board_id: str, entity_id: str, screen_id: str, entity_type: str = "spec"
+) -> str:
+    """
+    Delete a screen mockup from any entity.
+
+    Args:
+        board_id: Board ID
+        entity_id: Entity ID (spec, ideation, refinement, or card)
+        screen_id: Screen mockup ID to delete
+        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
+        if not entity:
+            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+
+        screens = list(entity.screen_mockups or [])
+        original_len = len(screens)
+        screens = [s for s in screens if s.get("id") != screen_id]
+        if len(screens) == original_len:
+            return json.dumps({"error": f"Screen '{screen_id}' not found"})
+
+        await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
+        await db.commit()
+
+    return json.dumps({"success": True, "screen_id": screen_id})
+
+
+# ============================================================================
+# GUIDELINE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_get_board_guidelines(board_id: str) -> str:
+    """
+    Get all guidelines for a board, ordered by priority. This is the PRIMARY tool
+    for reading board guidelines — call it BEFORE doing any work on a board.
+
+    Returns linked global guidelines and inline board guidelines merged and sorted.
+
+    Args:
+        board_id: Board ID
+
+    Returns:
+        JSON with list of guidelines sorted by priority (highest first)
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = GuidelineService(db)
+        items = await service.get_board_guidelines(board_id)
+        await db.commit()
+
+        return json.dumps({"board_id": board_id, "count": len(items), "guidelines": items}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_guidelines(
+    board_id: str, offset: str = "0", limit: str = "50", tag: str = "",
+) -> str:
+    """
+    List global guidelines from the catalog. Use this to browse available guidelines
+    that can be linked to boards.
+
+    Args:
+        board_id: Board ID (used for authentication)
+        offset: Pagination offset (default 0)
+        limit: Max results (default 50)
+        tag: Optional tag filter (empty = all)
+
+    Returns:
+        JSON with list of global guidelines
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        # Use the board owner as the owner_id for listing
+        board = await db.get(Board, board_id)
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        service = GuidelineService(db)
+        guidelines = await service.list_guidelines(
+            owner_id=board.owner_id,
+            offset=int(offset),
+            limit=int(limit),
+            tag=tag or None,
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "count": len(guidelines),
+                "guidelines": [
+                    {
+                        "id": g.id,
+                        "title": g.title,
+                        "content": g.content,
+                        "tags": g.tags,
+                        "scope": g.scope,
+                        "created_at": g.created_at.isoformat() if g.created_at else None,
+                    }
+                    for g in guidelines
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_create_guideline(
+    board_id: str, title: str, content: str, tags: str = "", scope: str = "global",
+) -> str:
+    """
+    Create a new guideline. If scope is "global", it goes into the catalog and can be
+    linked to any board. If scope is "inline", set a board_id to make it board-specific.
+
+    Args:
+        board_id: Board ID (used for authentication; also used as guideline board_id if scope is "inline")
+        title: Guideline title
+        content: Guideline content (Markdown supported)
+        tags: Pipe-separated tags (e.g. "coding|architecture") — empty = no tags
+        scope: "global" (catalog) or "inline" (board-specific)
+
+    Returns:
+        JSON with created guideline
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE if hasattr(Permissions, 'BOARD_UPDATE') else Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        board = await db.get(Board, board_id)
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        from okto_pulse.core.models.schemas import GuidelineCreate
+        tag_list = [t.strip() for t in tags.split("|") if t.strip()] if tags else None
+        data = GuidelineCreate(
+            title=title,
+            content=content,
+            tags=tag_list,
+            scope=scope,
+            board_id=board_id if scope == "inline" else None,
+        )
+
+        service = GuidelineService(db)
+        guideline = await service.create_guideline(owner_id=board.owner_id, data=data)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "id": guideline.id,
+                "title": guideline.title,
+                "content": guideline.content,
+                "tags": guideline.tags,
+                "scope": guideline.scope,
+                "board_id": guideline.board_id,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_update_guideline(
+    board_id: str, guideline_id: str, title: str = "", content: str = "", tags: str = "",
+) -> str:
+    """
+    Update a guideline's title, content, or tags.
+
+    Args:
+        board_id: Board ID (used for authentication)
+        guideline_id: Guideline ID to update
+        title: New title (empty = no change)
+        content: New content (empty = no change)
+        tags: New pipe-separated tags (empty = no change)
+
+    Returns:
+        JSON with updated guideline
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE if hasattr(Permissions, 'BOARD_UPDATE') else Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        board = await db.get(Board, board_id)
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        from okto_pulse.core.models.schemas import GuidelineUpdate
+        data = GuidelineUpdate(
+            title=title or None,
+            content=content or None,
+            tags=[t.strip() for t in tags.split("|") if t.strip()] if tags else None,
+        )
+
+        service = GuidelineService(db)
+        guideline = await service.update_guideline(guideline_id, board.owner_id, data)
+        if not guideline:
+            return json.dumps({"error": "Guideline not found or not owned by board owner"})
+        await db.commit()
+
+        return json.dumps(
+            {
+                "id": guideline.id,
+                "title": guideline.title,
+                "content": guideline.content,
+                "tags": guideline.tags,
+                "scope": guideline.scope,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_guideline(board_id: str, guideline_id: str) -> str:
+    """
+    Delete a guideline. Also removes all board links.
+
+    Args:
+        board_id: Board ID (used for authentication)
+        guideline_id: Guideline ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE if hasattr(Permissions, 'BOARD_UPDATE') else Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        board = await db.get(Board, board_id)
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        service = GuidelineService(db)
+        deleted = await service.delete_guideline(guideline_id, board.owner_id)
+        if not deleted:
+            return json.dumps({"error": "Guideline not found or not owned by board owner"})
+        await db.commit()
+
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_link_guideline_to_board(
+    board_id: str, guideline_id: str, priority: str = "0",
+) -> str:
+    """
+    Link a global guideline to a board so agents see it when loading board guidelines.
+
+    Args:
+        board_id: Board ID
+        guideline_id: Guideline ID to link
+        priority: Priority order (higher = more important, default 0)
+
+    Returns:
+        JSON with link details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE if hasattr(Permissions, 'BOARD_UPDATE') else Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = GuidelineService(db)
+        guideline = await service.get_guideline(guideline_id)
+        if not guideline:
+            return json.dumps({"error": "Guideline not found"})
+
+        link = await service.link_guideline_to_board(board_id, guideline_id, int(priority))
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "board_id": board_id,
+                "guideline_id": guideline_id,
+                "priority": link.priority,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_unlink_guideline_from_board(board_id: str, guideline_id: str) -> str:
+    """
+    Unlink a guideline from a board. The guideline itself is not deleted.
+
+    Args:
+        board_id: Board ID
+        guideline_id: Guideline ID to unlink
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE if hasattr(Permissions, 'BOARD_UPDATE') else Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = GuidelineService(db)
+        unlinked = await service.unlink_guideline_from_board(board_id, guideline_id)
+        if not unlinked:
+            return json.dumps({"error": "Link not found"})
+        await db.commit()
+
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
+    """
+    Delete a spec. Derived cards are unlinked but not deleted.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        deleted = await service.delete_spec(spec_id, ctx.agent_id)
+        await db.commit()
+
+        if not deleted:
+            return json.dumps({"error": "Spec not found"})
+
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_link_card_to_spec(board_id: str, spec_id: str, card_id: str) -> str:
+    """
+    Link an existing card to a spec. The card and spec must belong to the same board.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        card_id: Card ID to link
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        linked = await service.link_card(spec_id, card_id)
+        await db.commit()
+
+        if not linked:
+            return json.dumps({"error": "Spec or card not found, or they belong to different boards"})
+
+        return json.dumps({"success": True, "spec_id": spec_id, "card_id": card_id})
+
+
+# ============================================================================
+# SPEC HISTORY TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_get_spec_history(board_id: str, spec_id: str, limit: str = "30") -> str:
+    """
+    Get the detailed change history of a spec. Shows every modification with field-level diffs
+    (old value vs new value), who made the change, and when. Use this to understand how a spec
+    evolved over time and what exactly was modified at each step.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        limit: Maximum number of history entries to return (default 30)
+
+    Returns:
+        JSON with list of history entries, newest first. Each entry includes:
+        - action: what happened (created, updated, status_changed, cards_derived, etc.)
+        - actor_name: who did it
+        - changes: list of {field, old, new} diffs
+        - summary: human-readable summary
+        - version: spec version at that point
+        - created_at: when it happened
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        entries = await service.list_history(spec_id, int(limit))
+        await db.commit()
+
+        return json.dumps(
+            {
+                "spec_id": spec_id,
+                "count": len(entries),
+                "history": [
+                    {
+                        "id": e.id,
+                        "action": e.action,
+                        "actor_type": e.actor_type,
+                        "actor_id": e.actor_id,
+                        "actor_name": e.actor_name,
+                        "changes": e.changes,
+                        "summary": e.summary,
+                        "version": e.version,
+                        "created_at": e.created_at.isoformat(),
+                    }
+                    for e in entries
+                ],
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# SPEC Q&A TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_ask_spec_question(board_id: str, spec_id: str, question: str) -> str:
+    """
+    Ask a question on a spec's Q&A board. Use @Name to direct the question.
+    Both humans and agents can ask questions — this is for clarifying spec requirements
+    BEFORE work begins on tasks.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        question: Question text (use @Name to mention someone)
+
+    Returns:
+        JSON with Q&A item details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import SpecQACreate
+
+    async with get_db_for_mcp() as db:
+        service = SpecQAService(db)
+        qa = await service.create_question(spec_id, ctx.agent_id, SpecQACreate(question=question))
+        if not qa:
+            return json.dumps({"error": "Spec not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="spec_question_added",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"spec_id": spec_id, "question": question[:100]},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "asked_by": qa.asked_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_ask_spec_choice_question(
+    board_id: str,
+    spec_id: str,
+    question: str,
+    options: str,
+    question_type: str = "choice",
+    allow_free_text: str = "false",
+) -> str:
+    """
+    Ask a choice question (poll/form) on a spec's Q&A board. The respondent picks from predefined options.
+    Use this when you need a structured answer — e.g. "Which auth approach?" with options.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        question: The question text
+        options: Comma-separated list of option labels (e.g. "OAuth2,API Keys,Both")
+        question_type: "choice" for single-select (default) or "multi_choice" for multi-select
+        allow_free_text: "true" to also allow a free-text response alongside selections
+
+    Returns:
+        JSON with Q&A item including choices
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import uuid as _uuid
+
+    from okto_pulse.core.models.schemas import SpecQAChoiceOption, SpecQACreate
+
+    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    if not option_labels:
+        return json.dumps({"error": "At least one option is required"})
+
+    choice_list = [
+        SpecQAChoiceOption(id=f"opt_{i}", label=label)
+        for i, label in enumerate(option_labels)
+    ]
+
+    async with get_db_for_mcp() as db:
+        service = SpecQAService(db)
+        data = SpecQACreate(
+            question=question,
+            question_type=question_type if question_type in ("choice", "multi_choice") else "choice",
+            choices=choice_list,
+            allow_free_text=allow_free_text.lower() == "true",
+        )
+        qa = await service.create_question(spec_id, ctx.agent_id, data)
+        if not qa:
+            return json.dumps({"error": "Spec not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="spec_choice_question_added",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"spec_id": spec_id, "question": question[:100], "option_count": len(choice_list)},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "question_type": qa.question_type,
+                    "choices": qa.choices,
+                    "allow_free_text": qa.allow_free_text,
+                    "asked_by": qa.asked_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: str, answer: str = "", selected: str = "") -> str:
+    """
+    Answer a question on a spec's Q&A board.
+    For text questions, provide answer. For choice questions, provide selected option IDs.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID (for context/validation)
+        qa_id: Q&A item ID to answer
+        answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
+        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+
+    Returns:
+        JSON with updated Q&A item
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_ANSWER)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import SpecQAAnswer
+
+    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+
+    async with get_db_for_mcp() as db:
+        service = SpecQAService(db)
+        qa = await service.answer_question(
+            qa_id, ctx.agent_id,
+            SpecQAAnswer(answer=answer or None, selected=selected_list),
+        )
+        if not qa:
+            return json.dumps({"error": "Q&A item not found or invalid selection"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="spec_question_answered",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"spec_id": spec_id, "qa_id": qa_id, "answer": (answer or "")[:100], "selected": selected_list},
+        )
+        await db.commit()
+
+        return json.dumps(
+            {
+                "success": True,
+                "qa": {
+                    "id": qa.id,
+                    "question": qa.question,
+                    "question_type": qa.question_type,
+                    "answer": qa.answer,
+                    "selected": qa.selected,
+                    "asked_by": qa.asked_by,
+                    "answered_by": qa.answered_by,
+                },
+            }
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_spec_qa(board_id: str, spec_id: str) -> str:
+    """
+    List all Q&A items on a spec. Check this before starting work to understand
+    any open questions or clarifications about the spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with list of Q&A items
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecQAService(db)
+        items = await service.list_qa(spec_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "spec_id": spec_id,
+                "count": len(items),
+                "qa_items": [
+                    {
+                        "id": qa.id,
+                        "question": qa.question,
+                        "question_type": qa.question_type,
+                        "choices": qa.choices,
+                        "allow_free_text": qa.allow_free_text,
+                        "answer": qa.answer,
+                        "selected": qa.selected,
+                        "asked_by": qa.asked_by,
+                        "answered_by": qa.answered_by,
+                        "created_at": qa.created_at.isoformat(),
+                        "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
+                    }
+                    for qa in items
+                ],
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# SPEC SKILL TOOLS (3-level loading: RETRIEVE → INSPECT → LOAD)
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_spec_skill_retrieve(board_id: str, spec_id: str) -> str:
+    """
+    Level 1 — RETRIEVE: List all skills attached to a spec.
+    Returns a lightweight catalog with skill_id, name, description, and tags.
+    Use this to discover what skills are available before inspecting or loading them.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with list of skill summaries
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecSkillService(db)
+        skills = await service.list_skills(spec_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "spec_id": spec_id,
+                "count": len(skills),
+                "skills": [
+                    {
+                        "skill_id": s.skill_id,
+                        "name": s.name,
+                        "description": s.description,
+                        "type": s.type,
+                        "tags": s.tags,
+                    }
+                    for s in skills
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_spec_skill_inspect(board_id: str, spec_id: str, skill_id: str) -> str:
+    """
+    Level 2 — INSPECT: Get a skill's section index with summary content inline.
+    Returns the skill metadata plus a list of sections (id, title, description)
+    so you can decide which sections to load in full.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        skill_id: The skill_id slug to inspect
+
+    Returns:
+        JSON with skill metadata and section index
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecSkillService(db)
+        skill = await service.get_skill(spec_id, skill_id)
+        await db.commit()
+
+        if not skill:
+            return json.dumps({"error": f"Skill '{skill_id}' not found in spec"})
+
+        sections_index = []
+        for s in (skill.sections or []):
+            entry: dict[str, Any] = {
+                "id": s.get("id", ""),
+                "title": s.get("title", ""),
+                "description": s.get("description", ""),
+                "level": s.get("level", "detail"),
+            }
+            # Include inline content for summary-level sections
+            if s.get("level") == "summary":
+                entry["content"] = s.get("content", "")
+            sections_index.append(entry)
+
+        return json.dumps(
+            {
+                "skill_id": skill.skill_id,
+                "name": skill.name,
+                "description": skill.description,
+                "type": skill.type,
+                "version": skill.version,
+                "tags": skill.tags,
+                "sections": sections_index,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_spec_skill_load(
+    board_id: str, spec_id: str, skill_id: str, section_id: str = ""
+) -> str:
+    """
+    Level 3 — LOAD: Get the full content of one or more skill sections.
+    If section_id is empty, returns ALL sections with full content.
+    Use comma-separated section_ids to load specific sections.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        skill_id: The skill_id slug to load
+        section_id: Comma-separated section IDs to load (empty = all)
+
+    Returns:
+        JSON with full section content
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecSkillService(db)
+        skill = await service.get_skill(spec_id, skill_id)
+        await db.commit()
+
+        if not skill:
+            return json.dumps({"error": f"Skill '{skill_id}' not found in spec"})
+
+        sections = skill.sections or []
+        if section_id:
+            requested_ids = {sid.strip() for sid in section_id.split(",")}
+            sections = [s for s in sections if s.get("id") in requested_ids]
+
+        return json.dumps(
+            {
+                "skill_id": skill.skill_id,
+                "name": skill.name,
+                "sections": [
+                    {
+                        "id": s.get("id", ""),
+                        "title": s.get("title", ""),
+                        "content": s.get("content", ""),
+                    }
+                    for s in sections
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_create_spec_skill(
+    board_id: str,
+    spec_id: str,
+    skill_id: str,
+    name: str,
+    description: str,
+    content: str = "",
+    tags: str = "",
+    type: str = "PROMPT",
+) -> str:
+    """
+    Create a skill on a spec. If content is provided as a single block, it becomes one section.
+    For multi-section skills, use okto_pulse_update_spec_skill to set structured sections.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        skill_id: Unique slug identifier for the skill (e.g. "api-design-guidelines")
+        name: Display name
+        description: What this skill provides
+        content: Skill content (optional — creates a single "main" section)
+        tags: Comma-separated tags (optional)
+        type: Skill type, default "PROMPT"
+
+    Returns:
+        JSON with created skill
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import SkillSectionSchema, SpecSkillCreate
+
+    sections = None
+    if content:
+        sections = [SkillSectionSchema(
+            id="main",
+            title=name,
+            description=description,
+            level="full",
+            content=content.replace("\\n", "\n"),
+        )]
+
+    async with get_db_for_mcp() as db:
+        service = SpecSkillService(db)
+        skill_data = SpecSkillCreate(
+            skill_id=skill_id,
+            name=name,
+            description=description,
+            type=type,
+            tags=tags.split(",") if tags else None,
+            sections=sections,
+        )
+        skill = await service.create_skill(spec_id, ctx.agent_id, skill_data)
+        await db.commit()
+
+        if not skill:
+            return json.dumps({"error": "Failed to create skill — spec not found or duplicate skill_id"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "skill": {
+                    "skill_id": skill.skill_id,
+                    "name": skill.name,
+                    "description": skill.description,
+                    "sections_count": len(skill.sections or []),
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_spec_skill(board_id: str, spec_id: str, skill_id: str) -> str:
+    """
+    Delete a skill from a spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        skill_id: The skill_id slug to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecSkillService(db)
+        deleted = await service.delete_skill(spec_id, skill_id)
+        await db.commit()
+
+        if not deleted:
+            return json.dumps({"error": "Skill not found"})
+
+        return json.dumps({"success": True})
+
+
+# ============================================================================
+# SPEC KNOWLEDGE BASE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_list_spec_knowledge(board_id: str, spec_id: str) -> str:
+    """
+    List all knowledge base items attached to a spec (titles and descriptions, without content).
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with list of knowledge base items
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecKnowledgeService(db)
+        items = await service.list_knowledge(spec_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "spec_id": spec_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    {
+                        "id": kb.id,
+                        "title": kb.title,
+                        "description": kb.description,
+                        "mime_type": kb.mime_type,
+                        "created_at": kb.created_at.isoformat(),
+                    }
+                    for kb in items
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_spec_knowledge(board_id: str, spec_id: str, knowledge_id: str) -> str:
+    """
+    Get the full content of a knowledge base item.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        knowledge_id: Knowledge base item ID
+
+    Returns:
+        JSON with full knowledge base content
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecKnowledgeService(db)
+        kb = await service.get_knowledge(knowledge_id)
+        await db.commit()
+
+        if not kb or kb.spec_id != spec_id:
+            return json.dumps({"error": "Knowledge base item not found"})
+
+        return json.dumps(
+            {
+                "id": kb.id,
+                "title": kb.title,
+                "description": kb.description,
+                "content": kb.content,
+                "mime_type": kb.mime_type,
+                "created_at": kb.created_at.isoformat(),
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_add_spec_knowledge(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    content: str,
+    description: str = "",
+    mime_type: str = "text/markdown",
+) -> str:
+    """
+    Add a knowledge base item to a spec. Use this to attach reference documents,
+    design docs, API specs, or any context that helps agents understand the spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        title: Title of the knowledge base item
+        content: The full text content
+        description: Short description of what this document contains (optional)
+        mime_type: Content type, default "text/markdown"
+
+    Returns:
+        JSON with created knowledge base item
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import SpecKnowledgeCreate
+
+    async with get_db_for_mcp() as db:
+        service = SpecKnowledgeService(db)
+        kb_data = SpecKnowledgeCreate(
+            title=title,
+            description=description or None,
+            content=content.replace("\\n", "\n"),
+            mime_type=mime_type,
+        )
+        kb = await service.create_knowledge(spec_id, ctx.agent_id, kb_data)
+        await db.commit()
+
+        if not kb:
+            return json.dumps({"error": "Failed to create knowledge base item — spec not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "knowledge": {
+                    "id": kb.id,
+                    "title": kb.title,
+                    "mime_type": kb.mime_type,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_spec_knowledge(board_id: str, spec_id: str, knowledge_id: str) -> str:
+    """
+    Delete a knowledge base item from a spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        knowledge_id: Knowledge base item ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecKnowledgeService(db)
+        kb = await service.get_knowledge(knowledge_id)
+        if not kb or kb.spec_id != spec_id:
+            return json.dumps({"error": "Knowledge base item not found"})
+        await service.delete_knowledge(knowledge_id)
+        await db.commit()
+
+        return json.dumps({"success": True})
+
+
+# ============================================================================
+# REFINEMENT SNAPSHOT TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_list_refinement_snapshots(board_id: str, refinement_id: str) -> str:
+    """
+    List all version snapshots of a refinement. Each snapshot is an immutable copy
+    of the refinement's state at the moment it was marked as 'done'.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+
+    Returns:
+        JSON with list of snapshot summaries (version, title, created_at)
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        snapshots = await service.list_snapshots(refinement_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "refinement_id": refinement_id,
+                "count": len(snapshots),
+                "snapshots": [
+                    {
+                        "version": s.version,
+                        "title": s.title,
+                        "created_by": s.created_by,
+                        "created_at": s.created_at.isoformat(),
+                    }
+                    for s in snapshots
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_refinement_snapshot(board_id: str, refinement_id: str, version: str) -> str:
+    """
+    Get the full immutable snapshot of a refinement at a specific version.
+    Includes all fields as they were when the refinement was marked 'done',
+    plus a snapshot of all Q&A at that point.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        version: Version number to retrieve
+
+    Returns:
+        JSON with complete snapshot including Q&A history
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        snapshot = await service.get_snapshot(refinement_id, int(version))
+        await db.commit()
+
+        if not snapshot:
+            return json.dumps({"error": f"Snapshot v{version} not found"})
+
+        return json.dumps(
+            {
+                "refinement_id": refinement_id,
+                "version": snapshot.version,
+                "title": snapshot.title,
+                "description": snapshot.description,
+                "in_scope": snapshot.in_scope,
+                "out_of_scope": snapshot.out_of_scope,
+                "analysis": snapshot.analysis,
+                "decisions": snapshot.decisions,
+                "labels": snapshot.labels,
+                "qa_snapshot": snapshot.qa_snapshot,
+                "created_by": snapshot.created_by,
+                "created_at": snapshot.created_at.isoformat(),
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# REFINEMENT KNOWLEDGE BASE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_list_refinement_knowledge(board_id: str, refinement_id: str) -> str:
+    """
+    List all knowledge base items attached to a refinement (titles and descriptions, without content).
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+
+    Returns:
+        JSON with list of knowledge base items
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementKnowledgeService(db)
+        items = await service.list_knowledge(refinement_id)
+        await db.commit()
+
+        return json.dumps(
+            {
+                "refinement_id": refinement_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    {
+                        "id": kb.id,
+                        "title": kb.title,
+                        "description": kb.description,
+                        "mime_type": kb.mime_type,
+                        "created_at": kb.created_at.isoformat(),
+                    }
+                    for kb in items
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_refinement_knowledge(board_id: str, refinement_id: str, knowledge_id: str) -> str:
+    """
+    Get the full content of a refinement knowledge base item.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        knowledge_id: Knowledge base item ID
+
+    Returns:
+        JSON with full knowledge base content
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementKnowledgeService(db)
+        kb = await service.get_knowledge(knowledge_id)
+        await db.commit()
+
+        if not kb or kb.refinement_id != refinement_id:
+            return json.dumps({"error": "Knowledge base item not found"})
+
+        return json.dumps(
+            {
+                "id": kb.id,
+                "title": kb.title,
+                "description": kb.description,
+                "content": kb.content,
+                "mime_type": kb.mime_type,
+                "created_at": kb.created_at.isoformat(),
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_add_refinement_knowledge(
+    board_id: str,
+    refinement_id: str,
+    title: str,
+    content: str,
+    description: str = "",
+    mime_type: str = "text/markdown",
+) -> str:
+    """
+    Add a knowledge base item to a refinement. Use this to attach reference documents,
+    design docs, analysis notes, or any context that helps agents understand the refinement.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        title: Title of the knowledge base item
+        content: The full text content
+        description: Short description of what this document contains (optional)
+        mime_type: Content type, default "text/markdown"
+
+    Returns:
+        JSON with created knowledge base item
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import RefinementKnowledgeCreate
+
+    async with get_db_for_mcp() as db:
+        service = RefinementKnowledgeService(db)
+        kb_data = RefinementKnowledgeCreate(
+            title=title,
+            description=description or None,
+            content=content.replace("\\n", "\n"),
+            mime_type=mime_type,
+        )
+        kb = await service.create_knowledge(refinement_id, ctx.agent_id, kb_data)
+        await db.commit()
+
+        if not kb:
+            return json.dumps({"error": "Failed to create knowledge base item — refinement not found"})
+
+        return json.dumps(
+            {
+                "success": True,
+                "knowledge": {
+                    "id": kb.id,
+                    "title": kb.title,
+                    "mime_type": kb.mime_type,
+                },
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_refinement_knowledge(board_id: str, refinement_id: str, knowledge_id: str) -> str:
+    """
+    Delete a knowledge base item from a refinement.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        knowledge_id: Knowledge base item ID
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = RefinementKnowledgeService(db)
+        kb = await service.get_knowledge(knowledge_id)
+        if not kb or kb.refinement_id != refinement_id:
+            return json.dumps({"error": "Knowledge base item not found"})
+        await service.delete_knowledge(knowledge_id)
+        await db.commit()
+
+        return json.dumps({"success": True})
+
+
+# ============================================================================
+# SERVER STARTUP
+# ============================================================================
+
+
+def run_mcp_server():
+    """Run the MCP server with session-based API key auth middleware."""
+    from okto_pulse.core.infra.config import get_settings
+    from okto_pulse.core.infra.database import create_database, get_session_factory
+
+    settings = get_settings()
+    create_database(settings.database_url, echo=settings.debug)
+    register_session_factory(get_session_factory())
+
+    http_app = mcp.http_app(transport="streamable-http")
+    wrapped = ApiKeySessionMiddleware(http_app)
+    uvicorn.run(wrapped, host="0.0.0.0", port=settings.mcp_port)
+
+
+if __name__ == "__main__":
+    run_mcp_server()
