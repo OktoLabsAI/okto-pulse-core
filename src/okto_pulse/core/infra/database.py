@@ -318,6 +318,39 @@ async def _migrate_add_skip_trs_coverage() -> None:
                 pass
 
 
+async def _migrate_add_spec_validation_columns() -> None:
+    """Add spec validation columns: skip_contract_coverage, skip_qualitative_validation, validation_threshold, evaluations."""
+    from sqlalchemy import text as sa_text
+
+    columns = [
+        ("skip_contract_coverage", "BOOLEAN DEFAULT false NOT NULL"),
+        ("skip_qualitative_validation", "BOOLEAN DEFAULT false NOT NULL"),
+        ("validation_threshold", "INTEGER"),
+        ("evaluations", "JSON"),
+    ]
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'specs')"
+            ))
+            if not table_check.scalar():
+                return
+            for col_name, col_type in columns:
+                await conn.execute(sa_text(
+                    f"ALTER TABLE specs ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                ))
+        else:
+            for col_name, col_type in columns:
+                try:
+                    col_type_sqlite = col_type.replace("false", "0")
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE specs ADD COLUMN {col_name} {col_type_sqlite}"
+                    ))
+                except Exception:
+                    pass
+
+
 async def _migrate_add_archive_columns() -> None:
     """Add archived and pre_archive_status columns to ideations, refinements, specs, cards."""
     from sqlalchemy import text as sa_text
@@ -376,6 +409,51 @@ async def _migrate_status_renames() -> None:
             pass
 
 
+async def _migrate_add_permission_columns() -> None:
+    """Add permission_flags and preset_id to agents, permission_overrides to agent_boards."""
+    from sqlalchemy import text as sa_text
+
+    agent_columns = [
+        ("permission_flags", "JSON"),
+        ("preset_id", "VARCHAR(36)"),
+    ]
+    board_columns = [
+        ("permission_overrides", "JSON"),
+    ]
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            for col_name, col_type in agent_columns:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE agents ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                    ))
+                except Exception:
+                    pass
+            for col_name, col_type in board_columns:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE agent_boards ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                    ))
+                except Exception:
+                    pass
+        else:
+            for col_name, col_type in agent_columns:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE agents ADD COLUMN {col_name} {col_type}"
+                    ))
+                except Exception:
+                    pass
+            for col_name, col_type in board_columns:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE agent_boards ADD COLUMN {col_name} {col_type}"
+                    ))
+                except Exception:
+                    pass
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -392,10 +470,99 @@ async def init_db() -> None:
     await _migrate_add_skip_rules_coverage()
     await _migrate_add_skip_trs_coverage()
     await _migrate_add_archive_columns()
+    await _migrate_add_spec_validation_columns()
     await _migrate_status_renames()
+    await _migrate_add_permission_columns()
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _migrate_agent_boards()
+    await _seed_builtin_presets()
+    await _migrate_agent_permissions()
+
+
+async def _migrate_agent_permissions() -> None:
+    """Migrate agents from legacy flat permissions to granular permission_flags."""
+    from sqlalchemy import text as sa_text
+
+    async with get_session_factory()() as session:
+        try:
+            # Check if permission_flags column exists
+            result = await session.execute(sa_text(
+                "SELECT id, permissions, permission_flags FROM agents WHERE permission_flags IS NULL"
+            ))
+            agents = result.all()
+            if not agents:
+                return
+
+            import json as _json
+            from okto_pulse.core.infra.permissions import (
+                PERMISSION_REGISTRY, map_legacy_permissions
+            )
+            import copy
+
+            for agent_row in agents:
+                agent_id = agent_row[0]
+                old_perms = agent_row[1]  # JSON string or None
+
+                if old_perms is None:
+                    # Full access — map to Full Control (all True)
+                    new_flags = copy.deepcopy(PERMISSION_REGISTRY)
+                else:
+                    # Parse legacy permissions list
+                    if isinstance(old_perms, str):
+                        perm_list = _json.loads(old_perms)
+                    else:
+                        perm_list = old_perms
+                    new_flags = map_legacy_permissions(perm_list)
+
+                flags_json = _json.dumps(new_flags)
+                await session.execute(
+                    sa_text(
+                        "UPDATE agents SET permission_flags = :flags WHERE id = :id"
+                    ).bindparams(flags=flags_json, id=agent_id)
+                )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+
+async def _seed_builtin_presets() -> None:
+    """Seed built-in permission presets if they don't exist."""
+    from sqlalchemy import text as sa_text
+
+    try:
+        from okto_pulse.core.infra.permissions import get_builtin_presets
+        presets = get_builtin_presets()
+    except Exception:
+        return
+
+    async with get_session_factory()() as session:
+        try:
+            from okto_pulse.core.models.db import PermissionPreset
+            for preset_def in presets:
+                # Check if preset already exists by name + is_builtin
+                existing = await session.execute(
+                    sa_text(
+                        "SELECT id FROM permission_presets WHERE name = :name AND is_builtin = :builtin"
+                    ).bindparams(name=preset_def["name"], builtin=True)
+                )
+                if existing.scalar():
+                    continue
+                import uuid
+                import json
+                preset = PermissionPreset(
+                    id=str(uuid.uuid4()),
+                    owner_id=None,
+                    name=preset_def["name"],
+                    description=preset_def["description"],
+                    is_builtin=True,
+                    base_preset_id=None,
+                    flags=preset_def["flags"],
+                )
+                session.add(preset)
+            await session.commit()
+        except Exception:
+            await session.rollback()
 
 
 async def close_db() -> None:

@@ -317,27 +317,46 @@ class CardService:
                 "If this task is not related to any spec, create a spec first."
             )
 
+        # --- Test card validations ---
+        if card_type_val == "test":
+            if not data.test_scenario_ids:
+                raise ValueError(
+                    "test_scenario_ids is required for test cards and must contain at least one scenario ID"
+                )
+
         # Enforce: spec status rules for card creation
         # - Normal tasks: spec must be 'approved' or 'in_progress'
         # - Bug cards: also allowed when spec is 'done'
+        # - Test cards: also allowed when spec is 'validated'
         spec = await self.db.get(Spec, data.spec_id)
         if not spec:
             raise ValueError(f"Spec '{data.spec_id}' not found")
-        is_bug = data.card_type == "bug"
-        allowed_statuses = {SpecStatus.APPROVED, SpecStatus.IN_PROGRESS}
-        if is_bug:
-            allowed_statuses.add(SpecStatus.DONE)
+
+        if card_type_val == "bug":
+            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.DONE}
+            status_msg = "'approved', 'in_progress', or 'done'"
+        elif card_type_val == "test":
+            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS}
+            status_msg = "'approved', 'validated', or 'in_progress'"
+        else:
+            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.IN_PROGRESS}
+            status_msg = "'approved' or 'in_progress'"
+
         if spec.status not in allowed_statuses:
-            if is_bug:
-                raise ValueError(
-                    f"Bug cards can only be created for specs in 'approved', 'in_progress', or 'done' status. "
-                    f"Spec '{spec.title}' is currently '{spec.status.value}'."
-                )
             raise ValueError(
-                f"Task cards can only be created for specs in 'approved' or 'in_progress' status. "
-                f"Spec '{spec.title}' is currently '{spec.status.value}'. "
-                f"Move the spec to 'approved' first."
+                f"{card_type_val.capitalize()} cards can only be created for specs in {status_msg} status. "
+                f"Spec '{spec.title}' is currently '{spec.status.value}'."
             )
+
+        # Validate test_scenario_ids against spec for test cards
+        if card_type_val == "test" and data.test_scenario_ids:
+            spec_scenario_ids = {s["id"] for s in (spec.test_scenarios or [])}
+            invalid_ids = [sid for sid in data.test_scenario_ids if sid not in spec_scenario_ids]
+            if invalid_ids:
+                raise ValueError(
+                    f"Test scenario(s) not found in spec '{spec.title}': {invalid_ids}. "
+                    f"Available scenarios: {sorted(spec_scenario_ids)}"
+                )
 
         # Get max position for the status column
         pos_query = (
@@ -520,6 +539,159 @@ class CardService:
         CardStatus.CANCELLED: 3,
     }
 
+    # ---- Coverage gate functions (used by SpecService.move_spec) ----
+
+    async def check_test_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every test scenario has at least one linked card of type TEST."""
+        skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
+        if spec.skip_test_coverage or skip_global:
+            return
+        scenarios = list(spec.test_scenarios or [])
+        if not scenarios:
+            return
+        # Collect all card IDs from linked_task_ids across scenarios
+        all_card_ids: set[str] = set()
+        for s in scenarios:
+            for cid in (s.get("linked_task_ids") or []):
+                all_card_ids.add(cid)
+        # Batch query to get card_type for all linked cards
+        test_card_ids: set[str] = set()
+        if all_card_ids:
+            result = await self.db.execute(
+                select(Card.id, Card.card_type).where(Card.id.in_(all_card_ids))
+            )
+            for cid, ctype in result.all():
+                if ctype == CardType.TEST:
+                    test_card_ids.add(cid)
+        # Check each scenario has at least one TEST card
+        unlinked = []
+        for s in scenarios:
+            task_ids = s.get("linked_task_ids") or []
+            has_test = any(tid in test_card_ids for tid in task_ids)
+            if not has_test:
+                unlinked.append(s)
+        if unlinked:
+            titles = ", ".join(f'"{s["title"]}"' for s in unlinked[:3])
+            suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(unlinked)} test scenario(s) "
+                f"in spec '{spec.title}' have no linked test cards "
+                f"({titles}{suffix}). "
+                f"REQUIRED ACTION: Create test cards (card_type='test') with test_scenario_ids "
+                f"for each uncovered scenario. Only cards of type 'test' count for coverage. "
+                f"Alternatively, enable 'skip test coverage' on the spec or board."
+            )
+
+    async def check_rules_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every FR has a BR and every BR has a linked task."""
+        skip_global = (board.settings or {}).get("skip_rules_coverage_global", False) if board else False
+        if getattr(spec, "skip_rules_coverage", False) or skip_global:
+            return
+        frs = list(spec.functional_requirements or [])
+        brs = list(spec.business_rules or [])
+        if not frs:
+            return
+        # Check FR → BR coverage
+        covered_fr_indices: set[int] = set()
+        for br in brs:
+            if isinstance(br, dict):
+                for ref in (br.get("linked_requirements") or []):
+                    ref_str = str(ref)
+                    try:
+                        idx_num = int(ref_str)
+                        if 0 <= idx_num < len(frs):
+                            covered_fr_indices.add(idx_num)
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                    for fi, fr_text in enumerate(frs):
+                        if ref_str in fr_text or fr_text in ref_str:
+                            covered_fr_indices.add(fi)
+                            break
+        uncovered = [(i, fr) for i, fr in enumerate(frs) if i not in covered_fr_indices]
+        if uncovered:
+            previews = ", ".join(
+                f'"FR{i}: {fr[:40]}..."' if len(fr) > 40 else f'"FR{i}: {fr}"'
+                for i, fr in uncovered[:3]
+            )
+            suffix = f" and {len(uncovered) - 3} more" if len(uncovered) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(uncovered)} functional requirement(s) "
+                f"in spec '{spec.title}' have no linked business rules "
+                f"({previews}{suffix}). "
+                f"REQUIRED ACTION: Create business rules with linked_requirements "
+                f"for each uncovered FR. "
+                f"Alternatively, enable 'skip rules coverage' on the spec or board."
+            )
+        # Check BR → Task coverage
+        unlinked_rules = [
+            br for br in brs
+            if isinstance(br, dict) and not br.get("linked_task_ids")
+        ]
+        if unlinked_rules:
+            titles = ", ".join(
+                f'"{br.get("title", br.get("id", "?"))}"'
+                for br in unlinked_rules[:3]
+            )
+            suffix = f" and {len(unlinked_rules) - 3} more" if len(unlinked_rules) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(unlinked_rules)} business rule(s) "
+                f"in spec '{spec.title}' have no linked task cards "
+                f"({titles}{suffix}). "
+                f"REQUIRED ACTION: Link task cards to each business rule via "
+                f"okto_pulse_link_task_to_rule. "
+                f"Alternatively, enable 'skip rules coverage' on the spec or board."
+            )
+
+    async def check_trs_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every structured TR has a linked task."""
+        skip_global = (board.settings or {}).get("skip_trs_coverage_global", False) if board else False
+        if getattr(spec, "skip_trs_coverage", False) or skip_global:
+            return
+        trs = list(spec.technical_requirements or [])
+        structured_trs = [tr for tr in trs if isinstance(tr, dict) and tr.get("id")]
+        if not structured_trs:
+            return
+        unlinked_trs = [tr for tr in structured_trs if not tr.get("linked_task_ids")]
+        if unlinked_trs:
+            previews = ", ".join(
+                f'"{tr.get("text", tr.get("id", "?"))[:40]}"'
+                for tr in unlinked_trs[:3]
+            )
+            suffix = f" and {len(unlinked_trs) - 3} more" if len(unlinked_trs) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(unlinked_trs)} technical requirement(s) "
+                f"in spec '{spec.title}' have no linked task cards "
+                f"({previews}{suffix}). "
+                f"REQUIRED ACTION: Link task cards to each TR via "
+                f"okto_pulse_link_task_to_tr. "
+                f"Alternatively, enable 'skip TRs coverage' on the spec or board."
+            )
+
+    async def check_contract_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every API contract has a linked task."""
+        skip_global = (board.settings or {}).get("skip_contract_coverage_global", False) if board else False
+        if getattr(spec, "skip_contract_coverage", False) or skip_global:
+            return
+        contracts = list(spec.api_contracts or [])
+        if not contracts:
+            return
+        unlinked = [c for c in contracts if not c.get("linked_task_ids")]
+        if unlinked:
+            previews = ", ".join(
+                f'"{c.get("method", "?")} {c.get("path", "?")}"'
+                for c in unlinked[:3]
+            )
+            suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(unlinked)} API contract(s) "
+                f"in spec '{spec.title}' have no linked task cards "
+                f"({previews}{suffix}). "
+                f"REQUIRED ACTION: Link task cards to each API contract via "
+                f"okto_pulse_link_task_to_contract. "
+                f"Alternatively, enable 'skip contract coverage' on the spec or board."
+            )
+
     async def move_card(
         self, card_id: str, user_id: str, data: CardMove, actor_name: str | None = None
     ) -> Card | None:
@@ -527,8 +699,6 @@ class CardService:
 
         Moving to 'done' requires a conclusion text. The conclusion is appended
         to the card's conclusions list (supports multiple cycles).
-        Moving forward (started/in_progress) requires all test scenarios in the
-        spec to have linked task cards, unless skip_test_coverage is set.
         """
         card = await self.get_card(card_id)
         if not card:
@@ -547,154 +717,29 @@ class CardService:
         board_settings = board.settings or {} if board else {}
         skip_global = board_settings.get("skip_test_coverage_global", False)
 
-        # Block forward moves unless spec is in_progress
+        # Block forward moves based on card_type and spec status
         old_level = self._STATUS_ORDER.get(old_status, 0)
         new_level = self._STATUS_ORDER.get(data.status, 0)
         if new_level > old_level and card.spec_id:
             spec_for_status = await self.db.get(Spec, card.spec_id)
-            if spec_for_status and spec_for_status.status != SpecStatus.IN_PROGRESS:
-                raise ValueError(
-                    f"Cannot move card forward: spec '{spec_for_status.title}' must be 'in_progress' "
-                    f"(currently '{spec_for_status.status.value}'). "
-                    f"Move the spec to 'in_progress' before starting work on its cards."
-                )
+            if spec_for_status:
+                card_type = getattr(card, "card_type", CardType.NORMAL)
+                if card_type == CardType.TEST:
+                    # Test cards can start when spec is validated or in_progress
+                    allowed_spec_statuses = (SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS)
+                else:
+                    # Normal and bug cards can only start when spec is in_progress
+                    allowed_spec_statuses = (SpecStatus.IN_PROGRESS,)
+                if spec_for_status.status not in allowed_spec_statuses:
+                    allowed_names = " or ".join(f"'{s.value}'" for s in allowed_spec_statuses)
+                    raise ValueError(
+                        f"Cannot move card forward: spec '{spec_for_status.title}' must be {allowed_names} "
+                        f"(currently '{spec_for_status.status.value}'). "
+                        f"Move the spec forward before starting work on its cards."
+                    )
 
-        # Block forward moves if spec test scenarios lack linked tasks
-        if new_level > old_level and card.spec_id:
-            spec = await self.db.get(Spec, card.spec_id)
-            if spec and not spec.skip_test_coverage and not skip_global:
-                scenarios = list(spec.test_scenarios or [])
-                if scenarios:
-                    unlinked = [
-                        s for s in scenarios if not s.get("linked_task_ids")
-                    ]
-                    if unlinked:
-                        titles = ", ".join(
-                            f'"{s["title"]}"' for s in unlinked[:3]
-                        )
-                        suffix = (
-                            f" and {len(unlinked) - 3} more"
-                            if len(unlinked) > 3
-                            else ""
-                        )
-                        raise ValueError(
-                            f"Cannot start this card: {len(unlinked)} test scenario(s) "
-                            f"in spec '{spec.title}' have no linked task cards "
-                            f"({titles}{suffix}). "
-                            f"REQUIRED ACTION: For each test scenario, you must: "
-                            f"(1) create a test card with spec_id and test_scenario_ids "
-                            f"via okto_pulse_create_card (this auto-links bidirectionally), "
-                            f"(2) verify with okto_pulse_list_test_scenarios that every "
-                            f"scenario shows linked_task_ids. Only then can cards be started. "
-                            f"Alternatively, enable 'skip test coverage' on the spec or "
-                            f"the board-level global override in the IDE."
-                        )
-
-        # Block forward moves if FRs lack business rules coverage
-        skip_rules_global = board_settings.get("skip_rules_coverage_global", False)
-        if new_level > old_level and card.spec_id:
-            spec = spec if 'spec' in dir() else await self.db.get(Spec, card.spec_id)
-            if spec and not getattr(spec, "skip_rules_coverage", False) and not skip_rules_global:
-                frs = list(spec.functional_requirements or [])
-                brs = list(spec.business_rules or [])
-                if frs:
-                    # Collect FR indices covered by at least one business rule.
-                    # linked_requirements can be numeric indices ("0") or full FR text.
-                    covered_fr_indices: set[int] = set()
-                    for br in brs:
-                        if isinstance(br, dict):
-                            for ref in (br.get("linked_requirements") or []):
-                                ref_str = str(ref)
-                                # Try as numeric index
-                                try:
-                                    idx_num = int(ref_str)
-                                    if 0 <= idx_num < len(frs):
-                                        covered_fr_indices.add(idx_num)
-                                        continue
-                                except (ValueError, TypeError):
-                                    pass
-                                # Try matching by FR text content
-                                for fi, fr_text in enumerate(frs):
-                                    if ref_str in fr_text or fr_text in ref_str:
-                                        covered_fr_indices.add(fi)
-                                        break
-                    uncovered = [
-                        (i, fr) for i, fr in enumerate(frs) if i not in covered_fr_indices
-                    ]
-                    if uncovered:
-                        previews = ", ".join(
-                            f'"FR{i}: {fr[:40]}..."' if len(fr) > 40 else f'"FR{i}: {fr}"'
-                            for i, fr in uncovered[:3]
-                        )
-                        suffix = f" and {len(uncovered) - 3} more" if len(uncovered) > 3 else ""
-                        raise ValueError(
-                            f"Cannot start this card: {len(uncovered)} functional requirement(s) "
-                            f"in spec '{spec.title}' have no linked business rules "
-                            f"({previews}{suffix}). "
-                            f"REQUIRED ACTION: For each uncovered FR, you must: "
-                            f"(1) create a business rule with linked_requirements referencing "
-                            f"the FR index via okto_pulse_add_business_rule, "
-                            f"(2) verify with okto_pulse_list_business_rules that every FR "
-                            f"has at least one linked rule. Only then can cards be started. "
-                            f"Alternatively, enable 'skip rules coverage' on the spec or "
-                            f"the board-level global override in the IDE."
-                        )
-
-                    # Check that all BRs have linked tasks (mirrors test scenario task linkage)
-                    unlinked_rules = [
-                        br for br in brs
-                        if isinstance(br, dict) and not br.get("linked_task_ids")
-                    ]
-                    if unlinked_rules:
-                        titles = ", ".join(
-                            f'"{br.get("title", br.get("id", "?"))}"'
-                            for br in unlinked_rules[:3]
-                        )
-                        suffix = (
-                            f" and {len(unlinked_rules) - 3} more"
-                            if len(unlinked_rules) > 3 else ""
-                        )
-                        raise ValueError(
-                            f"Cannot start this card: {len(unlinked_rules)} business rule(s) "
-                            f"in spec '{spec.title}' have no linked task cards "
-                            f"({titles}{suffix}). "
-                            f"REQUIRED ACTION: For each business rule, you must: "
-                            f"(1) create an implementation card with spec_id via okto_pulse_create_card, "
-                            f"(2) link the card to the rule via okto_pulse_link_task_to_rule. "
-                            f"Only then can cards be started. "
-                            f"Alternatively, enable 'skip rules coverage' on the spec or "
-                            f"the board-level global override in the IDE."
-                        )
-
-        # Block forward moves if TRs lack linked tasks
-        skip_trs_global = board_settings.get("skip_trs_coverage_global", False)
-        if new_level > old_level and card.spec_id:
-            spec = spec if 'spec' in dir() else await self.db.get(Spec, card.spec_id)
-            if spec and not getattr(spec, "skip_trs_coverage", False) and not skip_trs_global:
-                trs = list(spec.technical_requirements or [])
-                # Only check structured TRs (dicts with id), skip legacy strings
-                structured_trs = [tr for tr in trs if isinstance(tr, dict) and tr.get("id")]
-                if structured_trs:
-                    unlinked_trs = [
-                        tr for tr in structured_trs if not tr.get("linked_task_ids")
-                    ]
-                    if unlinked_trs:
-                        previews = ", ".join(
-                            f'"{tr.get("text", tr.get("id", "?"))[:40]}"'
-                            for tr in unlinked_trs[:3]
-                        )
-                        suffix = f" and {len(unlinked_trs) - 3} more" if len(unlinked_trs) > 3 else ""
-                        raise ValueError(
-                            f"Cannot start this card: {len(unlinked_trs)} technical requirement(s) "
-                            f"in spec '{spec.title}' have no linked task cards "
-                            f"({previews}{suffix}). "
-                            f"REQUIRED ACTION: For each TR, you must: "
-                            f"(1) create an implementation card with spec_id via okto_pulse_create_card, "
-                            f"(2) link the card to the TR via okto_pulse_link_task_to_tr. "
-                            f"Only then can cards be started. "
-                            f"Alternatively, enable 'skip TRs coverage' on the spec or "
-                            f"the board-level global override in the IDE."
-                        )
+        # Coverage gates (test, rules, TRs, contracts) are now in SpecService.move_spec
+        # (approved → validated transition). No longer checked here.
 
         # Block Done on test cards if linked scenarios not updated
         if data.status == CardStatus.DONE and card.spec_id and card.test_scenario_ids:
@@ -744,6 +789,14 @@ class CardService:
                         f"Linked test task '{test_task_id}' not found. "
                         f"Remove it from linked_test_task_ids using okto_pulse_update_card "
                         f"and link a valid test task instead."
+                    )
+
+                # Validate test task is of type TEST
+                if getattr(test_task, "card_type", "normal") != CardType.TEST:
+                    raise ValueError(
+                        f"Linked test task '{test_task.title}' is not a test card "
+                        f"(type: {getattr(test_task, 'card_type', 'normal')}). "
+                        f"Bug cards require linked test cards of type 'test'."
                     )
 
                 # Validate test task has test_scenario_ids
@@ -855,6 +908,25 @@ class CardService:
             )
             max_pos = (await self.db.execute(pos_query)).scalar() or -1
             card.position = max_pos + 1
+
+        # Auto-rollback: if card cancelled and spec is validated → revert to approved
+        if data.status == CardStatus.CANCELLED and card.spec_id:
+            spec_for_rollback = await self.db.get(Spec, card.spec_id)
+            if spec_for_rollback and spec_for_rollback.status == SpecStatus.VALIDATED:
+                spec_for_rollback.status = SpecStatus.APPROVED
+                if spec_for_rollback.evaluations:
+                    for ev in spec_for_rollback.evaluations:
+                        ev["stale"] = True
+                    flag_modified(spec_for_rollback, "evaluations")
+                rollback_name = actor_name or await resolve_actor_name(self.db, user_id, card.board_id)
+                spec_service = SpecService(self.db)
+                await spec_service._record_history(
+                    spec_id=card.spec_id, action="status_changed",
+                    actor_id=user_id, actor_name=rollback_name,
+                    changes=[{"field": "status", "old": "validated", "new": "approved"}],
+                    summary=f"Auto-rollback: card '{card.title}' cancelled — spec reverted for revalidation",
+                    version=spec_for_rollback.version,
+                )
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, card.board_id)
         await self._log_activity(
@@ -1234,9 +1306,10 @@ class SpecService:
         SpecStatus.DRAFT: 0,
         SpecStatus.REVIEW: 1,
         SpecStatus.APPROVED: 2,
-        SpecStatus.IN_PROGRESS: 3,
-        SpecStatus.DONE: 4,
-        SpecStatus.CANCELLED: 4,
+        SpecStatus.VALIDATED: 3,
+        SpecStatus.IN_PROGRESS: 4,
+        SpecStatus.DONE: 5,
+        SpecStatus.CANCELLED: 5,
     }
 
     async def _record_history(
@@ -1426,13 +1499,25 @@ class SpecService:
             )
         return spec
 
+    # ---- Spec state machine ----
+    _SPEC_TRANSITIONS = {
+        SpecStatus.DRAFT: [SpecStatus.REVIEW, SpecStatus.CANCELLED],
+        SpecStatus.REVIEW: [SpecStatus.DRAFT, SpecStatus.APPROVED, SpecStatus.CANCELLED],
+        SpecStatus.APPROVED: [SpecStatus.REVIEW, SpecStatus.VALIDATED, SpecStatus.CANCELLED],
+        SpecStatus.VALIDATED: [SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.CANCELLED],
+        SpecStatus.IN_PROGRESS: [SpecStatus.VALIDATED, SpecStatus.DONE, SpecStatus.CANCELLED],
+        SpecStatus.DONE: [SpecStatus.DRAFT],
+        SpecStatus.CANCELLED: [SpecStatus.DRAFT],
+    }
+
     async def move_spec(
         self, spec_id: str, user_id: str, data: SpecMove, actor_name: str | None = None
     ) -> Spec | None:
         """Move a spec to a different status.
 
-        Moving to 'done' requires full test coverage (every acceptance criterion
-        must have at least one test scenario) unless skip_test_coverage is set.
+        Enforces a strict state machine. Coverage gates run on approved→validated.
+        Qualitative validation runs on validated→in_progress.
+        Moving to 'done' requires full test coverage and task completion.
         """
         spec = await self.get_spec(spec_id)
         if not spec:
@@ -1441,8 +1526,69 @@ class SpecService:
         if getattr(spec, "archived", False):
             raise ValueError("This spec is archived. Restore it first before changing status.")
 
-        # Enforce test coverage when moving to Done
+        # Enforce state machine transitions
+        allowed = self._SPEC_TRANSITIONS.get(spec.status, [])
+        if data.status not in allowed:
+            allowed_values = [s.value for s in allowed]
+            raise ValueError(
+                f"Cannot move spec from '{spec.status.value}' to '{data.status.value}'. "
+                f"Allowed transitions: {allowed_values}"
+            )
+
+        # Load board for settings
         board = await self.db.get(Board, spec.board_id)
+
+        # Enforce coverage gates when moving to validated
+        if data.status == SpecStatus.VALIDATED:
+            card_service = CardService(self.db)
+            await card_service.check_test_coverage(spec, board)
+            await card_service.check_rules_coverage(spec, board)
+            await card_service.check_trs_coverage(spec, board)
+            await card_service.check_contract_coverage(spec, board)
+
+        # Re-execute coverage gates + qualitative validation when moving to in_progress
+        if data.status == SpecStatus.IN_PROGRESS and spec.status == SpecStatus.VALIDATED:
+            card_service = CardService(self.db)
+            await card_service.check_test_coverage(spec, board)
+            await card_service.check_rules_coverage(spec, board)
+            await card_service.check_trs_coverage(spec, board)
+            await card_service.check_contract_coverage(spec, board)
+
+            # Qualitative validation gate
+            auto_validate = (board.settings or {}).get("auto_validate", False) if board else False
+            skip_qualitative = getattr(spec, "skip_qualitative_validation", False)
+            if not auto_validate and not skip_qualitative:
+                evaluations = [e for e in (spec.evaluations or []) if not e.get("stale")]
+                approvals = [e for e in evaluations if e.get("recommendation") == "approve"]
+                rejections = [e for e in evaluations if e.get("recommendation") == "reject"]
+                if rejections:
+                    reject_names = ", ".join(
+                        e.get("evaluator_name", e.get("evaluator_id", "?")) for e in rejections
+                    )
+                    raise ValueError(
+                        f"Cannot move spec to 'in_progress': {len(rejections)} evaluation(s) "
+                        f"with 'reject' recommendation exist (by: {reject_names}). "
+                        f"Remove or replace the rejecting evaluations before proceeding."
+                    )
+                if not approvals:
+                    raise ValueError(
+                        "Cannot move spec to 'in_progress': no evaluation with "
+                        "'approve' recommendation found. At least one approval is required. "
+                        "Submit an evaluation via okto_pulse_submit_spec_evaluation."
+                    )
+                threshold = (
+                    getattr(spec, "validation_threshold", None)
+                    or (board.settings or {}).get("validation_threshold_global", 70) if board else 70
+                )
+                avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(approvals)
+                if avg_score < threshold:
+                    raise ValueError(
+                        f"Cannot move spec to 'in_progress': average approval score "
+                        f"({avg_score:.0f}) is below threshold ({threshold}). "
+                        f"Submit additional evaluations with higher scores or lower the threshold."
+                    )
+
+        # Enforce test coverage when moving to Done
         skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
         if data.status == SpecStatus.DONE and not spec.skip_test_coverage and not skip_global:
             criteria = spec.acceptance_criteria or []
@@ -1536,8 +1682,8 @@ class SpecService:
         spec = await self.db.get(Spec, spec_id)
         if not spec:
             return False
-        if spec.status not in (SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.DONE):
-            raise ValueError(f"Cards can only be linked to a spec in 'approved', 'in_progress', or 'done' status (current: '{spec.status.value}')")
+        if spec.status not in (SpecStatus.APPROVED, SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS, SpecStatus.DONE):
+            raise ValueError(f"Cards can only be linked to a spec in 'approved', 'validated', 'in_progress', or 'done' status (current: '{spec.status.value}')")
         card = await self.db.get(Card, card_id)
         if not card or card.board_id != spec.board_id:
             return False

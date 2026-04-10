@@ -60,6 +60,7 @@ class SpecStatus(str, PyEnum):
     DRAFT = "draft"
     REVIEW = "review"
     APPROVED = "approved"
+    VALIDATED = "validated"
     IN_PROGRESS = "in_progress"
     DONE = "done"
     CANCELLED = "cancelled"
@@ -88,10 +89,11 @@ class CardPriority(str, PyEnum):
 
 
 class CardType(str, PyEnum):
-    """Card type enum — normal task or bug."""
+    """Card type enum — normal task, bug, or test."""
 
     NORMAL = "normal"
     BUG = "bug"
+    TEST = "test"
 
 
 class BugSeverity(str, PyEnum):
@@ -545,6 +547,14 @@ class Spec(Base):
     skip_rules_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, cards can start without full TR→Task coverage
     skip_trs_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    # If true, spec can move to validated without full API contract coverage
+    skip_contract_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
+    skip_qualitative_validation: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    # Minimum avg score for qualitative validation (None = use board or default 70)
+    validation_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Qualitative evaluations: [{id, evaluator_id, evaluator_name, evaluator_type, dimensions, overall_score, overall_justification, recommendation, stale, created_at}]
+    evaluations: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -961,6 +971,10 @@ class Agent(Base):
     api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
     permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Granular permission flags (new system) — JSON dict with nested flags
+    permission_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Preset ID — FK to permission_presets (nullable, agent may have custom flags without preset)
+    preset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -994,10 +1008,34 @@ class AgentBoard(Base):
     granted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # Board-scoped permission overrides (AND with agent flags — can only restrict)
+    permission_overrides: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     agent: Mapped["Agent"] = relationship("Agent", back_populates="board_grants")
     board: Mapped["Board"] = relationship("Board", back_populates="agent_grants")
+
+
+class PermissionPreset(Base):
+    """Permission preset — reusable set of permission flags."""
+
+    __tablename__ = "permission_presets"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    owner_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_builtin: Mapped[bool] = mapped_column(default=False)
+    base_preset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class AgentSeenItem(Base):

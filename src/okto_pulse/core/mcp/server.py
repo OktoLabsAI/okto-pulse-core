@@ -130,12 +130,35 @@ class AgentContext:
         agent_id: str,
         agent_name: str,
         board_id: str,
-        permissions: list[str] | None,
+        permissions,  # list[str] | PermissionSet | None
     ):
         self.agent_id = agent_id
         self.agent_name = agent_name
         self.board_id = board_id
         self.permissions = permissions
+
+
+# ---- Permission cache (TTL 60s) ----
+_permission_cache: dict[tuple[str, str], tuple[float, "AgentContext"]] = {}
+_PERMISSION_CACHE_TTL = 60.0
+
+
+def _cache_get(agent_id: str, board_id: str) -> "AgentContext | None":
+    """Get cached AgentContext if within TTL."""
+    import time
+    key = (agent_id, board_id)
+    entry = _permission_cache.get(key)
+    if entry and (time.time() - entry[0]) < _PERMISSION_CACHE_TTL:
+        return entry[1]
+    if entry:
+        del _permission_cache[key]
+    return None
+
+
+def _cache_set(agent_id: str, board_id: str, ctx: "AgentContext") -> None:
+    """Cache AgentContext with current timestamp."""
+    import time
+    _permission_cache[(agent_id, board_id)] = (time.time(), ctx)
 
 
 async def _get_authenticated_agent():
@@ -151,7 +174,11 @@ async def _get_authenticated_agent():
 
 
 async def _get_agent_ctx(board_id: str) -> AgentContext | None:
-    """Authenticate agent from active API key and verify board access."""
+    """Authenticate agent from active API key and verify board access.
+
+    Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s cache.
+    Falls back to legacy flat permissions if permission_flags is not set.
+    """
     api_key = _active_api_key
     if not api_key:
         return None
@@ -160,15 +187,53 @@ async def _get_agent_ctx(board_id: str) -> AgentContext | None:
         agent = await service.get_agent_by_key(api_key)
         if not agent:
             return None
-        if not await service.agent_has_board_access(agent.id, board_id):
+
+        # Check board access — also loads AgentBoard record
+        from sqlalchemy import select as sa_select
+        from okto_pulse.core.models.db import AgentBoard
+        ab_query = sa_select(AgentBoard).where(
+            AgentBoard.agent_id == agent.id,
+            AgentBoard.board_id == board_id,
+        )
+        ab_result = await db.execute(ab_query)
+        agent_board = ab_result.scalar_one_or_none()
+        if not agent_board:
             return None
+
+        # Check cache
+        cached = _cache_get(agent.id, board_id)
+        if cached:
+            await db.commit()
+            return cached
+
+        # Resolve permissions
+        agent_flags = getattr(agent, "permission_flags", None)
+        if agent_flags is not None:
+            # New granular system
+            from okto_pulse.core.infra.permissions import resolve_permissions
+            # Load preset flags if agent has a preset
+            preset_flags = None
+            preset_id = getattr(agent, "preset_id", None)
+            if preset_id:
+                from okto_pulse.core.models.db import PermissionPreset
+                preset = await db.get(PermissionPreset, preset_id)
+                if preset:
+                    preset_flags = preset.flags
+            board_overrides = getattr(agent_board, "permission_overrides", None)
+            perm_set = resolve_permissions(agent_flags, preset_flags, board_overrides)
+        else:
+            # Legacy: use flat permissions list (backward compat)
+            perm_set = agent.permissions
+
         await db.commit()
-        return AgentContext(
+        ctx = AgentContext(
             agent_id=agent.id,
             agent_name=agent.name,
             board_id=board_id,
-            permissions=agent.permissions,
+            permissions=perm_set,
         )
+        _cache_set(agent.id, board_id, ctx)
+        return ctx
 
 
 async def _log_card_activity(
@@ -1065,9 +1130,20 @@ async def okto_pulse_create_card(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_CREATE)
-    if perm_err:
-        return _perm_error(perm_err)
+    # Check card.create or card.create_test based on card_type
+    if card_type == "test":
+        perm_err = check_permission(ctx.permissions, Permissions.CARDS_CREATE)
+        if not perm_err:
+            # Also check the granular create_test flag if using PermissionSet
+            from okto_pulse.core.infra.permissions import PermissionSet
+            if isinstance(ctx.permissions, PermissionSet):
+                perm_err = ctx.permissions.check("card.entity.create_test")
+        if perm_err:
+            return _perm_error(perm_err)
+    else:
+        perm_err = check_permission(ctx.permissions, Permissions.CARDS_CREATE)
+        if perm_err:
+            return _perm_error(perm_err)
 
     from okto_pulse.core.models.db import Board, CardPriority, CardStatus
     from okto_pulse.core.models.schemas import CardCreate
@@ -4608,12 +4684,12 @@ async def okto_pulse_update_spec(
 @mcp.tool()
 async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
     """
-    Change a spec's status (e.g. draft → review → approved → in_progress → done).
+    Change a spec's status (e.g. draft → review → approved → validated → in_progress → done).
 
     Args:
         board_id: Board ID
         spec_id: Spec ID
-        status: New status — one of: draft, review, approved, in_progress, done, cancelled
+        status: New status — one of: draft, review, approved, validated, in_progress, done, cancelled
 
     Returns:
         JSON with updated spec status
@@ -7077,6 +7153,268 @@ async def okto_pulse_link_card_to_spec(board_id: str, spec_id: str, card_id: str
 
 
 # ============================================================================
+# SPEC EVALUATION TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_submit_spec_evaluation(
+    board_id: str,
+    spec_id: str,
+    breakdown_completeness: int,
+    breakdown_justification: str,
+    granularity: int,
+    granularity_justification: str,
+    dependency_coherence: int,
+    dependency_justification: str,
+    test_coverage_quality: int,
+    test_coverage_justification: str,
+    overall_score: int,
+    overall_justification: str,
+    recommendation: str,
+) -> str:
+    """
+    Submit a qualitative evaluation for a spec in 'validated' status.
+    Multiple evaluators can submit independent evaluations.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID (must be in 'validated' status)
+        breakdown_completeness: Score 0-100 — do tasks cover the spec scope?
+        breakdown_justification: Why this score
+        granularity: Score 0-100 — are tasks properly sized?
+        granularity_justification: Why this score
+        dependency_coherence: Score 0-100 — do task dependencies make sense?
+        dependency_justification: Why this score
+        test_coverage_quality: Score 0-100 — do tests cover happy path and edge cases?
+        test_coverage_justification: Why this score
+        overall_score: Overall score 0-100
+        overall_justification: Overall assessment summary
+        recommendation: approve | request_changes | reject
+
+    Returns:
+        JSON with created evaluation details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_EVALUATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    # Validate recommendation
+    if recommendation not in ("approve", "request_changes", "reject"):
+        return json.dumps({"error": "Recommendation must be one of: approve, request_changes, reject"})
+
+    # Validate scores
+    for name, score in [
+        ("breakdown_completeness", breakdown_completeness),
+        ("granularity", granularity),
+        ("dependency_coherence", dependency_coherence),
+        ("test_coverage_quality", test_coverage_quality),
+        ("overall_score", overall_score),
+    ]:
+        if not (0 <= score <= 100):
+            return json.dumps({"error": f"{name} must be between 0 and 100"})
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SpecService
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        from okto_pulse.core.models.db import SpecStatus
+        if spec.status != SpecStatus.VALIDATED:
+            return json.dumps({
+                "error": f"Spec must be in 'validated' status to submit evaluations "
+                         f"(currently '{spec.status.value}')"
+            })
+
+        import uuid as _uuid
+        evaluation = {
+            "id": f"eval_{_uuid.uuid4().hex[:8]}",
+            "spec_id": spec_id,
+            "evaluator_id": ctx.agent_id,
+            "evaluator_name": ctx.agent_name,
+            "evaluator_type": "agent",
+            "dimensions": {
+                "breakdown_completeness": {"score": breakdown_completeness, "justification": breakdown_justification},
+                "granularity": {"score": granularity, "justification": granularity_justification},
+                "dependency_coherence": {"score": dependency_coherence, "justification": dependency_justification},
+                "test_coverage_quality": {"score": test_coverage_quality, "justification": test_coverage_justification},
+            },
+            "overall_score": overall_score,
+            "overall_justification": overall_justification,
+            "recommendation": recommendation,
+            "stale": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        evaluations = list(spec.evaluations or [])
+        evaluations.append(evaluation)
+        spec.evaluations = evaluations
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(spec, "evaluations")
+        await db.commit()
+
+    return json.dumps({"success": True, "evaluation": evaluation}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_spec_evaluations(board_id: str, spec_id: str) -> str:
+    """
+    List all qualitative evaluations for a spec, with stale indication.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with evaluations list and summary
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SpecService
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        evaluations = spec.evaluations or []
+        non_stale = [e for e in evaluations if not e.get("stale")]
+        approvals = [e for e in non_stale if e.get("recommendation") == "approve"]
+
+        summary = {
+            "total": len(evaluations),
+            "non_stale": len(non_stale),
+            "approvals": len(approvals),
+            "rejections": len([e for e in non_stale if e.get("recommendation") == "reject"]),
+            "request_changes": len([e for e in non_stale if e.get("recommendation") == "request_changes"]),
+            "avg_score_approvals": (
+                sum(e.get("overall_score", 0) for e in approvals) / len(approvals)
+                if approvals else 0
+            ),
+            "stale_count": len(evaluations) - len(non_stale),
+        }
+
+        # Return summary view (without full dimensions)
+        eval_list = [
+            {
+                "id": e.get("id"),
+                "evaluator_id": e.get("evaluator_id"),
+                "evaluator_name": e.get("evaluator_name"),
+                "evaluator_type": e.get("evaluator_type"),
+                "overall_score": e.get("overall_score"),
+                "recommendation": e.get("recommendation"),
+                "stale": e.get("stale", False),
+                "created_at": e.get("created_at"),
+            }
+            for e in evaluations
+        ]
+
+    return json.dumps({"evaluations": eval_list, "summary": summary}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_get_spec_evaluation(
+    board_id: str, spec_id: str, evaluation_id: str
+) -> str:
+    """
+    Get full details of a specific evaluation including all dimensions and justifications.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        evaluation_id: Evaluation ID (e.g. eval_abc12345)
+
+    Returns:
+        JSON with full evaluation details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SpecService
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        for e in (spec.evaluations or []):
+            if e.get("id") == evaluation_id:
+                return json.dumps({"evaluation": e}, default=str)
+
+    return json.dumps({"error": f"Evaluation '{evaluation_id}' not found"})
+
+
+@mcp.tool()
+async def okto_pulse_delete_spec_evaluation(
+    board_id: str, spec_id: str, evaluation_id: str
+) -> str:
+    """
+    Delete your own evaluation. Only the author can delete their evaluation.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        evaluation_id: Evaluation ID to delete
+
+    Returns:
+        JSON with success or error
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_EVALUATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SpecService
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        evaluations = list(spec.evaluations or [])
+        target = None
+        for e in evaluations:
+            if e.get("id") == evaluation_id:
+                target = e
+                break
+
+        if not target:
+            return json.dumps({"error": f"Evaluation '{evaluation_id}' not found"})
+
+        if target.get("evaluator_id") != ctx.agent_id:
+            return json.dumps({
+                "error": "Cannot delete evaluation: you can only delete your own evaluations"
+            })
+
+        evaluations.remove(target)
+        spec.evaluations = evaluations
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(spec, "evaluations")
+        await db.commit()
+
+    return json.dumps({"success": True, "deleted_evaluation_id": evaluation_id})
+
+
 # SPEC HISTORY TOOLS
 # ============================================================================
 
