@@ -1,6 +1,6 @@
 # okto-pulse-core
 
-Core engine for [Okto Pulse](https://github.com/okto-labs/okto-pulse) — shared models, services, API routes, and MCP server.
+Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — shared models, services, API routes, and MCP server.
 
 > **You probably want to install [`okto-pulse`](https://pypi.org/project/okto-pulse/) instead.**
 > This package is the internal engine. The `okto-pulse` package provides the CLI, frontend, and everything you need to get started.
