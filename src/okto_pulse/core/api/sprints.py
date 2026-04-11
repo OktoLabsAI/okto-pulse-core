@@ -151,3 +151,20 @@ async def list_history(
     """List sprint history."""
     service = SprintService(db)
     return await service.list_history(sprint_id)
+
+
+@router.get("/boards/{board_id}/specs/{spec_id}/sprints/suggest")
+async def suggest_sprints(
+    board_id: str,
+    spec_id: str,
+    threshold: int = 8,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Suggest sprint breakdown for a spec."""
+    service = SprintService(db)
+    try:
+        suggestions = await service.suggest_sprints(spec_id, threshold)
+        return {"suggestions": suggestions, "count": len(suggestions)}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

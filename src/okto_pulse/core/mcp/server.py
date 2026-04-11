@@ -9065,6 +9065,38 @@ async def okto_pulse_answer_sprint_question(
         })
 
 
+@mcp.tool()
+async def okto_pulse_suggest_sprints(
+    board_id: str,
+    spec_id: str,
+    threshold: int = 8,
+) -> str:
+    """
+    Suggest a sprint breakdown for a spec based on tasks, FRs, and dependencies.
+    Does NOT create sprints — returns suggestions for review.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        threshold: Max tasks per sprint (default 8)
+
+    Returns:
+        JSON with list of suggested sprints (title, card_ids, test_scenario_ids, business_rule_ids)
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        try:
+            suggestions = await service.suggest_sprints(spec_id, threshold)
+            return json.dumps({"suggestions": suggestions, "count": len(suggestions)})
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
 # ============================================================================
 # SERVER STARTUP
 # ============================================================================

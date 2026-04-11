@@ -4016,6 +4016,139 @@ class SprintService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
+    async def suggest_sprints(
+        self, spec_id: str, threshold: int = 8,
+    ) -> list[dict]:
+        """Suggest sprint breakdown for a spec based on FRs, test scenarios, and dependencies.
+
+        Algorithm:
+        1. Group cards by linked FRs (via test_scenario_ids → linked_criteria).
+        2. Consider card dependencies (dependent cards in same or later sprint).
+        3. Distribute into N sprints where N = ceil(total_cards / threshold).
+        4. Each sprint gets the test_scenario_ids and business_rule_ids for its cards.
+        Returns suggestions without creating anything.
+        """
+        import math
+
+        spec = await self.db.get(Spec, spec_id)
+        if not spec:
+            raise ValueError("Spec not found")
+
+        cards_q = select(Card).where(
+            Card.spec_id == spec_id, Card.archived.is_(False),
+            Card.status.notin_([CardStatus.DONE, CardStatus.CANCELLED]),
+        )
+        result = await self.db.execute(cards_q)
+        cards = list(result.scalars().all())
+
+        if not cards:
+            return []
+
+        # Build FR→cards mapping via test_scenario_ids → linked_criteria
+        scenarios = {s.get("id"): s for s in (spec.test_scenarios or [])}
+        rules = {r.get("id"): r for r in (spec.business_rules or [])}
+        fr_groups: dict[str, list[Card]] = {}
+        ungrouped: list[Card] = []
+
+        for card in cards:
+            linked_frs: set[str] = set()
+            for ts_id in (card.test_scenario_ids or []):
+                sc = scenarios.get(ts_id)
+                if sc:
+                    for crit in (sc.get("linked_criteria") or []):
+                        linked_frs.add(crit)
+            if linked_frs:
+                primary_fr = sorted(linked_frs)[0]
+                fr_groups.setdefault(primary_fr, []).append(card)
+            else:
+                ungrouped.append(card)
+
+        # Build dependency graph
+        deps_q = select(CardDependency).where(
+            CardDependency.card_id.in_([c.id for c in cards])
+        )
+        deps_result = await self.db.execute(deps_q)
+        dependencies = list(deps_result.scalars().all())
+        dep_map: dict[str, set[str]] = {}
+        for d in dependencies:
+            dep_map.setdefault(d.card_id, set()).add(d.depends_on_id)
+
+        # Flatten groups into ordered buckets
+        all_groups = list(fr_groups.values())
+        if ungrouped:
+            all_groups.append(ungrouped)
+
+        # Determine number of sprints
+        total = len(cards)
+        n_sprints = max(1, math.ceil(total / threshold))
+
+        # Distribute groups across sprints
+        suggested: list[list[Card]] = [[] for _ in range(n_sprints)]
+        group_idx = 0
+        for group in all_groups:
+            target = group_idx % n_sprints
+            suggested[target].extend(group)
+            group_idx += 1
+
+        # Ensure dependency ordering: if card A depends on B, B must be in same or earlier sprint
+        card_sprint_map: dict[str, int] = {}
+        for si, sprint_cards in enumerate(suggested):
+            for c in sprint_cards:
+                card_sprint_map[c.id] = si
+
+        # Adjust: move cards earlier if their dependencies are in later sprints
+        changed = True
+        iterations = 0
+        while changed and iterations < 10:
+            changed = False
+            iterations += 1
+            for card_id, card_deps in dep_map.items():
+                if card_id not in card_sprint_map:
+                    continue
+                card_si = card_sprint_map[card_id]
+                for dep_id in card_deps:
+                    dep_si = card_sprint_map.get(dep_id)
+                    if dep_si is not None and dep_si > card_si:
+                        # Move dependency to same sprint as dependent card
+                        card_sprint_map[dep_id] = card_si
+                        changed = True
+
+        # Rebuild sprints from adjusted map
+        final: list[list[Card]] = [[] for _ in range(n_sprints)]
+        for card in cards:
+            si = card_sprint_map.get(card.id, 0)
+            final[si].append(card)
+
+        # Build suggestion output
+        suggestions = []
+        for i, sprint_cards in enumerate(final):
+            if not sprint_cards:
+                continue
+            # Collect scoped test scenario and BR IDs
+            ts_ids: set[str] = set()
+            br_ids: set[str] = set()
+            for c in sprint_cards:
+                for ts_id in (c.test_scenario_ids or []):
+                    ts_ids.add(ts_id)
+                    sc = scenarios.get(ts_id)
+                    if sc:
+                        for linked in (sc.get("linked_criteria") or []):
+                            # Find BRs that reference this FR
+                            for r in (spec.business_rules or []):
+                                if linked in (r.get("linked_requirements") or []):
+                                    br_ids.add(r.get("id"))
+
+            suggestions.append({
+                "title": f"Sprint {i + 1}",
+                "description": f"Auto-suggested sprint ({len(sprint_cards)} tasks)",
+                "card_ids": [c.id for c in sprint_cards],
+                "card_titles": [c.title for c in sprint_cards],
+                "test_scenario_ids": sorted(ts_ids) if ts_ids else None,
+                "business_rule_ids": sorted(br_ids) if br_ids else None,
+            })
+
+        return suggestions
+
 
 class SprintQAService:
     """Service for sprint Q&A operations."""
