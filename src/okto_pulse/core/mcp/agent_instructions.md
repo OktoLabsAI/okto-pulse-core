@@ -63,9 +63,26 @@ You are an AI agent connected to the Okto Pulse via MCP tools. The dashboard is 
 | `okto_pulse_get_spec` | board_id, spec_id | Full spec with requirements and linked cards |
 | `okto_pulse_list_specs` | board_id, status? | List specs, optionally filtered by status |
 | `okto_pulse_update_spec` | board_id, spec_id, title?, description?, context?, functional_requirements?, technical_requirements?, acceptance_criteria?, assignee_id?, labels? | Update spec fields (bumps version on content changes) |
-| `okto_pulse_move_spec` | board_id, spec_id, status | Change spec status (draft → review → approved → in_progress → done) |
+| `okto_pulse_move_spec` | board_id, spec_id, status | Change spec status (draft → review → approved → validated → in_progress → done) |
 | `okto_pulse_delete_spec` | board_id, spec_id | Delete spec (unlinks cards, doesn't delete them) |
 | `okto_pulse_link_card_to_spec` | board_id, spec_id, card_id | Link existing card to a spec |
+
+### Sprints
+| Tool | Args | Purpose |
+|------|------|---------|
+| `okto_pulse_create_sprint` | board_id, spec_id, title, description?, test_scenario_ids?, business_rule_ids?, start_date?, end_date?, labels? | Create a sprint for a spec (scoped test/BR IDs are comma-separated) |
+| `okto_pulse_get_sprint` | board_id, sprint_id | Full sprint with cards, evaluations, Q&A |
+| `okto_pulse_list_sprints` | board_id, spec_id | List all sprints for a spec |
+| `okto_pulse_update_sprint` | board_id, sprint_id, title?, description?, test_scenario_ids?, business_rule_ids?, labels?, skip_test_coverage?, skip_rules_coverage?, skip_qualitative_validation? | Update sprint fields |
+| `okto_pulse_move_sprint` | board_id, sprint_id, status | Move sprint (draft → active → review → closed) |
+| `okto_pulse_assign_tasks_to_sprint` | board_id, sprint_id, card_ids | Assign cards to sprint (comma-separated IDs, must be same spec) |
+| `okto_pulse_submit_sprint_evaluation` | board_id, sprint_id, breakdown_completeness, breakdown_justification, granularity, granularity_justification, dependency_coherence, dependency_justification, test_coverage_quality, test_coverage_justification, overall_score, overall_justification, recommendation | Submit evaluation for sprint in 'review' status |
+| `okto_pulse_list_sprint_evaluations` | board_id, sprint_id | List evaluations with stale/approval summary |
+| `okto_pulse_get_sprint_evaluation` | board_id, sprint_id, evaluation_id | Get single evaluation details |
+| `okto_pulse_delete_sprint_evaluation` | board_id, sprint_id, evaluation_id | Delete your own evaluation |
+| `okto_pulse_suggest_sprints` | board_id, spec_id, threshold? | Suggest sprint breakdown based on tasks, FRs, dependencies (does NOT create) |
+| `okto_pulse_ask_sprint_question` | board_id, sprint_id, question | Ask a question on a sprint |
+| `okto_pulse_answer_sprint_question` | board_id, sprint_id, qa_id, answer | Answer a sprint question |
 
 ### Test Scenarios
 | Tool | Args | Purpose |
@@ -602,6 +619,44 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 - Every card must have `spec_id` set — no orphaned cards
 - Every test card must have `test_scenario_ids` populated via `link_task_to_scenario`
 
+### 2.7 Sprints — Incremental Delivery Slices
+
+Sprints break large specs into incremental deliverables with scoped gates and evaluations.
+
+**Lifecycle:** draft → active → review → closed (cancelled from any state)
+
+**When to use sprints:**
+- Specs with many tasks (typically 6+ cards) benefit from sprint breakdown
+- The system automatically suggests sprints during spec validation (approved → validated) when task count exceeds the threshold
+- Sprints are optional — specs can work without them
+
+**Creating sprints:**
+1. Use `okto_pulse_suggest_sprints(board_id, spec_id, threshold?)` to get AI-suggested breakdown
+2. Create sprints with `okto_pulse_create_sprint` — scope test_scenario_ids and business_rule_ids from the spec
+3. Assign cards with `okto_pulse_assign_tasks_to_sprint(board_id, sprint_id, card_ids)`
+
+**Sprint gates:**
+| Transition | Gate |
+|------------|------|
+| draft → active | At least 1 card assigned |
+| active → review | Scoped test scenarios must be passed (unless skip_test_coverage) |
+| review → closed | Qualitative evaluation with at least 1 approval, 0 rejects, avg score ≥ threshold |
+
+**Card behavior with sprints:**
+- If a spec has sprints, `card.sprint_id` is **mandatory** — cards without a sprint cannot advance
+- Cards can only advance when their sprint is in `active` status
+- Cards in backlog (no sprint_id) are blocked until assigned to an active sprint
+
+**Spec done gate with sprints:**
+- All sprints must be `closed` or `cancelled` (minimum 1 closed)
+- Coverage gates evaluate the total spec, not individual sprints
+
+**Evaluation (same 4 dimensions as spec):**
+- Submit via `okto_pulse_submit_sprint_evaluation` (sprint must be in `review` status)
+- recommendation: `approve`, `request_changes`, or `reject`
+
+**Permission flags:** 25 flags under `sprint.*` — entity (9), move (4), interact_in (5), qa (3), evaluations (3), history_read (1)
+
 ### 3. Work on Cards
 - Read card details before acting: `okto_pulse_get_card(board_id, card_id)`
 - If the card has a `spec_id`, read the spec for full context: `okto_pulse_get_spec(board_id, spec_id)`
@@ -648,9 +703,20 @@ Moving forward (higher level) requires all dependencies to be `done` or `cancell
 | `draft` | Being written | Initial creation, requirements not finalized |
 | `review` | Under review | Requirements written, awaiting feedback/approval |
 | `approved` | Ready for execution | Requirements finalized, cards can be derived |
-| `in_progress` | Being executed | Cards have been derived and work is underway |
-| `done` | Complete | All derived cards are done |
+| `validated` | Coverage validated | Coverage gates passed (tests, rules, TRs, contracts). Sprint suggestion may appear. |
+| `in_progress` | Being executed | Qualitative validation passed, work is underway |
+| `done` | Complete | All derived cards done. If sprints exist: all closed/cancelled (min 1 closed). |
 | `cancelled` | Abandoned | Spec is no longer needed |
+
+### Sprint Statuses
+
+| Value | Meaning | Gate to advance |
+|-------|---------|-----------------|
+| `draft` | Planning | — |
+| `active` | In execution | At least 1 card assigned |
+| `review` | Under review | Scoped test scenarios passed |
+| `closed` | Complete | Qualitative evaluation approved |
+| `cancelled` | Abandoned | — |
 
 ## Content Formatting
 
