@@ -479,6 +479,9 @@ class RefinementCreate(BaseModel):
     assignee_id: str | None = None
     labels: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
+    # Artifact propagation filters (optional — None = propagate all from parent)
+    mockup_ids: list[str] | None = None
+    kb_ids: list[str] | None = None
 
 
 class RefinementUpdate(BaseModel):

@@ -818,6 +818,28 @@ Upload artifacts (`okto_pulse_upload_attachment`) whenever they add context that
    upload_attachment: test-results.txt (if applicable)
 ```
 
+## Artifact Propagation
+
+When creating or deriving entities across pipeline stages (Ideation → Refinement → Spec), artifacts are **automatically propagated** from the parent entity.
+
+### Default behavior (copy all):
+- `okto_pulse_create_refinement(ideation_id=X)` → copies ALL mockups and KBs from ideation
+- `okto_pulse_derive_spec_from_ideation(ideation_id=X)` → copies ALL mockups from ideation
+- `okto_pulse_derive_spec_from_refinement(refinement_id=X)` → copies ALL mockups and KBs from refinement
+- Q&A answered items are always compiled into the context field
+
+### Selective propagation:
+When creating multiple children from the same parent (e.g., 2 refinements from 1 ideation with different scopes), use `mockup_ids` and `kb_ids` to select which artifacts to propagate:
+
+- `okto_pulse_create_refinement(ideation_id=X, mockup_ids="sm_1|sm_2")` → only selected mockups
+- `okto_pulse_derive_spec_from_refinement(refinement_id=X, kb_ids="kb_3|kb_7")` → only selected KBs
+
+### For cards (explicit only):
+Card creation does NOT auto-propagate. Use `okto_pulse_copy_mockups_to_card` and `okto_pulse_copy_knowledge_to_card` explicitly to select which artifacts a card needs.
+
+### Best practice:
+Always use create/derive with parent ID instead of creating orphan entities. This ensures context, decisions, and visual artifacts flow through the pipeline.
+
 ## Rules
 
 1. **Follow board guidelines** — BEFORE doing any work, call `okto_pulse_get_board_guidelines(board_id)` and follow every guideline. Guidelines are rules set by the board owner that govern how work should be done on that board.

@@ -2521,17 +2521,16 @@ class IdeationService:
         return ideation
 
     async def derive_spec(
-        self, ideation_id: str, user_id: str, skip_ownership_check: bool = False
+        self, ideation_id: str, user_id: str, skip_ownership_check: bool = False,
+        mockup_ids: list[str] | None = None, kb_ids: list[str] | None = None,
     ) -> Spec | None:
         """Create a Spec draft linked to an ideation.
 
         Compiles context from the ideation's problem statement, proposed approach,
-        scope assessment, and Q&A history. Structured fields (functional_requirements,
-        technical_requirements, acceptance_criteria) are left empty — they must be
-        filled by the agent or human through deliberate analysis.
+        scope assessment, and Q&A history. Artifacts (mockups, KBs) are automatically
+        propagated. Use mockup_ids/kb_ids to select specific ones.
 
-        Only allowed when ideation status is 'done' — ensures the ideation has been
-        fully reviewed and snapshotted before specs are created from it.
+        Only allowed when ideation status is 'done'.
         """
         ideation = await self.get_ideation(ideation_id)
         if not ideation:
@@ -2592,6 +2591,8 @@ class IdeationService:
                 target_entity=spec,
                 target_kb_class=SpecKnowledgeBase,
                 user_id=user_id,
+                mockup_ids=mockup_ids,
+                kb_ids=kb_ids,
             )
             actor_name = await resolve_actor_name(self.db, user_id, ideation.board_id)
             await self._record_history(
@@ -3075,12 +3076,13 @@ class RefinementService:
         return True
 
     async def derive_spec(
-        self, refinement_id: str, user_id: str, skip_ownership_check: bool = False
+        self, refinement_id: str, user_id: str, skip_ownership_check: bool = False,
+        mockup_ids: list[str] | None = None, kb_ids: list[str] | None = None,
     ) -> Spec | None:
         """Create a Spec draft linked to a refinement.
 
-        Compiles context from the refinement's scope, analysis, decisions,
-        and Q&A history. Structured fields (functional_requirements,
+        Artifacts (mockups, KBs) are automatically propagated. Use mockup_ids/kb_ids
+        to select specific ones. Compiles context from the refinement's scope, analysis, decisions,
         technical_requirements, acceptance_criteria) are left empty — they must be
         filled by the agent or human through deliberate analysis.
 
@@ -3138,6 +3140,8 @@ class RefinementService:
                 target_entity=spec,
                 target_kb_class=SpecKnowledgeBase,
                 user_id=user_id,
+                mockup_ids=mockup_ids,
+                kb_ids=kb_ids,
             )
 
             actor_name = await resolve_actor_name(self.db, user_id, refinement.board_id)

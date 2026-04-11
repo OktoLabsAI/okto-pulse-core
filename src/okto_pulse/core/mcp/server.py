@@ -3180,16 +3180,26 @@ async def okto_pulse_evaluate_ideation(
 
 
 @mcp.tool()
-async def okto_pulse_derive_spec_from_ideation(board_id: str, ideation_id: str) -> str:
+async def okto_pulse_derive_spec_from_ideation(
+    board_id: str,
+    ideation_id: str,
+    mockup_ids: str = "",
+    kb_ids: str = "",
+) -> str:
     """
     Create a spec draft from a DONE ideation. The ideation must be in 'done' status
     (meaning it has been fully reviewed and snapshotted). The spec will have rich context
     compiled from the ideation but structured fields (requirements, criteria) left empty
     for deliberate analysis.
 
+    Artifacts (mockups, KBs) from the ideation are automatically propagated to the spec.
+    Use mockup_ids/kb_ids to select specific ones (default: all).
+
     Args:
         board_id: Board ID
         ideation_id: Ideation ID (must be in 'done' status)
+        mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
+        kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
 
     Returns:
         JSON with the created spec details
@@ -3202,10 +3212,16 @@ async def okto_pulse_derive_spec_from_ideation(board_id: str, ideation_id: str) 
     if perm_err:
         return _perm_error(perm_err)
 
+    _mockup_ids = [x.strip() for x in mockup_ids.split("|") if x.strip()] or None
+    _kb_ids = [x.strip() for x in kb_ids.split("|") if x.strip()] or None
+
     async with get_db_for_mcp() as db:
         service = IdeationService(db)
         try:
-            spec = await service.derive_spec(ideation_id, ctx.agent_id, skip_ownership_check=True)
+            spec = await service.derive_spec(
+                ideation_id, ctx.agent_id, skip_ownership_check=True,
+                mockup_ids=_mockup_ids, kb_ids=_kb_ids,
+            )
         except ValueError as e:
             return json.dumps({"error": str(e)})
         await db.commit()
@@ -3632,11 +3648,16 @@ async def okto_pulse_create_refinement(
     decisions: str = "",
     assignee_id: str = "",
     labels: str = "",
+    mockup_ids: str = "",
+    kb_ids: str = "",
 ) -> str:
     """
     Create a new refinement for a DONE ideation. The ideation must be in 'done' status
     (snapshotted) before refinements can be created. If description is not provided,
     context is compiled from the ideation's problem statement, approach, and Q&A.
+
+    Artifacts (mockups, KBs) from the ideation are automatically propagated.
+    Use mockup_ids/kb_ids to select specific ones (default: all).
 
     Args:
         board_id: Board ID
@@ -3649,6 +3670,8 @@ async def okto_pulse_create_refinement(
         decisions: Pipe-separated list of decisions made (e.g. "Use REST API|Cache with Redis") (optional)
         assignee_id: User/agent ID to assign (optional)
         labels: Comma-separated labels (optional)
+        mockup_ids: Pipe-separated mockup IDs to propagate from ideation (optional, empty = all)
+        kb_ids: Pipe-separated KB IDs to propagate from ideation (optional, empty = all)
 
     Returns:
         JSON with created refinement details
@@ -3680,6 +3703,8 @@ async def okto_pulse_create_refinement(
             decisions=_split(decisions, "|"),
             assignee_id=assignee_id or None,
             labels=labels.split(",") if labels else None,
+            mockup_ids=[x.strip() for x in mockup_ids.split("|") if x.strip()] or None,
+            kb_ids=[x.strip() for x in kb_ids.split("|") if x.strip()] or None,
         )
 
         try:
@@ -4029,14 +4054,24 @@ async def okto_pulse_delete_refinement(board_id: str, refinement_id: str) -> str
 
 
 @mcp.tool()
-async def okto_pulse_derive_spec_from_refinement(board_id: str, refinement_id: str) -> str:
+async def okto_pulse_derive_spec_from_refinement(
+    board_id: str,
+    refinement_id: str,
+    mockup_ids: str = "",
+    kb_ids: str = "",
+) -> str:
     """
     Create a spec draft from a DONE refinement. The refinement must be in 'done' status.
     Context is compiled from the refinement's scope, analysis, decisions, and Q&A.
 
+    Artifacts (mockups, KBs) from the refinement are automatically propagated to the spec.
+    Use mockup_ids/kb_ids to select specific ones (default: all).
+
     Args:
         board_id: Board ID
         refinement_id: Refinement ID (must be in 'done' status)
+        mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
+        kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
 
     Returns:
         JSON with the created spec details
@@ -4049,10 +4084,16 @@ async def okto_pulse_derive_spec_from_refinement(board_id: str, refinement_id: s
     if perm_err:
         return _perm_error(perm_err)
 
+    _mockup_ids = [x.strip() for x in mockup_ids.split("|") if x.strip()] or None
+    _kb_ids = [x.strip() for x in kb_ids.split("|") if x.strip()] or None
+
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
         try:
-            spec = await service.derive_spec(refinement_id, ctx.agent_id, skip_ownership_check=True)
+            spec = await service.derive_spec(
+                refinement_id, ctx.agent_id, skip_ownership_check=True,
+                mockup_ids=_mockup_ids, kb_ids=_kb_ids,
+            )
         except ValueError as e:
             return json.dumps({"error": str(e)})
         await db.commit()
