@@ -1,6 +1,6 @@
 """Sprint API endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
@@ -16,6 +16,19 @@ from okto_pulse.core.models.schemas import (
 from okto_pulse.core.services.main import SprintService
 
 router = APIRouter()
+
+
+@router.get("/boards/{board_id}/sprints", response_model=list[SprintSummary])
+async def list_board_sprints(
+    board_id: str,
+    status_filter: str | None = Query(None, alias="status"),
+    include_archived: bool = Query(False),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all sprints for a board, optionally filtered by status."""
+    service = SprintService(db)
+    return await service.list_board_sprints(board_id, status_filter, include_archived)
 
 
 @router.post(

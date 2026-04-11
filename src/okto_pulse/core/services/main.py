@@ -3769,6 +3769,22 @@ class SprintService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
+    async def list_board_sprints(
+        self, board_id: str, status_filter: str | None = None,
+        include_archived: bool = False,
+    ) -> list[Sprint]:
+        """List all sprints for a board, optionally filtered by status."""
+        from sqlalchemy.orm import selectinload
+        query = select(Sprint).where(Sprint.board_id == board_id)
+        if status_filter:
+            query = query.where(Sprint.status == SprintStatus(status_filter))
+        if not include_archived:
+            query = query.where(Sprint.archived == False)
+        query = query.options(selectinload(Sprint.spec))
+        query = query.order_by(Sprint.updated_at.desc())
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
     async def update_sprint(
         self, sprint_id: str, user_id: str, data: SprintUpdate,
     ) -> Sprint | None:
