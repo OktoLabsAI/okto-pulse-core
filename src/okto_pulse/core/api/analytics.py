@@ -22,6 +22,8 @@ from okto_pulse.core.models.db import (
     Refinement,
     Spec,
     SpecStatus,
+    Sprint,
+    SprintStatus,
 )
 
 router = APIRouter()
@@ -656,10 +658,12 @@ async def board_entity_detail(
         return await _card_detail(db, board_id, entity_id)
     elif entity_type == "refinement":
         return await _refinement_detail(db, board_id, entity_id)
+    elif entity_type == "sprint":
+        return await _sprint_detail(db, board_id, entity_id)
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="entity_type must be one of: spec, ideation, card, refinement",
+            detail="entity_type must be one of: spec, ideation, card, refinement, sprint",
         )
 
 
@@ -1087,6 +1091,30 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
     # Bug stats for this spec
     bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
 
+    # Sprint breakdown
+    sprints_q = select(Sprint).where(Sprint.spec_id == spec_id, Sprint.archived.is_(False))
+    sprints = list((await db.execute(sprints_q)).scalars().all())
+    sprint_summaries = []
+    for sp in sprints:
+        sp_cards = [c for c in cards if getattr(c, "sprint_id", None) == sp.id]
+        sp_done = [c for c in sp_cards if c.status == CardStatus.DONE]
+        sp_concls = [_extract_conclusion(c) for c in sp_done if _extract_conclusion(c)]
+        sp_completeness = [cn.get("completeness") for cn in sp_concls if cn.get("completeness") is not None]
+        sp_drift = [cn.get("drift") for cn in sp_concls if cn.get("drift") is not None]
+        sp_cycle = []
+        for c in sp_done:
+            if c.created_at and c.updated_at:
+                sp_cycle.append(round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1))
+        sprint_summaries.append({
+            "sprint_id": sp.id, "title": sp.title, "status": sp.status.value,
+            "tasks_total": len(sp_cards), "tasks_done": len(sp_done),
+            "progress": round(len(sp_done) / len(sp_cards) * 100, 1) if sp_cards else 0,
+            "avg_completeness": round(sum(sp_completeness) / len(sp_completeness), 1) if sp_completeness else None,
+            "avg_drift": round(sum(sp_drift) / len(sp_drift), 1) if sp_drift else None,
+            "avg_cycle_hours": round(sum(sp_cycle) / len(sp_cycle), 1) if sp_cycle else None,
+            "evaluations_count": len(sp.evaluations or []),
+        })
+
     return {
         "spec_id": spec.id,
         "title": spec.title,
@@ -1105,6 +1133,7 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         "rules_coverage": rules_coverage,
         "contracts_coverage": contracts_coverage,
         "bugs_count": len(bug_cards),
+        "sprints": sprint_summaries,
     }
 
 
@@ -1210,4 +1239,112 @@ async def _refinement_detail(db: AsyncSession, board_id: str, refinement_id: str
         ],
         "created_at": refinement.created_at.isoformat() if refinement.created_at else None,
         "updated_at": refinement.updated_at.isoformat() if refinement.updated_at else None,
+    }
+
+
+async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dict:
+    """Sprint detail: tasks done/total, completeness avg, drift avg, cycle time, evaluations, comparison."""
+    q = select(Sprint).where(Sprint.id == sprint_id, Sprint.board_id == board_id)
+    sprint = (await db.execute(q)).scalars().first()
+    if not sprint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found")
+
+    # Cards in this sprint
+    cards_q = select(Card).where(Card.sprint_id == sprint_id)
+    cards = list((await db.execute(cards_q)).scalars().all())
+
+    done_cards = [c for c in cards if c.status == CardStatus.DONE]
+    cancelled = [c for c in cards if c.status == CardStatus.CANCELLED]
+    in_progress = [c for c in cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED)]
+
+    # Completeness and drift from conclusions
+    completeness_vals: list[float] = []
+    drift_vals: list[float] = []
+    cycle_times: list[float] = []
+    card_metrics = []
+    for c in cards:
+        concl = _extract_conclusion(c)
+        comp = concl.get("completeness") if concl else None
+        dr = concl.get("drift") if concl else None
+        ct_hours = None
+        if c.status == CardStatus.DONE and c.created_at and c.updated_at:
+            ct_hours = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
+            cycle_times.append(ct_hours)
+        if comp is not None:
+            completeness_vals.append(comp)
+        if dr is not None:
+            drift_vals.append(dr)
+        card_metrics.append({
+            "id": c.id, "title": c.title,
+            "status": c.status.value if c.status else None,
+            "card_type": getattr(c, "card_type", "normal"),
+            "completeness": comp, "drift": dr,
+            "cycle_hours": ct_hours,
+        })
+
+    # Evaluations summary
+    evaluations = sprint.evaluations or []
+    non_stale = [e for e in evaluations if not e.get("stale")]
+    approvals = [e for e in non_stale if e.get("recommendation") == "approve"]
+
+    # Scoped test scenario coverage
+    spec = await db.get(Spec, sprint.spec_id) if sprint.spec_id else None
+    scoped_scenarios = []
+    if spec and sprint.test_scenario_ids:
+        all_scenarios = {s.get("id"): s for s in (spec.test_scenarios or [])}
+        for ts_id in sprint.test_scenario_ids:
+            sc = all_scenarios.get(ts_id)
+            if sc:
+                scoped_scenarios.append({
+                    "id": sc.get("id"), "title": sc.get("title"),
+                    "status": sc.get("status", "unknown"),
+                })
+    passed = [s for s in scoped_scenarios if s["status"] == "passed"]
+
+    # Sibling sprints for comparison
+    comparison = []
+    if sprint.spec_id:
+        siblings_q = select(Sprint).where(
+            Sprint.spec_id == sprint.spec_id, Sprint.archived.is_(False),
+        )
+        siblings = list((await db.execute(siblings_q)).scalars().all())
+        for sib in siblings:
+            sib_cards_q = select(Card).where(Card.sprint_id == sib.id)
+            sib_cards = list((await db.execute(sib_cards_q)).scalars().all())
+            sib_done = [c for c in sib_cards if c.status == CardStatus.DONE]
+            sib_concls = [_extract_conclusion(c) for c in sib_done if _extract_conclusion(c)]
+            sib_comp = [cn.get("completeness") for cn in sib_concls if cn.get("completeness") is not None]
+            sib_dr = [cn.get("drift") for cn in sib_concls if cn.get("drift") is not None]
+            comparison.append({
+                "sprint_id": sib.id, "title": sib.title, "status": sib.status.value,
+                "tasks_total": len(sib_cards), "tasks_done": len(sib_done),
+                "avg_completeness": round(sum(sib_comp) / len(sib_comp), 1) if sib_comp else None,
+                "avg_drift": round(sum(sib_dr) / len(sib_dr), 1) if sib_dr else None,
+                "is_current": sib.id == sprint_id,
+            })
+
+    return {
+        "sprint_id": sprint.id,
+        "title": sprint.title,
+        "status": sprint.status.value,
+        "spec_id": sprint.spec_id,
+        "spec_version": sprint.spec_version,
+        "tasks_total": len(cards),
+        "tasks_done": len(done_cards),
+        "tasks_cancelled": len(cancelled),
+        "tasks_in_progress": len(in_progress),
+        "progress": round(len(done_cards) / len(cards) * 100, 1) if cards else 0,
+        "avg_completeness": round(sum(completeness_vals) / len(completeness_vals), 1) if completeness_vals else None,
+        "avg_drift": round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None,
+        "avg_cycle_hours": round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None,
+        "cards": card_metrics,
+        "evaluations_total": len(evaluations),
+        "evaluations_non_stale": len(non_stale),
+        "approvals": len(approvals),
+        "avg_eval_score": round(sum(e.get("overall_score", 0) for e in approvals) / len(approvals), 1) if approvals else None,
+        "scoped_scenarios": scoped_scenarios,
+        "scenario_coverage": round(len(passed) / len(scoped_scenarios) * 100, 1) if scoped_scenarios else 0,
+        "comparison": comparison,
+        "created_at": sprint.created_at.isoformat() if sprint.created_at else None,
+        "updated_at": sprint.updated_at.isoformat() if sprint.updated_at else None,
     }
