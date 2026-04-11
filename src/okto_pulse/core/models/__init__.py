@@ -35,6 +35,7 @@ from okto_pulse.core.models.db import (
 )
 from okto_pulse.core.models.schemas import (
     ActivityLogResponse,
+    AgentBoardOverridesUpdate,
     AgentBoardResponse,
     AgentCreate,
     AgentResponse,
@@ -141,6 +142,7 @@ __all__ = [
     "SpecStatus",
     # Schemas
     "ActivityLogResponse",
+    "AgentBoardOverridesUpdate",
     "AgentBoardResponse",
     "AgentCreate",
     "AgentResponse",

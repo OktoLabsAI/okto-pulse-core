@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models import (
+    AgentBoardOverridesUpdate,
     AgentBoardResponse,
     AgentCreate,
     AgentResponse,
@@ -167,6 +168,27 @@ async def grant_board_access(
     grant = await service.grant_board_access(agent_id, board_id, user_id)
     await db.commit()
     return grant
+
+
+@router.patch("/{agent_id}/boards/{board_id}", response_model=AgentBoardResponse)
+async def update_board_overrides(
+    agent_id: str,
+    board_id: str,
+    data: AgentBoardOverridesUpdate,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update permission overrides for an agent on a board (ceiling model)."""
+    service = AgentService(db)
+    agent = await service.get_agent(agent_id)
+    if not agent or agent.created_by != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+
+    ab = await service.update_board_overrides(agent_id, board_id, data.permission_overrides)
+    if not ab:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board access not found")
+    await db.commit()
+    return ab
 
 
 @router.delete("/{agent_id}/boards/{board_id}", status_code=status.HTTP_204_NO_CONTENT)

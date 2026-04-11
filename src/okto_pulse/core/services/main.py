@@ -1076,6 +1076,21 @@ class AgentService:
         result = await self.db.execute(query)
         return result.rowcount > 0
 
+    async def update_board_overrides(
+        self, agent_id: str, board_id: str, permission_overrides: dict | None
+    ) -> AgentBoard | None:
+        """Update permission overrides for an agent on a specific board."""
+        query = select(AgentBoard).where(
+            AgentBoard.agent_id == agent_id,
+            AgentBoard.board_id == board_id,
+        )
+        result = await self.db.execute(query)
+        ab = result.scalar_one_or_none()
+        if not ab:
+            return None
+        ab.permission_overrides = permission_overrides
+        return ab
+
     async def list_boards_for_agent(self, agent_id: str) -> list[Board]:
         """List all boards an agent has access to."""
         query = (

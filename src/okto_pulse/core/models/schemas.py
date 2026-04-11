@@ -92,6 +92,13 @@ class AgentBoardResponse(BaseSchema):
     board_id: str
     granted_by: str
     granted_at: datetime
+    permission_overrides: dict[str, Any] | None = None
+
+
+class AgentBoardOverridesUpdate(BaseModel):
+    """Schema for updating board-level permission overrides."""
+
+    permission_overrides: dict[str, Any] | None = None
 
 
 # ============================================================================
