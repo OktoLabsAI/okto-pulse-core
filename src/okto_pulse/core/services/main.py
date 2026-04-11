@@ -761,10 +761,13 @@ class CardService:
                         f"okto_pulse_update_test_scenario_status before completing the card."
                     )
 
-        # --- Bug card: block in_progress without properly linked test tasks ---
+        # --- Bug card: block in_progress/done without properly linked test tasks ---
+        # Gate triggers when moving TO in_progress or done FROM a status before in_progress
+        # (i.e. not_started or started). Once in_progress is reached, the gate was already passed.
         if (
-            data.status == CardStatus.IN_PROGRESS
-            and getattr(card, "card_type", "normal") == "bug"
+            data.status in (CardStatus.IN_PROGRESS, CardStatus.DONE)
+            and old_level < self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
+            and getattr(card, "card_type", CardType.NORMAL) == CardType.BUG
         ):
             linked_tests = card.linked_test_task_ids or []
             if not linked_tests:
