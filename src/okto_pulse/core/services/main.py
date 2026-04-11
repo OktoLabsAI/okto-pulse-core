@@ -336,11 +336,11 @@ class CardService:
             allowed_statuses = {SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.DONE}
             status_msg = "'approved', 'in_progress', or 'done'"
         elif card_type_val == "test":
-            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS}
-            status_msg = "'approved', 'validated', or 'in_progress'"
+            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS, SpecStatus.DONE}
+            status_msg = "'approved', 'validated', 'in_progress', or 'done'"
         else:
-            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.IN_PROGRESS}
-            status_msg = "'approved' or 'in_progress'"
+            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.DONE}
+            status_msg = "'approved', 'in_progress', or 'done'"
 
         if spec.status not in allowed_statuses:
             raise ValueError(
@@ -717,23 +717,27 @@ class CardService:
         board_settings = board.settings or {} if board else {}
         skip_global = board_settings.get("skip_test_coverage_global", False)
 
-        # Block forward moves based on card_type and spec status
+        # Block forward moves based on card_type and spec status.
+        # Uses level comparison: spec must have reached the minimum required status.
+        # Once a spec reaches IN_PROGRESS or DONE, cards can advance freely.
         old_level = self._STATUS_ORDER.get(old_status, 0)
         new_level = self._STATUS_ORDER.get(data.status, 0)
         if new_level > old_level and card.spec_id:
             spec_for_status = await self.db.get(Spec, card.spec_id)
             if spec_for_status:
+                from okto_pulse.core.services.main import SpecService
+                spec_level = SpecService._STATUS_ORDER.get(spec_for_status.status, 0)
                 card_type = getattr(card, "card_type", CardType.NORMAL)
                 if card_type == CardType.TEST:
-                    # Test cards can start when spec is validated or in_progress
-                    allowed_spec_statuses = (SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS)
+                    # Test cards can start when spec >= validated (level 3)
+                    min_spec_level = SpecService._STATUS_ORDER.get(SpecStatus.VALIDATED, 3)
                 else:
-                    # Normal and bug cards can only start when spec is in_progress
-                    allowed_spec_statuses = (SpecStatus.IN_PROGRESS,)
-                if spec_for_status.status not in allowed_spec_statuses:
-                    allowed_names = " or ".join(f"'{s.value}'" for s in allowed_spec_statuses)
+                    # Normal and bug cards can start when spec >= in_progress (level 4)
+                    min_spec_level = SpecService._STATUS_ORDER.get(SpecStatus.IN_PROGRESS, 4)
+                if spec_level < min_spec_level:
                     raise ValueError(
-                        f"Cannot move card forward: spec '{spec_for_status.title}' must be {allowed_names} "
+                        f"Cannot move card forward: spec '{spec_for_status.title}' must be at least "
+                        f"'{SpecStatus.VALIDATED.value if card_type == CardType.TEST else SpecStatus.IN_PROGRESS.value}' "
                         f"(currently '{spec_for_status.status.value}'). "
                         f"Move the spec forward before starting work on its cards."
                     )
