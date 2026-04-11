@@ -482,11 +482,13 @@ async def init_db() -> None:
 
 async def _migrate_agent_permissions() -> None:
     """Migrate agents from legacy flat permissions to granular permission_flags."""
+    import logging
+    logger = logging.getLogger("okto_pulse.migrations")
+
     from sqlalchemy import text as sa_text
 
     async with get_session_factory()() as session:
         try:
-            # Check if permission_flags column exists
             result = await session.execute(sa_text(
                 "SELECT id, permissions, permission_flags FROM agents WHERE permission_flags IS NULL"
             ))
@@ -502,13 +504,11 @@ async def _migrate_agent_permissions() -> None:
 
             for agent_row in agents:
                 agent_id = agent_row[0]
-                old_perms = agent_row[1]  # JSON string or None
+                old_perms = agent_row[1]
 
                 if old_perms is None:
-                    # Full access — map to Full Control (all True)
                     new_flags = copy.deepcopy(PERMISSION_REGISTRY)
                 else:
-                    # Parse legacy permissions list
                     if isinstance(old_perms, str):
                         perm_list = _json.loads(old_perms)
                     else:
@@ -521,8 +521,11 @@ async def _migrate_agent_permissions() -> None:
                         "UPDATE agents SET permission_flags = :flags WHERE id = :id"
                     ).bindparams(flags=flags_json, id=agent_id)
                 )
+                logger.info(f"Migrated agent {agent_id[:8]} permissions ({len(flags_json)} bytes)")
             await session.commit()
-        except Exception:
+            logger.info(f"Permission migration complete: {len(agents)} agent(s)")
+        except Exception as e:
+            logger.error(f"Permission migration failed: {e}")
             await session.rollback()
 
 
