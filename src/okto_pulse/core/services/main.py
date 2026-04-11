@@ -46,6 +46,10 @@ from okto_pulse.core.models.db import (
     SpecQAItem,
     SpecSkill,
     SpecStatus,
+    Sprint,
+    SprintHistory,
+    SprintQAItem,
+    SprintStatus,
 )
 from okto_pulse.core.models.schemas import (
     AgentCreate,
@@ -83,6 +87,9 @@ from okto_pulse.core.models.schemas import (
     SpecSkillCreate,
     SpecSkillUpdate,
     SpecUpdate,
+    SprintCreate,
+    SprintMove,
+    SprintUpdate,
 )
 
 settings = get_settings()
@@ -834,8 +841,27 @@ class CardService:
                         f"Move the spec forward before starting work on its cards."
                     )
 
-        # Coverage gates (test, rules, TRs, contracts) are now in SpecService.move_spec
-        # (approved → validated transition). No longer checked here.
+        # Sprint gate: if spec has sprints, card must have sprint_id and sprint must be active
+        if new_level > old_level and card.spec_id:
+            spec_for_sprint = await self.db.get(Spec, card.spec_id)
+            if spec_for_sprint:
+                sprint_count_q = select(func.count()).select_from(Sprint).where(
+                    Sprint.spec_id == card.spec_id, Sprint.archived.is_(False),
+                )
+                sprint_count = (await self.db.execute(sprint_count_q)).scalar() or 0
+                if sprint_count > 0:
+                    if not card.sprint_id:
+                        raise ValueError(
+                            "This spec uses sprints. Card must be assigned to a sprint before advancing. "
+                            "Use okto_pulse_update_card or assign_tasks_to_sprint to assign it."
+                        )
+                    sprint_obj = await self.db.get(Sprint, card.sprint_id)
+                    if sprint_obj and sprint_obj.status != SprintStatus.ACTIVE:
+                        raise ValueError(
+                            f"Card's sprint '{sprint_obj.title}' is not active "
+                            f"(status: '{sprint_obj.status.value}'). "
+                            f"Only cards in active sprints can advance."
+                        )
 
         # Block Done on test cards if linked scenarios not updated
         if data.status == CardStatus.DONE and card.spec_id and card.test_scenario_ids:
@@ -1719,6 +1745,33 @@ class SpecService:
                         f"Uncovered: {'; '.join(uncovered[:5])}"
                         f"{f' (and {len(uncovered) - 5} more)' if len(uncovered) > 5 else ''}. "
                         f"Create test scenarios for all criteria, or set skip_test_coverage flag in the spec."
+                    )
+
+        # Sprint done gate: all sprints must be closed|cancelled (min 1 closed)
+        if data.status == SpecStatus.DONE:
+            sprints_q = select(Sprint).where(
+                Sprint.spec_id == spec_id, Sprint.archived.is_(False),
+            )
+            sprints_result = await self.db.execute(sprints_q)
+            spec_sprints = list(sprints_result.scalars().all())
+            if spec_sprints:
+                pending = [
+                    s for s in spec_sprints
+                    if s.status not in (SprintStatus.CLOSED, SprintStatus.CANCELLED)
+                ]
+                has_closed = any(s.status == SprintStatus.CLOSED for s in spec_sprints)
+                if pending:
+                    sprint_list = "; ".join(
+                        f"'{s.title}' ({s.status.value})" for s in pending[:5]
+                    )
+                    raise ValueError(
+                        f"Cannot move spec to 'done': {len(pending)} sprint(s) are not closed or cancelled. "
+                        f"Pending: {sprint_list}. Close or cancel all sprints first."
+                    )
+                if not has_closed:
+                    raise ValueError(
+                        "Cannot move spec to 'done': at least 1 sprint must be closed "
+                        "(all are cancelled). Close at least one sprint."
                     )
 
         # Enforce all linked tasks (non-bug) must be done/cancelled before spec can be done
@@ -3607,3 +3660,407 @@ class ArchiveService:
 
         await self.db.flush()
         return counts
+
+
+# ============================================================================
+# SPRINT SERVICE
+# ============================================================================
+
+
+class SprintService:
+    """Service for sprint operations."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    _SPRINT_TRANSITIONS = {
+        SprintStatus.DRAFT: [SprintStatus.ACTIVE, SprintStatus.CANCELLED],
+        SprintStatus.ACTIVE: [SprintStatus.DRAFT, SprintStatus.REVIEW, SprintStatus.CANCELLED],
+        SprintStatus.REVIEW: [SprintStatus.ACTIVE, SprintStatus.CLOSED, SprintStatus.CANCELLED],
+        SprintStatus.CLOSED: [SprintStatus.DRAFT],
+        SprintStatus.CANCELLED: [SprintStatus.DRAFT],
+    }
+
+    async def _record_history(
+        self, sprint_id: str, action: str, actor_id: str, actor_name: str,
+        actor_type: str = "user", changes: list[dict] | None = None,
+        summary: str | None = None, version: int | None = None,
+    ) -> None:
+        entry = SprintHistory(
+            sprint_id=sprint_id, action=action, actor_type=actor_type,
+            actor_id=actor_id, actor_name=actor_name,
+            changes=changes, summary=summary, version=version,
+        )
+        self.db.add(entry)
+
+    async def _log_activity(self, **kwargs: Any) -> None:
+        log = ActivityLog(**kwargs)
+        self.db.add(log)
+
+    async def create_sprint(
+        self, board_id: str, user_id: str, data: SprintCreate,
+        skip_ownership_check: bool = False,
+    ) -> Sprint | None:
+        """Create a new sprint for a spec."""
+        spec = await self.db.get(Spec, data.spec_id)
+        if not spec or spec.board_id != board_id:
+            return None
+        if not skip_ownership_check:
+            board = await self.db.get(Board, board_id)
+            if not board or board.owner_id != user_id:
+                return None
+
+        # Validate scoped IDs exist in spec
+        if data.test_scenario_ids:
+            spec_ts_ids = {s.get("id") for s in (spec.test_scenarios or [])}
+            invalid = set(data.test_scenario_ids) - spec_ts_ids
+            if invalid:
+                raise ValueError(f"Test scenario IDs not found in spec: {invalid}")
+        if data.business_rule_ids:
+            spec_br_ids = {r.get("id") for r in (spec.business_rules or [])}
+            invalid = set(data.business_rule_ids) - spec_br_ids
+            if invalid:
+                raise ValueError(f"Business rule IDs not found in spec: {invalid}")
+
+        sprint = Sprint(
+            board_id=board_id, spec_id=data.spec_id,
+            title=data.title, description=data.description,
+            spec_version=spec.version,
+            test_scenario_ids=data.test_scenario_ids,
+            business_rule_ids=data.business_rule_ids,
+            start_date=data.start_date, end_date=data.end_date,
+            labels=data.labels, created_by=user_id,
+        )
+        self.db.add(sprint)
+        await self.db.flush()
+
+        actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        await self._log_activity(
+            board_id=board_id, action="sprint_created",
+            actor_type="user", actor_id=user_id, actor_name=actor_name,
+            details={"title": data.title, "sprint_id": sprint.id, "spec_id": data.spec_id},
+        )
+        await self._record_history(
+            sprint_id=sprint.id, action="created", actor_id=user_id, actor_name=actor_name,
+            summary=f"Sprint created: {data.title}", version=1,
+        )
+        return sprint
+
+    async def get_sprint(self, sprint_id: str) -> Sprint | None:
+        """Get a sprint by ID with cards, Q&A, and history."""
+        query = (
+            select(Sprint)
+            .options(selectinload(Sprint.cards))
+            .options(selectinload(Sprint.qa_items))
+            .options(selectinload(Sprint.history))
+            .where(Sprint.id == sprint_id)
+        )
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
+    async def list_sprints(
+        self, spec_id: str, include_archived: bool = False,
+    ) -> list[Sprint]:
+        """List sprints for a spec."""
+        query = select(Sprint).where(Sprint.spec_id == spec_id)
+        if not include_archived:
+            query = query.where(Sprint.archived == False)
+        query = query.order_by(Sprint.created_at.asc())
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def update_sprint(
+        self, sprint_id: str, user_id: str, data: SprintUpdate,
+    ) -> Sprint | None:
+        """Update a sprint. Bumps version on content changes."""
+        sprint = await self.get_sprint(sprint_id)
+        if not sprint:
+            return None
+        if sprint.archived:
+            raise ValueError("This sprint is archived. Restore it first.")
+
+        update_data = data.model_dump(exclude_unset=True)
+        old_data = {k: getattr(sprint, k) for k in update_data.keys()}
+
+        # Validate scoped IDs if changed
+        if "test_scenario_ids" in update_data and update_data["test_scenario_ids"] is not None:
+            spec = await self.db.get(Spec, sprint.spec_id)
+            if spec:
+                spec_ts_ids = {s.get("id") for s in (spec.test_scenarios or [])}
+                invalid = set(update_data["test_scenario_ids"]) - spec_ts_ids
+                if invalid:
+                    raise ValueError(f"Test scenario IDs not found in spec: {invalid}")
+        if "business_rule_ids" in update_data and update_data["business_rule_ids"] is not None:
+            spec = spec if "test_scenario_ids" in update_data else await self.db.get(Spec, sprint.spec_id)
+            if spec:
+                spec_br_ids = {r.get("id") for r in (spec.business_rules or [])}
+                invalid = set(update_data["business_rule_ids"]) - spec_br_ids
+                if invalid:
+                    raise ValueError(f"Business rule IDs not found in spec: {invalid}")
+
+        content_fields = {"title", "description", "test_scenario_ids", "business_rule_ids"}
+        bumps_version = bool(content_fields & update_data.keys())
+
+        json_fields = {"test_scenario_ids", "business_rule_ids", "labels"}
+        for key, value in update_data.items():
+            setattr(sprint, key, value)
+            if key in json_fields:
+                flag_modified(sprint, key)
+
+        if bumps_version:
+            sprint.version += 1
+
+        actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
+        await self._log_activity(
+            board_id=sprint.board_id, action="sprint_updated",
+            actor_type="user", actor_id=user_id, actor_name=actor_name,
+            details={"sprint_id": sprint_id, "version": sprint.version, "fields": list(update_data.keys())},
+        )
+        changes = SpecService._compute_diff(old_data, update_data, list(update_data.keys()))
+        if changes:
+            await self._record_history(
+                sprint_id=sprint_id, action="updated", actor_id=user_id, actor_name=actor_name,
+                changes=changes, version=sprint.version,
+                summary=f"Updated: {', '.join(c['field'] for c in changes)}",
+            )
+        return sprint
+
+    async def move_sprint(
+        self, sprint_id: str, user_id: str, data: SprintMove,
+        actor_name: str | None = None,
+    ) -> Sprint | None:
+        """Move a sprint to a different status with gates."""
+        sprint = await self.get_sprint(sprint_id)
+        if not sprint:
+            return None
+        if sprint.archived:
+            raise ValueError("This sprint is archived. Restore it first.")
+
+        allowed = self._SPRINT_TRANSITIONS.get(sprint.status, [])
+        if data.status not in allowed:
+            allowed_values = [s.value for s in allowed]
+            raise ValueError(
+                f"Cannot move sprint from '{sprint.status.value}' to '{data.status.value}'. "
+                f"Allowed: {allowed_values}"
+            )
+
+        spec = await self.db.get(Spec, sprint.spec_id)
+        board = await self.db.get(Board, sprint.board_id) if spec else None
+
+        # Gate: draft → active requires at least 1 card assigned
+        if data.status == SprintStatus.ACTIVE:
+            cards_q = select(func.count()).select_from(Card).where(
+                Card.sprint_id == sprint_id, Card.archived.is_(False),
+            )
+            card_count = (await self.db.execute(cards_q)).scalar() or 0
+            if card_count == 0:
+                raise ValueError(
+                    "Cannot activate sprint: no cards assigned. "
+                    "Assign at least one card to this sprint before activating."
+                )
+
+        # Gate: active → review requires scoped test coverage check
+        if data.status == SprintStatus.REVIEW:
+            skip_tc = sprint.skip_test_coverage or (
+                (board.settings or {}).get("skip_test_coverage_global", False) if board else False
+            )
+            if not skip_tc and spec and sprint.test_scenario_ids:
+                scenarios = spec.test_scenarios or []
+                scoped = [s for s in scenarios if s.get("id") in (sprint.test_scenario_ids or [])]
+                not_covered = [s for s in scoped if s.get("status") != "passed"]
+                if not_covered:
+                    names = "; ".join(s.get("title", s.get("id", "?"))[:60] for s in not_covered[:5])
+                    raise ValueError(
+                        f"Cannot submit sprint for review: {len(not_covered)} scoped test scenario(s) "
+                        f"not passed. Pending: {names}"
+                        f"{f' (and {len(not_covered) - 5} more)' if len(not_covered) > 5 else ''}."
+                    )
+
+        # Gate: review → closed requires evaluation
+        if data.status == SprintStatus.CLOSED:
+            skip_qual = sprint.skip_qualitative_validation
+            if not skip_qual:
+                evaluations = [e for e in (sprint.evaluations or []) if not e.get("stale")]
+                approvals = [e for e in evaluations if e.get("recommendation") == "approve"]
+                rejections = [e for e in evaluations if e.get("recommendation") == "reject"]
+                if rejections:
+                    names = ", ".join(e.get("evaluator_name", "?") for e in rejections)
+                    raise ValueError(
+                        f"Cannot close sprint: {len(rejections)} evaluation(s) with 'reject' "
+                        f"recommendation (by: {names}). Remove or replace rejections."
+                    )
+                if not approvals:
+                    raise ValueError(
+                        "Cannot close sprint: no evaluation with 'approve' recommendation. "
+                        "Submit an evaluation before closing."
+                    )
+                threshold = (
+                    sprint.validation_threshold
+                    or (board.settings or {}).get("validation_threshold_global", 70) if board else 70
+                )
+                avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(approvals)
+                if avg_score < threshold:
+                    raise ValueError(
+                        f"Cannot close sprint: average approval score ({avg_score:.0f}) "
+                        f"is below threshold ({threshold})."
+                    )
+
+        old_status = sprint.status
+        sprint.status = data.status
+
+        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, sprint.board_id)
+        await self._log_activity(
+            board_id=sprint.board_id, action="sprint_moved",
+            actor_type="user", actor_id=user_id, actor_name=resolved_name,
+            details={
+                "sprint_id": sprint_id, "spec_id": sprint.spec_id,
+                "from_status": old_status.value, "to_status": data.status.value,
+            },
+        )
+        await self._record_history(
+            sprint_id=sprint_id, action="status_changed",
+            actor_id=user_id, actor_name=resolved_name,
+            changes=[{"field": "status", "old": old_status.value, "new": data.status.value}],
+            summary=f"Status: {old_status.value} → {data.status.value}",
+            version=sprint.version,
+        )
+        return sprint
+
+    async def delete_sprint(self, sprint_id: str, user_id: str) -> bool:
+        """Delete a sprint. Unlinks cards but doesn't delete them."""
+        sprint = await self.get_sprint(sprint_id)
+        if not sprint:
+            return False
+        await self.db.execute(
+            update(Card).where(Card.sprint_id == sprint_id).values(sprint_id=None)
+        )
+        board_id = sprint.board_id
+        actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        await self.db.delete(sprint)
+        await self._log_activity(
+            board_id=board_id, action="sprint_deleted",
+            actor_type="user", actor_id=user_id, actor_name=actor_name,
+            details={"sprint_id": sprint_id},
+        )
+        return True
+
+    async def assign_tasks(
+        self, sprint_id: str, card_ids: list[str], user_id: str,
+    ) -> int:
+        """Assign cards to a sprint. Cards must belong to the same spec."""
+        sprint = await self.db.get(Sprint, sprint_id)
+        if not sprint:
+            raise ValueError("Sprint not found")
+        assigned = 0
+        for card_id in card_ids:
+            card = await self.db.get(Card, card_id)
+            if not card:
+                continue
+            if card.spec_id != sprint.spec_id:
+                raise ValueError(
+                    f"Card '{card.title}' belongs to a different spec. "
+                    f"Sprint spec: {sprint.spec_id}, card spec: {card.spec_id}"
+                )
+            card.sprint_id = sprint_id
+            assigned += 1
+        if assigned:
+            actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
+            await self._log_activity(
+                board_id=sprint.board_id, action="sprint_tasks_assigned",
+                actor_type="user", actor_id=user_id, actor_name=actor_name,
+                details={"sprint_id": sprint_id, "card_ids": card_ids, "count": assigned},
+            )
+        return assigned
+
+    async def submit_evaluation(
+        self, sprint_id: str, user_id: str, evaluation: dict,
+    ) -> Sprint | None:
+        """Submit a qualitative evaluation for a sprint."""
+        sprint = await self.db.get(Sprint, sprint_id)
+        if not sprint:
+            return None
+        if sprint.status != SprintStatus.REVIEW:
+            raise ValueError(
+                f"Evaluations can only be submitted for sprints in 'review' status "
+                f"(current: '{sprint.status.value}')"
+            )
+        import uuid as _uuid
+        eval_entry = {
+            "id": f"eval_{_uuid.uuid4().hex[:8]}",
+            "evaluator_id": user_id,
+            "evaluator_name": await resolve_actor_name(self.db, user_id, sprint.board_id),
+            "evaluator_type": "user",
+            **evaluation,
+            "stale": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        evals = list(sprint.evaluations or [])
+        evals.append(eval_entry)
+        sprint.evaluations = evals
+        flag_modified(sprint, "evaluations")
+
+        await self._log_activity(
+            board_id=sprint.board_id, action="sprint_evaluation_submitted",
+            actor_type="user", actor_id=user_id, actor_name=eval_entry["evaluator_name"],
+            details={"sprint_id": sprint_id, "evaluation_id": eval_entry["id"], "score": evaluation.get("overall_score")},
+        )
+        return sprint
+
+    async def list_history(self, sprint_id: str, limit: int = 50) -> list[SprintHistory]:
+        query = (
+            select(SprintHistory)
+            .where(SprintHistory.sprint_id == sprint_id)
+            .order_by(SprintHistory.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+
+class SprintQAService:
+    """Service for sprint Q&A operations."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def create_question(
+        self, sprint_id: str, user_id: str, question: str,
+        question_type: str = "text", choices: list | None = None,
+        allow_free_text: bool = False,
+    ) -> SprintQAItem | None:
+        sprint = await self.db.get(Sprint, sprint_id)
+        if not sprint:
+            return None
+        qa = SprintQAItem(
+            sprint_id=sprint_id, question=question,
+            question_type=question_type or "text",
+            choices=choices, allow_free_text=allow_free_text,
+            asked_by=user_id,
+        )
+        self.db.add(qa)
+        await self.db.flush()
+        return qa
+
+    async def answer_question(
+        self, qa_id: str, user_id: str, answer: str | None = None,
+        selected: list[str] | None = None,
+    ) -> SprintQAItem | None:
+        qa = await self.db.get(SprintQAItem, qa_id)
+        if not qa:
+            return None
+        qa.answer = answer
+        qa.selected = selected
+        qa.answered_by = user_id
+        qa.answered_at = datetime.now(timezone.utc)
+        if selected is not None:
+            flag_modified(qa, "selected")
+        return qa
+
+    async def list_qa(self, sprint_id: str) -> list[SprintQAItem]:
+        query = (
+            select(SprintQAItem)
+            .where(SprintQAItem.sprint_id == sprint_id)
+            .order_by(SprintQAItem.created_at.asc())
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())

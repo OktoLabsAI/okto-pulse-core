@@ -14,6 +14,7 @@ from okto_pulse.core.api.guidelines import router as guidelines_router
 from okto_pulse.core.api.specs import router as specs_router
 from okto_pulse.core.api.analytics import router as analytics_router
 from okto_pulse.core.api.presets import router as presets_router
+from okto_pulse.core.api.sprints import router as sprints_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -29,3 +30,4 @@ api_router.include_router(qa_router, prefix="/qa", tags=["qa"])
 api_router.include_router(comments_router, prefix="/comments", tags=["comments"])
 api_router.include_router(analytics_router, tags=["analytics"])
 api_router.include_router(presets_router, prefix="/presets", tags=["presets"])
+api_router.include_router(sprints_router, tags=["sprints"])

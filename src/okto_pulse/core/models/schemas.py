@@ -12,6 +12,7 @@ from okto_pulse.core.models.db import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
+    SprintStatus,
 )
 
 
@@ -996,6 +997,7 @@ class CardSummaryForSpec(BaseSchema):
     status: CardStatus
     priority: CardPriority
     assignee_id: str | None
+    sprint_id: str | None = None
 
 
 class SpecResponse(BaseSchema):
@@ -1050,6 +1052,7 @@ class CardCreate(BaseModel):
     due_date: datetime | None = None
     labels: list[str] | None = None
     spec_id: str | None = None
+    sprint_id: str | None = None
     test_scenario_ids: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
     # Bug card fields
@@ -1075,6 +1078,7 @@ class CardUpdate(BaseModel):
     due_date: datetime | None = None
     labels: list[str] | None = None
     spec_id: str | None = None
+    sprint_id: str | None = None
     test_scenario_ids: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
     # Bug card fields (only updatable, not card_type or origin_task_id)
@@ -1116,6 +1120,7 @@ class CardResponse(BaseSchema):
     id: str
     board_id: str
     spec_id: str | None = None
+    sprint_id: str | None = None
     title: str
     description: str | None
     details: str | None
@@ -1153,6 +1158,7 @@ class CardSummary(BaseSchema):
     id: str
     board_id: str
     spec_id: str | None = None
+    sprint_id: str | None = None
     title: str
     description: str | None
     status: CardStatus
@@ -1329,6 +1335,162 @@ class ActivityLogResponse(BaseSchema):
     actor_name: str
     details: dict[str, Any] | None
     created_at: datetime
+
+
+# ============================================================================
+# Sprint Schemas
+# ============================================================================
+
+
+class SprintCreate(BaseModel):
+    """Schema for creating a sprint."""
+
+    title: str = Field(..., min_length=1, max_length=500)
+    description: str | None = None
+    spec_id: str
+    test_scenario_ids: list[str] | None = None
+    business_rule_ids: list[str] | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    labels: list[str] | None = None
+
+
+class SprintUpdate(BaseModel):
+    """Schema for updating a sprint."""
+
+    title: str | None = Field(None, min_length=1, max_length=500)
+    description: str | None = None
+    test_scenario_ids: list[str] | None = None
+    business_rule_ids: list[str] | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    labels: list[str] | None = None
+    skip_test_coverage: bool | None = None
+    skip_rules_coverage: bool | None = None
+    skip_qualitative_validation: bool | None = None
+    validation_threshold: int | None = None
+
+
+class SprintMove(BaseModel):
+    """Schema for changing sprint status."""
+
+    status: SprintStatus
+
+
+class SprintEvaluationCreate(BaseModel):
+    """Schema for submitting a sprint evaluation (4 dimensions + overall)."""
+
+    breakdown_completeness: int = Field(..., ge=0, le=100)
+    breakdown_justification: str
+    granularity: int = Field(..., ge=0, le=100)
+    granularity_justification: str
+    dependency_coherence: int = Field(..., ge=0, le=100)
+    dependency_justification: str
+    test_coverage_quality: int = Field(..., ge=0, le=100)
+    test_coverage_justification: str
+    overall_score: int = Field(..., ge=0, le=100)
+    overall_justification: str
+    recommendation: str = Field(..., pattern=r"^(approve|request_changes|reject)$")
+
+
+class SprintQACreate(BaseModel):
+    """Schema for asking a question on a sprint."""
+
+    question: str = Field(..., min_length=1)
+    question_type: str = "text"
+    choices: list[dict] | None = None
+    allow_free_text: bool = False
+
+
+class SprintQAAnswer(BaseModel):
+    """Schema for answering a sprint question."""
+
+    answer: str | None = None
+    selected: list[str] | None = None
+
+
+class SprintQAResponse(BaseSchema):
+    """Schema for sprint Q&A item response."""
+
+    id: str
+    sprint_id: str
+    question: str
+    question_type: str
+    choices: list[dict] | None = None
+    allow_free_text: bool = False
+    answer: str | None = None
+    selected: list[str] | None = None
+    asked_by: str
+    answered_by: str | None = None
+    created_at: datetime
+    answered_at: datetime | None = None
+
+
+class SprintHistoryResponse(BaseSchema):
+    """Schema for sprint history entry."""
+
+    id: str
+    sprint_id: str
+    action: str
+    actor_type: str
+    actor_id: str
+    actor_name: str
+    changes: list | None = None
+    summary: str | None = None
+    version: int | None = None
+    created_at: datetime
+
+
+class SprintSummary(BaseSchema):
+    """Schema for sprint summary (used in lists and spec responses)."""
+
+    id: str
+    spec_id: str
+    board_id: str
+    title: str
+    description: str | None = None
+    status: SprintStatus
+    spec_version: int
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    test_scenario_ids: list[str] | None = None
+    business_rule_ids: list[str] | None = None
+    version: int
+    labels: list[str] | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    archived: bool = False
+
+
+class SprintResponse(BaseSchema):
+    """Schema for full sprint response."""
+
+    id: str
+    spec_id: str
+    board_id: str
+    title: str
+    description: str | None = None
+    status: SprintStatus
+    spec_version: int
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    test_scenario_ids: list[str] | None = None
+    business_rule_ids: list[str] | None = None
+    evaluations: list | None = None
+    skip_test_coverage: bool = False
+    skip_rules_coverage: bool = False
+    skip_qualitative_validation: bool = False
+    validation_threshold: int | None = None
+    version: int
+    labels: list[str] | None = None
+    archived: bool = False
+    pre_archive_status: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    cards: list[CardSummaryForSpec] = []
+    qa_items: list[SprintQAResponse] = []
 
 
 # ============================================================================

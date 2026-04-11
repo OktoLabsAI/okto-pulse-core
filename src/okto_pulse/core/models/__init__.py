@@ -32,6 +32,10 @@ from okto_pulse.core.models.db import (
     SpecQAItem,
     SpecSkill,
     SpecStatus,
+    Sprint,
+    SprintHistory,
+    SprintQAItem,
+    SprintStatus,
 )
 from okto_pulse.core.models.schemas import (
     ActivityLogResponse,
@@ -105,6 +109,16 @@ from okto_pulse.core.models.schemas import (
     SpecSkillUpdate,
     SpecSummary,
     SpecUpdate,
+    SprintCreate,
+    SprintEvaluationCreate,
+    SprintHistoryResponse,
+    SprintMove,
+    SprintQAAnswer,
+    SprintQACreate,
+    SprintQAResponse,
+    SprintResponse,
+    SprintSummary,
+    SprintUpdate,
 )
 
 __all__ = [
@@ -140,6 +154,10 @@ __all__ = [
     "SpecQAItem",
     "SpecSkill",
     "SpecStatus",
+    "Sprint",
+    "SprintHistory",
+    "SprintQAItem",
+    "SprintStatus",
     # Schemas
     "ActivityLogResponse",
     "AgentBoardOverridesUpdate",
@@ -212,4 +230,14 @@ __all__ = [
     "SpecSkillUpdate",
     "SpecSummary",
     "SpecUpdate",
+    "SprintCreate",
+    "SprintEvaluationCreate",
+    "SprintHistoryResponse",
+    "SprintMove",
+    "SprintQAAnswer",
+    "SprintQACreate",
+    "SprintQAResponse",
+    "SprintResponse",
+    "SprintSummary",
+    "SprintUpdate",
 ]

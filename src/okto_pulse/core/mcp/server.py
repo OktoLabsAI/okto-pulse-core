@@ -8508,6 +8508,564 @@ async def okto_pulse_delete_refinement_knowledge(board_id: str, refinement_id: s
 
 
 # ============================================================================
+# SPRINT TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_create_sprint(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    description: str = "",
+    test_scenario_ids: str = "",
+    business_rule_ids: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    labels: str = "",
+) -> str:
+    """
+    Create a new sprint for a spec. Sprints break specs into incremental deliverables.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID this sprint belongs to
+        title: Sprint title
+        description: Sprint objective/goal (optional)
+        test_scenario_ids: Comma-separated spec test scenario IDs scoped to this sprint (optional)
+        business_rule_ids: Comma-separated spec business rule IDs scoped to this sprint (optional)
+        start_date: ISO date string (optional)
+        end_date: ISO date string (optional)
+        labels: Comma-separated labels (optional)
+
+    Returns:
+        JSON with created sprint details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "sprint.entity.create")
+    if isinstance(ctx.permissions, PermissionSet):
+        perm_err = ctx.permissions.check("sprint.entity.create")
+    else:
+        perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import SprintCreate
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        try:
+            data = SprintCreate(
+                title=title, description=description or None, spec_id=spec_id,
+                test_scenario_ids=[x.strip() for x in test_scenario_ids.split(",") if x.strip()] or None,
+                business_rule_ids=[x.strip() for x in business_rule_ids.split(",") if x.strip()] or None,
+                start_date=start_date or None, end_date=end_date or None,
+                labels=[x.strip() for x in labels.split(",") if x.strip()] or None,
+            )
+            sprint = await service.create_sprint(board_id, ctx.agent_id, data, skip_ownership_check=True)
+            await db.commit()
+            if not sprint:
+                return json.dumps({"error": "Failed to create sprint (spec not found or wrong board)"})
+            return json.dumps({
+                "success": True,
+                "sprint": {"id": sprint.id, "title": sprint.title, "status": sprint.status.value, "spec_id": sprint.spec_id},
+            })
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_update_sprint(
+    board_id: str,
+    sprint_id: str,
+    title: str = "",
+    description: str = "",
+    test_scenario_ids: str = "",
+    business_rule_ids: str = "",
+    labels: str = "",
+    skip_test_coverage: str = "",
+    skip_rules_coverage: str = "",
+    skip_qualitative_validation: str = "",
+) -> str:
+    """
+    Update sprint fields.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+        title: New title (optional, empty = no change)
+        description: New description (optional)
+        test_scenario_ids: Comma-separated scoped test scenario IDs (optional)
+        business_rule_ids: Comma-separated scoped business rule IDs (optional)
+        labels: Comma-separated labels (optional)
+        skip_test_coverage: "true" or "false" (optional)
+        skip_rules_coverage: "true" or "false" (optional)
+        skip_qualitative_validation: "true" or "false" (optional)
+
+    Returns:
+        JSON with updated sprint details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.models.schemas import SprintUpdate
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        kwargs = {}
+        if title:
+            kwargs["title"] = title
+        if description:
+            kwargs["description"] = description
+        if test_scenario_ids:
+            kwargs["test_scenario_ids"] = [x.strip() for x in test_scenario_ids.split(",") if x.strip()]
+        if business_rule_ids:
+            kwargs["business_rule_ids"] = [x.strip() for x in business_rule_ids.split(",") if x.strip()]
+        if labels:
+            kwargs["labels"] = [x.strip() for x in labels.split(",") if x.strip()]
+        if skip_test_coverage:
+            kwargs["skip_test_coverage"] = skip_test_coverage.lower() == "true"
+        if skip_rules_coverage:
+            kwargs["skip_rules_coverage"] = skip_rules_coverage.lower() == "true"
+        if skip_qualitative_validation:
+            kwargs["skip_qualitative_validation"] = skip_qualitative_validation.lower() == "true"
+
+        try:
+            data = SprintUpdate(**kwargs)
+            sprint = await service.update_sprint(sprint_id, ctx.agent_id, data)
+            await db.commit()
+            if not sprint:
+                return json.dumps({"error": "Sprint not found"})
+            return json.dumps({
+                "success": True,
+                "sprint": {"id": sprint.id, "title": sprint.title, "version": sprint.version},
+            })
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_move_sprint(
+    board_id: str,
+    sprint_id: str,
+    status: str,
+) -> str:
+    """
+    Move a sprint to a new status. State machine: draft→active→review→closed.
+    Gates: draft→active requires cards, active→review requires scoped test coverage, review→closed requires evaluation.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+        status: New status — one of: draft, active, review, closed, cancelled
+
+    Returns:
+        JSON with updated sprint details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    from okto_pulse.core.models.db import SprintStatus
+    from okto_pulse.core.models.schemas import SprintMove
+
+    try:
+        sprint_status = SprintStatus(status)
+    except ValueError:
+        return json.dumps({"error": f"Invalid status. Must be one of: {[s.value for s in SprintStatus]}"})
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        try:
+            sprint = await service.move_sprint(sprint_id, ctx.agent_id, SprintMove(status=sprint_status))
+            await db.commit()
+            if not sprint:
+                return json.dumps({"error": "Sprint not found"})
+            return json.dumps({
+                "success": True,
+                "sprint": {"id": sprint.id, "title": sprint.title, "status": sprint.status.value},
+            })
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_get_sprint(board_id: str, sprint_id: str) -> str:
+    """
+    Get full sprint details including cards, evaluations, and Q&A.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+
+    Returns:
+        JSON with full sprint details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        sprint = await service.get_sprint(sprint_id)
+        if not sprint:
+            return json.dumps({"error": "Sprint not found"})
+        return json.dumps({
+            "id": sprint.id, "spec_id": sprint.spec_id, "board_id": sprint.board_id,
+            "title": sprint.title, "description": sprint.description,
+            "status": sprint.status.value, "spec_version": sprint.spec_version,
+            "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
+            "end_date": sprint.end_date.isoformat() if sprint.end_date else None,
+            "test_scenario_ids": sprint.test_scenario_ids,
+            "business_rule_ids": sprint.business_rule_ids,
+            "evaluations": sprint.evaluations,
+            "skip_test_coverage": sprint.skip_test_coverage,
+            "skip_rules_coverage": sprint.skip_rules_coverage,
+            "skip_qualitative_validation": sprint.skip_qualitative_validation,
+            "version": sprint.version, "labels": sprint.labels,
+            "cards": [
+                {"id": c.id, "title": c.title, "status": c.status.value, "priority": c.priority.value}
+                for c in sprint.cards
+            ],
+            "qa_items": [
+                {"id": q.id, "question": q.question, "answer": q.answer, "asked_by": q.asked_by}
+                for q in sprint.qa_items
+            ],
+            "created_by": sprint.created_by,
+            "created_at": sprint.created_at.isoformat() if sprint.created_at else None,
+        })
+
+
+@mcp.tool()
+async def okto_pulse_list_sprints(board_id: str, spec_id: str) -> str:
+    """
+    List all sprints for a spec.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with list of sprint summaries
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        sprints = await service.list_sprints(spec_id)
+        return json.dumps({
+            "spec_id": spec_id,
+            "count": len(sprints),
+            "sprints": [
+                {
+                    "id": s.id, "title": s.title, "status": s.status.value,
+                    "spec_version": s.spec_version,
+                    "test_scenario_ids": s.test_scenario_ids,
+                    "business_rule_ids": s.business_rule_ids,
+                    "labels": s.labels,
+                }
+                for s in sprints
+            ],
+        })
+
+
+@mcp.tool()
+async def okto_pulse_assign_tasks_to_sprint(
+    board_id: str,
+    sprint_id: str,
+    card_ids: str,
+) -> str:
+    """
+    Assign cards to a sprint. Cards must belong to the same spec as the sprint.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+        card_ids: Comma-separated card IDs to assign
+
+    Returns:
+        JSON with number of cards assigned
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    ids = [x.strip() for x in card_ids.split(",") if x.strip()]
+    if not ids:
+        return json.dumps({"error": "No card IDs provided"})
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        try:
+            count = await service.assign_tasks(sprint_id, ids, ctx.agent_id)
+            await db.commit()
+            return json.dumps({"success": True, "assigned": count})
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_submit_sprint_evaluation(
+    board_id: str,
+    sprint_id: str,
+    breakdown_completeness: int,
+    breakdown_justification: str,
+    granularity: int,
+    granularity_justification: str,
+    dependency_coherence: int,
+    dependency_justification: str,
+    test_coverage_quality: int,
+    test_coverage_justification: str,
+    overall_score: int,
+    overall_justification: str,
+    recommendation: str,
+) -> str:
+    """
+    Submit a qualitative evaluation for a sprint in 'review' status.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID (must be in 'review' status)
+        breakdown_completeness: Score 0-100 — do tasks cover the sprint scope?
+        breakdown_justification: Why this score
+        granularity: Score 0-100 — are tasks properly sized?
+        granularity_justification: Why this score
+        dependency_coherence: Score 0-100 — do task dependencies make sense?
+        dependency_justification: Why this score
+        test_coverage_quality: Score 0-100 — do tests cover happy path and edge cases?
+        test_coverage_justification: Why this score
+        overall_score: Overall score 0-100
+        overall_justification: Overall assessment
+        recommendation: One of: approve, request_changes, reject
+
+    Returns:
+        JSON with evaluation ID and sprint summary
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    if recommendation not in ("approve", "request_changes", "reject"):
+        return json.dumps({"error": "recommendation must be: approve, request_changes, or reject"})
+
+    evaluation = {
+        "dimensions": {
+            "breakdown_completeness": {"score": breakdown_completeness, "justification": breakdown_justification},
+            "granularity": {"score": granularity, "justification": granularity_justification},
+            "dependency_coherence": {"score": dependency_coherence, "justification": dependency_justification},
+            "test_coverage_quality": {"score": test_coverage_quality, "justification": test_coverage_justification},
+        },
+        "overall_score": overall_score,
+        "overall_justification": overall_justification,
+        "recommendation": recommendation,
+    }
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        try:
+            sprint = await service.submit_evaluation(sprint_id, ctx.agent_id, evaluation)
+            await db.commit()
+            if not sprint:
+                return json.dumps({"error": "Sprint not found"})
+            last_eval = sprint.evaluations[-1] if sprint.evaluations else {}
+            return json.dumps({
+                "success": True,
+                "evaluation_id": last_eval.get("id"),
+                "overall_score": overall_score,
+                "recommendation": recommendation,
+            })
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_list_sprint_evaluations(board_id: str, sprint_id: str) -> str:
+    """
+    List all evaluations for a sprint.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+
+    Returns:
+        JSON with evaluations list and summary
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.models.db import Sprint
+        sprint = await db.get(Sprint, sprint_id)
+        if not sprint:
+            return json.dumps({"error": "Sprint not found"})
+        evaluations = sprint.evaluations or []
+        non_stale = [e for e in evaluations if not e.get("stale")]
+        approvals = [e for e in non_stale if e.get("recommendation") == "approve"]
+        return json.dumps({
+            "sprint_id": sprint_id, "total": len(evaluations),
+            "non_stale": len(non_stale), "approvals": len(approvals),
+            "avg_score": (sum(e.get("overall_score", 0) for e in approvals) / len(approvals)) if approvals else 0,
+            "evaluations": evaluations,
+        })
+
+
+@mcp.tool()
+async def okto_pulse_get_sprint_evaluation(
+    board_id: str, sprint_id: str, evaluation_id: str,
+) -> str:
+    """
+    Get full details of a specific sprint evaluation.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+        evaluation_id: Evaluation ID
+
+    Returns:
+        JSON with full evaluation details
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.models.db import Sprint
+        sprint = await db.get(Sprint, sprint_id)
+        if not sprint:
+            return json.dumps({"error": "Sprint not found"})
+        for e in (sprint.evaluations or []):
+            if e.get("id") == evaluation_id:
+                return json.dumps(e)
+        return json.dumps({"error": f"Evaluation '{evaluation_id}' not found"})
+
+
+@mcp.tool()
+async def okto_pulse_delete_sprint_evaluation(
+    board_id: str, sprint_id: str, evaluation_id: str,
+) -> str:
+    """
+    Delete your own sprint evaluation.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+        evaluation_id: Evaluation ID to delete
+
+    Returns:
+        JSON with success or error
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.models.db import Sprint
+        sprint = await db.get(Sprint, sprint_id)
+        if not sprint:
+            return json.dumps({"error": "Sprint not found"})
+        evaluations = list(sprint.evaluations or [])
+        target = None
+        for e in evaluations:
+            if e.get("id") == evaluation_id:
+                target = e
+                break
+        if not target:
+            return json.dumps({"error": f"Evaluation '{evaluation_id}' not found"})
+        if target.get("evaluator_id") != ctx.agent_id:
+            return json.dumps({"error": "You can only delete your own evaluations"})
+        evaluations.remove(target)
+        sprint.evaluations = evaluations
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(sprint, "evaluations")
+        await db.commit()
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_ask_sprint_question(
+    board_id: str,
+    sprint_id: str,
+    question: str,
+) -> str:
+    """
+    Ask a question on a sprint.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+        question: Question text
+
+    Returns:
+        JSON with created Q&A item
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintQAService
+        service = SprintQAService(db)
+        qa = await service.create_question(sprint_id, ctx.agent_id, question)
+        await db.commit()
+        if not qa:
+            return json.dumps({"error": "Sprint not found"})
+        return json.dumps({
+            "success": True,
+            "qa": {"id": qa.id, "question": qa.question, "asked_by": qa.asked_by},
+        })
+
+
+@mcp.tool()
+async def okto_pulse_answer_sprint_question(
+    board_id: str,
+    sprint_id: str,
+    qa_id: str,
+    answer: str,
+) -> str:
+    """
+    Answer a question on a sprint.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+        qa_id: Q&A item ID
+        answer: Answer text
+
+    Returns:
+        JSON with updated Q&A item
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintQAService
+        service = SprintQAService(db)
+        qa = await service.answer_question(qa_id, ctx.agent_id, answer)
+        await db.commit()
+        if not qa:
+            return json.dumps({"error": "Q&A item not found"})
+        return json.dumps({
+            "success": True,
+            "qa": {"id": qa.id, "question": qa.question, "answer": qa.answer, "answered_by": qa.answered_by},
+        })
+
+
+# ============================================================================
 # SERVER STARTUP
 # ============================================================================
 

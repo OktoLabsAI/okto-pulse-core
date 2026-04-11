@@ -188,6 +188,25 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "cards_derive": True,
         "history_read": True,
     },
+    # ---- Sprint ----
+    "sprint": {
+        "entity": {
+            "read": True, "create": True, "edit_fields": True,
+            "edit_coverage_flags": True, "assign": True, "label": True,
+            "archive": True, "restore": True, "delete": True,
+        },
+        "move": {
+            "draft_to_active": True, "active_to_review": True,
+            "review_to_closed": True, "any_to_cancelled": True,
+        },
+        "interact_in": {
+            "draft": True, "active": True, "review": True,
+            "closed": True, "cancelled": True,
+        },
+        "qa": {"read": True, "ask": True, "answer": True},
+        "evaluations": {"read": True, "submit": True, "delete": True},
+        "history_read": True,
+    },
     # ---- Card ----
     "card": {
         "entity": {
@@ -396,7 +415,7 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "card.move.in_progress_to_on_hold", "card.move.on_hold_to_in_progress",
         "card.move.in_progress_to_done", "card.move.any_to_cancelled",
     ],
-    "specs:create": ["spec.entity.create"],
+    "specs:create": ["spec.entity.create", "sprint.entity.create"],
     "specs:update": [
         "spec.entity.edit_fields", "spec.entity.edit_coverage_flags",
         "spec.entity.assign", "spec.entity.label", "spec.entity.link_card",
@@ -413,9 +432,12 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.move.draft_to_review", "spec.move.review_to_approved",
         "spec.move.approved_to_validated", "spec.move.validated_to_in_progress",
         "spec.move.in_progress_to_done", "spec.move.any_to_cancelled",
+        "sprint.move.draft_to_active", "sprint.move.active_to_review",
+        "sprint.move.review_to_closed", "sprint.move.any_to_cancelled",
     ],
     "specs:evaluate": [
         "spec.evaluations.submit", "spec.evaluations.delete",
+        "sprint.evaluations.submit", "sprint.evaluations.delete",
     ],
     "comments:create": [
         "card.comments.create", "card.comments.create_choice",
@@ -427,10 +449,12 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "card.qa.ask", "spec.qa.ask", "spec.qa.ask_choice",
         "ideation.qa.ask", "ideation.qa.ask_choice",
         "refinement.qa.ask", "refinement.qa.ask_choice",
+        "sprint.qa.ask",
     ],
     "qa:answer": [
         "card.qa.answer", "spec.qa.answer",
         "ideation.qa.answer", "refinement.qa.answer",
+        "sprint.qa.answer",
     ],
     "qa:delete": ["card.qa.delete"],
     "attachments:upload": ["card.attachments.upload"],
@@ -451,7 +475,7 @@ def map_legacy_permissions(old_permissions: list[str]) -> dict[str, Any]:
     flags = _set_all_flags(copy.deepcopy(PERMISSION_REGISTRY), False)
 
     # Enable all interact_in (backward compat — existing agents could interact in all states)
-    for entity in ("ideation", "refinement", "spec", "card"):
+    for entity in ("ideation", "refinement", "spec", "sprint", "card"):
         interact_in = flags.get(entity, {}).get("interact_in", {})
         if isinstance(interact_in, dict):
             for status in interact_in:
@@ -518,6 +542,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.mockups.read", "spec.skills.read", "spec.skills.load",
         "spec.knowledge.read", "spec.evaluations.read", "spec.history_read",
         "spec.interact_in.validated", "spec.interact_in.in_progress", "spec.interact_in.done",
+        # Sprint: read + interact active/review
+        "sprint.entity.read", "sprint.qa.read", "sprint.evaluations.read", "sprint.history_read",
+        "sprint.interact_in.active", "sprint.interact_in.review",
         # Card full
         "card.*",
     ])
@@ -545,6 +572,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.evaluations.read", "spec.evaluations.submit",
         "spec.interact_in.review", "spec.interact_in.approved", "spec.interact_in.validated",
         "spec.move.review_to_approved", "spec.move.validated_to_in_progress",
+        # Sprint: read + evaluations + move
+        "sprint.entity.read", "sprint.qa.read",
+        "sprint.evaluations.read", "sprint.evaluations.submit",
+        "sprint.history_read",
+        "sprint.interact_in.review", "sprint.interact_in.closed",
+        "sprint.move.active_to_review", "sprint.move.review_to_closed",
         # Card: read + Q&A + comments + conclusion
         "card.entity.read", "card.entity.context_read",
         "card.qa.*", "card.comments.*", "card.conclusion.read", "card.activity_read",
@@ -568,6 +601,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.knowledge.read", "spec.history_read",
         "spec.evaluations.read", "spec.evaluations.submit",
         "spec.interact_in.*",
+        # Sprint: interact all + evaluations all
+        "sprint.entity.read", "sprint.interact_in.*",
+        "sprint.qa.*", "sprint.evaluations.*", "sprint.history_read",
         # Card: read + create_test + Q&A + comments + tests
         "card.entity.read", "card.entity.context_read", "card.entity.create_test",
         "card.qa.*", "card.comments.read", "card.comments.create",
@@ -596,6 +632,10 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "refinement.interact_in.review", "refinement.interact_in.approved",
         # Spec: full CRUD
         "spec.*",
+        # Sprint: entity.* + move.* + interact draft/active
+        "sprint.entity.*", "sprint.move.*", "sprint.qa.*",
+        "sprint.evaluations.*", "sprint.history_read",
+        "sprint.interact_in.draft", "sprint.interact_in.active",
         # Card: read + create + basic edit
         "card.entity.read", "card.entity.context_read", "card.entity.create", "card.entity.create_test",
         "card.entity.edit_fields", "card.entity.assign", "card.entity.label",

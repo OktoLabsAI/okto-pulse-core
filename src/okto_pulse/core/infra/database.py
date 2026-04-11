@@ -454,6 +454,28 @@ async def _migrate_add_permission_columns() -> None:
                     pass
 
 
+async def _migrate_add_card_sprint_id() -> None:
+    """Add sprint_id FK column to cards table."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE cards ADD COLUMN IF NOT EXISTS sprint_id VARCHAR(36) REFERENCES sprints(id) ON DELETE SET NULL"
+                ))
+            except Exception:
+                pass
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE cards ADD COLUMN sprint_id VARCHAR(36) REFERENCES sprints(id) ON DELETE SET NULL"
+                ))
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -475,6 +497,7 @@ async def init_db() -> None:
     await _migrate_add_permission_columns()
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _migrate_add_card_sprint_id()
     await _migrate_agent_boards()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()

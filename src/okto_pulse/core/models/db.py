@@ -54,6 +54,16 @@ class RefinementStatus(str, PyEnum):
     CANCELLED = "cancelled"
 
 
+class SprintStatus(str, PyEnum):
+    """Sprint lifecycle status."""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+    REVIEW = "review"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
 class SpecStatus(str, PyEnum):
     """Spec lifecycle status."""
 
@@ -200,6 +210,21 @@ class RefinementStatusType(TypeDecorator):
         return RefinementStatus(value)
 
 
+class SprintStatusType(TypeDecorator):
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return value.value if isinstance(value, SprintStatus) else value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return SprintStatus(value)
+
+
 class SpecStatusType(TypeDecorator):
     """SQLAlchemy type that stores SpecStatus as a string but returns the enum on load."""
 
@@ -264,6 +289,9 @@ class Board(Base):
     )
     specs: Mapped[list["Spec"]] = relationship(
         "Spec", back_populates="board", cascade="all, delete-orphan"
+    )
+    sprints: Mapped[list["Sprint"]] = relationship(
+        "Sprint", back_populates="board", cascade="all, delete-orphan"
     )
     agent_grants: Mapped[list["AgentBoard"]] = relationship(
         "AgentBoard", back_populates="board", cascade="all, delete-orphan"
@@ -577,6 +605,7 @@ class Spec(Base):
     ideation: Mapped["Ideation | None"] = relationship("Ideation", back_populates="specs")
     refinement: Mapped["Refinement | None"] = relationship("Refinement", back_populates="specs")
     cards: Mapped[list["Card"]] = relationship("Card", back_populates="spec")
+    sprints: Mapped[list["Sprint"]] = relationship("Sprint", back_populates="spec", cascade="all, delete-orphan")
     skills: Mapped[list["SpecSkill"]] = relationship(
         "SpecSkill", back_populates="spec", cascade="all, delete-orphan"
     )
@@ -731,6 +760,98 @@ class SpecKnowledgeBase(Base):
     spec: Mapped["Spec"] = relationship("Spec", back_populates="knowledge_bases")
 
 
+# ============================================================================
+# SPRINT
+# ============================================================================
+
+
+class Sprint(Base):
+    """Sprint — an incremental delivery slice of a spec."""
+
+    __tablename__ = "sprints"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    spec_id: Mapped[str] = mapped_column(String(36), ForeignKey("specs.id", ondelete="CASCADE"), nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    spec_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[SprintStatus] = mapped_column(SprintStatusType(), default=SprintStatus.DRAFT, nullable=False)
+    # Dates
+    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Scoped test scenario IDs from spec
+    test_scenario_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Scoped business rule IDs from spec
+    business_rule_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Qualitative evaluations: [{id, evaluator_id, evaluator_name, evaluator_type, dimensions, overall_score, overall_justification, recommendation, stale, created_at}]
+    evaluations: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Skip flags (same pattern as Spec)
+    skip_test_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_rules_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    skip_qualitative_validation: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    validation_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    spec: Mapped["Spec"] = relationship("Spec", back_populates="sprints")
+    board: Mapped["Board"] = relationship("Board", back_populates="sprints")
+    cards: Mapped[list["Card"]] = relationship("Card", back_populates="sprint")
+    qa_items: Mapped[list["SprintQAItem"]] = relationship("SprintQAItem", back_populates="sprint", cascade="all, delete-orphan")
+    history: Mapped[list["SprintHistory"]] = relationship("SprintHistory", back_populates="sprint", cascade="all, delete-orphan")
+
+
+class SprintHistory(Base):
+    """Change history for a sprint."""
+
+    __tablename__ = "sprint_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    sprint_id: Mapped[str] = mapped_column(String(36), ForeignKey("sprints.id", ondelete="CASCADE"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    changes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    sprint: Mapped["Sprint"] = relationship("Sprint", back_populates="history")
+
+
+class SprintQAItem(Base):
+    """Q&A on a sprint — same pattern as spec/ideation/refinement Q&A."""
+
+    __tablename__ = "sprint_qa_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    sprint_id: Mapped[str] = mapped_column(String(36), ForeignKey("sprints.id", ondelete="CASCADE"), nullable=False, index=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    question_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'text'"))
+    choices: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    allow_free_text: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    selected: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    asked_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    answered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    sprint: Mapped["Sprint"] = relationship("Sprint", back_populates="qa_items")
+
+
+# ============================================================================
+# CARD
+# ============================================================================
+
+
 class Card(Base):
     """Card model - represents a task/item in the Kanban board."""
 
@@ -744,6 +865,9 @@ class Card(Base):
     )
     spec_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("specs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    sprint_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("sprints.id", ondelete="SET NULL"), nullable=True, index=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -796,6 +920,7 @@ class Card(Base):
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="cards")
     spec: Mapped["Spec | None"] = relationship("Spec", back_populates="cards")
+    sprint: Mapped["Sprint | None"] = relationship("Sprint", back_populates="cards")
     attachments: Mapped[list["Attachment"]] = relationship(
         "Attachment", back_populates="card", cascade="all, delete-orphan"
     )
