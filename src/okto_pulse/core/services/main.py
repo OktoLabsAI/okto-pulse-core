@@ -88,6 +88,98 @@ from okto_pulse.core.models.schemas import (
 settings = get_settings()
 
 
+# ---------------------------------------------------------------------------
+# Artifact propagation utility
+# ---------------------------------------------------------------------------
+
+
+def _filter_mockups(
+    mockups: list[dict] | None,
+    mockup_ids: list[str] | None,
+) -> list[dict]:
+    """Filter and copy mockups, adding origin_id for traceability."""
+    if not mockups:
+        return []
+    source = mockups if mockup_ids is None else [m for m in mockups if m.get("id") in mockup_ids]
+    copied = []
+    for m in source:
+        new_m = dict(m)
+        new_m["origin_id"] = m.get("id")
+        new_m["id"] = f"sm_{hashlib.md5(f'{m.get("id")}{id(new_m)}'.encode()).hexdigest()[:8]}"
+        copied.append(new_m)
+    return copied
+
+
+def _compile_qa_context(qa_items: list) -> str | None:
+    """Compile answered Q&A items into a context section."""
+    answered = [qa for qa in (qa_items or []) if getattr(qa, "answer", None) or (isinstance(qa, dict) and qa.get("answer"))]
+    if not answered:
+        return None
+    lines = []
+    for qa in answered:
+        q = getattr(qa, "question", None) or qa.get("question", "")
+        a = getattr(qa, "answer", None) or qa.get("answer", "")
+        lines.append(f"**Q:** {q}\n**A:** {a}")
+    return "## Q&A Decisions\n" + "\n\n".join(lines)
+
+
+async def propagate_artifacts(
+    db: AsyncSession,
+    source_mockups: list[dict] | None,
+    source_qa_items: list | None,
+    source_knowledge_bases: list | None,
+    target_entity: Any,
+    target_kb_class: type | None,
+    user_id: str,
+    mockup_ids: list[str] | None = None,
+    kb_ids: list[str] | None = None,
+) -> None:
+    """Propagate mockups, KBs and Q&A from a parent entity to a target entity.
+
+    - Mockups: copied as JSON with origin_id. Default=all, filter by mockup_ids.
+    - KBs: copied as new DB rows with origin_id field. Default=all, filter by kb_ids.
+    - Q&A: compiled into context (appended, not replaced).
+    - Existing artifacts on target are preserved (additive, not replacement).
+    """
+    # Propagate mockups
+    copied_mockups = _filter_mockups(source_mockups, mockup_ids)
+    if copied_mockups:
+        existing = target_entity.screen_mockups or []
+        target_entity.screen_mockups = existing + copied_mockups
+
+    # Propagate knowledge bases (DB rows)
+    if target_kb_class and source_knowledge_bases:
+        kbs = source_knowledge_bases if kb_ids is None else [
+            kb for kb in source_knowledge_bases if getattr(kb, "id", None) in kb_ids
+        ]
+        # Determine FK field name from target_kb_class table
+        target_id_field = None
+        for col in ["spec_id", "refinement_id"]:
+            if hasattr(target_kb_class, col):
+                target_id_field = col
+                break
+        if target_id_field:
+            for kb in kbs:
+                new_kb = target_kb_class(
+                    **{target_id_field: target_entity.id},
+                    title=kb.title,
+                    description=f"[propagated from parent] {kb.description or ''}".strip(),
+                    content=kb.content,
+                    mime_type=getattr(kb, "mime_type", "text/markdown"),
+                    created_by=user_id,
+                )
+                db.add(new_kb)
+
+    # Compile Q&A into context (append)
+    qa_context = _compile_qa_context(source_qa_items)
+    if qa_context:
+        existing_context = getattr(target_entity, "context", None) or getattr(target_entity, "description", None) or ""
+        if hasattr(target_entity, "context"):
+            target_entity.context = (existing_context + "\n\n" + qa_context).strip() if existing_context else qa_context
+        elif hasattr(target_entity, "description"):
+            target_entity.description = (existing_context + "\n\n" + qa_context).strip() if existing_context else qa_context
+
+
 async def resolve_actor_name(db: AsyncSession, user_id: str, board_id: str) -> str:
     """Resolve a user/agent ID to a friendly display name."""
     agent = await db.get(Agent, user_id)
@@ -2485,13 +2577,22 @@ class IdeationService:
             context=context,
             ideation_id=ideation_id,
             labels=ideation.labels,
-            screen_mockups=ideation.screen_mockups,
         )
         spec_service = SpecService(self.db)
         spec = await spec_service.create_spec(
             ideation.board_id, user_id, spec_data, skip_ownership_check=skip_ownership_check
         )
         if spec:
+            # Propagate mockups from ideation to spec
+            await propagate_artifacts(
+                db=self.db,
+                source_mockups=ideation.screen_mockups,
+                source_qa_items=None,  # Q&A already compiled in context above
+                source_knowledge_bases=None,
+                target_entity=spec,
+                target_kb_class=SpecKnowledgeBase,
+                user_id=user_id,
+            )
             actor_name = await resolve_actor_name(self.db, user_id, ideation.board_id)
             await self._record_history(
                 ideation_id=ideation_id, action="spec_draft_created", actor_id=user_id, actor_name=actor_name,
@@ -2684,6 +2785,10 @@ class RefinementService:
                 context_parts.append(f"## Q&A Decisions\n" + "\n\n".join(qa_lines))
             description = "\n\n".join(context_parts) if context_parts else None
 
+        # Parse optional mockup/kb filters from data (if present)
+        prop_mockup_ids = getattr(data, "mockup_ids", None)
+        prop_kb_ids = getattr(data, "kb_ids", None)
+
         refinement = Refinement(
             ideation_id=ideation_id,
             board_id=board_id,
@@ -2693,13 +2798,26 @@ class RefinementService:
             out_of_scope=data.out_of_scope,
             analysis=data.analysis,
             decisions=data.decisions,
-            screen_mockups=data.screen_mockups or ideation.screen_mockups,
+            screen_mockups=data.screen_mockups,  # manual mockups only; propagation adds via propagate_artifacts
             assignee_id=data.assignee_id,
             created_by=user_id,
             labels=data.labels or ideation.labels,
         )
         self.db.add(refinement)
         await self.db.flush()
+
+        # Propagate artifacts from ideation (mockups, KBs, Q&A)
+        await propagate_artifacts(
+            db=self.db,
+            source_mockups=ideation.screen_mockups,
+            source_qa_items=ideation.qa_items,
+            source_knowledge_bases=None,  # Ideations don't have KBs
+            target_entity=refinement,
+            target_kb_class=RefinementKnowledgeBase,
+            user_id=user_id,
+            mockup_ids=prop_mockup_ids,
+            kb_ids=prop_kb_ids,
+        )
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
@@ -2998,17 +3116,6 @@ class RefinementService:
 
         context = "\n\n".join(context_parts) if context_parts else refinement.description
 
-        # Merge mockups: refinement's own + ideation's (if not already included)
-        merged_mockups = list(refinement.screen_mockups or [])
-        if refinement.ideation_id:
-            ideation_service = IdeationService(self.db)
-            parent_ideation = await ideation_service.get_ideation(refinement.ideation_id)
-            if parent_ideation and parent_ideation.screen_mockups:
-                existing_ids = {m.get("id") for m in merged_mockups}
-                for m in parent_ideation.screen_mockups:
-                    if m.get("id") not in existing_ids:
-                        merged_mockups.append(m)
-
         spec_data = SpecCreate(
             title=refinement.title,
             description=refinement.description,
@@ -3016,24 +3123,22 @@ class RefinementService:
             ideation_id=refinement.ideation_id,
             refinement_id=refinement_id,
             labels=refinement.labels,
-            screen_mockups=merged_mockups or None,
         )
         spec_service = SpecService(self.db)
         spec = await spec_service.create_spec(
             refinement.board_id, user_id, spec_data, skip_ownership_check=skip_ownership_check
         )
         if spec:
-            # Propagate knowledge bases from refinement to spec
-            for kb in (refinement.knowledge_bases or []):
-                spec_kb = SpecKnowledgeBase(
-                    spec_id=spec.id,
-                    title=kb.title,
-                    description=kb.description,
-                    content=kb.content,
-                    mime_type=kb.mime_type,
-                    created_by=user_id,
-                )
-                self.db.add(spec_kb)
+            # Propagate artifacts from refinement (mockups + KBs) via centralized function
+            await propagate_artifacts(
+                db=self.db,
+                source_mockups=refinement.screen_mockups,
+                source_qa_items=None,  # Q&A already compiled in context above
+                source_knowledge_bases=refinement.knowledge_bases,
+                target_entity=spec,
+                target_kb_class=SpecKnowledgeBase,
+                user_id=user_id,
+            )
 
             actor_name = await resolve_actor_name(self.db, user_id, refinement.board_id)
             await self._record_history(
