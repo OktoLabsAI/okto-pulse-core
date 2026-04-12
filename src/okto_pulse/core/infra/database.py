@@ -476,6 +476,25 @@ async def _migrate_add_card_sprint_id() -> None:
                 pass
 
 
+async def _migrate_add_sprint_scope_fields() -> None:
+    """Add objective and expected_outcome columns to sprints table."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        for col in ["objective", "expected_outcome"]:
+            if dialect == "postgresql":
+                try:
+                    await conn.execute(sa_text(f"ALTER TABLE sprints ADD COLUMN IF NOT EXISTS {col} TEXT"))
+                except Exception:
+                    pass
+            else:
+                try:
+                    await conn.execute(sa_text(f"ALTER TABLE sprints ADD COLUMN {col} TEXT"))
+                except Exception:
+                    pass
+
+
 async def _migrate_add_card_knowledge_bases() -> None:
     """Add knowledge_bases JSON column to cards table."""
     from sqlalchemy import text as sa_text
@@ -521,6 +540,7 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
     await _migrate_add_card_sprint_id()
     await _migrate_add_card_knowledge_bases()
+    await _migrate_add_sprint_scope_fields()
     await _migrate_agent_boards()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()

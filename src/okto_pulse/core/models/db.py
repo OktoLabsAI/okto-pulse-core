@@ -780,6 +780,9 @@ class Sprint(Base):
     # Dates
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Sprint-specific fields
+    objective: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expected_outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Scoped test scenario IDs from spec
     test_scenario_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Scoped business rule IDs from spec

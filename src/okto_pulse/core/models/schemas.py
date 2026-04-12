@@ -1349,6 +1349,8 @@ class SprintCreate(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=500)
     description: str | None = None
+    objective: str | None = None
+    expected_outcome: str | None = None
     spec_id: str
     test_scenario_ids: list[str] | None = None
     business_rule_ids: list[str] | None = None
@@ -1362,6 +1364,8 @@ class SprintUpdate(BaseModel):
 
     title: str | None = Field(None, min_length=1, max_length=500)
     description: str | None = None
+    objective: str | None = None
+    expected_outcome: str | None = None
     test_scenario_ids: list[str] | None = None
     business_rule_ids: list[str] | None = None
     start_date: datetime | None = None
@@ -1451,6 +1455,8 @@ class SprintSummary(BaseSchema):
     board_id: str
     title: str
     description: str | None = None
+    objective: str | None = None
+    expected_outcome: str | None = None
     status: SprintStatus
     spec_version: int
     start_date: datetime | None = None
@@ -1473,6 +1479,8 @@ class SprintResponse(BaseSchema):
     board_id: str
     title: str
     description: str | None = None
+    objective: str | None = None
+    expected_outcome: str | None = None
     status: SprintStatus
     spec_version: int
     start_date: datetime | None = None
