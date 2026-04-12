@@ -176,6 +176,7 @@ async def propagate_artifacts(
                     created_by=user_id,
                 )
                 db.add(new_kb)
+            await db.flush()  # Ensure KBs are persisted before returning
 
     # Compile Q&A into context (append)
     qa_context = _compile_qa_context(source_qa_items)
@@ -3771,13 +3772,16 @@ class SprintService:
 
     async def list_board_sprints(
         self, board_id: str, status_filter: str | None = None,
+        spec_id: str | None = None,
         include_archived: bool = False,
     ) -> list[Sprint]:
-        """List all sprints for a board, optionally filtered by status."""
+        """List all sprints for a board, optionally filtered by status and/or spec."""
         from sqlalchemy.orm import selectinload
         query = select(Sprint).where(Sprint.board_id == board_id)
         if status_filter:
             query = query.where(Sprint.status == SprintStatus(status_filter))
+        if spec_id:
+            query = query.where(Sprint.spec_id == spec_id)
         if not include_archived:
             query = query.where(Sprint.archived == False)
         query = query.options(selectinload(Sprint.spec))

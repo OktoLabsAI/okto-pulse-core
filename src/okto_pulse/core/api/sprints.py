@@ -22,13 +22,14 @@ router = APIRouter()
 async def list_board_sprints(
     board_id: str,
     status_filter: str | None = Query(None, alias="status"),
+    spec_id: str | None = Query(None, alias="spec_id"),
     include_archived: bool = Query(False),
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all sprints for a board, optionally filtered by status."""
+    """List all sprints for a board, optionally filtered by status and/or spec."""
     service = SprintService(db)
-    return await service.list_board_sprints(board_id, status_filter, include_archived)
+    return await service.list_board_sprints(board_id, status_filter, spec_id, include_archived)
 
 
 @router.post(
