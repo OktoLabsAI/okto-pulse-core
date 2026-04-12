@@ -1081,6 +1081,7 @@ class CardUpdate(BaseModel):
     sprint_id: str | None = None
     test_scenario_ids: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
+    knowledge_bases: list[dict] | None = None
     # Bug card fields (only updatable, not card_type or origin_task_id)
     severity: str | None = None
     expected_behavior: str | None = None
@@ -1135,6 +1136,7 @@ class CardResponse(BaseSchema):
     labels: list[str] | None
     test_scenario_ids: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
+    knowledge_bases: list[dict] | None = None
     conclusions: list[ConclusionEntry] | None = None
     attachments: list[AttachmentResponse] = []
     qa_items: list[QAResponse] = []

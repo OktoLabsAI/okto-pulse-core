@@ -476,6 +476,28 @@ async def _migrate_add_card_sprint_id() -> None:
                 pass
 
 
+async def _migrate_add_card_knowledge_bases() -> None:
+    """Add knowledge_bases JSON column to cards table."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE cards ADD COLUMN IF NOT EXISTS knowledge_bases JSONB"
+                ))
+            except Exception:
+                pass
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE cards ADD COLUMN knowledge_bases JSON"
+                ))
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -498,6 +520,7 @@ async def init_db() -> None:
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _migrate_add_card_sprint_id()
+    await _migrate_add_card_knowledge_bases()
     await _migrate_agent_boards()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()

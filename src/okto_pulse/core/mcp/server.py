@@ -1509,6 +1509,10 @@ async def okto_pulse_get_task_context(
 
                 result["spec"] = spec_data
 
+                # Card-own knowledge bases (JSON field)
+                if _inc_kb and card.knowledge_bases:
+                    result["card_knowledge_bases"] = card.knowledge_bases
+
                 # Filter test scenarios relevant to this card
                 if card.test_scenario_ids and spec.test_scenarios:
                     result["my_test_scenarios"] = [

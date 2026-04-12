@@ -895,6 +895,8 @@ class Card(Base):
     conclusions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Screen mockups: [{id, title, description, screen_type, html_content, annotations, order}]
     screen_mockups: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Knowledge bases: [{id, title, description, content, mime_type, source}]
+    knowledge_bases: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # --- Bug card fields ---
     card_type: Mapped[CardType] = mapped_column(
