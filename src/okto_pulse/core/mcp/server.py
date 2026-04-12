@@ -256,6 +256,79 @@ def _perm_error(msg: str) -> str:
     return json.dumps({"error": msg})
 
 
+def _spec_coverage(spec, *, scenarios=None, rules=None, contracts=None, trs=None) -> dict:
+    """Compute coverage stats for spec gates. Uses overrides if provided (for in-flight updates)."""
+    acs = spec.acceptance_criteria or []
+    frs = spec.functional_requirements or []
+    _ts = scenarios if scenarios is not None else (spec.test_scenarios or [])
+    _brs = rules if rules is not None else (spec.business_rules or [])
+    _contracts = contracts if contracts is not None else (spec.api_contracts or [])
+    _trs = trs if trs is not None else (spec.technical_requirements or [])
+
+    # AC coverage via test scenarios' linked_criteria
+    covered_ac = set()
+    for ts in _ts:
+        for idx in (ts.get("linked_criteria") or []):
+            if isinstance(idx, int):
+                covered_ac.add(idx)
+    ac_total = len(acs)
+    ac_covered = len(covered_ac & set(range(ac_total)))
+
+    # FR coverage via business rules' linked_requirements
+    covered_fr = set()
+    for br in _brs:
+        for idx in (br.get("linked_requirements") or []):
+            if isinstance(idx, int):
+                covered_fr.add(idx)
+    fr_total = len(frs)
+    fr_covered = len(covered_fr & set(range(fr_total)))
+
+    # Scenario → Task linkage
+    ts_total = len(_ts)
+    ts_linked = sum(1 for ts in _ts if ts.get("linked_task_ids"))
+
+    # BR → Task linkage
+    br_total = len(_brs)
+    br_linked = sum(1 for br in _brs if br.get("linked_task_ids"))
+
+    # Contract → Task linkage
+    c_total = len(_contracts)
+    c_linked = sum(1 for c in _contracts if c.get("linked_task_ids"))
+
+    # TR → Task linkage (structured only)
+    struct_trs = [t for t in _trs if isinstance(t, dict)]
+    tr_total = len(struct_trs)
+    tr_linked = sum(1 for t in struct_trs if t.get("linked_task_ids"))
+
+    def _pct(n, d):
+        return round((n / d * 100) if d > 0 else 100, 1)
+
+    return {
+        "ac_coverage_pct": _pct(ac_covered, ac_total),
+        "ac_covered": ac_covered,
+        "ac_total": ac_total,
+        "ac_uncovered_indices": sorted(set(range(ac_total)) - covered_ac),
+        "fr_coverage_pct": _pct(fr_covered, fr_total),
+        "fr_covered": fr_covered,
+        "fr_total": fr_total,
+        "fr_uncovered_indices": sorted(set(range(fr_total)) - covered_fr),
+        "scenario_task_linkage_pct": _pct(ts_linked, ts_total),
+        "scenarios_linked": ts_linked,
+        "scenarios_total": ts_total,
+        "br_task_linkage_pct": _pct(br_linked, br_total),
+        "brs_linked": br_linked,
+        "brs_total": br_total,
+        "contract_task_linkage_pct": _pct(c_linked, c_total),
+        "contracts_linked": c_linked,
+        "contracts_total": c_total,
+        "tr_task_linkage_pct": _pct(tr_linked, tr_total),
+        "trs_linked": tr_linked,
+        "trs_total": tr_total,
+        "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
+        "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
+    }
+
+
 # ============================================================================
 # AGENT PROFILE TOOLS
 # ============================================================================
@@ -2860,6 +2933,109 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
 
 
 @mcp.tool()
+async def okto_pulse_get_ideation_context(
+    board_id: str,
+    ideation_id: str,
+    include_knowledge: str = "true",
+    include_mockups: str = "true",
+    include_qa: str = "true",
+) -> str:
+    """
+    Get the FULL consolidated context of an ideation. Returns all data needed
+    to evaluate, review, or derive refinements/specs from this ideation.
+
+    **Always call this before evaluating, moving, or deriving from an ideation.**
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID
+        include_knowledge: Include knowledge base entries (default "true")
+        include_mockups: Include screen mockups (default "true")
+        include_qa: Include Q&A items (default "true")
+
+    Returns:
+        JSON with complete ideation context: details + Q&A + mockups + KBs + refinements + specs + evaluation
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
+    _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
+    _inc_qa = include_qa.lower() in ("true", "1", "yes")
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        ideation = await service.get_ideation(ideation_id)
+        await db.commit()
+
+        if not ideation or ideation.board_id != board_id:
+            return json.dumps({"error": "Ideation not found"})
+
+        result: dict = {
+            "id": ideation.id,
+            "board_id": ideation.board_id,
+            "title": ideation.title,
+            "description": ideation.description,
+            "problem_statement": ideation.problem_statement,
+            "proposed_approach": ideation.proposed_approach,
+            "scope_assessment": ideation.scope_assessment,
+            "complexity": ideation.complexity.value if ideation.complexity else None,
+            "status": ideation.status.value,
+            "version": ideation.version,
+            "assignee_id": ideation.assignee_id,
+            "created_by": ideation.created_by,
+            "created_at": ideation.created_at.isoformat() if ideation.created_at else None,
+            "updated_at": ideation.updated_at.isoformat() if ideation.updated_at else None,
+            "labels": ideation.labels or [],
+            "refinements": [
+                {"id": r.id, "title": r.title, "status": r.status.value, "version": r.version}
+                for r in ideation.refinements
+            ],
+            "specs": [
+                {"id": s.id, "title": s.title, "status": s.status.value}
+                for s in (ideation.specs if hasattr(ideation, "specs") else [])
+            ],
+        }
+
+        if _inc_qa:
+            result["qa_items"] = [
+                {
+                    "id": q.id,
+                    "question": q.question,
+                    "question_type": q.question_type,
+                    "choices": q.choices,
+                    "answer": q.answer,
+                    "selected": q.selected,
+                    "asked_by": q.asked_by,
+                    "answered_by": q.answered_by,
+                }
+                for q in ideation.qa_items
+            ]
+
+        if _inc_mockups and hasattr(ideation, "screen_mockups") and ideation.screen_mockups:
+            result["screen_mockups"] = ideation.screen_mockups
+
+        if _inc_kb and hasattr(ideation, "knowledge_bases"):
+            result["knowledge_bases"] = [
+                {
+                    "id": kb.id,
+                    "title": kb.title,
+                    "description": kb.description,
+                    "content": kb.content,
+                    "mime_type": kb.mime_type,
+                }
+                for kb in (ideation.knowledge_bases or [])
+            ]
+
+        return json.dumps(result, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_list_ideations(
     board_id: str, status: str = "", offset: int = 0, limit: int = 50
 ) -> str:
@@ -3810,6 +3986,106 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
 
 
 @mcp.tool()
+async def okto_pulse_get_refinement_context(
+    board_id: str,
+    refinement_id: str,
+    include_knowledge: str = "true",
+    include_mockups: str = "true",
+    include_qa: str = "true",
+) -> str:
+    """
+    Get the FULL consolidated context of a refinement. Returns all data needed
+    to review, derive specs, or evaluate this refinement.
+
+    **Always call this before moving, evaluating, or deriving a spec from a refinement.**
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID
+        include_knowledge: Include knowledge base entries (default "true")
+        include_mockups: Include screen mockups (default "true")
+        include_qa: Include Q&A items (default "true")
+
+    Returns:
+        JSON with complete refinement context: details + scope + Q&A + mockups + KBs + derived specs
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
+    _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
+    _inc_qa = include_qa.lower() in ("true", "1", "yes")
+
+    async with get_db_for_mcp() as db:
+        service = RefinementService(db)
+        refinement = await service.get_refinement(refinement_id)
+        await db.commit()
+
+        if not refinement or refinement.board_id != board_id:
+            return json.dumps({"error": "Refinement not found"})
+
+        result: dict = {
+            "id": refinement.id,
+            "ideation_id": refinement.ideation_id,
+            "board_id": refinement.board_id,
+            "title": refinement.title,
+            "description": refinement.description,
+            "in_scope": refinement.in_scope,
+            "out_of_scope": refinement.out_of_scope,
+            "analysis": refinement.analysis,
+            "decisions": refinement.decisions,
+            "status": refinement.status.value,
+            "version": refinement.version,
+            "assignee_id": refinement.assignee_id,
+            "created_by": refinement.created_by,
+            "created_at": refinement.created_at.isoformat() if refinement.created_at else None,
+            "updated_at": refinement.updated_at.isoformat() if refinement.updated_at else None,
+            "labels": refinement.labels or [],
+            "specs": [
+                {"id": s.id, "title": s.title, "status": s.status.value}
+                for s in (refinement.specs if hasattr(refinement, "specs") else [])
+            ],
+        }
+
+        if _inc_qa:
+            result["qa_items"] = [
+                {
+                    "id": q.id,
+                    "question": q.question,
+                    "question_type": q.question_type,
+                    "choices": q.choices,
+                    "answer": q.answer,
+                    "selected": q.selected,
+                    "asked_by": q.asked_by,
+                    "answered_by": q.answered_by,
+                }
+                for q in refinement.qa_items
+            ]
+
+        if _inc_mockups and hasattr(refinement, "screen_mockups") and refinement.screen_mockups:
+            result["screen_mockups"] = refinement.screen_mockups
+
+        if _inc_kb and hasattr(refinement, "knowledge_bases"):
+            result["knowledge_bases"] = [
+                {
+                    "id": kb.id,
+                    "title": kb.title,
+                    "description": kb.description,
+                    "content": kb.content,
+                    "mime_type": kb.mime_type,
+                }
+                for kb in (refinement.knowledge_bases or [])
+            ]
+
+        return json.dumps(result, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_list_refinements(
     board_id: str, ideation_id: str, status: str = "", offset: int = 0, limit: int = 50
 ) -> str:
@@ -4572,6 +4848,163 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
 
 
 @mcp.tool()
+async def okto_pulse_get_spec_context(
+    board_id: str,
+    spec_id: str,
+    include_knowledge: str = "true",
+    include_mockups: str = "true",
+    include_qa: str = "true",
+) -> str:
+    """
+    Get the FULL consolidated context of a spec. Returns ALL structured data
+    needed to evaluate, validate, or review this spec before advancing it.
+
+    Includes: requirements, test scenarios, business rules, API contracts,
+    screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
+
+    **Always call this before evaluating, moving, or creating cards from a spec.**
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        include_knowledge: Include knowledge base entries (default "true")
+        include_mockups: Include screen mockups (default "true")
+        include_qa: Include Q&A items (default "true")
+
+    Returns:
+        JSON with complete spec context: all requirements + structured sections + artifacts + cards + sprints
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
+    _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
+    _inc_qa = include_qa.lower() in ("true", "1", "yes")
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        await db.commit()
+
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+
+        result: dict = {
+            "id": spec.id,
+            "board_id": spec.board_id,
+            "title": spec.title,
+            "description": spec.description,
+            "context": spec.context,
+            "status": spec.status.value,
+            "version": spec.version,
+            "assignee_id": spec.assignee_id,
+            "created_by": spec.created_by,
+            "created_at": spec.created_at.isoformat() if spec.created_at else None,
+            "updated_at": spec.updated_at.isoformat() if spec.updated_at else None,
+            "labels": spec.labels or [],
+            "ideation_id": spec.ideation_id,
+            "refinement_id": spec.refinement_id,
+            # Requirements
+            "functional_requirements": spec.functional_requirements or [],
+            "technical_requirements": spec.technical_requirements or [],
+            "acceptance_criteria": spec.acceptance_criteria or [],
+            # Structured sections — ALWAYS included
+            "test_scenarios": spec.test_scenarios or [],
+            "business_rules": spec.business_rules or [],
+            "api_contracts": spec.api_contracts or [],
+            # Evaluations
+            "evaluations": spec.evaluations or [],
+            # Skip flags
+            "skip_test_coverage": spec.skip_test_coverage,
+            "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
+            "skip_qualitative_validation": getattr(spec, "skip_qualitative_validation", False),
+            "validation_threshold": getattr(spec, "validation_threshold", None),
+            # Cards
+            "cards": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "status": c.status.value,
+                    "priority": c.priority.value,
+                    "assignee_id": c.assignee_id,
+                    "card_type": c.card_type.value if c.card_type else "normal",
+                    "sprint_id": c.sprint_id,
+                    "test_scenario_ids": c.test_scenario_ids or [],
+                }
+                for c in spec.cards
+            ],
+            # Sprints
+            "sprints": [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "status": s.status.value,
+                    "description": s.description,
+                    "objective": getattr(s, "objective", None),
+                    "expected_outcome": getattr(s, "expected_outcome", None),
+                }
+                for s in (spec.sprints if hasattr(spec, "sprints") else [])
+            ],
+        }
+
+        if _inc_mockups and spec.screen_mockups:
+            result["screen_mockups"] = spec.screen_mockups
+
+        if _inc_qa:
+            result["qa_items"] = [
+                {
+                    "id": q.id,
+                    "question": q.question,
+                    "question_type": getattr(q, "question_type", "text"),
+                    "choices": getattr(q, "choices", None),
+                    "answer": q.answer,
+                    "selected": getattr(q, "selected", None),
+                    "asked_by": q.asked_by,
+                    "answered_by": q.answered_by,
+                }
+                for q in (spec.qa_items or [])
+            ]
+
+        if _inc_kb:
+            result["knowledge_bases"] = [
+                {
+                    "id": kb.id,
+                    "title": kb.title,
+                    "description": kb.description,
+                    "content": kb.content,
+                    "mime_type": kb.mime_type,
+                }
+                for kb in (spec.knowledge_bases or [])
+            ]
+
+        # Coverage summary
+        ac_count = len(spec.acceptance_criteria or [])
+        ts_list = spec.test_scenarios or []
+        covered_indices = set()
+        for ts in ts_list:
+            for idx in (ts.get("linked_criteria") or []):
+                if isinstance(idx, int):
+                    covered_indices.add(idx)
+        result["coverage_summary"] = {
+            "acceptance_criteria_total": ac_count,
+            "acceptance_criteria_covered": len(covered_indices),
+            "uncovered_indices": sorted(set(range(ac_count)) - covered_indices),
+            "test_scenarios_total": len(ts_list),
+            "business_rules_total": len(spec.business_rules or []),
+            "api_contracts_total": len(spec.api_contracts or []),
+            "cards_total": len(spec.cards),
+            "cards_done": sum(1 for c in spec.cards if c.status.value == "done"),
+        }
+
+        return json.dumps(result, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_list_specs(
     board_id: str, status: str = "", offset: int = 0, limit: int = 50
 ) -> str:
@@ -4878,7 +5311,8 @@ async def okto_pulse_add_test_scenario(
         await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
         await db.commit()
 
-        return json.dumps({"success": True, "scenario": scenario}, default=str)
+        cov = _spec_coverage(spec, scenarios=scenarios)
+        return json.dumps({"success": True, "scenario": scenario, "coverage": cov}, default=str)
 
 
 @mcp.tool()
@@ -5123,7 +5557,8 @@ async def okto_pulse_link_task_to_scenario(
 
         await db.commit()
 
-        return json.dumps({"success": True, "scenario_id": scenario_id, "card_id": card_id})
+        cov = _spec_coverage(spec, scenarios=scenarios)
+        return json.dumps({"success": True, "scenario_id": scenario_id, "card_id": card_id, "coverage": cov})
 
 
 @mcp.tool()
@@ -5182,7 +5617,8 @@ async def okto_pulse_link_task_to_rule(
         await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
         await db.commit()
 
-        return json.dumps({"success": True, "rule_id": rule_id, "card_id": card_id})
+        cov = _spec_coverage(spec, rules=rules)
+        return json.dumps({"success": True, "rule_id": rule_id, "card_id": card_id, "coverage": cov})
 
 
 @mcp.tool()
@@ -5239,7 +5675,8 @@ async def okto_pulse_link_task_to_contract(
         await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
         await db.commit()
 
-        return json.dumps({"success": True, "contract_id": contract_id, "card_id": card_id})
+        cov = _spec_coverage(spec, contracts=contracts)
+        return json.dumps({"success": True, "contract_id": contract_id, "card_id": card_id, "coverage": cov})
 
 
 @mcp.tool()
@@ -5300,7 +5737,8 @@ async def okto_pulse_link_task_to_tr(
         await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(technical_requirements=trs))
         await db.commit()
 
-        return json.dumps({"success": True, "tr_id": tr_id, "card_id": card_id})
+        cov = _spec_coverage(spec, trs=trs)
+        return json.dumps({"success": True, "tr_id": tr_id, "card_id": card_id, "coverage": cov})
 
 
 # ==================== ARCHIVE & RESTORE ====================
@@ -5927,7 +6365,8 @@ async def okto_pulse_add_business_rule(
         await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
         await db.commit()
 
-        return json.dumps({"success": True, "business_rule": br}, default=str)
+        cov = _spec_coverage(spec, rules=rules)
+        return json.dumps({"success": True, "business_rule": br, "coverage": cov}, default=str)
 
 
 @mcp.tool()
@@ -6022,7 +6461,8 @@ async def okto_pulse_update_business_rule(
         await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
         await db.commit()
 
-        return json.dumps({"success": True, "business_rule": target}, default=str)
+        cov = _spec_coverage(spec, rules=rules)
+        return json.dumps({"success": True, "business_rule": target, "coverage": cov}, default=str)
 
 
 @mcp.tool()
@@ -6065,7 +6505,8 @@ async def okto_pulse_remove_business_rule(
         await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=new_rules))
         await db.commit()
 
-        return json.dumps({"success": True, "removed": rule_id, "remaining": len(new_rules)})
+        cov = _spec_coverage(spec, rules=new_rules)
+        return json.dumps({"success": True, "removed": rule_id, "remaining": len(new_rules), "coverage": cov})
 
 
 @mcp.tool()
@@ -6253,7 +6694,8 @@ async def okto_pulse_add_api_contract(
         await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
         await db.commit()
 
-        return json.dumps({"success": True, "api_contract": contract}, default=str)
+        cov = _spec_coverage(spec, contracts=contracts)
+        return json.dumps({"success": True, "api_contract": contract, "coverage": cov}, default=str)
 
 
 @mcp.tool()
@@ -6438,7 +6880,8 @@ async def okto_pulse_remove_api_contract(
         await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=new_contracts))
         await db.commit()
 
-        return json.dumps({"success": True, "removed": contract_id, "remaining": len(new_contracts)})
+        cov = _spec_coverage(spec, contracts=new_contracts)
+        return json.dumps({"success": True, "removed": contract_id, "remaining": len(new_contracts), "coverage": cov})
 
 
 @mcp.tool()
@@ -8746,6 +9189,132 @@ async def okto_pulse_get_sprint(board_id: str, sprint_id: str) -> str:
             "created_by": sprint.created_by,
             "created_at": sprint.created_at.isoformat() if sprint.created_at else None,
         })
+
+
+@mcp.tool()
+async def okto_pulse_get_sprint_context(
+    board_id: str,
+    sprint_id: str,
+    include_spec: str = "true",
+) -> str:
+    """
+    Get the FULL consolidated context of a sprint. Returns sprint data plus
+    the parent spec's structured sections (requirements, test scenarios, BRs,
+    contracts) for scope resolution and evaluation.
+
+    **Always call this before evaluating, moving, or reviewing a sprint.**
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID
+        include_spec: Include parent spec context with all structured data (default "true")
+
+    Returns:
+        JSON with complete sprint context: details + cards + evaluations + Q&A + parent spec + scope
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    _inc_spec = include_spec.lower() in ("true", "1", "yes")
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintService
+        service = SprintService(db)
+        sprint = await service.get_sprint(sprint_id)
+        await db.commit()
+
+        if not sprint or sprint.board_id != board_id:
+            return json.dumps({"error": "Sprint not found"})
+
+        result: dict = {
+            "id": sprint.id,
+            "spec_id": sprint.spec_id,
+            "board_id": sprint.board_id,
+            "title": sprint.title,
+            "description": sprint.description,
+            "objective": getattr(sprint, "objective", None),
+            "expected_outcome": getattr(sprint, "expected_outcome", None),
+            "status": sprint.status.value,
+            "spec_version": sprint.spec_version,
+            "version": sprint.version,
+            "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
+            "end_date": sprint.end_date.isoformat() if sprint.end_date else None,
+            "test_scenario_ids": sprint.test_scenario_ids or [],
+            "business_rule_ids": sprint.business_rule_ids or [],
+            "evaluations": sprint.evaluations or [],
+            "skip_test_coverage": sprint.skip_test_coverage,
+            "skip_rules_coverage": sprint.skip_rules_coverage,
+            "skip_qualitative_validation": sprint.skip_qualitative_validation,
+            "labels": sprint.labels or [],
+            "cards": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "status": c.status.value,
+                    "priority": c.priority.value,
+                    "card_type": c.card_type.value if c.card_type else "normal",
+                    "test_scenario_ids": c.test_scenario_ids or [],
+                }
+                for c in sprint.cards
+            ],
+            "qa_items": [
+                {"id": q.id, "question": q.question, "answer": q.answer, "asked_by": q.asked_by}
+                for q in sprint.qa_items
+            ],
+            "created_by": sprint.created_by,
+            "created_at": sprint.created_at.isoformat() if sprint.created_at else None,
+        }
+
+        # Parent spec context for scope resolution
+        if _inc_spec and sprint.spec_id:
+            spec_service = SpecService(db)
+            spec = await spec_service.get_spec(sprint.spec_id)
+            await db.commit()
+
+            if spec:
+                sprint_card_ids = {c.id for c in sprint.cards}
+                spec_ts = spec.test_scenarios or []
+                spec_brs = spec.business_rules or []
+                spec_trs = spec.technical_requirements or []
+                spec_contracts = spec.api_contracts or []
+
+                # Resolve scoped items
+                scoped_ts_ids = set(sprint.test_scenario_ids or [])
+                scoped_ts = [ts for ts in spec_ts if ts.get("id") in scoped_ts_ids or
+                             any(tid in sprint_card_ids for tid in (ts.get("linked_task_ids") or []))]
+                scoped_brs_ids = set(sprint.business_rule_ids or [])
+                scoped_brs = [br for br in spec_brs if br.get("id") in scoped_brs_ids or
+                              any(tid in sprint_card_ids for tid in (br.get("linked_task_ids") or []))]
+                scoped_trs = [tr for tr in spec_trs if isinstance(tr, dict) and
+                              any(tid in sprint_card_ids for tid in (tr.get("linked_task_ids") or []))]
+                scoped_contracts = [c for c in spec_contracts if
+                                    any(tid in sprint_card_ids for tid in (c.get("linked_task_ids") or []))]
+
+                result["spec"] = {
+                    "id": spec.id,
+                    "title": spec.title,
+                    "status": spec.status.value,
+                    "functional_requirements": spec.functional_requirements or [],
+                    "technical_requirements": spec_trs,
+                    "acceptance_criteria": spec.acceptance_criteria or [],
+                    "test_scenarios": spec_ts,
+                    "business_rules": spec_brs,
+                    "api_contracts": spec_contracts,
+                }
+
+                result["scoped"] = {
+                    "test_scenarios": scoped_ts,
+                    "business_rules": scoped_brs,
+                    "technical_requirements": scoped_trs,
+                    "api_contracts": scoped_contracts,
+                }
+
+        return json.dumps(result, default=str)
 
 
 @mcp.tool()

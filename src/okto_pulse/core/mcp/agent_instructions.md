@@ -120,6 +120,29 @@ You are an AI agent connected to the Okto Pulse via MCP tools. The dashboard is 
 | `okto_pulse_list_my_mentions` | board_id, include_seen? | Get @mentions directed at you (unseen only by default) |
 | `okto_pulse_mark_as_seen` | board_id, item_ids | Mark item_ids as seen (comma-separated) |
 
+### Consolidated Context Retrieval (MANDATORY before any validation/move)
+| Tool | Args | Purpose |
+|------|------|---------|
+| `okto_pulse_get_task_context` | board_id, card_id, include_knowledge?, include_mockups?, include_qa?, include_comments? | **MANDATORY before executing a task** — card + spec + all requirements + BRs + contracts + KBs + mockups + Q&A |
+| `okto_pulse_get_ideation_context` | board_id, ideation_id, include_knowledge?, include_mockups?, include_qa? | **MANDATORY before evaluating/moving an ideation** — full ideation + Q&A + mockups + KBs + refinements + specs |
+| `okto_pulse_get_refinement_context` | board_id, refinement_id, include_knowledge?, include_mockups?, include_qa? | **MANDATORY before moving/deriving from a refinement** — full refinement + scope + Q&A + mockups + KBs + specs |
+| `okto_pulse_get_spec_context` | board_id, spec_id, include_knowledge?, include_mockups?, include_qa? | **MANDATORY before evaluating/moving a spec** — full spec + requirements + test scenarios + BRs + contracts + mockups + KBs + Q&A + evaluations + cards + sprints + coverage summary |
+| `okto_pulse_get_sprint_context` | board_id, sprint_id, include_spec? | **MANDATORY before evaluating/moving a sprint** — full sprint + cards + evaluations + Q&A + parent spec + scoped artifacts |
+
+**CRITICAL RULE — Full Context Retrieval Before Any Status Change:**
+
+Before moving ANY entity to a new status (ideation, refinement, spec, sprint, or card), you MUST retrieve its FULL consolidated context using the appropriate `get_*_context` tool. This is NON-NEGOTIABLE. The purpose is to ensure you have complete visibility of the entity's state, all linked artifacts, Q&A decisions, and coverage before making a judgment call about readiness.
+
+| Entity | Tool to call BEFORE any move | When |
+|--------|------------------------------|------|
+| Ideation | `get_ideation_context` | Before `move_ideation` to any status |
+| Refinement | `get_refinement_context` | Before `move_refinement` to any status |
+| Spec | `get_spec_context` | Before `move_spec` to any status, before `submit_spec_evaluation`, before creating cards |
+| Sprint | `get_sprint_context` | Before `move_sprint` to any status, before `submit_sprint_evaluation` |
+| Card/Task | `get_task_context` | Before `move_card` to any status, before starting any implementation work |
+
+**Never move an entity based on partial information.** A spec with unchecked test coverage, a sprint with unreviewed evaluations, or a card without reading its linked BRs = protocol violation.
+
 ## Startup Protocol
 
 Execute on every session start:
@@ -243,6 +266,103 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 
 **Good example** (grounded in codebase):
 > "Authentication must use the existing Clerk integration (src/core/auth.py) with X-User-Id header forwarding through the BFF proxy layer"
+
+#### 2.3b Spec Evaluation — Quality Gate for Execution
+
+After a spec reaches `validated` status (all coverage gates passed), it must undergo **qualitative evaluation** before moving to `in_progress`. This is a multi-dimensional assessment of whether the spec's task breakdown is ready for execution.
+
+**When to evaluate:** Spec status is `validated` — coverage gates have passed, but human/agent review is needed before execution begins.
+
+**Tool:** `okto_pulse_submit_spec_evaluation(board_id, spec_id, breakdown_completeness, breakdown_justification, granularity, granularity_justification, dependency_coherence, dependency_justification, test_coverage_quality, test_coverage_justification, overall_score, overall_justification, recommendation)`
+
+**Evaluation dimensions (each scored 0-100 with mandatory justification):**
+
+| Dimension | What to assess | Score guide |
+|-----------|---------------|-------------|
+| `breakdown_completeness` | Do derived cards fully cover the spec's scope? Are any FRs, TRs, or ACs not addressed by any card? | 90+: every requirement traced to ≥1 card. <70: significant gaps. |
+| `granularity` | Are cards properly sized for independent execution? | 90+: each card is 1-3 days of focused work. <70: cards too large (>1 week) or too fragmented (<2 hours). |
+| `dependency_coherence` | Do card dependencies reflect the real execution order? Are there circular deps, missing prerequisites, or unnecessary sequential chains? | 90+: clean DAG, parallelizable where possible. <70: circular deps or missing critical blockers. |
+| `test_coverage_quality` | Do test scenarios cover happy paths AND edge cases? Are Given/When/Then concrete and verifiable? | 90+: every AC has meaningful tests with edge cases. <70: tests are superficial or miss important scenarios. |
+| `overall_score` | Holistic assessment — is this spec ready for execution? | 90+: ready to go. 70-89: minor issues, can proceed with notes. <70: needs rework. |
+
+**Recommendations:**
+- `approve` — spec is ready for execution (required for validated → in_progress transition)
+- `request_changes` — spec has issues that should be addressed. The spec stays in `validated` and the evaluator should explain what needs to change.
+- `reject` — spec is fundamentally flawed and needs significant rework. **Blocks** the spec from advancing.
+
+**Gate enforcement (validated → in_progress):**
+- At least 1 evaluation with `recommendation="approve"`
+- Zero evaluations with `recommendation="reject"`
+- Average `overall_score` of approvals ≥ `validation_threshold` (default 70, configurable per board)
+- Unless `skip_qualitative_validation` flag is set
+
+**When evaluating, always:**
+1. Read the full spec: `okto_pulse_get_spec(board_id, spec_id)`
+2. Review all test scenarios: `okto_pulse_list_test_scenarios(board_id, spec_id)` — check coverage map
+3. Review business rules: `okto_pulse_list_business_rules(board_id, spec_id)`
+4. Review API contracts: `okto_pulse_list_api_contracts(board_id, spec_id)`
+5. Check that every FR maps to ≥1 card, every AC maps to ≥1 test scenario, every test scenario maps to ≥1 test card
+6. Verify card granularity and dependencies make sense for parallel execution
+
+#### 2.3c Coverage Progress in Tool Responses — Zero-Friction Gate Tracking
+
+Every tool that feeds into a coverage gate **automatically returns a `coverage` object** in its response. This eliminates the need for separate "check coverage" calls between create/link operations.
+
+**Example — creating a test scenario:**
+```json
+{
+  "success": true,
+  "scenario": { "id": "ts-001", "title": "..." },
+  "coverage": {
+    "ac_coverage_pct": 66.7,
+    "ac_covered": 2,
+    "ac_total": 3,
+    "ac_uncovered_indices": [2],
+    "fr_coverage_pct": 100.0,
+    "fr_covered": 3,
+    "fr_total": 3,
+    "fr_uncovered_indices": [],
+    "scenario_task_linkage_pct": 0.0,
+    "scenarios_linked": 0,
+    "scenarios_total": 2,
+    "skip_test_coverage": false,
+    "skip_rules_coverage": false
+  }
+}
+```
+
+**Key fields to watch per operation:**
+
+| Tool | Primary metric to track | Done when |
+|------|------------------------|-----------|
+| `add_test_scenario` | `ac_coverage_pct` + `ac_uncovered_indices` | `ac_coverage_pct = 100` or `skip_test_coverage = true` |
+| `add_business_rule` | `fr_coverage_pct` + `fr_uncovered_indices` | `fr_coverage_pct = 100` or `skip_rules_coverage = true` |
+| `add_api_contract` | `contracts_total` (informational) | All endpoints covered |
+| `link_task_to_scenario` | `scenario_task_linkage_pct` | `scenario_task_linkage_pct = 100` |
+| `link_task_to_rule` | `br_task_linkage_pct` | `br_task_linkage_pct = 100` |
+| `link_task_to_contract` | `contract_task_linkage_pct` | `contract_task_linkage_pct = 100` |
+| `link_task_to_tr` | `tr_task_linkage_pct` | `tr_task_linkage_pct = 100` |
+| `remove_business_rule` | `fr_coverage_pct` (may drop) | Check if removal broke coverage |
+| `remove_api_contract` | `contract_task_linkage_pct` | Check if removal broke linkage |
+
+**Workflow — creating test scenarios without friction:**
+```
+1. add_test_scenario(..., linked_criteria="0|1")   → coverage.ac_coverage_pct = 66.7, uncovered: [2]
+2. add_test_scenario(..., linked_criteria="2")      → coverage.ac_coverage_pct = 100.0, uncovered: []
+   ✅ Done — no need to call list_test_scenarios to check
+```
+
+**Workflow — linking tasks to scenarios:**
+```
+1. link_task_to_scenario(..., scenario_id="ts-001") → coverage.scenario_task_linkage_pct = 50.0
+2. link_task_to_scenario(..., scenario_id="ts-002") → coverage.scenario_task_linkage_pct = 100.0
+   ✅ Done — all scenarios have linked tasks, cards can now start
+```
+
+**The `skip_*` flags tell you if full coverage is mandatory:**
+- `skip_test_coverage = false` → AC coverage MUST reach 100% before spec can advance
+- `skip_test_coverage = true` → AC coverage is tracked but not enforced
+- Same for `skip_rules_coverage`
 
 #### 2.4 Test Scenarios (TDD — MANDATORY for non-trivial specs)
 
@@ -455,8 +575,8 @@ Mockups can also be added to **ideations, refinements, and cards** — not just 
 3b. **A spec cannot move to "done" if it has pending tasks** — all linked task cards (non-bug, non-archived) must be in `done` or `cancelled` status before the spec can be finalized. Bug cards are excluded from this check.
 4. **No card can be started unless ALL test scenarios have linked task cards** — when moving any card forward (to started/in_progress), the system checks if every test scenario in the card's spec has at least one linked task card. If any scenario has no linked tasks, the move is blocked. This ensures that test cards are created and linked BEFORE implementation begins. The only exception is if `skip_test_coverage` is enabled on the spec.
 5. **No card can be started unless ALL functional requirements have linked business rules** — when moving any card forward, the system checks if every FR in the card's spec has at least one business rule linked to it via `linked_requirements`. If any FR has no linked rule, the move is blocked. This ensures business rules are defined BEFORE implementation begins. The only exception is if `skip_rules_coverage` is enabled on the spec or the board-level `skip_rules_coverage_global` override.
-6. **Always retrieve full task context BEFORE starting work** — before writing any code or making any change, you MUST call `okto_pulse_get_task_context(board_id, card_id)` to get the complete execution context. This returns the card details plus all spec requirements (functional requirements, technical requirements, acceptance criteria, test scenarios, business rules, API contracts, knowledge base, and mockups). Never start implementing without reading the full context first.
-7. **Always move card to started/in_progress BEFORE beginning work** — before writing any code, running any command, or making any change related to a card, you MUST first move the card to `started` or `in_progress` using `okto_pulse_move_card`. This ensures the board accurately reflects what is being worked on. Never start implementing a card that is still in `not_started`.
+6. **MANDATORY — Retrieve full task context BEFORE any work** — before writing ANY code, running ANY command, or making ANY change, you MUST call `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true, include_qa=true, include_comments=true)` to get the **complete** execution context. This returns the card details plus ALL spec requirements (functional requirements, technical requirements, acceptance criteria, test scenarios, business rules, API contracts, knowledge bases, mockups, and Q&A decisions). **This is NOT optional. This is NOT skippable. Every single time you begin work on a card, you MUST read the full context first.** Implementing without context leads to misaligned results, duplicated work, and drift. If you skip this step, you are violating a mandatory protocol.
+7. **MANDATORY — Move card to `in_progress` BEFORE beginning work** — before writing any code, running any command, or making any change related to a card, you MUST first move the card to `in_progress` (or at minimum `started`) using `okto_pulse_move_card`. This ensures the board accurately reflects what is being worked on **at all times**. A card that is `not_started` while you are writing code for it is a **protocol violation** — the board becomes inaccurate and other agents/users cannot see what is happening. The correct sequence is always: **(1) get_task_context → (2) move to in_progress → (3) start working**.
 8. **Review conclusions of related tasks** — when working on a task that depends on or is related to completed tasks, call `okto_pulse_get_task_conclusions(board_id, card_id)` to understand what was done, root causes found (for bugs), and decisions made. This avoids duplicating work or contradicting previous decisions.
 9. **Contextual error messages** — if any of these rules are violated, the system returns a clear error explaining what is wrong and how to fix it.
 
@@ -588,11 +708,18 @@ A card that implements part of a spec but is not linked to it breaks traceabilit
 4. **IMMEDIATELY link each test card** to its scenario(s) using `okto_pulse_link_task_to_scenario(board_id, spec_id, scenario_id, card_id)`. A test card without a linked scenario has no traceability and blocks all cards from starting.
 5. **Verify full linkage**: Run `okto_pulse_list_test_scenarios` — every scenario must show at least one linked task. If any scenario has zero linked tasks, no card in the spec can be moved to started/in_progress.
 6. **THEN — Create implementation cards** for work units derived from requirements — always pass `spec_id`
-7. **Copy relevant context to each card** using the copy tools:
-   - `okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id, screen_ids?)` — copy mockups that the card will implement (use `screen_ids` to select specific screens, or omit to copy all)
-   - `okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id, knowledge_ids?)` — copy relevant knowledge base entries as comments on the card
-   - `okto_pulse_copy_qa_to_card(board_id, spec_id, card_id)` — copy answered Q&A decisions as a consolidated comment
-8. Reference specific requirements AND test scenarios in the card description
+7. **MANDATORY — Link artifacts to every card** using the copy tools. This is NOT optional — every card must carry the context it needs to be implemented correctly:
+   - `okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id, screen_ids?)` — **MUST copy** mockups relevant to the card's scope. For UI tasks, copy all mockups. For backend tasks, copy screens that show the expected behavior. Use `screen_ids` to select specific screens when only some are relevant.
+   - `okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id, knowledge_ids?)` — **MUST copy** all relevant knowledge base entries. KBs contain reference documents, API specs, design docs, and domain knowledge that are critical for correct implementation.
+   - `okto_pulse_copy_qa_to_card(board_id, spec_id, card_id)` — **MUST copy** answered Q&A decisions. These are binding decisions made during spec authoring — implementing without them risks contradicting agreed requirements.
+   - A card without linked artifacts forces the implementer to hunt for context. **Every card should be self-contained** — an agent picking up the card should be able to understand what to build from the card alone.
+8. **Write detailed card descriptions** — the card description MUST include:
+   - What specifically needs to be built/changed (not just "implement feature X")
+   - Which functional/technical requirements from the spec this card addresses (reference by index or content)
+   - Which test scenarios this card should satisfy
+   - Which API contracts define the interfaces
+   - Which business rules govern the behavior
+   - Any relevant technical constraints or patterns from the codebase
 
 **Test card naming convention:** Prefix test cards with `[TEST]` to distinguish them from implementation cards.
 Example: `[TEST] E2E — Valid OAuth2 token grants access`
@@ -612,6 +739,10 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 | Card with generic title like "Tests" | Doesn't communicate what is being tested | Use `[TEST] E2E — <scenario title>` format |
 | Orphaned implementation card (no spec_id) | Work happens outside the spec's view — invisible progress | Always link to the spec |
 | Task without contract reference | Ambiguous implementation = high drift | Reference the relevant API contract(s) and business rule(s) in the card description |
+| Card without linked KBs/mockups | Implementer lacks visual spec and reference docs = rework | Always `copy_mockups_to_card` and `copy_knowledge_to_card` after creating the card |
+| Card with vague description ("implement X") | No context for what to build = drift + misalignment | Write detailed descriptions referencing FRs, TRs, BRs, ACs, contracts |
+| Starting work without `get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `get_task_context` with all include flags BEFORE any work |
+| Card still `not_started` while writing code | Board is inaccurate, other agents can't see what's happening | Move to `in_progress` BEFORE first line of code |
 
 **Verification checklist after creating all cards:**
 - Run `okto_pulse_list_test_scenarios` → every scenario must have at least one linked task (zero "no tasks")
@@ -619,7 +750,7 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 - Every card must have `spec_id` set — no orphaned cards
 - Every test card must have `test_scenario_ids` populated via `link_task_to_scenario`
 
-### 2.7 Sprints — Incremental Delivery Slices
+### 2.10 Sprints — Incremental Delivery Slices
 
 Sprints break large specs into incremental deliverables with scoped gates and evaluations.
 
@@ -634,6 +765,44 @@ Sprints break large specs into incremental deliverables with scoped gates and ev
 1. Use `okto_pulse_suggest_sprints(board_id, spec_id, threshold?)` to get AI-suggested breakdown
 2. Create sprints with `okto_pulse_create_sprint` — scope test_scenario_ids and business_rule_ids from the spec
 3. Assign cards with `okto_pulse_assign_tasks_to_sprint(board_id, sprint_id, card_ids)`
+
+**MANDATORY — Detailed sprint fields:**
+
+When creating or updating a sprint, the following fields MUST be filled with meaningful, detailed content:
+
+- **`title`** — descriptive name that communicates the sprint's focus (e.g., "Sprint 1 — Auth Layer + JWT Validation", not "Sprint 1")
+- **`description`** — comprehensive description of what the sprint covers. MUST include:
+  - The scope boundary (what is IN this sprint vs. deferred to later sprints)
+  - The key deliverables expected at the end
+  - Any dependencies on previous sprints or external systems
+  - Risk factors or areas of uncertainty
+- **`objective`** — a clear, specific statement of what this sprint aims to achieve. Not a vague goal like "implement features" but a concrete target: "Deliver a working authentication flow with JWT validation, Clerk integration, and role-based access control for the API layer. Users should be able to sign in, receive a valid token, and access protected endpoints."
+- **`expected_outcome`** — a verifiable description of what "done" looks like for this sprint. Must be concrete enough that someone can verify it: "All 4 auth endpoints return correct responses, JWT tokens are validated against Clerk JWKS, role middleware blocks unauthorized access with proper 403 responses, and all 6 test scenarios pass."
+
+**Bad examples (DO NOT write like this):**
+- objective: "Implement sprint 1 features" ← vague, says nothing
+- description: "First sprint" ← no scope, no deliverables, no context
+- expected_outcome: "Everything works" ← not verifiable
+
+**Good examples:**
+- objective: "Establish the data layer and core CRUD operations for the sprint entity, including lifecycle validation, card assignment, and scope resolution from the parent spec."
+- description: "This sprint covers the foundation: Sprint model (SQLAlchemy), CRUD endpoints (FastAPI), lifecycle gates (draft→active requires ≥1 card, active→review requires scoped tests passed), card assignment/unassignment with spec validation, and scope computation (inherited TRs, BRs, ACs from parent spec via linked_task_ids). Deferred to Sprint 2: evaluation system, sprint Q&A, and history tracking."
+- expected_outcome: "POST/GET/PATCH/DELETE sprint endpoints functional, move endpoint enforces all gates, assign-tasks links cards correctly, scope tab in frontend resolves BRs/TRs/ACs/contracts from parent spec. 8 test scenarios pass."
+
+**Sprint scope — inherited from parent spec:**
+
+A sprint's scope is computed from its assigned cards' relationships to the parent spec:
+- **Test Scenarios**: Union of sprint-level `test_scenario_ids` + spec test scenarios where `linked_task_ids` includes any sprint card
+- **Business Rules**: Union of sprint-level `business_rule_ids` + spec BRs where `linked_task_ids` includes any sprint card
+- **Technical Requirements**: Spec TRs where `linked_task_ids` includes any sprint card
+- **API Contracts**: Spec contracts where `linked_task_ids` includes any sprint card
+- **Acceptance Criteria**: Resolved from scoped test scenarios' `linked_criteria` field
+
+For scope to resolve correctly, **you MUST link spec artifacts to cards** using:
+- `okto_pulse_link_task_to_scenario` — link cards to test scenarios
+- `okto_pulse_link_task_to_rule` — link cards to business rules
+- `okto_pulse_link_task_to_contract` — link cards to API contracts
+- `okto_pulse_link_task_to_tr` — link cards to technical requirements
 
 **Sprint gates:**
 | Transition | Gate |
@@ -651,9 +820,19 @@ Sprints break large specs into incremental deliverables with scoped gates and ev
 - All sprints must be `closed` or `cancelled` (minimum 1 closed)
 - Coverage gates evaluate the total spec, not individual sprints
 
-**Evaluation (same 4 dimensions as spec):**
-- Submit via `okto_pulse_submit_sprint_evaluation` (sprint must be in `review` status)
-- recommendation: `approve`, `request_changes`, or `reject`
+**Sprint evaluation (4 dimensions + overall):**
+
+When a sprint is in `review` status, submit an evaluation via `okto_pulse_submit_sprint_evaluation`. Each dimension scores 0-100 with a mandatory justification:
+
+| Dimension | What to evaluate |
+|-----------|-----------------|
+| `breakdown_completeness` | Do the assigned cards fully cover the sprint's scoped requirements? Are there gaps? |
+| `granularity` | Are cards properly sized? Too large = hard to track, too small = overhead |
+| `dependency_coherence` | Do card dependencies make sense? Are there circular deps or missing prerequisites? |
+| `test_coverage_quality` | Do test scenarios cover happy paths AND edge cases? Are they actually verifiable? |
+| `overall_score` | Overall assessment considering all dimensions |
+
+**recommendation:** `approve` (sprint can close), `request_changes` (needs rework), `reject` (fundamentally flawed)
 
 **Permission flags:** 25 flags under `sprint.*` — entity (9), move (4), interact_in (5), qa (3), evaluations (3), history_read (1)
 
@@ -868,18 +1047,28 @@ Upload artifacts (`okto_pulse_upload_attachment`) whenever they add context that
 - **Before/after diffs** — when the change is easier to understand visually
 - **Architecture or decision documents** — technical designs, ADRs, dependency graphs, or any structured analysis that would clutter a comment
 
-### Example Flow
+### Example Flow — MANDATORY Execution Sequence
 
-**IMPORTANT: ALWAYS move the card to `started` FIRST, before doing any work. This is mandatory, not optional.**
+**The 3-step mandatory sequence before ANY work on a card:**
+1. `get_task_context` — load ALL context (card + spec + requirements + BRs + contracts + KBs + mockups + Q&A)
+2. `move_card → in_progress` — signal that work is starting
+3. Begin implementation
+
+**This sequence is NON-NEGOTIABLE. Skipping any step is a protocol violation.**
 
 ```
-1. move_card → started  ← THIS MUST HAPPEN BEFORE ANY CODE/WORK
-   add_comment: "Starting work. Plan: remove legacy SSE transport, keep streamable-http only. Will update server.py, nginx.conf, and docs."
+0. get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true, include_qa=true, include_comments=true)
+   ← READ EVERYTHING. Understand the full scope before touching any code.
+
+1. move_card → in_progress  ← THIS MUST HAPPEN BEFORE ANY CODE/WORK
+   add_comment: "Starting work. Plan: remove legacy SSE transport, keep streamable-http only.
+   Scope: FR-0 (streaming protocol), TR-1 (nginx config), AC-2 (backward compat).
+   Will update server.py, nginx.conf, and docs."
 
 2. (during execution, hit an issue)
    add_comment: "Found bug: card.status comes as plain str from PostgreSQL but code calls .value (enum attr). Root cause: String(50) column type instead of SQLAlchemy Enum. Fixing with TypeDecorator."
 
-3. move_card → done
+3. move_card → done (with conclusion + completeness + drift)
    add_comment: "Done. Changes: (1) Removed SSE app and routes from server.py, (2) Updated nginx.conf to standard HTTP proxy, (3) Updated docs/services.md. Also fixed CardStatus bug with CardStatusType TypeDecorator. All 24 Playwright tests passing."
    upload_attachment: test-results.txt (if applicable)
 ```
@@ -913,18 +1102,12 @@ Always use create/derive with parent ID instead of creating orphan entities. Thi
 2. **Mark as seen after processing** — prevents re-processing in future sessions
 3. **Comment as you work** — follow the "Documenting Execution" section; comments are the audit trail of your work
 4. **Use @Name to direct messages** — ensures the target sees it as an unseen mention
-5. **Move card to started BEFORE doing any work** — always call `okto_pulse_move_card(board_id, card_id, status="started")` before writing code, running commands, or making any changes for a card. The board must reflect what is actively being worked on at all times
-6. **Read card and spec context BEFORE implementing** — before starting any implementation, you MUST load ALL relevant context into your working memory:
-   - `okto_pulse_get_card(board_id, card_id)` — read the full card including description, details, comments, Q&A, and **screen_mockups**
-   - `okto_pulse_get_spec(board_id, spec_id)` — read the linked spec with requirements, acceptance criteria, test scenarios, and **screen_mockups**
+5. **MANDATORY — Move card to `in_progress` BEFORE doing any work** — the FIRST action when you start working on a card is: `okto_pulse_move_card(board_id, card_id, status="in_progress")`. Do this BEFORE writing code, running commands, or making any changes. The board must reflect what is being worked on at ALL times. A `not_started` card with active work is a protocol violation.
+6. **MANDATORY — Read FULL task context BEFORE implementing** — before starting any implementation, you MUST call `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true, include_qa=true, include_comments=true)` as the **primary context loading tool**. This single call returns everything: card details, spec requirements, TRs, BRs, test scenarios, API contracts, KBs, mockups, Q&A, and comments. **Never skip this.** If you need additional detail beyond what `get_task_context` provides, use these supplementary tools:
    - `okto_pulse_list_attachments(board_id, card_id)` — check for attached investigation reports, plans, or reference documents
-   - If the card has **screen_mockups**: review them — they are the visual specification of what you must implement
-   - `okto_pulse_list_business_rules(board_id, spec_id)` — read all business rules. **Business rules define what the code MUST do.**
-   - `okto_pulse_list_api_contracts(board_id, spec_id)` — read all API contracts. **Contracts define HOW it communicates.**
-   - If the spec has **knowledge bases**: `okto_pulse_list_spec_knowledge(board_id, spec_id)` + `okto_pulse_get_spec_knowledge(board_id, spec_id, kb_id)` — read reference documents
-   - If the spec has **skills**: `okto_pulse_spec_skill_retrieve(board_id, spec_id)` → `okto_pulse_spec_skill_inspect(board_id, spec_id, skill_id)` → `okto_pulse_spec_skill_load(board_id, spec_id, skill_id, section)` — load relevant skill knowledge using the 3-level pattern
-   - Read all comments on the card for context from previous work or discussions
-   This is mandatory — never start implementing based solely on the card title. The card description, spec requirements, business rules, API contracts, mockups, knowledge bases, skills, and comment history contain critical context for correct implementation. **Implementing without reading context leads to misaligned results.**
+   - If the spec has **skills**: `okto_pulse_spec_skill_retrieve(board_id, spec_id)` → `okto_pulse_spec_skill_inspect` → `okto_pulse_spec_skill_load` — load skill knowledge using the 3-level pattern
+   - `okto_pulse_get_task_conclusions(board_id, dep_card_id)` — for each dependency, read what was done and decisions made
+   **The mandatory execution sequence is always: (1) `get_task_context` → (2) `move_card` to `in_progress` → (3) begin work.** Never start implementing based solely on the card title. **Implementing without reading context leads to misaligned results, duplicated work, and spec drift.**
 7. **Check before acting** — read card activity and comments to avoid duplicate work
 8. **Respect dependencies** — don't try to force-move blocked cards; resolve blockers first
 9. **Create sub-tasks when needed** — break complex work into cards and assign appropriately
