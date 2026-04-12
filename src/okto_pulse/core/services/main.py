@@ -154,10 +154,11 @@ async def propagate_artifacts(
         existing = target_entity.screen_mockups or []
         target_entity.screen_mockups = existing + copied_mockups
 
-    # Propagate knowledge bases (DB rows)
+    # Propagate knowledge bases (DB rows) — accepts ORM objects or dicts
     if target_kb_class and source_knowledge_bases:
         kbs = source_knowledge_bases if kb_ids is None else [
-            kb for kb in source_knowledge_bases if getattr(kb, "id", None) in kb_ids
+            kb for kb in source_knowledge_bases
+            if (kb.get("id") if isinstance(kb, dict) else getattr(kb, "id", None)) in kb_ids
         ]
         # Determine FK field name from target_kb_class table
         target_id_field = None
@@ -167,16 +168,17 @@ async def propagate_artifacts(
                 break
         if target_id_field:
             for kb in kbs:
+                _get = (lambda k: kb.get(k)) if isinstance(kb, dict) else (lambda k: getattr(kb, k, None))
                 new_kb = target_kb_class(
                     **{target_id_field: target_entity.id},
-                    title=kb.title,
-                    description=f"[propagated from parent] {kb.description or ''}".strip(),
-                    content=kb.content,
-                    mime_type=getattr(kb, "mime_type", "text/markdown"),
+                    title=_get("title"),
+                    description=f"[propagated from parent] {_get('description') or ''}".strip(),
+                    content=_get("content"),
+                    mime_type=_get("mime_type") or "text/markdown",
                     created_by=user_id,
                 )
                 db.add(new_kb)
-            await db.flush()  # Ensure KBs are persisted before returning
+            await db.flush()
 
     # Compile Q&A into context (append)
     qa_context = _compile_qa_context(source_qa_items)
@@ -3172,6 +3174,15 @@ class RefinementService:
 
         context = "\n\n".join(context_parts) if context_parts else refinement.description
 
+        # Snapshot artifact data BEFORE create_spec — flush() in create_spec
+        # expires all session objects, making eagerly-loaded collections inaccessible.
+        snapshot_mockups = list(refinement.screen_mockups or [])
+        snapshot_kbs = [
+            {"title": kb.title, "description": kb.description, "content": kb.content,
+             "mime_type": getattr(kb, "mime_type", "text/markdown"), "id": kb.id}
+            for kb in (refinement.knowledge_bases or [])
+        ]
+
         spec_data = SpecCreate(
             title=refinement.title,
             description=refinement.description,
@@ -3185,12 +3196,12 @@ class RefinementService:
             refinement.board_id, user_id, spec_data, skip_ownership_check=skip_ownership_check
         )
         if spec:
-            # Propagate artifacts from refinement (mockups + KBs) via centralized function
+            # Propagate artifacts using pre-flush snapshots
             await propagate_artifacts(
                 db=self.db,
-                source_mockups=refinement.screen_mockups,
+                source_mockups=snapshot_mockups,
                 source_qa_items=None,  # Q&A already compiled in context above
-                source_knowledge_bases=refinement.knowledge_bases,
+                source_knowledge_bases=snapshot_kbs,
                 target_entity=spec,
                 target_kb_class=SpecKnowledgeBase,
                 user_id=user_id,
