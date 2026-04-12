@@ -156,6 +156,48 @@ async def submit_evaluation(
     return {"success": True, "evaluation_id": sprint.evaluations[-1]["id"] if sprint.evaluations else None}
 
 
+@router.post("/sprints/{sprint_id}/assign-tasks")
+async def assign_tasks(
+    sprint_id: str,
+    data: dict,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Assign cards to a sprint. Cards must belong to the same spec."""
+    card_ids = data.get("card_ids", [])
+    if not card_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="card_ids required")
+    service = SprintService(db)
+    try:
+        count = await service.assign_tasks(sprint_id, card_ids, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    await db.commit()
+    return {"success": True, "assigned": count}
+
+
+@router.post("/sprints/{sprint_id}/unassign-tasks")
+async def unassign_tasks(
+    sprint_id: str,
+    data: dict,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove cards from a sprint (set sprint_id to null)."""
+    card_ids = data.get("card_ids", [])
+    if not card_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="card_ids required")
+    from okto_pulse.core.models.db import Card
+    count = 0
+    for card_id in card_ids:
+        card = await db.get(Card, card_id)
+        if card and card.sprint_id == sprint_id:
+            card.sprint_id = None
+            count += 1
+    await db.commit()
+    return {"success": True, "unassigned": count}
+
+
 @router.get("/sprints/{sprint_id}/history", response_model=list[SprintHistoryResponse])
 async def list_history(
     sprint_id: str,
