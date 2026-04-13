@@ -921,6 +921,102 @@ Use Mermaid diagrams when documenting:
 - Sequence diagrams for API interactions
 - Dependency graphs between components
 
+## Q&A — Patterns, Anti-Patterns, and When to Use Comments Instead
+
+Q&A items are **bidirectional communication channels** on entities (cards, specs, ideations, refinements, sprints). They exist to get decisions from humans or other agents. Q&A is NOT a place for the agent to talk to itself or dump information.
+
+### When to use Q&A vs Comments
+
+| Situation | Use | Why |
+|-----------|-----|-----|
+| You need a decision from the user or another agent | **Q&A** (ask a question) | Creates a tracked item that shows as pending until answered |
+| You need the user to choose between options | **Choice Q&A** (`ask_*_choice_question`) | Structured poll with selectable options |
+| You want to add context, observations, or notes | **Comment** (`add_comment`) | Comments are one-way — they don't require a response |
+| You found something interesting during analysis | **Comment** | Don't ask a question just to answer it yourself |
+| You want to document a decision you made | **Comment** | Q&A is for questions you CAN'T answer yourself |
+| You need clarification on scope or requirements | **Q&A** | The answer becomes a binding decision attached to the entity |
+
+### Q&A Tool Selection Guide
+
+Each entity type has its own Q&A tools. Use the correct ones:
+
+| Entity | Ask text question | Ask choice question | Answer |
+|--------|------------------|--------------------|---------| 
+| Card | `ask_question(board_id, card_id, question)` | `add_choice_comment(board_id, card_id, ...)` | `answer_question(board_id, qa_id, answer)` |
+| Ideation | `ask_ideation_question(board_id, ideation_id, question)` | `ask_ideation_choice_question(board_id, ideation_id, ...)` | `answer_ideation_question(board_id, ideation_id, qa_id, answer)` |
+| Refinement | `ask_refinement_question(board_id, refinement_id, question)` | `ask_refinement_choice_question(board_id, refinement_id, ...)` | `answer_refinement_question(board_id, refinement_id, qa_id, answer)` |
+| Spec | `ask_spec_question(board_id, spec_id, question)` | `ask_spec_choice_question(board_id, spec_id, ...)` | `answer_spec_question(board_id, spec_id, qa_id, answer)` |
+| Sprint | `ask_sprint_question(board_id, sprint_id, question)` | *(not available)* | `answer_sprint_question(board_id, sprint_id, qa_id, answer)` |
+
+### Choice Questions — When and How
+
+Use choice questions when the decision has a **finite set of known options**. This makes it easy for the user to respond with one click instead of writing a text answer.
+
+**When to use choice questions:**
+- Architecture decisions with 2-3 clear alternatives ("REST vs WebSocket vs SSE")
+- Technology picks ("PostgreSQL vs SQLite vs MongoDB")
+- Scope decisions ("Include feature X in this sprint? Yes / No / Defer to next sprint")
+- Priority calls ("Which should we implement first? A / B / C")
+
+**How to create a choice question:**
+```
+ask_ideation_choice_question(
+  board_id, ideation_id,
+  question="Which auth approach should we use?",
+  options="Clerk integration|Custom JWT|OAuth2 + PKCE",
+  question_type="choice",        # "choice" = single select, "multi_choice" = multi select
+  allow_free_text=true            # Let the user add a comment alongside their pick
+)
+```
+
+**How to respond to a choice question:**
+```
+respond_to_choice(
+  board_id, comment_id,
+  selected="Clerk integration",   # The option text, exactly as listed
+  free_text="Clerk is already in the ecosystem, less work"  # Optional justification
+)
+```
+
+### Writing Good Questions
+
+**Good questions are:**
+- **Short and specific** — one question per Q&A item, not a paragraph with 5 embedded questions
+- **Actionable** — the answer unblocks a concrete decision
+- **Answerable by the recipient** — don't ask technical questions to a non-technical user
+
+**Good examples:**
+```
+"Should the notification system store events in PostgreSQL (durable, queryable) or Redis (fast, ephemeral)?"
+
+"The spec has 12 acceptance criteria. Should we split into 2 sprints or keep as one?"
+
+"Card 'Auth middleware' depends on 'DB model' — should we block it or allow parallel work?"
+```
+
+### Anti-Patterns — DO NOT do these
+
+| Anti-Pattern | Why it's bad | What to do instead |
+|---|---|---|
+| Asking a question and immediately answering it yourself | Defeats the purpose of Q&A — it's a monologue, not a question. Clutters the Q&A list with resolved items that nobody asked for. | Use a **comment** (`add_comment`) to share your analysis or observation. |
+| Writing a long paragraph as a "question" | Hard to answer — the user doesn't know what exactly you need from them. The Q&A item becomes a wall of text. | Break into one specific question. Put context in a comment first, then ask the focused question. |
+| Embedding options in the question text ("Should we use A or B or C?") | The user has to type "A" or "B" as a free-text answer. No structured tracking of choices. | Use `ask_*_choice_question` with proper `options` parameter so the user can click to select. |
+| Asking questions you can answer from the codebase | Wastes the user's time. You have tools to read the code and find the answer yourself. | Read the code first (`get_spec`, `get_task_context`, grep the codebase). Only ask if the answer isn't in the code. |
+| Using Q&A to document what you did | Q&A is for questions, not status updates. | Use **comments** for progress updates, findings, and documentation. |
+| Asking multiple questions in one Q&A item | Impossible to answer partially. The user has to address everything or nothing. | Create one Q&A item per question. |
+| Not answering questions directed at you | Other agents or users asked you something and you ignored it. The Q&A stays "pending" forever. | Check `list_my_mentions` and answer all pending Q&A directed at you via `answer_*_question`. |
+| Answering a choice question with `answer_question` instead of `respond_to_choice` | Breaks the structured response tracking. The choice poll shows no selections. | Use `respond_to_choice(comment_id, selected="option text")` for choice questions. |
+
+### Q&A Lifecycle
+
+1. **Ask** → creates a Q&A item in "pending" state (visible in the entity's Q&A tab)
+2. **Answer** → the Q&A item is now "answered" with the response text or selected option
+3. **Decisions are binding** — answered Q&A items are compiled into the entity's context when deriving child entities (ideation → refinement → spec). The answer becomes part of the permanent record.
+
+**IMPORTANT:** Before asking a question, check if it was already asked and answered:
+- `get_ideation_context` / `get_refinement_context` / `get_spec_context` all include `qa_items`
+- If the question was already answered, don't ask it again — read the existing answer
+
 ## Documenting Execution
 
 Thorough documentation on cards is mandatory. Comments and attachments are the primary way users and other agents understand what was done, why, and what changed.
