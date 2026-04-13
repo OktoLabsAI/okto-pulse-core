@@ -1197,7 +1197,7 @@ async def okto_pulse_create_card(
             For bug cards, this is auto-resolved from the origin task if not provided.
         description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
         details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.
-        status: Card status - one of: not_started, started, in_progress, on_hold, done, cancelled
+        status: Card status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
         priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
         assignee_id: User ID to assign (optional)
         labels: Comma-separated labels (optional)
@@ -1811,7 +1811,7 @@ async def okto_pulse_move_card(
     Args:
         board_id: Board ID
         card_id: Card ID
-        status: New status - one of: not_started, started, in_progress, on_hold, done, cancelled
+        status: New status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
         position: New position in column (-1 = end of column)
         conclusion: REQUIRED when status='done'. Detailed summary of changes, files modified, decisions, test results, and follow-ups. Supports Markdown and Mermaid diagrams (```mermaid code blocks).
         completeness: REQUIRED when status='done'. 0-100, how much of the planned work was actually implemented. 100 = fully complete, 0 = nothing delivered. Use -1 when not moving to done.

@@ -1150,6 +1150,7 @@ class CardResponse(BaseSchema):
     steps_to_reproduce: str | None = None
     action_plan: str | None = None
     linked_test_task_ids: list[str] | None = None
+    validations: list[dict] | None = None
     archived: bool = False
     pre_archive_status: str | None = None
 
@@ -1179,6 +1180,46 @@ class CardSummary(BaseSchema):
     linked_test_task_ids: list[str] | None = None
     archived: bool = False
     pre_archive_status: str | None = None
+
+
+# ============================================================================
+# Task Validation Schemas
+# ============================================================================
+
+
+class TaskValidationSubmit(BaseModel):
+    """Request body for submitting a task validation."""
+
+    confidence: int = Field(..., ge=0, le=100)
+    confidence_justification: str = Field(..., min_length=10)
+    estimated_completeness: int = Field(..., ge=0, le=100)
+    completeness_justification: str = Field(..., min_length=10)
+    estimated_drift: int = Field(..., ge=0, le=100)
+    drift_justification: str = Field(..., min_length=10)
+    general_justification: str = Field(..., min_length=20)
+    recommendation: str = Field(..., pattern="^(approve|reject)$")
+
+
+class TaskValidationResponse(BaseModel):
+    """Response for a task validation."""
+
+    id: str
+    card_id: str
+    board_id: str
+    reviewer_id: str
+    confidence: int
+    confidence_justification: str
+    estimated_completeness: int
+    completeness_justification: str
+    estimated_drift: int
+    drift_justification: str
+    general_justification: str
+    recommendation: str
+    outcome: str
+    threshold_violations: list[str]
+    created_at: str
+    card_status: str | None = None
+    resolved_thresholds: dict | None = None
 
 
 # ============================================================================

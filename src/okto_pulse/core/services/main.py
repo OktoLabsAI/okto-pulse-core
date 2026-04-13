@@ -636,10 +636,213 @@ class CardService:
         CardStatus.NOT_STARTED: 0,
         CardStatus.STARTED: 1,
         CardStatus.IN_PROGRESS: 2,
+        CardStatus.VALIDATION: 2,  # same level as in_progress — lateral move into gate
         CardStatus.ON_HOLD: 2,  # same level — lateral move
         CardStatus.DONE: 3,
         CardStatus.CANCELLED: 3,
     }
+
+    # ---- Task Validation Gate ----
+
+    def _resolve_validation_config(
+        self, card: Card, spec: "Spec | None", sprint: "Sprint | None", board_settings: dict
+    ) -> dict:
+        """Resolve validation gate config from hierarchy: sprint → spec → board.
+
+        Returns dict with: required (bool), min_confidence, min_completeness, max_drift, resolved_from.
+        """
+        # Defaults from board settings
+        board_required = board_settings.get("require_task_validation", False)
+        board_min_conf = board_settings.get("validation_min_confidence", 70)
+        board_min_comp = board_settings.get("validation_min_completeness", 80)
+        board_max_drift = board_settings.get("validation_max_drift", 50)
+
+        # Spec overrides
+        spec_required = getattr(spec, "require_task_validation", None) if spec else None
+        spec_min_conf = getattr(spec, "validation_min_confidence", None) if spec else None
+        spec_min_comp = getattr(spec, "validation_min_completeness", None) if spec else None
+        spec_max_drift = getattr(spec, "validation_max_drift", None) if spec else None
+
+        # Sprint overrides
+        spr_required = getattr(sprint, "require_task_validation", None) if sprint else None
+        spr_min_conf = getattr(sprint, "validation_min_confidence", None) if sprint else None
+        spr_min_comp = getattr(sprint, "validation_min_completeness", None) if sprint else None
+        spr_max_drift = getattr(sprint, "validation_max_drift", None) if sprint else None
+
+        # Resolve with null-coalescing: sprint ?? spec ?? board
+        def _coalesce(*vals, default):
+            for v in vals:
+                if v is not None:
+                    return v
+            return default
+
+        required = _coalesce(spr_required, spec_required, board_required, default=False)
+        resolved_from = "board"
+        if spr_required is not None:
+            resolved_from = "sprint"
+        elif spec_required is not None:
+            resolved_from = "spec"
+
+        return {
+            "required": bool(required),
+            "min_confidence": _coalesce(spr_min_conf, spec_min_conf, board_min_conf, default=70),
+            "min_completeness": _coalesce(spr_min_comp, spec_min_comp, board_min_comp, default=80),
+            "max_drift": _coalesce(spr_max_drift, spec_max_drift, board_max_drift, default=50),
+            "resolved_from": resolved_from,
+        }
+
+    async def submit_task_validation(
+        self,
+        card_id: str,
+        reviewer_id: str,
+        reviewer_name: str,
+        data: dict,
+    ) -> dict:
+        """Submit a task validation for a card in 'validation' status.
+
+        Executes threshold check, computes outcome, persists validation,
+        and routes card (success→done, failed→not_started).
+        """
+        import uuid as _uuid
+
+        card = await self.get_card(card_id)
+        if not card:
+            raise ValueError("Card not found")
+
+        if card.status != CardStatus.VALIDATION:
+            raise ValueError(
+                f"Card is not in 'validation' status (currently '{card.status.value}'). "
+                f"Only cards in 'validation' status can receive validations."
+            )
+
+        if getattr(card, "card_type", CardType.NORMAL) == CardType.TEST:
+            raise ValueError("Card type 'test' is not subject to validation gate.")
+
+        # Resolve thresholds from hierarchy
+        board = await self.db.get(Board, card.board_id)
+        board_settings = board.settings or {} if board else {}
+        spec = await self.db.get(Spec, card.spec_id) if card.spec_id else None
+        sprint = await self.db.get(Sprint, card.sprint_id) if card.sprint_id else None
+        config = self._resolve_validation_config(card, spec, sprint, board_settings)
+
+        # Extract scores
+        confidence = data["confidence"]
+        completeness = data["estimated_completeness"]
+        drift = data["estimated_drift"]
+        recommendation = data["recommendation"]
+
+        # Threshold check
+        violations = []
+        if confidence < config["min_confidence"]:
+            violations.append(f"confidence {confidence} < min {config['min_confidence']}")
+        if completeness < config["min_completeness"]:
+            violations.append(f"completeness {completeness} < min {config['min_completeness']}")
+        if drift > config["max_drift"]:
+            violations.append(f"drift {drift} > max {config['max_drift']}")
+
+        # Compute outcome
+        if violations or recommendation == "reject":
+            outcome = "failed"
+        else:
+            outcome = "success"
+
+        # Build validation entry
+        validation_id = f"val_{_uuid.uuid4().hex[:8]}"
+        validation = {
+            "id": validation_id,
+            "card_id": card_id,
+            "board_id": card.board_id,
+            "reviewer_id": reviewer_id,
+            "confidence": confidence,
+            "confidence_justification": data["confidence_justification"].strip(),
+            "estimated_completeness": completeness,
+            "completeness_justification": data["completeness_justification"].strip(),
+            "estimated_drift": drift,
+            "drift_justification": data["drift_justification"].strip(),
+            "general_justification": data["general_justification"].strip(),
+            "recommendation": recommendation,
+            "outcome": outcome,
+            "threshold_violations": violations,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Persist validation (append-only)
+        validations = list(card.validations or [])
+        validations.append(validation)
+        card.validations = validations
+        flag_modified(card, "validations")
+
+        # Route card based on outcome (atomic with validation persist)
+        if outcome == "success":
+            card.status = CardStatus.DONE
+        else:
+            card.status = CardStatus.NOT_STARTED
+
+        # Auto-position at end of target column
+        pos_query = (
+            select(func.max(Card.position))
+            .where(Card.board_id == card.board_id, Card.status == card.status)
+        )
+        max_pos = (await self.db.execute(pos_query)).scalar() or -1
+        card.position = max_pos + 1
+
+        # Activity log
+        await self._log_activity(
+            board_id=card.board_id,
+            card_id=card_id,
+            action="validation_submitted",
+            actor_type="agent",
+            actor_id=reviewer_id,
+            actor_name=reviewer_name,
+            details={
+                "validation_id": validation_id,
+                "outcome": outcome,
+                "recommendation": recommendation,
+                "confidence": confidence,
+                "estimated_completeness": completeness,
+                "estimated_drift": drift,
+                "threshold_violations": violations,
+                "card_title": card.title,
+            },
+        )
+
+        return {
+            **validation,
+            "card_status": card.status.value,
+            "resolved_thresholds": config,
+        }
+
+    async def list_task_validations(self, card_id: str) -> list[dict]:
+        """List all validations for a card in reverse chronological order."""
+        card = await self.get_card(card_id)
+        if not card:
+            raise ValueError("Card not found")
+        validations = list(card.validations or [])
+        validations.reverse()
+        return validations
+
+    async def get_task_validation(self, card_id: str, validation_id: str) -> dict | None:
+        """Get a single validation by ID."""
+        card = await self.get_card(card_id)
+        if not card:
+            raise ValueError("Card not found")
+        for v in (card.validations or []):
+            if v.get("id") == validation_id:
+                return v
+        return None
+
+    async def delete_task_validation(self, card_id: str, validation_id: str, user_id: str) -> bool:
+        """Delete a validation entry. Requires card.validation.delete permission."""
+        card = await self.get_card(card_id)
+        if not card:
+            raise ValueError("Card not found")
+        validations = list(card.validations or [])
+        new_validations = [v for v in validations if v.get("id") != validation_id]
+        if len(new_validations) == len(validations):
+            return False
+        card.validations = new_validations
+        flag_modified(card, "validations")
+        return True
 
     # ---- Coverage gate functions (used by SpecService.move_spec) ----
 
@@ -865,6 +1068,24 @@ class CardService:
                             f"(status: '{sprint_obj.status.value}'). "
                             f"Only cards in active sprints can advance."
                         )
+
+        # --- Task Validation Gate: block in_progress→done when gate active ---
+        if (
+            data.status == CardStatus.DONE
+            and old_status in (CardStatus.IN_PROGRESS, CardStatus.STARTED, CardStatus.NOT_STARTED)
+            and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
+        ):
+            spec_for_gate = await self.db.get(Spec, card.spec_id) if card.spec_id else None
+            sprint_for_gate = await self.db.get(Sprint, card.sprint_id) if card.sprint_id else None
+            gate_config = self._resolve_validation_config(
+                card, spec_for_gate, sprint_for_gate, board_settings
+            )
+            if gate_config["required"]:
+                raise ValueError(
+                    "Validation gate is active. Move card to 'validation' status first. "
+                    "A reviewer must submit a task validation before the card can move to 'done'. "
+                    "Use move_card(status='validation') then submit_task_validation."
+                )
 
         # Block Done on test cards if linked scenarios not updated
         if data.status == CardStatus.DONE and card.spec_id and card.test_scenario_ids:

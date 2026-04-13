@@ -302,3 +302,103 @@ async def delete_card(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
     await db.commit()
+
+
+# ---- Task Validation Endpoints ----
+
+
+@router.post("/{card_id}/validate", status_code=status.HTTP_201_CREATED)
+async def submit_task_validation(
+    card_id: str,
+    data: dict,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit a task validation for a card in 'validation' status."""
+    # Validate required fields
+    required = [
+        "confidence", "confidence_justification",
+        "estimated_completeness", "completeness_justification",
+        "estimated_drift", "drift_justification",
+        "general_justification", "recommendation",
+    ]
+    missing = [f for f in required if f not in data or data[f] is None]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing required fields: {', '.join(missing)}",
+        )
+    if data.get("recommendation") not in ("approve", "reject"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="recommendation must be 'approve' or 'reject'",
+        )
+
+    # Resolve reviewer name
+    agent = await db.execute(select(Agent).where(Agent.user_id == user_id))
+    agent_row = agent.scalar_one_or_none()
+    reviewer_name = agent_row.name if agent_row else user_id
+
+    service = CardService(db)
+    try:
+        result = await service.submit_task_validation(
+            card_id=card_id,
+            reviewer_id=user_id,
+            reviewer_name=reviewer_name,
+            data=data,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    await db.commit()
+    return result
+
+
+@router.get("/{card_id}/validations")
+async def list_task_validations(
+    card_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all validations for a card (reverse chronological)."""
+    service = CardService(db)
+    try:
+        validations = await service.list_task_validations(card_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return {"card_id": card_id, "total": len(validations), "validations": validations}
+
+
+@router.get("/{card_id}/validations/{validation_id}")
+async def get_task_validation(
+    card_id: str,
+    validation_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single validation by ID."""
+    service = CardService(db)
+    try:
+        validation = await service.get_task_validation(card_id, validation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    if not validation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Validation not found")
+    return validation
+
+
+@router.delete("/{card_id}/validations/{validation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_task_validation(
+    card_id: str,
+    validation_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a validation entry."""
+    service = CardService(db)
+    try:
+        deleted = await service.delete_task_validation(card_id, validation_id, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Validation not found")
+    await db.commit()

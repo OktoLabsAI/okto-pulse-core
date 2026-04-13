@@ -82,6 +82,7 @@ class CardStatus(str, PyEnum):
     NOT_STARTED = "not_started"
     STARTED = "started"
     IN_PROGRESS = "in_progress"
+    VALIDATION = "validation"
     ON_HOLD = "on_hold"
     DONE = "done"
     CANCELLED = "cancelled"
@@ -581,6 +582,12 @@ class Spec(Base):
     skip_qualitative_validation: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # Minimum avg score for qualitative validation (None = use board or default 70)
     validation_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Task validation gate: when True, cards must pass through "validation" before "done"
+    require_task_validation: Mapped[bool | None] = mapped_column(nullable=True)
+    # Threshold overrides for task validation (null = inherit from board)
+    validation_min_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_min_completeness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_max_drift: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Qualitative evaluations: [{id, evaluator_id, evaluator_name, evaluator_type, dimensions, overall_score, overall_justification, recommendation, stale, created_at}]
     evaluations: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Archive support
@@ -794,6 +801,11 @@ class Sprint(Base):
     skip_rules_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     skip_qualitative_validation: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     validation_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Task validation gate override (null = inherit from spec/board)
+    require_task_validation: Mapped[bool | None] = mapped_column(nullable=True)
+    validation_min_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_min_completeness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_max_drift: Mapped[int | None] = mapped_column(Integer, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
@@ -900,6 +912,10 @@ class Card(Base):
     screen_mockups: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Knowledge bases: [{id, title, description, content, mime_type, source}]
     knowledge_bases: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Task validations: [{id, card_id, board_id, reviewer_id, confidence, confidence_justification,
+    # estimated_completeness, completeness_justification, estimated_drift, drift_justification,
+    # general_justification, recommendation, outcome, threshold_violations, created_at}]
+    validations: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # --- Bug card fields ---
     card_type: Mapped[CardType] = mapped_column(

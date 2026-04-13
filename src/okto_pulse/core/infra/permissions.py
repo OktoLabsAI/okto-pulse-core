@@ -222,10 +222,21 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "not_started_to_started": True, "started_to_in_progress": True,
             "in_progress_to_on_hold": True, "on_hold_to_in_progress": True,
             "in_progress_to_done": True, "any_to_cancelled": True,
+            "in_progress_to_validation": True,
+            "validation_to_done": True,
+            "validation_to_not_started": True,
+            "validation_to_on_hold": True,
+            "validation_to_cancelled": True,
         },
         "interact_in": {
             "not_started": True, "started": True, "in_progress": True,
             "on_hold": True, "done": True, "cancelled": True,
+            "validation": True,
+        },
+        "validation": {
+            "submit": True,
+            "read": True,
+            "delete": True,
         },
         "qa": {"read": True, "ask": True, "answer": True, "delete": True},
         "comments": {
@@ -414,6 +425,9 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "card.move.not_started_to_started", "card.move.started_to_in_progress",
         "card.move.in_progress_to_on_hold", "card.move.on_hold_to_in_progress",
         "card.move.in_progress_to_done", "card.move.any_to_cancelled",
+        "card.move.in_progress_to_validation",
+        "card.move.validation_to_done", "card.move.validation_to_not_started",
+        "card.move.validation_to_on_hold", "card.move.validation_to_cancelled",
     ],
     "specs:create": ["spec.entity.create", "sprint.entity.create"],
     "specs:update": [
@@ -548,6 +562,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         # Card full
         "card.*",
     ])
+    # Executor: can read validations but not submit or delete them
+    _set_nested(executor, "card.validation.submit", False)
+    _set_nested(executor, "card.validation.delete", False)
 
     validator = _build_preset_flags([
         "board.read", "board.activity_read", "board.mentions_read", "board.mentions_mark_seen",
@@ -583,7 +600,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.qa.*", "card.comments.*", "card.conclusion.read", "card.activity_read",
         "card.tests.read", "card.mockups.read", "card.attachments.read",
         "card.interact_in.in_progress", "card.interact_in.done",
+        "card.interact_in.validation",
         "card.move.in_progress_to_done",
+        "card.move.in_progress_to_validation",
+        "card.move.validation_to_done", "card.move.validation_to_not_started",
+        "card.move.validation_to_on_hold", "card.move.validation_to_cancelled",
+        "card.validation.submit", "card.validation.read",
     ])
 
     qa = _build_preset_flags([
@@ -611,6 +633,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.tests.*", "card.conclusion.read", "card.activity_read",
         "card.mockups.read", "card.attachments.read",
         "card.interact_in.*",
+        "card.validation.submit", "card.validation.read",
     ])
 
     spec_writer = _build_preset_flags([
@@ -643,6 +666,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.link_to.*", "card.copy_from_spec.*",
         "card.comments.read", "card.comments.create", "card.activity_read",
         "card.interact_in.not_started",
+        "card.validation.read",
     ])
 
     return [

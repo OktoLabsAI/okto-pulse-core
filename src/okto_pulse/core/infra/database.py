@@ -542,8 +542,62 @@ async def init_db() -> None:
     await _migrate_add_card_knowledge_bases()
     await _migrate_add_sprint_scope_fields()
     await _migrate_agent_boards()
+    await _migrate_add_task_validation_columns()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()
+
+
+async def _migrate_add_task_validation_columns() -> None:
+    """Add task validation gate columns to cards, specs, and sprints."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+
+    # Cards: add validations JSON column
+    card_columns = [
+        ("validations", "JSON"),
+    ]
+    # Specs: add require_task_validation + threshold overrides
+    spec_columns = [
+        ("require_task_validation", "BOOLEAN"),
+        ("validation_min_confidence", "INTEGER"),
+        ("validation_min_completeness", "INTEGER"),
+        ("validation_max_drift", "INTEGER"),
+    ]
+    # Sprints: same fields
+    sprint_columns = [
+        ("require_task_validation", "BOOLEAN"),
+        ("validation_min_confidence", "INTEGER"),
+        ("validation_min_completeness", "INTEGER"),
+        ("validation_max_drift", "INTEGER"),
+    ]
+
+    migrations = [
+        ("cards", card_columns),
+        ("specs", spec_columns),
+        ("sprints", sprint_columns),
+    ]
+
+    async with get_engine().begin() as conn:
+        for table, columns in migrations:
+            if dialect == "postgresql":
+                table_check = await conn.execute(sa_text(
+                    f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}')"
+                ))
+                if not table_check.scalar():
+                    continue
+                for col_name, col_type in columns:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                    ))
+            else:
+                for col_name, col_type in columns:
+                    try:
+                        await conn.execute(sa_text(
+                            f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                        ))
+                    except Exception:
+                        pass
 
 
 async def _migrate_agent_permissions() -> None:
