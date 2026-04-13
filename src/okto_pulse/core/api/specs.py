@@ -458,3 +458,98 @@ async def delete_spec_question(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Q&A item not found")
     await db.commit()
+
+
+# ---- Spec Validation Gate Endpoints ----
+
+
+@router.post("/specs/{spec_id}/validation", status_code=status.HTTP_201_CREATED)
+async def submit_spec_validation(
+    spec_id: str,
+    data: dict,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit a Spec Validation Gate record for a spec in 'approved' status.
+
+    Runs deterministic coverage gates as pre-requisite. If they pass, computes
+    outcome from thresholds + recommendation: failed if any threshold violated
+    or recommendation=reject; success only if all thresholds OK and approve.
+    On success, atomically promotes spec.status to validated.
+    """
+    # Validate required fields (mirror SpecValidationSubmit schema)
+    required = [
+        "completeness", "completeness_justification",
+        "assertiveness", "assertiveness_justification",
+        "ambiguity", "ambiguity_justification",
+        "general_justification", "recommendation",
+    ]
+    missing = [f for f in required if f not in data or data[f] is None]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing required fields: {', '.join(missing)}",
+        )
+    if data.get("recommendation") not in ("approve", "reject"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="recommendation must be 'approve' or 'reject'",
+        )
+    # Min length checks (schema-level guarantee, but fail fast here too)
+    for dim in ("completeness", "assertiveness", "ambiguity"):
+        jf = data.get(f"{dim}_justification", "")
+        if not isinstance(jf, str) or len(jf.strip()) < 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{dim}_justification must be at least 10 characters",
+            )
+    if len((data.get("general_justification") or "").strip()) < 20:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="general_justification must be at least 20 characters",
+        )
+
+    service = SpecService(db)
+    spec = await service.get_spec(spec_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+
+    # Resolve reviewer name
+    try:
+        from okto_pulse.core.services.main import resolve_actor_name
+        reviewer_name = await resolve_actor_name(db, user_id, spec.board_id)
+    except Exception:
+        reviewer_name = user_id
+
+    try:
+        result = await service.submit_spec_validation(
+            spec_id=spec_id,
+            reviewer_id=user_id,
+            reviewer_name=reviewer_name,
+            data=data,
+        )
+    except ValueError as e:
+        # Could be: state guard, opt-in guard, coverage gate failure, or input validation
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    await db.commit()
+    return result
+
+
+@router.get("/specs/{spec_id}/validations")
+async def list_spec_validations(
+    spec_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all Spec Validation Gate records in reverse chronological order.
+
+    Returns current_validation_id and the validations array with an 'active'
+    flag on each record indicating if it's the currently-active pointer.
+    """
+    service = SpecService(db)
+    try:
+        result = await service.list_spec_validations(spec_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return {"spec_id": spec_id, **result}

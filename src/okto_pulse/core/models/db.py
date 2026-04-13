@@ -590,6 +590,15 @@ class Spec(Base):
     validation_max_drift: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Qualitative evaluations: [{id, evaluator_id, evaluator_name, evaluator_type, dimensions, overall_score, overall_justification, recommendation, stale, created_at}]
     evaluations: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Spec Validation Gate — append-only history of validation records.
+    # Each record: {id, spec_id, board_id, reviewer_id, reviewer_name,
+    #  completeness, completeness_justification, assertiveness, assertiveness_justification,
+    #  ambiguity, ambiguity_justification, general_justification, recommendation,
+    #  outcome, threshold_violations, resolved_thresholds, created_at}
+    validations: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Pointer to the current active validation id — NULL when cleared by backward move.
+    # Content lock is ACTIVE when this is non-NULL and the pointed record has outcome='success'.
+    current_validation_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)

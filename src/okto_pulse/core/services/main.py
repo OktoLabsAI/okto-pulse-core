@@ -87,12 +87,56 @@ from okto_pulse.core.models.schemas import (
     SpecSkillCreate,
     SpecSkillUpdate,
     SpecUpdate,
+    SpecValidationSubmit,
     SprintCreate,
     SprintMove,
     SprintUpdate,
 )
 
 settings = get_settings()
+
+
+# ---------------------------------------------------------------------------
+# Spec Validation Gate — exception and lock helper
+# ---------------------------------------------------------------------------
+
+
+class SpecLockedError(Exception):
+    """Raised when a content-edit operation is attempted on a locked spec.
+
+    A spec is locked when its current_validation_id points to a validation
+    record with outcome='success'. To edit, the spec must be moved back to
+    draft or approved (any backward transition from validated/in_progress/done),
+    which atomically clears current_validation_id but preserves validations history.
+    """
+
+    def __init__(self, spec_id: str, current_validation_id: str | None = None, message: str | None = None):
+        self.spec_id = spec_id
+        self.current_validation_id = current_validation_id
+        self.message = message or (
+            "Spec is locked because validation passed. "
+            "Move the spec back to draft or approved to edit (validation will be cleared, history preserved)."
+        )
+        super().__init__(self.message)
+
+
+async def _require_spec_unlocked(db: AsyncSession, spec_id: str) -> None:
+    """Raise SpecLockedError if spec has an active passed validation.
+
+    Called at the top of every content-edit method on SpecService to enforce
+    the Spec Validation Gate content lock. Skips silently when spec doesn't
+    exist (caller handles that) or when no validation is active.
+    """
+    spec = await db.get(Spec, spec_id)
+    if not spec:
+        return
+    current_id = getattr(spec, "current_validation_id", None)
+    if not current_id:
+        return
+    validations = getattr(spec, "validations", None) or []
+    current = next((v for v in validations if v.get("id") == current_id), None)
+    if current and current.get("outcome") == "success":
+        raise SpecLockedError(spec_id=spec_id, current_validation_id=current_id)
 
 
 # ---------------------------------------------------------------------------
@@ -746,22 +790,40 @@ class CardService:
         else:
             outcome = "success"
 
-        # Build validation entry
+        # Build validation entry.
+        # Dual naming: we persist BOTH the legacy names (estimated_*, outcome, reviewer_id,
+        # general_justification) and the clean frontend-compatible names (completeness, drift,
+        # verdict, evaluator_id, summary). This keeps backward compat for any downstream code
+        # that reads the legacy names while allowing the IDE ValidationsTab (which reads the
+        # clean names) to render correctly. Going forward, consumers should prefer the clean
+        # names; the legacy aliases can be removed in a future cleanup.
         validation_id = f"val_{_uuid.uuid4().hex[:8]}"
+        _general = data["general_justification"].strip()
         validation = {
             "id": validation_id,
             "card_id": card_id,
             "board_id": card.board_id,
+            # Reviewer — legacy name + clean alias for frontend
             "reviewer_id": reviewer_id,
+            "evaluator_id": reviewer_id,
+            # Confidence
             "confidence": confidence,
             "confidence_justification": data["confidence_justification"].strip(),
+            # Completeness — legacy estimated_* + clean name
             "estimated_completeness": completeness,
+            "completeness": completeness,
             "completeness_justification": data["completeness_justification"].strip(),
+            # Drift — legacy estimated_* + clean name
             "estimated_drift": drift,
+            "drift": drift,
             "drift_justification": data["drift_justification"].strip(),
-            "general_justification": data["general_justification"].strip(),
+            # General justification — legacy + frontend "summary" alias
+            "general_justification": _general,
+            "summary": _general,
+            # Recommendation + outcome — legacy "outcome" + frontend "verdict" alias
             "recommendation": recommendation,
             "outcome": outcome,
+            "verdict": "pass" if outcome == "success" else "fail",
             "threshold_violations": violations,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -771,6 +833,28 @@ class CardService:
         validations.append(validation)
         card.validations = validations
         flag_modified(card, "validations")
+
+        # Auto-populate conclusion when outcome=success. The Conclusion tab has always
+        # expected completeness, drift, justifications and a "text" describing what was
+        # done. When the card auto-routes from validation→done, we derive a conclusion
+        # entry from the validation scores and general_justification so the tab is not
+        # left empty. Users can still add additional conclusion entries manually if they
+        # want more detail.
+        if outcome == "success":
+            conclusions_list = list(card.conclusions or [])
+            conclusions_list.append({
+                "text": _general,
+                "author_id": reviewer_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "completeness": completeness,
+                "completeness_justification": data["completeness_justification"].strip(),
+                "drift": drift,
+                "drift_justification": data["drift_justification"].strip(),
+                "source": "task_validation",
+                "validation_id": validation_id,
+            })
+            card.conclusions = conclusions_list
+            flag_modified(card, "conclusions")
 
         # Route card based on outcome (atomic with validation persist)
         if outcome == "success":
@@ -1805,7 +1889,16 @@ class SpecService:
         return list(result.scalars().all())
 
     async def update_spec(self, spec_id: str, user_id: str, data: SpecUpdate) -> Spec | None:
-        """Update a spec. Bumps version on content changes. Records field-level diffs."""
+        """Update a spec. Bumps version on content changes. Records field-level diffs.
+
+        Enforces the Spec Validation Gate content lock: if the spec has an active
+        validation with outcome='success', raises SpecLockedError. All content tools
+        (business rules, contracts, scenarios, mockups, knowledge, skills) flow
+        through this method via SpecUpdate, so applying the lock check here covers
+        the whole surface in one place.
+        """
+        await _require_spec_unlocked(self.db, spec_id)
+
         spec = await self.get_spec(spec_id)
         if not spec:
             return None
@@ -1864,15 +1957,29 @@ class SpecService:
         return spec
 
     # ---- Spec state machine ----
+    # Direct APPROVED→DRAFT and VALIDATED→DRAFT transitions added for the Spec
+    # Validation Gate: editing a validated spec requires one click/call, not three
+    # hops (validated→approved→review→draft). Both transitions trigger the backward
+    # clear of current_validation_id in move_spec().
     _SPEC_TRANSITIONS = {
         SpecStatus.DRAFT: [SpecStatus.REVIEW, SpecStatus.CANCELLED],
         SpecStatus.REVIEW: [SpecStatus.DRAFT, SpecStatus.APPROVED, SpecStatus.CANCELLED],
-        SpecStatus.APPROVED: [SpecStatus.REVIEW, SpecStatus.VALIDATED, SpecStatus.CANCELLED],
-        SpecStatus.VALIDATED: [SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.CANCELLED],
+        SpecStatus.APPROVED: [SpecStatus.REVIEW, SpecStatus.VALIDATED, SpecStatus.DRAFT, SpecStatus.CANCELLED],
+        SpecStatus.VALIDATED: [SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.DRAFT, SpecStatus.CANCELLED],
         SpecStatus.IN_PROGRESS: [SpecStatus.VALIDATED, SpecStatus.DONE, SpecStatus.CANCELLED],
         SpecStatus.DONE: [SpecStatus.DRAFT],
         SpecStatus.CANCELLED: [SpecStatus.DRAFT],
     }
+
+    # Statuses from which a backward move clears current_validation_id.
+    # Any move from {validated, in_progress, done} to {draft, review, approved}
+    # unlocks content editing but preserves spec.validations history.
+    _SPEC_LOCKED_STATUSES = frozenset(
+        {SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS, SpecStatus.DONE}
+    )
+    _SPEC_EDITABLE_STATUSES = frozenset(
+        {SpecStatus.DRAFT, SpecStatus.REVIEW, SpecStatus.APPROVED}
+    )
 
     async def move_spec(
         self, spec_id: str, user_id: str, data: SpecMove, actor_name: str | None = None
@@ -2022,6 +2129,16 @@ class SpecService:
         old_status = spec.status
         spec.status = data.status
 
+        # Spec Validation Gate: any backward transition from validated/in_progress/done
+        # to an editable status (draft/review/approved) clears current_validation_id,
+        # releasing the content lock. spec.validations array is preserved intact.
+        if (
+            old_status in self._SPEC_LOCKED_STATUSES
+            and data.status in self._SPEC_EDITABLE_STATUSES
+            and getattr(spec, "current_validation_id", None) is not None
+        ):
+            spec.current_validation_id = None
+
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, spec.board_id)
         await self._log_activity(
             board_id=spec.board_id,
@@ -2088,6 +2205,187 @@ class SpecService:
             return False
         card.spec_id = None
         return True
+
+    # ---- Spec Validation Gate ----
+
+    @staticmethod
+    def _resolve_spec_validation_config(board: Board | None) -> dict[str, Any]:
+        """Resolve Spec Validation Gate thresholds from board settings.
+
+        Defaults are more rigorous than the Task Validation Gate (70/80/50)
+        because poor spec quality has amplified downstream cost.
+        """
+        settings = (board.settings if board else None) or {}
+        return {
+            "require_spec_validation": bool(settings.get("require_spec_validation", False)),
+            "min_spec_completeness": int(settings.get("min_spec_completeness", 80)),
+            "min_spec_assertiveness": int(settings.get("min_spec_assertiveness", 80)),
+            "max_spec_ambiguity": int(settings.get("max_spec_ambiguity", 30)),
+        }
+
+    async def submit_spec_validation(
+        self,
+        spec_id: str,
+        reviewer_id: str,
+        reviewer_name: str,
+        data: dict,
+    ) -> dict:
+        """Submit a Spec Validation Gate record for a spec in 'approved' status.
+
+        Mirrors CardService.submit_task_validation: runs coverage gates as
+        pre-requisite, computes outcome atomically, appends to spec.validations
+        array (append-only history), sets current_validation_id, and on success
+        atomically moves spec.status to validated.
+
+        Outcome rule: failed if any threshold violated OR recommendation=reject;
+        success only if ALL thresholds ok AND recommendation=approve.
+        """
+        import uuid as _uuid
+
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            raise ValueError("Spec not found")
+
+        if spec.status != SpecStatus.APPROVED:
+            raise ValueError(
+                f"Spec must be in 'approved' status to receive validation "
+                f"(current: '{spec.status.value}')."
+            )
+
+        board = await self.db.get(Board, spec.board_id)
+        config = self._resolve_spec_validation_config(board)
+        if not config["require_spec_validation"]:
+            raise ValueError(
+                "This board does not require spec validation. "
+                "Enable 'require_spec_validation' in board settings first."
+            )
+
+        # Run coverage gates as pre-requisite — reuses existing CardService checks.
+        card_service = CardService(self.db)
+        await card_service.check_test_coverage(spec, board)
+        await card_service.check_rules_coverage(spec, board)
+        await card_service.check_trs_coverage(spec, board)
+        await card_service.check_contract_coverage(spec, board)
+
+        # Extract and validate inputs
+        completeness = int(data["completeness"])
+        assertiveness = int(data["assertiveness"])
+        ambiguity = int(data["ambiguity"])
+        recommendation = data["recommendation"]
+        if recommendation not in ("approve", "reject"):
+            raise ValueError("recommendation must be 'approve' or 'reject'")
+        for name, score in (
+            ("completeness", completeness),
+            ("assertiveness", assertiveness),
+            ("ambiguity", ambiguity),
+        ):
+            if not (0 <= score <= 100):
+                raise ValueError(f"{name} must be between 0 and 100")
+
+        # Threshold check (ambiguity is max_drift-style — lower is better)
+        violations: list[str] = []
+        if completeness < config["min_spec_completeness"]:
+            violations.append(f"completeness {completeness} < min {config['min_spec_completeness']}")
+        if assertiveness < config["min_spec_assertiveness"]:
+            violations.append(f"assertiveness {assertiveness} < min {config['min_spec_assertiveness']}")
+        if ambiguity > config["max_spec_ambiguity"]:
+            violations.append(f"ambiguity {ambiguity} > max {config['max_spec_ambiguity']}")
+
+        # Compute outcome: failed if any violation OR reject; success only if
+        # all thresholds ok AND approve.
+        if violations or recommendation == "reject":
+            outcome = "failed"
+        else:
+            outcome = "success"
+
+        # Build validation record (id <= 32 chars: "val_" + 8 hex = 12 chars)
+        validation_id = f"val_{_uuid.uuid4().hex[:8]}"
+        resolved_thresholds = {
+            "min_spec_completeness": config["min_spec_completeness"],
+            "min_spec_assertiveness": config["min_spec_assertiveness"],
+            "max_spec_ambiguity": config["max_spec_ambiguity"],
+        }
+        validation = {
+            "id": validation_id,
+            "spec_id": spec_id,
+            "board_id": spec.board_id,
+            "reviewer_id": reviewer_id,
+            "reviewer_name": reviewer_name,
+            "completeness": completeness,
+            "completeness_justification": data["completeness_justification"].strip(),
+            "assertiveness": assertiveness,
+            "assertiveness_justification": data["assertiveness_justification"].strip(),
+            "ambiguity": ambiguity,
+            "ambiguity_justification": data["ambiguity_justification"].strip(),
+            "general_justification": data["general_justification"].strip(),
+            "recommendation": recommendation,
+            "outcome": outcome,
+            "threshold_violations": violations,
+            "resolved_thresholds": resolved_thresholds,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Append-only: never overwrite history. flag_modified is required for JSONB.
+        validations = list(spec.validations or [])
+        validations.append(validation)
+        spec.validations = validations
+        flag_modified(spec, "validations")
+        spec.current_validation_id = validation_id
+
+        # Atomic state transition on success — same transaction as the persist.
+        old_status = spec.status
+        if outcome == "success":
+            spec.status = SpecStatus.VALIDATED
+
+        # Activity log
+        await self._log_activity(
+            board_id=spec.board_id,
+            action="spec_validation_submitted",
+            actor_type="agent" if reviewer_name and "agent" in reviewer_name.lower() else "user",
+            actor_id=reviewer_id,
+            actor_name=reviewer_name,
+            details={
+                "spec_id": spec_id,
+                "validation_id": validation_id,
+                "outcome": outcome,
+                "recommendation": recommendation,
+                "completeness": completeness,
+                "assertiveness": assertiveness,
+                "ambiguity": ambiguity,
+                "threshold_violations": violations,
+                "from_status": old_status.value,
+                "to_status": spec.status.value,
+            },
+        )
+
+        return {
+            **validation,
+            "spec_status": spec.status.value,
+            "active": True,
+        }
+
+    async def list_spec_validations(self, spec_id: str) -> dict[str, Any]:
+        """List all spec validations in reverse chronological order.
+
+        Returns a dict with current_validation_id and validations list where
+        each record has an 'active' flag indicating if it's the current pointer.
+        """
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            raise ValueError("Spec not found")
+
+        validations = list(spec.validations or [])
+        current_id = getattr(spec, "current_validation_id", None)
+
+        # Reverse chronological order + mark active
+        result_list = []
+        for v in reversed(validations):
+            result_list.append({**v, "active": v.get("id") == current_id})
+
+        return {
+            "current_validation_id": current_id,
+            "validations": result_list,
+        }
 
     async def _log_activity(self, **kwargs: Any) -> None:
         """Log an activity."""

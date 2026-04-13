@@ -172,6 +172,10 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "draft_to_review": True, "review_to_approved": True,
             "approved_to_validated": True, "validated_to_in_progress": True,
             "in_progress_to_done": True, "any_to_cancelled": True,
+            # Spec Validation Gate — direct backward transitions to draft.
+            # approved_to_draft unblocks minor edits; validated_to_draft unlocks
+            # a validated spec in 1 click (replaces the 3-hop validated→approved→review→draft).
+            "approved_to_draft": True, "validated_to_draft": True,
         },
         "interact_in": {
             "draft": True, "review": True, "approved": True,
@@ -185,6 +189,10 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "skills": {"read": True, "load": True, "create": True, "delete": True},
         "knowledge": {"read": True, "create": True, "delete": True},
         "evaluations": {"read": True, "submit": True, "delete": True},
+        # Spec Validation Gate — dedicated flags mirroring card.validation.
+        # Different from spec.evaluations (which is the qualitative gate for
+        # validated→in_progress). This is the approved→validated content gate.
+        "validation": {"submit": True, "read": True, "delete": True},
         "cards_derive": True,
         "history_read": True,
     },
@@ -446,11 +454,16 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.move.draft_to_review", "spec.move.review_to_approved",
         "spec.move.approved_to_validated", "spec.move.validated_to_in_progress",
         "spec.move.in_progress_to_done", "spec.move.any_to_cancelled",
+        # Spec Validation Gate — new backward transitions
+        "spec.move.approved_to_draft", "spec.move.validated_to_draft",
         "sprint.move.draft_to_active", "sprint.move.active_to_review",
         "sprint.move.review_to_closed", "sprint.move.any_to_cancelled",
     ],
     "specs:evaluate": [
         "spec.evaluations.submit", "spec.evaluations.delete",
+        # Spec Validation Gate — legacy agents with specs:evaluate also get
+        # the new validation gate submit/read permissions automatically.
+        "spec.validation.submit", "spec.validation.read",
         "sprint.evaluations.submit", "sprint.evaluations.delete",
     ],
     "comments:create": [
@@ -555,6 +568,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.qa.read", "spec.tests.read", "spec.rules.read", "spec.contracts.read",
         "spec.mockups.read", "spec.skills.read", "spec.skills.load",
         "spec.knowledge.read", "spec.evaluations.read", "spec.history_read",
+        # Spec Validation Gate — Executor can read validation history but not submit.
+        "spec.validation.read",
         "spec.interact_in.validated", "spec.interact_in.in_progress", "spec.interact_in.done",
         # Sprint: read + interact active/review
         "sprint.entity.read", "sprint.qa.read", "sprint.evaluations.read", "sprint.history_read",
@@ -587,6 +602,14 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.mockups.read", "spec.skills.read", "spec.skills.load",
         "spec.knowledge.read", "spec.history_read",
         "spec.evaluations.read", "spec.evaluations.submit",
+        # Spec Validation Gate — Validator submits and reads validation records,
+        # plus triggers approved→validated on success and owns the backward
+        # unlock paths to draft. approved_to_validated was missing from this
+        # preset and is needed for the Validator to complete the promotion
+        # after submit_spec_validation succeeds.
+        "spec.validation.submit", "spec.validation.read",
+        "spec.move.approved_to_validated",
+        "spec.move.approved_to_draft", "spec.move.validated_to_draft",
         "spec.interact_in.review", "spec.interact_in.approved", "spec.interact_in.validated",
         "spec.move.review_to_approved", "spec.move.validated_to_in_progress",
         # Sprint: read + evaluations + move
@@ -622,6 +645,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.rules.read", "spec.contracts.read", "spec.mockups.read",
         "spec.knowledge.read", "spec.history_read",
         "spec.evaluations.read", "spec.evaluations.submit",
+        # Spec Validation Gate — QA can submit validation (quality focus) and read history.
+        "spec.validation.submit", "spec.validation.read",
         "spec.interact_in.*",
         # Sprint: interact all + evaluations all
         "sprint.entity.read", "sprint.interact_in.*",

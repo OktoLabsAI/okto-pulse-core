@@ -1223,6 +1223,52 @@ class TaskValidationResponse(BaseModel):
 
 
 # ============================================================================
+# Spec Validation Gate Schemas
+# ============================================================================
+
+
+class SpecValidationSubmit(BaseModel):
+    """Request body for submitting a spec validation.
+
+    Mirrors TaskValidationSubmit but with the 3 spec-specific dimensions:
+    completeness, assertiveness, ambiguity (lower is better for ambiguity).
+    """
+
+    completeness: int = Field(..., ge=0, le=100)
+    completeness_justification: str = Field(..., min_length=10)
+    assertiveness: int = Field(..., ge=0, le=100)
+    assertiveness_justification: str = Field(..., min_length=10)
+    ambiguity: int = Field(..., ge=0, le=100)
+    ambiguity_justification: str = Field(..., min_length=10)
+    general_justification: str = Field(..., min_length=20)
+    recommendation: str = Field(..., pattern="^(approve|reject)$")
+
+
+class SpecValidationResponse(BaseModel):
+    """Response for a spec validation."""
+
+    id: str
+    spec_id: str
+    board_id: str
+    reviewer_id: str
+    reviewer_name: str | None = None
+    completeness: int
+    completeness_justification: str
+    assertiveness: int
+    assertiveness_justification: str
+    ambiguity: int
+    ambiguity_justification: str
+    general_justification: str
+    recommendation: str
+    outcome: str
+    threshold_violations: list[str]
+    resolved_thresholds: dict | None = None
+    created_at: str
+    spec_status: str | None = None
+    active: bool | None = None
+
+
+# ============================================================================
 # Guideline Schemas
 # ============================================================================
 

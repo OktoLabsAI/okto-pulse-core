@@ -256,6 +256,121 @@ def _perm_error(msg: str) -> str:
     return json.dumps({"error": msg})
 
 
+# Maximum bytes loadable via file_path/file_url (16 MB). Prevents runaway memory on large files.
+_MAX_CONTENT_BYTES = 16 * 1024 * 1024
+
+
+async def _resolve_text_content(
+    *,
+    content: str,
+    file_path: str | None,
+    file_url: str | None,
+) -> tuple[str | None, str | None]:
+    """Resolve text content from inline string, local file path, or URL.
+
+    Exactly one source must be provided. When file_path/file_url is used,
+    the MCP server reads the content server-side — the bytes never cross
+    the LLM context, saving tokens.
+
+    Returns:
+        (resolved_content, error) — exactly one is non-None.
+    """
+    provided = [bool(content), bool(file_path), bool(file_url)]
+    if sum(provided) == 0:
+        return None, "One of 'content', 'file_path', or 'file_url' must be provided"
+    if sum(provided) > 1:
+        return None, "Only one of 'content', 'file_path', or 'file_url' may be provided"
+
+    if content:
+        return content.replace("\\n", "\n"), None
+
+    if file_path:
+        try:
+            p = Path(file_path).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError) as e:
+            return None, f"file_path could not be resolved: {e}"
+        if not p.is_file():
+            return None, f"file_path is not a regular file: {p}"
+        try:
+            size = p.stat().st_size
+            if size > _MAX_CONTENT_BYTES:
+                return None, f"file_path exceeds {_MAX_CONTENT_BYTES} bytes ({size})"
+            return p.read_text(encoding="utf-8"), None
+        except (OSError, UnicodeDecodeError) as e:
+            return None, f"file_path could not be read as UTF-8 text: {e}"
+
+    # file_url
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+            resp = await client.get(file_url)
+            resp.raise_for_status()
+            raw = resp.content
+            if len(raw) > _MAX_CONTENT_BYTES:
+                return None, f"file_url exceeds {_MAX_CONTENT_BYTES} bytes ({len(raw)})"
+            try:
+                return raw.decode("utf-8"), None
+            except UnicodeDecodeError as e:
+                return None, f"file_url response is not valid UTF-8 text: {e}"
+    except Exception as e:
+        return None, f"file_url fetch failed: {e}"
+
+
+async def _resolve_binary_content(
+    *,
+    content_base64: str,
+    file_path: str | None,
+    file_url: str | None,
+) -> tuple[bytes | None, str | None]:
+    """Resolve binary content from base64 string, local file path, or URL.
+
+    Mirrors _resolve_text_content but returns raw bytes for binary uploads.
+    """
+    import base64
+
+    provided = [bool(content_base64), bool(file_path), bool(file_url)]
+    if sum(provided) == 0:
+        return None, "One of 'content_base64', 'file_path', or 'file_url' must be provided"
+    if sum(provided) > 1:
+        return None, "Only one of 'content_base64', 'file_path', or 'file_url' may be provided"
+
+    if content_base64:
+        try:
+            return base64.b64decode(content_base64), None
+        except Exception as e:
+            return None, f"Invalid base64 content: {e}"
+
+    if file_path:
+        try:
+            p = Path(file_path).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError) as e:
+            return None, f"file_path could not be resolved: {e}"
+        if not p.is_file():
+            return None, f"file_path is not a regular file: {p}"
+        try:
+            size = p.stat().st_size
+            if size > _MAX_CONTENT_BYTES:
+                return None, f"file_path exceeds {_MAX_CONTENT_BYTES} bytes ({size})"
+            return p.read_bytes(), None
+        except OSError as e:
+            return None, f"file_path could not be read: {e}"
+
+    # file_url
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+            resp = await client.get(file_url)
+            resp.raise_for_status()
+            raw = resp.content
+            if len(raw) > _MAX_CONTENT_BYTES:
+                return None, f"file_url exceeds {_MAX_CONTENT_BYTES} bytes ({len(raw)})"
+            return raw, None
+    except Exception as e:
+        return None, f"file_url fetch failed: {e}"
+
+
 def _spec_coverage(spec, *, scenarios=None, rules=None, contracts=None, trs=None) -> dict:
     """Compute coverage stats for spec gates. Uses overrides if provided (for in-flight updates)."""
     acs = spec.acceptance_criteria or []
@@ -2669,24 +2784,30 @@ async def okto_pulse_upload_attachment(
     board_id: str,
     card_id: str,
     filename: str,
-    content_base64: str,
+    content_base64: str = "",
     mime_type: str = "application/octet-stream",
+    file_path: str | None = None,
+    file_url: str | None = None,
 ) -> str:
     """
     Upload a file attachment to a card.
+
+    Provide exactly ONE of: content_base64, file_path, or file_url. Prefer
+    file_path or file_url for binary files — the bytes are loaded server-side
+    and never pass through the LLM context, saving tokens.
 
     Args:
         board_id: Board ID
         card_id: Card ID
         filename: Original filename
-        content_base64: File content encoded as base64
+        content_base64: File content encoded as base64 (use for small files only)
         mime_type: MIME type of the file
+        file_path: Absolute path to a local file on the MCP server host
+        file_url: HTTP(S) URL of a file to fetch
 
     Returns:
         JSON with attachment details
     """
-    import base64
-
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2695,10 +2816,11 @@ async def okto_pulse_upload_attachment(
     if perm_err:
         return _perm_error(perm_err)
 
-    try:
-        content = base64.b64decode(content_base64)
-    except Exception as e:
-        return json.dumps({"error": f"Invalid base64 content: {str(e)}"})
+    content, err = await _resolve_binary_content(
+        content_base64=content_base64, file_path=file_path, file_url=file_url
+    )
+    if err:
+        return json.dumps({"error": err})
 
     async with get_db_for_mcp() as db:
         service = AttachmentService(db)
@@ -8424,10 +8546,16 @@ async def okto_pulse_create_spec_skill(
     content: str = "",
     tags: str = "",
     type: str = "PROMPT",
+    file_path: str | None = None,
+    file_url: str | None = None,
 ) -> str:
     """
     Create a skill on a spec. If content is provided as a single block, it becomes one section.
     For multi-section skills, use okto_pulse_update_spec_skill to set structured sections.
+
+    Provide at most ONE of: content, file_path, or file_url. Prefer file_path or
+    file_url for large skill documents — the content is loaded server-side and
+    never passes through the LLM context, saving tokens.
 
     Args:
         board_id: Board ID
@@ -8435,9 +8563,11 @@ async def okto_pulse_create_spec_skill(
         skill_id: Unique slug identifier for the skill (e.g. "api-design-guidelines")
         name: Display name
         description: What this skill provides
-        content: Skill content (optional — creates a single "main" section)
+        content: Inline skill content (optional — creates a single "main" section)
         tags: Comma-separated tags (optional)
         type: Skill type, default "PROMPT"
+        file_path: Absolute path to a local UTF-8 text file on the MCP server host
+        file_url: HTTP(S) URL of a UTF-8 text document to fetch
 
     Returns:
         JSON with created skill
@@ -8452,14 +8582,23 @@ async def okto_pulse_create_spec_skill(
 
     from okto_pulse.core.models.schemas import SkillSectionSchema, SpecSkillCreate
 
+    # Skill content is optional — only resolve if any source was provided.
+    resolved_content: str | None = None
+    if content or file_path or file_url:
+        resolved_content, err = await _resolve_text_content(
+            content=content, file_path=file_path, file_url=file_url
+        )
+        if err:
+            return json.dumps({"error": err})
+
     sections = None
-    if content:
+    if resolved_content:
         sections = [SkillSectionSchema(
             id="main",
             title=name,
             description=description,
             level="full",
-            content=content.replace("\\n", "\n"),
+            content=resolved_content,
         )]
 
     async with get_db_for_mcp() as db:
@@ -8620,21 +8759,29 @@ async def okto_pulse_add_spec_knowledge(
     board_id: str,
     spec_id: str,
     title: str,
-    content: str,
+    content: str = "",
     description: str = "",
     mime_type: str = "text/markdown",
+    file_path: str | None = None,
+    file_url: str | None = None,
 ) -> str:
     """
     Add a knowledge base item to a spec. Use this to attach reference documents,
     design docs, API specs, or any context that helps agents understand the spec.
 
+    Provide exactly ONE of: content, file_path, or file_url. Prefer file_path or
+    file_url for large documents — the content is loaded server-side and never
+    passes through the LLM context, saving tokens.
+
     Args:
         board_id: Board ID
         spec_id: Spec ID
         title: Title of the knowledge base item
-        content: The full text content
+        content: Inline text content (use for small snippets)
         description: Short description of what this document contains (optional)
         mime_type: Content type, default "text/markdown"
+        file_path: Absolute path to a local UTF-8 text file on the MCP server host
+        file_url: HTTP(S) URL of a UTF-8 text document to fetch
 
     Returns:
         JSON with created knowledge base item
@@ -8647,6 +8794,12 @@ async def okto_pulse_add_spec_knowledge(
     if perm_err:
         return _perm_error(perm_err)
 
+    resolved_content, err = await _resolve_text_content(
+        content=content, file_path=file_path, file_url=file_url
+    )
+    if err:
+        return json.dumps({"error": err})
+
     from okto_pulse.core.models.schemas import SpecKnowledgeCreate
 
     async with get_db_for_mcp() as db:
@@ -8654,7 +8807,7 @@ async def okto_pulse_add_spec_knowledge(
         kb_data = SpecKnowledgeCreate(
             title=title,
             description=description or None,
-            content=content.replace("\\n", "\n"),
+            content=resolved_content,
             mime_type=mime_type,
         )
         kb = await service.create_knowledge(spec_id, ctx.agent_id, kb_data)
@@ -8903,21 +9056,29 @@ async def okto_pulse_add_refinement_knowledge(
     board_id: str,
     refinement_id: str,
     title: str,
-    content: str,
+    content: str = "",
     description: str = "",
     mime_type: str = "text/markdown",
+    file_path: str | None = None,
+    file_url: str | None = None,
 ) -> str:
     """
     Add a knowledge base item to a refinement. Use this to attach reference documents,
     design docs, analysis notes, or any context that helps agents understand the refinement.
 
+    Provide exactly ONE of: content, file_path, or file_url. Prefer file_path or
+    file_url for large documents — the content is loaded server-side and never
+    passes through the LLM context, saving tokens.
+
     Args:
         board_id: Board ID
         refinement_id: Refinement ID
         title: Title of the knowledge base item
-        content: The full text content
+        content: Inline text content (use for small snippets)
         description: Short description of what this document contains (optional)
         mime_type: Content type, default "text/markdown"
+        file_path: Absolute path to a local UTF-8 text file on the MCP server host
+        file_url: HTTP(S) URL of a UTF-8 text document to fetch
 
     Returns:
         JSON with created knowledge base item
@@ -8930,6 +9091,12 @@ async def okto_pulse_add_refinement_knowledge(
     if perm_err:
         return _perm_error(perm_err)
 
+    resolved_content, err = await _resolve_text_content(
+        content=content, file_path=file_path, file_url=file_url
+    )
+    if err:
+        return json.dumps({"error": err})
+
     from okto_pulse.core.models.schemas import RefinementKnowledgeCreate
 
     async with get_db_for_mcp() as db:
@@ -8937,7 +9104,7 @@ async def okto_pulse_add_refinement_knowledge(
         kb_data = RefinementKnowledgeCreate(
             title=title,
             description=description or None,
-            content=content.replace("\\n", "\n"),
+            content=resolved_content,
             mime_type=mime_type,
         )
         kb = await service.create_knowledge(refinement_id, ctx.agent_id, kb_data)
@@ -9860,6 +10027,153 @@ async def okto_pulse_get_task_validation(
             if not validation:
                 return json.dumps({"error": f"Validation '{validation_id}' not found"})
             return json.dumps(validation, default=str)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+# ============================================================================
+# SPEC VALIDATION GATE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_submit_spec_validation(
+    board_id: str,
+    spec_id: str,
+    completeness: int,
+    completeness_justification: str,
+    assertiveness: int,
+    assertiveness_justification: str,
+    ambiguity: int,
+    ambiguity_justification: str,
+    general_justification: str,
+    recommendation: str,
+) -> str:
+    """
+    Submit a Spec Validation Gate record for a spec in 'approved' status.
+
+    This is the entry point for the Spec Validation Gate — a semantic quality
+    gate that runs AFTER the existing deterministic coverage gates (AC/FR/TR/Contract).
+    Use this AFTER you have confidence the spec is saturated on detail (see
+    agent_instructions.md section 2.3a "Detail Saturation").
+
+    The system runs coverage gates first; if any fails the submit is rejected
+    with the specific coverage violation. If coverage passes, it computes outcome:
+    - FAILED if any threshold violated OR recommendation=reject
+    - SUCCESS only if ALL thresholds pass AND recommendation=approve
+
+    On SUCCESS, the spec is atomically promoted from 'approved' to 'validated'
+    and enters the content lock (update_spec and related tools will raise
+    SpecLockedError). To edit after a success, move the spec back to draft or
+    approved — the validation will be cleared but the full history is preserved.
+
+    ANTI-PATTERN WARNING: inflating scores to make the gate pass is a grave
+    violation of the detail saturation principle. If outcome=failed, iterate
+    on content (add scenarios, refine BRs, specify TRs) rather than just
+    raising the numbers.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID (must be in 'approved' status)
+        completeness: Score 0-100 — how complete is the spec detail (ACs, BRs, TRs, scenarios, contracts)?
+        completeness_justification: Why this completeness score (min 10 chars)
+        assertiveness: Score 0-100 — how measurable/testable is the text (no weasel words)?
+        assertiveness_justification: Why this assertiveness score (min 10 chars)
+        ambiguity: Score 0-100 — how many sentences admit multiple interpretations? (LOWER IS BETTER)
+        ambiguity_justification: Why this ambiguity score (min 10 chars)
+        general_justification: Overall assessment (min 20 chars)
+        recommendation: One of: approve, reject
+
+    Returns:
+        JSON with validation result, outcome, threshold violations, and resolved thresholds.
+        On success, spec_status becomes "validated".
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "spec.validation.submit")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    if recommendation not in ("approve", "reject"):
+        return json.dumps({"error": "recommendation must be: approve or reject"})
+
+    for name, score in [
+        ("completeness", completeness),
+        ("assertiveness", assertiveness),
+        ("ambiguity", ambiguity),
+    ]:
+        if not (0 <= score <= 100):
+            return json.dumps({"error": f"{name} must be between 0 and 100"})
+
+    # Length checks (Pydantic will re-validate but fail fast here)
+    if len(completeness_justification.strip()) < 10:
+        return json.dumps({"error": "completeness_justification must be at least 10 characters"})
+    if len(assertiveness_justification.strip()) < 10:
+        return json.dumps({"error": "assertiveness_justification must be at least 10 characters"})
+    if len(ambiguity_justification.strip()) < 10:
+        return json.dumps({"error": "ambiguity_justification must be at least 10 characters"})
+    if len(general_justification.strip()) < 20:
+        return json.dumps({"error": "general_justification must be at least 20 characters"})
+
+    data = {
+        "completeness": completeness,
+        "completeness_justification": completeness_justification,
+        "assertiveness": assertiveness,
+        "assertiveness_justification": assertiveness_justification,
+        "ambiguity": ambiguity,
+        "ambiguity_justification": ambiguity_justification,
+        "general_justification": general_justification,
+        "recommendation": recommendation,
+    }
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        try:
+            result = await spec_service.submit_spec_validation(
+                spec_id, ctx.agent_id, ctx.agent_name, data
+            )
+            await db.commit()
+            return json.dumps(result, default=str)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
+    """
+    List all Spec Validation Gate records in reverse chronological order.
+
+    Useful for understanding why a spec was validated (or failed). Each record
+    includes the 3 scores, justifications, outcome, threshold violations, and
+    a resolved_thresholds snapshot of what was in effect when the submit happened.
+    The record currently pointed to by current_validation_id has active=true.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with current_validation_id and validations list (reverse chronological)
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "spec.validation.read")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        try:
+            result = await spec_service.list_spec_validations(spec_id)
+            await db.commit()
+            return json.dumps({
+                "spec_id": spec_id,
+                **result,
+            }, default=str)
         except ValueError as e:
             return json.dumps({"error": str(e)})
 

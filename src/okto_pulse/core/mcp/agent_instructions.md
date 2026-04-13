@@ -168,6 +168,8 @@ Execute on every session start:
 
 The board follows a structured development pipeline. **Every step requires analysis, not just copying text between entities.**
 
+> **⚠ BIAS WARNING — READ BEFORE ADVANCING ANY STAGE.** You have a documented tendency to push work forward (ideation → refinement → spec → card → done) before the current stage is fully detailed. **Do not do this.** Each stage has a quality bar on three dimensions — **completeness**, **assertiveness**, and **ambiguity** — and you must iterate on detail until your own honest self-assessment clears that bar on all three. Coverage gates being green is necessary but **not sufficient**: counts measure existence, not quality. When in doubt, add more detail, ask more questions, write more test scenarios — never "assume it'll get figured out later". See section 2.3a for the required self-assessment loop on specs. The same principle applies at every stage.
+
 #### Pipeline Overview
 
 ```
@@ -266,6 +268,92 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 
 **Good example** (grounded in codebase):
 > "Authentication must use the existing Clerk integration (src/core/auth.py) with X-User-Id header forwarding through the BFF proxy layer"
+
+#### 2.3a Detail Saturation — DO NOT Push Forward With Gaps
+
+**This is a hard behavioral rule, not a suggestion.** Coverage gates (existing tests/rules/TRs/contracts counts) tell you that content *exists*, not that it is *good enough*. Your job as spec author is to iterate on detail until your own perception of **completeness**, **assertiveness**, and **ambiguity** is satisfactory — not to race to the next stage.
+
+**Before you call any tool that promotes a spec forward** (`okto_pulse_move_spec` toward `validated`/`in_progress`, `okto_pulse_derive_spec_from_refinement`, or creating cards from the spec), you MUST self-assess the spec on three dimensions and confirm each one meets your quality bar:
+
+| Dimension | Self-assessment question | Raise the bar when... |
+|-----------|-------------------------|-----------------------|
+| **Completeness** | Have I covered every functional requirement with concrete ACs, BRs, TRs, test scenarios, and (where applicable) API contracts? Are there scenarios, edge cases, or error paths I haven't written down? | You can think of any plausible user flow, failure mode, or integration point that isn't yet documented in the spec. |
+| **Assertiveness** | Is every statement in the spec **measurable and testable**? Would two independent engineers produce the same implementation from this text, or would they have to guess? | You find words like "should", "appropriate", "reasonable", "if needed", "etc." without objective criteria behind them. |
+| **Ambiguity** (lower is better) | How many sentences in the spec admit more than one interpretation? How many terms are undefined, implicit, or rely on shared context that isn't written down? | Any requirement can be read two ways, or any domain term is used without a definition. |
+
+**The anti-pattern to AVOID** (observed repeatedly):
+> "Coverage gates are green, let me promote this spec and start implementing."
+
+This is wrong when detail is still shallow. Coverage counts do not measure quality. A spec with 100% AC coverage but vague criteria is worse than a spec with 80% coverage where every criterion is concrete — because the first one creates **false confidence** and produces downstream rework.
+
+**The required loop — iterate until saturation:**
+
+1. **Draft** — populate ACs, FRs, BRs, TRs, contracts, test scenarios.
+2. **Read your own spec out loud** (i.e., call `okto_pulse_get_spec` and re-read it in full). Look for weasel words, undefined terms, missing edge cases, and untested error paths.
+3. **Score yourself** on completeness / assertiveness / ambiguity. Be honest — high scores on a shallow spec are self-deception.
+4. **If any dimension is below your bar, KEEP DETAILING.** Specific actions when you're below bar:
+   - Add more test scenarios (edge cases, error flows, boundary conditions)
+   - Rewrite vague ACs into measurable, verifiable statements (numbers, specific endpoints, concrete inputs/outputs)
+   - Add BRs to capture invariants you've been assuming implicitly
+   - Add TRs for architectural constraints you derived from codebase analysis
+   - Add API contracts with concrete request/response shapes
+   - Add mockups if UI behavior is ambiguous
+5. **Ask, don't assume.** When you hit a genuine ambiguity that you cannot resolve from the codebase or existing Q&A, **use `okto_pulse_ask_spec_question` to ask the user** — do not fill the gap with a guess and move on. Unresolved questions are also a gap.
+6. **Re-read and re-score.** Repeat until all three dimensions clear your bar.
+7. **Only then promote.** Record your final self-assessment in the spec evaluation (`okto_pulse_submit_spec_evaluation`) with concrete justification — not boilerplate.
+
+**Stop conditions — when it IS correct to move on:**
+- All three dimensions are at a level where you would confidently hand this spec to another engineer with no verbal context and expect them to build the right thing.
+- Remaining unknowns have been explicitly recorded as open questions (Q&A) with the user tagged, not silently absorbed as "I'll figure it out later".
+- Coverage gates are green AND the content behind them is concrete (not just present).
+
+**Red flags that you're pushing too early:**
+- You're thinking "this is probably fine" instead of "this is definitely complete".
+- Your justifications for the spec evaluation are generic ("looks good", "all covered") instead of pointing to specific requirements and tests.
+- You skipped adding edge-case test scenarios because "the happy path covers most cases".
+- You promoted a spec without a single Q&A question, despite the ideation originally being vague.
+- You're deriving cards from a spec whose FRs contain undefined terms.
+
+**When in doubt, add more detail. Detailing is cheap; rework from an underspecified spec is expensive.** The user has explicitly flagged that agents have a strong tendency to push forward prematurely — treat this section as a direct correction of that bias.
+
+##### The Spec Validation Gate — enforce detail saturation via `okto_pulse_submit_spec_validation`
+
+When the board has `require_spec_validation=true`, advancing a spec from `approved` to `validated` is gated by an explicit quality submission, not just coverage counts. This is the technical enforcement of the detail saturation principle above.
+
+**The canonical flow when the gate is active:**
+
+1. Populate the spec in `draft` → move through `review` → `approved`.
+2. Iterate coverage until ALL deterministic gates are green (AC, FR, TR, contract) — the content saturation loop described above.
+3. When you genuinely believe the spec is ready (not just "probably fine"), call `okto_pulse_submit_spec_validation(board_id, spec_id, completeness, completeness_justification, assertiveness, assertiveness_justification, ambiguity, ambiguity_justification, general_justification, recommendation)`.
+4. The gate runs the coverage checks first as a pre-requisite. If any fail, you get a coverage error with the offending dimension — fix the gap and retry.
+5. If coverage passes, the gate computes `outcome` atomically:
+   - `outcome=failed` if ANY threshold is violated OR `recommendation=reject`
+   - `outcome=success` ONLY if all thresholds pass AND `recommendation=approve`
+6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock** — you can no longer call `update_spec`, `add_business_rule`, `add_api_contract`, `add_test_scenario`, mockups, knowledge, or skills tools. `SpecLockedError` is raised until the lock is released.
+7. To edit a locked spec, move it back to `draft` or `approved` via `okto_pulse_move_spec`. Both transitions atomically clear `current_validation_id` (the lock is released) but preserve `spec.validations` history. You will need to re-submit validation before the spec can advance again.
+
+**Thresholds and dimensions.** The board defines thresholds (default 80/80/30, more rigorous than the Task Validation Gate's 70/80/50):
+
+- `completeness` (0-100, higher is better): are all ACs concrete, every AC has a test scenario, BRs capture invariants, TRs are grounded in real code, contracts have request/response shapes, edge cases covered?
+- `assertiveness` (0-100, higher is better): is every statement measurable and testable? Would two engineers produce the same implementation? Any weasel words (should, appropriate, reasonable, etc.) without objective criteria?
+- `ambiguity` (0-100, LOWER is better, max threshold): how many sentences admit multiple interpretations? How many terms are undefined or rely on implicit shared context?
+
+**When `outcome=failed`, use the `threshold_violations` array in the response to know where to iterate.** E.g., if the response says `"completeness 72 < min 80"`, go ADD content (new test scenarios, refined BRs, edge cases, mockups) until you genuinely believe completeness is higher — THEN re-submit. Do not just bump the number.
+
+**Anti-pattern — GRAVE violation of the saturation principle:**
+
+> Agent: "My first submit failed because assertiveness was 76 < min 80. Let me just re-submit with assertiveness=82 and a different justification." ❌
+
+This is inflating scores to pass the gate, which defeats the entire purpose. The correct response is:
+
+> Agent: "My first submit failed because assertiveness was 76. Looking at my FRs, FR3 says 'the system should be performant' — that's a weasel word without criteria. Let me rewrite it as 'request latency p95 < 200ms for /api/v1/boards under 100 req/s'. And FR7 uses 'appropriate error handling' — let me specify exact error codes per failure mode. Now I can honestly score 85 and re-submit." ✅
+
+**Loop detection.** If you find yourself submitting validation more than twice on the same spec (success → backward move → edit → submit → success → backward move → edit...), that is a signal that your draft phase was insufficient. Go back to Q&A with the user instead of continuing to iterate.
+
+**MCP tools for the gate:**
+- `okto_pulse_submit_spec_validation(...)` — gated by `spec.validation.submit` permission. Requires spec in `approved` status.
+- `okto_pulse_list_spec_validations(board_id, spec_id)` — gated by `spec.validation.read`. Returns full history in reverse chronological order with `active=true` on the current pointer.
+- `okto_pulse_move_spec(board_id, spec_id, status="draft")` — the single-hop unlock path from `validated` or `approved`. Clears `current_validation_id` but preserves the validations array. Gated by `spec.move.validated_to_draft` or `spec.move.approved_to_draft` (both available in the Validator and Spec Writer presets).
 
 #### 2.3b Spec Evaluation — Quality Gate for Execution
 

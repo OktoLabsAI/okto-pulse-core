@@ -351,6 +351,168 @@ async def _migrate_add_spec_validation_columns() -> None:
                     pass
 
 
+async def _migrate_heal_task_validation_field_names() -> None:
+    """One-shot healing for pre-existing card.validations records that used legacy
+    field names (estimated_completeness, estimated_drift, outcome, reviewer_id,
+    general_justification) without the clean frontend aliases.
+
+    Adds the clean aliases (completeness, drift, verdict, evaluator_id, summary)
+    to every legacy record in-place. Also populates card.conclusions with a
+    derived entry when a success validation exists but no conclusion was recorded
+    (fixes the gap where submit_task_validation auto-routed to done without
+    populating the Conclusion tab).
+
+    Idempotent: safe to run multiple times. Records that already have the clean
+    aliases are left untouched.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.orm.attributes import flag_modified as _flag_modified
+
+    async with get_session_factory()() as db:
+        # Load all cards that have any validations or might need healing.
+        # Using raw SQL to avoid ORM overhead for this migration.
+        try:
+            result = await db.execute(sa_text(
+                "SELECT id, validations, conclusions FROM cards WHERE validations IS NOT NULL"
+            ))
+            rows = result.fetchall()
+        except Exception:
+            # Table doesn't exist yet — nothing to heal
+            return
+
+        if not rows:
+            return
+
+        from okto_pulse.core.models.db import Card  # lazy import
+
+        healed_count = 0
+        for row in rows:
+            card_id = row[0]
+            raw_validations = row[1]
+            raw_conclusions = row[2]
+
+            # Parse JSON if stored as string (sqlite) vs dict (postgres)
+            if isinstance(raw_validations, str):
+                try:
+                    validations = _json.loads(raw_validations)
+                except Exception:
+                    continue
+            else:
+                validations = raw_validations
+
+            if not validations:
+                continue
+
+            modified = False
+            latest_success_validation = None
+
+            for v in validations:
+                if not isinstance(v, dict):
+                    continue
+                # Add clean aliases if missing
+                if "completeness" not in v and "estimated_completeness" in v:
+                    v["completeness"] = v["estimated_completeness"]
+                    modified = True
+                if "drift" not in v and "estimated_drift" in v:
+                    v["drift"] = v["estimated_drift"]
+                    modified = True
+                if "verdict" not in v and "outcome" in v:
+                    v["verdict"] = "pass" if v["outcome"] == "success" else "fail"
+                    modified = True
+                if "evaluator_id" not in v and "reviewer_id" in v:
+                    v["evaluator_id"] = v["reviewer_id"]
+                    modified = True
+                if "summary" not in v and "general_justification" in v:
+                    v["summary"] = v["general_justification"]
+                    modified = True
+                # Track the latest success validation for conclusion auto-population
+                if v.get("outcome") == "success" or v.get("verdict") == "pass":
+                    latest_success_validation = v
+
+            # Conclusion auto-population: if we have a success validation but no
+            # conclusions, derive one from the validation.
+            if isinstance(raw_conclusions, str):
+                try:
+                    conclusions = _json.loads(raw_conclusions) if raw_conclusions else []
+                except Exception:
+                    conclusions = []
+            else:
+                conclusions = raw_conclusions or []
+
+            needs_conclusion = (
+                latest_success_validation is not None
+                and (not conclusions or len(conclusions) == 0)
+            )
+            if needs_conclusion:
+                v = latest_success_validation
+                conclusions = [{
+                    "text": v.get("general_justification") or v.get("summary") or "",
+                    "author_id": v.get("reviewer_id") or v.get("evaluator_id") or "",
+                    "created_at": v.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                    "completeness": v.get("completeness", v.get("estimated_completeness", 0)),
+                    "completeness_justification": v.get("completeness_justification", ""),
+                    "drift": v.get("drift", v.get("estimated_drift", 0)),
+                    "drift_justification": v.get("drift_justification", ""),
+                    "source": "task_validation_heal",
+                    "validation_id": v.get("id"),
+                }]
+                modified = True
+
+            if modified:
+                card = await db.get(Card, card_id)
+                if card:
+                    card.validations = validations
+                    _flag_modified(card, "validations")
+                    if needs_conclusion:
+                        card.conclusions = conclusions
+                        _flag_modified(card, "conclusions")
+                    healed_count += 1
+
+        if healed_count > 0:
+            await db.commit()
+            import logging
+            logging.getLogger("okto_pulse.migrations").info(
+                f"Task validation healing: patched {healed_count} card(s) with clean "
+                f"aliases and/or auto-populated conclusions."
+            )
+
+
+async def _migrate_add_spec_validation_gate_columns() -> None:
+    """Add Spec Validation Gate columns: validations (JSON history) and current_validation_id (pointer).
+
+    Grandfathered: specs already in validated/in_progress/done status get validations=[] and
+    current_validation_id=NULL — no retroactive lock applied.
+    """
+    from sqlalchemy import text as sa_text
+
+    columns = [
+        ("validations", "JSON"),
+        ("current_validation_id", "VARCHAR(32)"),
+    ]
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'specs')"
+            ))
+            if not table_check.scalar():
+                return
+            for col_name, col_type in columns:
+                await conn.execute(sa_text(
+                    f"ALTER TABLE specs ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                ))
+        else:
+            for col_name, col_type in columns:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE specs ADD COLUMN {col_name} {col_type}"
+                    ))
+                except Exception:
+                    pass
+
+
 async def _migrate_add_archive_columns() -> None:
     """Add archived and pre_archive_status columns to ideations, refinements, specs, cards."""
     from sqlalchemy import text as sa_text
@@ -534,6 +696,8 @@ async def init_db() -> None:
     await _migrate_add_skip_trs_coverage()
     await _migrate_add_archive_columns()
     await _migrate_add_spec_validation_columns()
+    await _migrate_add_spec_validation_gate_columns()
+    await _migrate_heal_task_validation_field_names()
     await _migrate_status_renames()
     await _migrate_add_permission_columns()
     async with get_engine().begin() as conn:
