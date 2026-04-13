@@ -334,12 +334,20 @@ async def submit_task_validation(
             detail="recommendation must be 'approve' or 'reject'",
         )
 
-    # Resolve reviewer name
-    agent = await db.execute(select(Agent).where(Agent.user_id == user_id))
-    agent_row = agent.scalar_one_or_none()
-    reviewer_name = agent_row.name if agent_row else user_id
-
+    # Resolve reviewer name via CardService helper
     service = CardService(db)
+    try:
+        from okto_pulse.core.services.main import resolve_actor_name
+        # Get card first to know the board
+        card = await service.get_card(card_id)
+        if not card:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+        reviewer_name = await resolve_actor_name(db, user_id, card.board_id)
+    except HTTPException:
+        raise
+    except Exception:
+        reviewer_name = user_id
+
     try:
         result = await service.submit_task_validation(
             card_id=card_id,

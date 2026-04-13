@@ -1308,6 +1308,11 @@ class BoardSettings(BaseModel):
     skip_test_coverage_global: bool = False  # if True, all specs bypass test coverage checks
     skip_rules_coverage_global: bool = False  # if True, all specs bypass FR→BR coverage checks
     skip_trs_coverage_global: bool = False  # if True, all specs bypass TR→Task coverage checks
+    # Task Validation Gate — board-level defaults (overridable at spec/sprint)
+    require_task_validation: bool = False  # if True, cards must pass validation before moving to done
+    validation_min_confidence: int = 70  # min reviewer confidence score
+    validation_min_completeness: int = 80  # min reviewer completeness score
+    validation_max_drift: int = 50  # max reviewer drift score
 
 
 class BoardCreate(BaseModel):

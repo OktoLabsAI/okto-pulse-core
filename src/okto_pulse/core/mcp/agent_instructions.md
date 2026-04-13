@@ -836,6 +836,112 @@ When a sprint is in `review` status, submit an evaluation via `okto_pulse_submit
 
 **Permission flags:** 25 flags under `sprint.*` — entity (9), move (4), interact_in (5), qa (3), evaluations (3), history_read (1)
 
+#### 2.5 Task Validation Workflow — Independent Quality Checkpoint Before Done
+
+When the **Task Validation Gate** is enabled (configured at board, spec, or sprint level), cards must pass through an independent validation before moving to `done`. This ensures quality assurance by a reviewer other than the implementer, creating a deterministic quality floor backed by a permanent audit trail.
+
+**When does the gate apply?**
+- Gate is enabled when `validation_config.required == true` for the card (resolved via null-coalescing: sprint → spec → board)
+- Applies to `card_type: "normal"` and `card_type: "bug"`
+- **Excluded:** `card_type: "test"` — test cards are validated by test scenario pass/fail status, not the gate
+- When the gate is disabled, the standard conclusion flow applies (move directly to `done` with conclusion/completeness/drift)
+
+##### 2.5a Implementor Workflow
+
+1. **Retrieve context** — `okto_pulse_get_task_context(board_id, card_id)`
+   - Check `validation_config.required`: if `true`, the gate is active
+   - Check `validations` array: if non-empty AND the last entry has `outcome: "failed"`, this is a RESTART after rejection
+2. **MANDATORY for restarts** — if the card returned to `not_started` after a failed validation, you MUST read `validations[0]` (the most recent, failed one):
+   - Read `threshold_violations` — understand which dimensions failed
+   - Read `confidence_justification`, `completeness_justification`, `drift_justification`, `general_justification` — understand what the reviewer flagged
+   - **Implementing without reading the feedback means repeating the same mistakes.** This is the most common anti-pattern.
+3. **Move to in_progress** — `okto_pulse_move_card(status="in_progress")` before starting work
+4. **Implement the task** — complete the work as described, addressing any prior validation feedback
+5. **Link artifacts** — attach knowledge bases, mockups, or comments as the work progresses
+6. **Move to validation** — `okto_pulse_move_card(status="validation")` when done
+   - Do **NOT** include `conclusion`, `completeness`, `drift` fields in this call — the validation captures all of that
+   - Do **NOT** try to move directly to `done` when the gate is active — the backend returns 422 and blocks the transition
+7. **Wait** — another agent or human with `card.validation.submit` permission will validate your work
+
+##### 2.5b Validator Workflow
+
+1. **Find cards awaiting validation** — `okto_pulse_list_cards_by_status(board_id, status="validation")`
+2. **Get full context for each card** — `okto_pulse_get_task_context(board_id, card_id)`
+   - Includes the card description, spec context, linked artifacts, prior validations, and `validation_config` with resolved thresholds
+3. **Analyze the work** — review the implementation against the card description and spec requirements
+   - Check the commits/files touched if available
+   - Verify linked test scenarios pass (if applicable)
+   - Check that business rules and API contracts are respected
+4. **Submit the validation** — `okto_pulse_submit_task_validation(board_id, card_id, ...)` with:
+   - `confidence` (0-100): how confident you are the work is complete and correct
+   - `confidence_justification`: specific reasoning
+   - `estimated_completeness` (0-100): your independent assessment of how much of the planned work was delivered
+   - `completeness_justification`: specific reasoning
+   - `estimated_drift` (0-100): how much the implementation deviated from the plan (0 = none, 100 = completely different)
+   - `drift_justification`: specific reasoning
+   - `general_justification`: overall assessment summary
+   - `recommendation`: `"approve"` or `"reject"`
+5. **System routes automatically** — you do NOT need to move the card:
+   - `outcome=success` → card moves to `done` automatically
+   - `outcome=failed` → card moves to `not_started` automatically
+
+##### 2.5c Deterministic Thresholds
+
+The system enforces minimum quality thresholds resolved from the hierarchy:
+
+| Threshold | Default | Rule |
+|-----------|---------|------|
+| `min_confidence` | 70 | `confidence < min_confidence` → **auto-fail** |
+| `min_completeness` | 80 | `estimated_completeness < min_completeness` → **auto-fail** |
+| `max_drift` | 50 | `estimated_drift > max_drift` → **auto-fail** |
+
+**Threshold violations auto-fail the validation regardless of the reviewer's recommendation.** Even with `recommendation="approve"`, the validation fails if any threshold is violated. The `threshold_violations` array in the response lists every specific violation.
+
+The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"`, `"spec"`, or `"sprint"`). Use this for transparency when explaining a gate outcome.
+
+##### 2.5d Q&A and Validation Patterns
+
+✅ **Patterns (do these):**
+
+- **Read context before every validation submission.** The gate exists to prevent rubber-stamping.
+- **Write actionable justifications.** "Missing pagination on the list endpoint" is actionable. "Looks incomplete" is not.
+- **Quantify what you verified.** "Tested CRUD endpoints with valid/invalid payloads; auth middleware blocks unauthenticated requests" beats "looks good".
+- **Be honest about drift.** Positive drift is fine (you added rate limiting that wasn't in the plan); hiding drift defeats the audit trail.
+- **Prefer rejection over silent compromise.** If something is wrong, reject with specific feedback — this is the quality floor.
+
+❌ **Anti-Patterns (NEVER do these):**
+
+| Anti-pattern | Why it's wrong | Correct approach |
+|---|---|---|
+| **Submit validation without reviewing the implementation** | Rubber-stamping defeats the purpose of the gate | Read `get_task_context`, review changes, then submit with specific justifications |
+| **Give confidence 100% without detailed justification** | Inflated scores undermine the quality signal and create false audit records | Be honest — even excellent work rarely warrants 100%. Justify exactly what you verified |
+| **Ignore prior failed validations when restarting a rejected task** | Repeats the same mistakes that caused rejection | ALWAYS call `get_task_context` and read `validations[0]` before reimplementing. This is MANDATORY |
+| **Move card directly to `done` when gate is active** | Circumvents the quality gate; backend blocks it anyway | Move to `validation` first. Let the reviewer call `submit_task_validation` |
+| **Self-validate (implementer submits own validation)** | No independent verification — defeats the purpose | A different agent or human should validate. If only one agent exists on the board, flag it to the user rather than self-validating |
+| **Include `conclusion`/`completeness`/`drift` when moving to `validation`** | Duplicates what the validation captures and creates conflicting records | Move to `validation` with no extra fields. The validation submission is the record |
+| **Use text body of `ask_question` for discussion that doesn't need an answer** | Clutters Q&A and dilutes the signal for real questions | Use `add_comment` for discussion; use Q&A only when you need a response from the user or another agent |
+| **Treat threshold violations as optional** | The gate is deterministic by design | Threshold violations auto-fail. If you believe a threshold is wrong, escalate via comment to change the config — don't bypass it |
+
+##### 2.5e Conclusion vs. Validation
+
+When the validation gate is **active** for a card, the validation submission **replaces** the standard conclusion:
+
+- Do NOT send `conclusion`, `completeness`, `drift`, or their justifications when moving to `validation` — these belong to the pre-gate flow
+- The validation's `general_justification` is the quality assessment record
+- All validations (success AND failed) are stored permanently as the audit trail — a card that failed 2 validations before passing on the 3rd attempt keeps all 3 entries
+- When the gate is **inactive**, the standard conclusion flow applies (as documented elsewhere in these instructions)
+
+##### 2.5f Permission flags
+
+The validation workflow uses 3 dedicated permission flags under `card.validation.*`:
+
+- `card.validation.submit` — required to call `submit_task_validation`. Granted to: Full Control, Validator, QA
+- `card.validation.read` — required to list or view validations via `list_task_validations` / `get_task_validation`. Granted to: Full Control, Executor, Validator, QA, Spec Writer (all presets)
+- `card.validation.delete` — required to delete a validation entry. Granted to: Full Control only
+
+Plus 5 move-transition flags under `card.move.*`:
+- `in_progress_to_validation`, `validation_to_done`, `validation_to_not_started`, `validation_to_on_hold`, `validation_to_cancelled`
+
 ### 3. Work on Cards
 - Read card details before acting: `okto_pulse_get_card(board_id, card_id)`
 - If the card has a `spec_id`, read the spec for full context: `okto_pulse_get_spec(board_id, spec_id)`
