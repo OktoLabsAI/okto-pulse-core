@@ -266,20 +266,34 @@ def _spec_coverage(spec, *, scenarios=None, rules=None, contracts=None, trs=None
     _trs = trs if trs is not None else (spec.technical_requirements or [])
 
     # AC coverage via test scenarios' linked_criteria
+    # linked_criteria can be int indices OR resolved text strings
     covered_ac = set()
+    ac_text_set = {ac: i for i, ac in enumerate(acs)}
     for ts in _ts:
-        for idx in (ts.get("linked_criteria") or []):
-            if isinstance(idx, int):
-                covered_ac.add(idx)
+        for val in (ts.get("linked_criteria") or []):
+            if isinstance(val, int):
+                covered_ac.add(val)
+            elif isinstance(val, str):
+                # Match resolved text against AC list
+                for i, ac in enumerate(acs):
+                    if val == ac or ac.startswith(val) or val.startswith(ac):
+                        covered_ac.add(i)
+                        break
     ac_total = len(acs)
     ac_covered = len(covered_ac & set(range(ac_total)))
 
     # FR coverage via business rules' linked_requirements
+    # linked_requirements can be int indices OR resolved text strings
     covered_fr = set()
     for br in _brs:
-        for idx in (br.get("linked_requirements") or []):
-            if isinstance(idx, int):
-                covered_fr.add(idx)
+        for val in (br.get("linked_requirements") or []):
+            if isinstance(val, int):
+                covered_fr.add(val)
+            elif isinstance(val, str):
+                for i, fr in enumerate(frs):
+                    if val == fr or fr.startswith(val) or val.startswith(fr):
+                        covered_fr.add(i)
+                        break
     fr_total = len(frs)
     fr_covered = len(covered_fr & set(range(fr_total)))
 
@@ -4938,18 +4952,8 @@ async def okto_pulse_get_spec_context(
                 }
                 for c in spec.cards
             ],
-            # Sprints
-            "sprints": [
-                {
-                    "id": s.id,
-                    "title": s.title,
-                    "status": s.status.value,
-                    "description": s.description,
-                    "objective": getattr(s, "objective", None),
-                    "expected_outcome": getattr(s, "expected_outcome", None),
-                }
-                for s in (spec.sprints if hasattr(spec, "sprints") else [])
-            ],
+            # Sprints — loaded separately to avoid lazy-load issues
+            "sprints": [],
         }
 
         if _inc_mockups and spec.screen_mockups:
@@ -5000,6 +5004,26 @@ async def okto_pulse_get_spec_context(
             "cards_total": len(spec.cards),
             "cards_done": sum(1 for c in spec.cards if c.status.value == "done"),
         }
+
+        # Load sprints separately to avoid lazy-load error
+        try:
+            from okto_pulse.core.services.main import SprintService
+            sprint_service = SprintService(db)
+            sprints = await sprint_service.list_board_sprints(board_id, spec_id=spec_id)
+            await db.commit()
+            result["sprints"] = [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "status": s.status.value,
+                    "description": s.description,
+                    "objective": getattr(s, "objective", None),
+                    "expected_outcome": getattr(s, "expected_outcome", None),
+                }
+                for s in sprints
+            ]
+        except Exception:
+            pass
 
         return json.dumps(result, default=str)
 
@@ -8992,6 +9016,7 @@ async def okto_pulse_create_sprint(
     if not ctx:
         return _auth_error()
 
+    from okto_pulse.core.infra.permissions import PermissionSet
     perm_err = check_permission(ctx.permissions, "sprint.entity.create")
     if isinstance(ctx.permissions, PermissionSet):
         perm_err = ctx.permissions.check("sprint.entity.create")
