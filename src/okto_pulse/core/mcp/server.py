@@ -1607,6 +1607,19 @@ async def okto_pulse_get_task_context(
                         if ts.get("id") in card.test_scenario_ids
                     ]
 
+        # Task validations — critical for agents picking up cards that failed validation
+        result["validations"] = list(card.validations or [])
+
+        # Validation gate config (resolved from sprint → spec → board hierarchy)
+        from okto_pulse.core.models.db import Board as _Board, Spec as _Spec, Sprint as _Sprint
+        board_obj = await db.get(_Board, card.board_id)
+        board_settings = board_obj.settings or {} if board_obj else {}
+        spec_for_gate = await db.get(_Spec, card.spec_id) if card.spec_id else None
+        sprint_for_gate = await db.get(_Sprint, card.sprint_id) if card.sprint_id else None
+        result["validation_config"] = card_service._resolve_validation_config(
+            card, spec_for_gate, sprint_for_gate, board_settings
+        )
+
         return json.dumps(result, default=str)
 
 
@@ -2058,7 +2071,7 @@ async def okto_pulse_list_cards_by_status(
 
     Args:
         board_id: Board ID
-        status: Filter by status (optional, empty = all). Use "open" for cards NOT in done/cancelled.
+        status: Filter by status (optional, empty = all). One of: not_started, started, in_progress, validation, on_hold, done, cancelled. Use "open" for cards NOT in done/cancelled.
         spec_id: Filter by spec ID (optional) — only cards linked to this spec
         priority: Filter by priority (optional) — one of: none, low, medium, high, very_high, critical
         assignee_id: Filter by assignee (optional)
@@ -9691,6 +9704,162 @@ async def okto_pulse_suggest_sprints(
         try:
             suggestions = await service.suggest_sprints(spec_id, threshold)
             return json.dumps({"suggestions": suggestions, "count": len(suggestions)})
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+# ============================================================================
+# TASK VALIDATION TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_submit_task_validation(
+    board_id: str,
+    card_id: str,
+    confidence: int,
+    confidence_justification: str,
+    estimated_completeness: int,
+    completeness_justification: str,
+    estimated_drift: int,
+    drift_justification: str,
+    general_justification: str,
+    recommendation: str,
+) -> str:
+    """
+    Submit a task validation for a card in 'validation' status.
+
+    Evaluates the implementation quality of a completed task against three
+    dimensions: confidence, completeness, and drift. The system applies
+    threshold checks (resolved from sprint → spec → board hierarchy) and
+    automatically routes the card: success → done, failed → not_started.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID (must be in 'validation' status)
+        confidence: Score 0-100 — how confident is the reviewer that the task was implemented correctly?
+        confidence_justification: Why this confidence score
+        estimated_completeness: Score 0-100 — how complete is the implementation relative to the spec?
+        completeness_justification: Why this completeness score
+        estimated_drift: Score 0-100 — how much did the implementation deviate from the spec? (lower is better)
+        drift_justification: Why this drift score
+        general_justification: Overall assessment of the task implementation
+        recommendation: One of: approve, reject
+
+    Returns:
+        JSON with validation result, outcome, threshold violations, and card routing
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "card.validation.submit")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    if recommendation not in ("approve", "reject"):
+        return json.dumps({"error": "recommendation must be: approve or reject"})
+
+    # Validate scores
+    for name, score in [
+        ("confidence", confidence),
+        ("estimated_completeness", estimated_completeness),
+        ("estimated_drift", estimated_drift),
+    ]:
+        if not (0 <= score <= 100):
+            return json.dumps({"error": f"{name} must be between 0 and 100"})
+
+    data = {
+        "confidence": confidence,
+        "confidence_justification": confidence_justification,
+        "estimated_completeness": estimated_completeness,
+        "completeness_justification": completeness_justification,
+        "estimated_drift": estimated_drift,
+        "drift_justification": drift_justification,
+        "general_justification": general_justification,
+        "recommendation": recommendation,
+    }
+
+    async with get_db_for_mcp() as db:
+        card_service = CardService(db)
+        try:
+            result = await card_service.submit_task_validation(
+                card_id, ctx.agent_id, ctx.agent_name, data
+            )
+            await db.commit()
+            return json.dumps(result, default=str)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_list_task_validations(board_id: str, card_id: str) -> str:
+    """
+    List all validations for a task card in reverse chronological order.
+
+    Useful for understanding the validation history of a card, especially
+    cards that have been through multiple validation cycles (failed → reworked → resubmitted).
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+
+    Returns:
+        JSON with list of validation entries
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "card.validation.read")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        card_service = CardService(db)
+        try:
+            validations = await card_service.list_task_validations(card_id)
+            await db.commit()
+            return json.dumps({
+                "card_id": card_id,
+                "total": len(validations),
+                "validations": validations,
+            }, default=str)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_get_task_validation(
+    board_id: str, card_id: str, validation_id: str,
+) -> str:
+    """
+    Get full details of a specific task validation entry.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        validation_id: Validation ID (e.g. "val_abc12345")
+
+    Returns:
+        JSON with full validation details including scores, justifications, outcome, and threshold violations
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "card.validation.read")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        card_service = CardService(db)
+        try:
+            validation = await card_service.get_task_validation(card_id, validation_id)
+            await db.commit()
+            if not validation:
+                return json.dumps({"error": f"Validation '{validation_id}' not found"})
+            return json.dumps(validation, default=str)
         except ValueError as e:
             return json.dumps({"error": str(e)})
 
