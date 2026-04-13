@@ -4001,6 +4001,13 @@ class SprintService:
                 actor_type="user", actor_id=user_id, actor_name=actor_name,
                 details={"sprint_id": sprint_id, "card_ids": card_ids, "count": assigned},
             )
+            await self._record_history(
+                sprint_id=sprint_id, action="tasks_assigned",
+                actor_id=user_id, actor_name=actor_name,
+                changes=[{"field": "cards", "added": card_ids, "count": assigned}],
+                summary=f"Assigned {assigned} card(s) to sprint",
+                version=sprint.version,
+            )
         return assigned
 
     async def submit_evaluation(
@@ -4034,6 +4041,18 @@ class SprintService:
             board_id=sprint.board_id, action="sprint_evaluation_submitted",
             actor_type="user", actor_id=user_id, actor_name=eval_entry["evaluator_name"],
             details={"sprint_id": sprint_id, "evaluation_id": eval_entry["id"], "score": evaluation.get("overall_score")},
+        )
+        await self._record_history(
+            sprint_id=sprint_id, action="evaluation_submitted",
+            actor_id=user_id, actor_name=eval_entry["evaluator_name"],
+            changes=[{
+                "field": "evaluations",
+                "evaluation_id": eval_entry["id"],
+                "recommendation": evaluation.get("recommendation"),
+                "overall_score": evaluation.get("overall_score"),
+            }],
+            summary=f"Evaluation submitted: {evaluation.get('recommendation')} (score: {evaluation.get('overall_score')})",
+            version=sprint.version,
         )
         return sprint
 
