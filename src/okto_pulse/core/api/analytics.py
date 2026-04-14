@@ -16,6 +16,7 @@ from okto_pulse.core.models.db import (
     Board,
     Card,
     CardStatus,
+    CardType,
     Ideation,
     IdeationQAItem,
     IdeationStatus,
@@ -65,9 +66,346 @@ def _extract_conclusion(card) -> dict | None:
 
 
 def _is_test_card(card) -> bool:
-    """True if the card is a test card (has non-empty test_scenario_ids)."""
+    """True if the card is a test card. Prefers card_type=TEST; falls back to
+    non-empty test_scenario_ids for pre-card_type cards."""
+    ct = getattr(card, "card_type", None)
+    if ct is not None and str(ct).endswith("test"):
+        return True
     ids = card.test_scenario_ids
     return bool(ids and isinstance(ids, list) and len(ids) > 0)
+
+
+def _is_normal_card(card) -> bool:
+    """True if card_type is normal (not bug, not test)."""
+    ct = getattr(card, "card_type", None)
+    if ct is None:
+        return not _is_test_card(card)
+    return str(ct).endswith("normal")
+
+
+def _is_bug_card(card) -> bool:
+    ct = getattr(card, "card_type", None)
+    return ct is not None and str(ct).endswith("bug")
+
+
+# ---------------------------------------------------------------------------
+# Validation Gate aggregation helpers
+# ---------------------------------------------------------------------------
+#
+# Spec Validation Gate records (spec.validations) shape:
+#   {id, completeness, assertiveness, ambiguity, recommendation (approve|reject),
+#    outcome (success|failed), threshold_violations: [str], resolved_thresholds, ...}
+#
+# Task Validation Gate records (card.validations) shape:
+#   {id, confidence, estimated_completeness | completeness, estimated_drift | drift,
+#    recommendation, outcome, threshold_violations: [str], ...}
+#
+# D3 (multi-count): a single failed record can contribute to multiple rejection
+# reason buckets (e.g. completeness_below + ambiguity_above). Total rejection
+# reasons per gate may exceed total failed count.
+#
+# D4 (all history): aggregations walk the full array regardless of active flag.
+
+
+def _classify_spec_violation(violations: list[str], recommendation: str) -> list[str]:
+    """Map a spec validation's threshold_violations + recommendation to reason
+    buckets. Returns a list of 0..N reasons from:
+    {completeness_below, assertiveness_below, ambiguity_above, reject_recommendation}.
+    """
+    reasons: list[str] = []
+    for v in violations or []:
+        v_lower = str(v).lower()
+        if "completeness" in v_lower:
+            reasons.append("completeness_below")
+        elif "assertiveness" in v_lower:
+            reasons.append("assertiveness_below")
+        elif "ambiguity" in v_lower:
+            reasons.append("ambiguity_above")
+    if recommendation == "reject":
+        reasons.append("reject_recommendation")
+    return reasons
+
+
+def _classify_task_violation(violations: list[str], recommendation: str) -> list[str]:
+    """Map a task validation's threshold_violations + recommendation to reason
+    buckets: {confidence_below, completeness_below, drift_above, reject_recommendation}.
+    """
+    reasons: list[str] = []
+    for v in violations or []:
+        v_lower = str(v).lower()
+        if "confidence" in v_lower:
+            reasons.append("confidence_below")
+        elif "completeness" in v_lower:
+            reasons.append("completeness_below")
+        elif "drift" in v_lower:
+            reasons.append("drift_above")
+    if recommendation == "reject":
+        reasons.append("reject_recommendation")
+    return reasons
+
+
+def _safe_int(val, default: int = 0) -> int:
+    try:
+        return int(val) if val is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _avg(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def _aggregate_spec_validation_gate(specs: list) -> dict:
+    """Aggregate Spec Validation Gate metrics across a collection of specs.
+
+    Returns:
+        {
+          total_submitted, total_success, total_failed, success_rate (0-100),
+          avg_attempts_per_spec, avg_scores: {completeness, assertiveness, ambiguity},
+          rejection_reasons: {completeness_below, assertiveness_below,
+                              ambiguity_above, reject_recommendation},
+          specs_with_validation: int,
+        }
+    """
+    total_submitted = 0
+    total_success = 0
+    total_failed = 0
+    completeness_vals: list[float] = []
+    assertiveness_vals: list[float] = []
+    ambiguity_vals: list[float] = []
+    reasons: dict[str, int] = {
+        "completeness_below": 0,
+        "assertiveness_below": 0,
+        "ambiguity_above": 0,
+        "reject_recommendation": 0,
+    }
+    specs_with_validation = 0
+    attempts_per_spec: list[int] = []
+
+    for s in specs:
+        vals = getattr(s, "validations", None) or []
+        if not isinstance(vals, list) or len(vals) == 0:
+            continue
+        specs_with_validation += 1
+        attempts_per_spec.append(len(vals))
+        for v in vals:
+            if not isinstance(v, dict):
+                continue
+            total_submitted += 1
+            outcome = v.get("outcome")
+            if outcome == "success":
+                total_success += 1
+            elif outcome == "failed":
+                total_failed += 1
+                for r in _classify_spec_violation(
+                    v.get("threshold_violations") or [],
+                    v.get("recommendation", ""),
+                ):
+                    reasons[r] = reasons.get(r, 0) + 1
+            completeness_vals.append(_safe_int(v.get("completeness")))
+            assertiveness_vals.append(_safe_int(v.get("assertiveness")))
+            ambiguity_vals.append(_safe_int(v.get("ambiguity")))
+
+    return {
+        "total_submitted": total_submitted,
+        "total_success": total_success,
+        "total_failed": total_failed,
+        "success_rate": round(total_success / total_submitted * 100, 1) if total_submitted else None,
+        "avg_attempts_per_spec": round(sum(attempts_per_spec) / len(attempts_per_spec), 2) if attempts_per_spec else None,
+        "avg_scores": {
+            "completeness": _avg(completeness_vals),
+            "assertiveness": _avg(assertiveness_vals),
+            "ambiguity": _avg(ambiguity_vals),
+        },
+        "rejection_reasons": reasons,
+        "specs_with_validation": specs_with_validation,
+    }
+
+
+def _aggregate_task_validation_gate(cards: list) -> dict:
+    """Aggregate Task Validation Gate metrics across a collection of cards.
+
+    Returns similar shape as _aggregate_spec_validation_gate but for
+    confidence/completeness/drift dimensions.
+    """
+    total_submitted = 0
+    total_success = 0
+    total_failed = 0
+    confidence_vals: list[float] = []
+    completeness_vals: list[float] = []
+    drift_vals: list[float] = []
+    reasons: dict[str, int] = {
+        "confidence_below": 0,
+        "completeness_below": 0,
+        "drift_above": 0,
+        "reject_recommendation": 0,
+    }
+    cards_with_validation = 0
+    attempts_per_card: list[int] = []
+    first_pass_count = 0  # cards where the FIRST validation had outcome=success
+
+    for c in cards:
+        vals = getattr(c, "validations", None) or []
+        if not isinstance(vals, list) or len(vals) == 0:
+            continue
+        cards_with_validation += 1
+        attempts_per_card.append(len(vals))
+        if isinstance(vals[0], dict) and vals[0].get("outcome") == "success":
+            first_pass_count += 1
+        for v in vals:
+            if not isinstance(v, dict):
+                continue
+            total_submitted += 1
+            outcome = v.get("outcome")
+            verdict = v.get("verdict")
+            is_success = outcome == "success" or verdict == "pass"
+            is_failed = outcome == "failed" or verdict == "fail"
+            if is_success:
+                total_success += 1
+            elif is_failed:
+                total_failed += 1
+                for r in _classify_task_violation(
+                    v.get("threshold_violations") or [],
+                    v.get("recommendation", ""),
+                ):
+                    reasons[r] = reasons.get(r, 0) + 1
+            # Dual-naming support: completeness/drift were renamed from estimated_*
+            confidence_vals.append(_safe_int(v.get("confidence")))
+            completeness_vals.append(_safe_int(
+                v.get("completeness") if v.get("completeness") is not None
+                else v.get("estimated_completeness")
+            ))
+            drift_vals.append(_safe_int(
+                v.get("drift") if v.get("drift") is not None
+                else v.get("estimated_drift")
+            ))
+
+    return {
+        "total_submitted": total_submitted,
+        "total_success": total_success,
+        "total_failed": total_failed,
+        "success_rate": round(total_success / total_submitted * 100, 1) if total_submitted else None,
+        "avg_attempts_per_card": round(sum(attempts_per_card) / len(attempts_per_card), 2) if attempts_per_card else None,
+        "first_pass_rate": round(first_pass_count / cards_with_validation * 100, 1) if cards_with_validation else None,
+        "avg_scores": {
+            "confidence": _avg(confidence_vals),
+            "completeness": _avg(completeness_vals),
+            "drift": _avg(drift_vals),
+        },
+        "rejection_reasons": reasons,
+        "cards_with_validation": cards_with_validation,
+    }
+
+
+def _aggregate_spec_evaluation(specs: list) -> dict:
+    """Aggregate Spec Evaluation (qualitative gate for validated→in_progress).
+
+    Different from Spec Validation Gate — this is spec.evaluations, the
+    breakdown-quality gate submitted by reviewers against validated specs.
+    """
+    total = 0
+    total_approve = 0
+    total_reject = 0
+    total_request_changes = 0
+    overall_vals: list[float] = []
+    dimension_avgs: dict[str, list[float]] = {}
+    specs_with_eval = 0
+
+    for s in specs:
+        evals = getattr(s, "evaluations", None) or []
+        if not isinstance(evals, list) or len(evals) == 0:
+            continue
+        specs_with_eval += 1
+        for e in evals:
+            if not isinstance(e, dict):
+                continue
+            total += 1
+            rec = e.get("recommendation", "")
+            if rec == "approve":
+                total_approve += 1
+            elif rec == "reject":
+                total_reject += 1
+            elif rec == "request_changes":
+                total_request_changes += 1
+            if e.get("overall_score") is not None:
+                overall_vals.append(_safe_int(e.get("overall_score")))
+            dims = e.get("dimensions", {})
+            if isinstance(dims, dict):
+                for k, v in dims.items():
+                    score = v.get("score") if isinstance(v, dict) else v
+                    if score is not None:
+                        dimension_avgs.setdefault(k, []).append(_safe_int(score))
+
+    return {
+        "total_submitted": total,
+        "total_approve": total_approve,
+        "total_reject": total_reject,
+        "total_request_changes": total_request_changes,
+        "approve_rate": round(total_approve / total * 100, 1) if total else None,
+        "avg_overall_score": _avg(overall_vals),
+        "avg_dimension_scores": {k: _avg(v) for k, v in dimension_avgs.items()},
+        "specs_with_evaluation": specs_with_eval,
+    }
+
+
+def _aggregate_sprint_evaluation(sprints: list) -> dict:
+    """Aggregate Sprint Evaluation gate across sprints."""
+    total = 0
+    total_approve = 0
+    total_reject = 0
+    overall_vals: list[float] = []
+    sprints_with_eval = 0
+
+    for sp in sprints:
+        evals = getattr(sp, "evaluations", None) or []
+        if not isinstance(evals, list) or len(evals) == 0:
+            continue
+        sprints_with_eval += 1
+        for e in evals:
+            if not isinstance(e, dict):
+                continue
+            total += 1
+            rec = e.get("recommendation", "")
+            if rec == "approve":
+                total_approve += 1
+            elif rec == "reject":
+                total_reject += 1
+            if e.get("overall_score") is not None:
+                overall_vals.append(_safe_int(e.get("overall_score")))
+
+    return {
+        "total_submitted": total,
+        "total_approve": total_approve,
+        "total_reject": total_reject,
+        "approve_rate": round(total_approve / total * 100, 1) if total else None,
+        "avg_overall_score": _avg(overall_vals),
+        "sprints_with_evaluation": sprints_with_eval,
+    }
+
+
+def _spec_status_breakdown(specs: list) -> dict[str, int]:
+    """Count specs per status, aware of all SpecStatus values."""
+    out = {s.value: 0 for s in SpecStatus}
+    for s in specs:
+        st = s.status.value if hasattr(s.status, "value") else str(s.status)
+        out[st] = out.get(st, 0) + 1
+    return out
+
+
+def _card_status_breakdown(cards: list) -> dict[str, int]:
+    out = {s.value: 0 for s in CardStatus}
+    for c in cards:
+        st = c.status.value if hasattr(c.status, "value") else str(c.status)
+        out[st] = out.get(st, 0) + 1
+    return out
+
+
+def _sprint_status_breakdown(sprints: list) -> dict[str, int]:
+    out = {s.value: 0 for s in SprintStatus}
+    for sp in sprints:
+        st = sp.status.value if hasattr(sp.status, "value") else str(sp.status)
+        out[st] = out.get(st, 0) + 1
+    return out
 
 
 def _resolve_linked_fr_indices(linked_refs: list, frs: list[str]) -> set[int]:
@@ -102,7 +440,8 @@ async def analytics_overview(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Cross-board KPIs: totals, averages, funnel, velocity, board list."""
+    """Cross-board KPIs: totals, lifecycle status breakdowns, validation gates,
+    sprint summary, funnel, velocity, board list."""
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
@@ -114,19 +453,24 @@ async def analytics_overview(
 
     if not board_ids:
         return {
-            "total_ideations": 0,
-            "total_specs": 0,
-            "total_cards_impl": 0,
-            "total_cards_test": 0,
-            "avg_completeness": None,
-            "avg_drift": None,
-            "total_business_rules": 0,
-            "total_api_contracts": 0,
-            "specs_with_rules": 0,
-            "specs_with_contracts": 0,
-            "funnel": {"ideations": 0, "refinements": 0, "specs": 0, "cards": 0, "done": 0},
+            "total_ideations": 0, "total_specs": 0, "total_sprints": 0,
+            "total_cards_impl": 0, "total_cards_test": 0, "total_cards_bug": 0,
+            "spec_status_breakdown": {},
+            "sprint_status_breakdown": {},
+            "card_status_breakdown": {},
+            "total_business_rules": 0, "total_api_contracts": 0,
+            "specs_with_rules": 0, "specs_with_contracts": 0,
+            "spec_validation_gate": _aggregate_spec_validation_gate([]),
+            "task_validation_gate": _aggregate_task_validation_gate([]),
+            "spec_evaluation": _aggregate_spec_evaluation([]),
+            "sprint_evaluation": _aggregate_sprint_evaluation([]),
+            "funnel": {"ideations": 0, "refinements": 0, "specs": 0, "sprints": 0, "cards": 0, "done": 0},
             "velocity": [],
             "boards": [],
+            "total_bugs": 0, "bugs_open": 0, "bugs_done": 0,
+            "bugs_by_severity": {"critical": 0, "major": 0, "minor": 0},
+            "bug_rate_per_spec": [],
+            "avg_triage_hours": None,
         }
 
     # --- Ideations ---
@@ -161,21 +505,28 @@ async def analytics_overview(
         card_q = card_q.where(Card.created_at <= dt_to)
     cards = list((await db.execute(card_q)).scalars().all())
 
-    impl_cards = [c for c in cards if not _is_test_card(c)]
+    impl_cards = [c for c in cards if _is_normal_card(c)]
     test_cards = [c for c in cards if _is_test_card(c)]
+    bug_cards_all = [c for c in cards if _is_bug_card(c)]
 
-    # Avg completeness / drift from last conclusion of done cards
-    # Legacy conclusions (before completeness/drift fields) default to 100/0
-    completeness_vals: list[float] = []
-    drift_vals: list[float] = []
+    # --- Sprints ---
+    sprint_q = select(Sprint).where(Sprint.board_id.in_(board_ids))
+    if dt_from:
+        sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
+    if dt_to:
+        sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
+    sprints = list((await db.execute(sprint_q)).scalars().all())
+
+    # Self-reported scores (from card.conclusions — the implementer's report)
+    concl_completeness: list[float] = []
+    concl_drift: list[float] = []
     for c in cards:
         concl = _extract_conclusion(c)
         if concl:
-            completeness_vals.append(concl.get("completeness", 100))
-            drift_vals.append(concl.get("drift", 0))
+            concl_completeness.append(concl.get("completeness", 100))
+            concl_drift.append(concl.get("drift", 0))
 
-    avg_completeness = round(sum(completeness_vals) / len(completeness_vals), 1) if completeness_vals else None
-    avg_drift = round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None
+    # Reviewer-reported scores come from _aggregate_task_validation_gate.
 
     # Funnel
     done_cards = [c for c in cards if c.status == CardStatus.DONE]
@@ -183,11 +534,12 @@ async def analytics_overview(
         "ideations": len(ideations),
         "refinements": len(refinements),
         "specs": len(specs),
+        "sprints": len(sprints),
         "cards": len(cards),
         "done": len(done_cards),
     }
 
-    # Velocity: cards done per week, last 12 weeks
+    # Velocity: cards done per week, last 12 weeks (stacked by type)
     velocity = _compute_velocity(done_cards, 12)
 
     # Per-board stats
@@ -195,21 +547,26 @@ async def analytics_overview(
     for b in boards:
         b_cards = [c for c in cards if c.board_id == b.id]
         b_done = [c for c in b_cards if c.status == CardStatus.DONE]
-        b_bugs = [c for c in b_cards if getattr(c, "card_type", "normal") == "bug"]
+        b_bugs = [c for c in b_cards if _is_bug_card(c)]
+        b_sprints = [sp for sp in sprints if sp.board_id == b.id]
         board_stats.append({
             "board_id": b.id,
             "board_name": b.name,
             "ideations": sum(1 for i in ideations if i.board_id == b.id),
             "refinements": sum(1 for r in refinements if r.board_id == b.id),
             "specs": sum(1 for s in specs if s.board_id == b.id),
+            "sprints": len(b_sprints),
             "cards": len(b_cards),
             "cards_done": len(b_done),
             "bugs": len(b_bugs),
         })
 
-    # Status breakdowns
+    # Status breakdowns (full)
     ideations_done = sum(1 for i in ideations if i.status == IdeationStatus.DONE)
-    specs_done = sum(1 for s in specs if s.status == SpecStatus.DONE)
+    spec_status_breakdown = _spec_status_breakdown(specs)
+    sprint_status_breakdown = _sprint_status_breakdown(sprints)
+    card_status_breakdown = _card_status_breakdown(cards)
+    specs_done = spec_status_breakdown.get("done", 0)
     specs_with_tests = sum(1 for s in specs if s.test_scenarios and len(s.test_scenarios) > 0)
 
     # Business Rules & API Contracts aggregation
@@ -219,7 +576,7 @@ async def analytics_overview(
     specs_with_contracts = sum(1 for s in specs if s.api_contracts and len(s.api_contracts) > 0)
 
     # --- Bug metrics ---
-    bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
+    bug_cards = bug_cards_all
     total_bugs = len(bug_cards)
     bugs_open = sum(1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED))
     bugs_done = sum(1 for c in bug_cards if c.status == CardStatus.DONE)
@@ -228,6 +585,14 @@ async def analytics_overview(
         "major": sum(1 for c in bug_cards if getattr(c, "severity", None) == "major"),
         "minor": sum(1 for c in bug_cards if getattr(c, "severity", None) == "minor"),
     }
+
+    # --- Validation Gate aggregations ---
+    spec_validation_gate = _aggregate_spec_validation_gate(specs)
+    task_validation_gate = _aggregate_task_validation_gate(
+        [c for c in cards if _is_normal_card(c) or _is_bug_card(c)]
+    )
+    spec_evaluation = _aggregate_spec_evaluation(specs)
+    sprint_evaluation = _aggregate_sprint_evaluation(sprints)
 
     # Bugs per spec
     bugs_per_spec: dict[str, int] = {}
@@ -273,14 +638,22 @@ async def analytics_overview(
         "total_specs": len(specs),
         "specs_done": specs_done,
         "specs_with_tests": specs_with_tests,
+        "total_sprints": len(sprints),
+        "spec_status_breakdown": spec_status_breakdown,
+        "sprint_status_breakdown": sprint_status_breakdown,
+        "card_status_breakdown": card_status_breakdown,
         "total_business_rules": total_brs,
         "total_api_contracts": total_contracts,
         "specs_with_rules": specs_with_rules,
         "specs_with_contracts": specs_with_contracts,
         "total_cards_impl": len(impl_cards),
         "total_cards_test": len(test_cards),
-        "avg_completeness": avg_completeness,
-        "avg_drift": avg_drift,
+        "total_cards_bug": len(bug_cards_all),
+        # Validation gates — reviewer-reported metrics
+        "spec_validation_gate": spec_validation_gate,
+        "task_validation_gate": task_validation_gate,
+        "spec_evaluation": spec_evaluation,
+        "sprint_evaluation": sprint_evaluation,
         "funnel": funnel,
         "velocity": velocity,
         "boards": board_stats,
@@ -313,11 +686,12 @@ async def board_funnel(
 
     await _ensure_board(db, board_id, user_id)
 
-    counts: dict[str, int] = {}
+    counts: dict = {}
     for model, key in [
         (Ideation, "ideations"),
         (Refinement, "refinements"),
         (Spec, "specs"),
+        (Sprint, "sprints"),
         (Card, "cards"),
     ]:
         q = select(func.count(model.id)).where(model.board_id == board_id)
@@ -355,15 +729,16 @@ async def board_funnel(
     counts["ideations_done"] = (await db.execute(ideations_done_q)).scalar() or 0
     counts["specs_done"] = (await db.execute(specs_done_q)).scalar() or 0
 
-    # Impl vs test cards — use Python-side filtering (JSON column can't be compared with SQL strings)
+    # Impl / test / bug cards (Python-side filtering — JSON-backed card_type)
     all_cards_q = select(Card).where(Card.board_id == board_id)
     if dt_from:
         all_cards_q = all_cards_q.where(Card.created_at >= dt_from)
     if dt_to:
         all_cards_q = all_cards_q.where(Card.created_at <= dt_to)
     all_cards = list((await db.execute(all_cards_q)).scalars().all())
-    counts["cards_impl"] = sum(1 for c in all_cards if not _is_test_card(c))
+    counts["cards_impl"] = sum(1 for c in all_cards if _is_normal_card(c))
     counts["cards_test"] = sum(1 for c in all_cards if _is_test_card(c))
+    counts["cards_bug"] = sum(1 for c in all_cards if _is_bug_card(c))
 
     # Business Rules & API Contracts for the board
     spec_objs_q = select(Spec).where(Spec.board_id == board_id)
@@ -378,8 +753,21 @@ async def board_funnel(
     counts["specs_with_rules"] = sum(1 for s in spec_objs if s.business_rules and len(s.business_rules) > 0)
     counts["specs_with_contracts"] = sum(1 for s in spec_objs if s.api_contracts and len(s.api_contracts) > 0)
 
+    # Status breakdowns — full lifecycle visibility
+    counts["spec_status_breakdown"] = _spec_status_breakdown(spec_objs)
+    counts["card_status_breakdown"] = _card_status_breakdown(all_cards)
+
+    # Sprint breakdown
+    sprint_objs_q = select(Sprint).where(Sprint.board_id == board_id)
+    if dt_from:
+        sprint_objs_q = sprint_objs_q.where(Sprint.created_at >= dt_from)
+    if dt_to:
+        sprint_objs_q = sprint_objs_q.where(Sprint.created_at <= dt_to)
+    sprint_objs = list((await db.execute(sprint_objs_q)).scalars().all())
+    counts["sprint_status_breakdown"] = _sprint_status_breakdown(sprint_objs)
+
     # Bug metrics for board
-    bug_cards = [c for c in all_cards if getattr(c, "card_type", "normal") == "bug"]
+    bug_cards = [c for c in all_cards if _is_bug_card(c)]
     counts["bugs_total"] = len(bug_cards)
     counts["bugs_open"] = sum(1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED))
     counts["bugs_by_severity"] = {
@@ -404,7 +792,13 @@ async def board_quality(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Scatter: for each done card with conclusions, return completeness + drift."""
+    """Quality scatters with dual sources:
+    - conclusion_reported: self-reported from card.conclusions (implementer)
+    - validation_reported: reviewer-reported from card.validations (validator)
+
+    When the task validation gate is active, validation_reported is the
+    authoritative source. Both are returned so the UI can show the delta.
+    """
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
@@ -417,17 +811,43 @@ async def board_quality(
         q = q.where(Card.created_at <= dt_to)
 
     cards = list((await db.execute(q)).scalars().all())
-    result = []
+    conclusion_reported: list[dict] = []
+    validation_reported: list[dict] = []
     for c in cards:
         concl = _extract_conclusion(c)
         if concl:
-            result.append({
+            conclusion_reported.append({
                 "card_id": c.id,
                 "title": c.title,
+                "card_type": str(getattr(c, "card_type", "normal")).replace("CardType.", "").lower(),
                 "completeness": concl.get("completeness", 100),
                 "drift": concl.get("drift", 0),
             })
-    return result
+        vals = getattr(c, "validations", None) or []
+        if isinstance(vals, list) and vals:
+            # Use the latest success-outcome validation if any; else last record
+            success_vals = [v for v in vals if isinstance(v, dict) and (v.get("outcome") == "success" or v.get("verdict") == "pass")]
+            v = success_vals[-1] if success_vals else (vals[-1] if isinstance(vals[-1], dict) else None)
+            if v:
+                validation_reported.append({
+                    "card_id": c.id,
+                    "title": c.title,
+                    "card_type": str(getattr(c, "card_type", "normal")).replace("CardType.", "").lower(),
+                    "confidence": _safe_int(v.get("confidence")),
+                    "completeness": _safe_int(
+                        v.get("completeness") if v.get("completeness") is not None
+                        else v.get("estimated_completeness")
+                    ),
+                    "drift": _safe_int(
+                        v.get("drift") if v.get("drift") is not None
+                        else v.get("estimated_drift")
+                    ),
+                    "outcome": v.get("outcome") or v.get("verdict"),
+                })
+    return {
+        "conclusion_reported": conclusion_reported,
+        "validation_reported": validation_reported,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -444,20 +864,20 @@ async def board_velocity(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Cards done per week, stacked by impl/test."""
+    """Cards done per week, stacked by impl/test/bug + validation_bounce series."""
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
     await _ensure_board(db, board_id, user_id)
 
-    q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
+    all_q = select(Card).where(Card.board_id == board_id)
     if dt_from:
-        q = q.where(Card.created_at >= dt_from)
+        all_q = all_q.where(Card.created_at >= dt_from)
     if dt_to:
-        q = q.where(Card.created_at <= dt_to)
-
-    cards = list((await db.execute(q)).scalars().all())
-    return _compute_velocity(cards, weeks)
+        all_q = all_q.where(Card.created_at <= dt_to)
+    all_cards = list((await db.execute(all_q)).scalars().all())
+    done_cards = [c for c in all_cards if c.status == CardStatus.DONE]
+    return _compute_velocity(done_cards, weeks, all_cards=all_cards)
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +958,354 @@ async def board_coverage(
 
 
 # ---------------------------------------------------------------------------
+# NEW: /boards/{board_id}/analytics/validations — Validation gate panel
+# ---------------------------------------------------------------------------
+
+
+@router.get("/boards/{board_id}/analytics/validations")
+async def board_validations(
+    board_id: str,
+    date_from: str | None = Query(None, alias="from"),
+    date_to: str | None = Query(None, alias="to"),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Validation Gate panel for a board.
+
+    Returns:
+    - spec_validation_gate: aggregate across all specs + per-spec breakdown
+    - task_validation_gate: aggregate across all cards + per-card breakdown
+    - spec_evaluation: aggregate (different gate — qualitative breakdown quality)
+    - sprint_evaluation: aggregate
+    """
+    dt_from = _parse_date(date_from)
+    dt_to = _parse_date(date_to, end_of_day=True)
+
+    await _ensure_board(db, board_id, user_id)
+
+    spec_q = select(Spec).where(Spec.board_id == board_id)
+    if dt_from:
+        spec_q = spec_q.where(Spec.created_at >= dt_from)
+    if dt_to:
+        spec_q = spec_q.where(Spec.created_at <= dt_to)
+    specs = list((await db.execute(spec_q)).scalars().all())
+
+    card_q = select(Card).where(Card.board_id == board_id)
+    if dt_from:
+        card_q = card_q.where(Card.created_at >= dt_from)
+    if dt_to:
+        card_q = card_q.where(Card.created_at <= dt_to)
+    cards = list((await db.execute(card_q)).scalars().all())
+
+    sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+    if dt_from:
+        sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
+    if dt_to:
+        sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
+    sprints = list((await db.execute(sprint_q)).scalars().all())
+
+    # Per-spec breakdown for Spec Validation Gate — walks full history (D4)
+    per_spec: list[dict] = []
+    for s in specs:
+        vals = getattr(s, "validations", None) or []
+        if not isinstance(vals, list) or len(vals) == 0:
+            continue
+        agg = _aggregate_spec_validation_gate([s])
+        last = vals[-1] if isinstance(vals[-1], dict) else None
+        per_spec.append({
+            "spec_id": s.id,
+            "title": s.title,
+            "status": s.status.value if hasattr(s.status, "value") else str(s.status),
+            "attempts": len(vals),
+            "last_outcome": last.get("outcome") if last else None,
+            "last_completeness": _safe_int(last.get("completeness")) if last else None,
+            "last_assertiveness": _safe_int(last.get("assertiveness")) if last else None,
+            "last_ambiguity": _safe_int(last.get("ambiguity")) if last else None,
+            "success_count": agg["total_success"],
+            "failed_count": agg["total_failed"],
+            "rejection_reasons": agg["rejection_reasons"],
+            "current_validation_id": getattr(s, "current_validation_id", None),
+        })
+    per_spec.sort(key=lambda x: x["failed_count"], reverse=True)
+
+    # Per-card breakdown for Task Validation Gate
+    per_card: list[dict] = []
+    for c in cards:
+        vals = getattr(c, "validations", None) or []
+        if not isinstance(vals, list) or len(vals) == 0:
+            continue
+        agg = _aggregate_task_validation_gate([c])
+        last = vals[-1] if isinstance(vals[-1], dict) else None
+        per_card.append({
+            "card_id": c.id,
+            "title": c.title,
+            "card_type": str(getattr(c, "card_type", "normal")).replace("CardType.", "").lower(),
+            "spec_id": c.spec_id,
+            "sprint_id": c.sprint_id,
+            "status": c.status.value if hasattr(c.status, "value") else str(c.status),
+            "attempts": len(vals),
+            "last_outcome": (last.get("outcome") or last.get("verdict")) if last else None,
+            "last_confidence": _safe_int(last.get("confidence")) if last else None,
+            "last_completeness": _safe_int(
+                last.get("completeness") if last and last.get("completeness") is not None
+                else (last.get("estimated_completeness") if last else None)
+            ) if last else None,
+            "last_drift": _safe_int(
+                last.get("drift") if last and last.get("drift") is not None
+                else (last.get("estimated_drift") if last else None)
+            ) if last else None,
+            "success_count": agg["total_success"],
+            "failed_count": agg["total_failed"],
+            "rejection_reasons": agg["rejection_reasons"],
+        })
+    per_card.sort(key=lambda x: x["failed_count"], reverse=True)
+
+    return {
+        "spec_validation_gate": {
+            **_aggregate_spec_validation_gate(specs),
+            "per_spec": per_spec,
+        },
+        "task_validation_gate": {
+            **_aggregate_task_validation_gate(cards),
+            "per_card": per_card,
+        },
+        "spec_evaluation": _aggregate_spec_evaluation(specs),
+        "sprint_evaluation": _aggregate_sprint_evaluation(sprints),
+    }
+
+
+# ---------------------------------------------------------------------------
+# NEW: /boards/{board_id}/analytics/sprints — Sprint panel
+# ---------------------------------------------------------------------------
+
+
+@router.get("/boards/{board_id}/analytics/sprints")
+async def board_sprints_analytics(
+    board_id: str,
+    date_from: str | None = Query(None, alias="from"),
+    date_to: str | None = Query(None, alias="to"),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sprint panel for a board.
+
+    Returns:
+    - summary: counts by status + evaluation aggregate
+    - sprints: per-sprint breakdown with cards, completion, last eval
+    """
+    dt_from = _parse_date(date_from)
+    dt_to = _parse_date(date_to, end_of_day=True)
+
+    await _ensure_board(db, board_id, user_id)
+
+    sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+    if dt_from:
+        sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
+    if dt_to:
+        sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
+    sprints = list((await db.execute(sprint_q)).scalars().all())
+
+    card_q = select(Card).where(Card.board_id == board_id)
+    if dt_from:
+        card_q = card_q.where(Card.created_at >= dt_from)
+    if dt_to:
+        card_q = card_q.where(Card.created_at <= dt_to)
+    all_cards = list((await db.execute(card_q)).scalars().all())
+
+    per_sprint: list[dict] = []
+    for sp in sprints:
+        sp_cards = [c for c in all_cards if c.sprint_id == sp.id]
+        done_cards = [c for c in sp_cards if c.status == CardStatus.DONE]
+        total = len(sp_cards)
+        done = len(done_cards)
+        completion_rate = round(done / total * 100, 1) if total else 0.0
+        evals = getattr(sp, "evaluations", None) or []
+        last_eval = None
+        if isinstance(evals, list) and evals and isinstance(evals[-1], dict):
+            last_eval = {
+                "overall_score": evals[-1].get("overall_score"),
+                "recommendation": evals[-1].get("recommendation"),
+                "evaluator_name": evals[-1].get("evaluator_name"),
+                "created_at": evals[-1].get("created_at"),
+            }
+        task_gate = _aggregate_task_validation_gate(sp_cards)
+        per_sprint.append({
+            "sprint_id": sp.id,
+            "title": sp.title,
+            "status": sp.status.value if hasattr(sp.status, "value") else str(sp.status),
+            "spec_id": sp.spec_id,
+            "total_cards": total,
+            "done_cards": done,
+            "completion_rate": completion_rate,
+            "card_status_breakdown": _card_status_breakdown(sp_cards),
+            "evaluations_count": len(evals),
+            "last_evaluation": last_eval,
+            "task_validation_gate": {
+                "total_submitted": task_gate["total_submitted"],
+                "total_success": task_gate["total_success"],
+                "total_failed": task_gate["total_failed"],
+                "rejection_reasons": task_gate["rejection_reasons"],
+                "first_pass_rate": task_gate["first_pass_rate"],
+            },
+        })
+    per_sprint.sort(key=lambda x: x["total_cards"], reverse=True)
+
+    return {
+        "summary": {
+            "total_sprints": len(sprints),
+            "status_breakdown": _sprint_status_breakdown(sprints),
+            "avg_completion_rate": round(
+                sum(p["completion_rate"] for p in per_sprint) / len(per_sprint), 1
+            ) if per_sprint else None,
+            "sprint_evaluation": _aggregate_sprint_evaluation(sprints),
+        },
+        "sprints": per_sprint,
+    }
+
+
+# ---------------------------------------------------------------------------
+# NEW: /boards/{board_id}/analytics/spec/{spec_id} — Per-spec detail
+# ---------------------------------------------------------------------------
+
+
+@router.get("/boards/{board_id}/analytics/spec/{spec_id}")
+async def board_spec_analytics(
+    board_id: str,
+    spec_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-spec analytics: validation timeline, task gate summary, coverage."""
+    await _ensure_board(db, board_id, user_id)
+
+    spec = (await db.execute(
+        select(Spec).where(Spec.id == spec_id, Spec.board_id == board_id)
+    )).scalar_one_or_none()
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+
+    cards = list((await db.execute(
+        select(Card).where(Card.spec_id == spec_id)
+    )).scalars().all())
+
+    # Validation timeline: all submissions (D4), oldest first
+    validation_timeline: list[dict] = []
+    for v in (spec.validations or []):
+        if not isinstance(v, dict):
+            continue
+        validation_timeline.append({
+            "id": v.get("id"),
+            "reviewer_id": v.get("reviewer_id"),
+            "reviewer_name": v.get("reviewer_name"),
+            "completeness": _safe_int(v.get("completeness")),
+            "assertiveness": _safe_int(v.get("assertiveness")),
+            "ambiguity": _safe_int(v.get("ambiguity")),
+            "recommendation": v.get("recommendation"),
+            "outcome": v.get("outcome"),
+            "threshold_violations": v.get("threshold_violations") or [],
+            "rejection_reasons": _classify_spec_violation(
+                v.get("threshold_violations") or [], v.get("recommendation", "")
+            ),
+            "resolved_thresholds": v.get("resolved_thresholds"),
+            "created_at": v.get("created_at"),
+            "active": v.get("id") == getattr(spec, "current_validation_id", None),
+        })
+
+    return {
+        "spec_id": spec_id,
+        "title": spec.title,
+        "status": spec.status.value if hasattr(spec.status, "value") else str(spec.status),
+        "version": spec.version,
+        "gate_status": {
+            "current_validation_id": getattr(spec, "current_validation_id", None),
+            "locked": getattr(spec, "current_validation_id", None) is not None
+                and spec.status
+                in (SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS, SpecStatus.DONE),
+            "total_submissions": len(validation_timeline),
+        },
+        "validation_timeline": validation_timeline,
+        "task_validation_summary": _aggregate_task_validation_gate(cards),
+        "spec_evaluation": _aggregate_spec_evaluation([spec]),
+        "cards_summary": {
+            "total": len(cards),
+            "by_status": _card_status_breakdown(cards),
+            "by_type": {
+                "normal": sum(1 for c in cards if _is_normal_card(c)),
+                "test": sum(1 for c in cards if _is_test_card(c)),
+                "bug": sum(1 for c in cards if _is_bug_card(c)),
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# NEW: /boards/{board_id}/analytics/sprint/{sprint_id} — Per-sprint detail
+# ---------------------------------------------------------------------------
+
+
+@router.get("/boards/{board_id}/analytics/sprint/{sprint_id}")
+async def board_sprint_analytics(
+    board_id: str,
+    sprint_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-sprint analytics: kanban distribution, task gate, evaluation timeline."""
+    await _ensure_board(db, board_id, user_id)
+
+    sprint = (await db.execute(
+        select(Sprint).where(Sprint.id == sprint_id, Sprint.board_id == board_id)
+    )).scalar_one_or_none()
+    if not sprint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found")
+
+    cards = list((await db.execute(
+        select(Card).where(Card.sprint_id == sprint_id)
+    )).scalars().all())
+    done_cards = [c for c in cards if c.status == CardStatus.DONE]
+
+    # Evaluation timeline (append-only) — oldest first
+    eval_timeline: list[dict] = []
+    for e in (sprint.evaluations or []):
+        if not isinstance(e, dict):
+            continue
+        eval_timeline.append({
+            "id": e.get("id"),
+            "evaluator_id": e.get("evaluator_id"),
+            "evaluator_name": e.get("evaluator_name"),
+            "dimensions": e.get("dimensions"),
+            "overall_score": e.get("overall_score"),
+            "recommendation": e.get("recommendation"),
+            "stale": e.get("stale", False),
+            "created_at": e.get("created_at"),
+        })
+
+    # Weekly velocity during the sprint window (or last 4 weeks if window missing)
+    velocity = _compute_velocity(done_cards, 4, all_cards=cards)
+
+    return {
+        "sprint_id": sprint_id,
+        "title": sprint.title,
+        "status": sprint.status.value if hasattr(sprint.status, "value") else str(sprint.status),
+        "spec_id": sprint.spec_id,
+        "kanban_distribution": _card_status_breakdown(cards),
+        "cards_summary": {
+            "total": len(cards),
+            "done": len(done_cards),
+            "completion_rate": round(len(done_cards) / len(cards) * 100, 1) if cards else 0.0,
+            "by_type": {
+                "normal": sum(1 for c in cards if _is_normal_card(c)),
+                "test": sum(1 for c in cards if _is_test_card(c)),
+                "bug": sum(1 for c in cards if _is_bug_card(c)),
+            },
+        },
+        "task_validation_gate": _aggregate_task_validation_gate(cards),
+        "evaluation_timeline": eval_timeline,
+        "velocity": velocity,
+    }
+
+
+# ---------------------------------------------------------------------------
 # 6) GET /boards/{board_id}/analytics/agents — Agent ranking
 # ---------------------------------------------------------------------------
 
@@ -550,7 +1318,16 @@ async def board_agents(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Agent ranking: group cards by created_by, count done, avg completeness/drift."""
+    """Agent activity ranking with role-aware metrics.
+
+    Groups by `created_by` (cards) plus reviewer_id (validations) so both
+    implementers and validators show up. Emits:
+    - total_cards, done_cards (implementer side)
+    - avg_completeness, avg_drift (self-reported from conclusions)
+    - task_validations_submitted, task_validation_success_rate
+    - spec_validations_submitted, spec_validation_success_rate
+    - first_pass_acceptance: % of own cards that passed validation on 1st try
+    """
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
@@ -563,24 +1340,76 @@ async def board_agents(
         q = q.where(Card.created_at <= dt_to)
     cards = list((await db.execute(q)).scalars().all())
 
-    # Group by created_by
-    groups: dict[str, list] = {}
-    for c in cards:
-        groups.setdefault(c.created_by, []).append(c)
+    specs = list((await db.execute(
+        select(Spec).where(Spec.board_id == board_id)
+    )).scalars().all())
 
-    # Resolve agent names
+    # Collect actors from both cards and validations
+    actors: set[str] = set()
+    for c in cards:
+        if c.created_by:
+            actors.add(c.created_by)
+    for c in cards:
+        for v in (getattr(c, "validations", None) or []):
+            if isinstance(v, dict):
+                rid = v.get("reviewer_id") or v.get("evaluator_id")
+                if rid:
+                    actors.add(rid)
+    for s in specs:
+        for v in (getattr(s, "validations", None) or []):
+            if isinstance(v, dict):
+                rid = v.get("reviewer_id")
+                if rid:
+                    actors.add(rid)
+
     from okto_pulse.core.services.main import resolve_actor_name
 
     result = []
-    for actor_id, actor_cards in groups.items():
+    for actor_id in actors:
+        actor_cards = [c for c in cards if c.created_by == actor_id]
         done = [c for c in actor_cards if c.status == CardStatus.DONE]
-        comp_vals = []
-        drift_vals = []
+        comp_vals: list[float] = []
+        drift_vals: list[float] = []
         for c in done:
             concl = _extract_conclusion(c)
             if concl:
                 comp_vals.append(concl.get("completeness", 100))
                 drift_vals.append(concl.get("drift", 0))
+
+        # Task validations submitted BY this actor (as reviewer)
+        task_sub = 0
+        task_sub_success = 0
+        for c in cards:
+            for v in (getattr(c, "validations", None) or []):
+                if not isinstance(v, dict):
+                    continue
+                if (v.get("reviewer_id") or v.get("evaluator_id")) == actor_id:
+                    task_sub += 1
+                    if v.get("outcome") == "success" or v.get("verdict") == "pass":
+                        task_sub_success += 1
+
+        # Spec validations submitted BY this actor
+        spec_sub = 0
+        spec_sub_success = 0
+        for s in specs:
+            for v in (getattr(s, "validations", None) or []):
+                if not isinstance(v, dict):
+                    continue
+                if v.get("reviewer_id") == actor_id:
+                    spec_sub += 1
+                    if v.get("outcome") == "success":
+                        spec_sub_success += 1
+
+        # First-pass acceptance on own cards
+        own_with_vals = [c for c in actor_cards if getattr(c, "validations", None)]
+        first_pass = 0
+        for c in own_with_vals:
+            vals = c.validations or []
+            if vals and isinstance(vals[0], dict) and (
+                vals[0].get("outcome") == "success" or vals[0].get("verdict") == "pass"
+            ):
+                first_pass += 1
+        first_pass_rate = round(first_pass / len(own_with_vals) * 100, 1) if own_with_vals else None
 
         actor_name = await resolve_actor_name(db, actor_id, board_id)
         result.append({
@@ -590,10 +1419,18 @@ async def board_agents(
             "done_cards": len(done),
             "avg_completeness": round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None,
             "avg_drift": round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None,
+            "task_validations_submitted": task_sub,
+            "task_validation_success_rate": round(task_sub_success / task_sub * 100, 1) if task_sub else None,
+            "spec_validations_submitted": spec_sub,
+            "spec_validation_success_rate": round(spec_sub_success / spec_sub * 100, 1) if spec_sub else None,
+            "first_pass_acceptance_rate": first_pass_rate,
         })
 
-    # Sort by done_cards desc
-    result.sort(key=lambda x: x["done_cards"], reverse=True)
+    # Sort by most active (combined activity)
+    result.sort(
+        key=lambda x: (x["done_cards"] + x["task_validations_submitted"] + x["spec_validations_submitted"]),
+        reverse=True,
+    )
     return result
 
 
@@ -828,17 +1665,26 @@ async def _ensure_board(db: AsyncSession, board_id: str, user_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
 
 
-def _compute_velocity(done_cards: list, weeks: int) -> list[dict]:
-    """Compute weekly velocity (impl + test + bug) for the last N weeks."""
+def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = None) -> list[dict]:
+    """Compute weekly velocity for the last N weeks, stacked by card type.
+
+    Series:
+    - impl: normal cards moved to done that week
+    - test: test cards moved to done that week
+    - bug:  bug cards moved to done that week
+    - validation_bounce: count of task validations with outcome=failed created
+      that week (approximates "how many revalidations happened"). Uses
+      `all_cards` (not just done_cards) to catch failures on cards still
+      in-progress. When all_cards is None, falls back to done_cards only.
+    """
     now = datetime.now(timezone.utc)
     # Build week buckets (Monday-aligned)
     buckets: dict[str, dict[str, int]] = {}
     for i in range(weeks):
         week_start = now - timedelta(weeks=i)
-        # Align to Monday
         week_start = week_start - timedelta(days=week_start.weekday())
         key = week_start.strftime("%Y-%m-%d")
-        buckets[key] = {"impl": 0, "test": 0, "bug": 0}
+        buckets[key] = {"impl": 0, "test": 0, "bug": 0, "validation_bounce": 0}
 
     for c in done_cards:
         if not c.updated_at:
@@ -846,20 +1692,47 @@ def _compute_velocity(done_cards: list, weeks: int) -> list[dict]:
         updated = c.updated_at
         if updated.tzinfo is None:
             updated = updated.replace(tzinfo=timezone.utc)
-        # Align to Monday of that week
         week_start = updated - timedelta(days=updated.weekday())
         key = week_start.strftime("%Y-%m-%d")
         if key in buckets:
-            if getattr(c, "card_type", "normal") == "bug":
+            if _is_bug_card(c):
                 buckets[key]["bug"] += 1
             elif _is_test_card(c):
                 buckets[key]["test"] += 1
             else:
                 buckets[key]["impl"] += 1
 
+    # validation_bounce: count failed task validations by week
+    pool = all_cards if all_cards is not None else done_cards
+    for c in pool:
+        vals = getattr(c, "validations", None) or []
+        if not isinstance(vals, list):
+            continue
+        for v in vals:
+            if not isinstance(v, dict):
+                continue
+            if v.get("outcome") == "failed" or v.get("verdict") == "fail":
+                created_at = v.get("created_at")
+                if not created_at:
+                    continue
+                try:
+                    dt = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    continue
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                week_start = dt - timedelta(days=dt.weekday())
+                key = week_start.strftime("%Y-%m-%d")
+                if key in buckets:
+                    buckets[key]["validation_bounce"] += 1
+
     # Return sorted oldest first
     result = [
-        {"week": k, "impl": v["impl"], "test": v["test"], "bug": v["bug"]}
+        {
+            "week": k,
+            "impl": v["impl"], "test": v["test"], "bug": v["bug"],
+            "validation_bounce": v["validation_bounce"],
+        }
         for k, v in sorted(buckets.items())
     ]
     return result
