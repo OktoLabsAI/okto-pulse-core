@@ -697,9 +697,9 @@ class CardService:
         """
         # Defaults from board settings
         board_required = board_settings.get("require_task_validation", False)
-        board_min_conf = board_settings.get("validation_min_confidence", 70)
-        board_min_comp = board_settings.get("validation_min_completeness", 80)
-        board_max_drift = board_settings.get("validation_max_drift", 50)
+        board_min_conf = board_settings.get("min_confidence", 70)
+        board_min_comp = board_settings.get("min_completeness", 80)
+        board_max_drift = board_settings.get("max_drift", 50)
 
         # Spec overrides
         spec_required = getattr(spec, "require_task_validation", None) if spec else None
@@ -2016,6 +2016,24 @@ class SpecService:
             await card_service.check_rules_coverage(spec, board)
             await card_service.check_trs_coverage(spec, board)
             await card_service.check_contract_coverage(spec, board)
+
+            # Spec Validation Gate: when enabled, the only path to validated is via
+            # submit_spec_validation (which runs the semantic gate). Direct move_spec
+            # from approved→validated is blocked so users/agents cannot bypass the
+            # quality check. Backward transitions from validated/in_progress/done→
+            # draft/review/approved are intentionally unaffected (they preserve the
+            # unlock flow).
+            board_settings = (board.settings or {}) if board else {}
+            if (
+                spec.status == SpecStatus.APPROVED
+                and board_settings.get("require_spec_validation", False)
+            ):
+                raise ValueError(
+                    "Spec Validation Gate is enabled on this board. Direct "
+                    "approved→validated is blocked — submit a spec validation "
+                    "via okto_pulse_submit_spec_validation (or the IDE Validate "
+                    "button) to go through the semantic quality gate."
+                )
 
         # Re-execute coverage gates + qualitative validation when moving to in_progress
         if data.status == SpecStatus.IN_PROGRESS and spec.status == SpecStatus.VALIDATED:

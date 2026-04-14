@@ -1018,6 +1018,7 @@ class SpecResponse(BaseSchema):
     skip_test_coverage: bool = False
     skip_rules_coverage: bool = False
     skip_trs_coverage: bool = False
+    skip_contract_coverage: bool = False
     archived: bool = False
     pre_archive_status: str | None = None
     status: SpecStatus
@@ -1354,11 +1355,17 @@ class BoardSettings(BaseModel):
     skip_test_coverage_global: bool = False  # if True, all specs bypass test coverage checks
     skip_rules_coverage_global: bool = False  # if True, all specs bypass FR→BR coverage checks
     skip_trs_coverage_global: bool = False  # if True, all specs bypass TR→Task coverage checks
+    skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = False  # if True, cards must pass validation before moving to done
-    validation_min_confidence: int = 70  # min reviewer confidence score
-    validation_min_completeness: int = 80  # min reviewer completeness score
-    validation_max_drift: int = 50  # max reviewer drift score
+    min_confidence: int = 70  # min reviewer confidence score
+    min_completeness: int = 80  # min reviewer completeness score
+    max_drift: int = 50  # max reviewer drift score
+    # Spec Validation Gate — board-level defaults
+    require_spec_validation: bool = False  # if True, approved→validated requires Spec Validation Gate submission
+    min_spec_completeness: int = 80  # min spec completeness score
+    min_spec_assertiveness: int = 80  # min spec assertiveness score
+    max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
 
 
 class BoardCreate(BaseModel):

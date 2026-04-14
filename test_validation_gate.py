@@ -35,9 +35,9 @@ async def run_tests():
             id="b1", name="Test Board", owner_id="u1",
             settings={
                 "require_task_validation": True,
-                "validation_min_confidence": 70,
-                "validation_min_completeness": 80,
-                "validation_max_drift": 50,
+                "min_confidence": 70,
+                "min_completeness": 80,
+                "max_drift": 50,
             }
         )
         db.add(board)
@@ -97,9 +97,9 @@ async def run_tests():
             card=None, spec=spec, sprint=sprint,
             board_settings={
                 "require_task_validation": True,
-                "validation_min_confidence": 70,
-                "validation_min_completeness": 80,
-                "validation_max_drift": 50,
+                "min_confidence": 70,
+                "min_completeness": 80,
+                "max_drift": 50,
             }
         )
         check("min_confidence from spec (75)", config["min_confidence"] == 75)
