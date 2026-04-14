@@ -2049,7 +2049,7 @@ async def _ideation_detail(db: AsyncSession, board_id: str, ideation_id: str) ->
 
 
 async def _card_detail(db: AsyncSession, board_id: str, card_id: str) -> dict:
-    """Card detail: conclusions, cycle time, spec link."""
+    """Card detail: conclusions, validations history, cycle time, spec link."""
     q = select(Card).where(Card.id == card_id, Card.board_id == board_id)
     card = (await db.execute(q)).scalars().first()
     if not card:
@@ -2060,16 +2060,22 @@ async def _card_detail(db: AsyncSession, board_id: str, card_id: str) -> dict:
     if card.status == CardStatus.DONE and card.created_at and card.updated_at:
         cycle_hours = round((card.updated_at - card.created_at).total_seconds() / 3600.0, 1)
 
+    # Normalize card_type to lowercase string (enum or raw).
+    ct = getattr(card, "card_type", "normal")
+    card_type = str(ct).replace("CardType.", "").lower() or "normal"
+
     return {
         "card_id": card.id,
         "title": card.title,
         "status": card.status.value if card.status else None,
         "is_test": _is_test_card(card),
-        "card_type": getattr(card, "card_type", "normal") or "normal",
+        "card_type": card_type,
         "spec_id": card.spec_id,
+        "sprint_id": card.sprint_id,
         "completeness": concl.get("completeness") if concl else None,
         "drift": concl.get("drift") if concl else None,
         "conclusions": card.conclusions,
+        "validations": getattr(card, "validations", None) or [],
         "cycle_hours": cycle_hours,
         "created_at": card.created_at.isoformat() if card.created_at else None,
         "updated_at": card.updated_at.isoformat() if card.updated_at else None,
