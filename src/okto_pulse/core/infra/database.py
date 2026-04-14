@@ -709,6 +709,8 @@ async def init_db() -> None:
     await _migrate_add_task_validation_columns()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()
+    await _reconcile_builtin_presets()
+    await _reconcile_agent_permission_flags()
 
 
 async def _migrate_add_task_validation_columns() -> None:
@@ -849,6 +851,155 @@ async def _seed_builtin_presets() -> None:
                 session.add(preset)
             await session.commit()
         except Exception:
+            await session.rollback()
+
+
+def _merge_missing_flags(stored: dict, registry: dict) -> tuple[dict, int]:
+    """Deep-merge: add missing keys from registry to stored, preserve existing values.
+
+    Registry leaves are booleans; for any key present in registry but missing
+    in stored, the stored dict gets the key with default False. Existing leaf
+    values in stored are never overwritten. Returns (merged_dict, added_count).
+    """
+    added = 0
+    for key, reg_val in registry.items():
+        if key not in stored:
+            # Entire subtree missing — copy structure with False leaves
+            if isinstance(reg_val, dict):
+                import copy as _copy
+                subtree = _copy.deepcopy(reg_val)
+                _set_all_leaves(subtree, False)
+                stored[key] = subtree
+                added += _count_leaves(subtree)
+            else:
+                stored[key] = False
+                added += 1
+        elif isinstance(reg_val, dict) and isinstance(stored[key], dict):
+            _, sub_added = _merge_missing_flags(stored[key], reg_val)
+            added += sub_added
+    return stored, added
+
+
+def _set_all_leaves(d: dict, value) -> None:
+    for k, v in d.items():
+        if isinstance(v, dict):
+            _set_all_leaves(v, value)
+        else:
+            d[k] = value
+
+
+def _count_leaves(d: dict) -> int:
+    n = 0
+    for v in d.values():
+        if isinstance(v, dict):
+            n += _count_leaves(v)
+        else:
+            n += 1
+    return n
+
+
+async def _reconcile_builtin_presets() -> None:
+    """Refresh built-in preset flags from code definitions on every startup.
+
+    Built-in presets are authoritative in code (get_builtin_presets()). When
+    the registry grows (new entities or sub-flags), existing DB rows for
+    built-in presets become stale. This rewrites their flags from the current
+    definition, untouched for custom presets (is_builtin=False).
+    """
+    import logging
+    import json as _json
+    logger = logging.getLogger("okto_pulse.migrations")
+
+    from sqlalchemy import text as sa_text
+
+    try:
+        from okto_pulse.core.infra.permissions import get_builtin_presets
+        presets = get_builtin_presets()
+    except Exception as e:
+        logger.error(f"Built-in preset reconcile skipped (import failed): {e}")
+        return
+
+    async with get_session_factory()() as session:
+        try:
+            from okto_pulse.core.models.db import PermissionPreset
+            from sqlalchemy import select, update
+            refreshed = 0
+            for preset_def in presets:
+                query = select(PermissionPreset).where(
+                    PermissionPreset.name == preset_def["name"],
+                    PermissionPreset.is_builtin == True,
+                )
+                existing = (await session.execute(query)).scalar_one_or_none()
+                if not existing:
+                    continue
+                new_flags_json = _json.dumps(preset_def["flags"], sort_keys=True)
+                old_flags_json = _json.dumps(existing.flags or {}, sort_keys=True)
+                if new_flags_json != old_flags_json:
+                    await session.execute(
+                        update(PermissionPreset)
+                        .where(PermissionPreset.id == existing.id)
+                        .values(flags=preset_def["flags"])
+                    )
+                    refreshed += 1
+            if refreshed:
+                await session.commit()
+                logger.info(f"Refreshed {refreshed} built-in preset(s) from registry")
+        except Exception as e:
+            logger.error(f"Built-in preset reconcile failed: {e}")
+            await session.rollback()
+
+
+async def _reconcile_agent_permission_flags() -> None:
+    """Backfill missing registry keys into agents' permission_flags on every startup.
+
+    Non-destructive deep-merge: for each agent with a non-null permission_flags
+    dict, walks the current PERMISSION_REGISTRY and adds any keys missing in
+    the stored tree (default False). Existing leaf values are never overwritten
+    — the user's customisations are preserved.
+    """
+    import logging
+    import json as _json
+    import copy as _copy
+    logger = logging.getLogger("okto_pulse.migrations")
+
+    from sqlalchemy import text as sa_text
+
+    try:
+        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
+    except Exception as e:
+        logger.error(f"Agent permissions reconcile skipped (import failed): {e}")
+        return
+
+    async with get_session_factory()() as session:
+        try:
+            from okto_pulse.core.models.db import Agent as _Agent
+            from sqlalchemy import select as _select
+            from sqlalchemy.orm.attributes import flag_modified
+            result = await session.execute(
+                _select(_Agent).where(_Agent.permission_flags.is_not(None))
+            )
+            agents = list(result.scalars().all())
+            updated = 0
+            total_added = 0
+            for agent in agents:
+                if isinstance(agent.permission_flags, str):
+                    stored_dict = _json.loads(agent.permission_flags)
+                else:
+                    stored_dict = _copy.deepcopy(agent.permission_flags or {})
+                merged, added = _merge_missing_flags(stored_dict, PERMISSION_REGISTRY)
+                if added > 0:
+                    agent.permission_flags = merged
+                    flag_modified(agent, "permission_flags")
+                    updated += 1
+                    total_added += added
+            if updated:
+                await session.commit()
+                logger.info(
+                    f"Reconciled {updated} agent(s) permission_flags "
+                    f"(+{total_added} missing leaf keys backfilled as False)"
+                )
+        except Exception as e:
+            logger.error(f"Agent permissions reconcile failed: {e}")
             await session.rollback()
 
 
