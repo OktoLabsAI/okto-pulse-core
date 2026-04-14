@@ -771,27 +771,27 @@ async def _migrate_agent_permissions() -> None:
     import logging
     logger = logging.getLogger("okto_pulse.migrations")
 
-    from sqlalchemy import text as sa_text
+    import copy
+    import json as _json
+    from sqlalchemy import select as _select
+    from sqlalchemy.orm.attributes import flag_modified
 
     async with get_session_factory()() as session:
         try:
-            result = await session.execute(sa_text(
-                "SELECT id, permissions, permission_flags FROM agents WHERE permission_flags IS NULL"
-            ))
-            agents = result.all()
-            if not agents:
-                return
-
-            import json as _json
+            from okto_pulse.core.models.db import Agent as _Agent
             from okto_pulse.core.infra.permissions import (
                 PERMISSION_REGISTRY, map_legacy_permissions
             )
-            import copy
 
-            for agent_row in agents:
-                agent_id = agent_row[0]
-                old_perms = agent_row[1]
+            result = await session.execute(
+                _select(_Agent).where(_Agent.permission_flags.is_(None))
+            )
+            agents = list(result.scalars().all())
+            if not agents:
+                return
 
+            for agent in agents:
+                old_perms = agent.permissions
                 if old_perms is None:
                     new_flags = copy.deepcopy(PERMISSION_REGISTRY)
                 else:
@@ -800,14 +800,9 @@ async def _migrate_agent_permissions() -> None:
                     else:
                         perm_list = old_perms
                     new_flags = map_legacy_permissions(perm_list)
-
-                flags_json = _json.dumps(new_flags)
-                await session.execute(
-                    sa_text(
-                        "UPDATE agents SET permission_flags = :flags WHERE id = :id"
-                    ).bindparams(flags=flags_json, id=agent_id)
-                )
-                logger.info(f"Migrated agent {agent_id[:8]} permissions ({len(flags_json)} bytes)")
+                agent.permission_flags = new_flags
+                flag_modified(agent, "permission_flags")
+                logger.info(f"Migrated agent {agent.id[:8]} permissions")
             await session.commit()
             logger.info(f"Permission migration complete: {len(agents)} agent(s)")
         except Exception as e:

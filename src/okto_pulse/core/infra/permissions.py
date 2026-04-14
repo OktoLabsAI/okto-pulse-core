@@ -554,152 +554,307 @@ def _build_preset_flags(enabled_flags: list[str]) -> dict[str, Any]:
 
 
 def get_builtin_presets() -> list[dict[str, Any]]:
-    """Return the 5 built-in preset definitions."""
+    """Return the 5 built-in preset definitions with clean role separation.
+
+    Role boundaries (see docstring for each preset):
+    - Full Control: unrestricted
+    - Spec:       defines WHAT to build — owns ideation/refinement/spec content,
+                  plans sprints, drafts card breakdown. Never submits gates.
+    - Executor:   implements normal cards. Moves not_started→validation. Never
+                  submits gates, never crosses into validation→done.
+    - QA:         owns test scenarios and test card lifecycle. Reads specs,
+                  asks questions. Never submits any gate.
+    - Validator:  exclusive gate-holder. Submits spec_validation, spec_evaluation,
+                  sprint_evaluation, task_validation. Owns approved→validated,
+                  validated→in_progress, in_progress→done (spec) and the backward
+                  unlock transitions. On cards, only touches validation status
+                  and only moves validation→done or validation→not_started.
+    """
     import copy
 
     full_control = copy.deepcopy(PERMISSION_REGISTRY)  # all True
 
-    executor = _build_preset_flags([
-        "board.*",
-        "guidelines.read",
-        "profile.update",
-        # Spec read-only
-        "spec.entity.read",
-        "spec.qa.read", "spec.tests.read", "spec.rules.read", "spec.contracts.read",
-        "spec.mockups.read", "spec.skills.read", "spec.skills.load",
-        "spec.knowledge.read", "spec.evaluations.read", "spec.history_read",
-        # Spec Validation Gate — Executor can read validation history but not submit.
-        "spec.validation.read",
-        "spec.interact_in.validated", "spec.interact_in.in_progress", "spec.interact_in.done",
-        # Sprint: read + interact active/review
-        "sprint.entity.read", "sprint.qa.read", "sprint.evaluations.read", "sprint.history_read",
-        "sprint.interact_in.active", "sprint.interact_in.review",
-        # Card full
-        "card.*",
-    ])
-    # Executor: can read validations but not submit or delete them
-    _set_nested(executor, "card.validation.submit", False)
-    _set_nested(executor, "card.validation.delete", False)
-
-    validator = _build_preset_flags([
-        "board.read", "board.activity_read", "board.mentions_read", "board.mentions_mark_seen",
-        "guidelines.read",
-        "profile.update",
-        # Ideation: read + Q&A + versions/history
-        "ideation.entity.read",
-        "ideation.qa.*", "ideation.mockups.read", "ideation.versions_read", "ideation.history_read",
-        "ideation.interact_in.evaluating", "ideation.interact_in.refined",
-        "ideation.move.evaluating_to_refined", "ideation.move.refined_to_done",
-        # Refinement: read + Q&A
-        "refinement.entity.read",
-        "refinement.qa.*", "refinement.mockups.read", "refinement.knowledge.read",
-        "refinement.versions_read", "refinement.history_read",
-        "refinement.interact_in.review", "refinement.interact_in.approved",
-        "refinement.move.review_to_approved", "refinement.move.approved_to_done",
-        # Spec: read + evaluations + move validated->in_progress
-        "spec.entity.read",
-        "spec.qa.*", "spec.tests.read", "spec.rules.read", "spec.contracts.read",
-        "spec.mockups.read", "spec.skills.read", "spec.skills.load",
-        "spec.knowledge.read", "spec.history_read",
-        "spec.evaluations.read", "spec.evaluations.submit",
-        # Spec Validation Gate — Validator submits and reads validation records,
-        # plus triggers approved→validated on success and owns the backward
-        # unlock paths to draft. approved_to_validated was missing from this
-        # preset and is needed for the Validator to complete the promotion
-        # after submit_spec_validation succeeds.
-        "spec.validation.submit", "spec.validation.read",
-        "spec.move.approved_to_validated",
-        "spec.move.approved_to_draft", "spec.move.validated_to_draft",
-        "spec.interact_in.review", "spec.interact_in.approved", "spec.interact_in.validated",
-        "spec.move.review_to_approved", "spec.move.validated_to_in_progress",
-        # Sprint: read + evaluations + move
-        "sprint.entity.read", "sprint.qa.read",
-        "sprint.evaluations.read", "sprint.evaluations.submit",
-        "sprint.history_read",
-        "sprint.interact_in.review", "sprint.interact_in.closed",
-        "sprint.move.active_to_review", "sprint.move.review_to_closed",
-        # Card: read + Q&A + comments + conclusion
-        "card.entity.read", "card.entity.context_read",
-        "card.qa.*", "card.comments.*", "card.conclusion.read", "card.activity_read",
-        "card.tests.read", "card.mockups.read", "card.attachments.read",
-        "card.interact_in.in_progress", "card.interact_in.done",
-        "card.interact_in.validation",
-        "card.move.in_progress_to_done",
-        "card.move.in_progress_to_validation",
-        "card.move.validation_to_done", "card.move.validation_to_not_started",
-        "card.move.validation_to_on_hold", "card.move.validation_to_cancelled",
-        "card.validation.submit", "card.validation.read",
-    ])
-
-    qa = _build_preset_flags([
-        "board.read", "board.activity_read", "board.mentions_read", "board.mentions_mark_seen",
-        "guidelines.read",
-        "profile.update",
-        # Ideation/refinement read
-        "ideation.entity.read", "ideation.interact_in.*",
-        "refinement.entity.read", "refinement.knowledge.read", "refinement.interact_in.*",
-        # Spec: read + tests full + evaluations submit
-        "spec.entity.read",
-        "spec.qa.read", "spec.qa.ask", "spec.qa.answer",
-        "spec.tests.*",
-        "spec.rules.read", "spec.contracts.read", "spec.mockups.read",
-        "spec.knowledge.read", "spec.history_read",
-        "spec.evaluations.read", "spec.evaluations.submit",
-        # Spec Validation Gate — QA can submit validation (quality focus) and read history.
-        "spec.validation.submit", "spec.validation.read",
-        "spec.interact_in.*",
-        # Sprint: interact all + evaluations all
-        "sprint.entity.read", "sprint.interact_in.*",
-        "sprint.qa.*", "sprint.evaluations.*", "sprint.history_read",
-        # Card: read + create_test + Q&A + comments + tests
-        "card.entity.read", "card.entity.context_read", "card.entity.create_test",
-        "card.qa.*", "card.comments.read", "card.comments.create",
-        "card.comments.create_choice", "card.comments.respond_choice",
-        "card.tests.*", "card.conclusion.read", "card.activity_read",
-        "card.mockups.read", "card.attachments.read",
-        "card.interact_in.*",
-        "card.validation.submit", "card.validation.read",
-    ])
-
+    # ------------------------------------------------------------------
+    # Spec — defines WHAT to build
+    # ------------------------------------------------------------------
+    # Owns: ideation + refinement + spec content (BRs/TRs/contracts/mockups/
+    # skills/knowledge/test scenarios), sprint planning, initial card breakdown.
+    # Cannot: submit gates, validate anything, move cards past not_started,
+    # move specs past approved (Validator promotes to validated).
     spec_writer = _build_preset_flags([
         "board.read", "board.activity_read", "board.analytics_read",
         "board.mentions_read", "board.mentions_mark_seen",
         "guidelines.read",
         "profile.update",
-        # Ideation: read + evaluate + derive + Q&A
-        "ideation.entity.read", "ideation.entity.evaluate",
-        "ideation.qa.*", "ideation.mockups.read",
+        # Ideation — full ownership (create → done), evaluate, derive spec
+        "ideation.entity.read", "ideation.entity.create", "ideation.entity.edit_fields",
+        "ideation.entity.assign", "ideation.entity.label", "ideation.entity.evaluate",
+        "ideation.entity.archive", "ideation.entity.restore", "ideation.entity.delete",
+        "ideation.move.draft_to_evaluating", "ideation.move.evaluating_to_refined",
+        "ideation.move.refined_to_done", "ideation.move.any_to_cancelled",
+        "ideation.interact_in.draft", "ideation.interact_in.evaluating",
+        "ideation.interact_in.refined",
+        "ideation.qa.read", "ideation.qa.ask", "ideation.qa.ask_choice", "ideation.qa.answer",
+        "ideation.mockups.read", "ideation.mockups.create", "ideation.mockups.edit",
+        "ideation.mockups.delete", "ideation.mockups.annotate",
         "ideation.specs_derive", "ideation.versions_read", "ideation.history_read",
-        "ideation.interact_in.draft", "ideation.interact_in.evaluating", "ideation.interact_in.refined",
-        # Refinement: read + derive + Q&A + knowledge
-        "refinement.entity.read",
-        "refinement.qa.*", "refinement.mockups.read",
-        "refinement.knowledge.*", "refinement.specs_derive",
-        "refinement.versions_read", "refinement.history_read",
+        # Refinement — full ownership (create → done), derive spec
+        "refinement.entity.read", "refinement.entity.create", "refinement.entity.edit_fields",
+        "refinement.entity.assign", "refinement.entity.label",
+        "refinement.entity.archive", "refinement.entity.restore", "refinement.entity.delete",
+        "refinement.move.draft_to_in_progress", "refinement.move.in_progress_to_review",
+        "refinement.move.review_to_approved", "refinement.move.approved_to_done",
+        "refinement.move.any_to_cancelled",
         "refinement.interact_in.draft", "refinement.interact_in.in_progress",
         "refinement.interact_in.review", "refinement.interact_in.approved",
-        # Spec: full CRUD
-        "spec.*",
-        # Sprint: entity.* + move.* + interact draft/active
-        "sprint.entity.*", "sprint.move.*", "sprint.qa.*",
-        "sprint.evaluations.*", "sprint.history_read",
+        "refinement.qa.read", "refinement.qa.ask", "refinement.qa.ask_choice", "refinement.qa.answer",
+        "refinement.mockups.read", "refinement.mockups.create", "refinement.mockups.edit",
+        "refinement.mockups.delete", "refinement.mockups.annotate",
+        "refinement.knowledge.read", "refinement.knowledge.create", "refinement.knowledge.delete",
+        "refinement.specs_derive", "refinement.versions_read", "refinement.history_read",
+        # Spec — content CRUD up to approved. Gates and beyond are Validator's.
+        "spec.entity.read", "spec.entity.create", "spec.entity.edit_fields",
+        "spec.entity.edit_coverage_flags", "spec.entity.assign", "spec.entity.label",
+        "spec.entity.link_card",
+        "spec.entity.archive", "spec.entity.restore", "spec.entity.delete",
+        "spec.move.draft_to_review", "spec.move.review_to_approved",
+        "spec.move.any_to_cancelled",
+        "spec.interact_in.draft", "spec.interact_in.review", "spec.interact_in.approved",
+        "spec.qa.read", "spec.qa.ask", "spec.qa.ask_choice", "spec.qa.answer",
+        "spec.tests.read", "spec.tests.create", "spec.tests.update_status",
+        "spec.rules.read", "spec.rules.create", "spec.rules.edit", "spec.rules.delete",
+        "spec.contracts.read", "spec.contracts.create", "spec.contracts.edit", "spec.contracts.delete",
+        "spec.mockups.read", "spec.mockups.create", "spec.mockups.edit",
+        "spec.mockups.delete", "spec.mockups.annotate",
+        "spec.skills.read", "spec.skills.load", "spec.skills.create", "spec.skills.delete",
+        "spec.knowledge.read", "spec.knowledge.create", "spec.knowledge.delete",
+        # Spec read-only on gates (sees history, cannot submit)
+        "spec.evaluations.read",
+        "spec.validation.read",
+        "spec.cards_derive", "spec.history_read",
+        # Sprint — planner owns structure, reads gate history
+        "sprint.entity.read", "sprint.entity.create", "sprint.entity.edit_fields",
+        "sprint.entity.edit_coverage_flags", "sprint.entity.assign", "sprint.entity.label",
+        "sprint.entity.archive", "sprint.entity.restore", "sprint.entity.delete",
+        "sprint.move.draft_to_active", "sprint.move.active_to_review",
+        "sprint.move.any_to_cancelled",
         "sprint.interact_in.draft", "sprint.interact_in.active",
-        # Card: read + create + basic edit
-        "card.entity.read", "card.entity.context_read", "card.entity.create", "card.entity.create_test",
-        "card.entity.edit_fields", "card.entity.assign", "card.entity.label",
+        "sprint.qa.read", "sprint.qa.ask", "sprint.qa.answer",
+        "sprint.evaluations.read",
+        "sprint.history_read",
+        # Card — breakdown only (create, link, configure). Lifecycle is Executor/QA/Validator.
+        "card.entity.read", "card.entity.context_read",
+        "card.entity.create", "card.entity.create_test",
+        "card.entity.edit_fields",
+        "card.entity.assign", "card.entity.label",
         "card.entity.link_spec", "card.entity.link_tests", "card.entity.manage_dependencies",
-        "card.link_to.*", "card.copy_from_spec.*",
-        "card.comments.read", "card.comments.create", "card.activity_read",
-        "card.interact_in.not_started",
+        "card.copy_from_spec.mockups", "card.copy_from_spec.knowledge", "card.copy_from_spec.qa",
+        "card.link_to.scenario", "card.link_to.tr", "card.link_to.rule", "card.link_to.contract",
+        "card.comments.read", "card.comments.create",
+        "card.attachments.read",
+        "card.mockups.read",
+        "card.tests.read",
+        "card.qa.read", "card.qa.ask",
         "card.validation.read",
+        "card.activity_read",
+        "card.interact_in.not_started",
+    ])
+
+    # ------------------------------------------------------------------
+    # Executor — implements normal cards
+    # ------------------------------------------------------------------
+    # Owns: card lifecycle from not_started → started → in_progress → validation
+    # (and on_hold detours). Reads spec context to implement correctly.
+    # Cannot: create cards, submit validation, promote validation→done,
+    # create/edit spec content, touch sprint/gates.
+    executor = _build_preset_flags([
+        "board.read", "board.activity_read",
+        "board.mentions_read", "board.mentions_mark_seen",
+        "guidelines.read",
+        "profile.update",
+        # Spec — read-only, interact while in_progress lifecycle states
+        "spec.entity.read",
+        "spec.qa.read", "spec.qa.ask",
+        "spec.tests.read",
+        "spec.rules.read", "spec.contracts.read",
+        "spec.mockups.read",
+        "spec.skills.read", "spec.skills.load",
+        "spec.knowledge.read",
+        "spec.evaluations.read",
+        "spec.validation.read",
+        "spec.history_read",
+        "spec.interact_in.validated", "spec.interact_in.in_progress", "spec.interact_in.done",
+        # Sprint — read active sprint to know scope
+        "sprint.entity.read",
+        "sprint.qa.read", "sprint.qa.ask",
+        "sprint.evaluations.read",
+        "sprint.history_read",
+        "sprint.interact_in.active",
+        # Card — implementer: owns everything up to moving into validation
+        "card.entity.read", "card.entity.context_read",
+        "card.entity.edit_fields", "card.entity.edit_bug_fields",
+        "card.entity.assign", "card.entity.label",
+        "card.interact_in.not_started", "card.interact_in.started",
+        "card.interact_in.in_progress", "card.interact_in.on_hold",
+        "card.interact_in.validation",  # read-only touch (to see failed validation feedback)
+        "card.move.not_started_to_started", "card.move.started_to_in_progress",
+        "card.move.in_progress_to_on_hold", "card.move.on_hold_to_in_progress",
+        "card.move.in_progress_to_validation",
+        "card.move.any_to_cancelled",
+        "card.qa.read", "card.qa.ask", "card.qa.answer",
+        "card.comments.read", "card.comments.create",
+        "card.comments.create_choice", "card.comments.respond_choice", "card.comments.get_responses",
+        "card.attachments.read", "card.attachments.upload", "card.attachments.delete",
+        "card.mockups.read", "card.mockups.annotate",
+        "card.tests.read",
+        "card.conclusion.read", "card.conclusion.write",
+        "card.validation.read",  # read-only — cannot submit, cannot delete
+        "card.activity_read",
+    ])
+
+    # ------------------------------------------------------------------
+    # QA — owns test scenarios and test card lifecycle
+    # ------------------------------------------------------------------
+    # Owns: test_scenarios CRUD on specs, test cards (card_type="test")
+    # throughout their lifecycle, test scenario status updates.
+    # Cannot: submit any gate (spec_validation, spec_evaluation,
+    # sprint_evaluation, task_validation — all exclusive to Validator),
+    # create normal cards, touch implementation cards.
+    # NOTE: card_type enforcement is a convention, not hard-blocked by flags.
+    # The agent is instructed to only work on test cards.
+    qa = _build_preset_flags([
+        "board.read", "board.activity_read",
+        "board.mentions_read", "board.mentions_mark_seen",
+        "guidelines.read",
+        "profile.update",
+        # Ideation — read + Q&A to raise test-related questions
+        "ideation.entity.read",
+        "ideation.qa.read", "ideation.qa.ask", "ideation.qa.ask_choice", "ideation.qa.answer",
+        "ideation.mockups.read",
+        "ideation.versions_read", "ideation.history_read",
+        "ideation.interact_in.evaluating", "ideation.interact_in.refined",
+        # Refinement — read + Q&A
+        "refinement.entity.read",
+        "refinement.qa.read", "refinement.qa.ask", "refinement.qa.ask_choice", "refinement.qa.answer",
+        "refinement.mockups.read", "refinement.knowledge.read",
+        "refinement.versions_read", "refinement.history_read",
+        "refinement.interact_in.review", "refinement.interact_in.approved",
+        # Spec — tests CRUD (QA's core); read everything else, no gate submissions
+        "spec.entity.read",
+        "spec.qa.read", "spec.qa.ask", "spec.qa.ask_choice", "spec.qa.answer",
+        "spec.tests.read", "spec.tests.create", "spec.tests.update_status",
+        "spec.rules.read", "spec.contracts.read", "spec.mockups.read",
+        "spec.skills.read", "spec.skills.load",
+        "spec.knowledge.read",
+        "spec.evaluations.read",   # read-only — Validator submits
+        "spec.validation.read",    # read-only — Validator submits
+        "spec.history_read",
+        "spec.interact_in.approved", "spec.interact_in.validated", "spec.interact_in.in_progress",
+        # Sprint — read + Q&A only (no evaluation submission)
+        "sprint.entity.read",
+        "sprint.qa.read", "sprint.qa.ask", "sprint.qa.answer",
+        "sprint.evaluations.read",   # read-only — Validator submits
+        "sprint.history_read",
+        "sprint.interact_in.active", "sprint.interact_in.review",
+        # Card — test cards lifecycle (create, implement, complete) + read others
+        "card.entity.read", "card.entity.context_read",
+        "card.entity.create_test", "card.entity.edit_fields",
+        "card.link_to.scenario",
+        "card.qa.read", "card.qa.ask", "card.qa.answer",
+        "card.comments.read", "card.comments.create",
+        "card.attachments.read", "card.attachments.upload",
+        "card.mockups.read",
+        "card.tests.read", "card.tests.link", "card.tests.update_status",
+        "card.conclusion.read", "card.conclusion.write",
+        "card.validation.read",  # read-only
+        "card.activity_read",
+        # Test cards don't go through validation gate — QA moves them directly through lifecycle
+        "card.interact_in.not_started", "card.interact_in.started",
+        "card.interact_in.in_progress", "card.interact_in.on_hold",
+        "card.interact_in.done",
+        "card.move.not_started_to_started", "card.move.started_to_in_progress",
+        "card.move.in_progress_to_on_hold", "card.move.on_hold_to_in_progress",
+        "card.move.in_progress_to_done",   # test cards bypass validation gate
+        "card.move.any_to_cancelled",
+    ])
+
+    # ------------------------------------------------------------------
+    # Validator — exclusive gate-holder for every SDLC checkpoint
+    # ------------------------------------------------------------------
+    # Owns: spec_validation submit, spec_evaluation submit, sprint_evaluation
+    # submit, task_validation submit, spec promotions (approved→validated,
+    # validated→in_progress, in_progress→done), spec backward unlock
+    # (approved→draft, validated→draft), sprint review→closed.
+    # Cards: ONLY interact_in validation. ONLY move validation→done or
+    # validation→not_started (user requirement — strict).
+    # Cannot: create/edit anything, touch cards outside validation status,
+    # move specs forward without the gate.
+    validator = _build_preset_flags([
+        "board.read", "board.activity_read",
+        "board.mentions_read", "board.mentions_mark_seen",
+        "guidelines.read",
+        "profile.update",
+        # Ideation — read + Q&A (observer, cannot edit or promote)
+        "ideation.entity.read",
+        "ideation.qa.read", "ideation.qa.ask", "ideation.qa.answer",
+        "ideation.mockups.read",
+        "ideation.versions_read", "ideation.history_read",
+        "ideation.interact_in.evaluating", "ideation.interact_in.refined",
+        # Refinement — read + Q&A
+        "refinement.entity.read",
+        "refinement.qa.read", "refinement.qa.ask", "refinement.qa.answer",
+        "refinement.mockups.read", "refinement.knowledge.read",
+        "refinement.versions_read", "refinement.history_read",
+        "refinement.interact_in.review", "refinement.interact_in.approved",
+        # Spec — full read + both gates (validation + evaluation) EXCLUSIVE submit
+        "spec.entity.read",
+        "spec.qa.read", "spec.qa.ask", "spec.qa.answer",
+        "spec.tests.read", "spec.rules.read", "spec.contracts.read",
+        "spec.mockups.read", "spec.skills.read", "spec.skills.load",
+        "spec.knowledge.read",
+        "spec.history_read",
+        # Exclusive gate capabilities
+        "spec.evaluations.read", "spec.evaluations.submit",
+        "spec.validation.read", "spec.validation.submit",
+        # Spec status promotions — only the gate-bound moves
+        "spec.move.approved_to_validated",
+        "spec.move.validated_to_in_progress",
+        "spec.move.in_progress_to_done",
+        # Backward unlock paths (preserved from current preset — enables the
+        # fix-and-revalidate loop after a gate failure).
+        "spec.move.approved_to_draft", "spec.move.validated_to_draft",
+        "spec.interact_in.approved", "spec.interact_in.validated", "spec.interact_in.in_progress",
+        # Sprint — evaluation gate EXCLUSIVE + review→closed
+        "sprint.entity.read",
+        "sprint.qa.read", "sprint.qa.ask", "sprint.qa.answer",
+        "sprint.evaluations.read", "sprint.evaluations.submit",
+        "sprint.history_read",
+        "sprint.interact_in.review",
+        "sprint.move.review_to_closed",
+        # Card — ONLY the validation status, EXCLUSIVE task_validation submit
+        "card.entity.read", "card.entity.context_read",
+        "card.qa.read", "card.qa.ask", "card.qa.answer",
+        "card.comments.read", "card.comments.create",  # leave feedback
+        "card.conclusion.read",
+        "card.tests.read",
+        "card.mockups.read",
+        "card.attachments.read",
+        "card.validation.read", "card.validation.submit",  # exclusive submit
+        "card.activity_read",
+        # interact_in ONLY validation — hard user requirement
+        "card.interact_in.validation",
+        # moves ONLY validation → {done, not_started} — hard user requirement.
+        # submit_task_validation auto-routes via these flags.
+        "card.move.validation_to_done",
+        "card.move.validation_to_not_started",
     ])
 
     return [
         {"name": "Full Control", "description": "All permissions active — unrestricted access.", "flags": full_control},
-        {"name": "Executor", "description": "Execute tasks. Full card access, spec read-only.", "flags": executor},
-        {"name": "Validator", "description": "Review and approve. Evaluate specs, promote status, Q&A and comments.", "flags": validator},
-        {"name": "QA", "description": "Quality assurance. Create test cards, manage test scenarios, evaluate specs.", "flags": qa},
-        {"name": "Spec", "description": "Specification writer. Derive and define specs, create task breakdown.", "flags": spec_writer},
+        {"name": "Executor", "description": "Implement normal cards. Moves not_started→validation. Cannot submit gates or promote validation→done.", "flags": executor},
+        {"name": "Validator", "description": "Exclusive gate-holder. Submits spec/task/sprint validations and evaluations. On cards, only touches validation status.", "flags": validator},
+        {"name": "QA", "description": "Owns test scenarios and test card lifecycle. No gate submissions.", "flags": qa},
+        {"name": "Spec", "description": "Defines the spec (ideation→refinement→spec content, sprint plan, card breakdown). No gate submissions, no card execution.", "flags": spec_writer},
     ]
 
 
