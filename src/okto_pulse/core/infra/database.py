@@ -853,21 +853,27 @@ def _merge_missing_flags(stored: dict, registry: dict) -> tuple[dict, int]:
     """Deep-merge: add missing keys from registry to stored, preserve existing values.
 
     Registry leaves are booleans; for any key present in registry but missing
-    in stored, the stored dict gets the key with default False. Existing leaf
+    in stored, the stored dict gets the key with default True. Existing leaf
     values in stored are never overwritten. Returns (merged_dict, added_count).
+
+    Why default True? `PermissionSet.has()` already treats absent flags as
+    allowed. Backfilling as False would silently DEMOTE existing agents when
+    the registry grows — e.g. adding `sprint.entity.create` would deny it to
+    every agent that predates the flag. Backfilling as True preserves the
+    "absent = allowed" semantics that the rest of the system relies on.
     """
     added = 0
     for key, reg_val in registry.items():
         if key not in stored:
-            # Entire subtree missing — copy structure with False leaves
+            # Entire subtree missing — copy structure with True leaves
             if isinstance(reg_val, dict):
                 import copy as _copy
                 subtree = _copy.deepcopy(reg_val)
-                _set_all_leaves(subtree, False)
+                _set_all_leaves(subtree, True)
                 stored[key] = subtree
                 added += _count_leaves(subtree)
             else:
-                stored[key] = False
+                stored[key] = True
                 added += 1
         elif isinstance(reg_val, dict) and isinstance(stored[key], dict):
             _, sub_added = _merge_missing_flags(stored[key], reg_val)

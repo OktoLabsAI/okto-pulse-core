@@ -161,6 +161,18 @@ def _cache_set(agent_id: str, board_id: str, ctx: "AgentContext") -> None:
     _permission_cache[(agent_id, board_id)] = (time.time(), ctx)
 
 
+def invalidate_agent_cache(agent_id: str) -> None:
+    """Drop all cached AgentContext entries for an agent across all boards.
+
+    Call after any change that affects effective permissions (preset/flags
+    update, board grant/revoke, board overrides change). Without this,
+    agents see stale permissions for up to _PERMISSION_CACHE_TTL seconds.
+    """
+    keys_to_drop = [k for k in _permission_cache if k[0] == agent_id]
+    for k in keys_to_drop:
+        del _permission_cache[k]
+
+
 async def _get_authenticated_agent():
     """Get the agent authenticated via the active API key from the request."""
     api_key = _active_api_key
@@ -9841,6 +9853,161 @@ async def okto_pulse_answer_sprint_question(
             "success": True,
             "qa": {"id": qa.id, "question": qa.question, "answer": qa.answer, "answered_by": qa.answered_by},
         })
+
+
+@mcp.tool()
+async def okto_pulse_delete_spec_question(board_id: str, spec_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from a spec. Use this to invalidate outdated questions
+    or remove resolved clarifications that no longer apply.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID (for context/logging)
+        qa_id: Q&A item ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecQAService(db)
+        deleted = await service.delete_question(qa_id)
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="spec_question_deleted",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"spec_id": spec_id, "qa_id": qa_id},
+        )
+        await db.commit()
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_delete_ideation_question(board_id: str, ideation_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from an ideation. Use this to invalidate outdated questions
+    or remove resolved clarifications that no longer apply.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID (for context/logging)
+        qa_id: Q&A item ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import IdeationQAService
+        service = IdeationQAService(db)
+        deleted = await service.delete_question(qa_id)
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="ideation_question_deleted",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"ideation_id": ideation_id, "qa_id": qa_id},
+        )
+        await db.commit()
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_delete_refinement_question(board_id: str, refinement_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from a refinement. Use this to invalidate outdated questions
+    or remove resolved clarifications that no longer apply.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID (for context/logging)
+        qa_id: Q&A item ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import RefinementQAService
+        service = RefinementQAService(db)
+        deleted = await service.delete_question(qa_id)
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="refinement_question_deleted",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"refinement_id": refinement_id, "qa_id": qa_id},
+        )
+        await db.commit()
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_delete_sprint_question(board_id: str, sprint_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from a sprint. Use this to invalidate outdated questions
+    or remove resolved clarifications that no longer apply.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID (for context/logging)
+        qa_id: Q&A item ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintQAService
+        service = SprintQAService(db)
+        deleted = await service.delete_question(qa_id)
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="sprint_question_deleted",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"sprint_id": sprint_id, "qa_id": qa_id},
+        )
+        await db.commit()
+        return json.dumps({"success": True})
 
 
 @mcp.tool()
