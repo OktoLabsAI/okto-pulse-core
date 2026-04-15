@@ -33,6 +33,7 @@ from okto_pulse.core.models.db import (
     IdeationHistory,
     IdeationQAItem,
     IdeationStatus,
+    PermissionPreset,
     QAItem,
     Refinement,
     RefinementHistory,
@@ -1423,8 +1424,27 @@ class AgentService:
     async def create_agent(
         self, user_id: str, data: AgentCreate
     ) -> tuple[Agent, str]:
-        """Create a new global agent (no board_id)."""
+        """Create a new global agent (no board_id).
+
+        If preset_id is provided, agent.permission_flags is initialised from
+        that preset's flags so the agent immediately reflects the preset.
+        Otherwise, permission_flags defaults to a deep copy of the full
+        registry (all True), giving new agents full access by default.
+        """
+        import copy
+        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
+
         api_key = self.generate_api_key()
+
+        flags: dict | None = data.permission_flags
+        preset_id = data.preset_id
+        if preset_id and flags is None:
+            preset = await self.db.get(PermissionPreset, preset_id)
+            if preset and preset.flags:
+                flags = copy.deepcopy(preset.flags)
+        if flags is None:
+            flags = copy.deepcopy(PERMISSION_REGISTRY)
+
         agent = Agent(
             name=data.name,
             description=data.description,
@@ -1432,6 +1452,8 @@ class AgentService:
             api_key=api_key,
             api_key_hash=self.hash_api_key(api_key),
             permissions=data.permissions,
+            preset_id=preset_id,
+            permission_flags=flags,
             created_by=user_id,
         )
         self.db.add(agent)
@@ -1533,14 +1555,45 @@ class AgentService:
         return list(result.scalars().all())
 
     async def update_agent(self, agent_id: str, data: AgentUpdate) -> Agent | None:
-        """Update an agent."""
+        """Update an agent.
+
+        Special handling:
+        - If `preset_id` is set (and `permission_flags` is NOT in the same
+          payload), agent.permission_flags is reset from the preset's flags.
+          This makes selecting a preset in the UI behave intuitively: the
+          agent's effective permissions immediately match the preset.
+        - If `preset_id` is explicitly cleared (None), permission_flags is
+          reset to the full registry (all True) — i.e. "Full Control".
+        """
+        import copy
+        from sqlalchemy.orm.attributes import flag_modified
+        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
+
         agent = await self.get_agent(agent_id)
         if not agent:
             return None
 
         update_data = data.model_dump(exclude_unset=True)
+
+        preset_id_in_payload = "preset_id" in update_data
+        flags_in_payload = "permission_flags" in update_data
+
         for key, value in update_data.items():
             setattr(agent, key, value)
+
+        if preset_id_in_payload and not flags_in_payload:
+            new_preset_id = update_data.get("preset_id")
+            if new_preset_id:
+                preset = await self.db.get(PermissionPreset, new_preset_id)
+                if preset and preset.flags:
+                    agent.permission_flags = copy.deepcopy(preset.flags)
+                    flag_modified(agent, "permission_flags")
+            else:
+                agent.permission_flags = copy.deepcopy(PERMISSION_REGISTRY)
+                flag_modified(agent, "permission_flags")
+        elif flags_in_payload:
+            flag_modified(agent, "permission_flags")
+
         return agent
 
     async def regenerate_key(self, agent_id: str) -> tuple[Agent | None, str | None]:
@@ -4784,3 +4837,11 @@ class SprintQAService:
         )
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def delete_question(self, qa_id: str) -> bool:
+        """Delete a Q&A item."""
+        qa = await self.db.get(SprintQAItem, qa_id)
+        if not qa:
+            return False
+        await self.db.delete(qa)
+        return True

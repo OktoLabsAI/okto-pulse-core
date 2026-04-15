@@ -474,7 +474,10 @@ async def analytics_overview(
         }
 
     # --- Ideations ---
-    ideation_q = select(Ideation).where(Ideation.board_id.in_(board_ids))
+    ideation_q = select(Ideation).where(
+        Ideation.board_id.in_(board_ids),
+        Ideation.archived.is_(False),
+    )
     if dt_from:
         ideation_q = ideation_q.where(Ideation.created_at >= dt_from)
     if dt_to:
@@ -482,7 +485,10 @@ async def analytics_overview(
     ideations = list((await db.execute(ideation_q)).scalars().all())
 
     # --- Refinements ---
-    refinement_q = select(Refinement).where(Refinement.board_id.in_(board_ids))
+    refinement_q = select(Refinement).where(
+        Refinement.board_id.in_(board_ids),
+        Refinement.archived.is_(False),
+    )
     if dt_from:
         refinement_q = refinement_q.where(Refinement.created_at >= dt_from)
     if dt_to:
@@ -490,7 +496,10 @@ async def analytics_overview(
     refinements = list((await db.execute(refinement_q)).scalars().all())
 
     # --- Specs ---
-    spec_q = select(Spec).where(Spec.board_id.in_(board_ids))
+    spec_q = select(Spec).where(
+        Spec.board_id.in_(board_ids),
+        Spec.archived.is_(False),
+    )
     if dt_from:
         spec_q = spec_q.where(Spec.created_at >= dt_from)
     if dt_to:
@@ -498,7 +507,10 @@ async def analytics_overview(
     specs = list((await db.execute(spec_q)).scalars().all())
 
     # --- Cards ---
-    card_q = select(Card).where(Card.board_id.in_(board_ids))
+    card_q = select(Card).where(
+        Card.board_id.in_(board_ids),
+        Card.archived.is_(False),
+    )
     if dt_from:
         card_q = card_q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -510,7 +522,10 @@ async def analytics_overview(
     bug_cards_all = [c for c in cards if _is_bug_card(c)]
 
     # --- Sprints ---
-    sprint_q = select(Sprint).where(Sprint.board_id.in_(board_ids))
+    sprint_q = select(Sprint).where(
+        Sprint.board_id.in_(board_ids),
+        Sprint.archived.is_(False),
+    )
     if dt_from:
         sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
     if dt_to:
@@ -525,6 +540,9 @@ async def analytics_overview(
         if concl:
             concl_completeness.append(concl.get("completeness", 100))
             concl_drift.append(concl.get("drift", 0))
+
+    avg_completeness = _avg(concl_completeness)
+    avg_drift = _avg(concl_drift)
 
     # Reviewer-reported scores come from _aggregate_task_validation_gate.
 
@@ -649,6 +667,9 @@ async def analytics_overview(
         "total_cards_impl": len(impl_cards),
         "total_cards_test": len(test_cards),
         "total_cards_bug": len(bug_cards_all),
+        # Self-reported quality (averages across card.conclusions)
+        "avg_completeness": avg_completeness,
+        "avg_drift": avg_drift,
         # Validation gates — reviewer-reported metrics
         "spec_validation_gate": spec_validation_gate,
         "task_validation_gate": task_validation_gate,
@@ -694,7 +715,10 @@ async def board_funnel(
         (Sprint, "sprints"),
         (Card, "cards"),
     ]:
-        q = select(func.count(model.id)).where(model.board_id == board_id)
+        q = select(func.count(model.id)).where(
+            model.board_id == board_id,
+            model.archived.is_(False),
+        )
         if dt_from:
             q = q.where(model.created_at >= dt_from)
         if dt_to:
@@ -704,7 +728,11 @@ async def board_funnel(
     # Done cards
     done_q = (
         select(func.count(Card.id))
-        .where(Card.board_id == board_id, Card.status == CardStatus.DONE)
+        .where(
+            Card.board_id == board_id,
+            Card.status == CardStatus.DONE,
+            Card.archived.is_(False),
+        )
     )
     if dt_from:
         done_q = done_q.where(Card.created_at >= dt_from)
@@ -714,10 +742,14 @@ async def board_funnel(
 
     # Status breakdowns for KPIs
     ideations_done_q = select(func.count(Ideation.id)).where(
-        Ideation.board_id == board_id, Ideation.status == IdeationStatus.DONE
+        Ideation.board_id == board_id,
+        Ideation.status == IdeationStatus.DONE,
+        Ideation.archived.is_(False),
     )
     specs_done_q = select(func.count(Spec.id)).where(
-        Spec.board_id == board_id, Spec.status == SpecStatus.DONE
+        Spec.board_id == board_id,
+        Spec.status == SpecStatus.DONE,
+        Spec.archived.is_(False),
     )
     if dt_from:
         ideations_done_q = ideations_done_q.where(Ideation.created_at >= dt_from)
@@ -730,7 +762,10 @@ async def board_funnel(
     counts["specs_done"] = (await db.execute(specs_done_q)).scalar() or 0
 
     # Impl / test / bug cards (Python-side filtering — JSON-backed card_type)
-    all_cards_q = select(Card).where(Card.board_id == board_id)
+    all_cards_q = select(Card).where(
+        Card.board_id == board_id,
+        Card.archived.is_(False),
+    )
     if dt_from:
         all_cards_q = all_cards_q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -741,7 +776,10 @@ async def board_funnel(
     counts["cards_bug"] = sum(1 for c in all_cards if _is_bug_card(c))
 
     # Business Rules & API Contracts for the board
-    spec_objs_q = select(Spec).where(Spec.board_id == board_id)
+    spec_objs_q = select(Spec).where(
+        Spec.board_id == board_id,
+        Spec.archived.is_(False),
+    )
     if dt_from:
         spec_objs_q = spec_objs_q.where(Spec.created_at >= dt_from)
     if dt_to:
@@ -758,7 +796,10 @@ async def board_funnel(
     counts["card_status_breakdown"] = _card_status_breakdown(all_cards)
 
     # Sprint breakdown
-    sprint_objs_q = select(Sprint).where(Sprint.board_id == board_id)
+    sprint_objs_q = select(Sprint).where(
+        Sprint.board_id == board_id,
+        Sprint.archived.is_(False),
+    )
     if dt_from:
         sprint_objs_q = sprint_objs_q.where(Sprint.created_at >= dt_from)
     if dt_to:
@@ -804,7 +845,11 @@ async def board_quality(
 
     await _ensure_board(db, board_id, user_id)
 
-    q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
+    q = select(Card).where(
+        Card.board_id == board_id,
+        Card.status == CardStatus.DONE,
+        Card.archived.is_(False),
+    )
     if dt_from:
         q = q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -870,7 +915,10 @@ async def board_velocity(
 
     await _ensure_board(db, board_id, user_id)
 
-    all_q = select(Card).where(Card.board_id == board_id)
+    all_q = select(Card).where(
+        Card.board_id == board_id,
+        Card.archived.is_(False),
+    )
     if dt_from:
         all_q = all_q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -899,7 +947,10 @@ async def board_coverage(
 
     await _ensure_board(db, board_id, user_id)
 
-    spec_q = select(Spec).where(Spec.board_id == board_id)
+    spec_q = select(Spec).where(
+        Spec.board_id == board_id,
+        Spec.archived.is_(False),
+    )
     if dt_from:
         spec_q = spec_q.where(Spec.created_at >= dt_from)
     if dt_to:
@@ -983,21 +1034,30 @@ async def board_validations(
 
     await _ensure_board(db, board_id, user_id)
 
-    spec_q = select(Spec).where(Spec.board_id == board_id)
+    spec_q = select(Spec).where(
+        Spec.board_id == board_id,
+        Spec.archived.is_(False),
+    )
     if dt_from:
         spec_q = spec_q.where(Spec.created_at >= dt_from)
     if dt_to:
         spec_q = spec_q.where(Spec.created_at <= dt_to)
     specs = list((await db.execute(spec_q)).scalars().all())
 
-    card_q = select(Card).where(Card.board_id == board_id)
+    card_q = select(Card).where(
+        Card.board_id == board_id,
+        Card.archived.is_(False),
+    )
     if dt_from:
         card_q = card_q.where(Card.created_at >= dt_from)
     if dt_to:
         card_q = card_q.where(Card.created_at <= dt_to)
     cards = list((await db.execute(card_q)).scalars().all())
 
-    sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+    sprint_q = select(Sprint).where(
+        Sprint.board_id == board_id,
+        Sprint.archived.is_(False),
+    )
     if dt_from:
         sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
     if dt_to:
@@ -1098,14 +1158,20 @@ async def board_sprints_analytics(
 
     await _ensure_board(db, board_id, user_id)
 
-    sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+    sprint_q = select(Sprint).where(
+        Sprint.board_id == board_id,
+        Sprint.archived.is_(False),
+    )
     if dt_from:
         sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
     if dt_to:
         sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
     sprints = list((await db.execute(sprint_q)).scalars().all())
 
-    card_q = select(Card).where(Card.board_id == board_id)
+    card_q = select(Card).where(
+        Card.board_id == board_id,
+        Card.archived.is_(False),
+    )
     if dt_from:
         card_q = card_q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -1129,6 +1195,26 @@ async def board_sprints_analytics(
                 "created_at": evals[-1].get("created_at"),
             }
         task_gate = _aggregate_task_validation_gate(sp_cards)
+
+        # Self-reported quality from card.conclusions on this sprint's cards.
+        # Falls back to the validation gate's reviewer-reported avg_scores when
+        # no implementer conclusions exist (e.g. validation-gate-only flow).
+        sp_completeness: list[float] = []
+        sp_drift: list[float] = []
+        for c in sp_cards:
+            concl = _extract_conclusion(c)
+            if concl:
+                if concl.get("completeness") is not None:
+                    sp_completeness.append(concl["completeness"])
+                if concl.get("drift") is not None:
+                    sp_drift.append(concl["drift"])
+        avg_completeness = _avg(sp_completeness)
+        avg_drift = _avg(sp_drift)
+        if avg_completeness is None:
+            avg_completeness = task_gate["avg_scores"].get("completeness")
+        if avg_drift is None:
+            avg_drift = task_gate["avg_scores"].get("drift")
+
         per_sprint.append({
             "sprint_id": sp.id,
             "title": sp.title,
@@ -1137,6 +1223,8 @@ async def board_sprints_analytics(
             "total_cards": total,
             "done_cards": done,
             "completion_rate": completion_rate,
+            "avg_completeness": avg_completeness,
+            "avg_drift": avg_drift,
             "card_status_breakdown": _card_status_breakdown(sp_cards),
             "evaluations_count": len(evals),
             "last_evaluation": last_eval,
@@ -1185,7 +1273,7 @@ async def board_spec_analytics(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
 
     cards = list((await db.execute(
-        select(Card).where(Card.spec_id == spec_id)
+        select(Card).where(Card.spec_id == spec_id, Card.archived.is_(False))
     )).scalars().all())
 
     # Validation timeline: all submissions (D4), oldest first
@@ -1260,7 +1348,7 @@ async def board_sprint_analytics(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found")
 
     cards = list((await db.execute(
-        select(Card).where(Card.sprint_id == sprint_id)
+        select(Card).where(Card.sprint_id == sprint_id, Card.archived.is_(False))
     )).scalars().all())
     done_cards = [c for c in cards if c.status == CardStatus.DONE]
 
@@ -1333,7 +1421,7 @@ async def board_agents(
 
     await _ensure_board(db, board_id, user_id)
 
-    q = select(Card).where(Card.board_id == board_id)
+    q = select(Card).where(Card.board_id == board_id, Card.archived.is_(False))
     if dt_from:
         q = q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -1341,7 +1429,7 @@ async def board_agents(
     cards = list((await db.execute(q)).scalars().all())
 
     specs = list((await db.execute(
-        select(Spec).where(Spec.board_id == board_id)
+        select(Spec).where(Spec.board_id == board_id, Spec.archived.is_(False))
     )).scalars().all())
 
     # Collect actors from both cards and validations
@@ -1747,7 +1835,10 @@ async def _list_ideation_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Ideation).where(Ideation.board_id == board_id)
+    q = select(Ideation).where(
+        Ideation.board_id == board_id,
+        Ideation.archived.is_(False),
+    )
     if dt_from:
         q = q.where(Ideation.created_at >= dt_from)
     if dt_to:
@@ -1764,12 +1855,18 @@ async def _list_ideation_entities(
     for i in ideations:
         ref_count = (
             await db.execute(
-                select(func.count(Refinement.id)).where(Refinement.ideation_id == i.id)
+                select(func.count(Refinement.id)).where(
+                    Refinement.ideation_id == i.id,
+                    Refinement.archived.is_(False),
+                )
             )
         ).scalar() or 0
         spec_count = (
             await db.execute(
-                select(func.count(Spec.id)).where(Spec.ideation_id == i.id)
+                select(func.count(Spec.id)).where(
+                    Spec.ideation_id == i.id,
+                    Spec.archived.is_(False),
+                )
             )
         ).scalar() or 0
         result_items.append({
@@ -1794,7 +1891,10 @@ async def _list_spec_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Spec).where(Spec.board_id == board_id)
+    q = select(Spec).where(
+        Spec.board_id == board_id,
+        Spec.archived.is_(False),
+    )
     if dt_from:
         q = q.where(Spec.created_at >= dt_from)
     if dt_to:
@@ -1812,7 +1912,10 @@ async def _list_spec_entities(
         scenarios = s.test_scenarios or []
         card_count = (
             await db.execute(
-                select(func.count(Card.id)).where(Card.spec_id == s.id)
+                select(func.count(Card.id)).where(
+                    Card.spec_id == s.id,
+                    Card.archived.is_(False),
+                )
             )
         ).scalar() or 0
 
@@ -1840,7 +1943,10 @@ async def _list_card_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Card).where(Card.board_id == board_id)
+    q = select(Card).where(
+        Card.board_id == board_id,
+        Card.archived.is_(False),
+    )
     if dt_from:
         q = q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -1894,7 +2000,10 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
             })
 
     # Cards linked to this spec
-    cards_q = select(Card).where(Card.spec_id == spec_id)
+    cards_q = select(Card).where(
+        Card.spec_id == spec_id,
+        Card.archived.is_(False),
+    )
     cards = list((await db.execute(cards_q)).scalars().all())
     card_data = []
     for c in cards:
@@ -2128,15 +2237,21 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
     if not sprint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found")
 
-    # Cards in this sprint
-    cards_q = select(Card).where(Card.sprint_id == sprint_id)
+    # Cards in this sprint (skip archived to keep counts honest)
+    cards_q = select(Card).where(
+        Card.sprint_id == sprint_id,
+        Card.archived.is_(False),
+    )
     cards = list((await db.execute(cards_q)).scalars().all())
 
     done_cards = [c for c in cards if c.status == CardStatus.DONE]
     cancelled = [c for c in cards if c.status == CardStatus.CANCELLED]
     in_progress = [c for c in cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED)]
 
-    # Completeness and drift from conclusions
+    # Completeness and drift: prefer self-reported conclusions, fall back to
+    # the validation gate's reviewer score when no conclusion exists. This
+    # ensures sprints that use the task validation gate flow still surface
+    # quality metrics instead of showing "--".
     completeness_vals: list[float] = []
     drift_vals: list[float] = []
     cycle_times: list[float] = []
@@ -2145,6 +2260,17 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
         concl = _extract_conclusion(c)
         comp = concl.get("completeness") if concl else None
         dr = concl.get("drift") if concl else None
+        if comp is None or dr is None:
+            vals = getattr(c, "validations", None) or []
+            last_val = next(
+                (v for v in reversed(vals) if isinstance(v, dict)),
+                None,
+            )
+            if last_val:
+                if comp is None:
+                    comp = last_val.get("completeness") or last_val.get("estimated_completeness")
+                if dr is None:
+                    dr = last_val.get("drift") or last_val.get("estimated_drift")
         ct_hours = None
         if c.status == CardStatus.DONE and c.created_at and c.updated_at:
             ct_hours = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
@@ -2188,7 +2314,10 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
         )
         siblings = list((await db.execute(siblings_q)).scalars().all())
         for sib in siblings:
-            sib_cards_q = select(Card).where(Card.sprint_id == sib.id)
+            sib_cards_q = select(Card).where(
+                Card.sprint_id == sib.id,
+                Card.archived.is_(False),
+            )
             sib_cards = list((await db.execute(sib_cards_q)).scalars().all())
             sib_done = [c for c in sib_cards if c.status == CardStatus.DONE]
             sib_concls = [_extract_conclusion(c) for c in sib_done if _extract_conclusion(c)]

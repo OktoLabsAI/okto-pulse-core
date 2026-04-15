@@ -39,6 +39,8 @@ class AgentCreate(BaseModel):
     description: str | None = None
     objective: str | None = None
     permissions: list[str] | None = None
+    preset_id: str | None = None
+    permission_flags: dict[str, Any] | None = None
 
 
 class AgentUpdate(BaseModel):
@@ -49,6 +51,8 @@ class AgentUpdate(BaseModel):
     objective: str | None = None
     is_active: bool | None = None
     permissions: list[str] | None = None
+    preset_id: str | None = None
+    permission_flags: dict[str, Any] | None = None
 
 
 class AgentSelfUpdate(BaseModel):
@@ -68,6 +72,8 @@ class AgentResponse(BaseSchema):
     api_key: str
     is_active: bool
     permissions: list[str] | None
+    preset_id: str | None = None
+    permission_flags: dict[str, Any] | None = None
     created_by: str
     created_at: datetime
     last_used_at: datetime | None
@@ -81,6 +87,8 @@ class AgentSummary(BaseSchema):
     description: str | None
     objective: str | None = None
     is_active: bool
+    preset_id: str | None = None
+    permission_flags: dict[str, Any] | None = None
     created_at: datetime
     last_used_at: datetime | None
 
