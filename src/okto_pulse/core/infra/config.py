@@ -40,6 +40,15 @@ class CoreSettings(BaseSettings):
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # Knowledge Graph (MVP Fase 0)
+    kg_base_dir: str = "~/.okto-pulse"
+    kg_embedding_mode: str = "stub"  # "stub" | "sentence-transformers"
+    kg_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    kg_embedding_dim: int = 384
+    kg_session_ttl_seconds: int = 3600
+    kg_cleanup_interval_seconds: int = 60
+    kg_cleanup_enabled: bool = True
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse CORS origins from comma-separated string."""

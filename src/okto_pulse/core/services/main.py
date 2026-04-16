@@ -4327,6 +4327,8 @@ class SprintService:
         sprint = Sprint(
             board_id=board_id, spec_id=data.spec_id,
             title=data.title, description=data.description,
+            objective=data.objective,
+            expected_outcome=data.expected_outcome,
             spec_version=spec.version,
             test_scenario_ids=data.test_scenario_ids,
             business_rule_ids=data.business_rule_ids,

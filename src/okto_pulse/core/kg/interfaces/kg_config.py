@@ -1,0 +1,23 @@
+"""KGConfig Protocol — configuration contract for the KG layer."""
+
+from __future__ import annotations
+
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class KGConfig(Protocol):
+    @property
+    def kg_base_dir(self) -> str: ...
+    @property
+    def kg_embedding_mode(self) -> str: ...
+    @property
+    def kg_embedding_model(self) -> str: ...
+    @property
+    def kg_embedding_dim(self) -> int: ...
+    @property
+    def kg_session_ttl_seconds(self) -> int: ...
+    @property
+    def kg_cleanup_interval_seconds(self) -> int: ...
+    @property
+    def kg_cleanup_enabled(self) -> bool: ...

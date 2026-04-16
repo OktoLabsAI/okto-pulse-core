@@ -1,0 +1,697 @@
+"""The 7 consolidation primitives — pure async functions (no MCP decoration).
+
+Each primitive takes a typed Pydantic request and returns a typed response.
+The MCP layer in `okto_pulse.core.mcp.kg_tools` wraps these and handles
+auth/serialization. Keeping the primitives decoupled from MCP means the REST
+API (spec 3681b078) can reuse the same functions.
+
+Reconciliation rules (deterministic, zero LLM):
+- SHA256 content_hash matches last committed → NOOP
+- Candidate has stable id that matches existing kuzu node → UPDATE
+- Candidate similar to existing node (embedding + title fuzzy match) but
+  new id → SUPERSEDE hint, agent decides whether to override
+- Otherwise → ADD
+
+commit_consolidation writes to Kùzu first (via compensating delete on
+failure — the pattern lives in card 7b922175 `compensating_tx.py`), then
+writes the audit row + outbox event in a single SQLite transaction.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+
+from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+from okto_pulse.core.kg.schemas import (
+    AbortConsolidationRequest,
+    AbortConsolidationResponse,
+    AddEdgeCandidateRequest,
+    AddEdgeCandidateResponse,
+    AddNodeCandidateRequest,
+    AddNodeCandidateResponse,
+    BeginConsolidationRequest,
+    BeginConsolidationResponse,
+    CommitConsolidationRequest,
+    CommitConsolidationResponse,
+    GetSimilarNodesRequest,
+    GetSimilarNodesResponse,
+    ProposeReconciliationRequest,
+    ProposeReconciliationResponse,
+    ReconciliationHint,
+    ReconciliationOperation,
+    SessionStatus,
+    SimilarNode,
+)
+from okto_pulse.core.kg.session_manager import (
+    ConsolidationSession,
+    compute_content_hash,
+)
+
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+
+class KGPrimitiveError(Exception):
+    def __init__(self, code: str, message: str, session_id: str | None = None,
+                 details: dict | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.session_id = session_id
+        self.details = details or {}
+
+
+def _not_found(session_id: str) -> KGPrimitiveError:
+    return KGPrimitiveError(
+        "session_not_found",
+        f"Session not found or expired: {session_id}",
+        session_id=session_id,
+    )
+
+
+def _ownership(session_id: str, agent_id: str) -> KGPrimitiveError:
+    return KGPrimitiveError(
+        "session_ownership_mismatch",
+        f"Agent {agent_id} does not own session {session_id}",
+        session_id=session_id,
+    )
+
+
+async def _require_open_session(
+    session_id: str, agent_id: str
+) -> ConsolidationSession:
+    store = get_kg_registry().session_store
+    session = await store.get(session_id)
+    if session is None:
+        raise _not_found(session_id)
+    if not session.check_ownership(agent_id):
+        raise _ownership(session_id, agent_id)
+    if session.status != SessionStatus.OPEN:
+        raise KGPrimitiveError(
+            "session_already_committed",
+            f"Session {session_id} is in status {session.status}",
+            session_id=session_id,
+        )
+    return session
+
+
+# ---------------------------------------------------------------------------
+# 1. begin_consolidation
+# ---------------------------------------------------------------------------
+
+
+async def begin_consolidation(
+    req: BeginConsolidationRequest,
+    *,
+    agent_id: str,
+    db=None,
+) -> BeginConsolidationResponse:
+    """Open a new transactional session. SHA256-dedup against the last commit."""
+    registry = get_kg_registry()
+    store = registry.session_store
+    session_id = f"kgses_{uuid.uuid4().hex[:16]}"
+
+    content_hash = compute_content_hash(req.raw_content, req.artifact_id, req.board_id)
+
+    # Nothing-changed detection via audit repository or db fallback.
+    latest = await _get_latest_audit(registry, db, req.board_id, req.artifact_id)
+
+    nothing_changed = bool(latest and _audit_hash(latest) == content_hash)
+    previous_session_id = _audit_session_id(latest) if latest else None
+
+    session = await store.create(
+        session_id=session_id,
+        board_id=req.board_id,
+        artifact_id=req.artifact_id,
+        artifact_type=req.artifact_type,
+        agent_id=agent_id,
+        raw_content=req.raw_content,
+    )
+
+    for cand in req.deterministic_candidates:
+        if cand.candidate_id in session.node_candidates:
+            raise KGPrimitiveError(
+                "duplicate_candidate_id",
+                f"Duplicate deterministic candidate: {cand.candidate_id}",
+                session_id=session_id,
+            )
+        session.node_candidates[cand.candidate_id] = cand
+
+    return BeginConsolidationResponse(
+        session_id=session_id,
+        board_id=req.board_id,
+        artifact_id=req.artifact_id,
+        artifact_type=req.artifact_type,
+        status=SessionStatus.OPEN,
+        content_hash=content_hash,
+        nothing_changed=nothing_changed,
+        previous_session_id=previous_session_id,
+        expires_at=session.expires_at,
+        deterministic_candidates_count=len(req.deterministic_candidates),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2. add_node_candidate
+# ---------------------------------------------------------------------------
+
+
+async def add_node_candidate(
+    req: AddNodeCandidateRequest,
+    *,
+    agent_id: str,
+) -> AddNodeCandidateResponse:
+    session = await _require_open_session(req.session_id, agent_id)
+    store = get_kg_registry().session_store
+    async with session.lock:
+        if req.candidate.candidate_id in session.node_candidates:
+            raise KGPrimitiveError(
+                "duplicate_candidate_id",
+                f"candidate_id already in session: {req.candidate.candidate_id}",
+                session_id=req.session_id,
+            )
+        session.node_candidates[req.candidate.candidate_id] = req.candidate
+        session.touch(store.default_ttl_seconds)
+        return AddNodeCandidateResponse(
+            session_id=req.session_id,
+            candidate_id=req.candidate.candidate_id,
+            accepted=True,
+            node_count_in_session=len(session.node_candidates),
+        )
+
+
+# ---------------------------------------------------------------------------
+# 3. add_edge_candidate
+# ---------------------------------------------------------------------------
+
+
+async def add_edge_candidate(
+    req: AddEdgeCandidateRequest,
+    *,
+    agent_id: str,
+) -> AddEdgeCandidateResponse:
+    session = await _require_open_session(req.session_id, agent_id)
+    store = get_kg_registry().session_store
+    async with session.lock:
+        cand = req.candidate
+        for ep in (cand.from_candidate_id, cand.to_candidate_id):
+            if ep.startswith("kg:"):
+                continue
+            if ep not in session.node_candidates:
+                raise KGPrimitiveError(
+                    "invalid_candidate",
+                    f"edge references unknown candidate: {ep}",
+                    session_id=req.session_id,
+                )
+
+        if cand.candidate_id in session.edge_candidates:
+            raise KGPrimitiveError(
+                "duplicate_candidate_id",
+                f"edge candidate_id already in session: {cand.candidate_id}",
+                session_id=req.session_id,
+            )
+        session.edge_candidates[cand.candidate_id] = cand
+        session.touch(store.default_ttl_seconds)
+        return AddEdgeCandidateResponse(
+            session_id=req.session_id,
+            candidate_id=cand.candidate_id,
+            accepted=True,
+            edge_count_in_session=len(session.edge_candidates),
+        )
+
+
+# ---------------------------------------------------------------------------
+# 4. get_similar_nodes
+# ---------------------------------------------------------------------------
+
+
+async def get_similar_nodes(
+    req: GetSimilarNodesRequest,
+    *,
+    agent_id: str,
+) -> GetSimilarNodesResponse:
+    """Return up to top_k existing Kùzu nodes similar to the candidate.
+
+    Embeds the candidate with the active embedding provider (stub or
+    sentence-transformers) and runs a k-NN query against the per-type HNSW
+    index via `kg.search.find_similar_nodes_by_type`. Returns an empty list
+    if the index doesn't exist yet or the node type isn't searchable — the
+    agent can still proceed with ADD in that case.
+    """
+    from okto_pulse.core.kg.search import find_similar_nodes_by_type
+
+    session = await _require_open_session(req.session_id, agent_id)
+    if req.candidate_id not in session.node_candidates:
+        raise KGPrimitiveError(
+            "candidate_not_found",
+            f"unknown candidate: {req.candidate_id}",
+            session_id=req.session_id,
+        )
+
+    cand = session.node_candidates[req.candidate_id]
+    embedder = get_kg_registry().embedding_provider
+    query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+
+    node_type = (
+        cand.node_type.value if hasattr(cand.node_type, "value") else cand.node_type
+    )
+    raw = find_similar_nodes_by_type(
+        board_id=session.board_id,
+        node_type=node_type,
+        query_vector=query_vec,
+        top_k=req.top_k,
+        min_similarity=req.min_similarity,
+    )
+
+    similar = [
+        SimilarNode(
+            kuzu_node_id=r.kuzu_node_id,
+            node_type=r.node_type,
+            title=r.title,
+            source_artifact_ref=r.source_artifact_ref,
+            similarity=r.similarity,
+        )
+        for r in raw
+    ]
+    return GetSimilarNodesResponse(
+        session_id=req.session_id,
+        candidate_id=req.candidate_id,
+        similar=similar,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 5. propose_reconciliation
+# ---------------------------------------------------------------------------
+
+
+async def propose_reconciliation(
+    req: ProposeReconciliationRequest,
+    *,
+    agent_id: str,
+    db=None,
+) -> ProposeReconciliationResponse:
+    """Compute deterministic ADD/UPDATE/SUPERSEDE/NOOP hints for all candidates."""
+    from okto_pulse.core.kg.reconciliation import reconcile_session
+
+    registry = get_kg_registry()
+    session = await _require_open_session(req.session_id, agent_id)
+
+    latest = await _get_latest_audit(
+        registry, db, session.board_id, session.artifact_id
+    )
+    nothing_changed = bool(latest and _audit_hash(latest) == session.content_hash)
+
+    existing_matches_by_candidate: dict[str, list] = {}
+    if not nothing_changed:
+        from okto_pulse.core.kg.search import find_similar_for_candidate
+
+        embedder = registry.embedding_provider
+        for cand_id, cand in session.node_candidates.items():
+            node_type = (
+                cand.node_type.value
+                if hasattr(cand.node_type, "value")
+                else cand.node_type
+            )
+            query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+            matches = find_similar_for_candidate(
+                board_id=session.board_id,
+                node_type=node_type,
+                query_vector=query_vec,
+                top_k=5,
+                min_similarity=0.3,
+            )
+            if matches:
+                existing_matches_by_candidate[cand_id] = matches
+
+    hints_by_cid = reconcile_session(
+        session.node_candidates,
+        nothing_changed=nothing_changed,
+        existing_matches_by_candidate=existing_matches_by_candidate,
+    )
+    hints = list(hints_by_cid.values())
+
+    async with session.lock:
+        session.reconciliation_hints = hints_by_cid
+        session.touch(registry.session_store.default_ttl_seconds)
+
+    return ProposeReconciliationResponse(session_id=req.session_id, hints=hints)
+
+
+# ---------------------------------------------------------------------------
+# 6. commit_consolidation
+# ---------------------------------------------------------------------------
+
+
+async def commit_consolidation(
+    req: CommitConsolidationRequest,
+    *,
+    agent_id: str,
+    db=None,
+) -> CommitConsolidationResponse:
+    """Atomically write Kuzu nodes/edges + audit + outbox event.
+
+    Uses TransactionOrchestrator for Kuzu writes with compensating delete.
+    Audit persistence via registry.audit_repo (or db fallback).
+    """
+    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.transaction import TransactionOrchestrator
+
+    registry = get_kg_registry()
+    session = await _require_open_session(req.session_id, agent_id)
+
+    async with session.lock:
+        effective_hints = dict(session.reconciliation_hints)
+        for cid, override in req.agent_overrides.items():
+            effective_hints[cid] = override
+
+        try:
+            kdb, kconn = open_board_connection(session.board_id)
+        except ImportError as exc:
+            raise KGPrimitiveError(
+                "commit_failed",
+                "kuzu not installed",
+                session_id=req.session_id,
+            ) from exc
+
+        embedder = registry.embedding_provider
+        orch = TransactionOrchestrator(
+            kuzu_conn=kconn,
+            sqlite_session=db,
+            session_id=req.session_id,
+            board_id=session.board_id,
+        )
+
+        candidate_to_kuzu_id: dict[str, str] = {}
+
+        try:
+            for cand_id, cand in session.node_candidates.items():
+                hint = effective_hints.get(cand_id)
+                op = _resolve_op(hint, cand.source_confidence)
+                if op == ReconciliationOperation.NOOP:
+                    continue
+
+                node_type = _enum_value(cand.node_type)
+                node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
+                embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+
+                node_attrs = {
+                    "title": cand.title,
+                    "content": cand.content or "",
+                    "context": cand.context or "",
+                    "justification": cand.justification or "",
+                    "source_artifact_ref": cand.source_artifact_ref or "",
+                    "created_at": _now_iso(),
+                    "created_by_agent": agent_id,
+                    "source_confidence": cand.source_confidence,
+                    "validation_status": _enum_value(cand.validation_status),
+                    "corroboration_count": 0,
+                    "embedding": embedding,
+                }
+                _apply_kuzu_node_create_with_timestamp(
+                    orch, node_type, node_id, node_attrs
+                )
+                candidate_to_kuzu_id[cand_id] = node_id
+
+            for edge in session.edge_candidates.values():
+                from_id = _resolve_endpoint(
+                    edge.from_candidate_id, candidate_to_kuzu_id
+                )
+                to_id = _resolve_endpoint(
+                    edge.to_candidate_id, candidate_to_kuzu_id
+                )
+                if from_id is None or to_id is None:
+                    continue
+                orch.create_edge(
+                    edge_type=_enum_value(edge.edge_type),
+                    from_id=from_id,
+                    to_id=to_id,
+                    attrs={"confidence": edge.confidence},
+                )
+
+            committed_at = datetime.now(timezone.utc)
+
+            # Persist audit via registry.audit_repo or db fallback.
+            await _commit_audit_records(
+                registry, db, orch, req, session, agent_id, committed_at
+            )
+
+            counters = orch.counters
+        except KGPrimitiveError:
+            raise
+        except Exception as exc:
+            try:
+                await orch.compensate()
+            except Exception as comp_exc:
+                raise KGPrimitiveError(
+                    "commit_failed",
+                    f"commit failed and compensate also failed: {comp_exc}",
+                    session_id=req.session_id,
+                    details={"original_error": str(exc)},
+                ) from comp_exc
+            raise KGPrimitiveError(
+                "commit_failed",
+                f"commit failed and was compensated: {exc}",
+                session_id=req.session_id,
+            ) from exc
+        finally:
+            del kconn
+            del kdb
+
+        session.status = SessionStatus.COMMITTED
+        session.committed_kuzu_node_refs = [
+            {"node_id": r.entity_id, "node_type": r.entity_type, "kind": r.kind}
+            for r in orch.records
+        ]
+        await registry.session_store.remove(req.session_id)
+
+        registry.cache_backend.invalidate_board(session.board_id)
+
+        return CommitConsolidationResponse(
+            session_id=req.session_id,
+            status=SessionStatus.COMMITTED,
+            nodes_added=counters.nodes_added,
+            nodes_updated=counters.nodes_updated,
+            nodes_superseded=counters.nodes_superseded,
+            edges_added=counters.edges_added,
+            committed_at=committed_at,
+        )
+
+
+def _resolve_op(
+    hint: ReconciliationHint | None, default_confidence: float
+) -> ReconciliationOperation:
+    if hint is None:
+        return ReconciliationOperation.ADD
+    op = hint.operation
+    if isinstance(op, ReconciliationOperation):
+        return op
+    return ReconciliationOperation(op)
+
+
+def _enum_value(obj):
+    return obj.value if hasattr(obj, "value") else obj
+
+
+def _resolve_endpoint(
+    endpoint: str, candidate_to_kuzu_id: dict[str, str]
+) -> str | None:
+    """Resolve an edge endpoint to an existing or newly-created kuzu_node_id."""
+    if endpoint.startswith("kg:"):
+        return endpoint[3:]
+    return candidate_to_kuzu_id.get(endpoint)
+
+
+def _apply_kuzu_node_create_with_timestamp(
+    orch, node_type: str, node_id: str, attrs: dict
+) -> None:
+    """Shim that uses the orchestrator's create_node but handles the Kùzu
+    timestamp() wrapper around created_at. Kùzu's parameter binding can't
+    coerce an ISO string to TIMESTAMP without the timestamp() function call,
+    so we patch the generated query before execution.
+    """
+    # orchestrator.create_node builds a literal `created_at: $created_at`
+    # substring — we rewrite the connection.execute call to wrap it.
+    # Simpler approach: pre-create the node with raw kuzu_conn and then append
+    # to records manually so compensation still works.
+    params = dict(attrs)
+    params["id"] = node_id
+    params["source_session_id"] = orch.session_id
+    columns = ", ".join(
+        f"{k}: timestamp(${k})" if k == "created_at" else f"{k}: ${k}"
+        for k in params
+    )
+    orch.kuzu_conn.execute(
+        f"CREATE (n:{node_type} {{{columns}}})", params
+    )
+    from okto_pulse.core.kg.transaction import KuzuWriteRecord
+    orch.records.append(
+        KuzuWriteRecord(kind="node", entity_type=node_type, entity_id=node_id)
+    )
+    orch.counters.nodes_added += 1
+
+
+# ---------------------------------------------------------------------------
+# 7. abort_consolidation
+# ---------------------------------------------------------------------------
+
+
+async def abort_consolidation(
+    req: AbortConsolidationRequest,
+    *,
+    agent_id: str,
+) -> AbortConsolidationResponse:
+    """Drop an in-flight session. No compensating delete because commit was
+    never called — the transactional boundary guaranteed no partial writes."""
+    session = await _require_open_session(req.session_id, agent_id)
+    async with session.lock:
+        session.status = SessionStatus.ABORTED
+    await get_kg_registry().session_store.remove(req.session_id)
+    return AbortConsolidationResponse(
+        session_id=req.session_id,
+        status=SessionStatus.ABORTED,
+        compensating_delete_applied=False,
+    )
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
+
+
+# ---------------------------------------------------------------------------
+# Audit helpers — registry.audit_repo with db fallback
+# ---------------------------------------------------------------------------
+
+
+async def _get_latest_audit(registry, db, board_id: str, artifact_id: str):
+    """Get latest committed audit via audit_repo or db fallback."""
+    if registry.audit_repo is not None:
+        return await registry.audit_repo.get_latest_for_artifact(board_id, artifact_id)
+    if db is not None:
+        from sqlalchemy import select
+        from okto_pulse.core.models.db import ConsolidationAudit
+
+        query = (
+            select(ConsolidationAudit)
+            .where(
+                ConsolidationAudit.board_id == board_id,
+                ConsolidationAudit.artifact_id == artifact_id,
+                ConsolidationAudit.committed_at.is_not(None),
+                ConsolidationAudit.undo_status == "none",
+            )
+            .order_by(ConsolidationAudit.committed_at.desc())
+            .limit(1)
+        )
+        return (await db.execute(query)).scalars().first()
+    return None
+
+
+def _audit_hash(audit_row) -> str | None:
+    """Extract content_hash from either AuditRow DTO or SQLAlchemy model."""
+    return audit_row.content_hash if audit_row else None
+
+
+def _audit_session_id(audit_row) -> str | None:
+    """Extract session_id from either AuditRow DTO or SQLAlchemy model."""
+    return audit_row.session_id if audit_row else None
+
+
+async def _commit_audit_records(registry, db, orch, req, session, agent_id, committed_at):
+    """Write audit records via audit_repo or db fallback."""
+    from okto_pulse.core.kg.interfaces.audit_dtos import (
+        ConsolidationAuditData,
+        NodeRefData,
+        OutboxEventData,
+    )
+
+    kuzu_refs = [
+        NodeRefData(
+            session_id=req.session_id,
+            board_id=session.board_id,
+            kuzu_node_id=r.entity_id,
+            kuzu_node_type=r.entity_type,
+            operation="add" if r.kind == "node" else "edge",
+        )
+        for r in orch.records
+        if r.kind == "node"
+    ]
+
+    audit_data = ConsolidationAuditData(
+        session_id=req.session_id,
+        board_id=session.board_id,
+        artifact_id=session.artifact_id,
+        artifact_type=session.artifact_type,
+        agent_id=agent_id,
+        started_at=session.started_at,
+        committed_at=committed_at,
+        nodes_added=orch.counters.nodes_added,
+        nodes_updated=orch.counters.nodes_updated,
+        nodes_superseded=orch.counters.nodes_superseded,
+        edges_added=orch.counters.edges_added,
+        summary_text=req.summary_text,
+        content_hash=session.content_hash,
+    )
+
+    outbox_data = OutboxEventData(
+        event_id=f"evt_{uuid.uuid4().hex[:16]}",
+        board_id=session.board_id,
+        session_id=req.session_id,
+        event_type="consolidation_committed",
+        payload={
+            "session_id": req.session_id,
+            "artifact_id": session.artifact_id,
+            "nodes_added": orch.counters.nodes_added,
+            "nodes_updated": orch.counters.nodes_updated,
+            "nodes_superseded": orch.counters.nodes_superseded,
+            "edges_added": orch.counters.edges_added,
+        },
+    )
+
+    if registry.audit_repo is not None:
+        await registry.audit_repo.commit_consolidation_records(
+            audit_data, kuzu_refs, outbox_data
+        )
+    elif db is not None:
+        from okto_pulse.core.models.db import (
+            ConsolidationAudit,
+            GlobalUpdateOutbox,
+            KuzuNodeRef,
+        )
+
+        def _stage(sqlite_session):
+            sqlite_session.add(ConsolidationAudit(
+                session_id=audit_data.session_id,
+                board_id=audit_data.board_id,
+                artifact_id=audit_data.artifact_id,
+                artifact_type=audit_data.artifact_type,
+                agent_id=audit_data.agent_id,
+                started_at=audit_data.started_at,
+                committed_at=audit_data.committed_at,
+                nodes_added=audit_data.nodes_added,
+                nodes_updated=audit_data.nodes_updated,
+                nodes_superseded=audit_data.nodes_superseded,
+                edges_added=audit_data.edges_added,
+                summary_text=audit_data.summary_text,
+                content_hash=audit_data.content_hash,
+                undo_status="none",
+            ))
+            for ref in kuzu_refs:
+                sqlite_session.add(KuzuNodeRef(
+                    session_id=ref.session_id,
+                    board_id=ref.board_id,
+                    kuzu_node_id=ref.kuzu_node_id,
+                    kuzu_node_type=ref.kuzu_node_type,
+                    operation=ref.operation,
+                ))
+            sqlite_session.add(GlobalUpdateOutbox(
+                event_id=outbox_data.event_id,
+                board_id=outbox_data.board_id,
+                session_id=outbox_data.session_id,
+                event_type=outbox_data.event_type,
+                payload=outbox_data.payload,
+            ))
+
+        await orch.commit_sqlite(_stage)
