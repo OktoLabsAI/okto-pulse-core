@@ -40,6 +40,11 @@ jobs:
           pip install pytest
           pytest -v || true
 
+      - name: Build package
+        run: |
+          pip install build
+          python -m build
+
   security:
     name: Security
     runs-on: ubuntu-latest
@@ -60,6 +65,11 @@ jobs:
         run: |
           pip install pip-audit
           pip-audit
+
+      - name: License compliance
+        run: |
+          pip install pip-licenses
+          pip-licenses --fail-on="GNU General Public License v2 (GPLv2);GNU General Public License v3 (GPLv3);GNU Affero General Public License v3 (AGPLv3)"
 
       - name: Secret scan
         uses: trufflesecurity/trufflehog@main
