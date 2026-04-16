@@ -2,6 +2,97 @@
 
 You are an AI agent connected to the Okto Pulse via MCP tools. The dashboard is a Kanban board where you collaborate with users and other agents on tasks (cards). Your identity and authentication are handled automatically by the MCP connection — you do not need to pass API keys.
 
+## Pre-Flight Checklist (READ FIRST — before ANY action)
+
+Every time you start a session or pick up a new task, follow this sequence. Violations are logged and auditable.
+
+```
+1. okto_pulse_get_my_profile()                          → know who you are
+2. okto_pulse_list_my_boards()                           → know what you have access to
+3. okto_pulse_get_unseen_summary(board_id)               → check mentions + pending work
+4. okto_pulse_get_board_guidelines(board_id)              → read rules set by the board owner
+5. okto_pulse_get_task_context(board_id, card_id, ...)    → FULL context before ANY work
+6. okto_pulse_move_card(status="in_progress")             → signal that work is starting
+7. BEGIN WORK                                             → only now write code / make changes
+```
+
+**Never skip steps 5 and 6.** Implementing based on the card title alone leads to spec drift, duplicated work, and contradictory decisions. The `get_task_context` call returns the card, spec requirements, TRs, BRs, test scenarios, API contracts, knowledge bases, mockups, Q&A, and comments — everything you need.
+
+**Never move a card to `done` without reading the "Card Status Transitions" section below.** The `done` transition has mandatory parameters (conclusion, completeness, drift) that are enforced by the system. Attempting without them returns an error.
+
+## Card Status Transitions — Mandatory Gates
+
+Every `move_card` transition has pre-requisites. The system enforces these — you cannot bypass them. Knowing the gates in advance prevents errors and wasted round-trips.
+
+### Normal cards (card_type = "normal")
+
+| From | To | Pre-requisites | Notes |
+|------|-----|---------------|-------|
+| `not_started` | `started` | Spec must be `in_progress` or later | Starting work signals intent |
+| `started` | `in_progress` | — | Active implementation |
+| `in_progress` | `validation` | — | Ready for review |
+| `validation` | `done` | `submit_task_validation` with `recommendation=approve` must pass first | System auto-routes: approve → done, reject → not_started |
+| `not_started` | `in_progress` | Spec must be `in_progress` or later | Skip `started` if you're already implementing |
+| Any | `on_hold` | — | Paused work |
+| Any | `cancelled` | — | Abandoned |
+
+**When moving to `done`** (only via validation gate for normal cards), `submit_task_validation` requires:
+- `confidence` (0-100) + justification
+- `estimated_completeness` (0-100) + justification
+- `estimated_drift` (0-100) + justification
+- `general_justification`
+- `recommendation` (approve / reject)
+
+### Test cards (card_type = "test")
+
+Test cards have a DIFFERENT lifecycle. They do NOT go through `submit_task_validation`.
+
+| From | To | Pre-requisites | Notes |
+|------|-----|---------------|-------|
+| `not_started` | `started` | Spec must be `in_progress` or later | — |
+| `started` / `in_progress` / `validation` | `done` | **ALL linked test scenarios must be `passed` or `automated`** (not `draft` or `ready`) | Use `okto_pulse_update_test_scenario_status` FIRST |
+| `validation` | `done` | Same as above + `conclusion` parameter REQUIRED | See below |
+
+**When moving a test card to `done`**, `move_card` requires these parameters:
+- `conclusion` (string, detailed) — what was tested, files created, results
+- `completeness` (0-100) — how much of the planned test coverage was achieved
+- `completeness_justification` (string)
+- `drift` (0-100) — how much the tests deviated from the scenario descriptions
+- `drift_justification` (string)
+
+**The #1 error agents hit:** calling `move_card(status="done")` on a test card without first updating all linked scenarios to `passed`. The system rejects with a list of scenarios still in `draft`. Fix: call `okto_pulse_update_test_scenario_status(scenario_id, status="passed")` for each linked scenario, THEN call `move_card`.
+
+### Sprint transitions
+
+| From | To | Pre-requisites |
+|------|-----|---------------|
+| `draft` | `active` | Must have assigned cards |
+| `active` | `review` | Scoped test scenarios must be `passed` (unless `skip_test_coverage`) |
+| `review` | `closed` | `submit_sprint_evaluation` with `recommendation=approve` must pass |
+
+### Spec transitions
+
+| From | To | Pre-requisites |
+|------|-----|---------------|
+| `draft` | `review` | — |
+| `review` | `approved` | — |
+| `approved` | `validated` | `submit_spec_validation` with all coverage gates passing (AC, FR, scenario linkage, BR linkage, TR linkage, contract linkage) + `recommendation=approve` |
+| `validated` | `in_progress` | `submit_spec_evaluation` with `recommendation=approve` |
+| `in_progress` | `done` | All cards done |
+
+### Common Errors and How to Fix Them
+
+| Error message | Cause | Fix |
+|---|---|---|
+| `"A conclusion is required when moving a card to Done"` | Missing `conclusion`, `completeness`, `drift` parameters | Add all 5 parameters to `move_card` call |
+| `"Card type 'test' is not subject to validation gate"` | Called `submit_task_validation` on a test card | Test cards skip validation — move directly to `done` (after scenarios are passed) |
+| `"N test scenario(s) still have status 'draft'"` | Test card's linked scenarios not updated | Call `update_test_scenario_status(status="passed")` for each, then retry `move_card` |
+| `"Cannot move card forward: spec must be at least 'in_progress'"` | Spec is still in `approved` or `validated` | Move the spec to `in_progress` first via `move_spec` |
+| `"Cannot validate spec: N business rule(s) have no linked task cards"` | BRs not linked to implementation cards | Call `link_task_to_rule` for each unlinked BR |
+| `"Cannot validate spec: N test scenario(s) have no linked test cards"` | Scenarios not linked to test cards | Create test cards with `card_type="test"` and `test_scenario_ids` parameter |
+| `"Validation gate is active. Move card to 'validation' first"` | Tried to move normal card directly to `done` | Move to `validation`, then `submit_task_validation`, system auto-routes to `done` |
+| `"Cannot complete this test card: linked scenario(s) still have status 'draft'"` | Same as scenario draft error | Update scenario statuses to `passed` before completing |
+
 ## Available Tools
 
 ### Identity & Context
@@ -27,7 +118,7 @@ You are an AI agent connected to the Okto Pulse via MCP tools. The dashboard is 
 | `okto_pulse_get_task_context` | board_id, card_id, include_knowledge?, include_mockups?, include_qa?, include_comments? | **Full execution context** — card + spec requirements, TRs, BRs, test scenarios, API contracts, KBs, mockups. **Always call before starting a task.** |
 | `okto_pulse_get_task_conclusions` | board_id, card_id | Get conclusions from a completed task — what was done, root cause (bugs), decisions |
 | `okto_pulse_update_card` | board_id, card_id, title?, description?, assignee_id?, labels?, severity?, expected_behavior?, observed_behavior?, steps_to_reproduce?, action_plan?, linked_test_task_ids? | Edit card fields |
-| `okto_pulse_move_card` | board_id, card_id, status, position? | Change card status (blocked by unmet dependencies + bug test requirements) |
+| `okto_pulse_move_card` | board_id, card_id, status, position?, **conclusion?**, **completeness?**, **completeness_justification?**, **drift?**, **drift_justification?** | Change card status. **When status=done**: conclusion + completeness + drift are REQUIRED (see "Card Status Transitions" above). System enforces gates — read the transition table first. |
 | `okto_pulse_delete_card` | board_id, card_id | Remove a card |
 | `okto_pulse_list_cards_by_status` | board_id, status? | List cards, optionally filtered |
 
@@ -1384,6 +1475,164 @@ Card creation does NOT auto-propagate. Use `okto_pulse_copy_mockups_to_card` and
 
 ### Best practice:
 Always use create/derive with parent ID instead of creating orphan entities. This ensures context, decisions, and visual artifacts flow through the pipeline.
+
+## Knowledge Graph — Consolidation, Query, and Discovery
+
+The Okto Pulse platform includes an incremental knowledge graph (KG) layer that captures decisions, criteria, constraints, learnings, and relationships extracted from board artifacts (specs, sprints, Q&A). The KG is embedded (Kuzu + SQLite) and runs in the same process — no external infrastructure.
+
+### Architecture Overview
+
+- **Per-board Kuzu graph** at `~/.okto-pulse/boards/{board_id}/graph.kuzu` — 11 node types, 10 relationship types, 5 HNSW vector indexes
+- **Global discovery meta-graph** at `~/.okto-pulse/global/discovery.kuzu` — board summaries, topic clusters, canonical entities (digest-only, no sensitive content)
+- **SQLite operational tables**: `consolidation_queue` (pending triggers), `consolidation_audit` (session history), `kuzu_node_refs` (back-references for undo), `global_update_outbox` (eventual consistency to global layer)
+- **Agent-as-LLM premise**: the platform NEVER invokes LLM. All cognitive work (extraction, reasoning, reconciliation decisions) is done by YOU, the code agent. The platform provides deterministic primitives and hints.
+
+### Consolidation Primitives (7 tools)
+
+Use these to consolidate knowledge from completed artifacts into the KG. The flow is session-based and transactional.
+
+| Tool | Args | Purpose |
+|------|------|---------|
+| `okto_pulse_kg_begin_consolidation` | board_id, artifact_type, artifact_id, raw_content, deterministic_candidates? | Open a transactional session. Returns session_id + SHA256 dedup (nothing_changed flag). |
+| `okto_pulse_kg_add_node_candidate` | session_id, candidate (candidate_id, node_type, title, content, confidence) | Add a node candidate to the in-flight session. Not persisted until commit. |
+| `okto_pulse_kg_add_edge_candidate` | session_id, candidate (candidate_id, edge_type, from_candidate_id, to_candidate_id, confidence) | Add an edge. Endpoints reference in-session candidates or existing nodes via `kg:` prefix. |
+| `okto_pulse_kg_get_similar_nodes` | session_id, candidate_id, top_k?, min_similarity? | HNSW vector search against existing graph. Use to check if a candidate already exists before adding. |
+| `okto_pulse_kg_propose_reconciliation` | session_id | Server computes deterministic hints: ADD (new), UPDATE (same entity changed), SUPERSEDE (replaced), NOOP (unchanged). |
+| `okto_pulse_kg_commit_consolidation` | session_id, summary_text?, agent_overrides? | Atomically write to Kuzu + audit row + outbox event. Compensating delete on failure. |
+| `okto_pulse_kg_abort_consolidation` | session_id, reason? | Drop the session without writing. No side effects. |
+
+**Consolidation workflow:**
+1. Call `begin_consolidation` with the artifact content. If `nothing_changed=true`, you can skip (artifact hasn't changed since last consolidation).
+2. Extract nodes from the artifact: Decisions, Criteria, Constraints, Assumptions, Learnings, Alternatives, etc. Use `add_node_candidate` for each.
+3. Extract relationships: supersedes, contradicts, derives_from, depends_on, etc. Use `add_edge_candidate`.
+4. For important candidates, call `get_similar_nodes` to check for duplicates.
+5. Call `propose_reconciliation` — the server returns deterministic ADD/UPDATE/SUPERSEDE/NOOP hints. Override any hint you disagree with via `agent_overrides` in commit.
+6. Call `commit_consolidation` with a summary. Done.
+7. If anything goes wrong, call `abort_consolidation`.
+
+### Tier Primario Query Tools (9 tools)
+
+Intent-based tools for the most common KG queries (~80% of use cases). Use these to enrich your understanding of a board's context.
+
+| Tool | Args | Purpose |
+|------|------|---------|
+| `okto_pulse_kg_get_decision_history` | board_id, topic, min_confidence?, max_rows? | Trace decisions about a topic over time |
+| `okto_pulse_kg_get_related_context` | board_id, artifact_id, min_confidence?, max_rows? | 2-hop neighborhood: prior decisions, criteria, bugs, alternatives for an artifact |
+| `okto_pulse_kg_get_supersedence_chain` | board_id, decision_id | What superseded what — full chain up to depth 10 |
+| `okto_pulse_kg_find_contradictions` | board_id, node_id?, max_rows? | Contradictory decision pairs. Empty node_id = all pairs. |
+| `okto_pulse_kg_find_similar_decisions` | board_id, topic, top_k?, min_similarity? | Semantic search with hybrid ranking (0.5 semantic + 0.2 centrality + 0.2 recency + 0.1 confidence) |
+| `okto_pulse_kg_explain_constraint` | board_id, constraint_id | Origin (spec/decision), related constraints, violations (bugs) |
+| `okto_pulse_kg_list_alternatives` | board_id, decision_id, max_rows? | Alternatives considered and discarded for a decision |
+| `okto_pulse_kg_get_learning_from_bugs` | board_id, area, min_confidence?, max_rows? | Lessons learned from bugs in a specific area |
+| `okto_pulse_kg_query_global` | board_id?, nl_query, top_k? | Cross-board semantic search. ACL-filtered. |
+
+**When to use query tools:**
+- Before creating a new spec/refinement: call `find_similar_decisions` and `get_related_context` to understand prior art
+- Before answering a Q&A question: call `get_decision_history` to check if the topic was already decided
+- When reviewing a spec: call `find_contradictions` to detect conflicting decisions
+- When investigating a bug: call `get_learning_from_bugs` to see if the same area had issues before
+- When starting work on a card: call `get_related_context` with the spec's artifact_id
+
+### Tier Power Escape Hatch (3 tools)
+
+Flexible query tools for the ~20% of cases that don't fit the intent-based tools above.
+
+| Tool | Args | Purpose |
+|------|------|---------|
+| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms? | Read-only Cypher directly on Kuzu. Parser whitelist rejects writes. Auto-injects LIMIT. |
+| `okto_pulse_kg_query_natural` | board_id, nl_query, limit?, min_confidence? | Natural language search via embedding + HNSW. No LLM — deterministic hybrid search. |
+| `okto_pulse_kg_schema_info` | board_id?, include_internal? | Schema introspection: node types, rel types, vector indexes. Use to write correct Cypher. |
+
+**Safety rails applied to all tier power queries:**
+- Timeout: 5s default, 30s max
+- Max rows: 1000 default, 10000 max
+- Rate limit: 30 queries/min per agent
+- Cypher injection: blacklist keywords (CREATE/DELETE/SET/MERGE/DROP) rejected, comments stripped, unicode normalized
+
+### Node Types (11)
+
+Decision, Criterion, Constraint, Assumption, Requirement, Entity, APIContract, TestScenario, Bug, Learning, Alternative
+
+### Relationship Types (10)
+
+supersedes, contradicts, derives_from, relates_to, mentions, depends_on, violates, implements, tests, validates
+
+### Reconciliation Rules
+
+When `propose_reconciliation` runs, it applies these deterministic rules:
+1. **NOOP** — SHA256 content hash matches the last committed session (artifact unchanged)
+2. **UPDATE** — candidate's stable_id (source_artifact_ref) matches an existing node, OR semantic similarity >= 0.95
+3. **SUPERSEDE** — semantic similarity in [0.85, 0.95) — existing node is likely being replaced
+4. **ADD** — no match found, new knowledge
+
+You can override any hint in `commit_consolidation.agent_overrides` when your semantic reading disagrees (e.g., promoting UPDATE to SUPERSEDE because the justification narrative makes clear a reversal).
+
+### When to Consolidate
+
+- After a spec moves to `done` or `approved` — consolidate its decisions, criteria, constraints
+- After a sprint closes — consolidate learnings and retrospective
+- After answering Q&A with significant decisions — consolidate the decision + rationale
+- The `consolidation_queue` table tracks pending artifacts; use `get_unseen_summary` to discover what needs consolidation
+
+### Anti-Patterns — What NOT to Do
+
+These are common mistakes that degrade the knowledge graph quality. Avoid them.
+
+**Consolidation anti-patterns:**
+
+| Anti-pattern | Why it's wrong | Correct approach |
+|---|---|---|
+| **Skipping consolidation after spec done** | Decisions and criteria rot in the spec text, invisible to future queries. Next agent working on a related area reinvents the same decisions or contradicts them unknowingly. | Always consolidate when a spec reaches `done` or `approved`. Check `consolidation_queue` on every session start. |
+| **Consolidating only the title** | A Decision node with just a title and no content/justification is useless — `find_similar_decisions` matches it but provides zero context to the querying agent. | Extract title + content + justification + source_artifact_ref for every node. The justification is where the actual value lives. |
+| **Ignoring `nothing_changed=true`** | Re-consolidating unchanged artifacts creates duplicate audit rows, wastes tokens, and can produce duplicate HNSW entries that pollute similarity search. | When `begin_consolidation` returns `nothing_changed=true`, abort immediately. The artifact hasn't changed since last consolidation. |
+| **Accepting all reconciliation hints blindly** | The server's deterministic hints are a baseline, not gospel. They don't read justification text. A server-suggested UPDATE might actually be a SUPERSEDE if the narrative says "we reversed this decision". | Always read `propose_reconciliation` hints critically. Override via `agent_overrides` when your semantic understanding disagrees. This is the cognitive work only you can do. |
+| **Adding nodes without checking for duplicates** | Creates ghost duplicates that fragment the graph — `find_similar_decisions` returns 3 copies of the same decision, each with partial context. The graph becomes noisy and unreliable. | Call `get_similar_nodes` before `add_node_candidate` for any non-trivial node. If similarity > 0.85, it probably already exists — use UPDATE or SUPERSEDE instead of ADD. |
+| **Leaving sessions open** | Sessions have a TTL (default 1h) but an open session holds in-memory state. Abandoned sessions waste memory and clutter the session manager. | Always call `commit_consolidation` or `abort_consolidation`. Never let a session expire by TTL — that's a resource leak, not a feature. |
+| **Consolidating only Decisions** | A Decision without its Constraints, Criteria, and Alternatives is a floating assertion. "We chose Kuzu" is useless without "because embedded + Cypher + HNSW" (constraint: no Docker) and "rejected Neo4j" (alternative). | Extract the full constellation: Decision + Constraints that drove it + Criteria it satisfies + Alternatives that were rejected + Learnings from past attempts. |
+| **Using tier power `query_cypher` for routine queries** | Bypasses the cache, doesn't benefit from default filters, and generates audit noise in `tier_power_audit`. Also couples your code to Kuzu's Cypher dialect. | Use the 9 tier primario tools for routine queries. Reserve `query_cypher` for ad-hoc exploration and edge cases the intent-based tools don't cover. |
+
+**Query anti-patterns:**
+
+| Anti-pattern | Why it's wrong | Correct approach |
+|---|---|---|
+| **Not querying KG before creating new specs** | You create a spec about "auth token rotation" without knowing the board already has 3 prior decisions about auth. The new spec contradicts or duplicates existing knowledge. | Before any new spec/refinement, call `find_similar_decisions(topic)` and `get_related_context(artifact_id)`. Reference prior decisions in the new spec's Q&A. |
+| **Ignoring contradictions** | Two contradictory decisions coexist in the graph — one says "use JWT with HttpOnly cookies", the other says "use opaque tokens via Clerk". Agents downstream get inconsistent context. | Periodically call `find_contradictions()` on active boards. When found, raise a Q&A question to the board owner and consolidate the resolution as a SUPERSEDE. |
+| **Querying with empty topic** | `get_decision_history(topic="")` returns everything, unranked. Useless for context — you get 100 random decisions. | Always provide a specific topic. Multiple narrow queries beat one broad query. |
+| **Not using `query_global` for cross-board context** | You work on board-B without knowing board-A already solved the same problem. Duplicated effort across boards. | When starting work on a new area, call `query_global(nl_query)` to discover if other accessible boards have relevant context. |
+
+### Consequences of Neglecting Consolidation
+
+The knowledge graph's value is proportional to the discipline of consolidation. Here's what degrades when consolidation is skipped or done poorly:
+
+**1. Context amnesia across sessions**
+Without consolidation, every new agent session starts from zero. The agent reads specs and Q&A raw text — slow, expensive (tokens), and lossy (the agent might miss a decision buried in paragraph 47 of a long Q&A thread). The KG is the structured, queryable memory that persists across sessions.
+
+**2. Contradictory decisions accumulate silently**
+When decisions are not consolidated, there's no mechanism to detect contradictions. Board-A decides "use SQLite for state" while board-B decides "use PostgreSQL for the same component". Without `find_contradictions` and cross-board `query_global`, these conflicts surface only at integration time — expensive to fix, trust-eroding.
+
+**3. Repeated mistakes and circular discussions**
+Without `get_learning_from_bugs(area)`, the same bugs recur. A team discusses "should we cache auth tokens?" for the third time because the first two discussions (and their conclusions) were never consolidated. Q&A threads grow longer but the institutional memory doesn't.
+
+**4. Decision provenance is lost**
+When someone asks "why did we choose Kuzu over Neo4j?", the answer should be a `get_supersedence_chain` call away. Without consolidation, the answer is "grep through 200 Q&A responses and hope someone remembers". The KG preserves the chain: Decision → Constraint → Alternative (rejected) → Learning — the full reasoning graph.
+
+**5. Similarity search degrades for everyone**
+`find_similar_decisions` relies on the HNSW vector index. If only 10% of decisions are consolidated, the index is sparse and similarity results are unreliable. Agents stop trusting the KG and fall back to reading raw text — defeating the purpose of the entire layer.
+
+**6. Historical consolidation becomes expensive**
+The longer you wait to consolidate, the more artifacts pile up in `consolidation_queue`. A board with 50 un-consolidated specs means 50 sessions of extraction work, each consuming agent tokens. Incremental consolidation (consolidate each spec as it's done) is O(1) per artifact. Backfill is O(N) and painful.
+
+**7. Right-to-erasure becomes incomplete**
+LGPD/GDPR right-to-erasure relies on the KG tracking which data came from which source via `source_artifact_ref` and `source_session_id`. If some decisions were never consolidated (they only exist in raw text), `DELETE /api/kg/boards/{bid}/kg` doesn't erase them — they're still in the spec text. Consolidated data has clean provenance for complete erasure.
+
+**Bottom line:** consolidation is not optional maintenance — it's the mechanism that transforms ephemeral conversation into persistent institutional knowledge. An unconsolidated board is a board with amnesia.
+
+### Privacy & Compliance
+
+- Per-board KG data is isolated in separate Kuzu files
+- Global discovery layer contains ONLY digests (title + summary + pointer) — never full content
+- ACL is server-side: `check_board_access` runs before every query, never client-side
+- Right-to-erasure: `DELETE /api/kg/boards/{bid}/kg` wipes Kuzu file + global cascade + audit purge
 
 ## Rules
 

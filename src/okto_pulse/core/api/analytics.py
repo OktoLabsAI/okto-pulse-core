@@ -650,6 +650,34 @@ async def analytics_overview(
 
     avg_triage_hours = round(sum(triage_times) / len(triage_times), 1) if triage_times else None
 
+    # Fallback: use validation scores if conclusion-based averages are empty
+    if avg_completeness is None and task_validation_gate["avg_scores"]["completeness"] is not None:
+        avg_completeness = task_validation_gate["avg_scores"]["completeness"]
+    if avg_drift is None and task_validation_gate["avg_scores"]["drift"] is not None:
+        avg_drift = task_validation_gate["avg_scores"]["drift"]
+
+    # Cycle time: avg hours from created_at to updated_at for done cards
+    cycle_times: list[float] = []
+    for c in done_cards:
+        if c.created_at and c.updated_at:
+            ct = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
+            cycle_times.append(ct)
+    avg_cycle_hours = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None
+
+    def _lifecycle_ct(items, done_status_str: str) -> float | None:
+        times = []
+        for item in items:
+            if str(item.status) == done_status_str and item.created_at and item.updated_at:
+                times.append((item.updated_at - item.created_at).total_seconds() / 3600.0)
+        return round(sum(times) / len(times), 1) if times else None
+
+    cycle_time_by_level = {
+        "ideation": _lifecycle_ct(ideations, str(IdeationStatus.DONE)),
+        "spec": _lifecycle_ct(specs, str(SpecStatus.DONE)),
+        "sprint": _lifecycle_ct(sprints, str(SprintStatus.CLOSED)),
+        "card": avg_cycle_hours,
+    }
+
     return {
         "total_ideations": len(ideations),
         "ideations_done": ideations_done,
@@ -667,9 +695,12 @@ async def analytics_overview(
         "total_cards_impl": len(impl_cards),
         "total_cards_test": len(test_cards),
         "total_cards_bug": len(bug_cards_all),
-        # Self-reported quality (averages across card.conclusions)
+        # Self-reported quality (with validation fallback)
         "avg_completeness": avg_completeness,
         "avg_drift": avg_drift,
+        # Cycle time
+        "avg_cycle_hours": avg_cycle_hours,
+        "cycle_time": cycle_time_by_level,
         # Validation gates — reviewer-reported metrics
         "spec_validation_gate": spec_validation_gate,
         "task_validation_gate": task_validation_gate,

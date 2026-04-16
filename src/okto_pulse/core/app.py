@@ -44,8 +44,21 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await init_db()
-        yield
-        await close_db()
+        # Start the KG session cleanup worker if enabled. Safe to call even
+        # when the KG layer is unused — the worker just sweeps an empty
+        # SessionManager and costs one asyncio.sleep per interval.
+        cleanup_worker = None
+        if getattr(settings, "kg_cleanup_enabled", True):
+            from okto_pulse.core.kg.workers import get_cleanup_worker
+
+            cleanup_worker = get_cleanup_worker()
+            await cleanup_worker.start()
+        try:
+            yield
+        finally:
+            if cleanup_worker is not None:
+                await cleanup_worker.stop()
+            await close_db()
 
     app = FastAPI(
         title=settings.app_name,

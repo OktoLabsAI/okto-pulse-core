@@ -1,0 +1,76 @@
+"""Shared fixtures for the KG foundation test suite."""
+
+import asyncio
+import os
+import sys
+import tempfile
+
+import pytest
+import pytest_asyncio
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+# Set env before any okto_pulse import
+_tmpdb = tempfile.mktemp(suffix=".db")
+_kg_dir = tempfile.mkdtemp(prefix="okto_kg_test_")
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_tmpdb}"
+os.environ["KG_BASE_DIR"] = _kg_dir
+os.environ["KG_CLEANUP_INTERVAL_SECONDS"] = "1"
+os.environ["KG_CLEANUP_ENABLED"] = "false"
+
+from okto_pulse.core.infra.database import (  # noqa: E402
+    create_database,
+    get_engine,
+    get_session_factory,
+    init_db,
+)
+from okto_pulse.core.kg.embedding import reset_embedding_provider_cache  # noqa: E402
+from okto_pulse.core.kg.schema import bootstrap_board_graph  # noqa: E402
+from okto_pulse.core.kg.session_manager import reset_session_manager_for_tests  # noqa: E402
+from okto_pulse.core.kg.workers import reset_cleanup_worker_for_tests  # noqa: E402
+from okto_pulse.core.models import db as _models  # noqa: E402, F401
+
+
+AGENT_ID = "agent-test-001"
+BOARD_ID = "board-test-001"
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _db_init():
+    create_database(f"sqlite+aiosqlite:///{_tmpdb}", echo=False)
+    await init_db()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_singletons():
+    reset_session_manager_for_tests()
+    reset_cleanup_worker_for_tests()
+    reset_embedding_provider_cache()
+
+
+@pytest.fixture
+def board_id():
+    return BOARD_ID
+
+
+@pytest.fixture
+def agent_id():
+    return AGENT_ID
+
+
+@pytest.fixture
+def db_factory():
+    return get_session_factory()
+
+
+@pytest.fixture
+def board_handle():
+    return bootstrap_board_graph(BOARD_ID)

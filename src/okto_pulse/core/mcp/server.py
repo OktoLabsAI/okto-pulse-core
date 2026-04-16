@@ -6237,6 +6237,8 @@ async def okto_pulse_get_analytics(
             return json.dumps({"error": "Board not found"})
 
         if metric_type == "overview":
+            from okto_pulse.core.models.db import Sprint, SprintStatus
+
             # Ideations
             ideation_q = select(Ideation).where(Ideation.board_id == board_id)
             if dt_from:
@@ -6245,6 +6247,14 @@ async def okto_pulse_get_analytics(
                 ideation_q = ideation_q.where(Ideation.created_at <= dt_to)
             ideations = list((await db.execute(ideation_q)).scalars().all())
 
+            # Refinements
+            refinement_q = select(Refinement).where(Refinement.board_id == board_id)
+            if dt_from:
+                refinement_q = refinement_q.where(Refinement.created_at >= dt_from)
+            if dt_to:
+                refinement_q = refinement_q.where(Refinement.created_at <= dt_to)
+            refinements = list((await db.execute(refinement_q)).scalars().all())
+
             # Specs
             spec_q = select(Spec).where(Spec.board_id == board_id)
             if dt_from:
@@ -6252,6 +6262,14 @@ async def okto_pulse_get_analytics(
             if dt_to:
                 spec_q = spec_q.where(Spec.created_at <= dt_to)
             specs = list((await db.execute(spec_q)).scalars().all())
+
+            # Sprints
+            sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+            if dt_from:
+                sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
+            if dt_to:
+                sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
+            sprints = list((await db.execute(sprint_q)).scalars().all())
 
             # Cards
             card_q = select(Card).where(Card.board_id == board_id)
@@ -6264,7 +6282,9 @@ async def okto_pulse_get_analytics(
             impl_cards = [c for c in cards if not _is_test(c)]
             test_cards = [c for c in cards if _is_test(c)]
             done_cards = [c for c in cards if c.status == CardStatus.DONE]
+            bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
 
+            # --- Self-reported quality (from card.conclusions) ---
             comp_vals = []
             drift_vals = []
             for c in cards:
@@ -6274,29 +6294,125 @@ async def okto_pulse_get_analytics(
                 if concl and "drift" in concl:
                     drift_vals.append(concl["drift"])
 
+            avg_completeness = round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None
+            avg_drift = round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None
+
+            # --- Task Validation Gate (from card.validations) ---
+            tv_submitted = 0
+            tv_success = 0
+            tv_failed = 0
+            tv_conf = []
+            tv_comp = []
+            tv_drift = []
+            tv_cards_with = 0
+            for c in cards:
+                vals = getattr(c, "validations", None) or []
+                if not isinstance(vals, list) or not vals:
+                    continue
+                tv_cards_with += 1
+                for v in vals:
+                    if not isinstance(v, dict):
+                        continue
+                    tv_submitted += 1
+                    outcome = v.get("outcome")
+                    verdict = v.get("verdict")
+                    if outcome == "success" or verdict == "pass":
+                        tv_success += 1
+                    elif outcome == "failed" or verdict == "fail":
+                        tv_failed += 1
+                    if v.get("confidence") is not None:
+                        tv_conf.append(int(v["confidence"]))
+                    comp_v = v.get("completeness") if v.get("completeness") is not None else v.get("estimated_completeness")
+                    if comp_v is not None:
+                        tv_comp.append(int(comp_v))
+                    drift_v = v.get("drift") if v.get("drift") is not None else v.get("estimated_drift")
+                    if drift_v is not None:
+                        tv_drift.append(int(drift_v))
+
+            task_validation_gate = {
+                "total_submitted": tv_submitted,
+                "total_success": tv_success,
+                "total_failed": tv_failed,
+                "success_rate": round(tv_success / tv_submitted * 100, 1) if tv_submitted else None,
+                "avg_scores": {
+                    "confidence": round(sum(tv_conf) / len(tv_conf), 1) if tv_conf else None,
+                    "completeness": round(sum(tv_comp) / len(tv_comp), 1) if tv_comp else None,
+                    "drift": round(sum(tv_drift) / len(tv_drift), 1) if tv_drift else None,
+                },
+                "cards_with_validation": tv_cards_with,
+            }
+
+            # Fallback: use validation scores if conclusion-based averages are empty
+            if avg_completeness is None and task_validation_gate["avg_scores"]["completeness"] is not None:
+                avg_completeness = task_validation_gate["avg_scores"]["completeness"]
+            if avg_drift is None and task_validation_gate["avg_scores"]["drift"] is not None:
+                avg_drift = task_validation_gate["avg_scores"]["drift"]
+
+            # --- Cycle time (from done cards) ---
+            cycle_times = []
+            for c in done_cards:
+                if c.created_at and c.updated_at:
+                    ct = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
+                    cycle_times.append(ct)
+            avg_cycle_hours = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None
+
+            # --- Lifecycle cycle times (created_at → updated_at for done items) ---
+            def _lifecycle_cycle_time(items, done_status) -> float | None:
+                times = []
+                for item in items:
+                    if str(getattr(item, "status", "")) == str(done_status) and item.created_at and item.updated_at:
+                        times.append(round((item.updated_at - item.created_at).total_seconds() / 3600.0, 1))
+                return round(sum(times) / len(times), 1) if times else None
+
+            # --- Sprint evaluations ---
+            sprint_evals_total = 0
+            sprint_eval_scores = []
+            for sp in sprints:
+                evals = getattr(sp, "evaluations", None) or []
+                if isinstance(evals, list):
+                    sprint_evals_total += len(evals)
+                    for e in evals:
+                        if isinstance(e, dict) and e.get("overall_score") is not None:
+                            sprint_eval_scores.append(int(e["overall_score"]))
+
             funnel = {
                 "ideations": len(ideations),
+                "refinements": len(refinements),
                 "specs": len(specs),
+                "sprints": len(sprints),
                 "cards": len(cards),
                 "done": len(done_cards),
             }
 
-            # Bug metrics
-            bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
             bugs_open = sum(1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED))
 
             return json.dumps({
                 "board_id": board_id,
                 "ideation_count": len(ideations),
+                "refinement_count": len(refinements),
                 "spec_count": len(specs),
+                "sprint_count": len(sprints),
                 "task_count": {
                     "total": len(cards),
                     "impl": len(impl_cards),
                     "tests": len(test_cards),
                     "bugs": len(bug_cards),
                 },
-                "avg_completeness": round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None,
-                "avg_drift": round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None,
+                "avg_completeness": avg_completeness,
+                "avg_drift": avg_drift,
+                "avg_cycle_hours": avg_cycle_hours,
+                "cycle_time": {
+                    "ideation": _lifecycle_cycle_time(ideations, "done"),
+                    "refinement": _lifecycle_cycle_time(refinements, "done"),
+                    "spec": _lifecycle_cycle_time(specs, "done"),
+                    "sprint": _lifecycle_cycle_time(sprints, "closed"),
+                    "card": avg_cycle_hours,
+                },
+                "task_validation_gate": task_validation_gate,
+                "sprint_evaluation": {
+                    "total_submitted": sprint_evals_total,
+                    "avg_overall_score": round(sum(sprint_eval_scores) / len(sprint_eval_scores), 1) if sprint_eval_scores else None,
+                },
                 "funnel": funnel,
                 "bugs": {
                     "total": len(bug_cards),
@@ -9181,6 +9297,8 @@ async def okto_pulse_create_sprint(
     spec_id: str,
     title: str,
     description: str = "",
+    objective: str = "",
+    expected_outcome: str = "",
     test_scenario_ids: str = "",
     business_rule_ids: str = "",
     start_date: str = "",
@@ -9194,7 +9312,9 @@ async def okto_pulse_create_sprint(
         board_id: Board ID
         spec_id: Spec ID this sprint belongs to
         title: Sprint title
-        description: Sprint objective/goal (optional)
+        description: Sprint description with scope and deliverables (optional)
+        objective: What this sprint aims to achieve (optional but recommended)
+        expected_outcome: What success looks like when this sprint is done (optional but recommended)
         test_scenario_ids: Comma-separated spec test scenario IDs scoped to this sprint (optional)
         business_rule_ids: Comma-separated spec business rule IDs scoped to this sprint (optional)
         start_date: ISO date string (optional)
@@ -9225,6 +9345,8 @@ async def okto_pulse_create_sprint(
         try:
             data = SprintCreate(
                 title=title, description=description or None, spec_id=spec_id,
+                objective=objective or None,
+                expected_outcome=expected_outcome or None,
                 test_scenario_ids=[x.strip() for x in test_scenario_ids.split(",") if x.strip()] or None,
                 business_rule_ids=[x.strip() for x in business_rule_ids.split(",") if x.strip()] or None,
                 start_date=start_date or None, end_date=end_date or None,
@@ -10343,6 +10465,20 @@ async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
             }, default=str)
         except ValueError as e:
             return json.dumps({"error": str(e)})
+
+
+# ============================================================================
+# KG CONSOLIDATION PRIMITIVES (MVP Fase 0)
+# ============================================================================
+
+from okto_pulse.core.mcp.kg_tools import register_kg_tools as _register_kg_tools
+from okto_pulse.core.mcp.kg_query_tools import register_kg_query_tools as _register_kg_query_tools
+
+_register_kg_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
+_register_kg_query_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
+
+from okto_pulse.core.mcp.kg_power_tools import register_kg_power_tools as _register_kg_power_tools
+_register_kg_power_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
 
 
 # ============================================================================

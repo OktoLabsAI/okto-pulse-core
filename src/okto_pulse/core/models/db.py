@@ -1317,3 +1317,143 @@ class ActivityLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Graph Foundation (MVP Fase 0)
+# ---------------------------------------------------------------------------
+# Four operational tables that bridge SQLite state to the per-board Kùzu
+# graphs: consolidation_queue (pending triggers), consolidation_audit (session
+# history + undo), kuzu_node_refs (back-references for compensating delete),
+# global_update_outbox (transactional outbox for the global discovery layer).
+
+
+class ConsolidationQueue(Base):
+    """Pending consolidation triggers — populated by state transitions,
+    consumed by the agent on-demand via the primitives MCP."""
+
+    __tablename__ = "consolidation_queue"
+    __table_args__ = (
+        UniqueConstraint(
+            "board_id", "artifact_type", "artifact_id",
+            name="uq_queue_board_artifact",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    priority: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="high"
+    )  # "high" (runtime trigger) | "low" (historical backfill)
+    source: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="state_transition"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", index=True,
+    )  # pending | claimed | done | paused | failed
+    triggered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    triggered_by_event: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    claimed_by_session_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ConsolidationAudit(Base):
+    """Per-session audit trail — primary log of every consolidation commit.
+    session_id is the PK because everything else (kuzu_node_refs, undo chain)
+    joins back here."""
+
+    __tablename__ = "consolidation_audit"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    committed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True,
+    )
+    nodes_added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    nodes_updated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    nodes_superseded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    edges_added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    undo_status: Mapped[str] = mapped_column(
+        String(20), default="none", nullable=False
+    )  # none | undone | undo_blocked
+    undone_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class KuzuNodeRef(Base):
+    """Back-reference from SQLite to Kùzu nodes created by a session.
+    Powers compensating delete on abort and undo on demand."""
+
+    __tablename__ = "kuzu_node_refs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("consolidation_audit.session_id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    board_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    kuzu_node_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    kuzu_node_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    operation: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # add | update | supersede
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class GlobalUpdateOutbox(Base):
+    """Transactional outbox for the global discovery layer sync worker.
+    Events are INSERTed in the same SQLite transaction as the audit row;
+    a background worker later drains them into the global Kùzu meta-graph
+    with retry + dead-letter semantics."""
+
+    __tablename__ = "global_update_outbox"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    board_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True,
+    )
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
