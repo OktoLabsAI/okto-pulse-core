@@ -39,3 +39,28 @@ jobs:
         run: |
           pip install pytest
           pytest -v || true
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit
+
+      - name: Secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
