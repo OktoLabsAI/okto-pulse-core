@@ -974,20 +974,57 @@ async def stream_kg_events(
     entire outbox backlog. Absence ⇒ start from now().
     """
     import asyncio as _asyncio
+    import uuid as _uuid
     from datetime import datetime as _dt, timezone as _tz
 
-    from sqlalchemy import and_, asc, select as _select
+    from sqlalchemy import and_, asc, func, select as _select
 
-    from okto_pulse.core.models.db import GlobalUpdateOutbox
+    from okto_pulse.core.models.db import ConsolidationQueue, GlobalUpdateOutbox
 
     try:
         cursor = _dt.fromisoformat(since) if since else _dt.now(_tz.utc)
     except ValueError:
         raise HTTPException(status_code=400, detail="since must be ISO 8601")
 
+    async def _queue_snapshot() -> dict[str, int]:
+        """Counters for `ConsolidationQueue` rows scoped to this board."""
+        rows = (await db.execute(
+            _select(ConsolidationQueue.status, func.count())
+            .where(ConsolidationQueue.board_id == board_id)
+            .group_by(ConsolidationQueue.status)
+        )).all()
+        snap = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
+        for status, count in rows:
+            if status in snap:
+                snap[status] = int(count)
+        snap["total"] = sum(snap.values())
+        return snap
+
     async def _iter():
         # Initial heartbeat so the client knows the connection is alive.
         yield "event: hello\ndata: {}\n\n"
+        # Emit an initial progress snapshot so the client can render the
+        # toast immediately instead of waiting for the first change.
+        try:
+            initial = await _queue_snapshot()
+            yield (
+                "event: kg.queue.progress\n"
+                "data: "
+                + json.dumps(
+                    {
+                        "event_id": f"progress:{_uuid.uuid4().hex}",
+                        "event_type": "kg.queue.progress",
+                        "created_at": _dt.now(_tz.utc).isoformat(),
+                        "payload": initial,
+                    },
+                    default=str,
+                )
+                + "\n\n"
+            )
+            last_progress = initial
+        except Exception:
+            last_progress = None
+
         last_seen = cursor
         while True:
             rows = (await db.execute(
@@ -1009,6 +1046,31 @@ async def stream_kg_events(
                     f"data: {json.dumps(payload, default=str)}\n\n"
                 )
                 last_seen = row.created_at or last_seen
+
+            # Emit progress whenever queue counters change. Saves bandwidth
+            # on idle boards while keeping the UI chip authoritative.
+            try:
+                snap = await _queue_snapshot()
+                if snap != last_progress:
+                    yield (
+                        "event: kg.queue.progress\n"
+                        "data: "
+                        + json.dumps(
+                            {
+                                "event_id": f"progress:{_uuid.uuid4().hex}",
+                                "event_type": "kg.queue.progress",
+                                "created_at": _dt.now(_tz.utc).isoformat(),
+                                "payload": snap,
+                            },
+                            default=str,
+                        )
+                        + "\n\n"
+                    )
+                    last_progress = snap
+            except Exception:
+                # Snapshot is best-effort — never break the stream over it.
+                pass
+
             # Keepalive comment every poll so proxies don't drop the
             # connection in between committed bursts.
             yield ": keepalive\n\n"
@@ -1107,6 +1169,17 @@ async def retry_pending_entry(
             reopened.append(row.id)
 
     await db.commit()
+
+    # Fase 4 — wake the background worker so retried rows are picked up
+    # immediately instead of waiting for the heartbeat tick.
+    try:
+        from okto_pulse.core.kg.workers.consolidation import (
+            signal_consolidation_worker,
+        )
+        signal_consolidation_worker()
+    except Exception:  # pragma: no cover — signal is best-effort
+        pass
+
     return {
         "board_id": board_id,
         "queue_entry_id": queue_entry_id,

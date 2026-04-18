@@ -241,28 +241,58 @@ async def _process_queue_entry(
 
 
 class ConsolidationWorker:
-    """Async background worker that polls consolidation_queue and processes
-    pending entries through the deterministic Layer 1 pipeline."""
+    """Async background worker that drains consolidation_queue through the
+    deterministic Layer 1 pipeline.
 
-    def __init__(self, session_factory, interval_seconds: int = 10, batch_size: int = 5):
+    Trigger model (Fase 4): primarily event-driven via an internal
+    `asyncio.Event` that enqueue sites signal on. The `heartbeat_seconds`
+    sleep is a safety-net so the worker still wakes up periodically even
+    when the signal is dropped (e.g. singleton was restarted mid-flight).
+    """
+
+    def __init__(
+        self,
+        session_factory,
+        heartbeat_seconds: int = 30,
+        batch_size: int = 5,
+    ):
         self.session_factory = session_factory
-        self.interval_seconds = interval_seconds
+        self.heartbeat_seconds = heartbeat_seconds
         self.batch_size = batch_size
         self._task: asyncio.Task | None = None
         self._running = False
+        # Lazily created in start() so the event binds to the running loop.
+        self._wake_event: asyncio.Event | None = None
 
     @property
     def is_running(self) -> bool:
         return self._running and self._task is not None and not self._task.done()
 
+    def signal_new_work(self) -> None:
+        """Wake the run-loop now. Safe to call from any coroutine in the
+        same event loop — used by enqueue sites to get near-instant
+        processing without waiting for the heartbeat."""
+        evt = self._wake_event
+        if evt is not None:
+            try:
+                evt.set()
+            except RuntimeError:
+                # Event was bound to a different loop (tests / forked
+                # processes) — ignore, heartbeat will pick the work up.
+                pass
+
     async def start(self) -> None:
         if self.is_running:
             return
         self._running = True
+        self._wake_event = asyncio.Event()
         self._task = asyncio.create_task(
             self._run_loop(), name="kg.consolidation_worker"
         )
-        logger.info("kg.consolidation_worker.started interval=%ds", self.interval_seconds)
+        logger.info(
+            "kg.consolidation_worker.started heartbeat=%ds",
+            self.heartbeat_seconds,
+        )
 
     async def stop(self, timeout: float = 10.0) -> None:
         if not self.is_running:
@@ -276,6 +306,7 @@ class ConsolidationWorker:
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
         self._task = None
+        self._wake_event = None
         logger.info("kg.consolidation_worker.stopped")
 
     async def process_batch(self) -> int:
@@ -324,10 +355,29 @@ class ConsolidationWorker:
                 try:
                     processed = await self.process_batch()
                     if processed > 0:
-                        logger.info("kg.consolidation_worker.batch processed=%d", processed)
+                        logger.info(
+                            "kg.consolidation_worker.batch processed=%d", processed,
+                        )
                 except Exception as exc:
-                    logger.error("kg.consolidation_worker.batch_failed: %s", exc, exc_info=True)
-                await asyncio.sleep(self.interval_seconds)
+                    logger.error(
+                        "kg.consolidation_worker.batch_failed: %s", exc, exc_info=True,
+                    )
+
+                # Wait for either a wake signal or the heartbeat tick —
+                # whichever comes first. Clearing the event after wait
+                # keeps signals coalesced (many signals → one batch).
+                evt = self._wake_event
+                if evt is None:
+                    # Defensive: start() always creates the event, but if
+                    # stop() is racing we just fall back to a short sleep.
+                    await asyncio.sleep(self.heartbeat_seconds)
+                    continue
+
+                try:
+                    await asyncio.wait_for(evt.wait(), timeout=self.heartbeat_seconds)
+                except asyncio.TimeoutError:
+                    pass
+                evt.clear()
         except asyncio.CancelledError:
             pass
 
@@ -349,3 +399,11 @@ def get_consolidation_worker(session_factory=None) -> ConsolidationWorker:
 def reset_consolidation_worker_for_tests() -> None:
     global _singleton
     _singleton = None
+
+
+def signal_consolidation_worker() -> None:
+    """Module-level helper: wake the process-wide worker if one is running.
+    Enqueue sites call this right after committing new rows so the worker
+    picks them up without waiting for the heartbeat."""
+    if _singleton is not None and _singleton.is_running:
+        _singleton.signal_new_work()

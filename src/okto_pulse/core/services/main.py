@@ -241,8 +241,16 @@ async def propagate_artifacts(
         if target_qa_class and target_fk_field:
             for qa in source_qa_items:
                 _get = (lambda k: qa.get(k)) if isinstance(qa, dict) else (lambda k: getattr(qa, k, None))
-                # Only copy answered Q&A items
-                if not _get("answer"):
+                # Only copy ANSWERED Q&A items. Choice questions (choice/
+                # single_choice/multi_choice) store the answer in `selected`
+                # and leave `answer` as None — the original `if not answer`
+                # silently dropped every choice-type response, so derived
+                # entities lost the decisions made on the parent. Treat the
+                # item as answered when EITHER `answer` OR `selected` is set.
+                answer = _get("answer")
+                selected = _get("selected")
+                has_selection = bool(selected) and len(selected) > 0
+                if not answer and not has_selection:
                     continue
                 new_qa = target_qa_class(
                     **{target_fk_field: target_entity.id},
@@ -250,8 +258,8 @@ async def propagate_artifacts(
                     question_type=_get("question_type") or "text",
                     choices=_get("choices"),
                     allow_free_text=_get("allow_free_text") or False,
-                    answer=_get("answer"),
-                    selected=_get("selected"),
+                    answer=answer,
+                    selected=selected,
                     asked_by=_get("asked_by") or user_id,
                     answered_by=_get("answered_by"),
                 )
@@ -2512,23 +2520,32 @@ class SpecQAService:
         return qa
 
     async def answer_question(self, qa_id: str, user_id: str, data: SpecQAAnswer) -> SpecQAItem | None:
-        """Answer a spec Q&A question (text or choice selection)."""
+        """Answer a spec Q&A question (text or choice selection).
+        Mirrors IdeationQAService.answer_question — accepts `single_choice`
+        as alias of `choice`, and only commits when something was persisted.
+        """
         qa = await self.db.get(SpecQAItem, qa_id)
         if not qa:
             return None
 
-        if qa.question_type in ("choice", "multi_choice") and data.selected:
-            # Validate selected options
+        saved_something = False
+        choice_types = ("choice", "single_choice", "multi_choice")
+        if qa.question_type in choice_types and data.selected:
             valid_ids = {c["id"] for c in (qa.choices or [])}
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type == "choice" and len(data.selected) > 1:
+            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
                 data.selected = data.selected[:1]
             qa.selected = data.selected
+            saved_something = True
 
         if data.answer:
             qa.answer = data.answer
+            saved_something = True
+
+        if not saved_something:
+            return None
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
@@ -3298,22 +3315,40 @@ class IdeationQAService:
         return qa
 
     async def answer_question(self, qa_id: str, user_id: str, data: IdeationQAAnswer) -> IdeationQAItem | None:
-        """Answer an ideation Q&A question (text or choice selection)."""
+        """Answer an ideation Q&A question (text or choice selection).
+
+        Accepts `question_type in {"choice","single_choice","multi_choice"}`
+        — `single_choice` is treated as an alias of `choice`. Only commits
+        `answered_at`/`answered_by` when something was actually persisted,
+        otherwise returns None so the route surfaces a 404 instead of a
+        false-positive 200 (which caused the "toast says saved but the
+        question flips back to unanswered" UX bug).
+        """
         qa = await self.db.get(IdeationQAItem, qa_id)
         if not qa:
             return None
 
-        if qa.question_type in ("choice", "multi_choice") and data.selected:
+        saved_something = False
+        choice_types = ("choice", "single_choice", "multi_choice")
+        if qa.question_type in choice_types and data.selected:
             valid_ids = {c["id"] for c in (qa.choices or [])}
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type == "choice" and len(data.selected) > 1:
+            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
                 data.selected = data.selected[:1]
             qa.selected = data.selected
+            saved_something = True
 
         if data.answer:
             qa.answer = data.answer
+            saved_something = True
+        elif qa.question_type not in choice_types and data.answer == "":
+            # Explicit clear of a free-text answer.
+            qa.answer = None
+
+        if not saved_something:
+            return None
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
@@ -3850,22 +3885,32 @@ class RefinementQAService:
         return qa
 
     async def answer_question(self, qa_id: str, user_id: str, data: RefinementQAAnswer) -> RefinementQAItem | None:
-        """Answer a refinement Q&A question (text or choice selection)."""
+        """Answer a refinement Q&A question (text or choice selection).
+        Mirrors IdeationQAService.answer_question — accepts `single_choice`
+        as alias of `choice`, and only commits when something was persisted.
+        """
         qa = await self.db.get(RefinementQAItem, qa_id)
         if not qa:
             return None
 
-        if qa.question_type in ("choice", "multi_choice") and data.selected:
+        saved_something = False
+        choice_types = ("choice", "single_choice", "multi_choice")
+        if qa.question_type in choice_types and data.selected:
             valid_ids = {c["id"] for c in (qa.choices or [])}
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type == "choice" and len(data.selected) > 1:
+            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
                 data.selected = data.selected[:1]
             qa.selected = data.selected
+            saved_something = True
 
         if data.answer:
             qa.answer = data.answer
+            saved_something = True
+
+        if not saved_something:
+            return None
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
