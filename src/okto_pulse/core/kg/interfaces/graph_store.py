@@ -15,7 +15,10 @@ from typing import Any, Protocol, runtime_checkable
 class QueryFilters:
     min_confidence: float = 0.5
     max_rows: int = 100
-    validation_status_exclude: str = "unvalidated"
+    # v0.3.0: validation_status_exclude is preserved as a no-op for
+    # backwards compat across call-sites; R3 introduces `min_relevance`
+    # alongside it once the scoring pipeline lands.
+    validation_status_exclude: str = ""
 
 
 @runtime_checkable

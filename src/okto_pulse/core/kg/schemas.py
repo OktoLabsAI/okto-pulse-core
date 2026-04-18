@@ -48,12 +48,6 @@ class KGEdgeType(str, Enum):
     BELONGS_TO = "belongs_to"
 
 
-class ValidationStatus(str, Enum):
-    UNVALIDATED = "unvalidated"
-    CORROBORATED = "corroborated"
-    HUMAN_VALIDATED = "human_validated"
-
-
 class ReconciliationOperation(str, Enum):
     ADD = "ADD"
     UPDATE = "UPDATE"
@@ -86,7 +80,12 @@ class NodeCandidate(BaseModel):
     justification: str | None = None
     source_artifact_ref: str | None = None
     source_confidence: float = Field(0.7, ge=0.0, le=1.0)
-    validation_status: ValidationStatus = ValidationStatus.UNVALIDATED
+    # v0.3.0: continuous score replacing validation_status. Starts neutral
+    # (0.5) for fresh candidates; R2's scoring pipeline recomputes on commit
+    # based on source_confidence, edge degree, query hits, and contradictions.
+    # Range [0.0, 1.5] — the upper bound >1.0 lets frequently-hit nodes rise
+    # above their source_confidence cap.
+    relevance_score: float = Field(0.5, ge=0.0, le=1.5)
 
 
 class EdgeCandidate(BaseModel):

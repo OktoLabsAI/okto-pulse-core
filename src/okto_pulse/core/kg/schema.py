@@ -17,7 +17,7 @@ from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
 
-SCHEMA_VERSION = "0.2.0"
+SCHEMA_VERSION = "0.3.0"
 
 # Provenance metadata required on every rel (KG Pipeline v2 — spec c48a5c33).
 # `layer` is a closed enum validated by the worker/agent and the layer_isolation
@@ -104,6 +104,11 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
 # Common attributes shared across every node type — written once in the DDL
 # template below. Embedding is always declared even on types without a vector
 # index so nothing breaks if a future tool queries similarity on them.
+#
+# v0.3.0 replaced the binary validation_status + corroboration_count pair with
+# a continuous `relevance_score` plus usage telemetry (query_hits,
+# last_queried_at). See `docs/migrations/v0.3.0.md` for the rationale and the
+# R2 scoring pipeline that consumes these fields.
 _COMMON_NODE_ATTRS = """
     id STRING PRIMARY KEY,
     title STRING,
@@ -115,13 +120,28 @@ _COMMON_NODE_ATTRS = """
     created_at TIMESTAMP,
     created_by_agent STRING,
     source_confidence DOUBLE,
-    validation_status STRING,
-    corroboration_count INT64,
+    relevance_score DOUBLE,
+    query_hits INT64,
+    last_queried_at STRING,
     superseded_by STRING,
     superseded_at TIMESTAMP,
     revocation_reason STRING,
     embedding DOUBLE[384]
 """.strip()
+
+# Columns added in v0.3.0 — used by the migration probe and ALTER TABLE path
+# when the node table already exists but lacks the new columns. Kùzu accepts
+# ALTER TABLE ADD for nullable columns without DEFAULT, which is enough since
+# primitives.py always supplies values at insert time.
+RELEVANCE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("relevance_score", "DOUBLE"),
+    ("query_hits", "INT64"),
+    ("last_queried_at", "STRING"),
+)
+
+# Columns removed in v0.3.0. Kùzu v0.6 has no ALTER TABLE DROP COLUMN, so the
+# migration strategy is dump→drop→create→bulk-insert when these are detected.
+LEGACY_NODE_COLUMNS: tuple[str, ...] = ("validation_status", "corroboration_count")
 
 
 @dataclass(frozen=True)
@@ -272,6 +292,254 @@ def _board_meta_ddl() -> str:
     )
 
 
+def _ensure_relevance_columns(conn, node_type: str) -> list[str]:
+    """ALTER TABLE ADD for every v0.3.0 column missing on ``node_type``.
+
+    Returns the list of columns actually added. Kùzu raises on duplicate ADD
+    so we catch-and-continue — the operation is idempotent. Used when the
+    node table already exists but was bootstrapped under v0.2.0.
+    """
+    added: list[str] = []
+    for col_name, col_type in RELEVANCE_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE {node_type} ADD {col_name} {col_type}")
+            added.append(col_name)
+        except Exception:
+            pass
+    return added
+
+
+def _backfill_relevance_defaults(conn, node_type: str) -> None:
+    """Populate the v0.3.0 columns for rows that existed before the migration.
+
+    Sets relevance_score=0.5 and query_hits=0 only where the value is NULL,
+    keeping the migration re-runnable. last_queried_at stays NULL — it will be
+    populated organically by the R2 hit-counter path.
+    """
+    try:
+        conn.execute(
+            f"MATCH (n:{node_type}) "
+            f"WHERE n.relevance_score IS NULL "
+            f"SET n.relevance_score = 0.5"
+        )
+    except Exception as exc:
+        logger.warning(
+            "migrate_relevance.backfill_failed node=%s col=relevance_score err=%s",
+            node_type, exc,
+        )
+    try:
+        conn.execute(
+            f"MATCH (n:{node_type}) "
+            f"WHERE n.query_hits IS NULL "
+            f"SET n.query_hits = 0"
+        )
+    except Exception as exc:
+        logger.warning(
+            "migrate_relevance.backfill_failed node=%s col=query_hits err=%s",
+            node_type, exc,
+        )
+
+
+def _node_has_legacy_columns(conn, node_type: str) -> bool:
+    """Returns True iff ``node_type`` still has validation_status /
+    corroboration_count columns from v0.2.0. Uses the table info catalog.
+
+    A best-effort probe — any error is treated as "no legacy columns" so we
+    don't try to re-drop on a fresh v0.3.0 board.
+    """
+    try:
+        res = conn.execute(f"CALL TABLE_INFO('{node_type}') RETURN *")
+        cols: set[str] = set()
+        while res.has_next():
+            row = res.get_next()
+            # TABLE_INFO returns columns including "name" somewhere in the row;
+            # normalise by iterating.
+            for item in row:
+                if isinstance(item, str):
+                    cols.add(item)
+        return any(c in cols for c in LEGACY_NODE_COLUMNS)
+    except Exception:
+        return False
+
+
+def _node_has_relevance_columns(conn, node_type: str) -> bool:
+    """Returns True iff ``node_type`` already has the v0.3.0 columns."""
+    try:
+        res = conn.execute(f"CALL TABLE_INFO('{node_type}') RETURN *")
+        cols: set[str] = set()
+        while res.has_next():
+            row = res.get_next()
+            for item in row:
+                if isinstance(item, str):
+                    cols.add(item)
+        return all(c in cols for c in (name for name, _ in RELEVANCE_COLUMNS))
+    except Exception:
+        return False
+
+
+def _migrate_node_table_v030(conn, node_type: str) -> int:
+    """Drop + recreate a node table with the v0.3.0 schema, preserving rows.
+
+    Kùzu v0.6 has no ALTER TABLE DROP COLUMN, so when validation_status /
+    corroboration_count must go we have to:
+
+      1. dump every row via ``MATCH (n:Type) RETURN n.*``
+      2. ``DROP NODE TABLE Type``
+      3. ``CREATE NODE TABLE Type (...)`` with the new schema
+      4. re-insert the dumped rows, mapping legacy cols onto the new defaults
+
+    Returns the number of rows migrated (best-effort — 0 when the driver
+    doesn't expose a count). The caller is expected to recreate any vector
+    index on the table afterwards (``CREATE_VECTOR_INDEX`` is idempotent and
+    lives in ``bootstrap_board_graph``).
+    """
+    dumped: list[dict[str, Any]] = []
+    try:
+        res = conn.execute(
+            f"MATCH (n:{node_type}) RETURN n.id AS id, n.title AS title, "
+            f"n.content AS content, n.context AS context, "
+            f"n.justification AS justification, "
+            f"n.source_artifact_ref AS source_artifact_ref, "
+            f"n.source_session_id AS source_session_id, "
+            f"n.created_at AS created_at, n.created_by_agent AS created_by_agent, "
+            f"n.source_confidence AS source_confidence, "
+            f"n.superseded_by AS superseded_by, "
+            f"n.superseded_at AS superseded_at, "
+            f"n.revocation_reason AS revocation_reason, "
+            f"n.embedding AS embedding"
+        )
+        while res.has_next():
+            row = res.get_next()
+            # Row is positional — map to column names in the SELECT order.
+            dumped.append({
+                "id": row[0],
+                "title": row[1],
+                "content": row[2],
+                "context": row[3],
+                "justification": row[4],
+                "source_artifact_ref": row[5],
+                "source_session_id": row[6],
+                "created_at": row[7],
+                "created_by_agent": row[8],
+                "source_confidence": row[9],
+                "superseded_by": row[10],
+                "superseded_at": row[11],
+                "revocation_reason": row[12],
+                "embedding": row[13],
+            })
+    except Exception as exc:
+        logger.warning(
+            "migrate_v030.dump_failed node=%s err=%s — skipping table",
+            node_type, exc,
+        )
+        return 0
+
+    try:
+        conn.execute(f"DROP TABLE {node_type}")
+    except Exception as exc:
+        logger.warning(
+            "migrate_v030.drop_failed node=%s err=%s — table may be in use",
+            node_type, exc,
+        )
+        return 0
+
+    try:
+        conn.execute(_build_node_ddl(node_type))
+    except Exception as exc:
+        logger.error(
+            "migrate_v030.create_failed node=%s err=%s — data loss risk",
+            node_type, exc,
+        )
+        raise
+
+    restored = 0
+    for row in dumped:
+        try:
+            conn.execute(
+                f"CREATE (n:{node_type} {{"
+                f"id: $id, title: $title, content: $content, context: $context, "
+                f"justification: $justification, "
+                f"source_artifact_ref: $source_artifact_ref, "
+                f"source_session_id: $source_session_id, "
+                f"created_at: $created_at, created_by_agent: $created_by_agent, "
+                f"source_confidence: $source_confidence, "
+                f"relevance_score: 0.5, query_hits: 0, last_queried_at: NULL, "
+                f"superseded_by: $superseded_by, superseded_at: $superseded_at, "
+                f"revocation_reason: $revocation_reason, embedding: $embedding"
+                f"}})",
+                row,
+            )
+            restored += 1
+        except Exception as exc:
+            logger.warning(
+                "migrate_v030.restore_failed node=%s id=%s err=%s",
+                node_type, row.get("id"), exc,
+            )
+
+    logger.info(
+        "migrate_v030.table_done node=%s dumped=%d restored=%d",
+        node_type, len(dumped), restored,
+        extra={"event": "migrate_v030.table_done", "node_type": node_type,
+               "dumped": len(dumped), "restored": restored},
+    )
+    return restored
+
+
+def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
+    """Apply the v0.2.0 → v0.3.0 migration to a board.
+
+    Idempotent. Strategy per node table:
+
+      * If the table has the legacy columns (validation_status /
+        corroboration_count), dump → drop → create → bulk-insert.
+      * Otherwise, ALTER TABLE ADD any missing v0.3.0 columns and backfill
+        NULLs with defaults (0.5 / 0).
+
+    Vector indexes are recreated by ``bootstrap_board_graph`` on the next
+    full open — callers should follow this helper with one of those opens.
+
+    Returns a summary `{node_type: rows_migrated | 'altered'}` for audit logs.
+    """
+    summary: dict[str, Any] = {}
+    path = board_kuzu_path(board_id)
+    if not path.exists():
+        return summary
+
+    close_all_connections(board_id)
+
+    with open_board_connection(board_id) as (_db, conn):
+        for node_type in NODE_TYPES:
+            if _node_has_legacy_columns(conn, node_type):
+                rows = _migrate_node_table_v030(conn, node_type)
+                summary[node_type] = {"strategy": "recreate", "rows": rows}
+            else:
+                added = _ensure_relevance_columns(conn, node_type)
+                _backfill_relevance_defaults(conn, node_type)
+                summary[node_type] = {"strategy": "alter", "added": added}
+
+        # Mark the board as on v0.3.0 in BoardMeta so subsequent opens skip
+        # the probe. Uses DELETE+CREATE so re-migrations overwrite cleanly.
+        try:
+            conn.execute(
+                "MATCH (m:BoardMeta {board_id: $bid}) "
+                "SET m.schema_version = $v",
+                {"bid": board_id, "v": SCHEMA_VERSION},
+            )
+        except Exception as exc:
+            logger.warning(
+                "migrate_v030.meta_update_failed board=%s err=%s",
+                board_id, exc,
+            )
+
+    logger.info(
+        "migrate_v030.done board=%s summary=%s",
+        board_id, summary,
+        extra={"event": "migrate_v030.done", "board_id": board_id,
+               "summary": summary},
+    )
+    return summary
+
+
 def vector_index_name(node_type: str) -> str:
     """Canonical HNSW index name per node type."""
     return f"{node_type.lower()}_embedding_idx"
@@ -328,6 +596,56 @@ def _board_needs_migration(board_id: str) -> bool:
         # Probe failed — assume migration is needed; the apply itself is
         # idempotent so a false positive only costs one extra DDL pass.
         return True
+
+
+def _board_needs_v030_migration(board_id: str) -> bool:
+    """Returns True iff the board is on a pre-v0.3.0 schema.
+
+    Probes BoardMeta.schema_version first (cheap); falls back to a
+    TABLE_INFO probe on the first node type when BoardMeta is missing or
+    empty. Any error returns False so a broken probe doesn't drop the board
+    into a destructive re-migration loop.
+    """
+    if board_id in _MIGRATED_BOARDS:
+        return False
+    try:
+        import kuzu  # type: ignore
+        path = board_kuzu_path(board_id)
+        if not path.exists():
+            return False
+        db = kuzu.Database(str(path))
+        conn = kuzu.Connection(db)
+        try:
+            # Primary: read BoardMeta.schema_version.
+            recorded: str | None = None
+            try:
+                res = conn.execute(
+                    "MATCH (m:BoardMeta {board_id: $bid}) "
+                    "RETURN m.schema_version",
+                    {"bid": board_id},
+                )
+                if res.has_next():
+                    recorded = res.get_next()[0]
+            except Exception:
+                recorded = None
+
+            if recorded == SCHEMA_VERSION:
+                return False
+
+            # Secondary: inspect the first node type for legacy columns or
+            # missing v0.3.0 columns. Covers boards bootstrapped before
+            # BoardMeta started recording the version.
+            for node_type in NODE_TYPES:
+                if _node_has_legacy_columns(conn, node_type):
+                    return True
+                if not _node_has_relevance_columns(conn, node_type):
+                    return True
+                break  # one probe is enough — all node types share _COMMON_NODE_ATTRS
+            return False
+        finally:
+            del conn, db
+    except Exception:
+        return False
 
 
 def _migrate_board_schema(board_id: str) -> None:
@@ -479,13 +797,26 @@ class BoardConnection:
             # Brand-new board — full bootstrap (creates path, vector indexes,
             # BoardMeta singleton).
             bootstrap_board_graph(board_id)
-        elif _board_needs_migration(board_id):
-            # Pre-existing board missing a rel table (e.g. `belongs_to` added
-            # post-bootstrap). Run schema apply ONCE to backfill, then mark the
-            # board as migrated so subsequent opens skip the (write-heavy) DDL
-            # pass — running it on every connection caused silent rollbacks of
-            # parallel commits via Kùzu's lock manager.
-            _migrate_board_schema(board_id)
+        else:
+            # v0.3.0 pivot: if the board still carries validation_status /
+            # corroboration_count, run the destructive column migration BEFORE
+            # the rel-table apply so apply_schema_to_connection operates on
+            # the new DDL. Idempotent: the probe short-circuits once the
+            # BoardMeta version is bumped or the cache is populated.
+            if _board_needs_v030_migration(board_id):
+                try:
+                    migrate_board_to_v030(board_id)
+                except Exception as exc:
+                    logger.warning(
+                        "board_v030_migrate.failed board=%s err=%s",
+                        board_id, exc,
+                    )
+            if _board_needs_migration(board_id):
+                # Pre-existing board missing a rel table (e.g. `belongs_to`
+                # added post-bootstrap). Run schema apply ONCE to backfill,
+                # then mark the board as migrated so subsequent opens skip
+                # the (write-heavy) DDL pass.
+                _migrate_board_schema(board_id)
 
         self._board_id = board_id
         self._db = kuzu.Database(str(path))

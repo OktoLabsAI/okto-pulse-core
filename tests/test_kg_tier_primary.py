@@ -59,25 +59,25 @@ def _seed_data():
     emb_b = [0.2] * 384
     emb_c = [0.3] * 384
 
-    for nid, title, content, emb, vs in [
-        ("dec-1", "Use Kuzu for KG", "Embedded graph DB", emb_a, "corroborated"),
-        ("dec-2", "Use DuckDB for analytics", "Columnar DB", emb_b, "corroborated"),
-        ("dec-3", "Deprecated SQLite KG", "Old approach", emb_c, "unvalidated"),
+    for nid, title, content, emb, score in [
+        ("dec-1", "Use Kuzu for KG", "Embedded graph DB", emb_a, 0.8),
+        ("dec-2", "Use DuckDB for analytics", "Columnar DB", emb_b, 0.8),
+        ("dec-3", "Deprecated SQLite KG", "Old approach", emb_c, 0.2),
     ]:
         conn.execute(
             "CREATE (d:Decision {id: $id, title: $t, content: $c, "
             "source_artifact_ref: $ref, source_session_id: 's1', "
-            "source_confidence: 0.9, validation_status: $vs, "
-            "corroboration_count: 1, created_at: timestamp('2026-04-15T10:00:00'), "
+            "source_confidence: 0.9, relevance_score: $score, "
+            "query_hits: 0, created_at: timestamp('2026-04-15T10:00:00'), "
             "created_by_agent: 'agent-1', embedding: $emb})",
             {"id": nid, "t": title, "c": content, "ref": "spec-1",
-             "vs": vs, "emb": emb},
+             "score": score, "emb": emb},
         )
     conn.execute(
         "CREATE (c:Constraint {id: 'cst-1', title: 'No Docker', "
         "content: 'Embedded only', source_artifact_ref: 'spec-1', "
         "source_session_id: 's1', source_confidence: 0.85, "
-        "validation_status: 'corroborated', corroboration_count: 1, "
+        "relevance_score: 0.8, query_hits: 0, "
         "created_at: timestamp('2026-04-15T10:00:00'), "
         "created_by_agent: 'agent-1', embedding: $emb})",
         {"emb": emb_b},
@@ -86,8 +86,8 @@ def _seed_data():
         "CREATE (a:Alternative {id: 'alt-1', title: 'Use Neo4j', "
         "content: 'Server-based', justification: 'Rejected: Docker', "
         "source_artifact_ref: 'spec-1', source_session_id: 's1', "
-        "source_confidence: 0.7, validation_status: 'corroborated', "
-        "corroboration_count: 0, created_at: timestamp('2026-04-15T10:00:00'), "
+        "source_confidence: 0.7, relevance_score: 0.6, "
+        "query_hits: 0, created_at: timestamp('2026-04-15T10:00:00'), "
         "created_by_agent: 'agent-1', embedding: $emb})",
         {"emb": emb_c},
     )
@@ -262,4 +262,4 @@ class TestContextToolsErrors:
     def test_schema_drift_detection(self):
         svc = get_kg_service()
         ver = svc.get_schema_version(BOARD)
-        assert ver == "0.2.0"
+        assert ver == "0.3.0"

@@ -51,7 +51,7 @@ def _seed_rows(count: int = SEED_COUNT) -> list[dict]:
             "content": f"Seeded node {i}",
             "created_at": ts,
             "source_confidence": 0.85,
-            "validation_status": "corroborated",
+            "relevance_score": 0.8,
             "source_artifact_ref": "spec-s8",
         })
     # Sort by created_at DESC, id DESC — the stable order the endpoint must honour.

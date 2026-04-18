@@ -21,7 +21,12 @@ class KGNodeResult(BaseModel):
     justification: str | None = None
     source_artifact_ref: str | None = None
     source_confidence: float = 0.0
-    validation_status: str | None = None
+    # v0.3.0: validation_status retired in favour of relevance_score.
+    # Optional fields so older response bodies that omit them still
+    # validate while consumers (frontend types, MCP) catch up.
+    relevance_score: float | None = None
+    query_hits: int | None = None
+    last_queried_at: str | None = None
     created_at: str | None = None
     superseded_by: str | None = None
 

@@ -32,7 +32,12 @@ logger = logging.getLogger("okto_pulse.kg.service")
 class DefaultFilters:
     min_confidence: float = 0.5
     max_rows: int = 100
-    validation_status_exclude: str = "unvalidated"
+    # v0.3.0: validation_status_exclude retained as a no-op for call-site
+    # compatibility; R3 replaces it with `min_relevance_score: float = 0.3`
+    # once the scoring pipeline lands. Keep the attribute so existing
+    # signatures (DefaultFilters(validation_status_exclude=...)) don't break
+    # during the R1→R3 window.
+    validation_status_exclude: str = ""
 
 
 @dataclass(frozen=True)
@@ -200,7 +205,8 @@ class KGService:
                     f"MATCH (n:{ntype} {{id: $nid}}) "
                     f"RETURN n.id, n.title, n.content, n.justification, "
                     f"n.source_artifact_ref, n.source_confidence, "
-                    f"n.validation_status, n.created_at, n.superseded_by"
+                    f"n.relevance_score, n.query_hits, n.last_queried_at, "
+                    f"n.created_at, n.superseded_by"
                 )
                 try:
                     res = conn.execute(cypher, {"nid": node_id})
@@ -215,9 +221,11 @@ class KGService:
                         "justification": r[3] or "",
                         "source_artifact_ref": r[4],
                         "source_confidence": r[5] if r[5] is not None else 0.0,
-                        "validation_status": r[6] or "unvalidated",
-                        "created_at": r[7].isoformat() if r[7] else None,
-                        "superseded_by": r[8],
+                        "relevance_score": r[6] if r[6] is not None else 0.5,
+                        "query_hits": r[7] if r[7] is not None else 0,
+                        "last_queried_at": r[8],
+                        "created_at": r[9].isoformat() if r[9] else None,
+                        "superseded_by": r[10],
                         "node_type": ntype,
                     }
         return None
@@ -269,7 +277,8 @@ class KGService:
             {
                 "id": r[0], "node_type": r[1], "title": r[2], "content": r[3],
                 "created_at": r[4], "source_confidence": r[5],
-                "validation_status": r[6], "source_artifact_ref": r[7],
+                "relevance_score": r[6] if r[6] is not None else 0.5,
+                "source_artifact_ref": r[7],
             }
             for r in rows
         ]
@@ -297,7 +306,8 @@ class KGService:
             {
                 "id": r[0], "title": r[1], "content": r[2],
                 "created_at": r[3], "source_confidence": r[4],
-                "validation_status": r[5], "superseded_by": r[6],
+                "relevance_score": r[5] if r[5] is not None else 0.5,
+                "superseded_by": r[6],
             }
             for r in rows
         ]

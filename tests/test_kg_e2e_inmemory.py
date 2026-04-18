@@ -133,7 +133,7 @@ class TestBackwardCompat:
 
         assert len(NODE_TYPES) == 11
         assert len(REL_TYPES) == 10
-        assert SCHEMA_VERSION == "0.2.0"
+        assert SCHEMA_VERSION == "0.3.0"
 
     def test_all_interfaces_importable(self):
         from okto_pulse.core.kg.interfaces import (
