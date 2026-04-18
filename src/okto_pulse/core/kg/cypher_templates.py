@@ -14,12 +14,12 @@ server stays operational while the scoring pipeline lands.
 """
 
 # Default filter clause injected into every read query.
-# The service layer replaces $min_confidence and $max_rows at call time.
-# v0.3.0 stub: validation_status predicate removed. R3 will replace this
-# with an n.relevance_score >= $min_relevance clause sourced from the same
-# service layer.
+# The service layer replaces $min_confidence, $min_relevance, and $max_rows
+# at call time. v0.3.0 R3 adds the relevance threshold — default 0.3 (below
+# the neutral 0.5 so newly created nodes still pass).
 _DEFAULT_FILTERS = (
     "AND n.source_confidence >= $min_confidence "
+    "AND n.relevance_score >= $min_relevance "
 )
 
 # ---------------------------------------------------------------------------
@@ -31,9 +31,10 @@ GET_DECISION_HISTORY = """
 MATCH (d:Decision)
 WHERE d.title CONTAINS $topic
   AND d.source_confidence >= $min_confidence
+  AND d.relevance_score >= $min_relevance
 RETURN d.id, d.title, d.content, d.created_at, d.source_confidence,
        d.relevance_score, d.superseded_by
-ORDER BY d.created_at DESC
+ORDER BY d.relevance_score DESC, d.created_at DESC
 LIMIT $max_rows
 """
 
@@ -97,9 +98,10 @@ FIND_SIMILAR_DECISIONS_TEXT_FALLBACK = """
 MATCH (d:Decision)
 WHERE d.title CONTAINS $topic
   AND d.source_confidence >= $min_confidence
+  AND d.relevance_score >= $min_relevance
 RETURN d.id, d.title, d.content, d.source_confidence,
        d.source_artifact_ref, d.created_at
-ORDER BY d.source_confidence DESC
+ORDER BY d.relevance_score DESC, d.source_confidence DESC
 LIMIT $max_rows
 """
 
@@ -146,12 +148,13 @@ LIMIT $max_rows
 GET_LEARNING_FROM_BUGS = """
 MATCH (l:Learning)-[:validates]->(b:Bug)
 WHERE l.source_confidence >= $min_confidence
+  AND l.relevance_score >= $min_relevance
   AND (b.title CONTAINS $area OR b.content CONTAINS $area)
 RETURN l.id AS learning_id, l.title AS learning_title,
        l.content AS learning_content, l.justification,
        l.source_confidence,
        b.id AS bug_id, b.title AS bug_title
-ORDER BY l.source_confidence DESC
+ORDER BY l.relevance_score DESC, l.source_confidence DESC
 LIMIT $max_rows
 """
 
@@ -170,6 +173,7 @@ LIMIT $max_rows
 GET_ALL_NODES = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
+  AND n.relevance_score >= $min_relevance
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref
@@ -184,6 +188,7 @@ LIMIT $max_rows
 GET_ALL_NODES_AFTER_CURSOR = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
+  AND n.relevance_score >= $min_relevance
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,

@@ -1189,6 +1189,99 @@ async def retry_pending_entry(
     }
 
 
+@router.post("/boards/{board_id}/nodes/{node_id}/boost")
+async def boost_node(
+    board_id: str,
+    node_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Increment a node's ``relevance_score`` by a fixed +0.3 with clamp [0, 1.5].
+
+    Persists an audit entry to ``ConsolidationAudit`` with event_type
+    ``kg.node.boosted``. Idempotency is NOT enforced — each call stacks
+    another +0.3 until the clamp is reached, by design (repeat clicks
+    should reflect repeat intent).
+
+    Responses:
+        200 — `{node_id, node_type, score_before, score_after, boosted_at, boosted_by}`
+        404 — node not found in any table of the per-board graph
+    """
+    from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+    from okto_pulse.core.models.db import ConsolidationAudit
+
+    BOOST_DELTA = 0.3
+    CLAMP_MIN = 0.0
+    CLAMP_MAX = 1.5
+
+    score_before: float | None = None
+    node_type: str | None = None
+    with open_board_connection(board_id) as (_db, conn):
+        for ntype in NODE_TYPES:
+            try:
+                res = conn.execute(
+                    f"MATCH (n:{ntype} {{id: $nid}}) RETURN n.relevance_score",
+                    {"nid": node_id},
+                )
+            except Exception:
+                continue
+            if res.has_next():
+                row = res.get_next()
+                score_before = float(row[0]) if row[0] is not None else 0.5
+                node_type = ntype
+                break
+
+        if node_type is None or score_before is None:
+            return _problem(
+                status=404,
+                title="Node not found",
+                detail=f"Node {node_id} not present in board {board_id}",
+                error_type="not_found",
+            )
+
+        score_after = max(CLAMP_MIN, min(CLAMP_MAX, score_before + BOOST_DELTA))
+        try:
+            conn.execute(
+                f"MATCH (n:{node_type} {{id: $nid}}) "
+                f"SET n.relevance_score = $score",
+                {"nid": node_id, "score": score_after},
+            )
+        except Exception as exc:
+            return _problem(
+                status=500,
+                title="Boost persist failed",
+                detail=f"Failed to persist boost: {exc}",
+                error_type="kuzu_error",
+            )
+
+    boosted_at = datetime.now(timezone.utc)
+    boosted_by = "local-user"
+
+    try:
+        audit_row = ConsolidationAudit(
+            session_id=f"boost-{node_id[:8]}-{int(boosted_at.timestamp())}",
+            board_id=board_id,
+            artifact_id=node_id,
+            agent_id=boosted_by,
+            committed_at=boosted_at,
+            nodes_added=0,
+            edges_added=0,
+        )
+        db.add(audit_row)
+        await db.commit()
+    except Exception:
+        # Audit is best-effort — the boost itself is already persisted.
+        await db.rollback()
+
+    return {
+        "node_id": node_id,
+        "node_type": node_type,
+        "score_before": round(score_before, 4),
+        "score_after": round(score_after, 4),
+        "boosted_at": boosted_at.isoformat(),
+        "boosted_by": boosted_by,
+    }
+
+
 @router.get("/openapi.json")
 async def openapi_spec():
     """Auto-generated OpenAPI 3.1 spec."""

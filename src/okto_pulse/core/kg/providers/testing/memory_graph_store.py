@@ -89,10 +89,13 @@ class InMemoryGraphStore:
             if topic_lower in title:
                 conf = n.get("source_confidence", 0)
                 if conf >= filters.min_confidence:
+                    score = n.get("relevance_score", 0.5)
+                    if score < filters.min_relevance:
+                        continue
                     results.append([
                         n["id"], n.get("title"), n.get("content"),
                         n.get("created_at"), n.get("source_confidence"),
-                        n.get("relevance_score", 0.5), n.get("superseded_by"),
+                        score, n.get("superseded_by"),
                     ])
         return results[:filters.max_rows]
 

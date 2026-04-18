@@ -146,21 +146,24 @@ class KuzuGraphStore:
     def find_by_topic(
         self, board_id: str, node_type: str, topic: str, filters: QueryFilters
     ) -> list[list]:
-        # v0.3.0: dropped n.validation_status filter; R3 will replace it
-        # with `n.relevance_score >= $min_relevance`. Projection now exposes
-        # relevance_score so the caller can rank without a second round-trip.
+        # v0.3.0 R3: replaced the dropped validation_status filter with
+        # the relevance_score threshold (default 0.3 — below the neutral
+        # 0.5 so freshly created nodes still pass). Ranking order uses
+        # relevance_score DESC so hot nodes bubble to the top.
         cypher = (
             f"MATCH (n:{node_type}) "
             f"WHERE n.title CONTAINS $topic "
             f"AND n.source_confidence >= $min_confidence "
+            f"AND n.relevance_score >= $min_relevance "
             f"RETURN n.id, n.title, n.content, n.created_at, n.source_confidence, "
             f"n.relevance_score, n.superseded_by "
-            f"ORDER BY n.created_at DESC "
+            f"ORDER BY n.relevance_score DESC, n.created_at DESC "
             f"LIMIT $max_rows"
         )
         return self._exec(board_id, cypher, {
             "topic": topic,
             "min_confidence": filters.min_confidence,
+            "min_relevance": filters.min_relevance,
             "max_rows": filters.max_rows,
         })
 

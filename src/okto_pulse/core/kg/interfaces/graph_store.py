@@ -15,10 +15,10 @@ from typing import Any, Protocol, runtime_checkable
 class QueryFilters:
     min_confidence: float = 0.5
     max_rows: int = 100
-    # v0.3.0: validation_status_exclude is preserved as a no-op for
-    # backwards compat across call-sites; R3 introduces `min_relevance`
-    # alongside it once the scoring pipeline lands.
-    validation_status_exclude: str = ""
+    # v0.3.0 R3: continuous relevance threshold used by every read query.
+    # Default 0.3 below the neutral 0.5 so newly-created nodes still
+    # pass through the filter. Callers can pass 0.0 to disable.
+    min_relevance: float = 0.3
 
 
 @runtime_checkable

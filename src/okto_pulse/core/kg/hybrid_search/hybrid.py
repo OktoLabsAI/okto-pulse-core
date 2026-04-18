@@ -320,13 +320,32 @@ def kg_search_hybrid(
             resolved.name, elapsed, deadline_budget,
         )
 
+    # v0.3.0 R3: fire-and-forget hit hook for every node in the final
+    # top-K. The counter update happens in the background; the response
+    # never waits for the flush. Failures are swallowed by the task and
+    # logged by kg_service._flush_hits.
+    top_k_results = tuple(ranked[:top_k])
+    try:
+        import asyncio as _asyncio
+        from okto_pulse.core.kg.kg_service import KGService as _KGService
+        loop = _asyncio.get_running_loop()
+        svc = _KGService()
+        for result in top_k_results:
+            node_id = getattr(result, "node_id", None)
+            node_type = getattr(result, "node_type", None)
+            if node_id and node_type:
+                loop.create_task(svc.increment_hit(board_id, node_type, node_id))
+    except Exception:
+        # No running loop (sync caller) or module import error — skip hook.
+        pass
+
     return HybridSearchResult(
         intent=resolved.name,
         query=query,
         board_id=board_id,
         seeds=tuple(seeds),
         neighbors=tuple(neighbors),
-        ranked=tuple(ranked[:top_k]),
+        ranked=top_k_results,
         timing=HybridSearchTiming(
             vector_seed_ms=vector_ms,
             graph_expand_ms=expand_ms,
