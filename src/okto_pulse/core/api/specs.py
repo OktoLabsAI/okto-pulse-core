@@ -88,9 +88,17 @@ async def update_spec(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update a spec. Bumps version when content fields change."""
+    """Update a spec. Bumps version when content fields change.
+    Rejects orphan `linked_*` references with 422 — see
+    `_validate_spec_linked_refs` in services/main.py for the exact rules.
+    """
     service = SpecService(db)
-    spec = await service.update_spec(spec_id, user_id, data)
+    try:
+        spec = await service.update_spec(spec_id, user_id, data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+        )
     if not spec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
     await db.commit()
@@ -193,13 +201,24 @@ async def link_task_to_scenario(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Link a task card to a test scenario (bidirectional)."""
+    """Link a task card to a test scenario (bidirectional).
+    Validates upfront that both scenario and card exist before mutating
+    either side, so a typo in card_id no longer leaves an orphan link.
+    """
     from okto_pulse.core.services import CardService
 
     spec_service = SpecService(db)
     spec = await spec_service.get_spec(spec_id)
     if not spec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+
+    card_service = CardService(db)
+    card = await card_service.get_card(card_id)
+    if not card:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Card '{card_id}' not found — cannot link a non-existent card.",
+        )
 
     scenarios = list(spec.test_scenarios or [])
     found = False
@@ -213,18 +232,23 @@ async def link_task_to_scenario(
             break
 
     if not found:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scenario not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scenario '{scenario_id}' not found in spec.",
+        )
 
-    await spec_service.update_spec(spec_id, user_id, SpecUpdate(test_scenarios=scenarios))
+    try:
+        await spec_service.update_spec(spec_id, user_id, SpecUpdate(test_scenarios=scenarios))
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+        )
 
-    card_service = CardService(db)
-    card = await card_service.get_card(card_id)
-    if card:
-        existing = list(card.test_scenario_ids or [])
-        if scenario_id not in existing:
-            existing.append(scenario_id)
-        from okto_pulse.core.models.schemas import CardUpdate as CU
-        await card_service.update_card(card_id, user_id, CU(test_scenario_ids=existing))
+    existing = list(card.test_scenario_ids or [])
+    if scenario_id not in existing:
+        existing.append(scenario_id)
+    from okto_pulse.core.models.schemas import CardUpdate as CU
+    await card_service.update_card(card_id, user_id, CU(test_scenario_ids=existing))
 
     await db.commit()
     return {"success": True, "spec_id": spec_id, "scenario_id": scenario_id, "card_id": card_id}
