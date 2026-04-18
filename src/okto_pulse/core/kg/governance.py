@@ -155,6 +155,18 @@ async def start_historical_consolidation(
         "governance.historical_start board=%s specs=%d sprints=%d cards=%d total=%d",
         board_id, len(specs), len(sprints), len(cards), total,
     )
+
+    if total > 0:
+        # Fase 4 — wake the background worker immediately so the freshly
+        # enqueued rows start processing without waiting for a heartbeat.
+        try:
+            from okto_pulse.core.kg.workers.consolidation import (
+                signal_consolidation_worker,
+            )
+            signal_consolidation_worker()
+        except Exception:  # pragma: no cover — signal is best-effort
+            pass
+
     return {"status": "queueing", "board_id": board_id, "total_artifacts": total}
 
 
