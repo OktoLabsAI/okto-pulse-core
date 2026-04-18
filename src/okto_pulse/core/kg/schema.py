@@ -488,17 +488,21 @@ def _migrate_node_table_v030(conn, node_type: str) -> int:
 def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     """Apply the v0.2.0 → v0.3.0 migration to a board.
 
-    Idempotent. Strategy per node table:
+    Idempotent, non-destructive. For every node table:
 
-      * If the table has the legacy columns (validation_status /
-        corroboration_count), dump → drop → create → bulk-insert.
-      * Otherwise, ALTER TABLE ADD any missing v0.3.0 columns and backfill
-        NULLs with defaults (0.5 / 0).
+      * ``ALTER TABLE ADD`` the three v0.3.0 columns when missing.
+      * Backfill ``relevance_score = 0.5`` / ``query_hits = 0`` where NULL.
 
-    Vector indexes are recreated by ``bootstrap_board_graph`` on the next
-    full open — callers should follow this helper with one of those opens.
+    Kùzu v0.6 does not allow ``DROP NODE TABLE`` while rel tables or
+    vector indexes reference it, so we leave the legacy
+    ``validation_status`` / ``corroboration_count`` columns in place as
+    orphans. The Python code no longer reads them — they are harmless
+    dead data until a future hard reset.
 
-    Returns a summary `{node_type: rows_migrated | 'altered'}` for audit logs.
+    Vector indexes remain intact; the migration never drops them.
+
+    Returns a summary ``{node_type: {"strategy": "alter", "added": [...]}}``
+    for audit logs.
     """
     summary: dict[str, Any] = {}
     path = board_kuzu_path(board_id)
@@ -507,18 +511,24 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
 
     close_all_connections(board_id)
 
-    with open_board_connection(board_id) as (_db, conn):
+    # Use a raw kuzu.Connection here — open_board_connection() would
+    # re-enter _board_needs_v030_migration and recurse infinitely, and
+    # the migration must run BEFORE the BoardConnection bootstrap path
+    # ever owns the handle.
+    import kuzu  # type: ignore
+    db = kuzu.Database(str(path))
+    conn = kuzu.Connection(db)
+    try:
         for node_type in NODE_TYPES:
-            if _node_has_legacy_columns(conn, node_type):
-                rows = _migrate_node_table_v030(conn, node_type)
-                summary[node_type] = {"strategy": "recreate", "rows": rows}
-            else:
-                added = _ensure_relevance_columns(conn, node_type)
-                _backfill_relevance_defaults(conn, node_type)
-                summary[node_type] = {"strategy": "alter", "added": added}
+            added = _ensure_relevance_columns(conn, node_type)
+            _backfill_relevance_defaults(conn, node_type)
+            had_legacy = _node_has_legacy_columns(conn, node_type)
+            summary[node_type] = {
+                "strategy": "alter",
+                "added": added,
+                "legacy_columns_left": had_legacy,
+            }
 
-        # Mark the board as on v0.3.0 in BoardMeta so subsequent opens skip
-        # the probe. Uses DELETE+CREATE so re-migrations overwrite cleanly.
         try:
             conn.execute(
                 "MATCH (m:BoardMeta {board_id: $bid}) "
@@ -530,6 +540,12 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
                 "migrate_v030.meta_update_failed board=%s err=%s",
                 board_id, exc,
             )
+    finally:
+        del conn
+        del db
+        gc.collect()
+
+    _MIGRATED_BOARDS.add(board_id)
 
     logger.info(
         "migrate_v030.done board=%s summary=%s",
@@ -599,12 +615,16 @@ def _board_needs_migration(board_id: str) -> bool:
 
 
 def _board_needs_v030_migration(board_id: str) -> bool:
-    """Returns True iff the board is on a pre-v0.3.0 schema.
+    """Returns True iff the board is missing the v0.3.0 node columns.
 
-    Probes BoardMeta.schema_version first (cheap); falls back to a
-    TABLE_INFO probe on the first node type when BoardMeta is missing or
-    empty. Any error returns False so a broken probe doesn't drop the board
-    into a destructive re-migration loop.
+    The probe is column-based — it does NOT trust BoardMeta.schema_version
+    alone because an earlier destructive-migration attempt may have bumped
+    the recorded version without actually adding the ALTER columns (if a
+    DROP TABLE failed against a referenced rel/index). Inspecting
+    ``TABLE_INFO`` on the first node type is the authoritative answer.
+
+    Returns False on any probe error so a broken probe never loops a
+    destructive re-migration.
     """
     if board_id in _MIGRATED_BOARDS:
         return False
@@ -616,28 +636,7 @@ def _board_needs_v030_migration(board_id: str) -> bool:
         db = kuzu.Database(str(path))
         conn = kuzu.Connection(db)
         try:
-            # Primary: read BoardMeta.schema_version.
-            recorded: str | None = None
-            try:
-                res = conn.execute(
-                    "MATCH (m:BoardMeta {board_id: $bid}) "
-                    "RETURN m.schema_version",
-                    {"bid": board_id},
-                )
-                if res.has_next():
-                    recorded = res.get_next()[0]
-            except Exception:
-                recorded = None
-
-            if recorded == SCHEMA_VERSION:
-                return False
-
-            # Secondary: inspect the first node type for legacy columns or
-            # missing v0.3.0 columns. Covers boards bootstrapped before
-            # BoardMeta started recording the version.
             for node_type in NODE_TYPES:
-                if _node_has_legacy_columns(conn, node_type):
-                    return True
                 if not _node_has_relevance_columns(conn, node_type):
                     return True
                 break  # one probe is enough — all node types share _COMMON_NODE_ATTRS
