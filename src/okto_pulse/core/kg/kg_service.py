@@ -67,12 +67,12 @@ def _hits_snapshot() -> dict[tuple[str, str], int]:
 class DefaultFilters:
     min_confidence: float = 0.5
     max_rows: int = 100
-    # v0.3.0: validation_status_exclude retained as a no-op for call-site
-    # compatibility; R3 replaces it with `min_relevance_score: float = 0.3`
-    # once the scoring pipeline lands. Keep the attribute so existing
-    # signatures (DefaultFilters(validation_status_exclude=...)) don't break
-    # during the R1→R3 window.
-    validation_status_exclude: str = ""
+    # v0.3.0 R3: relevance threshold replaces the legacy
+    # validation_status_exclude filter. Default 0.3 is below the neutral
+    # 0.5 used on insert so newly created nodes still pass the filter —
+    # only nodes whose score has decayed / been penalised below 0.3 get
+    # excluded from read-side tooling.
+    min_relevance: float = 0.3
 
 
 @dataclass(frozen=True)
@@ -112,13 +112,15 @@ def _get_graph_store():
 def _filters(
     min_confidence: float | None = None,
     max_rows: int | None = None,
+    min_relevance: float | None = None,
     defaults: DefaultFilters | None = None,
 ) -> QueryFilters:
     """Build QueryFilters from optional overrides + service defaults."""
     d = defaults or DefaultFilters()
     return QueryFilters(
-        min_confidence=min_confidence or d.min_confidence,
-        max_rows=max_rows or d.max_rows,
+        min_confidence=min_confidence if min_confidence is not None else d.min_confidence,
+        max_rows=max_rows if max_rows is not None else d.max_rows,
+        min_relevance=min_relevance if min_relevance is not None else d.min_relevance,
     )
 
 
@@ -365,6 +367,7 @@ class KGService:
         min_confidence: float = 0.0,
         max_rows: int | None = None,
         cursor: str | None = None,
+        min_relevance: float | None = None,
     ) -> list[dict]:
         """Return nodes ordered ``(created_at DESC, id DESC)`` — Spec 8 / S1.3.
 
@@ -374,10 +377,11 @@ class KGService:
         """
         from okto_pulse.core.kg.schema import open_board_connection
 
-        f = _filters(min_confidence, max_rows, self.defaults)
+        f = _filters(min_confidence, max_rows, min_relevance, self.defaults)
         params: dict = {
             "min_confidence": f.min_confidence,
             "max_rows": f.max_rows,
+            "min_relevance": f.min_relevance,
         }
         if cursor:
             from okto_pulse.core.api.kg_routes import decode_cursor
@@ -420,7 +424,7 @@ class KGService:
         max_rows: int | None = None,
     ) -> list[dict]:
         store = _get_graph_store()
-        f = _filters(min_confidence, max_rows, self.defaults)
+        f = _filters(min_confidence, max_rows, defaults=self.defaults)
 
         rows = self._cached_call(
             "get_decision_history", board_id, {"topic": topic},
@@ -449,7 +453,7 @@ class KGService:
         max_rows: int | None = None,
     ) -> list[dict]:
         store = _get_graph_store()
-        f = _filters(min_confidence, max_rows, self.defaults)
+        f = _filters(min_confidence, max_rows, defaults=self.defaults)
 
         rows = self._cached_call(
             "get_related_context", board_id, {"artifact_id": artifact_id},
@@ -655,7 +659,7 @@ class KGService:
         max_rows: int | None = None,
     ) -> list[dict]:
         store = _get_graph_store()
-        f = _filters(min_confidence, max_rows, self.defaults)
+        f = _filters(min_confidence, max_rows, defaults=self.defaults)
 
         rows = self._cached_call(
             "get_learning_from_bugs", board_id, {"area": area},
