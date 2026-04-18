@@ -505,6 +505,42 @@ async def commit_consolidation(
                         to_type=to_hint,
                     )
 
+                # v0.3.0 R2: recompute relevance_score for every endpoint
+                # whose degree just changed. Only touches the two sides of
+                # each edge — O(N_endpoints), not O(N_board).
+                try:
+                    from okto_pulse.core.kg.scoring import _recompute_relevance_batch
+
+                    endpoints_to_recompute: list[tuple[str, str]] = []
+                    seen: set[tuple[str, str]] = set()
+                    for edge in session.edge_candidates.values():
+                        from_id_resolved, from_type_resolved = _resolve_endpoint(
+                            edge.from_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+                        )
+                        to_id_resolved, to_type_resolved = _resolve_endpoint(
+                            edge.to_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+                        )
+                        if from_id_resolved and from_type_resolved:
+                            key = (from_type_resolved, from_id_resolved)
+                            if key not in seen:
+                                seen.add(key)
+                                endpoints_to_recompute.append(key)
+                        if to_id_resolved and to_type_resolved:
+                            key = (to_type_resolved, to_id_resolved)
+                            if key not in seen:
+                                seen.add(key)
+                                endpoints_to_recompute.append(key)
+                    if endpoints_to_recompute:
+                        _recompute_relevance_batch(
+                            kconn, session.board_id, endpoints_to_recompute,
+                            trigger="degree_delta",
+                        )
+                except Exception as exc:  # best-effort — never fail the commit
+                    logger.warning(
+                        "kg.scoring.commit_hook_failed session=%s err=%s",
+                        req.session_id, exc,
+                    )
+
                 committed_at = datetime.now(timezone.utc)
 
                 # Persist audit via registry.audit_repo or db fallback.
