@@ -700,6 +700,7 @@ async def init_db() -> None:
     await _migrate_heal_task_validation_field_names()
     await _migrate_status_renames()
     await _migrate_add_permission_columns()
+    await _migrate_add_event_tables()
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _migrate_add_card_sprint_id()
@@ -711,6 +712,65 @@ async def init_db() -> None:
     await _migrate_agent_permissions()
     await _reconcile_builtin_presets()
     await _reconcile_agent_permission_flags()
+
+
+async def _migrate_add_event_tables() -> None:
+    """Create domain_events + domain_event_handler_executions tables.
+
+    Idempotent: uses CREATE TABLE IF NOT EXISTS. Must run BEFORE
+    Base.metadata.create_all so the two tables exist by the time the
+    dispatcher starts consuming them.
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    ts_type = "TIMESTAMP WITH TIME ZONE" if dialect == "postgresql" else "TIMESTAMP"
+    json_type = "JSONB" if dialect == "postgresql" else "JSON"
+
+    async with get_engine().begin() as conn:
+        await conn.execute(sa_text(f"""
+            CREATE TABLE IF NOT EXISTS domain_events (
+                id VARCHAR(36) PRIMARY KEY,
+                event_type VARCHAR(100) NOT NULL,
+                board_id VARCHAR(36) NOT NULL,
+                actor_id VARCHAR(36),
+                actor_type VARCHAR(20) NOT NULL DEFAULT 'user',
+                payload_json {json_type} NOT NULL,
+                occurred_at {ts_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_domain_events_event_type "
+            "ON domain_events(event_type)"
+        ))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_domain_events_board_id "
+            "ON domain_events(board_id)"
+        ))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_domain_events_occurred_at "
+            "ON domain_events(occurred_at)"
+        ))
+
+        await conn.execute(sa_text(f"""
+            CREATE TABLE IF NOT EXISTS domain_event_handler_executions (
+                id VARCHAR(36) PRIMARY KEY,
+                event_id VARCHAR(36) NOT NULL,
+                handler_name VARCHAR(100) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error VARCHAR(500),
+                processed_at {ts_type},
+                next_attempt_at {ts_type},
+                FOREIGN KEY (event_id) REFERENCES domain_events(id) ON DELETE CASCADE,
+                CONSTRAINT uq_deh_event_handler UNIQUE (event_id, handler_name)
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_deh_status_next_attempt "
+            "ON domain_event_handler_executions(status, next_attempt_at)"
+        ))
 
 
 async def _migrate_add_task_validation_columns() -> None:

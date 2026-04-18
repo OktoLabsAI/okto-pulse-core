@@ -569,6 +569,22 @@ class CardService:
         self.db.add(card)
         await self.db.flush()
 
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import CardCreated
+
+        await event_publish(
+            CardCreated(
+                board_id=board_id,
+                actor_id=user_id,
+                card_id=card.id,
+                spec_id=card.spec_id,
+                sprint_id=card.sprint_id,
+                card_type=card_type_val,
+                priority=data.priority.value,
+            ),
+            session=self.db,
+        )
+
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
             board_id=board_id,
@@ -1395,6 +1411,48 @@ class CardService:
                 )
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, card.board_id)
+
+        # Emit CardMoved + optional CardCancelled / CardRestored so downstream
+        # handlers (e.g. KG decay on cancel) can react.
+        if old_status != data.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import (
+                CardCancelled,
+                CardMoved,
+                CardRestored,
+            )
+
+            await event_publish(
+                CardMoved(
+                    board_id=card.board_id,
+                    actor_id=user_id,
+                    card_id=card.id,
+                    from_status=old_status.value,
+                    to_status=data.status.value,
+                ),
+                session=self.db,
+            )
+            if data.status == CardStatus.CANCELLED:
+                await event_publish(
+                    CardCancelled(
+                        board_id=card.board_id,
+                        actor_id=user_id,
+                        card_id=card.id,
+                        previous_status=old_status.value,
+                    ),
+                    session=self.db,
+                )
+            elif old_status == CardStatus.CANCELLED:
+                await event_publish(
+                    CardRestored(
+                        board_id=card.board_id,
+                        actor_id=user_id,
+                        card_id=card.id,
+                        to_status=data.status.value,
+                    ),
+                    session=self.db,
+                )
+
         await self._log_activity(
             board_id=card.board_id,
             card_id=card_id,
@@ -2074,6 +2132,29 @@ class SpecService:
         self.db.add(spec)
         await self.db.flush()
 
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import SpecCreated
+
+        spec_source: str = "manual"
+        origin_id: str | None = None
+        if data.refinement_id:
+            spec_source = "derived_refinement"
+            origin_id = data.refinement_id
+        elif data.ideation_id:
+            spec_source = "derived_ideation"
+            origin_id = data.ideation_id
+
+        await event_publish(
+            SpecCreated(
+                board_id=board_id,
+                actor_id=user_id,
+                spec_id=spec.id,
+                source=spec_source,
+                origin_id=origin_id,
+            ),
+            session=self.db,
+        )
+
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
             board_id=board_id,
@@ -2174,11 +2255,29 @@ class SpecService:
             if key in json_fields:
                 flag_modified(spec, key)
 
+        old_version = spec.version
         if bumps_version:
             spec.version += 1
 
         # Compute diffs
         changes = self._compute_diff(old_data, update_data, list(update_data.keys()))
+
+        if bumps_version:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecVersionBumped
+
+            changed_struct_fields = sorted(content_fields & update_data.keys())
+            await event_publish(
+                SpecVersionBumped(
+                    board_id=spec.board_id,
+                    actor_id=user_id,
+                    spec_id=spec.id,
+                    old_version=old_version,
+                    new_version=spec.version,
+                    changed_fields=changed_struct_fields,
+                ),
+                session=self.db,
+            )
 
         actor_name = await resolve_actor_name(self.db, user_id, spec.board_id)
         await self._log_activity(
@@ -2398,6 +2497,21 @@ class SpecService:
             and getattr(spec, "current_validation_id", None) is not None
         ):
             spec.current_validation_id = None
+
+        if old_status != data.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecMoved
+
+            await event_publish(
+                SpecMoved(
+                    board_id=spec.board_id,
+                    actor_id=user_id,
+                    spec_id=spec.id,
+                    from_status=old_status.value,
+                    to_status=data.status.value,
+                ),
+                session=self.db,
+            )
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, spec.board_id)
         await self._log_activity(
@@ -3433,6 +3547,20 @@ class IdeationService:
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
             )
+
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import IdeationDerivedToSpec
+
+            await event_publish(
+                IdeationDerivedToSpec(
+                    board_id=ideation.board_id,
+                    actor_id=user_id,
+                    ideation_id=ideation_id,
+                    spec_id=spec.id,
+                ),
+                session=self.db,
+            )
+
             actor_name = await resolve_actor_name(self.db, user_id, ideation.board_id)
             await self._record_history(
                 ideation_id=ideation_id, action="spec_draft_created", actor_id=user_id, actor_name=actor_name,
@@ -4003,6 +4131,19 @@ class RefinementService:
                 kb_ids=kb_ids,
             )
 
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import RefinementDerivedToSpec
+
+            await event_publish(
+                RefinementDerivedToSpec(
+                    board_id=refinement.board_id,
+                    actor_id=user_id,
+                    refinement_id=refinement_id,
+                    spec_id=spec.id,
+                ),
+                session=self.db,
+            )
+
             actor_name = await resolve_actor_name(self.db, user_id, refinement.board_id)
             await self._record_history(
                 refinement_id=refinement_id, action="spec_draft_created", actor_id=user_id, actor_name=actor_name,
@@ -4552,6 +4693,19 @@ class SprintService:
         self.db.add(sprint)
         await self.db.flush()
 
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import SprintCreated as SprintCreatedEvent
+
+        await event_publish(
+            SprintCreatedEvent(
+                board_id=board_id,
+                actor_id=user_id,
+                sprint_id=sprint.id,
+                spec_id=data.spec_id,
+            ),
+            session=self.db,
+        )
+
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
             board_id=board_id, action="sprint_created",
@@ -4744,6 +4898,33 @@ class SprintService:
 
         old_status = sprint.status
         sprint.status = data.status
+
+        if old_status != data.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import (
+                SprintClosed as SprintClosedEvent,
+                SprintMoved as SprintMovedEvent,
+            )
+
+            await event_publish(
+                SprintMovedEvent(
+                    board_id=sprint.board_id,
+                    actor_id=user_id,
+                    sprint_id=sprint.id,
+                    from_status=old_status.value,
+                    to_status=data.status.value,
+                ),
+                session=self.db,
+            )
+            if data.status == SprintStatus.CLOSED:
+                await event_publish(
+                    SprintClosedEvent(
+                        board_id=sprint.board_id,
+                        actor_id=user_id,
+                        sprint_id=sprint.id,
+                    ),
+                    session=self.db,
+                )
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, sprint.board_id)
         await self._log_activity(
