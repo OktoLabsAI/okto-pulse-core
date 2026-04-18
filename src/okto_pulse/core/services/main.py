@@ -225,14 +225,38 @@ async def propagate_artifacts(
                 db.add(new_kb)
             await db.flush()
 
-    # Compile Q&A into context (append)
-    qa_context = _compile_qa_context(source_qa_items)
-    if qa_context:
-        existing_context = getattr(target_entity, "context", None) or getattr(target_entity, "description", None) or ""
-        if hasattr(target_entity, "context"):
-            target_entity.context = (existing_context + "\n\n" + qa_context).strip() if existing_context else qa_context
-        elif hasattr(target_entity, "description"):
-            target_entity.description = (existing_context + "\n\n" + qa_context).strip() if existing_context else qa_context
+    # Propagate Q&A items as proper QA rows on the target entity
+    if source_qa_items:
+        from okto_pulse.core.models.db import SpecQAItem, RefinementQAItem
+        # Determine target QA class based on entity type
+        target_qa_class = None
+        target_fk_field = None
+        if hasattr(target_entity, "spec_id") or target_entity.__tablename__ == "specs":
+            target_qa_class = SpecQAItem
+            target_fk_field = "spec_id"
+        elif hasattr(target_entity, "refinement_id") or (hasattr(target_entity, "__tablename__") and target_entity.__tablename__ == "refinements"):
+            target_qa_class = RefinementQAItem
+            target_fk_field = "refinement_id"
+
+        if target_qa_class and target_fk_field:
+            for qa in source_qa_items:
+                _get = (lambda k: qa.get(k)) if isinstance(qa, dict) else (lambda k: getattr(qa, k, None))
+                # Only copy answered Q&A items
+                if not _get("answer"):
+                    continue
+                new_qa = target_qa_class(
+                    **{target_fk_field: target_entity.id},
+                    question=_get("question") or "",
+                    question_type=_get("question_type") or "text",
+                    choices=_get("choices"),
+                    allow_free_text=_get("allow_free_text") or False,
+                    answer=_get("answer"),
+                    selected=_get("selected"),
+                    asked_by=_get("asked_by") or user_id,
+                    answered_by=_get("answered_by"),
+                )
+                db.add(new_qa)
+            await db.flush()
 
 
 async def resolve_actor_name(db: AsyncSession, user_id: str, board_id: str) -> str:
@@ -3206,15 +3230,10 @@ class IdeationService:
                 f"- Dependencies: {sa.get('dependencies', '?')}/5\n"
                 f"- Complexity: {ideation.complexity.value if ideation.complexity else 'not evaluated'}"
             )
-        # Include answered Q&A as context
-        qa_items = [qa for qa in (ideation.qa_items or []) if qa.answer]
-        if qa_items:
-            qa_lines = []
-            for qa in qa_items:
-                qa_lines.append(f"**Q:** {qa.question}\n**A:** {qa.answer}")
-            context_parts.append(f"## Q&A Decisions\n" + "\n\n".join(qa_lines))
-
         context = "\n\n".join(context_parts) if context_parts else ideation.description
+
+        # Snapshot Q&A before flush (eager-loaded collections expire after flush)
+        snapshot_qa = list(ideation.qa_items or [])
 
         spec_data = SpecCreate(
             title=ideation.title,
@@ -3228,11 +3247,11 @@ class IdeationService:
             ideation.board_id, user_id, spec_data, skip_ownership_check=skip_ownership_check
         )
         if spec:
-            # Propagate mockups from ideation to spec
+            # Propagate mockups and Q&A from ideation to spec
             await propagate_artifacts(
                 db=self.db,
                 source_mockups=ideation.screen_mockups,
-                source_qa_items=None,  # Q&A already compiled in context above
+                source_qa_items=snapshot_qa,
                 source_knowledge_bases=None,
                 target_entity=spec,
                 target_kb_class=SpecKnowledgeBase,
@@ -3754,18 +3773,11 @@ class RefinementService:
         if refinement.decisions:
             decisions_text = "\n".join(f"- {d}" for d in refinement.decisions)
             context_parts.append(f"## Decisions\n{decisions_text}")
-        # Include answered Q&A as context
-        qa_items = [qa for qa in (refinement.qa_items or []) if qa.answer]
-        if qa_items:
-            qa_lines = []
-            for qa in qa_items:
-                qa_lines.append(f"**Q:** {qa.question}\n**A:** {qa.answer}")
-            context_parts.append(f"## Q&A Decisions\n" + "\n\n".join(qa_lines))
-
         context = "\n\n".join(context_parts) if context_parts else refinement.description
 
         # Snapshot artifact data BEFORE create_spec — flush() in create_spec
         # expires all session objects, making eagerly-loaded collections inaccessible.
+        snapshot_qa = list(refinement.qa_items or [])
         snapshot_mockups = list(refinement.screen_mockups or [])
         snapshot_kbs = [
             {"title": kb.title, "description": kb.description, "content": kb.content,
@@ -3790,7 +3802,7 @@ class RefinementService:
             await propagate_artifacts(
                 db=self.db,
                 source_mockups=snapshot_mockups,
-                source_qa_items=None,  # Q&A already compiled in context above
+                source_qa_items=snapshot_qa,
                 source_knowledge_bases=snapshot_kbs,
                 target_entity=spec,
                 target_kb_class=SpecKnowledgeBase,

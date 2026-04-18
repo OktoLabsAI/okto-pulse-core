@@ -1,6 +1,7 @@
 """MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10497,7 +10498,9 @@ def run_mcp_server():
 
     http_app = mcp.http_app(transport="streamable-http")
     wrapped = ApiKeySessionMiddleware(http_app)
-    uvicorn.run(wrapped, host="0.0.0.0", port=settings.mcp_port)
+    # Read port from environment (set by CLI) or use settings
+    port = int(os.environ.get("MCP_PORT", str(settings.mcp_port)))
+    uvicorn.run(wrapped, host="127.0.0.1", port=port, ws="wsproto")
 
 
 if __name__ == "__main__":

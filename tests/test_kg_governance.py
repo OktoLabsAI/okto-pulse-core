@@ -14,6 +14,7 @@ os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{tmpdb}")
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gov_"))
 
 from okto_pulse.core.models import db as _models  # noqa: F401
+from okto_pulse.core.models.db import Board, Spec, SpecStatus
 from okto_pulse.core.infra.database import create_database, get_session_factory, init_db
 from okto_pulse.core.kg.governance import (
     cancel_historical,
@@ -30,13 +31,6 @@ from okto_pulse.core.kg.governance import (
 )
 
 _initialized = False
-
-
-@pytest.fixture(scope="module")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -58,15 +52,35 @@ def db_factory():
     return get_session_factory()
 
 
+async def _seed_board_with_spec(db_factory, board_id: str) -> None:
+    """Insert a Board + done Spec so start_historical_consolidation finds artifacts."""
+    import uuid
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name=f"Test {board_id}", owner_id="test-owner"))
+        db.add(Spec(
+            id=str(uuid.uuid4()),
+            board_id=board_id,
+            title="Seed spec",
+            status=SpecStatus.DONE,
+            archived=False,
+            created_by="test-user",
+        ))
+        await db.commit()
+
+
 class TestHistoricalOptIn:
     @pytest.mark.asyncio
     async def test_start_creates_queue_entry(self, db_factory):
+        await _seed_board_with_spec(db_factory, "board-hist-1")
         async with db_factory() as db:
             result = await start_historical_consolidation(db, "board-hist-1")
             assert result["status"] == "queueing"
+            assert result["total_artifacts"] >= 1
 
     @pytest.mark.asyncio
     async def test_start_twice_returns_in_progress(self, db_factory):
+        await _seed_board_with_spec(db_factory, "board-hist-2")
         async with db_factory() as db:
             await start_historical_consolidation(db, "board-hist-2")
         async with db_factory() as db:
@@ -75,6 +89,7 @@ class TestHistoricalOptIn:
 
     @pytest.mark.asyncio
     async def test_pause_and_resume(self, db_factory):
+        await _seed_board_with_spec(db_factory, "board-hist-3")
         async with db_factory() as db:
             await start_historical_consolidation(db, "board-hist-3")
         async with db_factory() as db:
@@ -86,6 +101,7 @@ class TestHistoricalOptIn:
 
     @pytest.mark.asyncio
     async def test_cancel_removes_pending(self, db_factory):
+        await _seed_board_with_spec(db_factory, "board-hist-4")
         async with db_factory() as db:
             await start_historical_consolidation(db, "board-hist-4")
         async with db_factory() as db:
@@ -95,6 +111,7 @@ class TestHistoricalOptIn:
 
     @pytest.mark.asyncio
     async def test_progress_tracking(self, db_factory):
+        await _seed_board_with_spec(db_factory, "board-hist-5")
         async with db_factory() as db:
             await start_historical_consolidation(db, "board-hist-5")
         async with db_factory() as db:

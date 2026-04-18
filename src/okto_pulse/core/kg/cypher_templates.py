@@ -39,10 +39,8 @@ LIMIT $max_rows
 GET_RELATED_CONTEXT = """
 MATCH (center)-[r1]-(hop1)
 WHERE center.source_artifact_ref = $artifact_id
-  AND center.validation_status <> 'unvalidated'
   AND center.source_confidence >= $min_confidence
 OPTIONAL MATCH (hop1)-[r2]-(hop2)
-WHERE hop2.validation_status <> 'unvalidated'
 RETURN center.id AS center_id, center.title AS center_title,
        hop1.id AS hop1_id, hop1.title AS hop1_title,
        hop2.id AS hop2_id, hop2.title AS hop2_title,
@@ -77,8 +75,6 @@ LIMIT $max_rows
 
 FIND_CONTRADICTIONS_ALL = """
 MATCH (a:Decision)-[r:contradicts]->(b:Decision)
-WHERE a.validation_status <> 'unvalidated'
-  AND b.validation_status <> 'unvalidated'
 RETURN a.id AS id_a, a.title AS title_a,
        b.id AS id_b, b.title AS title_b,
        r.confidence AS confidence
@@ -130,7 +126,6 @@ RETURN bug.id, bug.title
 
 LIST_ALTERNATIVES = """
 MATCH (d:Decision {id: $decision_id})-[:relates_to]->(alt:Alternative)
-WHERE alt.validation_status <> 'unvalidated'
 RETURN alt.id, alt.title, alt.content, alt.justification,
        alt.source_confidence, alt.source_artifact_ref
 ORDER BY alt.source_confidence DESC
@@ -163,3 +158,33 @@ LIMIT $max_rows
 # ---------------------------------------------------------------------------
 
 # (handled in kg_service.py via search.find_similar_nodes_by_type on global)
+
+# ---------------------------------------------------------------------------
+# 10. get_all_nodes — visualization helper (no type filter)
+# ---------------------------------------------------------------------------
+
+GET_ALL_NODES = """
+MATCH (n)
+WHERE n.source_confidence >= $min_confidence
+RETURN n.id, label(n) AS node_type, n.title, n.content,
+       n.created_at, n.source_confidence, n.validation_status,
+       n.source_artifact_ref
+ORDER BY n.created_at DESC, n.id DESC
+LIMIT $max_rows
+"""
+
+# Cursor-keyset variant — Spec 8 / S1.3. The WHERE clause applies a
+# strict tuple comparison so the next page starts immediately after the
+# last row of the previous page. Mirrors the ORDER BY above so the page
+# boundaries are stable across calls.
+GET_ALL_NODES_AFTER_CURSOR = """
+MATCH (n)
+WHERE n.source_confidence >= $min_confidence
+  AND (n.created_at < $cursor_ts
+       OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
+RETURN n.id, label(n) AS node_type, n.title, n.content,
+       n.created_at, n.source_confidence, n.validation_status,
+       n.source_artifact_ref
+ORDER BY n.created_at DESC, n.id DESC
+LIMIT $max_rows
+"""

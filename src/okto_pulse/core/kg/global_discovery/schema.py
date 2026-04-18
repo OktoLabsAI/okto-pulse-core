@@ -11,8 +11,12 @@ Path: ~/.okto-pulse/global/discovery.kuzu
 
 from __future__ import annotations
 
+import gc
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger("okto_pulse.kg.global_discovery.schema")
 
 GLOBAL_SCHEMA_VERSION = "0.1.0"
 
@@ -102,7 +106,9 @@ def bootstrap_global_discovery() -> Path:
         for table, idx_name, col in VECTOR_INDEXES:
             try:
                 conn.execute(
-                    f"CALL CREATE_VECTOR_INDEX('{table}', '{idx_name}', '{col}')"
+                    f"CALL CREATE_VECTOR_INDEX("
+                    f"'{table}', '{idx_name}', '{col}', "
+                    f"metric := 'cosine')"
                 )
             except Exception:
                 pass
@@ -136,7 +142,39 @@ def open_global_connection():
     return _global_db, conn
 
 
-def reset_global_db_for_tests() -> None:
-    """Drop the cached global Database — forces re-open on next call."""
+def close_global_connection() -> None:
+    """Close the cached global discovery ``_global_db`` and release its file lock.
+
+    Idempotent: returns immediately if no Database is cached. Exceptions raised
+    by the underlying ``close()`` are logged as warnings and not propagated —
+    the caller is usually about to rmtree or re-bootstrap and a close failure
+    should not block that path.
+
+    ``gc.collect()`` is mandatory on Windows: Kùzu holds an OS-level lock on
+    the ``discovery.kuzu`` directory for as long as the C++ Database object
+    exists. Without the gc pass, the object can survive the ``del`` long
+    enough for the next ``rmtree`` to fail with ``WinError 32``.
+    """
     global _global_db
+    db = _global_db
+    if db is None:
+        return
     _global_db = None
+    if hasattr(db, "close"):
+        try:
+            db.close()
+        except Exception as exc:
+            logger.warning(
+                "global_connection.close_failed err=%s", exc,
+                extra={"event": "global_connection.close_failed"},
+            )
+    del db
+    gc.collect()
+
+
+def reset_global_db_for_tests() -> None:
+    """Drop the cached global Database — forces re-open on next call.
+
+    Thin wrapper around :func:`close_global_connection` for legacy test code.
+    """
+    close_global_connection()

@@ -73,16 +73,97 @@ def entity_combined_score(
 def board_delete_cascade(board_id: str) -> dict:
     """Remove a board and cascade-cleanup orphans from the global discovery.
 
+    Also wipes the per-board Kùzu graph (every node + edge) so that re-
+    running historical consolidation rebuilds from a clean slate. Without
+    this step the global cleanup leaves orphan nodes from prior workers
+    (e.g. legacy `FR-{n}` Requirement nodes) that nothing references —
+    polluting the canvas with disconnected debris.
+
     Returns counts of removed entities per type.
     """
     from okto_pulse.core.kg.global_discovery.schema import open_global_connection
+    from okto_pulse.core.kg.schema import (
+        NODE_TYPES,
+        board_kuzu_path,
+        open_board_connection,
+    )
 
     counts = {
         "board_removed": False,
         "digests_removed": 0,
         "topics_decremented": 0,
         "entities_decremented": 0,
+        "board_nodes_removed": 0,
     }
+
+    # 0. Wipe per-board SQLite audit + outbox + queue rows. Without this the
+    # next consolidation re-uses the stale `content_hash` from a prior commit
+    # and `propose_reconciliation` short-circuits every candidate to NOOP —
+    # the queue worker reports "done" but Kùzu stays empty.
+    try:
+        import asyncio
+        from sqlalchemy import delete
+        from okto_pulse.core.infra.database import get_session_factory
+        from okto_pulse.core.models.db import (
+            ConsolidationAudit,
+            ConsolidationQueue,
+            GlobalUpdateOutbox,
+        )
+
+        async def _wipe_sqlite() -> dict[str, int]:
+            sf = get_session_factory()
+            removed: dict[str, int] = {}
+            async with sf() as db:
+                for model, label in (
+                    (GlobalUpdateOutbox, "outbox"),
+                    (ConsolidationAudit, "audit"),
+                    (ConsolidationQueue, "queue"),
+                ):
+                    res = await db.execute(
+                        delete(model).where(model.board_id == board_id)
+                    )
+                    removed[label] = res.rowcount or 0
+                await db.commit()
+            return removed
+
+        try:
+            loop = asyncio.get_running_loop()
+            sqlite_counts = asyncio.run_coroutine_threadsafe(
+                _wipe_sqlite(), loop
+            ).result()
+        except RuntimeError:
+            sqlite_counts = asyncio.run(_wipe_sqlite())
+        for k, v in sqlite_counts.items():
+            counts[f"sqlite_{k}_removed"] = v
+    except Exception as exc:
+        logger.warning(
+            "board_delete.sqlite_wipe_failed board=%s err=%s",
+            board_id, exc,
+        )
+
+    # 1. Wipe per-board Kùzu graph (skip BoardMeta singleton).
+    if board_kuzu_path(board_id).exists():
+        try:
+            with open_board_connection(board_id) as (_db, conn):
+                for node_type in NODE_TYPES:
+                    if node_type == "BoardMeta":
+                        continue
+                    try:
+                        res = conn.execute(
+                            f"MATCH (n:{node_type}) DETACH DELETE n RETURN count(n)"
+                        )
+                        if res.has_next():
+                            counts["board_nodes_removed"] += int(res.get_next()[0] or 0)
+                    except Exception as exc:
+                        logger.warning(
+                            "board_delete.per_board_wipe_failed board=%s type=%s err=%s",
+                            board_id, node_type, exc,
+                        )
+        except Exception as exc:
+            logger.warning(
+                "board_delete.per_board_open_failed board=%s err=%s",
+                board_id, exc,
+            )
 
     gdb, gconn = open_global_connection()
     try:

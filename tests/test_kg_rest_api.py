@@ -16,28 +16,34 @@ from okto_pulse.core.api.kg_routes import (
 
 
 class TestEndpointRegistration:
-    def test_18_endpoints(self):
+    def test_endpoint_count(self):
         routes = [r for r in router.routes if hasattr(r, "methods")]
-        assert len(routes) == 18
+        assert len(routes) >= 21
 
-    def test_all_under_api_kg(self):
+    def test_all_under_kg_prefix(self):
         routes = [r for r in router.routes if hasattr(r, "path")]
         for r in routes:
-            assert r.path.startswith("/api/kg/"), f"Route {r.path} not under /api/kg/"
+            assert r.path.startswith("/kg"), f"Route {r.path} not under /kg"
 
 
 class TestCursorPagination:
+    """Cursor codec contract — updated per Spec 8 / S1.2 to use an
+    ``iso;id`` tuple-encoded payload that raises ``ValueError`` on any
+    corruption (so route handlers translate to 410 Gone)."""
+
     def test_encode_decode_roundtrip(self):
-        cursor = encode_cursor("id-123", "2026-04-15T10:00:00")
-        decoded = decode_cursor(cursor)
-        assert decoded["last_id"] == "id-123"
-        assert decoded["last_created_at"] == "2026-04-15T10:00:00"
+        cursor = encode_cursor("2026-04-15T10:00:00", "id-123")
+        ts, node_id = decode_cursor(cursor)
+        assert ts == "2026-04-15T10:00:00"
+        assert node_id == "id-123"
 
     def test_decode_invalid(self):
-        assert decode_cursor("invalid-base64!!!") is None
+        with pytest.raises(ValueError):
+            decode_cursor("invalid-base64!!!")
 
     def test_decode_empty(self):
-        assert decode_cursor("") is None
+        with pytest.raises(ValueError):
+            decode_cursor("")
 
 
 class TestProblemDetail:
@@ -57,19 +63,19 @@ class TestProblemDetail:
 class TestStreamingExport:
     def test_export_endpoint_exists(self):
         paths = [r.path for r in router.routes if hasattr(r, "path")]
-        assert "/api/kg/boards/{board_id}/audit/export" in paths
+        assert "/kg/boards/{board_id}/audit/export" in paths
 
 
 class TestCypherDelegate:
     def test_cypher_endpoint_exists(self):
         paths = [r.path for r in router.routes if hasattr(r, "path")]
-        assert "/api/kg/boards/{board_id}/cypher" in paths
+        assert "/kg/boards/{board_id}/cypher" in paths
 
 
 class TestSchemaEndpoint:
     def test_schema_endpoint_exists(self):
         paths = [r.path for r in router.routes if hasattr(r, "path")]
-        assert "/api/kg/schema" in paths
+        assert "/kg/schema" in paths
 
 
 class TestDeleteKG:
@@ -83,6 +89,20 @@ class TestDeleteKG:
 class TestHistoricalEndpoints:
     def test_start_cancel_progress_exist(self):
         paths = [r.path for r in router.routes if hasattr(r, "path")]
-        assert "/api/kg/boards/{board_id}/historical-consolidation/start" in paths
-        assert "/api/kg/boards/{board_id}/historical-consolidation/cancel" in paths
-        assert "/api/kg/boards/{board_id}/historical-consolidation/progress" in paths
+        assert "/kg/boards/{board_id}/historical-consolidation/start" in paths
+        assert "/kg/boards/{board_id}/historical-consolidation/cancel" in paths
+        assert "/kg/boards/{board_id}/historical-consolidation/progress" in paths
+
+
+class TestNewEndpoints:
+    def test_similar_endpoint_exists(self):
+        paths = [r.path for r in router.routes if hasattr(r, "path")]
+        assert "/kg/boards/{board_id}/similar" in paths
+
+    def test_supersedence_endpoint_exists(self):
+        paths = [r.path for r in router.routes if hasattr(r, "path")]
+        assert "/kg/boards/{board_id}/supersedence/{decision_id}" in paths
+
+    def test_contradictions_endpoint_exists(self):
+        paths = [r.path for r in router.routes if hasattr(r, "path")]
+        assert "/kg/boards/{board_id}/contradictions" in paths

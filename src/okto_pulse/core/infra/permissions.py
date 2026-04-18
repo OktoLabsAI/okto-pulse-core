@@ -258,6 +258,40 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "conclusion": {"read": True, "write": True},
         "activity_read": True,
     },
+    # ---- Knowledge Graph ----
+    "kg": {
+        "query": {
+            "decision_history": True,
+            "related_context": True,
+            "supersedence_chain": True,
+            "contradictions": True,
+            "similar_decisions": True,
+            "constraint_explain": True,
+            "alternatives": True,
+            "learning_from_bugs": True,
+            "global": True,
+        },
+        "power": {
+            "cypher": True,
+            "natural": True,
+            "schema_info": True,
+        },
+        "session": {
+            "begin": True,
+            "add_node": True,
+            "add_edge": True,
+            "get_similar": True,
+            "propose": True,
+            "commit": True,
+            "abort": True,
+        },
+        "admin": {
+            "wipe_board": True,
+            "settings_write": True,
+            "settings_read": True,
+            "historical_consolidation": True,
+        },
+    },
 }
 
 
@@ -658,6 +692,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.validation.read",
         "card.activity_read",
         "card.interact_in.not_started",
+        # KG — spec writers drive knowledge consolidation from artifacts
+        "kg.query.*", "kg.session.*",
+        "kg.admin.settings_read",
     ])
 
     # ------------------------------------------------------------------
@@ -710,6 +747,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.conclusion.read", "card.conclusion.write",
         "card.validation.read",  # read-only — cannot submit, cannot delete
         "card.activity_read",
+        # KG — read-only queries for implementation context
+        "kg.query.*",
+        "kg.admin.settings_read",
     ])
 
     # ------------------------------------------------------------------
@@ -776,6 +816,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.move.in_progress_to_on_hold", "card.move.on_hold_to_in_progress",
         "card.move.in_progress_to_done",   # test cards bypass validation gate
         "card.move.any_to_cancelled",
+        # KG — read learnings from bugs, trace test→constraint→violation paths
+        "kg.query.*",
+        "kg.admin.settings_read",
     ])
 
     # ------------------------------------------------------------------
@@ -847,6 +890,9 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         # submit_task_validation auto-routes via these flags.
         "card.move.validation_to_done",
         "card.move.validation_to_not_started",
+        # KG — read-only for informed validation decisions
+        "kg.query.*",
+        "kg.admin.settings_read",
     ])
 
     return [

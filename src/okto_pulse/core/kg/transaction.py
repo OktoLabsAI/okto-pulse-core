@@ -180,19 +180,54 @@ class TransactionOrchestrator:
         from_id: str,
         to_id: str,
         attrs: dict[str, Any] | None = None,
+        *,
+        from_type: str | None = None,
+        to_type: str | None = None,
     ) -> None:
-        """Insert a relationship between two existing nodes."""
+        """Insert a relationship between two existing nodes.
+
+        For single-pair rels (REL_TYPES) the from/to node types are resolved
+        automatically from the registry. For multi-pair rels (MULTI_REL_TYPES,
+        e.g. ``belongs_to``) the caller MUST pass ``from_type``/``to_type``
+        because the same rel name accepts many endpoint combinations and the
+        Cypher MATCH needs the concrete node labels.
+        """
         self._guard_fresh()
         edge_attrs: dict[str, Any] = dict(attrs or {})
         edge_attrs.setdefault("confidence", 0.7)
         edge_attrs["created_by_session_id"] = self.session_id
         edge_attrs.setdefault("created_at", _now_iso())
+        # v0.2.0 provenance metadata. Default to layer="cognitive" because the
+        # TransactionOrchestrator is the cognitive-agent write path — the Layer 1
+        # worker uses its own write API and overrides these explicitly.
+        edge_attrs.setdefault("layer", "cognitive")
+        edge_attrs.setdefault("rule_id", "")
+        edge_attrs.setdefault("created_by", self.session_id)
+        edge_attrs.setdefault("fallback_reason", "")
 
-        # Resolve from/to types from REL_TYPES registry so MATCH uses correct labels.
+        # Resolve from/to types: REL_TYPES single-pair → auto; otherwise honour
+        # the caller-supplied hints (multi-pair rels like `belongs_to`).
         rel_row = next((r for r in REL_TYPES if r[0] == edge_type), None)
-        if rel_row is None:
-            raise ValueError(f"unknown edge_type: {edge_type}")
-        _, from_type, to_type = rel_row
+        if rel_row is not None:
+            _, resolved_from, resolved_to = rel_row
+        else:
+            from okto_pulse.core.kg.schema import MULTI_REL_TYPES
+            multi = next((m for m in MULTI_REL_TYPES if m[0] == edge_type), None)
+            if multi is None:
+                raise ValueError(f"unknown edge_type: {edge_type}")
+            if not from_type or not to_type:
+                raise ValueError(
+                    f"multi-pair edge_type '{edge_type}' requires explicit "
+                    f"from_type/to_type hints; got {from_type!r}/{to_type!r}"
+                )
+            valid_pairs = multi[1]
+            if (from_type, to_type) not in valid_pairs:
+                raise ValueError(
+                    f"edge_type '{edge_type}' does not accept pair "
+                    f"({from_type}, {to_type}); valid pairs: {valid_pairs}"
+                )
+            resolved_from, resolved_to = from_type, to_type
+        from_type, to_type = resolved_from, resolved_to
 
         attr_cols = ", ".join(f"{k}: ${k}" for k in edge_attrs)
         stmt = (

@@ -45,6 +45,7 @@ class KGEdgeType(str, Enum):
     IMPLEMENTS = "implements"
     TESTS = "tests"
     VALIDATES = "validates"
+    BELONGS_TO = "belongs_to"
 
 
 class ValidationStatus(str, Enum):
@@ -101,6 +102,14 @@ class EdgeCandidate(BaseModel):
     )
     to_candidate_id: str
     confidence: float = Field(0.7, ge=0.0, le=1.0)
+    # v0.2.0 provenance metadata (spec c48a5c33). Optional so legacy callers
+    # keep working — TransactionOrchestrator fills sensible defaults. When the
+    # Layer 1 deterministic worker feeds candidates in, these fields carry the
+    # rule_id/layer up to Kùzu so /metrics can segment correctly.
+    layer: str | None = None
+    rule_id: str | None = None
+    created_by: str | None = None
+    fallback_reason: str | None = None
 
 
 class ReconciliationHint(BaseModel):
