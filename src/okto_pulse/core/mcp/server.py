@@ -506,6 +506,8 @@ async def okto_pulse_get_my_profile() -> str:
     if not agent:
         return json.dumps({"error": "Authentication failed"})
 
+    from okto_pulse.core.infra.permissions import generate_role_summary
+
     return json.dumps(
         {
             "id": agent.id,
@@ -514,6 +516,7 @@ async def okto_pulse_get_my_profile() -> str:
             "objective": agent.objective,
             "is_active": agent.is_active,
             "permissions": agent.permissions,
+            "role_summary": generate_role_summary(agent.permissions),
             "created_at": agent.created_at.isoformat(),
             "last_used_at": (
                 agent.last_used_at.isoformat() if agent.last_used_at else None
@@ -1174,6 +1177,8 @@ async def okto_pulse_list_agents(board_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
+    from okto_pulse.core.infra.permissions import generate_role_summary
+
     async with get_db_for_mcp() as db:
         service = AgentService(db)
         agents = await service.list_agents(board_id)
@@ -1187,6 +1192,7 @@ async def okto_pulse_list_agents(board_id: str) -> str:
                     "description": a.description,
                     "objective": a.objective,
                     "is_active": a.is_active,
+                    "role_summary": generate_role_summary(a.permissions),
                     "created_at": a.created_at.isoformat(),
                     "last_used_at": (
                         a.last_used_at.isoformat() if a.last_used_at else None
