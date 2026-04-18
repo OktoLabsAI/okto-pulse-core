@@ -15,10 +15,12 @@ is embedded and single-writer).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time as _time
+from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from okto_pulse.core.kg import cypher_templates as tpl
@@ -26,6 +28,39 @@ from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 from okto_pulse.core.kg.schema import SCHEMA_VERSION
 
 logger = logging.getLogger("okto_pulse.kg.service")
+
+# ---------------------------------------------------------------------------
+# v0.3.0 R2 — hit counter with lazy flush
+# ---------------------------------------------------------------------------
+
+# Module-level cache shared across requests. A defaultdict keyed by
+# (board_id, node_id). Values are int counters. On flush the delta is
+# added to n.query_hits in Kùzu and the cache entry is reset to 0.
+_PENDING_HITS: dict[tuple[str, str], int] = defaultdict(int)
+
+# Timestamp (UTC) of the last successful flush per node. Used by the age
+# trigger: if the last flush was >24h ago, force a flush even if the count
+# hasn't reached the threshold.
+_LAST_FLUSH: dict[tuple[str, str], datetime] = {}
+
+# Per-node asyncio.Lock instances to serialise concurrent hits against the
+# same node without blocking hits against other nodes.
+_HIT_LOCKS: dict[tuple[str, str], asyncio.Lock] = defaultdict(asyncio.Lock)
+
+HIT_FLUSH_THRESHOLD = 10
+HIT_FLUSH_MAX_AGE_S = 24 * 3600  # 24h in seconds
+
+
+def _reset_hit_state_for_tests() -> None:
+    """Clear every bit of module-level hit state. Test-only helper."""
+    _PENDING_HITS.clear()
+    _LAST_FLUSH.clear()
+    _HIT_LOCKS.clear()
+
+
+def _hits_snapshot() -> dict[tuple[str, str], int]:
+    """Return a shallow copy of the pending cache. For debugging/metrics."""
+    return dict(_PENDING_HITS)
 
 
 @dataclass(frozen=True)
@@ -110,6 +145,95 @@ class KGService:
                 code="permission_denied",
                 message=f"No access to board {board_id}",
             )
+
+    # ------------------------------------------------------------------
+    # Hit counter (v0.3.0 R2 — FR5/FR9)
+    # ------------------------------------------------------------------
+
+    async def increment_hit(
+        self,
+        board_id: str,
+        node_type: str,
+        node_id: str,
+    ) -> None:
+        """Record that ``node_id`` appeared in a query result top-K.
+
+        Lazy-flushes the counter to Kùzu when the pending count reaches
+        ``HIT_FLUSH_THRESHOLD`` (10) or when the last flush was more than
+        24h ago. R3 wires this into the hybrid_search top-K; R2 exposes
+        it as a public method that tests can exercise directly.
+
+        Thread-safety: a per-node ``asyncio.Lock`` serialises increments
+        against the same node without blocking increments on other nodes.
+        A crash between increments and the next flush loses at most
+        ``HIT_FLUSH_THRESHOLD`` hits per node (documented trade-off — BR3).
+        """
+        key = (board_id, node_id)
+        async with _HIT_LOCKS[key]:
+            _PENDING_HITS[key] += 1
+            count = _PENDING_HITS[key]
+            last_flush = _LAST_FLUSH.get(key)
+            age_s = (datetime.now(timezone.utc) - last_flush).total_seconds() if last_flush else None
+
+            should_flush = count >= HIT_FLUSH_THRESHOLD or (
+                age_s is not None and age_s >= HIT_FLUSH_MAX_AGE_S
+            )
+            if should_flush:
+                await self._flush_hits(board_id, node_type, node_id)
+
+    async def _flush_hits(
+        self,
+        board_id: str,
+        node_type: str,
+        node_id: str,
+    ) -> None:
+        """Write the pending hit counter to Kùzu. Caller holds the lock."""
+        from okto_pulse.core.kg.schema import open_board_connection
+
+        key = (board_id, node_id)
+        delta = _PENDING_HITS.get(key, 0)
+        if delta <= 0:
+            _LAST_FLUSH[key] = datetime.now(timezone.utc)
+            return
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        try:
+            with open_board_connection(board_id) as (_db, conn):
+                conn.execute(
+                    f"MATCH (n:{node_type} {{id: $nid}}) "
+                    f"SET n.query_hits = COALESCE(n.query_hits, 0) + $delta, "
+                    f"n.last_queried_at = $ts",
+                    {"nid": node_id, "delta": delta, "ts": now_iso},
+                )
+        except Exception as exc:
+            logger.error(
+                "kg.scoring.hit_flush_failed board=%s node=%s delta=%d err=%s",
+                board_id, node_id, delta, exc,
+                extra={
+                    "event": "kg.scoring.hit_flush_failed",
+                    "board_id": board_id,
+                    "node_id": node_id,
+                    "delta": delta,
+                },
+            )
+            # Reset anyway — BR3 ACKs that hits can be lost on failure
+            # rather than risk unbounded cache growth on persistent error.
+            _PENDING_HITS[key] = 0
+            _LAST_FLUSH[key] = datetime.now(timezone.utc)
+            return
+
+        logger.info(
+            "kg.scoring.hit_flushed board=%s node=%s delta=%d",
+            board_id, node_id, delta,
+            extra={
+                "event": "kg.scoring.hit_flushed",
+                "board_id": board_id,
+                "node_id": node_id,
+                "delta": delta,
+            },
+        )
+        _PENDING_HITS[key] = 0
+        _LAST_FLUSH[key] = datetime.now(timezone.utc)
 
     # ------------------------------------------------------------------
     # Schema version (FR-6)
