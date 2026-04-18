@@ -16,6 +16,7 @@ from okto_pulse.core.api.analytics import router as analytics_router
 from okto_pulse.core.api.presets import router as presets_router
 from okto_pulse.core.api.sprints import router as sprints_router
 from okto_pulse.core.api.kg_routes import router as kg_router
+from okto_pulse.core.api.me import router as me_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -33,3 +34,4 @@ api_router.include_router(analytics_router, tags=["analytics"])
 api_router.include_router(presets_router, prefix="/presets", tags=["presets"])
 api_router.include_router(sprints_router, tags=["sprints"])
 api_router.include_router(kg_router, tags=["knowledge-graph"])
+api_router.include_router(me_router, tags=["me"])
