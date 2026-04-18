@@ -44,6 +44,17 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await init_db()
+
+        # Import events package BEFORE dispatcher.start — side-effect of
+        # importing handlers is @register_handler populating the registry.
+        # Dispatcher relies on the registry being complete when it drains.
+        from okto_pulse.core import events as _events  # noqa: F401
+        from okto_pulse.core.events.dispatcher import EventDispatcher, set_dispatcher
+
+        event_dispatcher = EventDispatcher(get_session_factory())
+        await event_dispatcher.start()
+        set_dispatcher(event_dispatcher)
+
         # Start the KG session cleanup worker if enabled. Safe to call even
         # when the KG layer is unused — the worker just sweeps an empty
         # SessionManager and costs one asyncio.sleep per interval.
@@ -66,6 +77,10 @@ def create_app(
         try:
             yield
         finally:
+            # Reverse order: stop dispatcher first so in-flight handlers
+            # finish before the downstream workers they depend on exit.
+            await event_dispatcher.stop(timeout=5.0)
+            set_dispatcher(None)
             if cleanup_worker is not None:
                 await cleanup_worker.stop()
             if outbox_worker is not None:

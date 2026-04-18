@@ -9,6 +9,7 @@ from sqlalchemy import (
     JSON,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -1457,3 +1458,66 @@ class GlobalUpdateOutbox(Base):
     )
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DomainEventRow(Base):
+    """Append-only log of domain events (outbox pattern).
+
+    Every state change in card/spec/sprint/ideation/refinement publishes a
+    row here inside the same transaction as the data change. Readers
+    (EventDispatcher worker) consume via domain_event_handler_executions.
+    """
+
+    __tablename__ = "domain_events"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    actor_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'user'")
+    )
+    payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        server_default=func.now(), index=True,
+    )
+
+
+class DomainEventHandlerExecution(Base):
+    """One row per (event, handler) pair. Tracks retry state for the
+    async dispatcher; events with multiple handlers get multiple executions.
+    """
+
+    __tablename__ = "domain_event_handler_executions"
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id", "handler_name", name="uq_deh_event_handler",
+        ),
+        Index("ix_deh_status_next_attempt", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    event_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("domain_events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    handler_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'pending'"),
+    )  # pending | processing | done | failed | dlq
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
