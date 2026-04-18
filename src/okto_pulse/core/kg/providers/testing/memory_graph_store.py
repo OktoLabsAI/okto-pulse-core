@@ -92,7 +92,7 @@ class InMemoryGraphStore:
                     results.append([
                         n["id"], n.get("title"), n.get("content"),
                         n.get("created_at"), n.get("source_confidence"),
-                        n.get("validation_status"), n.get("superseded_by"),
+                        n.get("relevance_score", 0.5), n.get("superseded_by"),
                     ])
         return results[:filters.max_rows]
 

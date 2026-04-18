@@ -228,7 +228,7 @@ class TestKGServiceUsesRegistry:
         assert svc.get_schema_version("b1") is None
 
         store.bootstrap("b1")
-        assert svc.get_schema_version("b1") == "0.2.0"
+        assert svc.get_schema_version("b1") == "0.3.0"
 
     def test_service_decision_history_via_graph_store(self):
         from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore
@@ -240,7 +240,7 @@ class TestKGServiceUsesRegistry:
             "title": "Use GraphQL for the API layer",
             "content": "Chose GraphQL over REST",
             "source_confidence": 0.9,
-            "validation_status": "corroborated",
+            "relevance_score": 0.8,
         })
 
         configure_kg_registry(graph_store=store)

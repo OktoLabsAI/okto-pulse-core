@@ -437,6 +437,11 @@ async def commit_consolidation(
                     node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
                     embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
 
+                    # v0.3.0: validation_status + corroboration_count replaced
+                    # by relevance_score (continuous) + usage telemetry. The
+                    # candidate carries an initial score (default 0.5); R2's
+                    # scoring pipeline reconciles it post-commit against the
+                    # current graph state (edge degree, contradictions, hits).
                     node_attrs = {
                         "title": cand.title,
                         "content": cand.content or "",
@@ -446,8 +451,9 @@ async def commit_consolidation(
                         "created_at": _now_iso(),
                         "created_by_agent": agent_id,
                         "source_confidence": cand.source_confidence,
-                        "validation_status": _enum_value(cand.validation_status),
-                        "corroboration_count": 0,
+                        "relevance_score": getattr(cand, "relevance_score", 0.5),
+                        "query_hits": 0,
+                        "last_queried_at": None,
                         "embedding": embedding,
                     }
                     _apply_kuzu_node_create_with_timestamp(

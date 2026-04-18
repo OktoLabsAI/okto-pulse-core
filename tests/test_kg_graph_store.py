@@ -53,7 +53,7 @@ class TestSemanticGraphStore:
         store = InMemoryGraphStore()
         assert store.get_schema_version("b1") is None
         store.bootstrap("b1")
-        assert store.get_schema_version("b1") == "0.2.0"
+        assert store.get_schema_version("b1") == "0.3.0"
 
     def test_create_and_find_by_topic(self):
         store = InMemoryGraphStore()
@@ -62,13 +62,13 @@ class TestSemanticGraphStore:
             "title": "Use FastAPI for REST",
             "content": "Chose FastAPI",
             "source_confidence": 0.9,
-            "validation_status": "validated",
+            "relevance_score": 0.8,
         })
         store.create_node("b1", "Decision", "d2", {
             "title": "Use Django ORM",
             "content": "Chose Django",
             "source_confidence": 0.8,
-            "validation_status": "validated",
+            "relevance_score": 0.7,
         })
 
         results = store.find_by_topic("b1", "Decision", "fastapi", QueryFilters())
@@ -152,7 +152,7 @@ class TestSemanticGraphStore:
     def test_get_schema_info(self):
         store = InMemoryGraphStore()
         info = store.get_schema_info("b1")
-        assert info["schema_version"] == "0.2.0"
+        assert info["schema_version"] == "0.3.0"
         assert len(info["stable_node_types"]) == 11
         assert len(info["stable_rel_types"]) == 10
         assert len(info["vector_indexes"]) == 5

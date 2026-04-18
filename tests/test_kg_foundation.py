@@ -77,7 +77,7 @@ class TestBootstrapSchema:
         }
 
     def test_schema_version(self):
-        assert SCHEMA_VERSION == "0.2.0"
+        assert SCHEMA_VERSION == "0.3.0"
 
     def test_bootstrap_creates_kuzu_dir(self, board_id):
         handle = bootstrap_board_graph(board_id)

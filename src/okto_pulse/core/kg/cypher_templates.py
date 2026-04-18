@@ -1,17 +1,24 @@
 """Parametrized Cypher templates for the 9 tier primario tools.
 
 SECURITY: ALL templates use $-prefixed params — NEVER string interpolation.
-This mitigates Cypher injection (FR-10). Default filters (validation_status,
-min_confidence, max_rows) are injected by the service layer at query time.
+This mitigates Cypher injection (FR-10). Default filters (min_confidence,
+max_rows) are injected by the service layer at query time.
 
 Templates return dicts from Kuzu `RETURN` projections. The service layer
 wraps results into typed Pydantic models.
+
+v0.3.0: validation_status filter removed from every template; R3 adds a
+relevance_score threshold filter in its place. During the R1→R3 window the
+queries are intentionally permissive — stubs return the full graph so the
+server stays operational while the scoring pipeline lands.
 """
 
 # Default filter clause injected into every read query.
 # The service layer replaces $min_confidence and $max_rows at call time.
+# v0.3.0 stub: validation_status predicate removed. R3 will replace this
+# with an n.relevance_score >= $min_relevance clause sourced from the same
+# service layer.
 _DEFAULT_FILTERS = (
-    "AND n.validation_status <> 'unvalidated' "
     "AND n.source_confidence >= $min_confidence "
 )
 
@@ -23,10 +30,9 @@ _DEFAULT_FILTERS = (
 GET_DECISION_HISTORY = """
 MATCH (d:Decision)
 WHERE d.title CONTAINS $topic
-  AND d.validation_status <> 'unvalidated'
   AND d.source_confidence >= $min_confidence
 RETURN d.id, d.title, d.content, d.created_at, d.source_confidence,
-       d.validation_status, d.superseded_by
+       d.relevance_score, d.superseded_by
 ORDER BY d.created_at DESC
 LIMIT $max_rows
 """
@@ -90,7 +96,6 @@ LIMIT $max_rows
 FIND_SIMILAR_DECISIONS_TEXT_FALLBACK = """
 MATCH (d:Decision)
 WHERE d.title CONTAINS $topic
-  AND d.validation_status <> 'unvalidated'
   AND d.source_confidence >= $min_confidence
 RETURN d.id, d.title, d.content, d.source_confidence,
        d.source_artifact_ref, d.created_at
@@ -140,8 +145,7 @@ LIMIT $max_rows
 
 GET_LEARNING_FROM_BUGS = """
 MATCH (l:Learning)-[:validates]->(b:Bug)
-WHERE l.validation_status <> 'unvalidated'
-  AND l.source_confidence >= $min_confidence
+WHERE l.source_confidence >= $min_confidence
   AND (b.title CONTAINS $area OR b.content CONTAINS $area)
 RETURN l.id AS learning_id, l.title AS learning_title,
        l.content AS learning_content, l.justification,
@@ -167,7 +171,7 @@ GET_ALL_NODES = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
 RETURN n.id, label(n) AS node_type, n.title, n.content,
-       n.created_at, n.source_confidence, n.validation_status,
+       n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
@@ -183,7 +187,7 @@ WHERE n.source_confidence >= $min_confidence
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
-       n.created_at, n.source_confidence, n.validation_status,
+       n.created_at, n.source_confidence, n.relevance_score,
        n.source_artifact_ref
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
