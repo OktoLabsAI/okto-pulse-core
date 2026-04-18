@@ -275,6 +275,9 @@ Ideation (raw idea) → Refinement(s) (focused analysis) → Spec (structured re
 
 Ideations are the starting point. When asked to evaluate or create an ideation:
 
+> **MANDATORY — Query the KG before evaluating.** Before calling `okto_pulse_evaluate_ideation`, you MUST run the Stage 1 query set from the "Query Timing" section of the Knowledge Graph chapter: `find_similar_decisions`, `query_global`, `get_learning_from_bugs`. Cite any hit explicitly in the ideation (decision_id + one-line summary). Failing to do this is a protocol violation — duplicate ideations and cross-board conflicts are traced back to this skip.
+
+
 1. **Evaluate scope**: Use `okto_pulse_evaluate_ideation` with scores 1-5 for each dimension:
 
    **Domains** — How many systems, services, or bounded contexts are impacted?
@@ -324,6 +327,9 @@ Ideations are the starting point. When asked to evaluate or create an ideation:
 
 Refinements break down a complex ideation into focused areas. Each refinement covers one specific aspect.
 
+> **MANDATORY — Query the KG before moving to `approved`.** Run the Stage 2 query set: `get_related_context(artifact_id=<parent_ideation_id>)`, `find_contradictions` on anchor decisions the refinement depends on, `list_alternatives` on those anchors. Every decision referenced in the refinement body must either (a) cite an existing node_id or (b) declare explicitly that it is new knowledge. Silent reuse or silent contradiction is rejected.
+
+
 - **Governance**: Refinements can only be created from a **"done" ideation** — the ideation must be fully reviewed and snapshotted first. This ensures refinements are based on a stable, agreed-upon version of the ideation.
 - **Context compilation**: When creating a refinement without a description, context is automatically compiled from the ideation (problem statement, approach, scope assessment, Q&A decisions).
 - **Status flow**: draft → review → approved → done
@@ -337,6 +343,10 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
 
 #### 2.3 Specs — CRITICAL: Analysis Before Populating
+
+> **MANDATORY — Query the KG before moving the spec out of `draft`.** Run the Stage 3 query set: `get_related_context(artifact_id=<spec_id>)`, board-wide `find_contradictions()`, per-major-FR/BR `find_similar_decisions`, and `explain_constraint` for every constraint cited. A spec that proceeds to `review` without this sweep will fail validation audit and is a protocol violation. Resolutions (SUPERSEDE targets, contradiction fixes, constraint origins) must be cited in the spec itself.
+
+**After the spec reaches `done`, consolidate immediately** — see the "When and How to Consolidate" section. The decisions captured in the spec must land in the KG so the next ideation on the same board can find them via `find_similar_decisions`. Skipping this step quietly breaks the whole chain for every later agent.
 
 **A spec is NOT a copy of the ideation.** When populating a spec's structured fields, you MUST:
 
@@ -1533,6 +1543,56 @@ Intent-based tools for the most common KG queries (~80% of use cases). Use these
 - When investigating a bug: call `get_learning_from_bugs` to see if the same area had issues before
 - When starting work on a card: call `get_related_context` with the spec's artifact_id
 
+### Query Timing — MANDATORY at every stage (Ideation, Refinement, Spec)
+
+Querying the KG is **not optional** and is **not only for new specs**. Each of the three planning stages has a required query set. Skipping any of them is a protocol violation, not a stylistic choice.
+
+The intent is simple: every piece of planning text you write must be checked against the existing institutional memory *before* it lands. The KG exists precisely so the same decision is not re-litigated on three different boards, three different sprints later.
+
+**Stage 1 — Ideation (before moving to `evaluating` or answering any Q&A)**
+
+Purpose of queries here: discover prior art, prevent re-inventing the wheel, detect that the "new idea" is actually a SUPERSEDE of an existing decision.
+
+| Query | Why it's required at this stage |
+|---|---|
+| `find_similar_decisions(board_id, topic=<ideation problem statement>)` | If the board has already decided this, the ideation must cite that prior decision (and justify superseding or skip creation entirely). |
+| `query_global(nl_query=<problem statement>)` | Cross-board context: the same problem may have been solved on a sibling board accessible to the agent. Without this, two boards solve the same problem two different ways. |
+| `get_learning_from_bugs(board_id, area=<affected area>)` | Past bugs in the affected area constrain the ideation scope. Ignoring them means re-hitting the same failure. |
+
+**Stage 2 — Refinement (before moving to `approved`)**
+
+Purpose: narrow scope against actual graph state, pull in constraints that the ideation didn't know about.
+
+| Query | Why it's required at this stage |
+|---|---|
+| `get_related_context(board_id, artifact_id=<parent_ideation_id>)` | Returns the 2-hop neighborhood around the parent ideation: decisions derived from it, constraints that already govern it, alternatives previously discarded. |
+| `find_contradictions(board_id, node_id=<relevant decision>)` | If the refinement implies a direction that contradicts a prior decision, you must resolve the contradiction *in the refinement* (propose SUPERSEDE or re-open Q&A with the owner) — NOT leave it for the spec to discover. |
+| `list_alternatives(board_id, decision_id=<anchor decision>)` | Surfaces "why not X" rationale so the refinement doesn't propose an already-rejected alternative without explicit justification for revisiting. |
+
+**Stage 3 — Spec (before moving out of `draft`)**
+
+Purpose: harden the spec against the full graph and detect drift.
+
+| Query | Why it's required at this stage |
+|---|---|
+| `get_related_context(board_id, artifact_id=<spec_id>)` | Final sweep of 2-hop neighbors. New FR/TR/BR/AC must not contradict anything in this set. |
+| `find_contradictions(board_id)` (board-wide, no node_id) | Detects contradictions the spec itself may have introduced during drafting. If found, resolve before submitting validation — a spec containing unresolved contradictions with the rest of the graph will fail audit. |
+| `find_similar_decisions(board_id, topic=<each major FR/BR>)` | Every significant FR/BR must be checked for similarity. Scores ≥ 0.95 → UPDATE (cite existing node); ≥ 0.85 → SUPERSEDE (explicit replacement + justification); < 0.85 → OK to ADD. |
+| `explain_constraint(board_id, constraint_id=<each relevant constraint>)` | For every constraint cited by the spec, fetch origin + related constraints + prior violations (bugs). The spec must reference the origin explicitly. |
+
+**Consequences of skipping these queries:**
+
+| Skipped query | What breaks |
+|---|---|
+| `find_similar_decisions` at Ideation | Duplicate ideations compete for the same decision space; users see two parallel tracks to solve one problem. |
+| `query_global` at Ideation | Cross-board duplication. Two boards ship two solutions to the same issue, each missing the other's lessons. |
+| `get_related_context` at Refinement | Refinement scope drifts past the ideation's boundary without anyone noticing; specs downstream inherit the drift. |
+| `find_contradictions` at Refinement or Spec | Contradictions surface at implementation time (cards fail review, tests contradict) — 10× more expensive than catching at spec time. |
+| `list_alternatives` at Refinement | Re-proposes a rejected alternative; reviewer loops you back with "we already said no to this". |
+| `explain_constraint` at Spec | Spec violates an existing constraint because the agent never checked why that constraint existed. |
+
+**Anti-pattern across stages:** running a query and then ignoring the result. The query's output must be **cited** in the artifact it informs — the ideation/refinement/spec must reference node_ids it found, and explicitly state which prior art it extends, supersedes, or diverges from. Silent "I checked and moved on" is indistinguishable from not checking.
+
 ### Tier Power Escape Hatch (3 tools)
 
 Flexible query tools for the ~20% of cases that don't fit the intent-based tools above.
@@ -1548,6 +1608,39 @@ Flexible query tools for the ~20% of cases that don't fit the intent-based tools
 - Max rows: 1000 default, 10000 max
 - Rate limit: 30 queries/min per agent
 - Cypher injection: blacklist keywords (CREATE/DELETE/SET/MERGE/DROP) rejected, comments stripped, unicode normalized
+
+### Query Patterns per Tool (what to pass, what to avoid, what breaks)
+
+Each query tool has a specific contract. Using the wrong tool or the right tool with wrong arguments silently returns misleading results — there is no error, just bad context, which leads to bad artifacts.
+
+**Tier primario (intent-based — prefer these):**
+
+| Tool | Pattern (correct use) | Anti-pattern | Consequence of misuse |
+|---|---|---|---|
+| `get_decision_history` | Pass a specific `topic` (2–5 words). Ideal when you need the chronology of a topic: who decided what, in what order. | Empty topic, or 1-word topic like `auth`. | Returns 100 unranked rows — useless for context, and ranks you out of your token budget. |
+| `get_related_context` | Pass the `artifact_id` of the current ideation/refinement/spec. Expects a specific anchor node. | Passing a board-level string or a topic. | Either returns empty (no match) or too broad — breaks the 2-hop neighborhood contract. |
+| `get_supersedence_chain` | Pass a concrete `decision_id` from a previous query result. Use when a spec references an older decision and you need the full replacement history. | Calling it on any non-Decision node_id. | Returns empty; you miss the actual supersede chain and cite a stale decision. |
+| `find_contradictions` | Call with no `node_id` to sweep the board during spec review. Call with a specific `node_id` to check one anchor decision before moving a refinement forward. | Running it once at the start of a session and caching the result for the whole session. | Contradictions introduced later in the session go undetected; the spec ships with a known conflict. |
+| `find_similar_decisions` | Pass a topic string that matches how you'd describe the decision in plain English. Use `top_k=5, min_similarity=0.85` to catch UPDATE/SUPERSEDE candidates during consolidation; use `top_k=10, min_similarity=0.6` for broader prior-art discovery during ideation. | Using defaults blindly for both consolidation and exploration. | Consolidation misses duplicates (too loose); exploration misses prior art (too tight). Same tool, two tunings. |
+| `explain_constraint` | Pass the `constraint_id` of each constraint the spec is about to cite. Returns origin (which decision minted it) + violations (bugs that broke it). | Citing a constraint in a spec without calling this tool first. | Spec restates the constraint without the origin's rationale; future reviewers ask "why?" and the answer isn't traceable. |
+| `list_alternatives` | Pass the `decision_id` of the decision the refinement/spec is about to extend. Returns the rejected alternatives and their rejection reason. | Proposing a new alternative without checking what was already rejected. | Reviewer loops you back with "we already said no to this, see alt-7f3a". |
+| `get_learning_from_bugs` | Pass an `area` string matching the domain you're touching (e.g., `auth-token-rotation`). Low confidence threshold (0.3) to surface every recorded lesson. | Skipping this when writing a spec in a previously-buggy area. | Spec repeats a known-bad approach because the agent never checked what broke before. |
+| `query_global` | Use it at **Ideation** and only there, with the problem statement as `nl_query`. Cross-board discovery. | Using it inside a single-board refinement/spec where `get_related_context` would give a precise 2-hop. | Noisy results: returns weakly relevant cross-board hits instead of precise local context. |
+
+**Tier power (escape hatch — use sparingly):**
+
+| Tool | Pattern (correct use) | Anti-pattern | Consequence of misuse |
+|---|---|---|---|
+| `kg_query_cypher` | Ad-hoc exploration or a specific query shape the 9 primario tools don't cover (e.g., "find all Decisions created by agent X in the last 30 days"). Always start by calling `kg_schema_info` to confirm the current schema. | Using it as a default for queries that fit `get_decision_history` or `find_similar_decisions`. | Bypasses the read-through cache (every call is a Kùzu hit), couples your code to the Cypher dialect, and generates audit noise in `tier_power_audit`. Primario queries are faster and logged cleaner. |
+| `kg_query_natural` | When the user's request is an English question and you don't know which primario tool fits. Lets the platform pick the intent. | Sending a cypher string here. | Mapped to embedding search; Cypher-specific syntax is treated as natural text and returns irrelevant results. |
+| `kg_schema_info` | Call once per session before writing any Cypher. Cache the result for the rest of the session. | Calling it on every Cypher query (N round-trips). | Wastes the rate limit and slows the session without adding signal — the schema rarely changes mid-session. |
+
+**Anti-patterns that apply to every query tool:**
+
+1. **Running a query and ignoring the result.** Output of every KG query must be either (a) cited in the artifact you're building or (b) explicitly acknowledged ("checked X, no hits"). Undocumented queries are indistinguishable from no queries.
+2. **Catching a query error and continuing.** A failed `find_contradictions` call is a blocker, not a warning. Abort the move/validation and investigate.
+3. **Hard-coding `min_confidence` and `min_relevance` defaults.** The sensible default is 0.5 / 0.3 respectively. If you need wider recall, set them explicitly and explain why in the artifact body.
+4. **Batching multiple distinct intents into one `kg_query_cypher` call to save round-trips.** Each intent gets its own primario call or its own cypher query. Merged queries are unreadable in the audit log.
 
 ### Node Types (11)
 
@@ -1567,12 +1660,71 @@ When `propose_reconciliation` runs, it applies these deterministic rules:
 
 You can override any hint in `commit_consolidation.agent_overrides` when your semantic reading disagrees (e.g., promoting UPDATE to SUPERSEDE because the justification narrative makes clear a reversal).
 
-### When to Consolidate
+### When and How to Consolidate — Mandatory Triggers
 
-- After a spec moves to `done` or `approved` — consolidate its decisions, criteria, constraints
-- After a sprint closes — consolidate learnings and retrospective
-- After answering Q&A with significant decisions — consolidate the decision + rationale
-- The `consolidation_queue` table tracks pending artifacts; use `get_unseen_summary` to discover what needs consolidation
+Consolidation is the mechanism that promotes ephemeral artifact text into the persistent, queryable KG. It is **not** a background housekeeping task — it is a first-class agent responsibility with specific triggers.
+
+**Mandatory triggers — you MUST open a consolidation session:**
+
+| Trigger | Tool to inspect the queue | Pattern |
+|---|---|---|
+| Spec moves to `done` or `approved` | `get_unseen_summary(board_id)` lists pending artifacts | Begin consolidation on the spec: extract Decision + Criterion + Constraint + Assumption + Alternative nodes and the rels between them. |
+| Sprint closes (moves to `done`) | Same | Consolidate retrospective Learnings + Bugs + Learning→validates→Bug edges. Include every non-trivial retro finding. |
+| Q&A on an ideation/refinement/spec gets an answer that **contains a decision** | Inspect Q&A answers after each `answer_*_question` call | Consolidate the decision (plus the justification as content) even though the parent artifact is not `done`. The answer itself is a stable point. |
+| A bug card moves to `done` with a root cause + fix narrative | Card conclusion | Consolidate a Learning node that validates the Bug node, including the fix rationale in `justification`. |
+| `consolidation_queue` has any row older than 24h | `get_unseen_summary` | Drain the backlog: every queued artifact becomes one consolidation session. Backlog >48h is a protocol violation. |
+
+**Optional but recommended triggers:**
+
+- After a major architectural discussion in comments — consolidate the outcome as a Decision linked to the involved artifacts.
+- After resolving a `find_contradictions` result — the resolution itself (which side won, which was superseded) must be consolidated as SUPERSEDE + Learning.
+
+**How to consolidate — step-by-step pattern:**
+
+```
+1. begin_consolidation(board_id, artifact_type, artifact_id, raw_content)
+   → if nothing_changed=true → STOP, abort and move on
+2. For every candidate the artifact yields:
+     a. get_similar_nodes(session_id, candidate_id, top_k=5, min_similarity=0.85)
+        → if match ≥ 0.95: plan UPDATE
+        → if match 0.85..0.95: plan SUPERSEDE
+        → else: plan ADD
+     b. add_node_candidate(session_id, candidate)
+3. add_edge_candidate for every rel (supersedes, derives_from, depends_on, contradicts, relates_to, mentions, violates, implements, tests, validates)
+4. propose_reconciliation(session_id)
+   → read the server's ADD/UPDATE/SUPERSEDE/NOOP hints
+5. commit_consolidation(session_id, summary_text="<1-2 sentences>", agent_overrides={...})
+   → override any hint you read differently (e.g., narrative says "we reversed" → force SUPERSEDE)
+6. On any error: abort_consolidation(session_id, reason=...)
+```
+
+**Consolidation patterns per tool (when + why):**
+
+| Tool | Pattern (use when) | Anti-pattern (never) | Consequence of the anti-pattern |
+|---|---|---|---|
+| `begin_consolidation` | First call of every session. Pass the **full raw_content** of the artifact so the SHA256 dedup works. | Passing only the title or a summary. | Dedup becomes ineffective — you'll re-consolidate noisy variations of the same artifact and bloat the audit table. |
+| `add_node_candidate` | Once per distinct assertion (decision/criterion/etc.). Include **title + content + justification + source_artifact_ref**. | Adding a node with just a title, or with empty content. | The resulting node scores near zero on `find_similar_decisions` and carries no context for future agents. |
+| `add_edge_candidate` | Once per semantic relationship between candidates. Always pick the *narrowest* edge type (`supersedes` beats `relates_to`). | Defaulting everything to `relates_to`. | The graph loses its semantic power — `get_supersedence_chain` and `find_contradictions` rely on specific edge types. |
+| `get_similar_nodes` | Before every non-trivial `add_node_candidate` when the title overlaps existing domain language. | Calling it with `top_k=1, min_similarity=0.5` and trusting the result. | False negatives: near-duplicate slips through as ADD and fragments the graph. Use `top_k=5, min_similarity=0.85`. |
+| `propose_reconciliation` | Exactly once per session, right before `commit_consolidation`. | Skipping it and going straight to commit. | The server cannot help with ADD/UPDATE/SUPERSEDE/NOOP classification; your commit becomes all-ADD and duplicates pile up. |
+| `commit_consolidation` | End of every successful session. Provide `summary_text` (goes into audit) and `agent_overrides` only for the hints you disagree with. | Committing without a `summary_text`. | Audit history becomes unreadable — future right-to-erasure requests and rollbacks have to guess what this session was about. |
+| `abort_consolidation` | Any unrecoverable error, or when `nothing_changed=true`. | Leaving the session open to expire by TTL. | Session state lingers in memory until expiry; under load, multiple abandoned sessions OOM the worker. |
+
+**Anti-triggers — do NOT consolidate in these cases:**
+
+- Artifact is still in `draft` or `review` — content is not stable. Consolidating now creates nodes that must be UPDATE/SUPERSEDE'd shortly after.
+- `begin_consolidation` returned `nothing_changed=true` — abort, don't re-commit the same state.
+- Q&A answer is a clarification, not a decision (e.g., "what do you mean by X?" → "I meant Y"). Decisions are commitments; clarifications aren't.
+
+**Consequence matrix — what happens when each trigger is skipped:**
+
+| Skipped trigger | Immediate consequence | Compounding consequence over time |
+|---|---|---|
+| Spec → done without consolidation | The spec's decisions exist only as prose inside the spec. | Next agent on the board re-decides the same thing, or contradicts it unknowingly. |
+| Sprint → done without consolidation | Retro learnings live only in the sprint retrospective card. | The same bug class recurs three sprints later because `get_learning_from_bugs` returns nothing. |
+| Q&A decision without consolidation | The decision sits in a Q&A thread, findable only by grep. | `find_similar_decisions` misses it; conflicting decisions accumulate in parallel Q&A threads. |
+| Bug fix without Learning consolidation | Fix is in commit history but not the KG. | Future investigations of similar bugs re-run the same diagnosis. |
+| Backlog in `consolidation_queue` > 48h | N artifacts to consolidate, each needing its own session. | Incremental consolidation is O(1) per artifact; backfill is O(N) of expensive extraction work and destroys trust in the "queryable memory" contract. |
 
 ### Anti-Patterns — What NOT to Do
 
