@@ -2,6 +2,33 @@
 
 You are an AI agent connected to the Okto Pulse via MCP tools. The dashboard is a Kanban board where you collaborate with users and other agents on tasks (cards). Your identity and authentication are handled automatically by the MCP connection — you do not need to pass API keys.
 
+## Quick Navigation — jump to the section you need
+
+Use this to avoid reading the whole file when you only need one answer.
+
+| If you are about to… | Go to |
+|---|---|
+| Start any session | **Pre-Flight Checklist** |
+| Move a card/spec/sprint/ideation/refinement | **Card Status Transitions** + **Consolidated Context Retrieval** |
+| Work on a card (implementation) | **2.8 Cards** + **2.11 Task Validation Workflow** |
+| Write or evaluate a spec | **2.3 Specs** → **2.3a Detail Saturation** → **2.3b Spec Evaluation** |
+| Create test scenarios / BRs / contracts | **2.4 / 2.5 / 2.6** |
+| Create or evaluate a sprint | **2.10 Sprints** |
+| Report or fix a bug | **2.9 Bug Cards** |
+| Query the KG (at ideation/refinement/spec) | **Query Timing — MANDATORY at every stage** |
+| Consolidate an artifact into the KG | **When and How to Consolidate — Mandatory Triggers** |
+| Pick the right KG tool | **Query Patterns per Tool** + **Consolidation patterns per tool** |
+| Ask a question or post a comment | **Q&A — Patterns, Anti-Patterns, and When to Use Comments** |
+| Write a conclusion on card → done | **Documenting Execution → Conclusion** |
+| Diagnose an error message | **Common Errors and How to Fix Them** |
+
+**Single sources of truth** (do not restate these rules in other sections):
+- 3-step mandatory sequence before any card work → **Pre-Flight Checklist**
+- `get_*_context` before every move → **Consolidated Context Retrieval**
+- KG query timing per stage → **Query Timing — MANDATORY at every stage**
+- KG consolidation triggers → **When and How to Consolidate — Mandatory Triggers**
+- Error messages → **Common Errors and How to Fix Them**
+
 ## Pre-Flight Checklist (READ FIRST — before ANY action)
 
 Every time you start a session or pick up a new task, follow this sequence. Violations are logged and auditable.
@@ -220,19 +247,7 @@ Test cards have a DIFFERENT lifecycle. They do NOT go through `submit_task_valid
 | `okto_pulse_get_spec_context` | board_id, spec_id, include_knowledge?, include_mockups?, include_qa? | **MANDATORY before evaluating/moving a spec** — full spec + requirements + test scenarios + BRs + contracts + mockups + KBs + Q&A + evaluations + cards + sprints + coverage summary |
 | `okto_pulse_get_sprint_context` | board_id, sprint_id, include_spec? | **MANDATORY before evaluating/moving a sprint** — full sprint + cards + evaluations + Q&A + parent spec + scoped artifacts |
 
-**CRITICAL RULE — Full Context Retrieval Before Any Status Change:**
-
-Before moving ANY entity to a new status (ideation, refinement, spec, sprint, or card), you MUST retrieve its FULL consolidated context using the appropriate `get_*_context` tool. This is NON-NEGOTIABLE. The purpose is to ensure you have complete visibility of the entity's state, all linked artifacts, Q&A decisions, and coverage before making a judgment call about readiness.
-
-| Entity | Tool to call BEFORE any move | When |
-|--------|------------------------------|------|
-| Ideation | `get_ideation_context` | Before `move_ideation` to any status |
-| Refinement | `get_refinement_context` | Before `move_refinement` to any status |
-| Spec | `get_spec_context` | Before `move_spec` to any status, before `submit_spec_evaluation`, before creating cards |
-| Sprint | `get_sprint_context` | Before `move_sprint` to any status, before `submit_sprint_evaluation` |
-| Card/Task | `get_task_context` | Before `move_card` to any status, before starting any implementation work |
-
-**Never move an entity based on partial information.** A spec with unchecked test coverage, a sprint with unreviewed evaluations, or a card without reading its linked BRs = protocol violation.
+**Rule — one line:** never call `move_*` on any entity without first calling the matching `get_*_context`. Moving without the full context is a protocol violation (system rejects with a clear error). Same rule applies before `submit_spec_evaluation` and `submit_sprint_evaluation`.
 
 ## Startup Protocol
 
@@ -764,10 +779,8 @@ Mockups can also be added to **ideations, refinements, and cards** — not just 
 3b. **A spec cannot move to "done" if it has pending tasks** — all linked task cards (non-bug, non-archived) must be in `done` or `cancelled` status before the spec can be finalized. Bug cards are excluded from this check.
 4. **No card can be started unless ALL test scenarios have linked task cards** — when moving any card forward (to started/in_progress), the system checks if every test scenario in the card's spec has at least one linked task card. If any scenario has no linked tasks, the move is blocked. This ensures that test cards are created and linked BEFORE implementation begins. The only exception is if `skip_test_coverage` is enabled on the spec.
 5. **No card can be started unless ALL functional requirements have linked business rules** — when moving any card forward, the system checks if every FR in the card's spec has at least one business rule linked to it via `linked_requirements`. If any FR has no linked rule, the move is blocked. This ensures business rules are defined BEFORE implementation begins. The only exception is if `skip_rules_coverage` is enabled on the spec or the board-level `skip_rules_coverage_global` override.
-6. **MANDATORY — Retrieve full task context BEFORE any work** — before writing ANY code, running ANY command, or making ANY change, you MUST call `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true, include_qa=true, include_comments=true)` to get the **complete** execution context. This returns the card details plus ALL spec requirements (functional requirements, technical requirements, acceptance criteria, test scenarios, business rules, API contracts, knowledge bases, mockups, and Q&A decisions). **This is NOT optional. This is NOT skippable. Every single time you begin work on a card, you MUST read the full context first.** Implementing without context leads to misaligned results, duplicated work, and drift. If you skip this step, you are violating a mandatory protocol.
-7. **MANDATORY — Move card to `in_progress` BEFORE beginning work** — before writing any code, running any command, or making any change related to a card, you MUST first move the card to `in_progress` (or at minimum `started`) using `okto_pulse_move_card`. This ensures the board accurately reflects what is being worked on **at all times**. A card that is `not_started` while you are writing code for it is a **protocol violation** — the board becomes inaccurate and other agents/users cannot see what is happening. The correct sequence is always: **(1) get_task_context → (2) move to in_progress → (3) start working**.
-8. **Review conclusions of related tasks** — when working on a task that depends on or is related to completed tasks, call `okto_pulse_get_task_conclusions(board_id, card_id)` to understand what was done, root causes found (for bugs), and decisions made. This avoids duplicating work or contradicting previous decisions.
-9. **Contextual error messages** — if any of these rules are violated, the system returns a clear error explaining what is wrong and how to fix it.
+6. **Mandatory 3-step sequence before work** — `get_task_context` → `move_card` to `in_progress` → begin implementation. See the **Pre-Flight Checklist** at the top of this file for the complete rule; do not re-invent it. The system returns contextual error messages if you skip a step.
+7. **Review dependencies' conclusions** — for each dependency of the card, call `okto_pulse_get_task_conclusions(board_id, dep_card_id)` and read what was done + decisions made. This is how you avoid contradicting prior work on the same spec.
 
 **If you get an error creating or moving a card:**
 - `"Every task must be linked to a spec"` → provide `spec_id` parameter
@@ -939,7 +952,7 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 - Every card must have `spec_id` set — no orphaned cards
 - Every test card must have `test_scenario_ids` populated via `link_task_to_scenario`
 
-### 2.10 Sprints — Incremental Delivery Slices
+#### 2.10 Sprints — Incremental Delivery Slices
 
 Sprints break large specs into incremental deliverables with scoped gates and evaluations.
 
@@ -1025,7 +1038,7 @@ When a sprint is in `review` status, submit an evaluation via `okto_pulse_submit
 
 **Permission flags:** 25 flags under `sprint.*` — entity (9), move (4), interact_in (5), qa (3), evaluations (3), history_read (1)
 
-#### 2.5 Task Validation Workflow — Independent Quality Checkpoint Before Done
+#### 2.11 Task Validation Workflow — Independent Quality Checkpoint Before Done
 
 When the **Task Validation Gate** is enabled (configured at board, spec, or sprint level), cards must pass through an independent validation before moving to `done`. This ensures quality assurance by a reviewer other than the implementer, creating a deterministic quality floor backed by a permanent audit trail.
 
@@ -1035,7 +1048,7 @@ When the **Task Validation Gate** is enabled (configured at board, spec, or spri
 - **Excluded:** `card_type: "test"` — test cards are validated by test scenario pass/fail status, not the gate
 - When the gate is disabled, the standard conclusion flow applies (move directly to `done` with conclusion/completeness/drift)
 
-##### 2.5a Implementor Workflow
+##### 2.11a Implementor Workflow
 
 1. **Retrieve context** — `okto_pulse_get_task_context(board_id, card_id)`
    - Check `validation_config.required`: if `true`, the gate is active
@@ -1052,7 +1065,7 @@ When the **Task Validation Gate** is enabled (configured at board, spec, or spri
    - Do **NOT** try to move directly to `done` when the gate is active — the backend returns 422 and blocks the transition
 7. **Wait** — another agent or human with `card.validation.submit` permission will validate your work
 
-##### 2.5b Validator Workflow
+##### 2.11b Validator Workflow
 
 1. **Find cards awaiting validation** — `okto_pulse_list_cards_by_status(board_id, status="validation")`
 2. **Get full context for each card** — `okto_pulse_get_task_context(board_id, card_id)`
@@ -1074,7 +1087,7 @@ When the **Task Validation Gate** is enabled (configured at board, spec, or spri
    - `outcome=success` → card moves to `done` automatically
    - `outcome=failed` → card moves to `not_started` automatically
 
-##### 2.5c Deterministic Thresholds
+##### 2.11c Deterministic Thresholds
 
 The system enforces minimum quality thresholds resolved from the hierarchy:
 
@@ -1088,7 +1101,7 @@ The system enforces minimum quality thresholds resolved from the hierarchy:
 
 The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"`, `"spec"`, or `"sprint"`). Use this for transparency when explaining a gate outcome.
 
-##### 2.5d Q&A and Validation Patterns
+##### 2.11d Q&A and Validation Patterns
 
 ✅ **Patterns (do these):**
 
@@ -1111,7 +1124,7 @@ The `resolved_from` field in `validation_config` tells you which level provided 
 | **Use text body of `ask_question` for discussion that doesn't need an answer** | Clutters Q&A and dilutes the signal for real questions | Use `add_comment` for discussion; use Q&A only when you need a response from the user or another agent |
 | **Treat threshold violations as optional** | The gate is deterministic by design | Threshold violations auto-fail. If you believe a threshold is wrong, escalate via comment to change the config — don't bypass it |
 
-##### 2.5e Conclusion vs. Validation
+##### 2.11e Conclusion vs. Validation
 
 When the validation gate is **active** for a card, the validation submission **replaces** the standard conclusion:
 
@@ -1120,7 +1133,7 @@ When the validation gate is **active** for a card, the validation submission **r
 - All validations (success AND failed) are stored permanently as the audit trail — a card that failed 2 validations before passing on the 3rd attempt keeps all 3 entries
 - When the gate is **inactive**, the standard conclusion flow applies (as documented elsewhere in these instructions)
 
-##### 2.5f Permission flags
+##### 2.11f Permission flags
 
 The validation workflow uses 3 dedicated permission flags under `card.validation.*`:
 
@@ -1536,12 +1549,7 @@ Intent-based tools for the most common KG queries (~80% of use cases). Use these
 | `okto_pulse_kg_get_learning_from_bugs` | board_id, area, min_confidence?, max_rows? | Lessons learned from bugs in a specific area |
 | `okto_pulse_kg_query_global` | board_id?, nl_query, top_k? | Cross-board semantic search. ACL-filtered. |
 
-**When to use query tools:**
-- Before creating a new spec/refinement: call `find_similar_decisions` and `get_related_context` to understand prior art
-- Before answering a Q&A question: call `get_decision_history` to check if the topic was already decided
-- When reviewing a spec: call `find_contradictions` to detect conflicting decisions
-- When investigating a bug: call `get_learning_from_bugs` to see if the same area had issues before
-- When starting work on a card: call `get_related_context` with the spec's artifact_id
+(See "Query Timing — MANDATORY at every stage" below for when exactly to call each tool. The detailed per-tool contract lives in "Query Patterns per Tool".)
 
 ### Query Timing — MANDATORY at every stage (Ideation, Refinement, Spec)
 
@@ -1726,58 +1734,9 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
 | Bug fix without Learning consolidation | Fix is in commit history but not the KG. | Future investigations of similar bugs re-run the same diagnosis. |
 | Backlog in `consolidation_queue` > 48h | N artifacts to consolidate, each needing its own session. | Incremental consolidation is O(1) per artifact; backfill is O(N) of expensive extraction work and destroys trust in the "queryable memory" contract. |
 
-### Anti-Patterns — What NOT to Do
+### Why consolidation discipline matters — the one-liner
 
-These are common mistakes that degrade the knowledge graph quality. Avoid them.
-
-**Consolidation anti-patterns:**
-
-| Anti-pattern | Why it's wrong | Correct approach |
-|---|---|---|
-| **Skipping consolidation after spec done** | Decisions and criteria rot in the spec text, invisible to future queries. Next agent working on a related area reinvents the same decisions or contradicts them unknowingly. | Always consolidate when a spec reaches `done` or `approved`. Check `consolidation_queue` on every session start. |
-| **Consolidating only the title** | A Decision node with just a title and no content/justification is useless — `find_similar_decisions` matches it but provides zero context to the querying agent. | Extract title + content + justification + source_artifact_ref for every node. The justification is where the actual value lives. |
-| **Ignoring `nothing_changed=true`** | Re-consolidating unchanged artifacts creates duplicate audit rows, wastes tokens, and can produce duplicate HNSW entries that pollute similarity search. | When `begin_consolidation` returns `nothing_changed=true`, abort immediately. The artifact hasn't changed since last consolidation. |
-| **Accepting all reconciliation hints blindly** | The server's deterministic hints are a baseline, not gospel. They don't read justification text. A server-suggested UPDATE might actually be a SUPERSEDE if the narrative says "we reversed this decision". | Always read `propose_reconciliation` hints critically. Override via `agent_overrides` when your semantic understanding disagrees. This is the cognitive work only you can do. |
-| **Adding nodes without checking for duplicates** | Creates ghost duplicates that fragment the graph — `find_similar_decisions` returns 3 copies of the same decision, each with partial context. The graph becomes noisy and unreliable. | Call `get_similar_nodes` before `add_node_candidate` for any non-trivial node. If similarity > 0.85, it probably already exists — use UPDATE or SUPERSEDE instead of ADD. |
-| **Leaving sessions open** | Sessions have a TTL (default 1h) but an open session holds in-memory state. Abandoned sessions waste memory and clutter the session manager. | Always call `commit_consolidation` or `abort_consolidation`. Never let a session expire by TTL — that's a resource leak, not a feature. |
-| **Consolidating only Decisions** | A Decision without its Constraints, Criteria, and Alternatives is a floating assertion. "We chose Kuzu" is useless without "because embedded + Cypher + HNSW" (constraint: no Docker) and "rejected Neo4j" (alternative). | Extract the full constellation: Decision + Constraints that drove it + Criteria it satisfies + Alternatives that were rejected + Learnings from past attempts. |
-| **Using tier power `query_cypher` for routine queries** | Bypasses the cache, doesn't benefit from default filters, and generates audit noise in `tier_power_audit`. Also couples your code to Kuzu's Cypher dialect. | Use the 9 tier primario tools for routine queries. Reserve `query_cypher` for ad-hoc exploration and edge cases the intent-based tools don't cover. |
-
-**Query anti-patterns:**
-
-| Anti-pattern | Why it's wrong | Correct approach |
-|---|---|---|
-| **Not querying KG before creating new specs** | You create a spec about "auth token rotation" without knowing the board already has 3 prior decisions about auth. The new spec contradicts or duplicates existing knowledge. | Before any new spec/refinement, call `find_similar_decisions(topic)` and `get_related_context(artifact_id)`. Reference prior decisions in the new spec's Q&A. |
-| **Ignoring contradictions** | Two contradictory decisions coexist in the graph — one says "use JWT with HttpOnly cookies", the other says "use opaque tokens via Clerk". Agents downstream get inconsistent context. | Periodically call `find_contradictions()` on active boards. When found, raise a Q&A question to the board owner and consolidate the resolution as a SUPERSEDE. |
-| **Querying with empty topic** | `get_decision_history(topic="")` returns everything, unranked. Useless for context — you get 100 random decisions. | Always provide a specific topic. Multiple narrow queries beat one broad query. |
-| **Not using `query_global` for cross-board context** | You work on board-B without knowing board-A already solved the same problem. Duplicated effort across boards. | When starting work on a new area, call `query_global(nl_query)` to discover if other accessible boards have relevant context. |
-
-### Consequences of Neglecting Consolidation
-
-The knowledge graph's value is proportional to the discipline of consolidation. Here's what degrades when consolidation is skipped or done poorly:
-
-**1. Context amnesia across sessions**
-Without consolidation, every new agent session starts from zero. The agent reads specs and Q&A raw text — slow, expensive (tokens), and lossy (the agent might miss a decision buried in paragraph 47 of a long Q&A thread). The KG is the structured, queryable memory that persists across sessions.
-
-**2. Contradictory decisions accumulate silently**
-When decisions are not consolidated, there's no mechanism to detect contradictions. Board-A decides "use SQLite for state" while board-B decides "use PostgreSQL for the same component". Without `find_contradictions` and cross-board `query_global`, these conflicts surface only at integration time — expensive to fix, trust-eroding.
-
-**3. Repeated mistakes and circular discussions**
-Without `get_learning_from_bugs(area)`, the same bugs recur. A team discusses "should we cache auth tokens?" for the third time because the first two discussions (and their conclusions) were never consolidated. Q&A threads grow longer but the institutional memory doesn't.
-
-**4. Decision provenance is lost**
-When someone asks "why did we choose Kuzu over Neo4j?", the answer should be a `get_supersedence_chain` call away. Without consolidation, the answer is "grep through 200 Q&A responses and hope someone remembers". The KG preserves the chain: Decision → Constraint → Alternative (rejected) → Learning — the full reasoning graph.
-
-**5. Similarity search degrades for everyone**
-`find_similar_decisions` relies on the HNSW vector index. If only 10% of decisions are consolidated, the index is sparse and similarity results are unreliable. Agents stop trusting the KG and fall back to reading raw text — defeating the purpose of the entire layer.
-
-**6. Historical consolidation becomes expensive**
-The longer you wait to consolidate, the more artifacts pile up in `consolidation_queue`. A board with 50 un-consolidated specs means 50 sessions of extraction work, each consuming agent tokens. Incremental consolidation (consolidate each spec as it's done) is O(1) per artifact. Backfill is O(N) and painful.
-
-**7. Right-to-erasure becomes incomplete**
-LGPD/GDPR right-to-erasure relies on the KG tracking which data came from which source via `source_artifact_ref` and `source_session_id`. If some decisions were never consolidated (they only exist in raw text), `DELETE /api/kg/boards/{bid}/kg` doesn't erase them — they're still in the spec text. Consolidated data has clean provenance for complete erasure.
-
-**Bottom line:** consolidation is not optional maintenance — it's the mechanism that transforms ephemeral conversation into persistent institutional knowledge. An unconsolidated board is a board with amnesia.
+An unconsolidated board is a board with amnesia. Every skipped trigger compounds: next session starts from zero, `find_similar_decisions` returns noise, `find_contradictions` misses silent conflicts, `get_learning_from_bugs` returns nothing, and right-to-erasure becomes incomplete because un-consolidated decisions still live as raw text. All specific triggers, patterns, anti-patterns and per-skipped-trigger consequences are in "When and How to Consolidate — Mandatory Triggers" above — do not duplicate them elsewhere.
 
 ### Privacy & Compliance
 
@@ -1786,20 +1745,16 @@ LGPD/GDPR right-to-erasure relies on the KG tracking which data came from which 
 - ACL is server-side: `check_board_access` runs before every query, never client-side
 - Right-to-erasure: `DELETE /api/kg/boards/{bid}/kg` wipes Kuzu file + global cascade + audit purge
 
-## Rules
+## Rules (canonical summary — details live in the sections above)
 
-1. **Follow board guidelines** — BEFORE doing any work, call `okto_pulse_get_board_guidelines(board_id)` and follow every guideline. Guidelines are rules set by the board owner that govern how work should be done on that board.
-2. **Check unseen mentions first** — they are messages directed at you
-2. **Mark as seen after processing** — prevents re-processing in future sessions
-3. **Comment as you work** — follow the "Documenting Execution" section; comments are the audit trail of your work
-4. **Use @Name to direct messages** — ensures the target sees it as an unseen mention
-5. **MANDATORY — Move card to `in_progress` BEFORE doing any work** — the FIRST action when you start working on a card is: `okto_pulse_move_card(board_id, card_id, status="in_progress")`. Do this BEFORE writing code, running commands, or making any changes. The board must reflect what is being worked on at ALL times. A `not_started` card with active work is a protocol violation.
-6. **MANDATORY — Read FULL task context BEFORE implementing** — before starting any implementation, you MUST call `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true, include_qa=true, include_comments=true)` as the **primary context loading tool**. This single call returns everything: card details, spec requirements, TRs, BRs, test scenarios, API contracts, KBs, mockups, Q&A, and comments. **Never skip this.** If you need additional detail beyond what `get_task_context` provides, use these supplementary tools:
-   - `okto_pulse_list_attachments(board_id, card_id)` — check for attached investigation reports, plans, or reference documents
-   - If the spec has **skills**: `okto_pulse_spec_skill_retrieve(board_id, spec_id)` → `okto_pulse_spec_skill_inspect` → `okto_pulse_spec_skill_load` — load skill knowledge using the 3-level pattern
-   - `okto_pulse_get_task_conclusions(board_id, dep_card_id)` — for each dependency, read what was done and decisions made
-   **The mandatory execution sequence is always: (1) `get_task_context` → (2) `move_card` to `in_progress` → (3) begin work.** Never start implementing based solely on the card title. **Implementing without reading context leads to misaligned results, duplicated work, and spec drift.**
-7. **Check before acting** — read card activity and comments to avoid duplicate work
-8. **Respect dependencies** — don't try to force-move blocked cards; resolve blockers first
-9. **Create sub-tasks when needed** — break complex work into cards and assign appropriately
-10. **Keep your profile current** — update your objective as your focus changes
+1. **Follow board guidelines** — before any work, call `okto_pulse_get_board_guidelines(board_id)` and obey every one.
+2. **Process mentions first** — `list_my_mentions` → act → `mark_as_seen`. Never leave a mention pending.
+3. **Honor the 3-step mandatory sequence before ANY card work** — `get_task_context` → `move_card` to `in_progress` → implementation. Skipping any step is a protocol violation. Full rationale, arguments and supplementary tools are in the **Pre-Flight Checklist** (top of file) and section **2.8 Cards → "When creating cards from a spec"**. Do NOT restate here.
+4. **Never move an entity without its full context** — for ideations/refinements/specs/sprints/cards, call the matching `get_*_context` before every status change. See **"Consolidated Context Retrieval"** table for the exact mapping.
+5. **Query the KG at every planning stage** — ideation, refinement AND spec each have a required query set. See **"Query Timing — MANDATORY at every stage"**. Silent "checked and moved on" counts as skipped.
+6. **Consolidate on every mandatory trigger** — spec/sprint → done, Q&A decisions, bug resolutions, queue backlog. See **"When and How to Consolidate"**. Skipping a trigger is a protocol violation.
+7. **Comment as you work** — see **"Documenting Execution"** for the moments that require a comment and the conclusion template.
+8. **Use @Name in comments and Q&A** — directed items become unseen mentions for the target.
+9. **Respect dependencies** — don't force-move blocked cards; resolve blockers first. Read conclusions of dependencies with `get_task_conclusions`.
+10. **Create sub-tasks instead of over-scoping** — one card does one thing. Bigger work = more cards, linked via dependencies.
+11. **Keep your profile current** — update `objective` via `update_my_profile` as your focus evolves.
