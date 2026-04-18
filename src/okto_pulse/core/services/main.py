@@ -1828,6 +1828,153 @@ class CommentService:
         return True
 
 
+async def _validate_spec_linked_refs(
+    db: AsyncSession,
+    current_spec: Any,
+    update_data: dict[str, Any],
+) -> None:
+    """Reject orphan references in linked_* fields before they hit the DB.
+
+    Computes the *final* state of each spec collection (incoming value when
+    the field is in `update_data`, otherwise the current persisted value)
+    and validates that every `linked_*` reference points to an existing
+    target:
+
+    - linked_criteria (test_scenarios → AC):
+        Must be a 0-based string index "0".."N-1" OR the exact AC text.
+        AC labels like "AC1" are rejected — the SpecModal coverage widget
+        does not recognise them and they would silently appear uncovered.
+
+    - linked_requirements (business_rules + api_contracts → FR):
+        Same rule — index "0".."N-1" OR exact FR text. Anything else
+        (including "FR1" labels) is rejected.
+
+    - linked_rules (api_contracts → BR):
+        Must match an existing business_rule.id in the same spec.
+
+    - linked_task_ids (test_scenarios + business_rules + api_contracts +
+      structured_trs → Card):
+        Each id must resolve to an existing Card row in the DB.
+
+    Raises ValueError with all offenders enumerated so the caller can fix
+    them in one round-trip instead of one-by-one.
+    """
+    def _final(field: str, default: Any):
+        if field in update_data:
+            return update_data[field] if update_data[field] is not None else default
+        return getattr(current_spec, field, None) or default
+
+    final_frs: list[str] = list(_final("functional_requirements", []) or [])
+    final_acs: list[str] = list(_final("acceptance_criteria", []) or [])
+    final_brs: list[dict] = [
+        b if isinstance(b, dict) else b.model_dump()
+        for b in (_final("business_rules", []) or [])
+    ]
+    final_contracts: list[dict] = [
+        c if isinstance(c, dict) else c.model_dump()
+        for c in (_final("api_contracts", []) or [])
+    ]
+    final_scenarios: list[dict] = [
+        s if isinstance(s, dict) else s.model_dump()
+        for s in (_final("test_scenarios", []) or [])
+    ]
+    final_trs_raw: list = list(_final("technical_requirements", []) or [])
+    final_trs_structured: list[dict] = []
+    for tr in final_trs_raw:
+        if isinstance(tr, dict) and tr.get("id"):
+            final_trs_structured.append(tr)
+        elif hasattr(tr, "model_dump") and getattr(tr, "id", None):
+            final_trs_structured.append(tr.model_dump())
+
+    valid_fr_indices = {str(i) for i in range(len(final_frs))}
+    valid_ac_indices = {str(i) for i in range(len(final_acs))}
+    valid_fr_texts = set(final_frs)
+    valid_ac_texts = set(final_acs)
+    valid_br_ids = {br.get("id") for br in final_brs if br.get("id")}
+
+    errors: list[str] = []
+
+    _DIM_TARGET = {"requirements": "FR", "criteria": "AC"}
+    def _check_index_or_text(refs: list[str], valid_indices: set, valid_texts: set, dim: str, owner_label: str):
+        target = _DIM_TARGET.get(dim, dim.upper()[:2])
+        for ref in refs or []:
+            ref_str = str(ref)
+            if ref_str in valid_indices or ref_str in valid_texts:
+                continue
+            max_idx = max(0, len(valid_indices) - 1)
+            errors.append(
+                f"{owner_label}: linked_{dim} reference '{ref_str}' is not a valid 0-based index "
+                f"(0..{max_idx}) nor matches any existing {target} text."
+            )
+
+    # business_rules.linked_requirements → FR
+    for br in final_brs:
+        owner = f"BR '{br.get('id') or br.get('title') or '?'}'"
+        _check_index_or_text(br.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+
+    # api_contracts.linked_requirements → FR
+    # api_contracts.linked_rules → BR.id
+    for ct in final_contracts:
+        owner = f"Contract '{ct.get('id') or (ct.get('method', '?') + ' ' + ct.get('path', '?'))}'"
+        _check_index_or_text(ct.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+        for ref in ct.get("linked_rules") or []:
+            if str(ref) not in valid_br_ids:
+                errors.append(
+                    f"{owner}: linked_rules reference '{ref}' does not match any business_rule.id "
+                    f"in the spec (valid: {sorted(valid_br_ids) or 'none'})."
+                )
+
+    # test_scenarios.linked_criteria → AC
+    for sc in final_scenarios:
+        owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
+        _check_index_or_text(sc.get("linked_criteria") or [], valid_ac_indices, valid_ac_texts, "criteria", owner)
+
+    # linked_task_ids → Card.id (DB existence check). Collect all in one batch.
+    all_task_ids: set[str] = set()
+    task_owners: dict[str, list[str]] = {}
+    for sc in final_scenarios:
+        owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
+        for tid in sc.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for br in final_brs:
+        owner = f"BR '{br.get('id') or br.get('title') or '?'}'"
+        for tid in br.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for ct in final_contracts:
+        owner = f"Contract '{ct.get('id') or '?'}'"
+        for tid in ct.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for tr in final_trs_structured:
+        owner = f"TR '{tr.get('id')}'"
+        for tid in tr.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+
+    if all_task_ids:
+        existing_ids: set[str] = set()
+        result = await db.execute(select(Card.id).where(Card.id.in_(all_task_ids)))
+        for (cid,) in result.all():
+            existing_ids.add(cid)
+        for missing in all_task_ids - existing_ids:
+            owners = ", ".join(task_owners.get(missing, []))
+            errors.append(
+                f"linked_task_ids reference card '{missing}' that does not exist in the database. "
+                f"Referenced by: {owners}."
+            )
+
+    if errors:
+        joined = "; ".join(errors[:10])
+        more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
+        raise ValueError(
+            f"Cannot update spec: {len(errors)} orphan link reference(s) found. {joined}{more}. "
+            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC, the BR.id for linked_rules, "
+            f"and an existing Card.id for linked_task_ids."
+        )
+
+
 class SpecService:
     """Service for spec operations."""
 
@@ -1981,6 +2128,10 @@ class SpecService:
         (business rules, contracts, scenarios, mockups, knowledge, skills) flow
         through this method via SpecUpdate, so applying the lock check here covers
         the whole surface in one place.
+
+        Also enforces referential integrity for `linked_*` fields: any
+        `linked_criteria`/`linked_requirements`/`linked_rules`/`linked_task_ids`
+        that points to a non-existent target raises ValueError before any write.
         """
         await _require_spec_unlocked(self.db, spec_id)
 
@@ -2010,6 +2161,12 @@ class SpecService:
                     s.model_dump() if hasattr(s, "model_dump") else s
                     for s in update_data[json_list_field]
                 ]
+
+        # Validate referential integrity of all `linked_*` fields BEFORE
+        # mutating the spec. The validator computes the final state of each
+        # collection (incoming value OR current state if untouched) and
+        # rejects orphan references with a precise error message.
+        await _validate_spec_linked_refs(self.db, spec, update_data)
 
         json_fields = {"test_scenarios", "screen_mockups", "business_rules", "api_contracts", "functional_requirements", "technical_requirements", "acceptance_criteria", "labels"}
         for key, value in update_data.items():

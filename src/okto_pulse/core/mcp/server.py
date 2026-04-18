@@ -261,6 +261,23 @@ async def _log_card_activity(
     )
 
 
+async def _safe_spec_update(service, spec_id: str, agent_id: str, payload):
+    """Wrap SpecService.update_spec so the ValueError raised by
+    `_validate_spec_linked_refs` (orphan link references) is rendered as
+    a structured JSON error instead of propagating to the MCP transport
+    as a generic 500.
+
+    Returns a tuple (spec, error_json). On success: (spec, None). On
+    validation failure: (None, '{"error": "..."}').
+    """
+    try:
+        spec = await service.update_spec(spec_id, agent_id, payload)
+        return spec, None
+    except ValueError as exc:
+        import json as _json
+        return None, _json.dumps({"error": str(exc)})
+
+
 def _auth_error() -> str:
     return json.dumps({"error": "Authentication failed or board access denied"})
 
@@ -1446,7 +1463,9 @@ async def okto_pulse_create_card(
                             changed = True
                 if changed:
                     from okto_pulse.core.models.schemas import SpecUpdate as SU
-                    await spec_service.update_spec(spec_id, ctx.agent_id, SU(test_scenarios=scenarios))
+                    _, _err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SU(test_scenarios=scenarios))
+                    if _err:
+                        return _err
 
         board_service = BoardService(db)
         await board_service._log_activity(
@@ -5308,7 +5327,9 @@ async def okto_pulse_update_spec(
 
     async with get_db_for_mcp() as db:
         service = SpecService(db)
-        spec = await service.update_spec(spec_id, ctx.agent_id, spec_update)
+        spec, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, spec_update)
+        if _err:
+            return _err
         await db.commit()
 
         if not spec:
@@ -5480,7 +5501,9 @@ async def okto_pulse_add_test_scenario(
         scenarios.append(scenario)
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, scenarios=scenarios)
@@ -5707,12 +5730,18 @@ async def okto_pulse_link_task_to_scenario(
         if not found:
             return json.dumps({"error": f"Scenario '{scenario_id}' not found"})
 
-        from okto_pulse.core.models.schemas import SpecUpdate, CardUpdate
-        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
-
-        # Update card's test_scenario_ids (with max limit check)
+        # Verify card exists BEFORE writing — prevents orphan task references.
         card_service = CardService(db)
         card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": f"Card '{card_id}' not found — cannot link a non-existent card."})
+
+        from okto_pulse.core.models.schemas import SpecUpdate, CardUpdate
+        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
+        if err:
+            return err
+
+        # Update card's test_scenario_ids (with max limit check)
         if card:
             existing_ids = list(card.test_scenario_ids or [])
             if scenario_id not in existing_ids:
@@ -5786,7 +5815,9 @@ async def okto_pulse_link_task_to_rule(
             return json.dumps({"error": f"Business rule '{rule_id}' not found in spec"})
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        if err:
+            return err
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
@@ -5844,7 +5875,9 @@ async def okto_pulse_link_task_to_contract(
             return json.dumps({"error": f"API contract '{contract_id}' not found in spec"})
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        if err:
+            return err
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=contracts)
@@ -5906,7 +5939,9 @@ async def okto_pulse_link_task_to_tr(
             })
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(technical_requirements=trs))
+        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(technical_requirements=trs))
+        if err:
+            return err
         await db.commit()
 
         cov = _spec_coverage(spec, trs=trs)
@@ -6650,7 +6685,9 @@ async def okto_pulse_add_business_rule(
         rules.append(br)
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
@@ -6746,7 +6783,9 @@ async def okto_pulse_update_business_rule(
             target["linked_requirements"] = req_list
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
@@ -6790,7 +6829,9 @@ async def okto_pulse_remove_business_rule(
             return json.dumps({"error": f"Business rule '{rule_id}' not found"})
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=new_rules))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(business_rules=new_rules))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, rules=new_rules)
@@ -6979,7 +7020,9 @@ async def okto_pulse_add_api_contract(
         contracts.append(contract)
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=contracts)
@@ -7122,7 +7165,9 @@ async def okto_pulse_update_api_contract(
             target["linked_rules"] = rules_list
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        if _err:
+            return _err
         await db.commit()
 
         return json.dumps({"success": True, "api_contract": target}, default=str)
@@ -7165,7 +7210,9 @@ async def okto_pulse_remove_api_contract(
             return json.dumps({"error": f"API contract '{contract_id}' not found"})
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=new_contracts))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=new_contracts))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=new_contracts)
@@ -7267,7 +7314,9 @@ async def _load_entity_mockups(db, entity_type: str, entity_id: str):
 async def _save_entity_mockups(service, entity_type, entity_id, agent_id, screens, UpdateClass):
     """Save screen_mockups back to the entity."""
     if entity_type == "spec":
-        await service.update_spec(entity_id, agent_id, UpdateClass(screen_mockups=screens))
+        _, _err = await _safe_spec_update(service, entity_id, agent_id, UpdateClass(screen_mockups=screens))
+        if _err:
+            return _err
     elif entity_type == "ideation":
         await service.update_ideation(entity_id, agent_id, UpdateClass(screen_mockups=screens))
     elif entity_type == "refinement":
