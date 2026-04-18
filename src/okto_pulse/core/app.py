@@ -53,11 +53,23 @@ def create_app(
 
             cleanup_worker = get_cleanup_worker()
             await cleanup_worker.start()
+        # Start the global discovery outbox worker. Populates the meta-graph
+        # from GlobalUpdateOutbox events so cross-board search works.
+        outbox_worker = None
+        try:
+            from okto_pulse.core.kg.global_discovery.outbox_worker import get_outbox_worker
+            outbox_worker = get_outbox_worker()
+            await outbox_worker.start()
+        except Exception:
+            # Kùzu may not be installed — log and continue
+            pass
         try:
             yield
         finally:
             if cleanup_worker is not None:
                 await cleanup_worker.stop()
+            if outbox_worker is not None:
+                await outbox_worker.stop()
             await close_db()
 
     app = FastAPI(

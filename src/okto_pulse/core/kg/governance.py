@@ -21,6 +21,10 @@ from okto_pulse.core.models.db import (
     ConsolidationQueue,
     GlobalUpdateOutbox,
     KuzuNodeRef,
+    Spec,
+    SpecStatus,
+    Sprint,
+    SprintStatus,
 )
 
 logger = logging.getLogger("okto_pulse.kg.governance")
@@ -37,6 +41,8 @@ async def start_historical_consolidation(
 ) -> dict:
     """Populate consolidation_queue with low-priority entries for all done
     specs/sprints in the board. Returns counts."""
+    import uuid
+
     # Check if already in progress
     existing = await db.execute(
         select(ConsolidationQueue).where(
@@ -48,21 +54,108 @@ async def start_historical_consolidation(
     if existing.scalars().first():
         return {"status": "already_in_progress", "board_id": board_id}
 
-    # MVP: insert a placeholder entry since we don't have direct access
-    # to the specs/sprints tables from this module. The real implementation
-    # would query Board -> Specs(done) -> insert queue entries.
-    import uuid
-    db.add(ConsolidationQueue(
-        id=str(uuid.uuid4()),
-        board_id=board_id,
-        artifact_type="historical_marker",
-        artifact_id=f"hist_{board_id}",
-        priority="low",
-        source="historical_backfill",
-        status="pending",
-    ))
+    # Query done/approved specs for this board
+    spec_result = await db.execute(
+        select(Spec).where(
+            Spec.board_id == board_id,
+            Spec.status.in_([SpecStatus.DONE, SpecStatus.APPROVED, SpecStatus.VALIDATED]),
+            Spec.archived == False,
+        )
+    )
+    specs = list(spec_result.scalars().all())
+
+    # Query closed sprints for this board
+    sprint_result = await db.execute(
+        select(Sprint).where(
+            Sprint.board_id == board_id,
+            Sprint.status == SprintStatus.CLOSED,
+            Sprint.archived == False,
+        )
+    )
+    sprints = list(sprint_result.scalars().all())
+
+    # Query cards (any status — Layer 1 worker materialises every card so
+    # the hierarchy backbone Spec→Sprint→Card stays consistent in the KG).
+    from okto_pulse.core.models.db import Card
+    card_result = await db.execute(
+        select(Card).where(Card.board_id == board_id)
+    )
+    cards = list(card_result.scalars().all())
+
+    # Remove completed/failed entries so they can be re-queued
+    await db.execute(
+        delete(ConsolidationQueue).where(
+            ConsolidationQueue.board_id == board_id,
+            ConsolidationQueue.source == "historical_backfill",
+            ConsolidationQueue.status.in_(["done", "failed"]),
+        )
+    )
+
+    # Collect remaining entries (pending/claimed) to avoid unique constraint violations
+    existing_result = await db.execute(
+        select(ConsolidationQueue.artifact_type, ConsolidationQueue.artifact_id).where(
+            ConsolidationQueue.board_id == board_id,
+        )
+    )
+    already_queued = {(row[0], row[1]) for row in existing_result.all()}
+
+    total = 0
+
+    # Insert queue entries for each spec
+    for spec in specs:
+        if ("spec", spec.id) in already_queued:
+            continue
+        db.add(ConsolidationQueue(
+            id=str(uuid.uuid4()),
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=spec.id,
+            priority="low",
+            source="historical_backfill",
+            status="pending",
+        ))
+        total += 1
+
+    # Insert queue entries for each sprint
+    for sprint in sprints:
+        if ("sprint", sprint.id) in already_queued:
+            continue
+        db.add(ConsolidationQueue(
+            id=str(uuid.uuid4()),
+            board_id=board_id,
+            artifact_type="sprint",
+            artifact_id=sprint.id,
+            priority="low",
+            source="historical_backfill",
+            status="pending",
+        ))
+        total += 1
+
+    # Insert queue entries for each card. We deliberately enqueue cards AFTER
+    # specs+sprints so the deterministic worker can resolve Card→Sprint /
+    # Card→Spec hierarchy edges via the cross-session lookup (the parent
+    # Entity is already committed when the card session opens).
+    for card in cards:
+        if ("card", card.id) in already_queued:
+            continue
+        db.add(ConsolidationQueue(
+            id=str(uuid.uuid4()),
+            board_id=board_id,
+            artifact_type="card",
+            artifact_id=card.id,
+            priority="low",
+            source="historical_backfill",
+            status="pending",
+        ))
+        total += 1
+
     await db.commit()
-    return {"status": "queueing", "board_id": board_id, "total_artifacts": 0}
+
+    logger.info(
+        "governance.historical_start board=%s specs=%d sprints=%d cards=%d total=%d",
+        board_id, len(specs), len(sprints), len(cards), total,
+    )
+    return {"status": "queueing", "board_id": board_id, "total_artifacts": total}
 
 
 async def pause_historical(db: AsyncSession, board_id: str) -> dict:
@@ -277,6 +370,152 @@ def clear_acl_violations_for_tests() -> None:
 # ---------------------------------------------------------------------------
 
 
+_RMTREE_RETRY_BACKOFF_SECONDS: tuple[float, ...] = (0.1, 0.3, 1.0)
+
+
+def _rmtree_with_retry(path, board_id: str) -> None:
+    """Remove a Kùzu board path on any platform without leaking file locks.
+
+    Kùzu 0.11 stores the graph as a single file (``graph.kuzu`` plus a sibling
+    ``.wal``), while older/newer versions may use a directory. This helper
+    handles both layouts — it also sweeps any ``graph.kuzu.*`` siblings
+    (WAL/shadow) that Kùzu may have left behind.
+
+    Windows holds an OS-level lock on any mmap'd file as long as the owning
+    process has a live handle. Before the remove can succeed we must:
+
+    1. Close every pooled + global :class:`BoardConnection` that might still
+       hold a handle on this board (via :func:`close_all_connections`).
+    2. Force a ``gc.collect()`` to drop any stray references.
+    3. Sleep 50ms so the OS flushes the handle table.
+
+    After the preamble, the remove runs with up to 3 retries on
+    ``PermissionError`` (backoff 0.1s / 0.3s / 1.0s). If all 4 attempts fail,
+    re-raise enriched with a ``diagnostic`` line listing still-open handles
+    on the path (via psutil when available — best-effort).
+
+    The preamble + retries are critical for the right-to-erasure path: a
+    WinError 32 here is user-visible and blocks GDPR compliance.
+    """
+    import gc
+    import time
+
+    from okto_pulse.core.kg.schema import close_all_connections
+
+    close_all_connections(board_id)
+    gc.collect()
+    time.sleep(0.05)
+
+    last_exc: Exception | None = None
+    for attempt in range(len(_RMTREE_RETRY_BACKOFF_SECONDS) + 1):
+        try:
+            _remove_path(path)
+            if attempt:
+                logger.info(
+                    "governance.rmtree_recovered board=%s attempts=%d",
+                    board_id, attempt + 1,
+                    extra={
+                        "event": "governance.rmtree_recovered",
+                        "board_id": board_id,
+                        "attempts": attempt + 1,
+                    },
+                )
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            if attempt >= len(_RMTREE_RETRY_BACKOFF_SECONDS):
+                break
+            backoff = _RMTREE_RETRY_BACKOFF_SECONDS[attempt]
+            logger.warning(
+                "governance.rmtree_retry board=%s attempt=%d backoff=%.2f err=%s",
+                board_id, attempt + 1, backoff, exc,
+                extra={
+                    "event": "governance.rmtree_retry",
+                    "board_id": board_id,
+                    "attempt": attempt + 1,
+                    "backoff_seconds": backoff,
+                },
+            )
+            close_all_connections(board_id)
+            gc.collect()
+            time.sleep(backoff)
+
+    assert last_exc is not None
+    diag = _diagnose_open_handles(path)
+    raise PermissionError(
+        f"rmtree failed for {path} after "
+        f"{len(_RMTREE_RETRY_BACKOFF_SECONDS) + 1} attempts: {last_exc}. "
+        f"Open handles diagnostic: {diag}"
+    ) from last_exc
+
+
+def _remove_path(path) -> None:
+    """Delete a Kùzu path whether it's a file or a directory.
+
+    Also sweeps WAL/shadow siblings (``{stem}.wal``, ``{stem}-shm``, etc.)
+    that Kùzu may have left outside the primary file.
+    """
+    import os
+    import shutil
+    from pathlib import Path
+
+    p = Path(path)
+    if p.is_dir():
+        shutil.rmtree(str(p))
+    elif p.is_file():
+        os.remove(str(p))
+        # Kùzu 0.11 emits sibling WAL/shadow files (e.g. graph.kuzu.wal).
+        # Sweep any that survived so the board dir is truly empty.
+        for sibling in p.parent.glob(p.name + ".*"):
+            try:
+                if sibling.is_file():
+                    os.remove(str(sibling))
+                elif sibling.is_dir():
+                    shutil.rmtree(str(sibling))
+            except Exception as exc:
+                logger.debug(
+                    "governance.sibling_cleanup_skipped sibling=%s err=%s",
+                    sibling, exc,
+                )
+
+
+def _diagnose_open_handles(path) -> str:
+    """Best-effort list of processes with open handles on ``path``.
+
+    Uses psutil when available — returns a short string suitable for log
+    context. Errors (psutil missing, access denied, etc.) collapse to a
+    descriptive placeholder so the rmtree error message always carries
+    *some* context.
+    """
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        return "psutil unavailable"
+
+    target = str(path).lower()
+    holders: list[str] = []
+    try:
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                for f in proc.open_files() or []:
+                    if f.path.lower().startswith(target):
+                        holders.append(
+                            f"pid={proc.info.get('pid')} "
+                            f"name={proc.info.get('name')} file={f.path}"
+                        )
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                continue
+    except Exception as exc:
+        return f"psutil scan failed: {exc}"
+
+    if not holders:
+        return "no process reported open handles (lock may be stale)"
+    return "; ".join(holders[:10])
+
+
+
+
+
 async def right_to_erasure(
     db: AsyncSession,
     board_id: str,
@@ -299,10 +538,9 @@ async def right_to_erasure(
     # 2. Kuzu per-board file delete
     try:
         from okto_pulse.core.kg.schema import board_kuzu_path
-        import shutil
         path = board_kuzu_path(board_id)
         if path.exists():
-            shutil.rmtree(str(path))
+            _rmtree_with_retry(path, board_id)
             counts["kuzu_file_removed"] = True
         else:
             counts["kuzu_file_removed"] = False

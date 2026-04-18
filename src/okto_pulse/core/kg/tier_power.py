@@ -228,10 +228,24 @@ def execute_cypher_read_only(
     max_rows: int | None = None,
     timeout_ms: int | None = None,
 ) -> dict:
-    """Execute a validated read-only Cypher query with safety rails."""
-    import time as _time
+    """Execute a validated read-only Cypher query with safety rails.
+
+    Delegates to registry.cypher_executor when available, falls back to
+    direct Kuzu execution.
+    """
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     max_rows = clamp_max_rows(max_rows)
+
+    executor = get_kg_registry().cypher_executor
+    if executor is not None:
+        return executor.execute_read_only(
+            board_id, cypher, params, max_rows=max_rows,
+        )
+
+    # Fallback: direct execution (should not happen with proper bootstrap)
+    import time as _time
+
     timeout_ms = clamp_timeout(timeout_ms)
 
     cleaned = _normalize_unicode(cypher)
@@ -240,22 +254,20 @@ def execute_cypher_read_only(
     cleaned = _auto_bound_var_length_path(cleaned, MAX_TRAVERSAL_DEPTH)
 
     t0 = _time.monotonic()
-    db, conn = open_board_connection(board_id)
-    try:
-        result = conn.execute(cleaned, params or {})
-        rows = []
-        while result.has_next():
-            rows.append(result.get_next())
-            if len(rows) > max_rows:
-                break
-    except Exception as exc:
-        raise TierPowerError(
-            "invalid_cypher",
-            f"Cypher execution failed: {exc}",
-            details={"cypher": cleaned[:200]},
-        ) from exc
-    finally:
-        del conn, db
+    with open_board_connection(board_id) as (_db, conn):
+        try:
+            result = conn.execute(cleaned, params or {})
+            rows = []
+            while result.has_next():
+                rows.append(result.get_next())
+                if len(rows) > max_rows:
+                    break
+        except Exception as exc:
+            raise TierPowerError(
+                "invalid_cypher",
+                f"Cypher execution failed: {exc}",
+                details={"cypher": cleaned[:200]},
+            ) from exc
 
     dur = (_time.monotonic() - t0) * 1000
     truncated = len(rows) > max_rows
@@ -284,9 +296,11 @@ def execute_natural_query(
 ) -> dict:
     """Hybrid search: embed query -> HNSW k-NN -> 1-hop traversal -> ranking."""
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-    from okto_pulse.core.kg.search import find_similar_nodes_by_type
+    from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 
-    embedder = get_kg_registry().embedding_provider
+    registry = get_kg_registry()
+    embedder = registry.embedding_provider
+    store = registry.graph_store
     warning = None
 
     try:
@@ -296,26 +310,40 @@ def execute_natural_query(
         query_vec = None
 
     all_results = []
-    if query_vec is not None:
+    if query_vec is not None and store is not None:
         for node_type in VECTOR_INDEX_TYPES:
-            raw = find_similar_nodes_by_type(
+            raw = store.vector_search(
                 board_id=board_id,
                 node_type=node_type,
-                query_vector=query_vec,
+                query_vec=query_vec,
                 top_k=limit,
                 min_similarity=0.3,
             )
             for r in raw:
                 all_results.append({
-                    "node_id": r.kuzu_node_id,
-                    "node_type": r.node_type,
-                    "title": r.title,
-                    "similarity": r.similarity,
+                    "node_id": r["node_id"],
+                    "node_type": r["node_type"],
+                    "title": r["title"],
+                    "similarity": r["similarity"],
                 })
+    elif store is not None:
+        # String-match fallback via graph_store
+        f = QueryFilters(min_confidence=0.0, max_rows=limit)
+        for node_type in NODE_TYPES:
+            try:
+                rows = store.find_by_topic(board_id, node_type, nl_query[:50], f)
+                for r in rows:
+                    all_results.append({
+                        "node_id": r[0],
+                        "node_type": node_type,
+                        "title": r[1],
+                        "similarity": 0.5,
+                    })
+            except Exception:
+                pass
     else:
-        # String-match fallback
-        db, conn = open_board_connection(board_id)
-        try:
+        # No graph_store — direct fallback
+        with open_board_connection(board_id) as (_db, conn):
             for node_type in NODE_TYPES:
                 try:
                     result = conn.execute(
@@ -333,8 +361,6 @@ def execute_natural_query(
                         })
                 except Exception:
                     pass
-        finally:
-            del conn, db
 
     all_results.sort(key=lambda x: x["similarity"], reverse=True)
     results = all_results[:limit]
@@ -359,6 +385,13 @@ def get_schema_info(
     include_internal: bool = False,
 ) -> dict:
     """Return schema introspection: node types, rel types, vector indexes."""
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    store = get_kg_registry().graph_store
+    if store is not None:
+        return store.get_schema_info(board_id, include_internal=include_internal)
+
+    # Fallback: static schema from constants
     stable_nodes = [
         {"name": nt, "stable": True}
         for nt in NODE_TYPES

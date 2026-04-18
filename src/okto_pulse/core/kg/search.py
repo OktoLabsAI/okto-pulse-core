@@ -43,6 +43,83 @@ class SimilarNodeRaw:
         return max(0.0, min(1.0, sim))
 
 
+def _cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
+    """Calculate cosine similarity between two vectors.
+
+    Returns 1.0 for identical vectors, 0.0 for orthogonal, -1.0 for opposite.
+    Vectors must have the same dimension.
+    """
+    if len(vec1) != len(vec2):
+        return 0.0
+
+    # Calculate dot product
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+
+    # Calculate magnitudes
+    magnitude1 = sum(a * a for a in vec1) ** 0.5
+    magnitude2 = sum(b * b for b in vec2) ** 0.5
+
+    if magnitude1 == 0.0 or magnitude2 == 0.0:
+        return 0.0
+
+    # Cosine similarity
+    return dot_product / (magnitude1 * magnitude2)
+
+
+def _fallback_manual_similarity_search(
+    board_id: str,
+    node_type: str,
+    query_vector: list[float],
+    *,
+    top_k: int = 5,
+    min_similarity: float = 0.0,
+) -> list[SimilarNodeRaw]:
+    """Fallback: manual cosine similarity calculation when QUERY_VECTOR_INDEX fails.
+
+    Fetches all nodes with embeddings and calculates similarity manually.
+    This is slower but works around Kùzu's vector search issues.
+    """
+    results: list[SimilarNodeRaw] = []
+    try:
+        with open_board_connection(board_id) as (_db, conn):
+            # Fetch all nodes with embeddings for this type
+            cypher = (
+                f"MATCH (n:{node_type}) "
+                f"WHERE n.embedding IS NOT NULL "
+                f"RETURN n.id, n.title, n.source_artifact_ref, n.embedding "
+                f"LIMIT 500"
+            )
+            result = conn.execute(cypher)
+            while result.has_next():
+                row = result.get_next()
+                node_id = row[0]
+                title = row[1]
+                source_ref = row[2] if len(row) > 2 else None
+                embedding = row[3] if len(row) > 3 else None
+
+                if embedding and len(embedding) == len(query_vector):
+                    # Calculate cosine similarity
+                    similarity = _cosine_similarity(query_vector, embedding)
+                    if similarity >= min_similarity:
+                        results.append(SimilarNodeRaw(
+                            kuzu_node_id=node_id,
+                            node_type=node_type,
+                            title=title,
+                            source_artifact_ref=source_ref,
+                            distance=1.0 - similarity,  # Convert similarity to distance
+                        ))
+    except Exception as exc:
+        logger.warning(
+            "kg.search.fallback_failed board=%s type=%s err=%s",
+            board_id, node_type, exc,
+        )
+        return []
+
+    # Sort by similarity descending
+    results.sort(key=lambda r: r.similarity, reverse=True)
+    return results[:top_k]
+
+
 def find_similar_nodes_by_type(
     board_id: str,
     node_type: str,
@@ -51,7 +128,7 @@ def find_similar_nodes_by_type(
     top_k: int = 5,
     min_similarity: float = 0.0,
 ) -> list[SimilarNodeRaw]:
-    """Run k-NN against one node type's HNSW index.
+    """Run k-NN against one node type's HNSW index with fallback to manual calculation.
 
     Returns at most `top_k` results, filtered by `min_similarity`. Empty list
     on any error (index missing, no rows, etc.) — callers should default to
@@ -62,8 +139,7 @@ def find_similar_nodes_by_type(
 
     results: list[SimilarNodeRaw] = []
     try:
-        db, conn = open_board_connection(board_id)
-        try:
+        with open_board_connection(board_id) as (_db, conn):
             idx = vector_index_name(node_type)
             # Kùzu 0.11 positional signature: (table, idx, vec, k).
             # RETURN is via node.* projection.
@@ -84,15 +160,26 @@ def find_similar_nodes_by_type(
                 )
                 if raw.similarity >= min_similarity:
                     results.append(raw)
-        finally:
-            del conn
-            del db
     except Exception as exc:
         logger.debug(
             "kg.search.vector_query_failed board=%s type=%s err=%s",
             board_id, node_type, exc,
         )
         return []
+
+    # If QUERY_VECTOR_INDEX returned no results, fall back to manual calculation
+    if not results:
+        logger.info(
+            "kg.search.vector_index_empty board=%s type=%s using_fallback",
+            board_id, node_type,
+        )
+        return _fallback_manual_similarity_search(
+            board_id=board_id,
+            node_type=node_type,
+            query_vector=query_vector,
+            top_k=top_k,
+            min_similarity=min_similarity,
+        )
 
     # Kùzu returns ordered by distance ascending; our SimilarNodeRaw exposes
     # similarity as 1-distance so we sort descending by similarity.

@@ -23,14 +23,16 @@ classifiers = [
 dependencies = [
     "fastapi>=0.109.0,<1.0.0",
     "uvicorn[standard]>=0.27.0,<1.0.0",
-    "pydantic>=2.5.0,<3.0.0",
+    "wsproto>=1.2.0,<2.0.0",
+    "pydantic>=2.5.0,<2.14",
+    "pydantic-core>=2.14.0,<2.47",
     "pydantic-settings>=2.1.0,<3.0.0",
     "aiofiles>=23.2.0,<26.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sqlalchemy[asyncio]>=2.0.0,<3.0.0",
     "aiosqlite>=0.19.0,<1.0.0",
     "asyncpg>=0.29,<1.0.0",
-    "fastmcp>=3.0.0,<4.0.0",
+    "fastmcp>=2.0.0,<3.0.0",
     "mcp>=1.0.0,<2.0.0",
     "kuzu>=0.6.0,<1.0.0",
     "numpy>=1.26.0,<3.0.0",
@@ -62,3 +64,17 @@ packages = ["src/okto_pulse"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/okto_pulse/core/mcp/agent_instructions.md" = "okto_pulse/core/mcp/agent_instructions.md"
+"src/okto_pulse/core/kg/workers/tech_entities.yml" = "okto_pulse/core/kg/workers/tech_entities.yml"
+"src/okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md" = "okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Default async-fixture loop scope. With "session" all session-scoped fixtures
+# (e.g. `_db_init`) run on the same loop the test functions use, eliminating
+# the cross-file race where a function-scoped per-test loop tried to use
+# objects created on a session-scoped one. This pairs with the conftest no
+# longer overriding `event_loop` itself (deprecated in pytest-asyncio 1.x).
+asyncio_default_fixture_loop_scope = "session"
+markers = [
+    "e2e: end-to-end pipeline contract tests — slow, open Kùzu handles, exercise outbox worker; excluded by the fast unit run via `pytest -m 'not e2e'`",
+]

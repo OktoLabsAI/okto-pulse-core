@@ -66,13 +66,11 @@ def _extract_conclusion(card) -> dict | None:
 
 
 def _is_test_card(card) -> bool:
-    """True if the card is a test card. Prefers card_type=TEST; falls back to
-    non-empty test_scenario_ids for pre-card_type cards."""
+    """True if the card is explicitly typed as a test card (card_type=test)."""
     ct = getattr(card, "card_type", None)
     if ct is not None and str(ct).endswith("test"):
         return True
-    ids = card.test_scenario_ids
-    return bool(ids and isinstance(ids, list) and len(ids) > 0)
+    return False
 
 
 def _is_normal_card(card) -> bool:
@@ -464,7 +462,7 @@ async def analytics_overview(
             "task_validation_gate": _aggregate_task_validation_gate([]),
             "spec_evaluation": _aggregate_spec_evaluation([]),
             "sprint_evaluation": _aggregate_sprint_evaluation([]),
-            "funnel": {"ideations": 0, "refinements": 0, "specs": 0, "sprints": 0, "cards": 0, "done": 0},
+            "funnel": {"ideations": 0, "refinements": 0, "specs": 0, "sprints": 0, "cards": 0, "tests": 0, "bugs": 0, "done": 0},
             "velocity": [],
             "boards": [],
             "total_bugs": 0, "bugs_open": 0, "bugs_done": 0,
@@ -554,6 +552,8 @@ async def analytics_overview(
         "specs": len(specs),
         "sprints": len(sprints),
         "cards": len(cards),
+        "tests": len(test_cards),
+        "bugs": len(bug_cards_all),
         "done": len(done_cards),
     }
 
@@ -847,6 +847,15 @@ async def board_funnel(
         "major": sum(1 for c in bug_cards if getattr(c, "severity", None) == "major"),
         "minor": sum(1 for c in bug_cards if getattr(c, "severity", None) == "minor"),
     }
+
+    # Avg cycle time for done cards
+    done_cards_board = [c for c in all_cards if c.status == CardStatus.DONE]
+    cycle_times_board: list[float] = []
+    for c in done_cards_board:
+        if c.created_at and c.updated_at:
+            ct = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
+            cycle_times_board.append(ct)
+    counts["avg_cycle_hours"] = round(sum(cycle_times_board) / len(cycle_times_board), 1) if cycle_times_board else None
 
     return counts
 

@@ -17,25 +17,20 @@ from __future__ import annotations
 import hashlib
 import math
 import struct
-from abc import ABC, abstractmethod
 from typing import Sequence
 
+from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 
-class EmbeddingProvider(ABC):
-    """Minimal contract for producing dense vectors from text."""
-
-    dim: int
-
-    @abstractmethod
-    def encode(self, text: str) -> list[float]:
-        """Encode a single string. Returns a list of length `dim`."""
-
-    def encode_batch(self, texts: Sequence[str]) -> list[list[float]]:
-        """Default batch path — providers override for efficiency."""
-        return [self.encode(t) for t in texts]
+__all__ = [
+    "EmbeddingProvider",
+    "StubEmbeddingProvider",
+    "SentenceTransformerProvider",
+    "get_embedding_provider",
+    "reset_embedding_provider_cache",
+]
 
 
-class StubEmbeddingProvider(EmbeddingProvider):
+class StubEmbeddingProvider:
     """Deterministic hash-based provider for tests.
 
     Maps text to a pseudo-random unit vector using SHA256 as a PRNG seed. Two
@@ -45,6 +40,9 @@ class StubEmbeddingProvider(EmbeddingProvider):
 
     def __init__(self, dim: int = 384):
         self.dim = dim
+
+    def encode_batch(self, texts: Sequence[str]) -> list[list[float]]:
+        return [self.encode(t) for t in texts]
 
     def encode(self, text: str) -> list[float]:
         seed = hashlib.sha256((text or "").encode("utf-8")).digest()
@@ -66,7 +64,7 @@ class StubEmbeddingProvider(EmbeddingProvider):
         return [x / norm for x in vec]
 
 
-class SentenceTransformerProvider(EmbeddingProvider):
+class SentenceTransformerProvider:
     """Lazy-loaded sentence-transformers provider."""
 
     def __init__(self, model_name: str, dim: int = 384):

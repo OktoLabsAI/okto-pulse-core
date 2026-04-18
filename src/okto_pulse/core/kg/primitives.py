@@ -197,15 +197,43 @@ async def add_edge_candidate(
     store = get_kg_registry().session_store
     async with session.lock:
         cand = req.candidate
+
+        # Layer ownership: reject deterministic edge types proposed by the
+        # cognitive agent (BR `Layer Ownership Isolation` — spec c48a5c33).
+        # Local workers set agent_id="system:layer1_worker"; the check only
+        # fires for real cognitive sessions.
+        from okto_pulse.core.kg.cognitive_policy import (
+            DETERMINISTIC_EDGE_TYPES,
+            LayerViolationError,
+        )
+        edge_type_str = (
+            cand.edge_type.value if hasattr(cand.edge_type, "value") else cand.edge_type
+        )
+        is_system_worker = agent_id.startswith("system:")
+        if (not is_system_worker) and edge_type_str in DETERMINISTIC_EDGE_TYPES:
+            raise KGPrimitiveError(
+                "layer_violation",
+                str(LayerViolationError(edge_type_str)),
+                session_id=req.session_id,
+            )
+
         for ep in (cand.from_candidate_id, cand.to_candidate_id):
             if ep.startswith("kg:"):
                 continue
-            if ep not in session.node_candidates:
-                raise KGPrimitiveError(
-                    "invalid_candidate",
-                    f"edge references unknown candidate: {ep}",
-                    session_id=req.session_id,
-                )
+            if ep in session.node_candidates:
+                continue
+            # Cross-session deterministic refs (Layer 1 hierarchy backbone):
+            # `<type>_<short>_entity` points to an Entity committed in a prior
+            # session of this board. The actual id resolution is deferred to
+            # commit_consolidation via Kùzu lookup; here we just accept the
+            # shape so the queue worker can stage edges before parents land.
+            if _is_cross_session_entity_ref(ep):
+                continue
+            raise KGPrimitiveError(
+                "invalid_candidate",
+                f"edge references unknown candidate: {ep}",
+                session_id=req.session_id,
+            )
 
         if cand.candidate_id in session.edge_candidates:
             raise KGPrimitiveError(
@@ -369,7 +397,7 @@ async def commit_consolidation(
             effective_hints[cid] = override
 
         try:
-            kdb, kconn = open_board_connection(session.board_id)
+            board_conn = open_board_connection(session.board_id)
         except ImportError as exc:
             raise KGPrimitiveError(
                 "commit_failed",
@@ -377,89 +405,125 @@ async def commit_consolidation(
                 session_id=req.session_id,
             ) from exc
 
-        embedder = registry.embedding_provider
-        orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=db,
-            session_id=req.session_id,
-            board_id=session.board_id,
-        )
-
-        candidate_to_kuzu_id: dict[str, str] = {}
-
-        try:
-            for cand_id, cand in session.node_candidates.items():
-                hint = effective_hints.get(cand_id)
-                op = _resolve_op(hint, cand.source_confidence)
-                if op == ReconciliationOperation.NOOP:
-                    continue
-
-                node_type = _enum_value(cand.node_type)
-                node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
-                embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
-
-                node_attrs = {
-                    "title": cand.title,
-                    "content": cand.content or "",
-                    "context": cand.context or "",
-                    "justification": cand.justification or "",
-                    "source_artifact_ref": cand.source_artifact_ref or "",
-                    "created_at": _now_iso(),
-                    "created_by_agent": agent_id,
-                    "source_confidence": cand.source_confidence,
-                    "validation_status": _enum_value(cand.validation_status),
-                    "corroboration_count": 0,
-                    "embedding": embedding,
-                }
-                _apply_kuzu_node_create_with_timestamp(
-                    orch, node_type, node_id, node_attrs
-                )
-                candidate_to_kuzu_id[cand_id] = node_id
-
-            for edge in session.edge_candidates.values():
-                from_id = _resolve_endpoint(
-                    edge.from_candidate_id, candidate_to_kuzu_id
-                )
-                to_id = _resolve_endpoint(
-                    edge.to_candidate_id, candidate_to_kuzu_id
-                )
-                if from_id is None or to_id is None:
-                    continue
-                orch.create_edge(
-                    edge_type=_enum_value(edge.edge_type),
-                    from_id=from_id,
-                    to_id=to_id,
-                    attrs={"confidence": edge.confidence},
-                )
-
-            committed_at = datetime.now(timezone.utc)
-
-            # Persist audit via registry.audit_repo or db fallback.
-            await _commit_audit_records(
-                registry, db, orch, req, session, agent_id, committed_at
+        with board_conn as (_kdb, kconn):
+            embedder = registry.embedding_provider
+            orch = TransactionOrchestrator(
+                kuzu_conn=kconn,
+                sqlite_session=db,
+                session_id=req.session_id,
+                board_id=session.board_id,
             )
 
-            counters = orch.counters
-        except KGPrimitiveError:
-            raise
-        except Exception as exc:
+            candidate_to_kuzu_id: dict[str, str] = {}
+
             try:
-                await orch.compensate()
-            except Exception as comp_exc:
+                for cand_id, cand in session.node_candidates.items():
+                    hint = effective_hints.get(cand_id)
+                    op = _resolve_op(hint, cand.source_confidence)
+
+                    # When NOOP (nothing_changed), lookup existing node so edges
+                    # can still be resolved. Bug: edges were skipped because
+                    # candidate_to_kuzu_id didn't have the NOOP nodes.
+                    if op == ReconciliationOperation.NOOP:
+                        node_type = _enum_value(cand.node_type)
+                        existing_id = _lookup_existing_node(
+                            kconn, node_type, cand.source_artifact_ref or ""
+                        )
+                        if existing_id:
+                            candidate_to_kuzu_id[cand_id] = existing_id
+                        continue
+
+                    node_type = _enum_value(cand.node_type)
+                    node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
+                    embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+
+                    node_attrs = {
+                        "title": cand.title,
+                        "content": cand.content or "",
+                        "context": cand.context or "",
+                        "justification": cand.justification or "",
+                        "source_artifact_ref": cand.source_artifact_ref or "",
+                        "created_at": _now_iso(),
+                        "created_by_agent": agent_id,
+                        "source_confidence": cand.source_confidence,
+                        "validation_status": _enum_value(cand.validation_status),
+                        "corroboration_count": 0,
+                        "embedding": embedding,
+                    }
+                    _apply_kuzu_node_create_with_timestamp(
+                        orch, node_type, node_id, node_attrs
+                    )
+                    candidate_to_kuzu_id[cand_id] = node_id
+
+                for edge in session.edge_candidates.values():
+                    from_id, from_xref_type = _resolve_endpoint(
+                        edge.from_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+                    )
+                    to_id, to_xref_type = _resolve_endpoint(
+                        edge.to_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+                    )
+                    if from_id is None or to_id is None:
+                        continue
+                    # Merge optional v0.2.0 provenance from the EdgeCandidate;
+                    # the orchestrator fills defaults for anything still unset
+                    # (layer="cognitive", rule_id="", fallback_reason="").
+                    edge_attrs: dict[str, object] = {"confidence": edge.confidence}
+                    if edge.layer:
+                        edge_attrs["layer"] = edge.layer
+                    if edge.rule_id:
+                        edge_attrs["rule_id"] = edge.rule_id
+                    if edge.created_by:
+                        edge_attrs["created_by"] = edge.created_by
+                    if edge.fallback_reason:
+                        edge_attrs["fallback_reason"] = edge.fallback_reason
+                    # Multi-pair rels (belongs_to) need explicit from_type/to_type
+                    # since one rel name accepts many endpoint combinations. Try
+                    # in-session candidates first; cross-session refs come back
+                    # typed from the resolver fallback above.
+                    from_cand = session.node_candidates.get(edge.from_candidate_id)
+                    to_cand = session.node_candidates.get(edge.to_candidate_id)
+                    from_hint = (
+                        _enum_value(from_cand.node_type) if from_cand
+                        else from_xref_type
+                    )
+                    to_hint = (
+                        _enum_value(to_cand.node_type) if to_cand
+                        else to_xref_type
+                    )
+                    orch.create_edge(
+                        edge_type=_enum_value(edge.edge_type),
+                        from_id=from_id,
+                        to_id=to_id,
+                        attrs=edge_attrs,
+                        from_type=from_hint,
+                        to_type=to_hint,
+                    )
+
+                committed_at = datetime.now(timezone.utc)
+
+                # Persist audit via registry.audit_repo or db fallback.
+                await _commit_audit_records(
+                    registry, db, orch, req, session, agent_id, committed_at
+                )
+
+                counters = orch.counters
+            except KGPrimitiveError:
+                raise
+            except Exception as exc:
+                try:
+                    await orch.compensate()
+                except Exception as comp_exc:
+                    raise KGPrimitiveError(
+                        "commit_failed",
+                        f"commit failed and compensate also failed: {comp_exc}",
+                        session_id=req.session_id,
+                        details={"original_error": str(exc)},
+                    ) from comp_exc
                 raise KGPrimitiveError(
                     "commit_failed",
-                    f"commit failed and compensate also failed: {comp_exc}",
+                    f"commit failed and was compensated: {exc}",
                     session_id=req.session_id,
-                    details={"original_error": str(exc)},
-                ) from comp_exc
-            raise KGPrimitiveError(
-                "commit_failed",
-                f"commit failed and was compensated: {exc}",
-                session_id=req.session_id,
-            ) from exc
-        finally:
-            del kconn
-            del kdb
+                ) from exc
 
         session.status = SessionStatus.COMMITTED
         session.committed_kuzu_node_refs = [
@@ -496,13 +560,98 @@ def _enum_value(obj):
     return obj.value if hasattr(obj, "value") else obj
 
 
-def _resolve_endpoint(
-    endpoint: str, candidate_to_kuzu_id: dict[str, str]
+def _lookup_existing_node(
+    kconn, node_type: str, source_artifact_ref: str
 ) -> str | None:
-    """Resolve an edge endpoint to an existing or newly-created kuzu_node_id."""
+    """Lookup an existing Kùzu node by type and source_artifact_ref.
+
+    Returns the kuzu_node_id if found, None otherwise. Used when NOOP
+    to find existing nodes so edges can still be resolved.
+    """
+    if not source_artifact_ref:
+        return None
+    cypher = (
+        f"MATCH (n:{node_type}) "
+        f"WHERE n.source_artifact_ref = $ref "
+        f"RETURN n.id LIMIT 1"
+    )
+    try:
+        res = kconn.execute(cypher, {"ref": source_artifact_ref})
+        if res.has_next():
+            return res.get_next()[0]
+    except Exception:
+        pass
+    return None
+
+
+_CROSS_SESSION_PREFIXES: tuple[str, ...] = ("spec_", "sprint_", "card_")
+
+
+def _is_cross_session_entity_ref(endpoint: str) -> bool:
+    """Match the `<artifact_type>_<short>_entity` shape Layer 1 emits when
+    referencing a parent Entity committed by an earlier session.
+
+    The validation in `add_edge_candidate` accepts these as deferred
+    endpoints; `_resolve_endpoint` later does the actual Kùzu lookup at
+    commit time.
+    """
+    if not endpoint.endswith("_entity"):
+        return False
+    body = endpoint[: -len("_entity")]
+    return any(body.startswith(p) and len(body) > len(p) for p in _CROSS_SESSION_PREFIXES)
+
+
+def _resolve_endpoint(
+    endpoint: str,
+    candidate_to_kuzu_id: dict[str, str],
+    *,
+    kconn=None,
+) -> tuple[str | None, str | None]:
+    """Resolve an edge endpoint to an existing or newly-created kuzu_node_id.
+
+    Returns ``(node_id, node_type)``. ``node_type`` is non-None only when the
+    resolution required a Kùzu lookup (cross-session ref) — single-session
+    candidates are typed by the caller via the local NodeCandidate.
+
+    Resolution order:
+        1. ``kg:<id>`` literal — strip prefix and trust the caller.
+        2. Local session candidate — match by candidate_id in the supplied map.
+        3. Cross-session by deterministic id pattern (`spec_<short>_entity` /
+           `sprint_<short>_entity`) — derive ``source_artifact_ref`` and
+           probe Kùzu for an Entity with that ref. Used by Layer 1 to wire
+           Sprint→Spec / Card→Sprint hierarchy edges across sessions.
+    """
     if endpoint.startswith("kg:"):
-        return endpoint[3:]
-    return candidate_to_kuzu_id.get(endpoint)
+        return endpoint[3:], None
+    local = candidate_to_kuzu_id.get(endpoint)
+    if local is not None:
+        return local, None
+    if kconn is None:
+        return None, None
+    # Cross-session deterministic-id fallback. We only handle the worker's
+    # own naming convention here (`spec_<id8>_entity`, `sprint_<id8>_entity`)
+    # to avoid surprises; new patterns must be opt-in.
+    if endpoint.endswith("_entity"):
+        body = endpoint[:-len("_entity")]
+        for prefix, ref_prefix in (("spec_", "spec:"), ("sprint_", "sprint:"), ("card_", "card:")):
+            if body.startswith(prefix):
+                short = body[len(prefix):]
+                # Source_artifact_ref uses the full UUID. We probe with a
+                # prefix match because the worker only carries the first 8
+                # chars in the candidate id.
+                cypher = (
+                    "MATCH (n:Entity) "
+                    "WHERE n.source_artifact_ref STARTS WITH $ref "
+                    "RETURN n.id LIMIT 1"
+                )
+                try:
+                    res = kconn.execute(cypher, {"ref": f"{ref_prefix}{short}"})
+                    if res.has_next():
+                        return res.get_next()[0], "Entity"
+                except Exception:
+                    pass
+                break
+    return None, None
 
 
 def _apply_kuzu_node_create_with_timestamp(

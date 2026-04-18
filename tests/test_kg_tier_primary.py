@@ -262,4 +262,4 @@ class TestContextToolsErrors:
     def test_schema_drift_detection(self):
         svc = get_kg_service()
         ver = svc.get_schema_version(BOARD)
-        assert ver == "0.1.0"
+        assert ver == "0.2.0"

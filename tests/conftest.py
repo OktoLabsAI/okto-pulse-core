@@ -17,6 +17,11 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_tmpdb}"
 os.environ["KG_BASE_DIR"] = _kg_dir
 os.environ["KG_CLEANUP_INTERVAL_SECONDS"] = "1"
 os.environ["KG_CLEANUP_ENABLED"] = "false"
+# Force the deterministic stub embedding provider for unit tests so we
+# don't reach for sentence-transformers (slow + non-deterministic on first
+# load). The community edition flips this to "sentence-transformers" in
+# production via CommunitySettings.
+os.environ["KG_EMBEDDING_MODE"] = "stub"
 
 from okto_pulse.core.infra.database import (  # noqa: E402
     create_database,
@@ -35,15 +40,14 @@ AGENT_ID = "agent-test-001"
 BOARD_ID = "board-test-001"
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")
 async def _db_init():
+    """Create the SQLite schema once per session.
+
+    Pinned to ``loop_scope="session"`` so the connection pool warmed up here
+    is reused by every async test (function-scoped loops would re-bind
+    aiosqlite handles and race the worker singletons).
+    """
     create_database(f"sqlite+aiosqlite:///{_tmpdb}", echo=False)
     await init_db()
     yield

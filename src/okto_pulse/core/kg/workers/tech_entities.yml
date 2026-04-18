@@ -1,0 +1,84 @@
+# Technical entity whitelist for Layer 1 deterministic NER.
+#
+# Each entry yields an Entity node when its `canonical` name or any `aliases`
+# term matches (case-insensitive, word-boundary) inside a Decision's content.
+# The `stem` flag enables light stemming for plural/verb forms — use only for
+# names where stemming is safe (e.g. "cache"/"caches"/"caching" → Cache).
+#
+# Consumed by okto_pulse.core.kg.workers.deterministic_worker._mentions_extractor.
+# Versioning: bump `version` any time a caller cares about determinism across
+# deploys (the worker ships the version in edge.rule_id metadata).
+
+version: 1
+
+entities:
+  # ------------------------------------------------------------------
+  # Data stores
+  # ------------------------------------------------------------------
+  - canonical: PostgreSQL
+    aliases: [postgres, pg, "postgres db", postgresql]
+    stem: false
+  - canonical: SQLite
+    aliases: [sqlite3, "sqlite db"]
+    stem: false
+  - canonical: Redis
+    aliases: [redis, "redis cache"]
+    stem: false
+  - canonical: Kuzu
+    aliases: [kuzu, "kùzu", kuzudb, "kuzu db"]
+    stem: false
+  - canonical: PostgreSQL JSONB
+    aliases: [jsonb]
+    stem: false
+
+  # ------------------------------------------------------------------
+  # IoT & external services
+  # ------------------------------------------------------------------
+  - canonical: SmartThings
+    aliases: [smartthings, "samsung smartthings"]
+    stem: false
+  - canonical: Home Assistant
+    aliases: ["home assistant", "homeassistant"]
+    stem: false
+  - canonical: OAuth2
+    aliases: [oauth2, oauth, "oauth 2.0"]
+    stem: false
+
+  # ------------------------------------------------------------------
+  # AI / ML stack
+  # ------------------------------------------------------------------
+  - canonical: HNSW
+    aliases: [hnsw, "hnsw index"]
+    stem: false
+  - canonical: Sentence Transformers
+    aliases: ["sentence-transformers", "sentence transformer"]
+    stem: false
+
+  # ------------------------------------------------------------------
+  # Protocols & formats
+  # ------------------------------------------------------------------
+  - canonical: REST
+    aliases: ["rest api", "restful"]
+    stem: false
+  - canonical: WebSocket
+    aliases: [websocket, ws]
+    stem: false
+  - canonical: Server-Sent Events
+    aliases: [sse, "server sent events"]
+    stem: false
+  - canonical: JSON
+    aliases: [json]
+    stem: false
+
+  # ------------------------------------------------------------------
+  # Python stack
+  # ------------------------------------------------------------------
+  - canonical: FastAPI
+    aliases: [fastapi]
+    stem: false
+  - canonical: Pydantic
+    aliases: [pydantic]
+    stem: false
+  - canonical: SQLAlchemy
+    aliases: [sqlalchemy]
+    stem: false
