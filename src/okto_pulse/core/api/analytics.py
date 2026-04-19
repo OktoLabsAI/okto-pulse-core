@@ -86,6 +86,53 @@ def _is_bug_card(card) -> bool:
     return ct is not None and str(ct).endswith("bug")
 
 
+def _resolve_linked_criteria_to_indices(
+    linked_list: list | None, ac_list: list[str]
+) -> set[int]:
+    """Normalize heterogeneous `linked_criteria` entries into a deduplicated set of
+    0-based AC indices.
+
+    Scenarios in the wild store entries in three shapes (historical drift across
+    code paths): `int`, numeric `str` (e.g. ``"3"``), or full AC text. Without
+    normalization, a set over raw values double-counts the same AC when multiple
+    shapes coexist in one spec — producing `covered_ac > total_ac`.
+
+    Out-of-range indices and unmatched texts are dropped silently so the invariant
+    `covered_ac <= total_ac` holds even for degenerate inputs.
+    """
+    if not linked_list or not ac_list:
+        return set()
+    valid_range = range(len(ac_list))
+    resolved: set[int] = set()
+    for entry in linked_list:
+        if isinstance(entry, bool):
+            # bool is a subclass of int in Python; reject to avoid True→1 coincidences
+            continue
+        if isinstance(entry, int):
+            if entry in valid_range:
+                resolved.add(entry)
+            continue
+        if isinstance(entry, str):
+            stripped = entry.strip()
+            if not stripped:
+                continue
+            # numeric-string index
+            try:
+                idx = int(stripped)
+            except ValueError:
+                pass
+            else:
+                if idx in valid_range:
+                    resolved.add(idx)
+                continue
+            # text match — tolerant, aligned with mcp/server.py::_spec_coverage
+            for i, ac in enumerate(ac_list):
+                if stripped == ac or ac.startswith(stripped) or stripped.startswith(ac):
+                    resolved.add(i)
+                    break
+    return resolved
+
+
 # ---------------------------------------------------------------------------
 # Validation Gate aggregation helpers
 # ---------------------------------------------------------------------------
@@ -1003,15 +1050,18 @@ async def board_coverage(
         total_ac = len(ac_list)
 
         scenarios = s.test_scenarios or []
-        # Covered ACs: ACs referenced in at least one test scenario's linked_criteria
-        covered_ac_ids: set[str] = set()
+        # Covered ACs: ACs referenced in at least one test scenario's linked_criteria.
+        # Normalize to int indices so mixed-type entries (idx / str-idx / text) dedup.
+        covered_ac_indices: set[int] = set()
         status_counts: dict[str, int] = {}
         for ts in scenarios:
             if isinstance(ts, dict):
-                for crit in (ts.get("linked_criteria") or []):
-                    covered_ac_ids.add(crit)
+                covered_ac_indices |= _resolve_linked_criteria_to_indices(
+                    ts.get("linked_criteria"), ac_list
+                )
                 ts_status = ts.get("status", "unknown")
                 status_counts[ts_status] = status_counts.get(ts_status, 0) + 1
+        covered_ac_count = min(len(covered_ac_indices), total_ac)
 
         # Business rules & API contracts coverage
         brs = s.business_rules or []
@@ -1037,7 +1087,7 @@ async def board_coverage(
             "spec_id": s.id,
             "title": s.title,
             "total_ac": total_ac,
-            "covered_ac": len(covered_ac_ids),
+            "covered_ac": covered_ac_count,
             "total_scenarios": len(scenarios),
             "scenario_status_counts": status_counts,
             "business_rules_count": len(brs),
@@ -2026,18 +2076,21 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
     ac_list = spec.acceptance_criteria or []
     scenarios = spec.test_scenarios or []
 
-    # Coverage
-    covered_ac_ids: set[str] = set()
+    # Coverage — normalize mixed linked_criteria formats (int / str-idx / AC text)
+    # to int indices so the `covered_ac <= total_ac` invariant holds.
+    covered_ac_indices: set[int] = set()
     scenario_statuses: list[dict] = []
     for ts in scenarios:
         if isinstance(ts, dict):
-            for crit in (ts.get("linked_criteria") or []):
-                covered_ac_ids.add(crit)
+            covered_ac_indices |= _resolve_linked_criteria_to_indices(
+                ts.get("linked_criteria"), ac_list
+            )
             scenario_statuses.append({
                 "id": ts.get("id"),
                 "title": ts.get("title"),
                 "status": ts.get("status", "unknown"),
             })
+    covered_ac_count = min(len(covered_ac_indices), len(ac_list))
 
     # Cards linked to this spec
     cards_q = select(Card).where(
@@ -2097,7 +2150,7 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         ac_details.append({
             "index": idx,
             "text": ac_text,
-            "covered": str(idx) in covered_ac_ids or ac_text in covered_ac_ids,
+            "covered": idx in covered_ac_indices,
         })
 
     # FR details with coverage status (rules + contracts)
@@ -2142,7 +2195,7 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         "title": spec.title,
         "status": spec.status.value if spec.status else None,
         "total_ac": len(ac_list),
-        "covered_ac": len(covered_ac_ids),
+        "covered_ac": covered_ac_count,
         "ac_details": ac_details,
         "total_fr": total_frs,
         "fr_details": fr_details,
