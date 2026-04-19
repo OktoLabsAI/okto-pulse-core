@@ -1156,7 +1156,7 @@ Decisions capture **why** a choice was made, with alternatives and supersedence.
 | Mood | "We chose Kùzu because..." | "The system MUST clamp at 1.5" |
 | Purpose | Records intent + tradeoffs | Enforces behavior |
 | Supersedence | Yes (explicit field) | Via versioning the spec |
-| Coverage gate | OPT-IN (default skip) | Mandatory FR→BR + BR→Task |
+| Coverage gate | Mandatory (default enforced since ideação #10) | Mandatory FR→BR + BR→Task |
 
 If it's an explanation of reasoning, it's a Decision. If it's an imperative rule the system must satisfy, it's a BusinessRule.
 
@@ -1168,9 +1168,43 @@ If it's an explanation of reasoning, it's a Decision. If it's an imperative rule
 - `okto_pulse_link_task_to_decision(board_id, spec_id, decision_id, card_id)` — idempotent, symmetric with `link_task_to_rule`. Populates `decision.linked_task_ids` so the opt-in coverage gate can verify each active Decision has at least one linked task.
 - `okto_pulse_migrate_spec_decisions(board_id, spec_id)` — one-shot, idempotent: extracts `## Decisions` markdown bullets from `spec.context` into structured `spec.decisions[]` and removes the block. Safe to run on already-migrated specs.
 
-**Coverage gate (OPT-IN):**
+**Coverage gate (ENFORCED by default — ideação #10 Fase 1):**
 
-The `skip_decisions_coverage` flag defaults to `True` on specs and boards. When you explicitly set it to `False`, `submit_spec_validation` calls `check_decisions_coverage` and rejects the spec if any **active** Decision has no `linked_task_ids`. Superseded and revoked decisions are not checked.
+Since ideação #10, `skip_decisions_coverage` defaults to `False` on newly created specs (specs criadas antes da migração preservam `True` via backward-compat). `submit_spec_validation` chama `check_decisions_coverage` e rejeita o spec se qualquer Decision **active** não tiver `linked_task_ids`. Superseded e revoked não são checadas. Para bypass explícito use o flag no spec ou `board.settings.skip_decisions_coverage_global`.
+
+**Semantic validation em submit_spec_validation (ideação #10 Fase 1):**
+
+`_validate_spec_linked_refs` rejeita orphan refs em decisions com mesma rigidez aplicada a TR/BR/Contract:
+- `supersedes_decision_id` deve apontar para um `decision.id` na mesma spec (órfãos são rejeitados).
+- `linked_requirements` cada entrada deve ser índice `"0".."N-1"` OU texto exato do FR.
+- `linked_task_ids` cada id deve resolver para um Card existente (batch check em uma query).
+
+**Consumo — `decisions_markdown` em `get_task_context` (ideação #10 Fase 2):**
+
+`okto_pulse_get_task_context` retorna dois formatos complementares em `spec_data`:
+- `decisions`: array cru (JSON) — útil quando o agente precisa traversar `linked_task_ids`, `id`, etc.
+- `decisions_markdown`: string markdown estruturada (bloco `## Decisions` com título, status, rationale, alternatives, linked FRs/tasks). **Prefira esta forma quando raciocinando sobre regras ativas** — já filtrada, formatada e cabe em ~200 tokens por decision. Respeita o parâmetro `include_superseded` (default false omite supersedidas).
+
+Exemplo de `decisions_markdown`:
+
+```markdown
+## Decisions
+
+### Use Kùzu embedded over Neo4j (active)
+- **Rationale**: Embedded DB reduces operational complexity
+- **Context**: Chosen during early KG design
+- **Alternatives**: Neo4j, PostgreSQL graph extensions
+- **Linked FRs**: FR0, FR2
+- **Linked tasks**: card-abc
+```
+
+**Coverage summary — `decisions_coverage_pct` em `get_spec_context` (ideação #10 Fase 1):**
+
+`spec_coverage_summary` emite 4 novas chaves paralelas a `fr_with_rules_pct`:
+- `decisions_total`: total de decisions active
+- `decisions_linked`: active com `linked_task_ids` preenchido
+- `decisions_coverage_pct`: 0-100 (ou 100 quando total=0, convenção de vacuous truth)
+- `decisions_uncovered_ids`: lista de `decision.id` sem tasks linkadas
 
 **Supersedence flow:**
 
