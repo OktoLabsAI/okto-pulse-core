@@ -1719,6 +1719,7 @@ async def okto_pulse_get_task_context(
                     "test_scenarios": spec.test_scenarios or [],
                     "business_rules": spec.business_rules or [],
                     "api_contracts": spec.api_contracts or [],
+                    "decisions": getattr(spec, "decisions", None) or [],
                 }
 
                 if _inc_mockups and spec.screen_mockups:
@@ -5104,11 +5105,13 @@ async def okto_pulse_get_spec_context(
             "test_scenarios": spec.test_scenarios or [],
             "business_rules": spec.business_rules or [],
             "api_contracts": spec.api_contracts or [],
+            "decisions": getattr(spec, "decisions", None) or [],
             # Evaluations
             "evaluations": spec.evaluations or [],
             # Skip flags
             "skip_test_coverage": spec.skip_test_coverage,
             "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
+            "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", True),
             "skip_qualitative_validation": getattr(spec, "skip_qualitative_validation", False),
             "validation_threshold": getattr(spec, "validation_threshold", None),
             # Cards

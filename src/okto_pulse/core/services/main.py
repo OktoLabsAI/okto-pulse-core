@@ -1969,6 +1969,10 @@ async def _validate_spec_linked_refs(
         s if isinstance(s, dict) else s.model_dump()
         for s in (_final("test_scenarios", []) or [])
     ]
+    final_decisions: list[dict] = [
+        d if isinstance(d, dict) else d.model_dump()
+        for d in (_final("decisions", []) or [])
+    ]
     final_trs_raw: list = list(_final("technical_requirements", []) or [])
     final_trs_structured: list[dict] = []
     for tr in final_trs_raw:
@@ -2020,6 +2024,21 @@ async def _validate_spec_linked_refs(
         owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
         _check_index_or_text(sc.get("linked_criteria") or [], valid_ac_indices, valid_ac_texts, "criteria", owner)
 
+    # decisions.linked_requirements → FR  +  supersedes_decision_id → Decision.id
+    valid_decision_ids = {d.get("id") for d in final_decisions if d.get("id")}
+    for dec in final_decisions:
+        owner = f"Decision '{dec.get('id') or dec.get('title') or '?'}'"
+        _check_index_or_text(
+            dec.get("linked_requirements") or [],
+            valid_fr_indices, valid_fr_texts, "requirements", owner,
+        )
+        sup = dec.get("supersedes_decision_id")
+        if sup and sup not in valid_decision_ids:
+            errors.append(
+                f"{owner}: supersedes_decision_id '{sup}' does not match any decision.id "
+                f"in the spec (valid: {sorted(valid_decision_ids) or 'none'})."
+            )
+
     # linked_task_ids → Card.id (DB existence check). Collect all in one batch.
     all_task_ids: set[str] = set()
     task_owners: dict[str, list[str]] = {}
@@ -2041,6 +2060,11 @@ async def _validate_spec_linked_refs(
     for tr in final_trs_structured:
         owner = f"TR '{tr.get('id')}'"
         for tid in tr.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for dec in final_decisions:
+        owner = f"Decision '{dec.get('id') or dec.get('title') or '?'}'"
+        for tid in dec.get("linked_task_ids") or []:
             all_task_ids.add(tid)
             task_owners.setdefault(tid, []).append(owner)
 
@@ -2268,8 +2292,8 @@ class SpecService:
         # Capture old values for diff
         old_data = {k: getattr(spec, k) for k in update_data.keys()}
 
-        # Serialize test_scenarios, screen_mockups, business_rules, api_contracts if present
-        for json_list_field in ("test_scenarios", "screen_mockups", "business_rules", "api_contracts"):
+        # Serialize test_scenarios, screen_mockups, business_rules, api_contracts, decisions if present
+        for json_list_field in ("test_scenarios", "screen_mockups", "business_rules", "api_contracts", "decisions"):
             if json_list_field in update_data and update_data[json_list_field] is not None:
                 update_data[json_list_field] = [
                     s.model_dump() if hasattr(s, "model_dump") else s
@@ -2282,7 +2306,7 @@ class SpecService:
         # rejects orphan references with a precise error message.
         await _validate_spec_linked_refs(self.db, spec, update_data)
 
-        json_fields = {"test_scenarios", "screen_mockups", "business_rules", "api_contracts", "functional_requirements", "technical_requirements", "acceptance_criteria", "labels"}
+        json_fields = {"test_scenarios", "screen_mockups", "business_rules", "api_contracts", "decisions", "functional_requirements", "technical_requirements", "acceptance_criteria", "labels"}
         for key, value in update_data.items():
             setattr(spec, key, value)
             if key in json_fields:
