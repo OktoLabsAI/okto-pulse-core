@@ -6844,6 +6844,474 @@ async def okto_pulse_remove_business_rule(
         return json.dumps({"success": True, "removed": rule_id, "remaining": len(new_rules), "coverage": cov})
 
 
+# ============================================================================
+# Decisions — formalized design choices on a spec (spec b66d2562)
+#
+# Decision vs BusinessRule: a Decision records *why* a choice was made
+# ("We chose Kùzu over Neo4j because..."); a BusinessRule is a prescriptive
+# norm ("The system MUST clamp scores at 1.5"). They're distinct entities
+# with distinct semantics — don't mix them.
+# ============================================================================
+
+
+def _parse_linked_requirements(raw: str, frs: list) -> tuple[list[str] | None, str | None]:
+    """Parse a pipe-separated "0|2|5" into resolved FR references.
+
+    Returns (list_or_None, error_str). CLEAR empties the list explicitly.
+    """
+    if not raw:
+        return None, None
+    if raw.strip().upper() == "CLEAR":
+        return [], None
+    out: list[str] = []
+    for token in raw.split("|"):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            idx = int(token)
+        except ValueError:
+            # Accept resolved text as-is
+            out.append(token)
+            continue
+        if 0 <= idx < len(frs):
+            # Keep the index as a string — aligned with BR/TR convention
+            out.append(str(idx))
+        else:
+            return None, f"Requirement index {idx} out of range (0-{len(frs)-1})"
+    return out, None
+
+
+@mcp.tool()
+async def okto_pulse_add_decision(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    rationale: str,
+    context: str = "",
+    alternatives_considered: str = "",
+    supersedes_decision_id: str = "",
+    linked_requirements: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Add a formalized Decision to a spec.
+
+    A Decision records a contextual CHOICE — the reasoning behind picking one
+    path over alternatives. Different from BusinessRule (which is a NORM, a
+    prescriptive "DEVE" statement): use a Decision to capture design
+    intent, tradeoffs, or team consensus. The KG extracts Decisions into
+    queryable nodes, and the optional coverage gate (opt-in) can require each
+    Decision to have ≥1 linked task.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        title: Decision title (e.g. "Use Kùzu embedded over Neo4j")
+        rationale: Why this choice was made
+        context: When/where this applies (optional)
+        alternatives_considered: Pipe-separated list of alternatives (e.g. "Neo4j|DuckDB")
+        supersedes_decision_id: id of another Decision this one replaces; it auto-moves to status=superseded
+        linked_requirements: Pipe-separated FR indices (e.g. "0|2")
+        notes: Additional notes
+
+    Returns:
+        JSON with created decision and spec coverage snapshot
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        frs = spec.functional_requirements or []
+        req_list, err = _parse_linked_requirements(linked_requirements, frs)
+        if err:
+            return json.dumps({"error": err})
+
+        alts = None
+        if alternatives_considered:
+            alts = [a.strip() for a in alternatives_considered.split("|") if a.strip()]
+
+        decisions = list(spec.decisions or [])
+
+        # Auto-supersede: if the new decision supersedes an existing one,
+        # flip the target's status to "superseded" in the same update.
+        if supersedes_decision_id:
+            found_target = False
+            for d in decisions:
+                if d.get("id") == supersedes_decision_id:
+                    d["status"] = "superseded"
+                    found_target = True
+                    break
+            if not found_target:
+                return json.dumps({
+                    "error": f"supersedes_decision_id '{supersedes_decision_id}' "
+                             f"not found in spec.decisions"
+                })
+
+        dec_id = f"dec_{_uuid.uuid4().hex[:8]}"
+        decision = {
+            "id": dec_id,
+            "title": title,
+            "rationale": rationale.replace("\\n", "\n"),
+            "context": context.replace("\\n", "\n") if context else None,
+            "alternatives_considered": alts,
+            "supersedes_decision_id": supersedes_decision_id or None,
+            "linked_requirements": req_list,
+            "linked_task_ids": None,
+            "status": "active",
+            "notes": notes.replace("\\n", "\n") if notes else None,
+        }
+        decisions.append(decision)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=decisions),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps(
+            {"success": True, "decision": decision, "decisions_total": len(decisions)},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_update_decision(
+    board_id: str,
+    spec_id: str,
+    decision_id: str,
+    title: str = "",
+    rationale: str = "",
+    context: str = "",
+    alternatives_considered: str = "",
+    supersedes_decision_id: str = "",
+    linked_requirements: str = "",
+    notes: str = "",
+    status: str = "",
+) -> str:
+    """
+    Update an existing Decision. Only non-empty fields are changed; pass "CLEAR"
+    to wipe optional string/list fields.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        decision_id: Decision ID ("dec_...")
+        title: New title (optional)
+        rationale: New rationale (optional)
+        context: New context (optional, "CLEAR" to remove)
+        alternatives_considered: Pipe-separated list (optional, "CLEAR" to remove)
+        supersedes_decision_id: New target Decision id, or "CLEAR" to unset
+        linked_requirements: Pipe-separated FR indices ("CLEAR" to empty)
+        notes: Notes (optional, "CLEAR" to remove)
+        status: One of "active", "superseded", "revoked" (optional)
+
+    Returns:
+        JSON with updated decision
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        decisions = list(spec.decisions or [])
+        target = next((d for d in decisions if d.get("id") == decision_id), None)
+        if target is None:
+            return json.dumps({"error": f"Decision '{decision_id}' not found"})
+
+        if title:
+            target["title"] = title
+        if rationale:
+            target["rationale"] = rationale.replace("\\n", "\n")
+        if context:
+            target["context"] = None if context.strip().upper() == "CLEAR" else context.replace("\\n", "\n")
+        if alternatives_considered:
+            if alternatives_considered.strip().upper() == "CLEAR":
+                target["alternatives_considered"] = None
+            else:
+                target["alternatives_considered"] = [
+                    a.strip() for a in alternatives_considered.split("|") if a.strip()
+                ]
+        if supersedes_decision_id:
+            if supersedes_decision_id.strip().upper() == "CLEAR":
+                target["supersedes_decision_id"] = None
+            else:
+                target["supersedes_decision_id"] = supersedes_decision_id
+                # Also flip the referenced decision's status
+                for d in decisions:
+                    if d.get("id") == supersedes_decision_id:
+                        d["status"] = "superseded"
+                        break
+        if linked_requirements:
+            frs = spec.functional_requirements or []
+            req_list, err = _parse_linked_requirements(linked_requirements, frs)
+            if err:
+                return json.dumps({"error": err})
+            target["linked_requirements"] = req_list or None
+        if notes:
+            target["notes"] = None if notes.strip().upper() == "CLEAR" else notes.replace("\\n", "\n")
+        if status:
+            if status not in ("active", "superseded", "revoked"):
+                return json.dumps({"error": f"Invalid status '{status}'. Use active/superseded/revoked."})
+            target["status"] = status
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=decisions),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps({"success": True, "decision": target}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_remove_decision(
+    board_id: str,
+    spec_id: str,
+    decision_id: str,
+) -> str:
+    """
+    Remove a Decision (soft-delete: status becomes "revoked").
+
+    Preserves history so the KG still surfaces the decision with its
+    revocation reason. Use okto_pulse_update_decision with status=active to
+    restore.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        decision_id: Decision ID ("dec_...")
+
+    Returns:
+        JSON confirmation
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        decisions = list(spec.decisions or [])
+        target = next((d for d in decisions if d.get("id") == decision_id), None)
+        if target is None:
+            return json.dumps({"error": f"Decision '{decision_id}' not found"})
+
+        target["status"] = "revoked"
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=decisions),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps({"success": True, "revoked": decision_id, "decision": target})
+
+
+@mcp.tool()
+async def okto_pulse_link_task_to_decision(
+    board_id: str,
+    spec_id: str,
+    decision_id: str,
+    card_id: str,
+) -> str:
+    """
+    Link a task card to a Decision, creating traceability.
+
+    Idempotent — re-linking the same card is a no-op. Symmetric with
+    okto_pulse_link_task_to_rule; populates decision.linked_task_ids so the
+    opt-in coverage gate (skip_decisions_coverage=False) can verify each
+    active Decision has at least one linked task.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        decision_id: Decision ID
+        card_id: Card ID to link
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        decisions = list(spec.decisions or [])
+        target = next((d for d in decisions if d.get("id") == decision_id), None)
+        if target is None:
+            return json.dumps({"error": f"Decision '{decision_id}' not found"})
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        if card_id not in task_ids:
+            task_ids.append(card_id)
+        target["linked_task_ids"] = task_ids
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            spec_service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=decisions),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps({
+            "success": True,
+            "decision_id": decision_id,
+            "card_id": card_id,
+            "linked_tasks": task_ids,
+        })
+
+
+@mcp.tool()
+async def okto_pulse_migrate_spec_decisions(
+    board_id: str,
+    spec_id: str,
+) -> str:
+    """
+    One-shot migrator: extract "## Decisions" markdown bullets from spec.context
+    into structured spec.decisions[] entries, then remove the block from context.
+
+    Idempotent — running twice on a migrated spec is a no-op. Existing
+    decisions are preserved; only the markdown-sourced ones are added, and
+    duplicates (same title) are skipped.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with migration summary (decisions_added, context_modified)
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import re
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        context_text = spec.context or ""
+        # Match the ## Decisions block up to the next heading or EOF. Bullets
+        # are "- " prefixed. Mirrors the worker's existing extractor.
+        pattern = re.compile(
+            r"(?m)^##\s+Decisions\s*\n((?:(?:[-*]\s+.*\n?)|\s*\n)+?)(?=^##\s+|\Z)"
+        )
+        match = pattern.search(context_text)
+        if not match:
+            return json.dumps({
+                "success": True,
+                "decisions_added": 0,
+                "context_modified": False,
+                "note": "No '## Decisions' block found — nothing to migrate.",
+            })
+
+        bullets_block = match.group(1)
+        bullet_pat = re.compile(r"^[-*]\s+(.+?)\s*$", re.MULTILINE)
+        raw_bullets = [b.strip() for b in bullet_pat.findall(bullets_block) if b.strip()]
+
+        existing = list(spec.decisions or [])
+        existing_titles = {d.get("title", "").strip() for d in existing}
+
+        added: list[dict] = []
+        for raw in raw_bullets:
+            if raw in existing_titles:
+                continue  # idempotent dedupe
+            dec = {
+                "id": f"dec_{_uuid.uuid4().hex[:8]}",
+                "title": raw[:200],
+                "rationale": raw,  # no richer context available from bullets
+                "context": None,
+                "alternatives_considered": None,
+                "supersedes_decision_id": None,
+                "linked_requirements": None,
+                "linked_task_ids": None,
+                "status": "active",
+                "notes": "Migrated from spec.context '## Decisions' markdown",
+            }
+            existing.append(dec)
+            existing_titles.add(dec["title"])
+            added.append(dec)
+
+        # Remove the block from context (only if we consumed bullets — or always,
+        # so the markdown source disappears and the extractor's backward-compat
+        # path doesn't re-emit the same decisions on next consolidation).
+        new_context = pattern.sub("", context_text).rstrip() + "\n"
+        context_modified = new_context.strip() != (context_text or "").strip()
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=existing, context=new_context),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps({
+            "success": True,
+            "decisions_added": len(added),
+            "context_modified": context_modified,
+            "added": [{"id": d["id"], "title": d["title"]} for d in added],
+        })
+
+
 @mcp.tool()
 async def okto_pulse_list_business_rules(
     board_id: str,

@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response models."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -301,6 +301,30 @@ class ApiContract(BaseModel):
     linked_requirements: list[str] | None = None
     linked_rules: list[str] | None = None
     linked_task_ids: list[str] | None = None  # Card IDs linked to this contract
+    notes: str | None = None
+
+
+DecisionStatus = Literal["active", "superseded", "revoked"]
+
+
+class Decision(BaseModel):
+    """A decision formalized on a spec — causal/contextual choice.
+
+    Different from BusinessRule (which is prescriptive, "system DEVE do X"):
+    a Decision records *why* a choice was made, with alternatives and
+    supersedence. Formalized so the spec carries full traceability and the
+    validation gate can optionally require linked tasks.
+    """
+
+    id: str  # "dec_" + 8 hex
+    title: str
+    rationale: str  # why this choice was made
+    context: str | None = None  # when/where it applies
+    alternatives_considered: list[str] | None = None
+    supersedes_decision_id: str | None = None  # id of a Decision on the same spec
+    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_task_ids: list[str] | None = None
+    status: DecisionStatus = "active"
     notes: str | None = None
 
 
@@ -695,6 +719,7 @@ class SpecCreate(BaseModel):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    decisions: list[Decision] | None = None
     status: SpecStatus = SpecStatus.DRAFT
     assignee_id: str | None = None
     labels: list[str] | None = None
@@ -715,9 +740,11 @@ class SpecUpdate(BaseModel):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    decisions: list[Decision] | None = None
     skip_test_coverage: bool | None = None
     skip_rules_coverage: bool | None = None
     skip_trs_coverage: bool | None = None
+    skip_decisions_coverage: bool | None = None
     assignee_id: str | None = None
     labels: list[str] | None = None
     ideation_id: str | None = None
@@ -1023,8 +1050,10 @@ class SpecResponse(BaseSchema):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    decisions: list[Decision] | None = None
     skip_test_coverage: bool = False
     skip_rules_coverage: bool = False
+    skip_decisions_coverage: bool = True
     skip_trs_coverage: bool = False
     skip_contract_coverage: bool = False
     archived: bool = False

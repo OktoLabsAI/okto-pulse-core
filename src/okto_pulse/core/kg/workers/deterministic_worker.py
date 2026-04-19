@@ -549,10 +549,86 @@ class DeterministicWorker:
                     rule_id=f"implements/fr_match@{WORKER_VERSION}",
                 ))
 
-        # 8. Decisions from "## Decisions" section → Decision nodes + derives_from
-        #    edges to EVERY FR (co-occurrence heuristic, confidence 0.6).
-        decisions_text = _extract_decisions_from_context(spec.get("context") or "")
+        # 8a. Formalized decisions from spec.decisions[] (spec b66d2562) —
+        #     structured entries win over the legacy markdown regex. Only
+        #     `active` decisions are emitted; superseded/revoked keep their
+        #     historical nodes from earlier commits (supersedence is written
+        #     on-state via subsequent commits).
+        formal_decisions = [
+            d for d in (spec.get("decisions") or [])
+            if isinstance(d, dict)
+            and d.get("status", "active") == "active"
+            and d.get("title")
+        ]
         tech_whitelist_version = _load_tech_whitelist()[1]
+        formal_titles: set[str] = {d["title"].strip() for d in formal_decisions}
+        for i, dec in enumerate(formal_decisions):
+            dec_title = dec["title"]
+            dec_text = dec.get("rationale") or dec_title
+            raw_parts.append(dec_text)
+            dec_cid = f"{prefix}_fdec_{i}"
+            result.nodes.append(EmittedNode(
+                candidate_id=dec_cid,
+                node_type="Decision",
+                title=dec_title[:120],
+                content=dec_text,
+                context=dec.get("context") or "",
+                source_artifact_ref=artifact_ref,
+                source_confidence=1.0,
+            ))
+            _add_belongs_to(dec_cid, "fdec", i)
+            # derives_from — link to linked_requirements when provided,
+            # otherwise fall back to co-occurrence (all FRs, confidence 0.6).
+            explicit_idx: list[int] = []
+            for ref in (dec.get("linked_requirements") or []):
+                try:
+                    explicit_idx.append(int(str(ref)))
+                except (TypeError, ValueError):
+                    continue
+            for j, (fr_cid, _fr_text) in enumerate(fr_ids):
+                is_explicit = j in explicit_idx
+                if explicit_idx and not is_explicit:
+                    continue
+                result.edges.append(EmittedEdge(
+                    candidate_id=f"{prefix}_edge_fdec{i}_derives_fr_{fr_cid}",
+                    edge_type="derives_from",
+                    from_candidate_id=dec_cid,
+                    to_candidate_id=fr_cid,
+                    confidence=1.0 if is_explicit else 0.6,
+                    rule_id=(
+                        f"derives_from/explicit_link@{WORKER_VERSION}"
+                        if is_explicit
+                        else f"derives_from/cooccurrence@{WORKER_VERSION}"
+                    ),
+                ))
+            # mentions via tech whitelist — same as legacy path.
+            for canonical in _extract_tech_mentions(dec_text):
+                ent_cid = f"ent_{_canonical_slug(canonical)}"
+                if not any(n.candidate_id == ent_cid for n in result.nodes):
+                    result.nodes.append(EmittedNode(
+                        candidate_id=ent_cid,
+                        node_type="Entity",
+                        title=canonical,
+                        content=canonical,
+                        source_artifact_ref="tech_entities.yml",
+                        source_confidence=1.0,
+                    ))
+                result.edges.append(EmittedEdge(
+                    candidate_id=f"{prefix}_edge_fdec{i}_mentions_{ent_cid}",
+                    edge_type="mentions",
+                    from_candidate_id=dec_cid,
+                    to_candidate_id=ent_cid,
+                    confidence=1.0,
+                    rule_id=f"mentions/tech_whitelist@v{tech_whitelist_version}",
+                ))
+
+        # 8. Legacy fallback: "## Decisions" bullets in context → Decision nodes
+        #    (backward-compat until the spec is migrated via
+        #    okto_pulse_migrate_spec_decisions). Skips titles already emitted
+        #    from the formalized path above to avoid duplicate candidates in
+        #    the same session.
+        decisions_text = _extract_decisions_from_context(spec.get("context") or "")
+        decisions_text = [t for t in decisions_text if t.strip() not in formal_titles]
         for i, dec_text in enumerate(decisions_text):
             raw_parts.append(dec_text)
             dec_cid = f"{prefix}_dec_{i}"
