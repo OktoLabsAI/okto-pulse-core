@@ -485,15 +485,18 @@ async def compute_velocity(
 
 
 def spec_coverage_summary(
-    spec, *, scenarios=None, rules=None, contracts=None, trs=None
+    spec, *, scenarios=None, rules=None, contracts=None, trs=None, decisions=None
 ) -> dict:
     """Compute coverage stats for a single spec — used by validation gate + UI.
 
     Move canônico do antigo `mcp/server.py::_spec_coverage`. Ambos REST e MCP
     passam a consumir daqui.
 
-    Override args (scenarios/rules/contracts/trs) suportam chamadas in-flight
-    onde o spec ainda não foi persistido com a nova coleção.
+    Override args (scenarios/rules/contracts/trs/decisions) suportam chamadas
+    in-flight onde o spec ainda não foi persistido com a nova coleção.
+
+    Ideação #10 Fase 1: adiciona decisions_coverage_pct + decisions_uncovered_ids
+    paralelo ao TR/BR/Contract linkage, paridade first-class.
     """
     acs = spec.acceptance_criteria or []
     frs = spec.functional_requirements or []
@@ -501,6 +504,7 @@ def spec_coverage_summary(
     _brs = rules if rules is not None else (spec.business_rules or [])
     _contracts = contracts if contracts is not None else (spec.api_contracts or [])
     _trs = trs if trs is not None else (spec.technical_requirements or [])
+    _decisions = decisions if decisions is not None else (getattr(spec, "decisions", None) or [])
 
     covered_ac = set()
     for ts in _ts:
@@ -541,6 +545,17 @@ def spec_coverage_summary(
     tr_total = len(struct_trs)
     tr_linked = sum(1 for t in struct_trs if t.get("linked_task_ids"))
 
+    active_decisions = [
+        d for d in _decisions
+        if isinstance(d, dict) and d.get("status", "active") == "active"
+    ]
+    d_total = len(active_decisions)
+    d_linked = sum(1 for d in active_decisions if d.get("linked_task_ids"))
+    d_uncovered_ids = [
+        d.get("id") for d in active_decisions
+        if not d.get("linked_task_ids") and d.get("id")
+    ]
+
     def _pct(n, d):
         return round((n / d * 100) if d > 0 else 100, 1)
 
@@ -565,8 +580,13 @@ def spec_coverage_summary(
         "tr_task_linkage_pct": _pct(tr_linked, tr_total),
         "trs_linked": tr_linked,
         "trs_total": tr_total,
+        "decisions_coverage_pct": _pct(d_linked, d_total),
+        "decisions_linked": d_linked,
+        "decisions_total": d_total,
+        "decisions_uncovered_ids": d_uncovered_ids,
         "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
         "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
+        "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", False),
     }
 
 
@@ -978,6 +998,82 @@ def aggregate_task_validation_gate(cards: list) -> dict:
         "rejection_reasons": reasons,
         "cards_with_validation": cards_with_validation,
     }
+
+
+def render_decisions_markdown(
+    decisions: list | None, *, include_superseded: bool = False
+) -> str:
+    """Ideação #10 Fase 2 — render structured markdown for agent consumption.
+
+    Produces a ``## Decisions`` block with one section per decision (title,
+    status, rationale, alternatives, linked FRs, linked tasks). Supersedes
+    relationship (supersedes_decision_id) is surfaced inline.
+
+    Parameters
+    ----------
+    decisions : list[dict] | None
+        Raw decisions list from spec.decisions.
+    include_superseded : bool
+        When False (default), status='superseded' entries are omitted.
+        When True, they are included with their supersedes chain visible.
+
+    Returns
+    -------
+    str
+        Empty string when there are no decisions to render, otherwise a
+        markdown block. Each decision renders in ~200 tokens to avoid
+        inflating get_task_context payload for specs with many decisions.
+    """
+    if not decisions:
+        return ""
+
+    kept = []
+    for d in decisions:
+        if not isinstance(d, dict):
+            continue
+        status = d.get("status") or "active"
+        if not include_superseded and status == "superseded":
+            continue
+        kept.append(d)
+
+    if not kept:
+        return ""
+
+    lines: list[str] = ["## Decisions", ""]
+    for d in kept:
+        title = d.get("title") or d.get("id") or "Untitled"
+        status = d.get("status") or "active"
+        lines.append(f"### {title} ({status})")
+
+        if sup := d.get("supersedes_decision_id"):
+            lines.append(f"- **Supersedes**: `{sup}`")
+
+        if rationale := d.get("rationale"):
+            lines.append(f"- **Rationale**: {rationale}")
+        if context := d.get("context"):
+            lines.append(f"- **Context**: {context}")
+
+        alternatives = d.get("alternatives_considered") or []
+        if alternatives:
+            alts = ", ".join(str(a) for a in alternatives)
+            lines.append(f"- **Alternatives**: {alts}")
+
+        linked_frs = d.get("linked_requirements") or []
+        if linked_frs:
+            frs = ", ".join(f"FR{x}" if str(x).isdigit() else str(x) for x in linked_frs)
+            lines.append(f"- **Linked FRs**: {frs}")
+
+        linked_tasks = d.get("linked_task_ids") or []
+        if linked_tasks:
+            tasks = ", ".join(str(t) for t in linked_tasks)
+            lines.append(f"- **Linked tasks**: {tasks}")
+
+        if notes := d.get("notes"):
+            lines.append(f"- **Notes**: {notes}")
+
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def decisions_stats(decisions: list | None) -> dict:

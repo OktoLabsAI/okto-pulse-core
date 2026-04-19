@@ -1053,7 +1053,7 @@ class SpecResponse(BaseSchema):
     decisions: list[Decision] | None = None
     skip_test_coverage: bool = False
     skip_rules_coverage: bool = False
-    skip_decisions_coverage: bool = True
+    skip_decisions_coverage: bool = False  # default False (ideação #10 Fase 1 parity)
     skip_trs_coverage: bool = False
     skip_contract_coverage: bool = False
     archived: bool = False
@@ -1393,6 +1393,7 @@ class BoardSettings(BaseModel):
     skip_rules_coverage_global: bool = False  # if True, all specs bypass FR→BR coverage checks
     skip_trs_coverage_global: bool = False  # if True, all specs bypass TR→Task coverage checks
     skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
+    skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = False  # if True, cards must pass validation before moving to done
     min_confidence: int = 70  # min reviewer confidence score

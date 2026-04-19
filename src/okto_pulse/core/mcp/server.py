@@ -406,6 +406,7 @@ async def _resolve_binary_content(
 from okto_pulse.core.services.analytics_service import (
     decisions_stats as _decisions_stats,  # noqa: F401
     filter_decisions_by_status as _filter_decisions_by_status,  # noqa: F401
+    render_decisions_markdown as _render_decisions_markdown,  # noqa: F401
 )
 
 
@@ -1655,6 +1656,10 @@ async def okto_pulse_get_task_context(
                     ),
                     "decisions_stats": _decisions_stats(
                         getattr(spec, "decisions", None) or []
+                    ),
+                    "decisions_markdown": _render_decisions_markdown(
+                        getattr(spec, "decisions", None) or [],
+                        include_superseded=_inc_superseded,
                     ),
                 }
 

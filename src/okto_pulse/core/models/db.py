@@ -581,9 +581,12 @@ class Spec(Base):
     skip_rules_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, cards can start without full TR→Task coverage
     skip_trs_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
-    # Decisions coverage is OPT-IN by default — specs don't have to link tasks
-    # to decisions unless explicitly required.
-    skip_decisions_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    # Decisions coverage gate — default False (enforced) since ideação #10
+    # Fase 1 para paridade com TR/BR/Contract. Specs migradas pré-ideação #10
+    # mantêm True via migration backward-compat.
+    skip_decisions_coverage: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default=text("false")
+    )
     # If true, spec can move to validated without full API contract coverage
     skip_contract_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
