@@ -287,14 +287,41 @@ def execute_cypher_read_only(
 # ---------------------------------------------------------------------------
 
 
+def _parse_iso_ts(value: str | None) -> Any:
+    """Parse an ISO-8601 timestamp into a Kùzu-ready datetime; ``None`` passes
+    through. Swallows invalid input so the caller can proceed unfiltered (a
+    bad cursor shouldn't cause a 500 — the natural-query tool must remain
+    best-effort)."""
+    if value is None or value == "":
+        return None
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
 def execute_natural_query(
     board_id: str,
     nl_query: str,
     *,
     limit: int = 20,
     min_confidence: float = 0.5,
+    since: str | None = None,
+    until: str | None = None,
 ) -> dict:
-    """Hybrid search: embed query -> HNSW k-NN -> 1-hop traversal -> ranking."""
+    """Hybrid search: embed query -> HNSW k-NN -> 1-hop traversal -> ranking.
+
+    Optional ``since`` / ``until`` parameters accept ISO-8601 timestamps
+    and post-filter results by ``n.created_at`` so an agent can scope the
+    query to a release window, a sprint, or "what happened since I last
+    looked". Invalid timestamps are ignored (best-effort). Over-fetch by a
+    10x factor so post-filter still returns ``limit`` matches when the window
+    is narrow.
+    """
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 
@@ -302,6 +329,13 @@ def execute_natural_query(
     embedder = registry.embedding_provider
     store = registry.graph_store
     warning = None
+
+    since_dt = _parse_iso_ts(since)
+    until_dt = _parse_iso_ts(until)
+    temporal_filter_requested = since_dt is not None or until_dt is not None
+    # Over-fetch when a temporal filter is active so the post-filter has
+    # enough candidates to return ``limit`` hits.
+    fetch_limit = limit * 10 if temporal_filter_requested else limit
 
     try:
         query_vec = embedder.encode(nl_query)
@@ -316,7 +350,7 @@ def execute_natural_query(
                 board_id=board_id,
                 node_type=node_type,
                 query_vec=query_vec,
-                top_k=limit,
+                top_k=fetch_limit,
                 min_similarity=0.3,
             )
             for r in raw:
@@ -328,7 +362,7 @@ def execute_natural_query(
                 })
     elif store is not None:
         # String-match fallback via graph_store
-        f = QueryFilters(min_confidence=0.0, max_rows=limit)
+        f = QueryFilters(min_confidence=0.0, max_rows=fetch_limit)
         for node_type in NODE_TYPES:
             try:
                 rows = store.find_by_topic(board_id, node_type, nl_query[:50], f)
@@ -349,7 +383,7 @@ def execute_natural_query(
                     result = conn.execute(
                         f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q "
                         f"RETURN n.id, n.title LIMIT $k",
-                        {"q": nl_query[:50], "k": limit},
+                        {"q": nl_query[:50], "k": fetch_limit},
                     )
                     while result.has_next():
                         row = result.get_next()
@@ -362,6 +396,29 @@ def execute_natural_query(
                 except Exception:
                     pass
 
+    total_before_filter = len(all_results)
+    filtered_out = 0
+    if temporal_filter_requested and all_results:
+        node_ids = [r["node_id"] for r in all_results]
+        timestamps = _batch_lookup_created_at(board_id, node_ids)
+        kept: list[dict] = []
+        for r in all_results:
+            ts = timestamps.get(r["node_id"])
+            if ts is None:
+                # Node vanished between vector hit and lookup — drop to avoid
+                # misleading an agent that asked for a specific window.
+                filtered_out += 1
+                continue
+            if since_dt is not None and ts < since_dt:
+                filtered_out += 1
+                continue
+            if until_dt is not None and ts > until_dt:
+                filtered_out += 1
+                continue
+            r["created_at"] = ts.isoformat()
+            kept.append(r)
+        all_results = kept
+
     all_results.sort(key=lambda x: x["similarity"], reverse=True)
     results = all_results[:limit]
 
@@ -371,7 +428,49 @@ def execute_natural_query(
     }
     if warning:
         resp["warning"] = warning
+    if temporal_filter_requested:
+        resp["temporal_filter"] = {
+            "since": since,
+            "until": until,
+            "candidates_before_filter": total_before_filter,
+            "filtered_out": filtered_out,
+        }
     return resp
+
+
+def _batch_lookup_created_at(board_id: str, node_ids: list[str]) -> dict[str, Any]:
+    """Fetch ``created_at`` for a list of node ids in one pass across all
+    node types. Returns a mapping ``{node_id: datetime}``. Nodes without a
+    known created_at (e.g. degenerate rows) are omitted — callers treat the
+    absence as "outside the temporal window" to be safe.
+    """
+    from datetime import timezone
+
+    if not node_ids:
+        return {}
+
+    out: dict[str, Any] = {}
+    with open_board_connection(board_id) as (_db, conn):
+        for node_type in NODE_TYPES:
+            try:
+                result = conn.execute(
+                    f"MATCH (n:{node_type}) WHERE n.id IN $ids "
+                    f"RETURN n.id, n.created_at",
+                    {"ids": node_ids},
+                )
+                while result.has_next():
+                    row = result.get_next()
+                    nid = row[0]
+                    ts = row[1]
+                    if ts is None:
+                        continue
+                    # Kùzu returns a Python datetime; ensure tz-aware UTC
+                    if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    out[nid] = ts
+            except Exception:
+                continue
+    return out
 
 
 # ---------------------------------------------------------------------------
