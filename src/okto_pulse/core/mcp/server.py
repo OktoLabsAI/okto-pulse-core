@@ -6615,37 +6615,14 @@ async def okto_pulse_get_analytics(
             return json.dumps(velocity, default=str)
 
         elif metric_type == "coverage":
-            spec_q = select(Spec).where(Spec.board_id == board_id)
-            if dt_from:
-                spec_q = spec_q.where(Spec.created_at >= dt_from)
-            if dt_to:
-                spec_q = spec_q.where(Spec.created_at <= dt_to)
-            specs = list((await db.execute(spec_q)).scalars().all())
-
-            from okto_pulse.core.api.analytics import _resolve_linked_criteria_to_indices
-            result = []
-            for s in specs:
-                ac_list = s.acceptance_criteria or []
-                total_ac = len(ac_list)
-                scenarios = s.test_scenarios or []
-                covered_ac_indices: set[int] = set()
-                status_counts: dict[str, int] = {}
-                for ts in scenarios:
-                    if isinstance(ts, dict):
-                        covered_ac_indices |= _resolve_linked_criteria_to_indices(
-                            ts.get("linked_criteria"), ac_list
-                        )
-                        ts_status = ts.get("status", "unknown")
-                        status_counts[ts_status] = status_counts.get(ts_status, 0) + 1
-                covered_ac_count = min(len(covered_ac_indices), total_ac)
-                result.append({
-                    "spec_id": s.id,
-                    "title": s.title,
-                    "total_ac": total_ac,
-                    "covered_ac": covered_ac_count,
-                    "total_scenarios": len(scenarios),
-                    "scenario_status_counts": status_counts,
-                })
+            # Delegado para o service layer (ideação #9 / D-1). MCP agora recebe
+            # os 4 campos extras que o REST já expunha: business_rules_count,
+            # api_contracts_count, fr_with_rules_pct, fr_with_contracts_pct.
+            from okto_pulse.core.services.analytics_service import compute_coverage
+            result = await compute_coverage(
+                db, board_id, dt_from=dt_from, dt_to=dt_to,
+                include_archived=True,  # preserva comportamento histórico MCP
+            )
             return json.dumps(result, default=str)
 
         elif metric_type == "agents":

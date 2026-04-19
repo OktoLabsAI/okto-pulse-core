@@ -1281,73 +1281,14 @@ async def board_coverage(
     db: AsyncSession = Depends(get_db),
 ):
     """Test coverage per spec: AC count, covered ACs, test scenario status counts."""
+    from okto_pulse.core.services.analytics_service import compute_coverage
+
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
     await _ensure_board(db, board_id, user_id)
 
-    spec_q = select(Spec).where(
-        Spec.board_id == board_id,
-        Spec.archived.is_(False),
-    )
-    if dt_from:
-        spec_q = spec_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        spec_q = spec_q.where(Spec.created_at <= dt_to)
-    specs = list((await db.execute(spec_q)).scalars().all())
-
-    result = []
-    for s in specs:
-        ac_list = s.acceptance_criteria or []
-        total_ac = len(ac_list)
-
-        scenarios = s.test_scenarios or []
-        # Covered ACs: ACs referenced in at least one test scenario's linked_criteria.
-        # Normalize to int indices so mixed-type entries (idx / str-idx / text) dedup.
-        covered_ac_indices: set[int] = set()
-        status_counts: dict[str, int] = {}
-        for ts in scenarios:
-            if isinstance(ts, dict):
-                covered_ac_indices |= _resolve_linked_criteria_to_indices(
-                    ts.get("linked_criteria"), ac_list
-                )
-                ts_status = ts.get("status", "unknown")
-                status_counts[ts_status] = status_counts.get(ts_status, 0) + 1
-        covered_ac_count = min(len(covered_ac_indices), total_ac)
-
-        # Business rules & API contracts coverage
-        brs = s.business_rules or []
-        contracts = s.api_contracts or []
-        frs = s.functional_requirements or []
-        total_frs = len(frs)
-
-        # FRs with at least one BR linked
-        fr_indices_with_rules: set[int] = set()
-        for br in brs:
-            if isinstance(br, dict):
-                fr_indices_with_rules |= _resolve_linked_fr_indices(br.get("linked_requirements") or [], frs)
-        fr_with_rules_pct = round(len(fr_indices_with_rules) / total_frs * 100, 1) if total_frs > 0 else 0
-
-        # FRs with at least one contract linked
-        fr_indices_with_contracts: set[int] = set()
-        for ct in contracts:
-            if isinstance(ct, dict):
-                fr_indices_with_contracts |= _resolve_linked_fr_indices(ct.get("linked_requirements") or [], frs)
-        fr_with_contracts_pct = round(len(fr_indices_with_contracts) / total_frs * 100, 1) if total_frs > 0 else 0
-
-        result.append({
-            "spec_id": s.id,
-            "title": s.title,
-            "total_ac": total_ac,
-            "covered_ac": covered_ac_count,
-            "total_scenarios": len(scenarios),
-            "scenario_status_counts": status_counts,
-            "business_rules_count": len(brs),
-            "api_contracts_count": len(contracts),
-            "fr_with_rules_pct": fr_with_rules_pct,
-            "fr_with_contracts_pct": fr_with_contracts_pct,
-        })
-    return result
+    return await compute_coverage(db, board_id, dt_from=dt_from, dt_to=dt_to)
 
 
 # ---------------------------------------------------------------------------
