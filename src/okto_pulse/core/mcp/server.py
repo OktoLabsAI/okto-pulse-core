@@ -401,6 +401,53 @@ async def _resolve_binary_content(
         return None, f"file_url fetch failed: {e}"
 
 
+def _filter_decisions_by_status(
+    decisions: list | None, *, include_superseded: bool = False
+) -> list:
+    """Return only `status="active"` decisions by default. When
+    ``include_superseded`` is True, return every decision untouched.
+
+    Defaults to the active-only slice because consumers asking "what are the
+    rules today?" pay a noise tax when the array carries every historical
+    decision. Migrations, audits, and supersedence reasoners pass the flag
+    to opt back in.
+    """
+    if not decisions:
+        return []
+    if include_superseded:
+        return list(decisions)
+    kept = []
+    for d in decisions:
+        if not isinstance(d, dict):
+            continue
+        status = d.get("status")
+        # Treat missing status as active so legacy rows (written before the
+        # field was mandatory) aren't dropped silently.
+        if status is None or status == "active":
+            kept.append(d)
+    return kept
+
+
+def _decisions_stats(decisions: list | None) -> dict:
+    """Breakdown by status so callers can see what was filtered without
+    having to re-request with include_superseded=true."""
+    out = {"total": 0, "active": 0, "superseded": 0, "revoked": 0, "other": 0}
+    for d in decisions or []:
+        if not isinstance(d, dict):
+            continue
+        out["total"] += 1
+        status = d.get("status") or "active"
+        if status == "active":
+            out["active"] += 1
+        elif status == "superseded":
+            out["superseded"] += 1
+        elif status == "revoked":
+            out["revoked"] += 1
+        else:
+            out["other"] += 1
+    return out
+
+
 def _spec_coverage(spec, *, scenarios=None, rules=None, contracts=None, trs=None) -> dict:
     """Compute coverage stats for spec gates. Uses overrides if provided (for in-flight updates)."""
     acs = spec.acceptance_criteria or []
@@ -1595,6 +1642,7 @@ async def okto_pulse_get_task_context(
     include_mockups: str = "true",
     include_qa: str = "true",
     include_comments: str = "true",
+    include_superseded: str = "false",
 ) -> str:
     """
     Get the FULL execution context for a task card. Aggregates the card data with
@@ -1628,6 +1676,7 @@ async def okto_pulse_get_task_context(
     _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
     _inc_qa = include_qa.lower() in ("true", "1", "yes")
     _inc_comments = include_comments.lower() in ("true", "1", "yes")
+    _inc_superseded = include_superseded.lower() in ("true", "1", "yes")
 
     async with get_db_for_mcp() as db:
         card_service = CardService(db)
@@ -1719,7 +1768,13 @@ async def okto_pulse_get_task_context(
                     "test_scenarios": spec.test_scenarios or [],
                     "business_rules": spec.business_rules or [],
                     "api_contracts": spec.api_contracts or [],
-                    "decisions": getattr(spec, "decisions", None) or [],
+                    "decisions": _filter_decisions_by_status(
+                        getattr(spec, "decisions", None) or [],
+                        include_superseded=_inc_superseded,
+                    ),
+                    "decisions_stats": _decisions_stats(
+                        getattr(spec, "decisions", None) or []
+                    ),
                 }
 
                 if _inc_mockups and spec.screen_mockups:
@@ -5042,6 +5097,7 @@ async def okto_pulse_get_spec_context(
     include_knowledge: str = "true",
     include_mockups: str = "true",
     include_qa: str = "true",
+    include_superseded: str = "false",
 ) -> str:
     """
     Get the FULL consolidated context of a spec. Returns ALL structured data
@@ -5058,6 +5114,11 @@ async def okto_pulse_get_spec_context(
         include_knowledge: Include knowledge base entries (default "true")
         include_mockups: Include screen mockups (default "true")
         include_qa: Include Q&A items (default "true")
+        include_superseded: When "false" (default), the `decisions` array
+            returns only entries with status="active" — noise reduction for
+            the common "what rules today?" path. Set to "true" to get the
+            full history (active + superseded + revoked). A `decisions_stats`
+            summary is always included so you can see what was filtered.
 
     Returns:
         JSON with complete spec context: all requirements + structured sections + artifacts + cards + sprints
@@ -5073,6 +5134,7 @@ async def okto_pulse_get_spec_context(
     _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
     _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
     _inc_qa = include_qa.lower() in ("true", "1", "yes")
+    _inc_superseded = include_superseded.lower() in ("true", "1", "yes")
 
     async with get_db_for_mcp() as db:
         spec_service = SpecService(db)
@@ -5105,7 +5167,13 @@ async def okto_pulse_get_spec_context(
             "test_scenarios": spec.test_scenarios or [],
             "business_rules": spec.business_rules or [],
             "api_contracts": spec.api_contracts or [],
-            "decisions": getattr(spec, "decisions", None) or [],
+            "decisions": _filter_decisions_by_status(
+                getattr(spec, "decisions", None) or [],
+                include_superseded=_inc_superseded,
+            ),
+            "decisions_stats": _decisions_stats(
+                getattr(spec, "decisions", None) or []
+            ),
             # Evaluations
             "evaluations": spec.evaluations or [],
             # Skip flags
