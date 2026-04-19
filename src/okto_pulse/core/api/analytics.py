@@ -154,41 +154,14 @@ def _resolve_linked_criteria_to_indices(
 # D4 (all history): aggregations walk the full array regardless of active flag.
 
 
-def _classify_spec_violation(violations: list[str], recommendation: str) -> list[str]:
-    """Map a spec validation's threshold_violations + recommendation to reason
-    buckets. Returns a list of 0..N reasons from:
-    {completeness_below, assertiveness_below, ambiguity_above, reject_recommendation}.
-    """
-    reasons: list[str] = []
-    for v in violations or []:
-        v_lower = str(v).lower()
-        if "completeness" in v_lower:
-            reasons.append("completeness_below")
-        elif "assertiveness" in v_lower:
-            reasons.append("assertiveness_below")
-        elif "ambiguity" in v_lower:
-            reasons.append("ambiguity_above")
-    if recommendation == "reject":
-        reasons.append("reject_recommendation")
-    return reasons
-
-
-def _classify_task_violation(violations: list[str], recommendation: str) -> list[str]:
-    """Map a task validation's threshold_violations + recommendation to reason
-    buckets: {confidence_below, completeness_below, drift_above, reject_recommendation}.
-    """
-    reasons: list[str] = []
-    for v in violations or []:
-        v_lower = str(v).lower()
-        if "confidence" in v_lower:
-            reasons.append("confidence_below")
-        elif "completeness" in v_lower:
-            reasons.append("completeness_below")
-        elif "drift" in v_lower:
-            reasons.append("drift_above")
-    if recommendation == "reject":
-        reasons.append("reject_recommendation")
-    return reasons
+# D-2/D-3 migrados (ideação #9): classify helpers + aggregators vivem no
+# service layer. Mantemos aliases locais para preservar call sites existentes.
+from okto_pulse.core.services.analytics_service import (  # noqa: E402
+    aggregate_spec_validation_gate as _aggregate_spec_validation_gate,
+    aggregate_task_validation_gate as _aggregate_task_validation_gate,
+    classify_spec_violation as _classify_spec_violation,
+    classify_task_violation as _classify_task_violation,
+)
 
 
 def _safe_int(val, default: int = 0) -> int:
@@ -200,148 +173,6 @@ def _safe_int(val, default: int = 0) -> int:
 
 def _avg(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 1) if values else None
-
-
-def _aggregate_spec_validation_gate(specs: list) -> dict:
-    """Aggregate Spec Validation Gate metrics across a collection of specs.
-
-    Returns:
-        {
-          total_submitted, total_success, total_failed, success_rate (0-100),
-          avg_attempts_per_spec, avg_scores: {completeness, assertiveness, ambiguity},
-          rejection_reasons: {completeness_below, assertiveness_below,
-                              ambiguity_above, reject_recommendation},
-          specs_with_validation: int,
-        }
-    """
-    total_submitted = 0
-    total_success = 0
-    total_failed = 0
-    completeness_vals: list[float] = []
-    assertiveness_vals: list[float] = []
-    ambiguity_vals: list[float] = []
-    reasons: dict[str, int] = {
-        "completeness_below": 0,
-        "assertiveness_below": 0,
-        "ambiguity_above": 0,
-        "reject_recommendation": 0,
-    }
-    specs_with_validation = 0
-    attempts_per_spec: list[int] = []
-
-    for s in specs:
-        vals = getattr(s, "validations", None) or []
-        if not isinstance(vals, list) or len(vals) == 0:
-            continue
-        specs_with_validation += 1
-        attempts_per_spec.append(len(vals))
-        for v in vals:
-            if not isinstance(v, dict):
-                continue
-            total_submitted += 1
-            outcome = v.get("outcome")
-            if outcome == "success":
-                total_success += 1
-            elif outcome == "failed":
-                total_failed += 1
-                for r in _classify_spec_violation(
-                    v.get("threshold_violations") or [],
-                    v.get("recommendation", ""),
-                ):
-                    reasons[r] = reasons.get(r, 0) + 1
-            completeness_vals.append(_safe_int(v.get("completeness")))
-            assertiveness_vals.append(_safe_int(v.get("assertiveness")))
-            ambiguity_vals.append(_safe_int(v.get("ambiguity")))
-
-    return {
-        "total_submitted": total_submitted,
-        "total_success": total_success,
-        "total_failed": total_failed,
-        "success_rate": round(total_success / total_submitted * 100, 1) if total_submitted else None,
-        "avg_attempts_per_spec": round(sum(attempts_per_spec) / len(attempts_per_spec), 2) if attempts_per_spec else None,
-        "avg_scores": {
-            "completeness": _avg(completeness_vals),
-            "assertiveness": _avg(assertiveness_vals),
-            "ambiguity": _avg(ambiguity_vals),
-        },
-        "rejection_reasons": reasons,
-        "specs_with_validation": specs_with_validation,
-    }
-
-
-def _aggregate_task_validation_gate(cards: list) -> dict:
-    """Aggregate Task Validation Gate metrics across a collection of cards.
-
-    Returns similar shape as _aggregate_spec_validation_gate but for
-    confidence/completeness/drift dimensions.
-    """
-    total_submitted = 0
-    total_success = 0
-    total_failed = 0
-    confidence_vals: list[float] = []
-    completeness_vals: list[float] = []
-    drift_vals: list[float] = []
-    reasons: dict[str, int] = {
-        "confidence_below": 0,
-        "completeness_below": 0,
-        "drift_above": 0,
-        "reject_recommendation": 0,
-    }
-    cards_with_validation = 0
-    attempts_per_card: list[int] = []
-    first_pass_count = 0  # cards where the FIRST validation had outcome=success
-
-    for c in cards:
-        vals = getattr(c, "validations", None) or []
-        if not isinstance(vals, list) or len(vals) == 0:
-            continue
-        cards_with_validation += 1
-        attempts_per_card.append(len(vals))
-        if isinstance(vals[0], dict) and vals[0].get("outcome") == "success":
-            first_pass_count += 1
-        for v in vals:
-            if not isinstance(v, dict):
-                continue
-            total_submitted += 1
-            outcome = v.get("outcome")
-            verdict = v.get("verdict")
-            is_success = outcome == "success" or verdict == "pass"
-            is_failed = outcome == "failed" or verdict == "fail"
-            if is_success:
-                total_success += 1
-            elif is_failed:
-                total_failed += 1
-                for r in _classify_task_violation(
-                    v.get("threshold_violations") or [],
-                    v.get("recommendation", ""),
-                ):
-                    reasons[r] = reasons.get(r, 0) + 1
-            # Dual-naming support: completeness/drift were renamed from estimated_*
-            confidence_vals.append(_safe_int(v.get("confidence")))
-            completeness_vals.append(_safe_int(
-                v.get("completeness") if v.get("completeness") is not None
-                else v.get("estimated_completeness")
-            ))
-            drift_vals.append(_safe_int(
-                v.get("drift") if v.get("drift") is not None
-                else v.get("estimated_drift")
-            ))
-
-    return {
-        "total_submitted": total_submitted,
-        "total_success": total_success,
-        "total_failed": total_failed,
-        "success_rate": round(total_success / total_submitted * 100, 1) if total_submitted else None,
-        "avg_attempts_per_card": round(sum(attempts_per_card) / len(attempts_per_card), 2) if attempts_per_card else None,
-        "first_pass_rate": round(first_pass_count / cards_with_validation * 100, 1) if cards_with_validation else None,
-        "avg_scores": {
-            "confidence": _avg(confidence_vals),
-            "completeness": _avg(completeness_vals),
-            "drift": _avg(drift_vals),
-        },
-        "rejection_reasons": reasons,
-        "cards_with_validation": cards_with_validation,
-    }
 
 
 def _aggregate_spec_evaluation(specs: list) -> dict:

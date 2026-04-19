@@ -40,6 +40,10 @@ from okto_pulse.core.models.db import (
     SpecStatus,
 )
 from okto_pulse.core.services.analytics_service import (
+    aggregate_spec_validation_gate,
+    aggregate_task_validation_gate,
+    classify_spec_violation,
+    classify_task_violation,
     compute_coverage,
     compute_funnel,
     compute_velocity,
@@ -337,6 +341,89 @@ class TestDecisionsHelpersParity:
             assert isinstance(v, int)
 
 
+class TestValidationGateParity:
+    """D-2 / D-3 — task + spec validation gate aggregators are pure, shape fixed."""
+
+    TASK_EXPECTED_KEYS = {
+        "total_submitted", "total_success", "total_failed", "success_rate",
+        "avg_attempts_per_card", "first_pass_rate", "avg_scores",
+        "rejection_reasons", "cards_with_validation",
+    }
+    SPEC_EXPECTED_KEYS = {
+        "total_submitted", "total_success", "total_failed", "success_rate",
+        "avg_attempts_per_spec", "avg_scores", "rejection_reasons",
+        "specs_with_validation",
+    }
+
+    class _FakeCard:
+        validations = [
+            {"outcome": "success", "confidence": 90, "completeness": 95, "drift": 5,
+             "recommendation": "approve"},
+            {"outcome": "failed", "confidence": 50, "estimated_completeness": 40,
+             "estimated_drift": 80, "recommendation": "reject",
+             "threshold_violations": ["confidence below 70", "drift above 50"]},
+        ]
+
+    class _FakeSpec:
+        validations = [
+            {"outcome": "success", "completeness": 90, "assertiveness": 85,
+             "ambiguity": 15, "recommendation": "approve"},
+            {"outcome": "failed", "completeness": 60, "assertiveness": 70,
+             "ambiguity": 45, "recommendation": "reject",
+             "threshold_violations": ["completeness below 80", "ambiguity above 30"]},
+        ]
+
+    def test_task_gate_has_all_expected_keys(self):
+        out = aggregate_task_validation_gate([self._FakeCard()])
+        assert set(out.keys()) == self.TASK_EXPECTED_KEYS
+
+    def test_spec_gate_has_all_expected_keys(self):
+        out = aggregate_spec_validation_gate([self._FakeSpec()])
+        assert set(out.keys()) == self.SPEC_EXPECTED_KEYS
+
+    def test_task_gate_empty_input(self):
+        out = aggregate_task_validation_gate([])
+        assert out["total_submitted"] == 0
+        assert out["success_rate"] is None
+        assert set(out["rejection_reasons"].keys()) == {
+            "confidence_below", "completeness_below",
+            "drift_above", "reject_recommendation",
+        }
+
+    def test_spec_gate_empty_input(self):
+        out = aggregate_spec_validation_gate([])
+        assert out["total_submitted"] == 0
+        assert out["success_rate"] is None
+        assert set(out["rejection_reasons"].keys()) == {
+            "completeness_below", "assertiveness_below",
+            "ambiguity_above", "reject_recommendation",
+        }
+
+    def test_task_gate_first_pass_tracked(self):
+        out = aggregate_task_validation_gate([self._FakeCard()])
+        assert out["first_pass_rate"] == 100.0  # first validation was success
+
+    def test_classify_multi_count(self):
+        """D3 regression guard — a single record can contribute multiple reasons."""
+        reasons = classify_task_violation(
+            ["confidence below 70", "drift above 50", "completeness below 80"],
+            "reject",
+        )
+        assert set(reasons) == {
+            "confidence_below", "drift_above",
+            "completeness_below", "reject_recommendation",
+        }
+
+    def test_classify_spec_multi_count(self):
+        reasons = classify_spec_violation(
+            ["completeness below 80", "ambiguity above 30"],
+            "reject",
+        )
+        assert set(reasons) == {
+            "completeness_below", "ambiguity_above", "reject_recommendation",
+        }
+
+
 # ---------------------------------------------------------------------------
 # Structural contract — delegation wiring
 # ---------------------------------------------------------------------------
@@ -351,14 +438,19 @@ class TestDelegationContract:
     def test_rest_analytics_imports_service_functions(self):
         from okto_pulse.core.api import analytics as rest_mod
         src = inspect.getsource(rest_mod)
-        # Each migrated endpoint has an `import ... from ... analytics_service`
-        for fn in ("compute_coverage", "compute_funnel", "compute_velocity"):
+        for fn in (
+            "compute_coverage", "compute_funnel", "compute_velocity",
+            "aggregate_task_validation_gate", "aggregate_spec_validation_gate",
+        ):
             assert fn in src, f"REST analytics missing service import: {fn}"
 
     def test_mcp_server_imports_service_functions(self):
         from okto_pulse.core.mcp import server as mcp_mod
         src = inspect.getsource(mcp_mod)
-        for fn in ("compute_coverage", "compute_funnel", "compute_velocity"):
+        for fn in (
+            "compute_coverage", "compute_funnel", "compute_velocity",
+            "aggregate_task_validation_gate",
+        ):
             assert fn in src, f"MCP server missing service import: {fn}"
 
     def test_mcp_re_exports_decisions_helpers(self):
