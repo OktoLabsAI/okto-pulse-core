@@ -6,8 +6,16 @@ this package BEFORE starting the dispatcher, guaranteeing the registry
 is complete when drain begins.
 """
 
+from okto_pulse.core.events.handlers.cancellation_decay import (  # noqa: F401
+    CancellationDecayHandler,
+    CancellationRestoreHandler,
+)
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (  # noqa: F401
     ConsolidationEnqueuer,
 )
 
-__all__ = ["ConsolidationEnqueuer"]
+__all__ = [
+    "CancellationDecayHandler",
+    "CancellationRestoreHandler",
+    "ConsolidationEnqueuer",
+]
