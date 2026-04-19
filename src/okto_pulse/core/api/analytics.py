@@ -1092,23 +1092,12 @@ async def board_velocity(
 
     await _ensure_board(db, board_id, user_id)
 
-    all_q = select(Card).where(
-        Card.board_id == board_id,
-        Card.archived.is_(False),
-    )
-    if dt_from:
-        all_q = all_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        all_q = all_q.where(Card.created_at <= dt_to)
-    all_cards = list((await db.execute(all_q)).scalars().all())
-    done_cards = [c for c in all_cards if c.status == CardStatus.DONE]
+    from okto_pulse.core.services.analytics_service import compute_velocity
 
-    if granularity == "day":
-        return await _compute_velocity_daily(
-            db, board_id, done_cards, days, all_cards=all_cards,
-        )
-    return await _compute_velocity_weekly(
-        db, board_id, done_cards, weeks, all_cards=all_cards,
+    return await compute_velocity(
+        db, board_id,
+        granularity=granularity, weeks=weeks, days=days,
+        dt_from=dt_from, dt_to=dt_to,
     )
 
 

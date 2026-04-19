@@ -414,3 +414,63 @@ async def compute_funnel(
     )
 
     return counts
+
+
+# ---------------------------------------------------------------------------
+# D-5 · Velocity (weekly + daily granularities)
+# ---------------------------------------------------------------------------
+
+
+async def compute_velocity(
+    db: AsyncSession,
+    board_id: str,
+    *,
+    granularity: str = "week",
+    weeks: int = 12,
+    days: int = 30,
+    dt_from: datetime | None = None,
+    dt_to: datetime | None = None,
+    include_archived: bool = False,
+) -> list[dict]:
+    """Compute velocity buckets (week|day) with lifecycle overlays.
+
+    Returns list of dicts, one per bucket, keyed by ``week`` or ``day``:
+      - impl / test / bug — cards done in the bucket (by card_type)
+      - validation_bounce — failed task validations in the bucket
+      - spec_done — spec_moved events where new_status == 'done'
+      - sprint_done — sprint_moved events where new_status == 'closed'
+
+    MCP previously hardcoded weekly 12 buckets and only returned impl/test.
+    Service delega para os builders existentes em api/analytics.py.
+    """
+    if granularity not in ("week", "day"):
+        raise ValueError(f"granularity must be 'week' or 'day', got {granularity!r}")
+
+    # Lazy-import helpers já testados em api/analytics.py
+    from okto_pulse.core.api.analytics import (
+        _build_velocity_buckets,
+        _load_lifecycle_moves,
+    )
+
+    all_q = select(Card).where(Card.board_id == board_id)
+    if not include_archived:
+        all_q = all_q.where(Card.archived.is_(False))
+    if dt_from:
+        all_q = all_q.where(Card.created_at >= dt_from)
+    if dt_to:
+        all_q = all_q.where(Card.created_at <= dt_to)
+    all_cards = list((await db.execute(all_q)).scalars().all())
+    done_cards = [c for c in all_cards if c.status == CardStatus.DONE]
+
+    spec_moves = await _load_lifecycle_moves(db, board_id, "spec_moved")
+    sprint_moves = await _load_lifecycle_moves(db, board_id, "sprint_moved")
+
+    periods = days if granularity == "day" else weeks
+    return _build_velocity_buckets(
+        done_cards=done_cards,
+        all_cards=all_cards,
+        periods=periods,
+        granularity=granularity,
+        spec_moves=spec_moves,
+        sprint_moves=sprint_moves,
+    )
