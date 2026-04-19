@@ -94,6 +94,7 @@ def _sprint_to_dict(sprint: Sprint) -> dict:
 
 
 def _card_to_dict(card) -> dict:
+    priority = getattr(card, "priority", None)
     return {
         "id": card.id,
         "title": card.title,
@@ -102,6 +103,7 @@ def _card_to_dict(card) -> dict:
         "spec_id": card.spec_id,
         "sprint_id": card.sprint_id,
         "origin_task_id": getattr(card, "origin_task_id", None),
+        "priority": getattr(priority, "value", priority) if priority is not None else None,
     }
 
 
@@ -114,6 +116,7 @@ def _worker_node_to_candidate(node: EmittedNode) -> NodeCandidate:
         context=node.context or None,
         source_artifact_ref=node.source_artifact_ref,
         source_confidence=node.source_confidence,
+        priority_boost=node.priority_boost,
     )
 
 

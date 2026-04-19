@@ -123,6 +123,7 @@ _COMMON_NODE_ATTRS = """
     relevance_score DOUBLE,
     query_hits INT64,
     last_queried_at STRING,
+    priority_boost DOUBLE,
     superseded_by STRING,
     superseded_at TIMESTAMP,
     revocation_reason STRING,
@@ -137,6 +138,14 @@ RELEVANCE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("relevance_score", "DOUBLE"),
     ("query_hits", "INT64"),
     ("last_queried_at", "STRING"),
+)
+
+# Columns added in v0.3.1 (spec 0eb51d3e — priority boost): priority_boost
+# carries the additive score derived from card.priority at extraction time
+# and is frozen on the node forever after. _resolve_priority_boost in
+# scoring.py owns the mapping table.
+PRIORITY_BOOST_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("priority_boost", "DOUBLE"),
 )
 
 # Columns removed in v0.3.0. Kùzu v0.6 has no ALTER TABLE DROP COLUMN, so the
@@ -309,6 +318,24 @@ def _ensure_relevance_columns(conn, node_type: str) -> list[str]:
     return added
 
 
+def _ensure_priority_boost_columns(conn, node_type: str) -> list[str]:
+    """ALTER TABLE ADD for the v0.3.1 priority_boost column on ``node_type``.
+
+    Idempotent — Kùzu raises on duplicate ADD so we catch-and-continue.
+    Returns the list of columns actually added (typically empty on second
+    run). Invoked from apply_schema_to_connection so every board gets the
+    column regardless of when it was first bootstrapped.
+    """
+    added: list[str] = []
+    for col_name, col_type in PRIORITY_BOOST_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE {node_type} ADD {col_name} {col_type}")
+            added.append(col_name)
+        except Exception:
+            pass
+    return added
+
+
 def _backfill_relevance_defaults(conn, node_type: str) -> None:
     """Populate the v0.3.0 columns for rows that existed before the migration.
 
@@ -464,6 +491,7 @@ def _migrate_node_table_v030(conn, node_type: str) -> int:
                 f"created_at: $created_at, created_by_agent: $created_by_agent, "
                 f"source_confidence: $source_confidence, "
                 f"relevance_score: 0.5, query_hits: 0, last_queried_at: NULL, "
+                f"priority_boost: 0.0, "
                 f"superseded_by: $superseded_by, superseded_at: $superseded_at, "
                 f"revocation_reason: $revocation_reason, embedding: $embedding"
                 f"}})",
@@ -682,6 +710,10 @@ def apply_schema_to_connection(conn) -> None:
     conn.execute(_board_meta_ddl())
     for node_type in NODE_TYPES:
         conn.execute(_build_node_ddl(node_type))
+        # v0.3.1: ensure priority_boost column exists on legacy boards. The
+        # CREATE TABLE IF NOT EXISTS above is a no-op on pre-existing tables
+        # so we still need to run the ALTER ADD path to backfill the column.
+        _ensure_priority_boost_columns(conn, node_type)
     for rel_name, from_type, to_type in REL_TYPES:
         conn.execute(_build_rel_ddl(rel_name, from_type, to_type))
         # v0.1.0 → v0.2.0 backfill: ALTER ADD the metadata cols on legacy

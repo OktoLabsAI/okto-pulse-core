@@ -20,9 +20,11 @@ from okto_pulse.core.kg.scoring import (
     CLAMP_MIN,
     DEGREE_SATURATION,
     HISTOGRAM_BUCKETS,
+    PRIORITY_BOOST_BY_LEVEL,
     _compute_relevance,
     _decay_hits,
     _observe_histogram,
+    _resolve_priority_boost,
     get_histogram_snapshot,
     reset_histogram,
 )
@@ -166,3 +168,134 @@ def test_clamp_constants():
 
 def test_degree_saturation_constant():
     assert DEGREE_SATURATION == 100
+
+
+# ---------------------------------------------------------------------------
+# Priority boost — v0.3.1 (spec 0eb51d3e)
+# TS1 / TS2 / TS3 / TS4 / TS5
+# ---------------------------------------------------------------------------
+
+
+def test_ts1_priority_boost_additive():
+    """TS1 (AC5): compute_relevance adds boost before clamp.
+
+    source=0.5, degree=0, hits=0, penalty=0, boost=0.10
+    raw = 0.4*0.5 + 0 + 0 - 0 + 0.10 = 0.30
+    """
+    got = _compute_relevance(0.5, 0, 0.0, 0.0, priority_boost=0.10)
+    assert got == pytest.approx(0.30)
+
+
+def test_ts2_priority_boost_respects_upper_clamp():
+    """TS2 (AC6): boost never breaks the 1.5 cap.
+
+    Uses decayed_hits=5.0 so the raw sum comfortably exceeds 1.5 and the
+    clamp actually fires — (0.4*1.0 + 0.3 + 0.3*5.0 + 0 + 0.20 ≈ 2.40).
+    """
+    got = _compute_relevance(1.0, 100, 5.0, 0.0, priority_boost=0.20)
+    assert got == CLAMP_MAX
+
+
+def test_priority_boost_combined_with_high_signals_clamps():
+    """Even max boost + max signals must respect the +1.5 cap (BR: cap)."""
+    for boost in (0.0, 0.05, 0.10, 0.15, 0.20):
+        got = _compute_relevance(1.0, 1000, 10.0, 0.0, priority_boost=boost)
+        assert got == CLAMP_MAX
+
+
+def test_priority_boost_default_is_backward_compatible():
+    """Callers without the new keyword get the original score."""
+    got_default = _compute_relevance(0.5, 0, 0.0, 0.0)
+    got_zero = _compute_relevance(0.5, 0, 0.0, 0.0, priority_boost=0.0)
+    assert got_default == got_zero == pytest.approx(0.20)
+
+
+def test_priority_boost_negative_coerced_to_zero():
+    """Defensive: negative boost (defensive coercion, not user-facing path)."""
+    got = _compute_relevance(0.5, 0, 0.0, 0.0, priority_boost=-0.5)
+    # Negative coerced → behaves like boost=0.0 → 0.4*0.5 = 0.20
+    assert got == pytest.approx(0.20)
+
+
+@pytest.mark.parametrize(
+    "priority,expected",
+    [
+        ("none", 0.0),
+        ("low", 0.0),
+        ("medium", 0.05),
+        ("high", 0.10),
+        ("very_high", 0.15),
+        ("critical", 0.20),
+        # Case/whitespace tolerance
+        ("CRITICAL", 0.20),
+        ("  high  ", 0.10),
+    ],
+)
+def test_ts3_resolve_priority_boost_str_mapping(priority, expected):
+    """TS3 (AC1, AC2): mapping for each CardPriority string value."""
+    assert _resolve_priority_boost(priority) == expected
+
+
+def test_ts3_resolve_priority_boost_enum_matches_str():
+    """TS3: CardPriority enum values produce same result as their str."""
+    from okto_pulse.core.models.db import CardPriority
+
+    for level in CardPriority:
+        expected = PRIORITY_BOOST_BY_LEVEL.get(level.value, 0.0)
+        assert _resolve_priority_boost(level) == expected
+        assert _resolve_priority_boost(level.value) == expected
+
+
+@pytest.mark.parametrize(
+    "unknown",
+    [None, "", "foo", "urgent", 42, 1.5, object(), [1, 2]],
+)
+def test_ts4_resolve_priority_boost_tolerates_unknown(unknown):
+    """TS4 (AC9): unknown inputs fall back to 0.0, never raise."""
+    assert _resolve_priority_boost(unknown) == 0.0
+
+
+def test_priority_boost_table_caps_at_02():
+    """BR: PRIORITY_BOOST_BY_LEVEL never exceeds +0.2 for any level."""
+    assert max(PRIORITY_BOOST_BY_LEVEL.values()) == pytest.approx(0.20)
+
+
+def test_ts5_node_candidate_default_priority_boost():
+    """TS5 (AC8): NodeCandidate defaults priority_boost to 0.0."""
+    from okto_pulse.core.kg.schemas import KGNodeType, NodeCandidate
+
+    cand = NodeCandidate(
+        candidate_id="c1",
+        node_type=KGNodeType.ENTITY,
+        title="t",
+    )
+    assert cand.priority_boost == 0.0
+
+
+def test_ts5_node_candidate_rejects_boost_above_cap():
+    """TS5: priority_boost > 0.2 raises Pydantic ValidationError."""
+    from pydantic import ValidationError
+
+    from okto_pulse.core.kg.schemas import KGNodeType, NodeCandidate
+
+    with pytest.raises(ValidationError):
+        NodeCandidate(
+            candidate_id="c1",
+            node_type=KGNodeType.ENTITY,
+            title="t",
+            priority_boost=0.25,
+        )
+
+
+def test_ts5_node_candidate_rejects_negative_boost():
+    from pydantic import ValidationError
+
+    from okto_pulse.core.kg.schemas import KGNodeType, NodeCandidate
+
+    with pytest.raises(ValidationError):
+        NodeCandidate(
+            candidate_id="c1",
+            node_type=KGNodeType.ENTITY,
+            title="t",
+            priority_boost=-0.01,
+        )

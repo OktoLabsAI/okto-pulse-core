@@ -284,3 +284,113 @@ def test_process_artifact_raises_on_unknown_type():
     import pytest as _pytest
     with _pytest.raises(ValueError, match="unknown artifact_type"):
         DeterministicWorker().process_artifact("ideation", {"id": "x"})
+
+
+# ---------------------------------------------------------------------------
+# Priority boost propagation — v0.3.1 (spec 0eb51d3e) — TS6 / TS7
+# ---------------------------------------------------------------------------
+
+
+def test_ts6_process_card_critical_sets_boost_020():
+    """TS6 (AC1): card.priority=critical → root EmittedNode boost=0.20."""
+    card = {
+        "id": "card-ts6-critical",
+        "title": "Crit card",
+        "description": "body",
+        "card_type": "normal",
+        "priority": "critical",
+    }
+    result = DeterministicWorker().process_card(card)
+    root = [n for n in result.nodes if n.source_artifact_ref == f"card:{card['id']}"]
+    assert len(root) == 1
+    assert root[0].priority_boost == 0.20
+
+
+def test_ts6_process_card_none_priority_zero_boost():
+    """TS6 (AC2): card.priority=None → boost=0.0."""
+    card = {
+        "id": "card-ts6-none",
+        "title": "No-priority card",
+        "card_type": "normal",
+        "priority": None,
+    }
+    result = DeterministicWorker().process_card(card)
+    assert result.nodes[0].priority_boost == 0.0
+
+
+def test_ts6_process_card_boost_only_on_root_not_hierarchy():
+    """TS6 BR3: hierarchy edges' belongs_to target nodes don't carry boost.
+
+    process_card emits the root Entity/Bug node plus belongs_to edges. No
+    *node* other than the root is created by process_card, so the only
+    node carrying a non-zero boost is the root. (Sprint/Spec anchor nodes
+    are created by process_sprint / process_spec, which we test below.)
+    """
+    card = {
+        "id": "card-ts6-hier",
+        "title": "Hierarchical card",
+        "card_type": "normal",
+        "priority": "high",
+        "sprint_id": "sprint-xyz",
+        "spec_id": "spec-xyz",
+    }
+    result = DeterministicWorker().process_card(card)
+    boosted = [n for n in result.nodes if n.priority_boost > 0.0]
+    assert len(boosted) == 1
+    assert boosted[0].candidate_id.endswith("_entity")
+    assert boosted[0].priority_boost == 0.10
+
+
+def test_ts6_process_card_bug_with_priority_propagates():
+    """process_card for bug cards also propagates the boost to the Bug node."""
+    bug = {
+        "id": "bug-ts6",
+        "title": "High-sev bug",
+        "card_type": "bug",
+        "priority": "very_high",
+        "origin_task_id": "task-abc",
+    }
+    result = DeterministicWorker().process_card(bug)
+    bug_nodes = [n for n in result.nodes if n.node_type == "Bug"]
+    assert len(bug_nodes) == 1
+    assert bug_nodes[0].priority_boost == 0.15
+
+
+def test_ts6_process_card_unknown_priority_zero_boost():
+    """process_card with unknown priority falls back to boost=0.0."""
+    card = {
+        "id": "card-ts6-unknown",
+        "title": "Mystery",
+        "card_type": "normal",
+        "priority": "urgent",  # not in enum
+    }
+    result = DeterministicWorker().process_card(card)
+    assert result.nodes[0].priority_boost == 0.0
+
+
+def test_ts7_process_spec_emits_zero_boost_everywhere():
+    """TS7 (AC4): every EmittedNode from process_spec has priority_boost=0.0.
+
+    Specs carry no priority field in the domain model, so all derived nodes
+    (Entity anchor, Requirement, Constraint, Criterion, TestScenario,
+    APIContract) must start at 0.0 — boosting only the root card's node.
+    """
+    result = DeterministicWorker().process_spec(_spec_fixture())
+    assert result.nodes  # sanity: spec fixture produces nodes
+    assert all(n.priority_boost == 0.0 for n in result.nodes), (
+        f"non-zero boost leaked into spec-derived nodes: "
+        f"{[(n.node_type, n.priority_boost) for n in result.nodes if n.priority_boost]}"
+    )
+
+
+def test_ts7_process_sprint_emits_zero_boost():
+    """Sprints also have no priority source → all derived nodes boost=0.0."""
+    sprint = {
+        "id": "sprint-ts7",
+        "title": "Sprint 99",
+        "description": "d",
+        "objective": "o",
+        "expected_outcome": "e",
+    }
+    result = DeterministicWorker().process_sprint(sprint)
+    assert all(n.priority_boost == 0.0 for n in result.nodes)

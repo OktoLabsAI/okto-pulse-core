@@ -57,6 +57,10 @@ class EmittedNode:
     source_artifact_ref: str
     source_confidence: float = 1.0
     context: str = ""
+    # v0.3.1: additive score boost resolved from the source card's priority.
+    # Non-zero only on the root node emitted from a Card — belongs_to child
+    # nodes (FR/TR/AC per Spec) stay at 0.0. Cap +0.2 (CRITICAL).
+    priority_boost: float = 0.0
 
 
 @dataclass
@@ -704,6 +708,10 @@ class DeterministicWorker:
         """Extract a card into the KG. Bugs emit a Bug node + `violates`
         missing_link_candidate (resolution depends on the origin_task_id
         chain — the cognitive agent handles it via fallback)."""
+        # Import here to avoid a scoring↔worker cycle at module load time;
+        # scoring.py is a lightweight leaf so the indirect import is cheap.
+        from okto_pulse.core.kg.scoring import _resolve_priority_boost
+
         cid = card["id"]
         prefix = f"card_{cid[:8]}"
         artifact_ref = f"card:{cid}"
@@ -716,6 +724,10 @@ class DeterministicWorker:
         else:
             node_type = "Entity"
 
+        # v0.3.1: resolve priority_boost from card.priority — only the root
+        # node of the card carries the boost. Hierarchy/belongs_to nodes
+        # (sprint/spec parents) stay at 0.0 per BR "Boost não herda".
+        boost = _resolve_priority_boost(card.get("priority"))
         card_cid = f"{prefix}_entity"
         result.nodes.append(EmittedNode(
             candidate_id=card_cid,
@@ -724,6 +736,7 @@ class DeterministicWorker:
             content=card.get("description") or "",
             source_artifact_ref=artifact_ref,
             source_confidence=1.0,
+            priority_boost=boost,
         ))
 
         if card_type == "bug":
