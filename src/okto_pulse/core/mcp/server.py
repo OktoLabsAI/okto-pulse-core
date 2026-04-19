@@ -6516,152 +6516,17 @@ async def okto_pulse_list_blockers(
     if stale_hours < 1:
         return json.dumps({"error": "stale_hours must be >= 1"})
 
-    from datetime import datetime, timezone, timedelta
-    from okto_pulse.core.models.db import (
-        Card as _Card, CardDependency as _Dep, CardStatus as _CS, Spec as _Spec, SpecStatus as _SS,
-    )
-    from sqlalchemy import select as _select
+    # Delegado ao service (D-6 ideação #9). REST board_blockers agora também
+    # aceita filter_type, garantindo paridade 1:1 com este tool.
+    from okto_pulse.core.services.analytics_service import compute_blockers
 
     async with get_db_for_mcp() as db:
-        now = datetime.now(timezone.utc)
-        stale_cutoff = now - timedelta(hours=stale_hours)
-
-        cards = list(
-            (await db.execute(
-                _select(_Card).where(_Card.board_id == board_id, _Card.archived.is_(False))
-            )).scalars().all()
+        result = await compute_blockers(
+            db, board_id,
+            stale_hours=stale_hours,
+            filter_type=filter_type or None,
         )
-        card_by_id = {c.id: c for c in cards}
-
-        deps: list = []
-        if cards:
-            deps = list((await db.execute(
-                _select(_Dep).where(_Dep.card_id.in_([c.id for c in cards]))
-            )).scalars().all())
-        deps_by_card: dict[str, list[str]] = {}
-        for d in deps:
-            deps_by_card.setdefault(d.card_id, []).append(d.depends_on_id)
-
-        blockers: list[dict] = []
-
-        active_states = {
-            _CS.NOT_STARTED, _CS.STARTED, _CS.IN_PROGRESS, _CS.VALIDATION, _CS.ON_HOLD,
-        }
-        stale_states = {_CS.STARTED, _CS.IN_PROGRESS, _CS.VALIDATION}
-
-        for c in cards:
-            if c.status in active_states:
-                blocking = []
-                for dep_id in deps_by_card.get(c.id, []):
-                    target = card_by_id.get(dep_id)
-                    if target is None or target.status != _CS.DONE:
-                        blocking.append({
-                            "id": dep_id,
-                            "title": getattr(target, "title", None),
-                            "status": target.status.value if target and target.status else None,
-                        })
-                if blocking:
-                    blockers.append({
-                        "type": "dependency_blocked",
-                        "card_id": c.id,
-                        "card_title": c.title,
-                        "card_status": c.status.value,
-                        "reason": f"Depends on {len(blocking)} unfinished card(s)",
-                        "evidence": {"blocking_cards": blocking},
-                    })
-
-            if c.status == _CS.ON_HOLD:
-                blockers.append({
-                    "type": "on_hold",
-                    "card_id": c.id,
-                    "card_title": c.title,
-                    "card_status": c.status.value,
-                    "reason": "Card explicitly paused via status=on_hold",
-                    "evidence": {"updated_at": c.updated_at.isoformat() if c.updated_at else None},
-                })
-
-            if c.status in stale_states and c.updated_at:
-                upd = c.updated_at
-                if upd.tzinfo is None:
-                    upd = upd.replace(tzinfo=timezone.utc)
-                if upd < stale_cutoff:
-                    age_h = round((now - upd).total_seconds() / 3600.0, 1)
-                    blockers.append({
-                        "type": "stale",
-                        "card_id": c.id,
-                        "card_title": c.title,
-                        "card_status": c.status.value,
-                        "reason": f"No update in {age_h}h while in active state",
-                        "evidence": {"last_updated": upd.isoformat(), "age_hours": age_h},
-                    })
-
-        specs = list((await db.execute(
-            _select(_Spec).where(_Spec.board_id == board_id, _Spec.archived.is_(False))
-        )).scalars().all())
-        spec_card_counts: dict[str, int] = {}
-        for c in cards:
-            if c.spec_id:
-                spec_card_counts[c.spec_id] = spec_card_counts.get(c.spec_id, 0) + 1
-
-        for s in specs:
-            if s.status == _SS.APPROVED:
-                evals = s.evaluations or []
-                approved = [e for e in evals if isinstance(e, dict) and e.get("recommendation") == "approve"]
-                if not approved:
-                    blockers.append({
-                        "type": "spec_pending_validation",
-                        "spec_id": s.id,
-                        "spec_title": s.title,
-                        "reason": "Spec is approved but has no 'approve' evaluation — cannot promote to in_progress",
-                        "evidence": {"total_evaluations": len(evals)},
-                    })
-            if s.status in (_SS.VALIDATED, _SS.IN_PROGRESS):
-                if spec_card_counts.get(s.id, 0) == 0:
-                    blockers.append({
-                        "type": "spec_no_cards",
-                        "spec_id": s.id,
-                        "spec_title": s.title,
-                        "reason": "Spec has zero linked cards — implementation hasn't started",
-                        "evidence": {"status": s.status.value},
-                    })
-
-        test_card_scenarios: set[str] = set()
-        for c in cards:
-            ct = getattr(c, "card_type", None)
-            if ct is not None and str(ct).endswith("test"):
-                for sid in (c.test_scenario_ids or []):
-                    test_card_scenarios.add(sid)
-        for s in specs:
-            for ts in (s.test_scenarios or []):
-                if not isinstance(ts, dict):
-                    continue
-                ts_id = ts.get("id")
-                if ts_id and ts_id not in test_card_scenarios:
-                    blockers.append({
-                        "type": "uncovered_scenario",
-                        "spec_id": s.id,
-                        "spec_title": s.title,
-                        "scenario_id": ts_id,
-                        "scenario_title": ts.get("title"),
-                        "reason": "Test scenario has no linked test card — coverage gate will fail",
-                        "evidence": {"scenario_status": ts.get("status")},
-                    })
-
-        if filter_type:
-            blockers = [b for b in blockers if b["type"] == filter_type]
-
-        summary: dict[str, int] = {}
-        for b in blockers:
-            summary[b["type"]] = summary.get(b["type"], 0) + 1
-
-        return json.dumps({
-            "board_id": board_id,
-            "summary": summary,
-            "total": len(blockers),
-            "stale_hours_threshold": stale_hours,
-            "filter_type": filter_type or None,
-            "blockers": blockers,
-        }, default=str)
+        return json.dumps(result, default=str)
 
 
 # ============================================================================
