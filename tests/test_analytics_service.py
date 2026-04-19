@@ -10,6 +10,7 @@ from __future__ import annotations
 from okto_pulse.core.services.analytics_service import (
     decisions_stats,
     filter_decisions_by_status,
+    render_decisions_markdown,
     resolve_linked_criteria_to_indices,
     resolve_linked_fr_indices,
     spec_coverage_summary,
@@ -91,6 +92,63 @@ class TestDecisionsStats:
         assert decisions_stats(None) == {"total": 0, "active": 0, "superseded": 0, "revoked": 0, "other": 0}
 
 
+class TestRenderDecisionsMarkdown:
+    """Ideação #10 Fase 2 — markdown helper for agent consumption."""
+
+    ACTIVE = {
+        "id": "d1",
+        "title": "Use Kùzu embedded over Neo4j",
+        "status": "active",
+        "rationale": "Embedded DB reduces operational complexity",
+        "context": "Chosen during early KG design",
+        "alternatives_considered": ["Neo4j", "PostgreSQL graph extensions"],
+        "linked_requirements": [0, 2],
+        "linked_task_ids": ["card-abc"],
+    }
+    SUPERSEDED = {
+        "id": "d2",
+        "title": "Cache layer deferido",
+        "status": "superseded",
+        "supersedes_decision_id": "d-earlier",
+        "rationale": "Not needed yet",
+    }
+
+    def test_empty(self):
+        assert render_decisions_markdown(None) == ""
+        assert render_decisions_markdown([]) == ""
+
+    def test_active_only_by_default(self):
+        md = render_decisions_markdown([self.ACTIVE, self.SUPERSEDED])
+        assert "Use Kùzu embedded over Neo4j" in md
+        assert "Cache layer deferido" not in md
+        assert "## Decisions" in md
+        assert "(active)" in md
+
+    def test_include_superseded(self):
+        md = render_decisions_markdown([self.ACTIVE, self.SUPERSEDED], include_superseded=True)
+        assert "Use Kùzu embedded over Neo4j" in md
+        assert "Cache layer deferido" in md
+        assert "(superseded)" in md
+        assert "Supersedes" in md
+
+    def test_missing_fields_omitted(self):
+        minimal = {"id": "m1", "title": "Minimal", "status": "active"}
+        md = render_decisions_markdown([minimal])
+        assert "Minimal" in md
+        # No bullets for unspecified fields
+        assert "Rationale" not in md
+        assert "Alternatives" not in md
+
+    def test_non_dict_entries_dropped(self):
+        md = render_decisions_markdown([self.ACTIVE, "bad", 42])
+        assert "Use Kùzu embedded" in md
+        assert "bad" not in md
+
+    def test_all_superseded_with_flag_off_returns_empty(self):
+        md = render_decisions_markdown([self.SUPERSEDED])
+        assert md == ""
+
+
 class TestSpecCoverageSummary:
     class _FakeSpec:
         def __init__(self, **kwargs):
@@ -128,3 +186,27 @@ class TestSpecCoverageSummary:
         assert out["trs_total"] == 2
         assert out["trs_linked"] == 1
         assert out["tr_task_linkage_pct"] == 50.0
+
+    def test_decisions_coverage_active_only(self):
+        """Ideação #10 Fase 1 — decisions_coverage_pct conta só active."""
+        spec = self._FakeSpec()
+        out = spec_coverage_summary(
+            spec,
+            decisions=[
+                {"id": "d1", "status": "active", "linked_task_ids": ["card-1"]},
+                {"id": "d2", "status": "active", "linked_task_ids": []},
+                {"id": "d3", "status": "superseded"},  # não conta
+                {"id": "d4"},  # legacy → active → sem linked
+            ],
+        )
+        assert out["decisions_total"] == 3  # d1, d2, d4
+        assert out["decisions_linked"] == 1  # only d1
+        assert out["decisions_coverage_pct"] == 33.3
+        assert set(out["decisions_uncovered_ids"]) == {"d2", "d4"}
+
+    def test_decisions_empty_spec_pct_100(self):
+        spec = self._FakeSpec()
+        out = spec_coverage_summary(spec)
+        assert out["decisions_total"] == 0
+        assert out["decisions_coverage_pct"] == 100
+        assert out["decisions_uncovered_ids"] == []

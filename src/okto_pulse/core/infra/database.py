@@ -353,6 +353,39 @@ async def _migrate_add_decisions_columns() -> None:
                     pass
 
 
+async def _migrate_decisions_default_false() -> None:
+    """Ideação #10 Fase 1: flip spec.skip_decisions_coverage default from True→False.
+
+    Backward-compat: only NEW inserts get False; existing rows keep their
+    current value (True for most pré-ideação #10 specs). On Postgres we
+    ALTER COLUMN SET DEFAULT so raw SQL inserts honor the flip too. On
+    SQLite, ALTER COLUMN DEFAULT is not supported — Python-side default
+    (set on the SQLAlchemy model) handles future ORM inserts. Idempotent.
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    if dialect != "postgresql":
+        # SQLite handled via Python-side default on the Mapped column
+        return
+    async with get_engine().begin() as conn:
+        table_check = await conn.execute(sa_text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'specs')"
+        ))
+        if not table_check.scalar():
+            return
+        col_check = await conn.execute(sa_text(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_name = 'specs' AND column_name = 'skip_decisions_coverage'"
+        ))
+        current_default = col_check.scalar()
+        if current_default and "false" in str(current_default).lower():
+            return
+        await conn.execute(sa_text(
+            "ALTER TABLE specs ALTER COLUMN skip_decisions_coverage SET DEFAULT false"
+        ))
+
+
 async def _migrate_add_spec_validation_columns() -> None:
     """Add spec validation columns: skip_contract_coverage, skip_qualitative_validation, validation_threshold, evaluations."""
     from sqlalchemy import text as sa_text
@@ -730,6 +763,7 @@ async def init_db() -> None:
     await _migrate_add_skip_rules_coverage()
     await _migrate_add_skip_trs_coverage()
     await _migrate_add_decisions_columns()
+    await _migrate_decisions_default_false()
     await _migrate_add_archive_columns()
     await _migrate_add_spec_validation_columns()
     await _migrate_add_spec_validation_gate_columns()

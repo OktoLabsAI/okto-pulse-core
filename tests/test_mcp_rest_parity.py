@@ -282,7 +282,10 @@ class TestSpecCoverageSummaryParity:
         "br_task_linkage_pct", "brs_linked", "brs_total",
         "contract_task_linkage_pct", "contracts_linked", "contracts_total",
         "tr_task_linkage_pct", "trs_linked", "trs_total",
-        "skip_test_coverage", "skip_rules_coverage",
+        # Ideação #10 Fase 1 — decisions paridade
+        "decisions_coverage_pct", "decisions_linked", "decisions_total",
+        "decisions_uncovered_ids",
+        "skip_test_coverage", "skip_rules_coverage", "skip_decisions_coverage",
     }
 
     class _FakeSpec:
