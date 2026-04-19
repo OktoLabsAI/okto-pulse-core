@@ -27,6 +27,12 @@ from okto_pulse.core.events.dispatcher import (
     EventDispatcher,
     MAX_ATTEMPTS,
 )
+from okto_pulse.core.events.handlers.cancellation_decay import (
+    DECAY_PENALTY,
+    REVOCATION_REASON,
+    CancellationDecayHandler,
+    CancellationRestoreHandler,
+)
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (
     ConsolidationEnqueuer,
 )
@@ -34,7 +40,13 @@ from okto_pulse.core.events.types import (
     CardCancelled,
     CardCreated,
     CardMoved,
+    CardRestored,
     SpecVersionBumped,
+)
+from okto_pulse.core.kg.schema import (
+    bootstrap_board_graph,
+    close_all_connections,
+    open_board_connection,
 )
 from okto_pulse.core.models.db import (
     Board,
@@ -558,3 +570,407 @@ def test_payload_for_storage_excludes_top_level_fields():
     assert "occurred_at" not in payload
     assert payload["card_id"] == "card-payload"
     assert payload["spec_id"] == "spec-payload"
+
+
+# ---------------------------------------------------------------------------
+# KG integrity pack — Fase 1 tests
+# CancellationDecayHandler + CancellationRestoreHandler (spec 2c4d500b)
+# ---------------------------------------------------------------------------
+
+
+def _seed_kuzu_node(
+    board_id: str,
+    node_type: str,
+    node_id: str,
+    card_id: str,
+    relevance_score: float,
+    revocation_reason: str | None = None,
+) -> None:
+    """Insert one Kùzu node derived from a card (source_artifact_ref='card:{id}').
+
+    Uses the deterministic stub embedding (384 zeros) so we don't depend on
+    sentence-transformers in unit tests. Explicitly releases the Python-side
+    kuzu handles + runs gc so the handler running inside the dispatcher can
+    acquire the Windows exclusive file lock.
+    """
+    import gc as _gc
+
+    bootstrap_board_graph(board_id)
+    _gc.collect()
+    bc = open_board_connection(board_id)
+    try:
+        bc.conn.execute(
+            f"CREATE (n:{node_type} "
+            "{id: $id, title: $title, content: '', context: '', "
+            "justification: '', source_artifact_ref: $ref, source_session_id: '', "
+            "created_at: timestamp($now), created_by_agent: 'test', "
+            "source_confidence: 0.8, relevance_score: $score, "
+            "query_hits: 0, last_queried_at: NULL, "
+            "superseded_by: NULL, superseded_at: NULL, "
+            "revocation_reason: $reason, embedding: $emb})",
+            {
+                "id": node_id,
+                "title": f"{node_type} for {card_id}",
+                "ref": f"card:{card_id}",
+                "now": datetime.now(timezone.utc).isoformat(),
+                "score": relevance_score,
+                "reason": revocation_reason,
+                "emb": [0.0] * 384,
+            },
+        )
+    finally:
+        bc.close()
+        del bc
+        _gc.collect()
+
+
+def _fetch_node_fields(
+    board_id: str, node_type: str, node_id: str
+) -> dict:
+    """Read a node's mutable fields — returns empty dict if node missing."""
+    import gc as _gc
+
+    bc = open_board_connection(board_id)
+    try:
+        result = bc.conn.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id "
+            "RETURN n.relevance_score, n.revocation_reason, n.superseded_at",
+            {"id": node_id},
+        )
+        if not result.has_next():
+            fields: dict = {}
+        else:
+            row = result.get_next()
+            fields = {
+                "relevance_score": row[0],
+                "revocation_reason": row[1],
+                "superseded_at": row[2],
+            }
+    finally:
+        bc.close()
+        del bc
+        _gc.collect()
+    return fields
+
+
+@pytest_asyncio.fixture
+async def decay_board(event_board):
+    """Ensure the Kùzu graph exists and is cleaned between tests."""
+    import gc as _gc
+
+    bootstrap_board_graph(event_board)
+    _gc.collect()
+    bc = open_board_connection(event_board)
+    try:
+        for nt in ("Entity", "Decision"):
+            try:
+                bc.conn.execute(f"MATCH (n:{nt}) DELETE n")
+            except Exception:  # noqa: BLE001 — best-effort cleanup
+                pass
+    finally:
+        bc.close()
+        del bc
+        _gc.collect()
+    yield event_board
+    close_all_connections(event_board)
+    _gc.collect()
+
+
+def test_decay_handlers_registered():
+    """Both new handlers appear in the bus registry next to the enqueuer."""
+    assert CancellationDecayHandler in EventBus._registry.get("card.cancelled", [])
+    assert CancellationRestoreHandler in EventBus._registry.get("card.restored", [])
+    # And ConsolidationEnqueuer is STILL there for the same events.
+    assert ConsolidationEnqueuer in EventBus._registry.get("card.cancelled", [])
+    assert ConsolidationEnqueuer in EventBus._registry.get("card.restored", [])
+
+
+@pytest.mark.asyncio
+async def test_decay_applied(db_factory, clean_tables, decay_board, caplog):
+    """Decay drops relevance_score by 0.5 and marks source_cancelled."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay")
+    card_id = "card-decay-1"
+    _seed_kuzu_node(decay_board, "Entity", "node-e1", card_id, 0.8)
+    _seed_kuzu_node(decay_board, "Decision", "node-d1", card_id, 0.8)
+
+    async with db_factory() as session:
+        await publish(
+            CardCancelled(
+                board_id=decay_board,
+                actor_id=USER_ID,
+                card_id=card_id,
+                previous_status="in_progress",
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(1.0)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    entity = _fetch_node_fields(decay_board, "Entity", "node-e1")
+    decision = _fetch_node_fields(decay_board, "Decision", "node-d1")
+    assert abs(entity["relevance_score"] - 0.3) < 1e-6
+    assert abs(decision["relevance_score"] - 0.3) < 1e-6
+    assert entity["revocation_reason"] == REVOCATION_REASON
+    assert decision["revocation_reason"] == REVOCATION_REASON
+    assert entity["superseded_at"] is not None
+    assert decision["superseded_at"] is not None
+
+    # At least one log line carries the structured event marker.
+    events = [r for r in caplog.records if getattr(r, "event", "") == "kg.cancellation_decay.applied"]
+    assert events, "expected kg.cancellation_decay.applied log"
+    # The last `applied` record covers both nodes.
+    assert any(r.nodes_affected == 2 for r in events)
+
+
+@pytest.mark.asyncio
+async def test_decay_clamp_floor(db_factory, clean_tables, decay_board):
+    """Score cannot go below 0 even if penalty exceeds current value."""
+    card_id = "card-decay-floor"
+    _seed_kuzu_node(decay_board, "Entity", "node-floor", card_id, 0.3)
+
+    async with db_factory() as session:
+        await publish(
+            CardCancelled(
+                board_id=decay_board,
+                actor_id=USER_ID,
+                card_id=card_id,
+                previous_status="in_progress",
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(1.0)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    node = _fetch_node_fields(decay_board, "Entity", "node-floor")
+    assert node["relevance_score"] == 0.0
+    assert node["revocation_reason"] == REVOCATION_REASON
+
+
+@pytest.mark.asyncio
+async def test_decay_idempotent(db_factory, clean_tables, decay_board):
+    """Second CardCancelled for the same card does not re-apply penalty."""
+    card_id = "card-decay-idem"
+    _seed_kuzu_node(decay_board, "Entity", "node-idem", card_id, 0.9)
+
+    async def _publish_and_drain():
+        async with db_factory() as session:
+            await publish(
+                CardCancelled(
+                    board_id=decay_board,
+                    actor_id=USER_ID,
+                    card_id=card_id,
+                    previous_status="in_progress",
+                ),
+                session=session,
+            )
+            await session.commit()
+        dispatcher = EventDispatcher(db_factory)
+        try:
+            await dispatcher.start()
+            await asyncio.sleep(0.8)
+        finally:
+            await dispatcher.stop(timeout=2.0)
+
+    await _publish_and_drain()
+    first = _fetch_node_fields(decay_board, "Entity", "node-idem")
+    assert abs(first["relevance_score"] - 0.4) < 1e-6  # 0.9 - 0.5
+
+    # Wipe the previous exec row so clean_tables doesn't block the second run
+    # from landing a fresh execution on the already-cancelled card.
+    async with db_factory() as session:
+        await session.execute(DomainEventHandlerExecution.__table__.delete())
+        await session.execute(DomainEventRow.__table__.delete())
+        await session.commit()
+
+    await _publish_and_drain()
+    second = _fetch_node_fields(decay_board, "Entity", "node-idem")
+    # Score must be identical — filter kicked in on revocation_reason check.
+    assert abs(second["relevance_score"] - first["relevance_score"]) < 1e-6
+
+
+@pytest.mark.asyncio
+async def test_decay_reverted(db_factory, clean_tables, decay_board, caplog):
+    """CardRestored adds the penalty back and clears the markers."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay")
+    card_id = "card-decay-revert"
+    # Start in a decayed state to exercise only the restore leg.
+    _seed_kuzu_node(
+        decay_board, "Entity", "node-revert", card_id, 0.3,
+        revocation_reason=REVOCATION_REASON,
+    )
+
+    async with db_factory() as session:
+        await publish(
+            CardRestored(
+                board_id=decay_board,
+                actor_id=USER_ID,
+                card_id=card_id,
+                from_status="cancelled",
+                to_status="in_progress",
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(1.0)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    node = _fetch_node_fields(decay_board, "Entity", "node-revert")
+    assert abs(node["relevance_score"] - 0.8) < 1e-6  # 0.3 + 0.5
+    assert node["revocation_reason"] is None
+    assert node["superseded_at"] is None
+    events = [r for r in caplog.records if getattr(r, "event", "") == "kg.cancellation_decay.reverted"]
+    assert any(r.nodes_affected == 1 for r in events)
+
+
+@pytest.mark.asyncio
+async def test_restore_selective_by_reason(db_factory, clean_tables, decay_board):
+    """Restore leaves nodes marked with other reasons untouched."""
+    card_id = "card-selective"
+    _seed_kuzu_node(
+        decay_board, "Entity", "node-match", card_id, 0.3,
+        revocation_reason=REVOCATION_REASON,
+    )
+    _seed_kuzu_node(
+        decay_board, "Entity", "node-other", card_id, 0.3,
+        revocation_reason="auto_superseded",
+    )
+
+    async with db_factory() as session:
+        await publish(
+            CardRestored(
+                board_id=decay_board,
+                actor_id=USER_ID,
+                card_id=card_id,
+                from_status="cancelled",
+                to_status="in_progress",
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(1.0)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    match = _fetch_node_fields(decay_board, "Entity", "node-match")
+    other = _fetch_node_fields(decay_board, "Entity", "node-other")
+    assert abs(match["relevance_score"] - 0.8) < 1e-6
+    assert match["revocation_reason"] is None
+    # Unmatched node stayed in its prior state.
+    assert abs(other["relevance_score"] - 0.3) < 1e-6
+    assert other["revocation_reason"] == "auto_superseded"
+
+
+@pytest.mark.asyncio
+async def test_decay_zero_nodes(db_factory, clean_tables, decay_board, caplog):
+    """Cancelling a card with no derived nodes completes cleanly."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay")
+    card_id = "card-no-nodes"
+
+    async with db_factory() as session:
+        await publish(
+            CardCancelled(
+                board_id=decay_board,
+                actor_id=USER_ID,
+                card_id=card_id,
+                previous_status="in_progress",
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.8)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        exec_rows = (await session.execute(
+            select(DomainEventHandlerExecution).where(
+                DomainEventHandlerExecution.handler_name == "CancellationDecayHandler",
+            )
+        )).scalars().all()
+        assert len(exec_rows) == 1
+        assert exec_rows[0].status == "done"
+
+    events = [r for r in caplog.records if getattr(r, "event", "") == "kg.cancellation_decay.applied"]
+    assert any(r.nodes_affected == 0 for r in events)
+
+
+@pytest.mark.asyncio
+async def test_handler_isolation_on_failure(db_factory, clean_tables, decay_board, monkeypatch):
+    """Enqueuer still runs to completion when the decay handler raises."""
+    async def _boom(self, event, session):  # noqa: ARG001
+        raise RuntimeError("decay boom")
+
+    monkeypatch.setattr(CancellationDecayHandler, "handle", _boom)
+
+    card_id = "card-iso"
+    async with db_factory() as session:
+        await publish(
+            CardCancelled(
+                board_id=decay_board,
+                actor_id=USER_ID,
+                card_id=card_id,
+                previous_status="in_progress",
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(1.0)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        queue_rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == decay_board,
+                ConsolidationQueue.artifact_id == card_id,
+            )
+        )).scalars().all()
+        # Enqueuer committed its own transaction despite decay's failure.
+        assert len(queue_rows) == 1
+        assert queue_rows[0].priority == "high"
+
+        exec_rows = (await session.execute(
+            select(DomainEventHandlerExecution).where(
+                DomainEventHandlerExecution.handler_name == "CancellationDecayHandler",
+            )
+        )).scalars().all()
+        assert len(exec_rows) == 1
+        # Either still retrying ('pending' with backoff) or already DLQ.
+        assert exec_rows[0].status in ("pending", "dlq")
+        assert exec_rows[0].last_error is not None
+        assert "decay boom" in exec_rows[0].last_error
