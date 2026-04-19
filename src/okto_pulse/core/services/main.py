@@ -2179,6 +2179,7 @@ class SpecService:
             technical_requirements=data.technical_requirements,
             acceptance_criteria=data.acceptance_criteria,
             test_scenarios=[s.model_dump() for s in data.test_scenarios] if data.test_scenarios else None,
+            decisions=[d.model_dump() for d in data.decisions] if data.decisions else None,
             status=data.status,
             assignee_id=data.assignee_id,
             created_by=user_id,
