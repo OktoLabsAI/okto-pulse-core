@@ -44,6 +44,7 @@ from okto_pulse.core.services.analytics_service import (
     aggregate_task_validation_gate,
     classify_spec_violation,
     classify_task_violation,
+    compute_blockers,
     compute_coverage,
     compute_funnel,
     compute_velocity,
@@ -341,6 +342,37 @@ class TestDecisionsHelpersParity:
             assert isinstance(v, int)
 
 
+@pytest.mark.asyncio
+class TestBlockersParity:
+    """D-6 — compute_blockers returns identical payload for REST and MCP paths."""
+
+    async def test_blockers_payload_shape(self, db_factory):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            payload = await compute_blockers(db, BOARD_ID)
+        assert set(payload.keys()) == {
+            "board_id", "summary", "total",
+            "stale_hours_threshold", "filter_type", "blockers",
+        }
+        assert isinstance(payload["summary"], dict)
+        assert isinstance(payload["blockers"], list)
+        assert payload["filter_type"] is None
+        assert payload["stale_hours_threshold"] == 72
+
+    async def test_filter_type_echoed_and_applied(self, db_factory):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            filtered = await compute_blockers(db, BOARD_ID, filter_type="stale")
+        assert filtered["filter_type"] == "stale"
+        for b in filtered["blockers"]:
+            assert b["type"] == "stale"
+
+    async def test_invalid_stale_hours_raises(self, db_factory):
+        async with db_factory() as db:
+            with pytest.raises(ValueError):
+                await compute_blockers(db, BOARD_ID, stale_hours=0)
+
+
 class TestValidationGateParity:
     """D-2 / D-3 — task + spec validation gate aggregators are pure, shape fixed."""
 
@@ -440,6 +472,7 @@ class TestDelegationContract:
         src = inspect.getsource(rest_mod)
         for fn in (
             "compute_coverage", "compute_funnel", "compute_velocity",
+            "compute_blockers",
             "aggregate_task_validation_gate", "aggregate_spec_validation_gate",
         ):
             assert fn in src, f"REST analytics missing service import: {fn}"
@@ -449,6 +482,7 @@ class TestDelegationContract:
         src = inspect.getsource(mcp_mod)
         for fn in (
             "compute_coverage", "compute_funnel", "compute_velocity",
+            "compute_blockers",
             "aggregate_task_validation_gate",
         ):
             assert fn in src, f"MCP server missing service import: {fn}"

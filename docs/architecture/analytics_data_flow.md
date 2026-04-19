@@ -39,9 +39,9 @@ tools são *thin adapters* que delegam ao service.
 | `decisions_stats()` | (futuro) | `get_spec_context`, `get_task_context` | D-8 ✓ |
 | `resolve_linked_criteria_to_indices()` | `board_coverage` | (via `compute_coverage`) | ✓ |
 | `resolve_linked_fr_indices()` | `board_coverage` | (via `compute_coverage`) | ✓ |
-| `aggregate_task_validation_gate()` | `board_overview` | `get_analytics(overview)` | **D-2 pendente** |
-| `aggregate_spec_validation_gate()` | `board_overview` | `get_analytics(overview)` | **D-3 pendente** |
-| `compute_blockers()` | `board_blockers` | `list_blockers` | **D-6 pendente (cosmético)** |
+| `aggregate_task_validation_gate()` | `board_overview` / `board_validations` | `get_analytics(overview)` | D-2 ✓ |
+| `aggregate_spec_validation_gate()` | `board_overview` / `board_validations` | `get_analytics(overview)` | D-3 ✓ |
+| `compute_blockers()` | `board_blockers` | `list_blockers` | D-6 ✓ |
 
 ## Invariante do contrato
 
@@ -76,9 +76,12 @@ Cada duplicação é migrada em commit separado:
 - `4aac1a9` — D-4 funnel
 - `e165bc6` — D-5 velocity
 - `b965e1b` — D-7 spec_coverage + D-8 decisions helpers
+- `5a3a2f9` — parity test suite (tests/test_mcp_rest_parity.py)
+- `e02c75f` — D-2 task validation gate + D-3 spec validation gate
+- D-6 blockers — commit final (mesma release)
 
-Commits futuros cobrem D-2 (task validation), D-3 (spec validation), D-6
-(blockers cosmetic) e criação do parity test suite.
+Todas as 8 duplicações mapeadas no audit `docs/duplications_audit.md`
+estão migradas. Parity test suite bloqueia regressão.
 
 ## Testes
 
