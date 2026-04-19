@@ -11,6 +11,7 @@ from __future__ import annotations
 import gc
 import logging
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -301,38 +302,95 @@ def _board_meta_ddl() -> str:
     )
 
 
+def _is_duplicate_column_error(exc: BaseException) -> bool:
+    """Kùzu raises Binder exceptions on duplicate ADD. Recognize the benign
+    idempotent case so we can distinguish it from genuine errors (lock
+    contention, permission, etc.)."""
+    msg = str(exc).lower()
+    return (
+        "already exists" in msg
+        or "duplicate" in msg
+        or "already has property" in msg
+    )
+
+
+def _is_retryable_kuzu_error(exc: BaseException) -> bool:
+    """File-lock and transient IO errors on the embedded .kuzu file.
+
+    Windows file locking is the dominant offender: when the board graph
+    is open for reads (e.g. fallback search) an ALTER concurrent with the
+    reader fails with ``IO exception: Could not set lock on file``.
+    """
+    msg = str(exc).lower()
+    return (
+        "could not set lock" in msg
+        or "io exception" in msg
+        or "timeout" in msg
+    )
+
+
+def _alter_add_column_with_retry(
+    conn, node_type: str, col_name: str, col_type: str,
+    *, max_attempts: int = 5, base_sleep: float = 0.2,
+) -> str:
+    """ALTER TABLE ADD with retry on lock contention.
+
+    Returns one of: ``"added"``, ``"exists"``, ``"failed"``. ``"exists"`` is
+    the idempotent path (column already present). ``"failed"`` means all
+    retries exhausted on a retryable error OR a non-retryable error — either
+    case logged at WARN so silent swallowing doesn't keep hiding schema
+    drift like the 2026-04-19 priority_boost incident.
+    """
+    ddl = f"ALTER TABLE {node_type} ADD {col_name} {col_type}"
+    last_err: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            conn.execute(ddl)
+            return "added"
+        except Exception as exc:
+            last_err = exc
+            if _is_duplicate_column_error(exc):
+                return "exists"
+            if _is_retryable_kuzu_error(exc) and attempt < max_attempts:
+                sleep_s = base_sleep * (2 ** (attempt - 1))
+                logger.info(
+                    "kg.schema.alter_retry node=%s col=%s attempt=%d/%d sleep=%.2fs err=%s",
+                    node_type, col_name, attempt, max_attempts, sleep_s, exc,
+                )
+                time.sleep(sleep_s)
+                continue
+            break
+    logger.warning(
+        "kg.schema.alter_failed node=%s col=%s attempts=%d err=%s",
+        node_type, col_name, max_attempts, last_err,
+    )
+    return "failed"
+
+
 def _ensure_relevance_columns(conn, node_type: str) -> list[str]:
     """ALTER TABLE ADD for every v0.3.0 column missing on ``node_type``.
 
-    Returns the list of columns actually added. Kùzu raises on duplicate ADD
-    so we catch-and-continue — the operation is idempotent. Used when the
-    node table already exists but was bootstrapped under v0.2.0.
+    Idempotent — retries on lock contention (see
+    :func:`_alter_add_column_with_retry`). Returns the list of columns
+    actually added this call.
     """
     added: list[str] = []
     for col_name, col_type in RELEVANCE_COLUMNS:
-        try:
-            conn.execute(f"ALTER TABLE {node_type} ADD {col_name} {col_type}")
+        if _alter_add_column_with_retry(conn, node_type, col_name, col_type) == "added":
             added.append(col_name)
-        except Exception:
-            pass
     return added
 
 
 def _ensure_priority_boost_columns(conn, node_type: str) -> list[str]:
     """ALTER TABLE ADD for the v0.3.1 priority_boost column on ``node_type``.
 
-    Idempotent — Kùzu raises on duplicate ADD so we catch-and-continue.
-    Returns the list of columns actually added (typically empty on second
-    run). Invoked from apply_schema_to_connection so every board gets the
-    column regardless of when it was first bootstrapped.
+    Idempotent with retry on lock contention. Returns the list of columns
+    actually added this call (typically empty on second run).
     """
     added: list[str] = []
     for col_name, col_type in PRIORITY_BOOST_COLUMNS:
-        try:
-            conn.execute(f"ALTER TABLE {node_type} ADD {col_name} {col_type}")
+        if _alter_add_column_with_retry(conn, node_type, col_name, col_type) == "added":
             added.append(col_name)
-        except Exception:
-            pass
     return added
 
 
@@ -642,6 +700,44 @@ def _board_needs_migration(board_id: str) -> bool:
         return True
 
 
+def _board_needs_priority_boost_migration(board_id: str) -> bool:
+    """Returns True iff the board is missing the v0.3.1 ``priority_boost``
+    column on any node type.
+
+    Fixes the 2026-04-19 incident where boards bootstrapped before the
+    ``7c032ee`` commit had rel tables + v0.3.0 columns (so the other two
+    probes short-circuited) but lacked ``priority_boost``, silently
+    breaking every ``commit_consolidation`` with a Binder exception.
+
+    Column-based probe over the first node type — authoritative regardless
+    of BoardMeta.schema_version. Returns False on probe failure so a stuck
+    probe never loops the migration.
+    """
+    try:
+        import kuzu  # type: ignore
+        path = board_kuzu_path(board_id)
+        db = kuzu.Database(str(path))
+        conn = kuzu.Connection(db)
+        try:
+            # TABLE_INFO on the first node type is representative: the
+            # migration adds priority_boost to every node type in a loop,
+            # so if any one is missing, all are missing (legacy boards
+            # were bootstrapped in one pass, not incrementally).
+            probe_node = NODE_TYPES[0]
+            res = conn.execute(f"CALL TABLE_INFO('{probe_node}') RETURN *")
+            existing_cols: set[str] = set()
+            while res.has_next():
+                row = res.get_next()
+                # TABLE_INFO row: [index, name, type, default, pk]
+                existing_cols.add(str(row[1]))
+        finally:
+            del conn, db
+        expected = {c for c, _ in PRIORITY_BOOST_COLUMNS}
+        return not expected.issubset(existing_cols)
+    except Exception:
+        return False
+
+
 def _board_needs_v030_migration(board_id: str) -> bool:
     """Returns True iff the board is missing the v0.3.0 node columns.
 
@@ -847,6 +943,16 @@ class BoardConnection:
                 # added post-bootstrap). Run schema apply ONCE to backfill,
                 # then mark the board as migrated so subsequent opens skip
                 # the (write-heavy) DDL pass.
+                _migrate_board_schema(board_id)
+            elif _board_needs_priority_boost_migration(board_id):
+                # v0.3.1 targeted migration — legacy boards that passed both
+                # rel-table and v0.3.0 probes but were bootstrapped before
+                # commit 7c032ee have no priority_boost column. Single
+                # apply_schema pass adds it via _ensure_priority_boost_columns.
+                logger.info(
+                    "board_priority_boost_migrate.start board=%s",
+                    board_id,
+                )
                 _migrate_board_schema(board_id)
 
         self._board_id = board_id
