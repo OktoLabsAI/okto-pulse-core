@@ -6291,50 +6291,15 @@ async def okto_pulse_get_analytics(
             avg_completeness = round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None
             avg_drift = round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None
 
-            # --- Task Validation Gate (from card.validations) ---
-            tv_submitted = 0
-            tv_success = 0
-            tv_failed = 0
-            tv_conf = []
-            tv_comp = []
-            tv_drift = []
-            tv_cards_with = 0
-            for c in cards:
-                vals = getattr(c, "validations", None) or []
-                if not isinstance(vals, list) or not vals:
-                    continue
-                tv_cards_with += 1
-                for v in vals:
-                    if not isinstance(v, dict):
-                        continue
-                    tv_submitted += 1
-                    outcome = v.get("outcome")
-                    verdict = v.get("verdict")
-                    if outcome == "success" or verdict == "pass":
-                        tv_success += 1
-                    elif outcome == "failed" or verdict == "fail":
-                        tv_failed += 1
-                    if v.get("confidence") is not None:
-                        tv_conf.append(int(v["confidence"]))
-                    comp_v = v.get("completeness") if v.get("completeness") is not None else v.get("estimated_completeness")
-                    if comp_v is not None:
-                        tv_comp.append(int(comp_v))
-                    drift_v = v.get("drift") if v.get("drift") is not None else v.get("estimated_drift")
-                    if drift_v is not None:
-                        tv_drift.append(int(drift_v))
-
-            task_validation_gate = {
-                "total_submitted": tv_submitted,
-                "total_success": tv_success,
-                "total_failed": tv_failed,
-                "success_rate": round(tv_success / tv_submitted * 100, 1) if tv_submitted else None,
-                "avg_scores": {
-                    "confidence": round(sum(tv_conf) / len(tv_conf), 1) if tv_conf else None,
-                    "completeness": round(sum(tv_comp) / len(tv_comp), 1) if tv_comp else None,
-                    "drift": round(sum(tv_drift) / len(tv_drift), 1) if tv_drift else None,
-                },
-                "cards_with_validation": tv_cards_with,
-            }
+            # --- Task Validation Gate (D-2 migrado em ideação #9) ---
+            # Delega ao service; MCP converge para o shape completo do REST
+            # (+ avg_attempts_per_card, first_pass_rate, rejection_reasons).
+            from okto_pulse.core.services.analytics_service import (
+                aggregate_spec_validation_gate as _agg_sv,
+                aggregate_task_validation_gate as _agg_tv,
+            )
+            task_validation_gate = _agg_tv(cards)
+            spec_validation_gate = _agg_sv(specs)
 
             # Fallback: use validation scores if conclusion-based averages are empty
             if avg_completeness is None and task_validation_gate["avg_scores"]["completeness"] is not None:
@@ -6403,6 +6368,7 @@ async def okto_pulse_get_analytics(
                     "card": avg_cycle_hours,
                 },
                 "task_validation_gate": task_validation_gate,
+                "spec_validation_gate": spec_validation_gate,
                 "sprint_evaluation": {
                     "total_submitted": sprint_evals_total,
                     "avg_overall_score": round(sum(sprint_eval_scores) / len(sprint_eval_scores), 1) if sprint_eval_scores else None,
