@@ -15,10 +15,21 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.models.db import Spec
+from okto_pulse.core.models.db import (
+    Card,
+    CardStatus,
+    Ideation,
+    IdeationStatus,
+    Refinement,
+    RefinementStatus,
+    Spec,
+    SpecStatus,
+    Sprint,
+    SprintStatus,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -185,3 +196,221 @@ async def compute_coverage(
         spec_q = spec_q.where(Spec.created_at <= dt_to)
     specs = list((await db.execute(spec_q)).scalars().all())
     return [_coverage_row_for_spec(s) for s in specs]
+
+
+# ---------------------------------------------------------------------------
+# D-4 · Funnel metrics
+# ---------------------------------------------------------------------------
+
+
+def _is_test_card(card) -> bool:
+    ct = getattr(card, "card_type", None)
+    return ct is not None and str(ct).endswith("test")
+
+
+def _is_bug_card(card) -> bool:
+    ct = getattr(card, "card_type", None)
+    return ct is not None and str(ct).endswith("bug")
+
+
+def _is_normal_card(card) -> bool:
+    ct = getattr(card, "card_type", None)
+    if ct is None:
+        return not _is_test_card(card)
+    return str(ct).endswith("normal")
+
+
+def _status_breakdown(items: list, enum_cls) -> dict[str, int]:
+    """Count items per status, aware of all enum values (zeros preserved)."""
+    out = {s.value: 0 for s in enum_cls}
+    for it in items:
+        st = it.status.value if hasattr(it.status, "value") else str(it.status)
+        out[st] = out.get(st, 0) + 1
+    return out
+
+
+async def compute_funnel(
+    db: AsyncSession,
+    board_id: str,
+    *,
+    dt_from: datetime | None = None,
+    dt_to: datetime | None = None,
+    include_archived: bool = False,
+) -> dict:
+    """Compute the full funnel for a board.
+
+    Returns the same rich shape as REST `/boards/{id}/analytics/funnel`:
+      - Per-level counts: ideations, refinements, specs, sprints, cards.
+      - Done counts: done, ideations_done, specs_done, refinements_done.
+      - Card type breakdown: cards_impl, cards_test, cards_bug.
+      - BR/Contract aggregation: rules_count, contracts_count,
+        specs_with_rules, specs_with_contracts.
+      - Status breakdowns: spec_status_breakdown, card_status_breakdown,
+        sprint_status_breakdown.
+      - Bug metrics: bugs_total, bugs_open, bugs_by_severity.
+      - Cycle time: avg_cycle_hours + cycle_time_by_phase{ideation, refinement,
+        spec, sprint, card}.
+
+    MCP previously returned only 6 keys (ideations/refinements/specs/cards/done)
+    — migration unifies to the full shape.
+    """
+    counts: dict = {}
+
+    # Per-level counts
+    archived_filter = (lambda m: m.archived.is_(False)) if not include_archived else (lambda m: None)
+    for model, key in [
+        (Ideation, "ideations"),
+        (Refinement, "refinements"),
+        (Spec, "specs"),
+        (Sprint, "sprints"),
+        (Card, "cards"),
+    ]:
+        q = select(func.count(model.id)).where(model.board_id == board_id)
+        if not include_archived:
+            q = q.where(model.archived.is_(False))
+        if dt_from:
+            q = q.where(model.created_at >= dt_from)
+        if dt_to:
+            q = q.where(model.created_at <= dt_to)
+        counts[key] = (await db.execute(q)).scalar() or 0
+
+    # Done cards
+    done_q = select(func.count(Card.id)).where(
+        Card.board_id == board_id,
+        Card.status == CardStatus.DONE,
+    )
+    if not include_archived:
+        done_q = done_q.where(Card.archived.is_(False))
+    if dt_from:
+        done_q = done_q.where(Card.created_at >= dt_from)
+    if dt_to:
+        done_q = done_q.where(Card.created_at <= dt_to)
+    counts["done"] = (await db.execute(done_q)).scalar() or 0
+
+    # Lifecycle done counts
+    ideations_done_q = select(func.count(Ideation.id)).where(
+        Ideation.board_id == board_id,
+        Ideation.status == IdeationStatus.DONE,
+    )
+    specs_done_q = select(func.count(Spec.id)).where(
+        Spec.board_id == board_id,
+        Spec.status == SpecStatus.DONE,
+    )
+    if not include_archived:
+        ideations_done_q = ideations_done_q.where(Ideation.archived.is_(False))
+        specs_done_q = specs_done_q.where(Spec.archived.is_(False))
+    if dt_from:
+        ideations_done_q = ideations_done_q.where(Ideation.created_at >= dt_from)
+        specs_done_q = specs_done_q.where(Spec.created_at >= dt_from)
+    if dt_to:
+        ideations_done_q = ideations_done_q.where(Ideation.created_at <= dt_to)
+        specs_done_q = specs_done_q.where(Spec.created_at <= dt_to)
+    counts["ideations_done"] = (await db.execute(ideations_done_q)).scalar() or 0
+    counts["specs_done"] = (await db.execute(specs_done_q)).scalar() or 0
+
+    # Card types (Python-side on JSON column)
+    all_cards_q = select(Card).where(Card.board_id == board_id)
+    if not include_archived:
+        all_cards_q = all_cards_q.where(Card.archived.is_(False))
+    if dt_from:
+        all_cards_q = all_cards_q.where(Card.created_at >= dt_from)
+    if dt_to:
+        all_cards_q = all_cards_q.where(Card.created_at <= dt_to)
+    all_cards = list((await db.execute(all_cards_q)).scalars().all())
+    counts["cards_impl"] = sum(1 for c in all_cards if _is_normal_card(c))
+    counts["cards_test"] = sum(1 for c in all_cards if _is_test_card(c))
+    counts["cards_bug"] = sum(1 for c in all_cards if _is_bug_card(c))
+
+    # Specs (para BR/Contract + breakdown)
+    spec_objs_q = select(Spec).where(Spec.board_id == board_id)
+    if not include_archived:
+        spec_objs_q = spec_objs_q.where(Spec.archived.is_(False))
+    if dt_from:
+        spec_objs_q = spec_objs_q.where(Spec.created_at >= dt_from)
+    if dt_to:
+        spec_objs_q = spec_objs_q.where(Spec.created_at <= dt_to)
+    spec_objs = list((await db.execute(spec_objs_q)).scalars().all())
+
+    counts["rules_count"] = sum(len(s.business_rules or []) for s in spec_objs)
+    counts["contracts_count"] = sum(len(s.api_contracts or []) for s in spec_objs)
+    counts["specs_with_rules"] = sum(
+        1 for s in spec_objs if s.business_rules and len(s.business_rules) > 0
+    )
+    counts["specs_with_contracts"] = sum(
+        1 for s in spec_objs if s.api_contracts and len(s.api_contracts) > 0
+    )
+
+    counts["spec_status_breakdown"] = _status_breakdown(spec_objs, SpecStatus)
+    counts["card_status_breakdown"] = _status_breakdown(all_cards, CardStatus)
+
+    # Sprints
+    sprint_objs_q = select(Sprint).where(Sprint.board_id == board_id)
+    if not include_archived:
+        sprint_objs_q = sprint_objs_q.where(Sprint.archived.is_(False))
+    if dt_from:
+        sprint_objs_q = sprint_objs_q.where(Sprint.created_at >= dt_from)
+    if dt_to:
+        sprint_objs_q = sprint_objs_q.where(Sprint.created_at <= dt_to)
+    sprint_objs = list((await db.execute(sprint_objs_q)).scalars().all())
+    counts["sprint_status_breakdown"] = _status_breakdown(sprint_objs, SprintStatus)
+
+    # Bug metrics
+    bug_cards = [c for c in all_cards if _is_bug_card(c)]
+    counts["bugs_total"] = len(bug_cards)
+    counts["bugs_open"] = sum(
+        1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED)
+    )
+    counts["bugs_by_severity"] = {
+        "critical": sum(1 for c in bug_cards if getattr(c, "severity", None) == "critical"),
+        "major": sum(1 for c in bug_cards if getattr(c, "severity", None) == "major"),
+        "minor": sum(1 for c in bug_cards if getattr(c, "severity", None) == "minor"),
+    }
+
+    # Avg cycle (cards done)
+    done_cards_board = [c for c in all_cards if c.status == CardStatus.DONE]
+    cycle_times_board: list[float] = []
+    for c in done_cards_board:
+        if c.created_at and c.updated_at:
+            cycle_times_board.append(
+                (c.updated_at - c.created_at).total_seconds() / 3600.0
+            )
+    counts["avg_cycle_hours"] = (
+        round(sum(cycle_times_board) / len(cycle_times_board), 1)
+        if cycle_times_board
+        else None
+    )
+
+    # Ideations/Refinements para cycle_time_by_phase
+    board_ideations_q = select(Ideation).where(Ideation.board_id == board_id)
+    board_refinements_q = select(Refinement).where(Refinement.board_id == board_id)
+    if not include_archived:
+        board_ideations_q = board_ideations_q.where(Ideation.archived.is_(False))
+        board_refinements_q = board_refinements_q.where(Refinement.archived.is_(False))
+    if dt_from:
+        board_ideations_q = board_ideations_q.where(Ideation.created_at >= dt_from)
+        board_refinements_q = board_refinements_q.where(Refinement.created_at >= dt_from)
+    if dt_to:
+        board_ideations_q = board_ideations_q.where(Ideation.created_at <= dt_to)
+        board_refinements_q = board_refinements_q.where(Refinement.created_at <= dt_to)
+    board_ideations = list((await db.execute(board_ideations_q)).scalars().all())
+    board_refinements = list((await db.execute(board_refinements_q)).scalars().all())
+
+    def _phase_ct(items, done_status_str: str) -> float | None:
+        times = []
+        for it in items:
+            if str(it.status) == done_status_str and it.created_at and it.updated_at:
+                times.append((it.updated_at - it.created_at).total_seconds() / 3600.0)
+        return round(sum(times) / len(times), 1) if times else None
+
+    counts["cycle_time_by_phase"] = {
+        "ideation": _phase_ct(board_ideations, str(IdeationStatus.DONE)),
+        "refinement": _phase_ct(board_refinements, str(RefinementStatus.DONE)),
+        "spec": _phase_ct(spec_objs, str(SpecStatus.DONE)),
+        "sprint": _phase_ct(sprint_objs, str(SprintStatus.CLOSED)),
+        "card": counts["avg_cycle_hours"],
+    }
+    counts["refinements_done"] = sum(
+        1 for r in board_refinements if str(r.status) == str(RefinementStatus.DONE)
+    )
+
+    return counts

@@ -6540,27 +6540,14 @@ async def okto_pulse_get_analytics(
             }, default=str)
 
         elif metric_type == "funnel":
-            counts = {}
-            for model, key in [
-                (Ideation, "ideations"),
-                (Refinement, "refinements"),
-                (Spec, "specs"),
-                (Card, "cards"),
-            ]:
-                q = select(func.count(model.id)).where(model.board_id == board_id)
-                if dt_from:
-                    q = q.where(model.created_at >= dt_from)
-                if dt_to:
-                    q = q.where(model.created_at <= dt_to)
-                counts[key] = (await db.execute(q)).scalar() or 0
-
-            done_q = select(func.count(Card.id)).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
-            if dt_from:
-                done_q = done_q.where(Card.created_at >= dt_from)
-            if dt_to:
-                done_q = done_q.where(Card.created_at <= dt_to)
-            counts["done"] = (await db.execute(done_q)).scalar() or 0
-
+            # Delegado para service (D-4). MCP agora recebe o shape completo
+            # do REST: status_breakdowns, cards_by_type, BR/contract counts,
+            # cycle_time_by_phase, bug metrics.
+            from okto_pulse.core.services.analytics_service import compute_funnel
+            counts = await compute_funnel(
+                db, board_id, dt_from=dt_from, dt_to=dt_to,
+                include_archived=True,  # MCP histórico
+            )
             return json.dumps(counts, default=str)
 
         elif metric_type == "quality":
