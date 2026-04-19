@@ -90,6 +90,12 @@ async def publish(event: DomainEvent, session: AsyncSession) -> None:
         occurred_at=event.occurred_at,
     )
     session.add(row)
+    # Flush the event row first so handler-execution INSERTs (which FK to
+    # domain_events.id) see the parent row even when the FK relationship
+    # isn't materialized as a SQLAlchemy relationship() and the unit-of-work
+    # topological sort doesn't reorder unrelated pending objects. Without
+    # this, SQLite raises FOREIGN KEY constraint failed at flush time.
+    await session.flush()
 
     handlers = _registry.get(event.event_type, [])
     for handler_cls in handlers:
