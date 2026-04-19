@@ -210,8 +210,18 @@ class KuzuGraphStore:
                 "min_relevance": filters.min_relevance,
             },
         )
-        # Preserve similarity ranking from the vector search
-        by_id = {row[0]: row for row in attrs}
+        # Normalize created_at → ISO string so the row shape matches
+        # find_by_topic (which gets its value through a Cypher template
+        # that Kùzu already serializes via default=str in the MCP wrapper).
+        # Without this, Pydantic response models that declare created_at as
+        # `str` reject the raw datetime.
+        normalized = []
+        for row in attrs:
+            r = list(row)
+            if len(r) > 3 and hasattr(r[3], "isoformat"):
+                r[3] = r[3].isoformat()
+            normalized.append(r)
+        by_id = {row[0]: row for row in normalized}
         return [by_id[nid] for nid in ids_in_order if nid in by_id]
 
     def find_by_artifact(
