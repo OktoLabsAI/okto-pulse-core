@@ -6571,34 +6571,16 @@ async def okto_pulse_get_analytics(
             return json.dumps(result, default=str)
 
         elif metric_type == "velocity":
-            q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
-            if dt_from:
-                q = q.where(Card.created_at >= dt_from)
-            if dt_to:
-                q = q.where(Card.created_at <= dt_to)
-            cards = list((await db.execute(q)).scalars().all())
-
-            from datetime import timedelta
-            now = datetime.now(timezone.utc)
-            buckets: dict[str, dict[str, int]] = {}
-            for i in range(12):
-                ws = now - timedelta(weeks=i)
-                ws = ws - timedelta(days=ws.weekday())
-                key = ws.strftime("%Y-%m-%d")
-                buckets[key] = {"impl": 0, "test": 0}
-
-            for c in cards:
-                if not c.updated_at:
-                    continue
-                updated = c.updated_at
-                if updated.tzinfo is None:
-                    updated = updated.replace(tzinfo=timezone.utc)
-                ws = updated - timedelta(days=updated.weekday())
-                key = ws.strftime("%Y-%m-%d")
-                if key in buckets:
-                    buckets[key]["test" if _is_test(c) else "impl"] += 1
-
-            velocity = [{"week": k, "impl": v["impl"], "test": v["test"]} for k, v in sorted(buckets.items())]
+            # Delegado para service (D-5). MCP agora suporta granularity=day|week,
+            # buckets configuráveis (weeks=12, days=30) e séries extras
+            # (bug, validation_bounce, spec_done, sprint_done) além de impl/test.
+            from okto_pulse.core.services.analytics_service import compute_velocity
+            velocity = await compute_velocity(
+                db, board_id,
+                granularity="week", weeks=12,
+                dt_from=dt_from, dt_to=dt_to,
+                include_archived=True,  # MCP histórico
+            )
             return json.dumps(velocity, default=str)
 
         elif metric_type == "coverage":
