@@ -1224,12 +1224,24 @@ async def board_quality(
 async def board_velocity(
     board_id: str,
     weeks: int = Query(12, ge=1, le=52),
+    days: int = Query(30, ge=1, le=365),
+    granularity: str = Query(
+        "week",
+        description="'week' (default) buckets by Monday-aligned week and uses `weeks`; 'day' buckets per calendar day and uses `days`.",
+    ),
     date_from: str | None = Query(None, alias="from"),
     date_to: str | None = Query(None, alias="to"),
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Cards done per week, stacked by impl/test/bug + validation_bounce series."""
+    """Velocity stacked by impl/test/bug with validation_bounce +
+    spec_done/sprint_done overlays. Supports week or day granularity.
+    """
+    if granularity not in ("week", "day"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"granularity must be 'week' or 'day', got {granularity!r}",
+        )
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
@@ -1245,7 +1257,14 @@ async def board_velocity(
         all_q = all_q.where(Card.created_at <= dt_to)
     all_cards = list((await db.execute(all_q)).scalars().all())
     done_cards = [c for c in all_cards if c.status == CardStatus.DONE]
-    return _compute_velocity(done_cards, weeks, all_cards=all_cards)
+
+    if granularity == "day":
+        return await _compute_velocity_daily(
+            db, board_id, done_cards, days, all_cards=all_cards,
+        )
+    return await _compute_velocity_weekly(
+        db, board_id, done_cards, weeks, all_cards=all_cards,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2077,25 +2096,57 @@ async def _ensure_board(db: AsyncSession, board_id: str, user_id: str):
 
 
 def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = None) -> list[dict]:
-    """Compute weekly velocity for the last N weeks, stacked by card type.
+    """Weekly velocity — backward-compat shim for callers that don't need
+    spec/sprint overlays. Delegates to the bucket builder with spec/sprint
+    event dicts empty."""
+    return _build_velocity_buckets(
+        done_cards=done_cards,
+        all_cards=all_cards,
+        periods=weeks,
+        granularity="week",
+        spec_moves=[],
+        sprint_moves=[],
+    )
 
-    Series:
-    - impl: normal cards moved to done that week
-    - test: test cards moved to done that week
-    - bug:  bug cards moved to done that week
-    - validation_bounce: count of task validations with outcome=failed created
-      that week (approximates "how many revalidations happened"). Uses
-      `all_cards` (not just done_cards) to catch failures on cards still
-      in-progress. When all_cards is None, falls back to done_cards only.
+
+def _bucket_key(dt: datetime, granularity: str) -> str:
+    """Build the bucket key for a datetime under the chosen granularity."""
+    if granularity == "day":
+        return dt.strftime("%Y-%m-%d")
+    # week — Monday-aligned
+    monday = dt - timedelta(days=dt.weekday())
+    return monday.strftime("%Y-%m-%d")
+
+
+def _build_velocity_buckets(
+    *,
+    done_cards: list,
+    all_cards: list | None,
+    periods: int,
+    granularity: str,
+    spec_moves: list[tuple[datetime, str]],
+    sprint_moves: list[tuple[datetime, str]],
+) -> list[dict]:
+    """Shared bucket builder for week and day granularities.
+
+    Series per bucket:
+    - ``impl`` / ``test`` / ``bug`` — cards of that type moved to done in the bucket.
+    - ``validation_bounce`` — task validations that failed in the bucket.
+    - ``spec_done`` — spec_moved events where details.new_status == 'done'.
+    - ``sprint_done`` — sprint_moved events where details.new_status == 'closed'.
     """
     now = datetime.now(timezone.utc)
-    # Build week buckets (Monday-aligned)
     buckets: dict[str, dict[str, int]] = {}
-    for i in range(weeks):
-        week_start = now - timedelta(weeks=i)
-        week_start = week_start - timedelta(days=week_start.weekday())
-        key = week_start.strftime("%Y-%m-%d")
-        buckets[key] = {"impl": 0, "test": 0, "bug": 0, "validation_bounce": 0}
+    # Seed buckets backwards so the axis has a stable shape even when no
+    # events landed in a given period.
+    for i in range(periods):
+        anchor = now - (timedelta(days=i) if granularity == "day" else timedelta(weeks=i))
+        key = _bucket_key(anchor, granularity)
+        buckets[key] = {
+            "impl": 0, "test": 0, "bug": 0,
+            "validation_bounce": 0,
+            "spec_done": 0, "sprint_done": 0,
+        }
 
     for c in done_cards:
         if not c.updated_at:
@@ -2103,8 +2154,7 @@ def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = Non
         updated = c.updated_at
         if updated.tzinfo is None:
             updated = updated.replace(tzinfo=timezone.utc)
-        week_start = updated - timedelta(days=updated.weekday())
-        key = week_start.strftime("%Y-%m-%d")
+        key = _bucket_key(updated, granularity)
         if key in buckets:
             if _is_bug_card(c):
                 buckets[key]["bug"] += 1
@@ -2113,7 +2163,6 @@ def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = Non
             else:
                 buckets[key]["impl"] += 1
 
-    # validation_bounce: count failed task validations by week
     pool = all_cards if all_cards is not None else done_cards
     for c in pool:
         vals = getattr(c, "validations", None) or []
@@ -2132,21 +2181,89 @@ def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = Non
                     continue
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
-                week_start = dt - timedelta(days=dt.weekday())
-                key = week_start.strftime("%Y-%m-%d")
+                key = _bucket_key(dt, granularity)
                 if key in buckets:
                     buckets[key]["validation_bounce"] += 1
 
-    # Return sorted oldest first
-    result = [
+    for dt, status_val in spec_moves:
+        if status_val != "done":
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        key = _bucket_key(dt, granularity)
+        if key in buckets:
+            buckets[key]["spec_done"] += 1
+
+    for dt, status_val in sprint_moves:
+        if status_val != "closed":
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        key = _bucket_key(dt, granularity)
+        if key in buckets:
+            buckets[key]["sprint_done"] += 1
+
+    period_label = "day" if granularity == "day" else "week"
+    return [
         {
-            "week": k,
+            period_label: k,
             "impl": v["impl"], "test": v["test"], "bug": v["bug"],
             "validation_bounce": v["validation_bounce"],
+            "spec_done": v["spec_done"], "sprint_done": v["sprint_done"],
         }
         for k, v in sorted(buckets.items())
     ]
-    return result
+
+
+async def _load_lifecycle_moves(
+    db: AsyncSession, board_id: str, action: str,
+) -> list[tuple[datetime, str]]:
+    """Read ActivityLog rows for a lifecycle action (spec_moved / sprint_moved)
+    and return (created_at, new_status) tuples for the aggregator."""
+    q = select(ActivityLog).where(
+        ActivityLog.board_id == board_id,
+        ActivityLog.action == action,
+    )
+    rows = list((await db.execute(q)).scalars().all())
+    out: list[tuple[datetime, str]] = []
+    for row in rows:
+        details = row.details or {}
+        if not isinstance(details, dict):
+            continue
+        # Different writers stamp the terminal-state field under slightly
+        # different keys — accept the full set we've observed in the wild.
+        for key in ("to_status", "new_status", "status"):
+            val = details.get(key)
+            if isinstance(val, str):
+                out.append((row.created_at, val))
+                break
+    return out
+
+
+async def _compute_velocity_weekly(
+    db: AsyncSession, board_id: str, done_cards: list,
+    weeks: int, all_cards: list | None,
+) -> list[dict]:
+    spec_moves = await _load_lifecycle_moves(db, board_id, "spec_moved")
+    sprint_moves = await _load_lifecycle_moves(db, board_id, "sprint_moved")
+    return _build_velocity_buckets(
+        done_cards=done_cards, all_cards=all_cards,
+        periods=weeks, granularity="week",
+        spec_moves=spec_moves, sprint_moves=sprint_moves,
+    )
+
+
+async def _compute_velocity_daily(
+    db: AsyncSession, board_id: str, done_cards: list,
+    days: int, all_cards: list | None,
+) -> list[dict]:
+    spec_moves = await _load_lifecycle_moves(db, board_id, "spec_moved")
+    sprint_moves = await _load_lifecycle_moves(db, board_id, "sprint_moved")
+    return _build_velocity_buckets(
+        done_cards=done_cards, all_cards=all_cards,
+        periods=days, granularity="day",
+        spec_moves=spec_moves, sprint_moves=sprint_moves,
+    )
 
 
 async def _list_ideation_entities(
