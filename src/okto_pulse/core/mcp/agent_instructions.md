@@ -1144,6 +1144,42 @@ The validation workflow uses 3 dedicated permission flags under `card.validation
 Plus 5 move-transition flags under `card.move.*`:
 - `in_progress_to_validation`, `validation_to_done`, `validation_to_not_started`, `validation_to_on_hold`, `validation_to_cancelled`
 
+#### 2.12 Decisions — Formalized Design Choices on a Spec
+
+Decisions capture **why** a choice was made, with alternatives and supersedence. They are structured entries on the spec (`spec.decisions[]`), not free-form markdown. Use them when you pick one path over another and want the team (or the KG) to remember the reasoning.
+
+**Decision vs. BusinessRule** — they are NOT the same thing:
+
+| Aspect | Decision | BusinessRule |
+|--------|----------|--------------|
+| Nature | Contextual CHOICE | Prescriptive NORM |
+| Mood | "We chose Kùzu because..." | "The system MUST clamp at 1.5" |
+| Purpose | Records intent + tradeoffs | Enforces behavior |
+| Supersedence | Yes (explicit field) | Via versioning the spec |
+| Coverage gate | OPT-IN (default skip) | Mandatory FR→BR + BR→Task |
+
+If it's an explanation of reasoning, it's a Decision. If it's an imperative rule the system must satisfy, it's a BusinessRule.
+
+**CRUD via MCP:**
+
+- `okto_pulse_add_decision(board_id, spec_id, title, rationale, context?, alternatives_considered?, supersedes_decision_id?, linked_requirements?, notes?)` — creates a Decision with `status="active"`. When `supersedes_decision_id` is set, the referenced Decision auto-moves to `status="superseded"`.
+- `okto_pulse_update_decision(board_id, spec_id, decision_id, ...)` — only non-empty fields are changed. Pass `"CLEAR"` to wipe optional fields. Accepts `status` explicitly.
+- `okto_pulse_remove_decision(board_id, spec_id, decision_id)` — **soft-delete**: sets `status="revoked"`. The Decision stays in the array and in the KG for audit/history.
+- `okto_pulse_link_task_to_decision(board_id, spec_id, decision_id, card_id)` — idempotent, symmetric with `link_task_to_rule`. Populates `decision.linked_task_ids` so the opt-in coverage gate can verify each active Decision has at least one linked task.
+- `okto_pulse_migrate_spec_decisions(board_id, spec_id)` — one-shot, idempotent: extracts `## Decisions` markdown bullets from `spec.context` into structured `spec.decisions[]` and removes the block. Safe to run on already-migrated specs.
+
+**Coverage gate (OPT-IN):**
+
+The `skip_decisions_coverage` flag defaults to `True` on specs and boards. When you explicitly set it to `False`, `submit_spec_validation` calls `check_decisions_coverage` and rejects the spec if any **active** Decision has no `linked_task_ids`. Superseded and revoked decisions are not checked.
+
+**Supersedence flow:**
+
+When Decision Y supersedes X, they BOTH stay on the spec — X with `status="superseded"`, Y with `status="active"` and `supersedes_decision_id=X.id`. The KG's `:supersedes` edge gets written at the next consolidation commit, and `get_decision_history` traverses the chain.
+
+**KG integration:**
+
+`DeterministicWorker.process_spec` emits Decision nodes from `spec.decisions[]` (source_confidence=1.0) before falling back to the legacy `## Decisions` markdown extractor (backward-compat for non-migrated specs). `linked_requirements` generate `:derives_from` edges with explicit confidence=1.0; co-occurrence fallback uses confidence=0.6.
+
 ### 3. Work on Cards
 - Read card details before acting: `okto_pulse_get_card(board_id, card_id)`
 - If the card has a `spec_id`, read the spec for full context: `okto_pulse_get_spec(board_id, spec_id)`

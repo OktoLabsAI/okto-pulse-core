@@ -1130,6 +1130,39 @@ class CardService:
                 f"Alternatively, enable 'skip contract coverage' on the spec or board."
             )
 
+    async def check_decisions_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every active Decision has a linked task (OPT-IN).
+
+        Specs and boards default `skip_decisions_coverage=True`, so this is a
+        no-op unless the user explicitly enables the gate. Only `active`
+        decisions are checked — `superseded` and `revoked` are historical and
+        don't need linkage.
+        """
+        skip_global = (board.settings or {}).get("skip_decisions_coverage_global", False) if board else False
+        # Default True at both levels — if either says skip, skip.
+        skip_spec = getattr(spec, "skip_decisions_coverage", True)
+        if skip_spec or skip_global:
+            return
+        decisions = list(spec.decisions or [])
+        active = [d for d in decisions if isinstance(d, dict) and d.get("status", "active") == "active"]
+        if not active:
+            return
+        unlinked = [d for d in active if not d.get("linked_task_ids")]
+        if unlinked:
+            titles = ", ".join(
+                f'"{d.get("title", d.get("id", "?"))}"'
+                for d in unlinked[:3]
+            )
+            suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(unlinked)} Decision(s) "
+                f"in spec '{spec.title}' have no linked task cards "
+                f"({titles}{suffix}). "
+                f"REQUIRED ACTION: Link task cards to each Decision via "
+                f"okto_pulse_link_task_to_decision. "
+                f"Alternatively, enable 'skip decisions coverage' on the spec or board."
+            )
+
     async def move_card(
         self, card_id: str, user_id: str, data: CardMove, actor_name: str | None = None
     ) -> Card | None:
@@ -2640,6 +2673,9 @@ class SpecService:
         await card_service.check_rules_coverage(spec, board)
         await card_service.check_trs_coverage(spec, board)
         await card_service.check_contract_coverage(spec, board)
+        # Decisions coverage is OPT-IN — no-op when skip_decisions_coverage=True
+        # (spec or board). See check_decisions_coverage for details.
+        await card_service.check_decisions_coverage(spec, board)
 
         # Extract and validate inputs
         completeness = int(data["completeness"])

@@ -571,12 +571,19 @@ class Spec(Base):
     business_rules: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # API contracts: [{id, method, path, description, request_body, response_success, response_errors, linked_requirements, linked_rules, notes}]
     api_contracts: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Decisions (spec 0eb51d3e R2.1 + Decisions formalization):
+    # [{id, title, rationale, context, alternatives_considered, supersedes_decision_id,
+    #   linked_requirements, linked_task_ids, status, notes}]
+    decisions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # If true, spec can move to Done without full test coverage — set by user only
     skip_test_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, cards can start without full FR→BR coverage — set by user only
     skip_rules_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, cards can start without full TR→Task coverage
     skip_trs_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    # Decisions coverage is OPT-IN by default — specs don't have to link tasks
+    # to decisions unless explicitly required.
+    skip_decisions_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
     # If true, spec can move to validated without full API contract coverage
     skip_contract_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
