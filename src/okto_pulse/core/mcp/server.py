@@ -401,138 +401,19 @@ async def _resolve_binary_content(
         return None, f"file_url fetch failed: {e}"
 
 
-def _filter_decisions_by_status(
-    decisions: list | None, *, include_superseded: bool = False
-) -> list:
-    """Return only `status="active"` decisions by default. When
-    ``include_superseded`` is True, return every decision untouched.
-
-    Defaults to the active-only slice because consumers asking "what are the
-    rules today?" pay a noise tax when the array carries every historical
-    decision. Migrations, audits, and supersedence reasoners pass the flag
-    to opt back in.
-    """
-    if not decisions:
-        return []
-    if include_superseded:
-        return list(decisions)
-    kept = []
-    for d in decisions:
-        if not isinstance(d, dict):
-            continue
-        status = d.get("status")
-        # Treat missing status as active so legacy rows (written before the
-        # field was mandatory) aren't dropped silently.
-        if status is None or status == "active":
-            kept.append(d)
-    return kept
+# D-8: helpers canônicos em services/analytics_service.py — re-exports para
+# preservar import paths existentes (tests + callers legados).
+from okto_pulse.core.services.analytics_service import (
+    decisions_stats as _decisions_stats,  # noqa: F401
+    filter_decisions_by_status as _filter_decisions_by_status,  # noqa: F401
+)
 
 
-def _decisions_stats(decisions: list | None) -> dict:
-    """Breakdown by status so callers can see what was filtered without
-    having to re-request with include_superseded=true."""
-    out = {"total": 0, "active": 0, "superseded": 0, "revoked": 0, "other": 0}
-    for d in decisions or []:
-        if not isinstance(d, dict):
-            continue
-        out["total"] += 1
-        status = d.get("status") or "active"
-        if status == "active":
-            out["active"] += 1
-        elif status == "superseded":
-            out["superseded"] += 1
-        elif status == "revoked":
-            out["revoked"] += 1
-        else:
-            out["other"] += 1
-    return out
-
-
-def _spec_coverage(spec, *, scenarios=None, rules=None, contracts=None, trs=None) -> dict:
-    """Compute coverage stats for spec gates. Uses overrides if provided (for in-flight updates)."""
-    acs = spec.acceptance_criteria or []
-    frs = spec.functional_requirements or []
-    _ts = scenarios if scenarios is not None else (spec.test_scenarios or [])
-    _brs = rules if rules is not None else (spec.business_rules or [])
-    _contracts = contracts if contracts is not None else (spec.api_contracts or [])
-    _trs = trs if trs is not None else (spec.technical_requirements or [])
-
-    # AC coverage via test scenarios' linked_criteria
-    # linked_criteria can be int indices OR resolved text strings
-    covered_ac = set()
-    ac_text_set = {ac: i for i, ac in enumerate(acs)}
-    for ts in _ts:
-        for val in (ts.get("linked_criteria") or []):
-            if isinstance(val, int):
-                covered_ac.add(val)
-            elif isinstance(val, str):
-                # Match resolved text against AC list
-                for i, ac in enumerate(acs):
-                    if val == ac or ac.startswith(val) or val.startswith(ac):
-                        covered_ac.add(i)
-                        break
-    ac_total = len(acs)
-    ac_covered = len(covered_ac & set(range(ac_total)))
-
-    # FR coverage via business rules' linked_requirements
-    # linked_requirements can be int indices OR resolved text strings
-    covered_fr = set()
-    for br in _brs:
-        for val in (br.get("linked_requirements") or []):
-            if isinstance(val, int):
-                covered_fr.add(val)
-            elif isinstance(val, str):
-                for i, fr in enumerate(frs):
-                    if val == fr or fr.startswith(val) or val.startswith(fr):
-                        covered_fr.add(i)
-                        break
-    fr_total = len(frs)
-    fr_covered = len(covered_fr & set(range(fr_total)))
-
-    # Scenario → Task linkage
-    ts_total = len(_ts)
-    ts_linked = sum(1 for ts in _ts if ts.get("linked_task_ids"))
-
-    # BR → Task linkage
-    br_total = len(_brs)
-    br_linked = sum(1 for br in _brs if br.get("linked_task_ids"))
-
-    # Contract → Task linkage
-    c_total = len(_contracts)
-    c_linked = sum(1 for c in _contracts if c.get("linked_task_ids"))
-
-    # TR → Task linkage (structured only)
-    struct_trs = [t for t in _trs if isinstance(t, dict)]
-    tr_total = len(struct_trs)
-    tr_linked = sum(1 for t in struct_trs if t.get("linked_task_ids"))
-
-    def _pct(n, d):
-        return round((n / d * 100) if d > 0 else 100, 1)
-
-    return {
-        "ac_coverage_pct": _pct(ac_covered, ac_total),
-        "ac_covered": ac_covered,
-        "ac_total": ac_total,
-        "ac_uncovered_indices": sorted(set(range(ac_total)) - covered_ac),
-        "fr_coverage_pct": _pct(fr_covered, fr_total),
-        "fr_covered": fr_covered,
-        "fr_total": fr_total,
-        "fr_uncovered_indices": sorted(set(range(fr_total)) - covered_fr),
-        "scenario_task_linkage_pct": _pct(ts_linked, ts_total),
-        "scenarios_linked": ts_linked,
-        "scenarios_total": ts_total,
-        "br_task_linkage_pct": _pct(br_linked, br_total),
-        "brs_linked": br_linked,
-        "brs_total": br_total,
-        "contract_task_linkage_pct": _pct(c_linked, c_total),
-        "contracts_linked": c_linked,
-        "contracts_total": c_total,
-        "tr_task_linkage_pct": _pct(tr_linked, tr_total),
-        "trs_linked": tr_linked,
-        "trs_total": tr_total,
-        "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
-        "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
-    }
+# D-7: spec_coverage agora canônico em services/analytics_service.py — re-export
+# preserva callers existentes em mcp/server.py + tests.
+from okto_pulse.core.services.analytics_service import (  # noqa: E402
+    spec_coverage_summary as _spec_coverage,  # noqa: F401
+)
 
 
 # ============================================================================

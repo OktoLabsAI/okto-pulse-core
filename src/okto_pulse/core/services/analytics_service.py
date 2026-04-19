@@ -474,3 +474,140 @@ async def compute_velocity(
         spec_moves=spec_moves,
         sprint_moves=sprint_moves,
     )
+
+
+# ---------------------------------------------------------------------------
+# D-7 · Spec coverage summary (per-spec detailed breakdown)
+# ---------------------------------------------------------------------------
+
+
+def spec_coverage_summary(
+    spec, *, scenarios=None, rules=None, contracts=None, trs=None
+) -> dict:
+    """Compute coverage stats for a single spec — used by validation gate + UI.
+
+    Move canônico do antigo `mcp/server.py::_spec_coverage`. Ambos REST e MCP
+    passam a consumir daqui.
+
+    Override args (scenarios/rules/contracts/trs) suportam chamadas in-flight
+    onde o spec ainda não foi persistido com a nova coleção.
+    """
+    acs = spec.acceptance_criteria or []
+    frs = spec.functional_requirements or []
+    _ts = scenarios if scenarios is not None else (spec.test_scenarios or [])
+    _brs = rules if rules is not None else (spec.business_rules or [])
+    _contracts = contracts if contracts is not None else (spec.api_contracts or [])
+    _trs = trs if trs is not None else (spec.technical_requirements or [])
+
+    covered_ac = set()
+    for ts in _ts:
+        for val in (ts.get("linked_criteria") or []):
+            if isinstance(val, int):
+                covered_ac.add(val)
+            elif isinstance(val, str):
+                for i, ac in enumerate(acs):
+                    if val == ac or ac.startswith(val) or val.startswith(ac):
+                        covered_ac.add(i)
+                        break
+    ac_total = len(acs)
+    ac_covered = len(covered_ac & set(range(ac_total)))
+
+    covered_fr = set()
+    for br in _brs:
+        for val in (br.get("linked_requirements") or []):
+            if isinstance(val, int):
+                covered_fr.add(val)
+            elif isinstance(val, str):
+                for i, fr in enumerate(frs):
+                    if val == fr or fr.startswith(val) or val.startswith(fr):
+                        covered_fr.add(i)
+                        break
+    fr_total = len(frs)
+    fr_covered = len(covered_fr & set(range(fr_total)))
+
+    ts_total = len(_ts)
+    ts_linked = sum(1 for ts in _ts if ts.get("linked_task_ids"))
+
+    br_total = len(_brs)
+    br_linked = sum(1 for br in _brs if br.get("linked_task_ids"))
+
+    c_total = len(_contracts)
+    c_linked = sum(1 for c in _contracts if c.get("linked_task_ids"))
+
+    struct_trs = [t for t in _trs if isinstance(t, dict)]
+    tr_total = len(struct_trs)
+    tr_linked = sum(1 for t in struct_trs if t.get("linked_task_ids"))
+
+    def _pct(n, d):
+        return round((n / d * 100) if d > 0 else 100, 1)
+
+    return {
+        "ac_coverage_pct": _pct(ac_covered, ac_total),
+        "ac_covered": ac_covered,
+        "ac_total": ac_total,
+        "ac_uncovered_indices": sorted(set(range(ac_total)) - covered_ac),
+        "fr_coverage_pct": _pct(fr_covered, fr_total),
+        "fr_covered": fr_covered,
+        "fr_total": fr_total,
+        "fr_uncovered_indices": sorted(set(range(fr_total)) - covered_fr),
+        "scenario_task_linkage_pct": _pct(ts_linked, ts_total),
+        "scenarios_linked": ts_linked,
+        "scenarios_total": ts_total,
+        "br_task_linkage_pct": _pct(br_linked, br_total),
+        "brs_linked": br_linked,
+        "brs_total": br_total,
+        "contract_task_linkage_pct": _pct(c_linked, c_total),
+        "contracts_linked": c_linked,
+        "contracts_total": c_total,
+        "tr_task_linkage_pct": _pct(tr_linked, tr_total),
+        "trs_linked": tr_linked,
+        "trs_total": tr_total,
+        "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
+        "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
+    }
+
+
+# ---------------------------------------------------------------------------
+# D-8 · Decisions filtering / stats
+# ---------------------------------------------------------------------------
+
+
+def filter_decisions_by_status(
+    decisions: list | None, *, include_superseded: bool = False
+) -> list:
+    """Return only `status="active"` decisions by default; all when flag set.
+
+    Legacy rows sem campo status são tratadas como active (não são dropadas
+    silenciosamente).
+    """
+    if not decisions:
+        return []
+    if include_superseded:
+        return list(decisions)
+    kept = []
+    for d in decisions:
+        if not isinstance(d, dict):
+            continue
+        status_val = d.get("status")
+        if status_val is None or status_val == "active":
+            kept.append(d)
+    return kept
+
+
+def decisions_stats(decisions: list | None) -> dict:
+    """Breakdown de decisions por status (total, active, superseded, revoked, other)."""
+    out = {"total": 0, "active": 0, "superseded": 0, "revoked": 0, "other": 0}
+    for d in decisions or []:
+        if not isinstance(d, dict):
+            continue
+        out["total"] += 1
+        status_val = d.get("status") or "active"
+        if status_val == "active":
+            out["active"] += 1
+        elif status_val == "superseded":
+            out["superseded"] += 1
+        elif status_val == "revoked":
+            out["revoked"] += 1
+        else:
+            out["other"] += 1
+    return out
