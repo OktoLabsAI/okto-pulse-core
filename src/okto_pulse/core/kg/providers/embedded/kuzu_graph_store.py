@@ -167,6 +167,53 @@ class KuzuGraphStore:
             "max_rows": filters.max_rows,
         })
 
+    def find_by_topic_semantic(
+        self,
+        board_id: str,
+        node_type: str,
+        query_vec: list[float],
+        filters: QueryFilters,
+        min_similarity: float = 0.3,
+    ) -> list[list]:
+        """Vector-search over a node type, reshaped into the find_by_topic row
+        shape so ``get_decision_history`` can merge semantic + title hits.
+
+        Uses the existing HNSW index via ``find_similar_nodes_by_type``; pulls
+        full node attributes (content, created_at, source_confidence,
+        relevance_score, superseded_by) for each hit. Returns empty list when
+        the index is absent or the query fails — caller falls back to
+        title-CONTAINS.
+        """
+        from okto_pulse.core.kg.search import find_similar_nodes_by_type
+
+        raw = find_similar_nodes_by_type(
+            board_id=board_id,
+            node_type=node_type,
+            query_vector=query_vec,
+            top_k=filters.max_rows,
+            min_similarity=min_similarity,
+        )
+        if not raw:
+            return []
+
+        ids_in_order = [r.kuzu_node_id for r in raw]
+        attrs = self._exec(
+            board_id,
+            f"MATCH (n:{node_type}) WHERE n.id IN $ids "
+            f"AND n.source_confidence >= $min_confidence "
+            f"AND n.relevance_score >= $min_relevance "
+            f"RETURN n.id, n.title, n.content, n.created_at, "
+            f"n.source_confidence, n.relevance_score, n.superseded_by",
+            {
+                "ids": ids_in_order,
+                "min_confidence": filters.min_confidence,
+                "min_relevance": filters.min_relevance,
+            },
+        )
+        # Preserve similarity ranking from the vector search
+        by_id = {row[0]: row for row in attrs}
+        return [by_id[nid] for nid in ids_in_order if nid in by_id]
+
     def find_by_artifact(
         self, board_id: str, artifact_id: str, filters: QueryFilters
     ) -> list[list]:

@@ -87,6 +87,8 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         topic: str,
         min_confidence: float = 0.5,
         max_rows: int = 100,
+        use_semantic: bool = True,
+        min_similarity: float = 0.3,
     ) -> str:
         """
         Trace decisions about a topic/module over time. Returns decisions
@@ -94,12 +96,21 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
 
         Args:
             board_id: Board ID
-            topic: Topic or keyword to search for in decision titles
+            topic: Topic or keyword to search for. Accepts natural-language
+                phrases when ``use_semantic=True`` (paraphrases like
+                "cache strategy" vs "caching approach" surface related hits).
             min_confidence: Minimum confidence threshold (default 0.5)
             max_rows: Maximum results (default 100)
+            use_semantic: When True (default), embed the topic and query the
+                Decision HNSW index first, then backfill with title-CONTAINS
+                matches. Set False for deterministic string-only search.
+            min_similarity: Cosine similarity floor for semantic hits
+                (default 0.3; range 0.0–1.0).
 
         Returns:
-            JSON with decisions list ordered by created_at DESC
+            JSON with decisions list. Semantic hits are ordered by similarity
+            (best first); title-CONTAINS fallbacks retain relevance_score
+            ordering.
         """
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
@@ -108,7 +119,9 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         try:
             svc.check_board_access(boards, board_id)
             rows = svc.get_decision_history(
-                board_id, topic, min_confidence=min_confidence, max_rows=max_rows,
+                board_id, topic,
+                min_confidence=min_confidence, max_rows=max_rows,
+                use_semantic=use_semantic, min_similarity=min_similarity,
             )
             resp = DecisionHistoryResponse(
                 decisions=[KGNodeResult(**r) for r in rows],

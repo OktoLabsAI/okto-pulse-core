@@ -422,14 +422,70 @@ class KGService:
         *,
         min_confidence: float | None = None,
         max_rows: int | None = None,
+        use_semantic: bool = True,
+        min_similarity: float = 0.3,
     ) -> list[dict]:
+        """Trace decisions about a topic.
+
+        When ``use_semantic=True`` (default) the topic is embedded and the
+        Decision HNSW index is queried — so paraphrases like "cache strategy"
+        vs "caching approach" surface relevant matches. Results missing from
+        the vector index (empty content, corrupted embedding) fall back to the
+        legacy title-CONTAINS match so no decision becomes invisible.
+
+        When ``use_semantic=False`` only title-CONTAINS is used (preserved for
+        callers that want deterministic string matching).
+        """
         store = _get_graph_store()
         f = _filters(min_confidence, max_rows, defaults=self.defaults)
 
-        rows = self._cached_call(
+        # Text match first — deterministic, always-available, low cost. Semantic
+        # enrichment runs only if we still have budget (fewer hits than max_rows)
+        # so the happy-path performance and test ergonomics match the legacy
+        # behavior when use_semantic is effectively a no-op.
+        text_rows = self._cached_call(
             "get_decision_history", board_id, {"topic": topic},
             lambda: store.find_by_topic(board_id, "Decision", topic, f),
         )
+
+        semantic_rows: list[list] = []
+        needs_semantic = (
+            use_semantic
+            and bool(topic.strip())
+            and len(text_rows) < f.max_rows
+            and hasattr(store, "find_by_topic_semantic")
+        )
+        if needs_semantic:
+            try:
+                from okto_pulse.core.kg.embedding import get_embedding_provider
+
+                query_vec = get_embedding_provider().encode(topic)
+                semantic_rows = self._cached_call(
+                    "get_decision_history.semantic", board_id,
+                    {"topic": topic, "top_k": f.max_rows},
+                    lambda: store.find_by_topic_semantic(
+                        board_id, "Decision", query_vec, f, min_similarity,
+                    ),
+                )
+            except Exception as exc:
+                logger.debug(
+                    "kg.decision_history.semantic_fallback board=%s err=%s",
+                    board_id, exc,
+                )
+                semantic_rows = []
+
+        # Merge: text hits first (stable ordering), semantic backfills decisions
+        # the title-CONTAINS missed. Dedup by id.
+        seen: set[str] = set()
+        merged: list[list] = []
+        for r in text_rows + semantic_rows:
+            if r[0] in seen:
+                continue
+            seen.add(r[0])
+            merged.append(r)
+            if len(merged) >= f.max_rows:
+                break
+
         return [
             {
                 "id": r[0], "title": r[1], "content": r[2],
@@ -437,7 +493,7 @@ class KGService:
                 "relevance_score": r[5] if r[5] is not None else 0.5,
                 "superseded_by": r[6],
             }
-            for r in rows
+            for r in merged
         ]
 
     # ------------------------------------------------------------------
