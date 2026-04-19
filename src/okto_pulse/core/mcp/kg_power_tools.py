@@ -75,6 +75,8 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         nl_query: str,
         limit: int = 20,
         min_confidence: float = 0.5,
+        since: str = "",
+        until: str = "",
     ) -> str:
         """
         Natural language search over the board's knowledge graph. Uses hybrid
@@ -89,9 +91,16 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
             nl_query: Natural language query
             limit: Max results (default 20)
             min_confidence: Min confidence threshold (default 0.5)
+            since: Optional ISO-8601 timestamp — return only nodes with
+                ``created_at >= since``. Empty string = no lower bound.
+                Invalid timestamps are ignored (best-effort).
+            until: Optional ISO-8601 timestamp — return only nodes with
+                ``created_at <= until``. Empty string = no upper bound.
 
         Returns:
-            JSON with nodes, total_matches, optional warning
+            JSON with nodes, total_matches, optional warning. When a temporal
+            filter is active the response also carries ``temporal_filter``
+            metadata (candidates_before_filter, filtered_out).
         """
         agent = await get_agent()
         if agent is None:
@@ -99,7 +108,9 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         try:
             check_rate_limit(agent.id)
             result = execute_natural_query(
-                board_id, nl_query, limit=limit, min_confidence=min_confidence,
+                board_id, nl_query,
+                limit=limit, min_confidence=min_confidence,
+                since=since or None, until=until or None,
             )
             return json.dumps(result, default=str)
         except TierPowerError as e:
