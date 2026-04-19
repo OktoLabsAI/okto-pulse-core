@@ -454,6 +454,7 @@ async def commit_consolidation(
                         "relevance_score": getattr(cand, "relevance_score", 0.5),
                         "query_hits": 0,
                         "last_queried_at": None,
+                        "priority_boost": getattr(cand, "priority_boost", 0.0),
                         "embedding": embedding,
                     }
                     _apply_kuzu_node_create_with_timestamp(

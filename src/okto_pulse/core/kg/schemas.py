@@ -86,6 +86,18 @@ class NodeCandidate(BaseModel):
     # Range [0.0, 1.5] — the upper bound >1.0 lets frequently-hit nodes rise
     # above their source_confidence cap.
     relevance_score: float = Field(0.5, ge=0.0, le=1.5)
+    # v0.3.1 (spec 0eb51d3e): additive boost derived from the source card's
+    # priority at extraction time. Only the Layer 1 deterministic worker
+    # sets this non-zero (process_card); cognitive candidates default to 0.0.
+    # Frozen after insert — recompute paths read but never overwrite the
+    # persisted column. Cap at +0.2 (CRITICAL) is enforced at the boundary
+    # so no caller can slip a larger boost past the clamp at 1.5.
+    priority_boost: float = Field(
+        0.0,
+        ge=0.0,
+        le=0.2,
+        description="Additive boost derived from source card priority, frozen at insert time",
+    )
 
 
 class EdgeCandidate(BaseModel):

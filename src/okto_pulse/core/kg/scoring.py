@@ -68,6 +68,36 @@ DEFAULT_CONTRADICT_CONFIDENCE = 0.5  # NULL fallback
 
 BATCH_UPDATE_THRESHOLD = 50  # endpoints above this use the UNWIND path
 
+# v0.3.1 (spec 0eb51d3e): priority_boost mapping table. The boost is applied
+# additively ONCE at node insert time and then persisted as an immutable
+# column; _fetch_node_inputs reads it back on every recompute. Caps at +0.2
+# (CRITICAL) so the combined score stays bounded under the +1.5 clamp.
+PRIORITY_BOOST_BY_LEVEL: dict[str, float] = {
+    "none": 0.0,
+    "low": 0.0,
+    "medium": 0.05,
+    "high": 0.10,
+    "very_high": 0.15,
+    "critical": 0.20,
+}
+
+
+def _resolve_priority_boost(priority: Any) -> float:
+    """Map a card priority to its additive boost.
+
+    Accepts str, CardPriority enum, or None. Unknown values (typos, future
+    enum additions, historical data) return 0.0 silently — the worker must
+    never raise on consolidation because a priority field drifted.
+    """
+    if priority is None:
+        return 0.0
+    # CardPriority and similar str-valued enums expose `.value`; fall back to
+    # str() so plain strings and unexpected shapes both normalise cleanly.
+    raw = getattr(priority, "value", priority)
+    if not isinstance(raw, str):
+        return 0.0
+    return PRIORITY_BOOST_BY_LEVEL.get(raw.strip().lower(), 0.0)
+
 # Histogram buckets matching the spec (8 upper bounds).
 HISTOGRAM_BUCKETS: tuple[float, ...] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.5)
 
@@ -89,12 +119,19 @@ def _compute_relevance(
     degree: int,
     decayed_hits: float,
     contradict_penalty: float,
+    priority_boost: float = 0.0,
 ) -> float:
-    """Combine the four signals into a relevance score in [0.0, 1.5].
+    """Combine the four signals (plus frozen priority_boost) into [0.0, 1.5].
 
     Pure function — no I/O, no global state. The clamp is the last step so
     an arbitrary penalty can never push the output below 0 nor can a huge
-    degree+hits combination exceed 1.5.
+    degree+hits+boost combination exceed 1.5.
+
+    ``priority_boost`` is the additive term resolved from the source card's
+    priority at INSERT time (spec 0eb51d3e, R2.1). Callers fetch it from the
+    persisted node column; recompute paths MUST NOT recalculate it — it
+    represents the criticality at the moment the information entered the
+    graph, not the current state of the source card.
 
     Emits WARN when the raw (pre-clamp) value falls outside the allowed
     range — helps detecting calibration drift (e.g. someone sets a huge
@@ -106,6 +143,8 @@ def _compute_relevance(
         decayed_hits = 0.0
     if contradict_penalty < 0:
         contradict_penalty = 0.0
+    if priority_boost < 0:
+        priority_boost = 0.0
 
     degree_term = 0.0
     if degree > 0:
@@ -116,13 +155,15 @@ def _compute_relevance(
         + degree_term
         + HITS_WEIGHT * decayed_hits
         - contradict_penalty
+        + priority_boost
     )
 
     if raw < CLAMP_MIN or raw > CLAMP_MAX:
         logger.warning(
             "kg.scoring.clamp_applied raw=%.4f source=%.2f degree=%d "
-            "decayed_hits=%.2f penalty=%.2f",
+            "decayed_hits=%.2f penalty=%.2f boost=%.2f",
             raw, source_conf, degree, decayed_hits, contradict_penalty,
+            priority_boost,
             extra={
                 "event": "kg.scoring.clamp_applied",
                 "raw_score": raw,
@@ -130,6 +171,7 @@ def _compute_relevance(
                 "degree": degree,
                 "decayed_hits": decayed_hits,
                 "contradict_penalty": contradict_penalty,
+                "priority_boost": priority_boost,
             },
         )
 
@@ -229,7 +271,8 @@ def _fetch_node_inputs(conn, node_type: str, node_id: str) -> dict[str, Any] | N
             f"OPTIONAL MATCH (n)<-[c:contradicts]-() "
             f"RETURN n.source_confidence, out_deg, in_deg, "
             f"n.query_hits, n.last_queried_at, n.relevance_score, "
-            f"SUM(COALESCE(c.confidence, $default_conf))",
+            f"SUM(COALESCE(c.confidence, $default_conf)), "
+            f"n.priority_boost",
             {"nid": node_id, "default_conf": DEFAULT_CONTRADICT_CONFIDENCE},
         )
     except Exception as exc:
@@ -249,6 +292,9 @@ def _fetch_node_inputs(conn, node_type: str, node_id: str) -> dict[str, Any] | N
     last_queried_at = row[4]
     score_before = float(row[5]) if row[5] is not None else 0.5
     penalty = float(row[6] or 0.0)
+    # priority_boost persisted column — NULL on legacy rows pre-migration,
+    # which maps cleanly to 0.0 (no boost, no-op additive term).
+    priority_boost = float(row[7]) if row[7] is not None else 0.0
 
     return {
         "source_confidence": source_conf,
@@ -257,6 +303,7 @@ def _fetch_node_inputs(conn, node_type: str, node_id: str) -> dict[str, Any] | N
         "last_queried_at": last_queried_at,
         "contradict_penalty": penalty,
         "score_before": score_before,
+        "priority_boost": priority_boost,
     }
 
 
@@ -300,6 +347,7 @@ def _recompute_relevance(
         inputs["degree"],
         decayed,
         inputs["contradict_penalty"],
+        priority_boost=inputs["priority_boost"],
     )
 
     if abs(new_score - inputs["score_before"]) > 1e-6:
@@ -378,6 +426,7 @@ def _recompute_relevance_batch(
             inputs["degree"],
             decayed,
             inputs["contradict_penalty"],
+            priority_boost=inputs["priority_boost"],
         )
         score_rows_by_type.setdefault(node_type, []).append(
             {"id": node_id, "score": new_score}
