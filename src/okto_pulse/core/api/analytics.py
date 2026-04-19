@@ -21,6 +21,7 @@ from okto_pulse.core.models.db import (
     IdeationQAItem,
     IdeationStatus,
     Refinement,
+    RefinementStatus,
     Spec,
     SpecStatus,
     Sprint,
@@ -720,6 +721,7 @@ async def analytics_overview(
 
     cycle_time_by_level = {
         "ideation": _lifecycle_ct(ideations, str(IdeationStatus.DONE)),
+        "refinement": _lifecycle_ct(refinements, str(RefinementStatus.DONE)),
         "spec": _lifecycle_ct(specs, str(SpecStatus.DONE)),
         "sprint": _lifecycle_ct(sprints, str(SprintStatus.CLOSED)),
         "card": avg_cycle_hours,
@@ -903,6 +905,44 @@ async def board_funnel(
             ct = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
             cycle_times_board.append(ct)
     counts["avg_cycle_hours"] = round(sum(cycle_times_board) / len(cycle_times_board), 1) if cycle_times_board else None
+
+    # Cycle time by lifecycle phase — created_at → updated_at for items in the
+    # "done" terminal state of each level. Mirrors the overview endpoint so
+    # per-board dashboards can show the same funnel-phase breakdown.
+    board_ideations_q = select(Ideation).where(
+        Ideation.board_id == board_id,
+        Ideation.archived.is_(False),
+    )
+    board_refinements_q = select(Refinement).where(
+        Refinement.board_id == board_id,
+        Refinement.archived.is_(False),
+    )
+    if dt_from:
+        board_ideations_q = board_ideations_q.where(Ideation.created_at >= dt_from)
+        board_refinements_q = board_refinements_q.where(Refinement.created_at >= dt_from)
+    if dt_to:
+        board_ideations_q = board_ideations_q.where(Ideation.created_at <= dt_to)
+        board_refinements_q = board_refinements_q.where(Refinement.created_at <= dt_to)
+    board_ideations = list((await db.execute(board_ideations_q)).scalars().all())
+    board_refinements = list((await db.execute(board_refinements_q)).scalars().all())
+
+    def _phase_ct(items, done_status_str: str) -> float | None:
+        times = []
+        for it in items:
+            if str(it.status) == done_status_str and it.created_at and it.updated_at:
+                times.append((it.updated_at - it.created_at).total_seconds() / 3600.0)
+        return round(sum(times) / len(times), 1) if times else None
+
+    counts["cycle_time_by_phase"] = {
+        "ideation": _phase_ct(board_ideations, str(IdeationStatus.DONE)),
+        "refinement": _phase_ct(board_refinements, str(RefinementStatus.DONE)),
+        "spec": _phase_ct(spec_objs, str(SpecStatus.DONE)),
+        "sprint": _phase_ct(sprint_objs, str(SprintStatus.CLOSED)),
+        "card": counts["avg_cycle_hours"],
+    }
+    counts["refinements_done"] = sum(
+        1 for r in board_refinements if str(r.status) == str(RefinementStatus.DONE)
+    )
 
     return counts
 
