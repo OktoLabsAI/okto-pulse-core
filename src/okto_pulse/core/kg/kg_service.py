@@ -507,14 +507,56 @@ class KGService:
         *,
         min_confidence: float | None = None,
         max_rows: int | None = None,
+        rel_types: list[str] | None = None,
+        direction: str = "both",
+        max_depth: int = 2,
     ) -> list[dict]:
+        """2-hop (or 1-hop) neighborhood around an artifact with optional
+        relationship-type + direction filters for impact analysis.
+
+        ``rel_types`` — restrict hop1 edges to a subset (e.g.
+        ``["supersedes", "contradicts"]``). ``None`` = any edge type.
+        ``direction`` — ``"outgoing"``, ``"incoming"``, or ``"both"`` (default).
+        Applied to hop1 only; hop2 always undirected to surface the whole
+        neighborhood.
+        ``max_depth`` — ``1`` returns center+hop1 only (hop2 fields null);
+        ``2`` (default) returns up to 2 hops.
+        """
+        if direction not in ("both", "incoming", "outgoing"):
+            raise ValueError(
+                f"invalid direction {direction!r}: expected 'both', 'incoming', 'outgoing'"
+            )
+        if max_depth not in (1, 2):
+            raise ValueError(f"invalid max_depth {max_depth!r}: expected 1 or 2")
+
         store = _get_graph_store()
         f = _filters(min_confidence, max_rows, defaults=self.defaults)
 
-        rows = self._cached_call(
-            "get_related_context", board_id, {"artifact_id": artifact_id},
-            lambda: store.find_by_artifact(board_id, artifact_id, f),
-        )
+        # Prefer the filtered method when the store implements it; otherwise
+        # fall back to the legacy 2-hop undirected query (caller gets a hint
+        # in the cache key so caches don't collide between shapes).
+        if (
+            hasattr(store, "find_by_artifact_filtered")
+            and (rel_types is not None or direction != "both" or max_depth != 2)
+        ):
+            cache_params = {
+                "artifact_id": artifact_id,
+                "rel_types": sorted(rel_types) if rel_types else None,
+                "direction": direction,
+                "max_depth": max_depth,
+            }
+            rows = self._cached_call(
+                "get_related_context.filtered", board_id, cache_params,
+                lambda: store.find_by_artifact_filtered(
+                    board_id, artifact_id, f,
+                    rel_types=rel_types, direction=direction, max_depth=max_depth,
+                ),
+            )
+        else:
+            rows = self._cached_call(
+                "get_related_context", board_id, {"artifact_id": artifact_id},
+                lambda: store.find_by_artifact(board_id, artifact_id, f),
+            )
         return [
             {
                 "center_id": r[0], "center_title": r[1],

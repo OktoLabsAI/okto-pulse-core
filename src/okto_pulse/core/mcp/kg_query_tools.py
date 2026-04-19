@@ -137,16 +137,28 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         artifact_id: str,
         min_confidence: float = 0.5,
         max_rows: int = 100,
+        rel_types: str = "",
+        direction: str = "both",
+        max_depth: int = 2,
     ) -> str:
         """
-        Given a new artifact, return historical context: prior decisions,
-        applicable criteria, similar bugs, discarded alternatives.
+        Given an artifact, return its neighborhood in the KG: prior
+        decisions, applicable criteria, similar bugs, discarded alternatives.
+        Supports impact-analysis filters so an agent can scope traversal to
+        a specific edge set or direction.
 
         Args:
             board_id: Board ID
             artifact_id: Source artifact reference (source_artifact_ref)
             min_confidence: Minimum confidence (default 0.5)
             max_rows: Maximum results (default 100)
+            rel_types: Comma- or pipe-separated edge types to restrict the
+                first hop (e.g. ``"supersedes,contradicts"`` or
+                ``"tests|relates_to"``). Empty = any type.
+            direction: ``"both"`` (default), ``"outgoing"``, or ``"incoming"``.
+                Applied to hop1 only; hop2 is always undirected.
+            max_depth: ``1`` returns center+hop1 only (hop2 fields null);
+                ``2`` (default) returns the full 2-hop context.
 
         Returns:
             JSON with 2-hop neighborhood context
@@ -157,14 +169,22 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
+            parsed_types: list[str] | None = None
+            if rel_types:
+                tokens = [t.strip() for t in rel_types.replace("|", ",").split(",")]
+                parsed_types = [t for t in tokens if t]
             rows = svc.get_related_context(
-                board_id, artifact_id, min_confidence=min_confidence, max_rows=max_rows,
+                board_id, artifact_id,
+                min_confidence=min_confidence, max_rows=max_rows,
+                rel_types=parsed_types, direction=direction, max_depth=max_depth,
             )
             resp = RelatedContextResponse(
                 context=[ContextHop(**r) for r in rows],
                 count=len(rows),
             )
             return resp.model_dump_json()
+        except ValueError as e:
+            return _err("invalid_argument", str(e))
         except KGToolError as e:
             return _err(e.code, e.message)
 

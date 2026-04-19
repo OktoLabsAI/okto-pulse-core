@@ -223,6 +223,75 @@ class KuzuGraphStore:
             "max_rows": filters.max_rows,
         })
 
+    def find_by_artifact_filtered(
+        self,
+        board_id: str,
+        artifact_id: str,
+        filters: QueryFilters,
+        *,
+        rel_types: list[str] | None = None,
+        direction: str = "both",
+        max_depth: int = 2,
+    ) -> list[list]:
+        """Impact-analysis variant of ``find_by_artifact`` with rel-type and
+        direction filters. Builds the Cypher pattern dynamically so the
+        caller can scope traversal (e.g. only ``supersedes``/``contradicts``
+        edges, only outgoing from the artifact).
+        """
+        if direction == "outgoing":
+            hop1_pat = "(center)-[r1]->(hop1)"
+        elif direction == "incoming":
+            hop1_pat = "(center)<-[r1]-(hop1)"
+        else:
+            hop1_pat = "(center)-[r1]-(hop1)"
+
+        rel_filter = ""
+        params: dict[str, Any] = {
+            "artifact_id": artifact_id,
+            "min_confidence": filters.min_confidence,
+            "max_rows": filters.max_rows,
+        }
+        if rel_types:
+            # Kùzu doesn't expose `label(r)` as a parameter-safe filter, so we
+            # inline a whitelist check via :<type1>|:<type2> pattern syntax.
+            # Normalize + guard against injection by keeping only identifier
+            # characters.
+            safe = [t for t in rel_types if t.replace("_", "").isalnum()]
+            if safe:
+                type_list = "|".join(safe)
+                # Rewrite the hop1 pattern to carry the type filter inline.
+                if direction == "outgoing":
+                    hop1_pat = f"(center)-[r1:{type_list}]->(hop1)"
+                elif direction == "incoming":
+                    hop1_pat = f"(center)<-[r1:{type_list}]-(hop1)"
+                else:
+                    hop1_pat = f"(center)-[r1:{type_list}]-(hop1)"
+
+        if max_depth == 1:
+            cypher = (
+                f"MATCH {hop1_pat} "
+                "WHERE center.source_artifact_ref = $artifact_id "
+                "  AND center.source_confidence >= $min_confidence "
+                "RETURN center.id AS center_id, center.title AS center_title, "
+                "       hop1.id AS hop1_id, hop1.title AS hop1_title, "
+                "       NULL AS hop2_id, NULL AS hop2_title, "
+                "       label(r1) AS rel1_type, NULL AS rel2_type "
+                "LIMIT $max_rows"
+            )
+        else:
+            cypher = (
+                f"MATCH {hop1_pat} "
+                "WHERE center.source_artifact_ref = $artifact_id "
+                "  AND center.source_confidence >= $min_confidence "
+                "OPTIONAL MATCH (hop1)-[r2]-(hop2) "
+                "RETURN center.id AS center_id, center.title AS center_title, "
+                "       hop1.id AS hop1_id, hop1.title AS hop1_title, "
+                "       hop2.id AS hop2_id, hop2.title AS hop2_title, "
+                "       label(r1) AS rel1_type, label(r2) AS rel2_type "
+                "LIMIT $max_rows"
+            )
+        return self._exec(board_id, cypher, params)
+
     def traverse_supersedence(
         self, board_id: str, decision_id: str, max_depth: int = 10
     ) -> list[list]:
