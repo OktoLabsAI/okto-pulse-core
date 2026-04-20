@@ -312,6 +312,9 @@ def execute_natural_query(
     min_confidence: float = 0.5,
     since: str | None = None,
     until: str | None = None,
+    rewrite: str = "none",
+    rewrite_llm_fn=None,
+    fusion_paraphrases: int = 3,
 ) -> dict:
     """Hybrid search: embed query -> HNSW k-NN -> 1-hop traversal -> ranking.
 
@@ -321,9 +324,30 @@ def execute_natural_query(
     looked". Invalid timestamps are ignored (best-effort). Over-fetch by a
     10x factor so post-filter still returns ``limit`` matches when the window
     is narrow.
+
+    Ideação 2cf21a31 — optional pre-retrieve rewrite stage:
+
+    - ``rewrite``: one of ``"none"`` (default, passthrough), ``"hyde"``
+      (embed a hypothetical passage instead of the query),
+      ``"decompose"`` (split into sub-queries and union-dedupe the
+      results), ``"fusion"`` (K paraphrases merged via RRF k=60).
+    - ``rewrite_llm_fn``: callable with the shape required by the
+      chosen strategy (see ``okto_pulse.core.kg.query_rewrite``).
+      Required for any non-``none`` strategy.
+    - ``fusion_paraphrases``: number of paraphrases the fusion LLM
+      should generate. Default 3.
+
+    On any rewrite failure the retrieval degrades to ``rewrite="none"``
+    with a warning — the rewrite stage never aborts the pipeline.
+
+    The response carries ``rewrite_strategy`` (what was effectively
+    applied) and ``rewrite_variants_count`` (1 for none/hyde, N for
+    decompose/fusion) so callers / audit can tell the stages apart.
     """
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
+    from okto_pulse.core.kg.query_rewrite import get_rewriter, merge_rrf
+    from okto_pulse.core.kg.query_rewrite.interfaces import RewriteResult
 
     registry = get_kg_registry()
     embedder = registry.embedding_provider
@@ -337,64 +361,138 @@ def execute_natural_query(
     # enough candidates to return ``limit`` hits.
     fetch_limit = limit * 10 if temporal_filter_requested else limit
 
+    # Pre-retrieve rewrite (ideação 2cf21a31). Any failure degrades
+    # to rewrite="none" — the pipeline never aborts because of it.
+    rewrite_result: RewriteResult
     try:
-        query_vec = embedder.encode(nl_query)
-    except Exception:
-        warning = "embedding_unavailable"
-        query_vec = None
+        rewriter = get_rewriter(
+            rewrite,
+            llm_fn=rewrite_llm_fn,
+            fusion_paraphrases=fusion_paraphrases,
+        )
+        rewrite_result = rewriter.rewrite(nl_query)
+    except Exception as e:  # noqa: BLE001 — anything falls back
+        logger.warning(
+            "execute_natural_query.rewrite_failed strategy=%s error=%s",
+            rewrite, type(e).__name__,
+        )
+        rewrite_result = RewriteResult(
+            strategy="none",
+            original_query=nl_query,
+            rewritten_queries=(nl_query,),
+            hyde_passage=None,
+        )
 
-    all_results = []
-    if query_vec is not None and store is not None:
-        for node_type in VECTOR_INDEX_TYPES:
-            raw = store.vector_search(
-                board_id=board_id,
-                node_type=node_type,
-                query_vec=query_vec,
-                top_k=fetch_limit,
-                min_similarity=0.3,
-            )
-            for r in raw:
-                all_results.append({
-                    "node_id": r["node_id"],
-                    "node_type": r["node_type"],
-                    "title": r["title"],
-                    "similarity": r["similarity"],
-                })
-    elif store is not None:
-        # String-match fallback via graph_store
-        f = QueryFilters(min_confidence=0.0, max_rows=fetch_limit)
-        for node_type in NODE_TYPES:
-            try:
-                rows = store.find_by_topic(board_id, node_type, nl_query[:50], f)
-                for r in rows:
-                    all_results.append({
-                        "node_id": r[0],
-                        "node_type": node_type,
-                        "title": r[1],
-                        "similarity": 0.5,
+    applied_strategy = rewrite_result.strategy
+    variants = list(rewrite_result.rewritten_queries)
+
+    # HyDE: embed the hypothetical passage, but retrieve with the seed
+    # from THAT passage (not from the original query). The query of
+    # record stays the original.
+    hyde_vec = None
+    if applied_strategy == "hyde" and rewrite_result.hyde_passage:
+        try:
+            hyde_vec = embedder.encode(rewrite_result.hyde_passage)
+        except Exception:
+            hyde_vec = None
+
+    def _run_single(variant_query: str, override_vec=None) -> list[dict]:
+        """Run the existing single-variant retrieval pipeline."""
+        out: list[dict] = []
+        try:
+            query_vec = override_vec if override_vec is not None else embedder.encode(variant_query)
+        except Exception:
+            query_vec = None
+
+        if query_vec is not None and store is not None:
+            for node_type in VECTOR_INDEX_TYPES:
+                raw = store.vector_search(
+                    board_id=board_id,
+                    node_type=node_type,
+                    query_vec=query_vec,
+                    top_k=fetch_limit,
+                    min_similarity=0.3,
+                )
+                for r in raw:
+                    out.append({
+                        "node_id": r["node_id"],
+                        "node_type": r["node_type"],
+                        "title": r["title"],
+                        "similarity": r["similarity"],
                     })
-            except Exception:
-                pass
-    else:
-        # No graph_store — direct fallback
-        with open_board_connection(board_id) as (_db, conn):
+        elif store is not None:
+            f = QueryFilters(min_confidence=0.0, max_rows=fetch_limit)
             for node_type in NODE_TYPES:
                 try:
-                    result = conn.execute(
-                        f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q "
-                        f"RETURN n.id, n.title LIMIT $k",
-                        {"q": nl_query[:50], "k": fetch_limit},
-                    )
-                    while result.has_next():
-                        row = result.get_next()
-                        all_results.append({
-                            "node_id": row[0],
+                    rows = store.find_by_topic(board_id, node_type, variant_query[:50], f)
+                    for r in rows:
+                        out.append({
+                            "node_id": r[0],
                             "node_type": node_type,
-                            "title": row[1],
+                            "title": r[1],
                             "similarity": 0.5,
                         })
                 except Exception:
                     pass
+        else:
+            with open_board_connection(board_id) as (_db, conn):
+                for node_type in NODE_TYPES:
+                    try:
+                        result = conn.execute(
+                            f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q "
+                            f"RETURN n.id, n.title LIMIT $k",
+                            {"q": variant_query[:50], "k": fetch_limit},
+                        )
+                        while result.has_next():
+                            row = result.get_next()
+                            out.append({
+                                "node_id": row[0],
+                                "node_type": node_type,
+                                "title": row[1],
+                                "similarity": 0.5,
+                            })
+                    except Exception:
+                        pass
+        return out
+
+    if applied_strategy in ("none", "hyde"):
+        # Single-variant path — hyde reuses _run_single with an override
+        # embedding so the retrieval seed is the passage, not the query.
+        variant = variants[0] if variants else nl_query
+        all_results = _run_single(variant, override_vec=hyde_vec)
+        if not all_results and hyde_vec is None and applied_strategy == "none":
+            # Preserve the old warning surface: when the embedder errored
+            # out and gave us no seed, report ``embedding_unavailable``
+            # so existing callers still see the warning they expect.
+            try:
+                embedder.encode(nl_query)
+            except Exception:
+                warning = "embedding_unavailable"
+
+    elif applied_strategy == "decompose":
+        # Run each sub-query independently and union with first-occurrence
+        # wins dedup. Do not re-rank — preserve the aggregate order of
+        # first appearance to respect the LLM's sub-query ordering.
+        seen: dict[str, dict] = {}
+        for variant in variants:
+            for row in _run_single(variant):
+                if row["node_id"] not in seen:
+                    seen[row["node_id"]] = row
+        all_results = list(seen.values())
+
+    elif applied_strategy == "fusion":
+        # Run each paraphrase independently, sort each ranking by
+        # similarity desc, then RRF-merge.
+        rankings: list[list[dict]] = []
+        for variant in variants:
+            rows = _run_single(variant)
+            rows.sort(key=lambda r: r["similarity"], reverse=True)
+            rankings.append(rows)
+        all_results = merge_rrf(rankings, k=60)
+
+    else:
+        # Unknown strategy somehow slipped through — be safe.
+        all_results = _run_single(nl_query)
 
     total_before_filter = len(all_results)
     filtered_out = 0
@@ -419,12 +517,18 @@ def execute_natural_query(
             kept.append(r)
         all_results = kept
 
-    all_results.sort(key=lambda x: x["similarity"], reverse=True)
+    # Final ordering: keep RRF order for fusion, otherwise sort by
+    # similarity desc (decompose respects union order except we also
+    # need a deterministic final ranking, so sort by similarity).
+    if applied_strategy != "fusion":
+        all_results.sort(key=lambda x: x["similarity"], reverse=True)
     results = all_results[:limit]
 
     resp: dict[str, Any] = {
         "nodes": results,
         "total_matches": len(all_results),
+        "rewrite_strategy": applied_strategy,
+        "rewrite_variants_count": len(variants) if variants else 1,
     }
     if warning:
         resp["warning"] = warning
