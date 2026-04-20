@@ -315,6 +315,11 @@ def execute_natural_query(
     rewrite: str = "none",
     rewrite_llm_fn=None,
     fusion_paraphrases: int = 3,
+    include_parent_context: bool = False,
+    parent_db=None,
+    compress_if_over_tokens: int = 0,
+    compress_llm_fn=None,
+    approx_token_count_fn=None,
 ) -> dict:
     """Hybrid search: embed query -> HNSW k-NN -> 1-hop traversal -> ranking.
 
@@ -517,19 +522,88 @@ def execute_natural_query(
             kept.append(r)
         all_results = kept
 
-    # Final ordering: keep RRF order for fusion, otherwise sort by
-    # similarity desc (decompose respects union order except we also
-    # need a deterministic final ranking, so sort by similarity).
+    # Final ordering: fusion preserves RRF; others sort by similarity
+    # desc (decompose respects union order except for the final
+    # deterministic sort by similarity).
     if applied_strategy != "fusion":
         all_results.sort(key=lambda x: x["similarity"], reverse=True)
     results = all_results[:limit]
+
+    # Parent-doc enrichment (ideação fe55ff7c). Runs AFTER the ordering
+    # so we only hit the DB for the top-limit rows. Orphans / malformed
+    # refs produce parent_artifact=None without removing the row.
+    if include_parent_context:
+        try:
+            from okto_pulse.core.kg.parent_doc import resolve_parent_artifacts
+            import asyncio as _asyncio
+
+            refs = [r.get("source_artifact_ref", "") for r in results]
+            refs = [r for r in refs if r]
+            parent_map: dict[str, dict] = {}
+            if parent_db is not None and refs:
+                try:
+                    parent_map = _asyncio.get_event_loop().run_until_complete(
+                        resolve_parent_artifacts(parent_db, refs)
+                    )
+                except RuntimeError:
+                    # Already inside an event loop — schedule as a task
+                    # via a nested run. This happens in async callers.
+                    loop = _asyncio.new_event_loop()
+                    try:
+                        parent_map = loop.run_until_complete(
+                            resolve_parent_artifacts(parent_db, refs)
+                        )
+                    finally:
+                        loop.close()
+            for r in results:
+                r["parent_artifact"] = parent_map.get(
+                    r.get("source_artifact_ref", ""),
+                )
+        except Exception as e:  # noqa: BLE001 — never break on parent lookup
+            logger.warning(
+                "execute_natural_query.parent_lookup_failed error=%s",
+                type(e).__name__,
+            )
+            for r in results:
+                r["parent_artifact"] = None
+
+    # Context compression (ideação fe55ff7c). Gate by opt-in threshold.
+    compressed_summary: dict | None = None
+    compression_applied = False
+    if compress_if_over_tokens > 0 and compress_llm_fn is not None:
+        try:
+            from okto_pulse.core.kg.context_compress import compress_if_needed
+
+            comp = compress_if_needed(
+                results,
+                compress_llm_fn=compress_llm_fn,
+                max_tokens=compress_if_over_tokens,
+                approx_token_count_fn=approx_token_count_fn,
+            )
+            if comp.applied:
+                compressed_summary = {
+                    "summary": comp.summary,
+                    "compressed_from_nodes": comp.compressed_from_nodes,
+                    "approx_original_tokens": comp.approx_original_tokens,
+                    "approx_compressed_tokens": comp.approx_compressed_tokens,
+                }
+                compression_applied = True
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "execute_natural_query.compression_failed error=%s",
+                type(e).__name__,
+            )
 
     resp: dict[str, Any] = {
         "nodes": results,
         "total_matches": len(all_results),
         "rewrite_strategy": applied_strategy,
         "rewrite_variants_count": len(variants) if variants else 1,
+        "parent_context_included": include_parent_context,
+        "compression_applied": compression_applied,
     }
+    if compressed_summary is not None:
+        resp["compressed_summary"] = compressed_summary
     if warning:
         resp["warning"] = warning
     if temporal_filter_requested:
