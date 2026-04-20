@@ -143,6 +143,50 @@ def test_no_unused_branches_in_dispatcher():
     )
 
 
+def test_every_executor_emits_entity_type_in_meta():
+    """Ideação 33cb4fa3 regression guard.
+
+    The Global Discovery UI now renders an "Open entity" drill-down on
+    every row that carries ``meta.entity_type`` + ``meta.entity_id``.
+    The contract is: every per-tool executor emits those two keys on
+    every row it builds, even when the entity cannot be resolved
+    (value=None is acceptable, the frontend hides the action). Losing
+    that key in one executor breaks the drill-down silently for that
+    intent only, which is exactly the kind of drift this test guards
+    against.
+    """
+    import inspect
+
+    # Executors that must carry entity_type/entity_id on every row they
+    # emit. Helper functions (_ok, _entity_ref, _resolve_entity_titles)
+    # are intentionally excluded.
+    executor_names = [
+        "_exec_activity_log",
+        "_exec_blockers",
+        "_exec_contradictions",
+        "_exec_similar_decisions",
+        "_exec_query_natural",
+        "_exec_card_dependencies",
+        "_exec_my_mentions",
+        "_exec_test_scenarios",
+        "_exec_uncovered_requirements",
+        "_exec_supersedence_chains",
+        "_exec_learnings",
+    ]
+    missing: list[str] = []
+    for name in executor_names:
+        fn = getattr(discovery_executor, name, None)
+        assert fn is not None, f"Executor {name} disappeared from module"
+        src = inspect.getsource(fn)
+        if '"entity_type"' not in src and "'entity_type'" not in src:
+            missing.append(name)
+    assert not missing, (
+        f"These executors no longer emit meta.entity_type, breaking the "
+        f"Global Discovery drill-down contract (ideação 33cb4fa3): "
+        f"{missing}"
+    )
+
+
 def test_blockers_dispatcher_scoped_to_active_sprint():
     """Ideação bf6a3766 regression guard.
 

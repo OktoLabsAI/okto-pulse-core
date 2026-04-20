@@ -129,39 +129,191 @@ def _ok(
 # --------------------------------------------------------------------------- #
 
 
+def _entity_ref(action: str, details: dict | None, card_id: str | None) -> tuple[str | None, str | None]:
+    """Derive (entity_type, entity_id) from an ActivityLog row.
+
+    Ideação 33cb4fa3: rows in Global Discovery need a stable pointer to
+    the entity they affect so the frontend can offer an "Open entity"
+    action. ActivityLog persists the target id inside ``details`` (keyed
+    by ``{spec,ideation,refinement,sprint}_id``) or directly on the
+    row's ``card_id`` column. The order below matters: a ``spec_moved``
+    row can also carry a ``card_id`` set to null, so we prefer the
+    details-level key and only fall back to ``card_id`` when no richer
+    entity is referenced.
+    """
+    d = details or {}
+    for key, etype in (
+        ("sprint_id", "sprint"),
+        ("spec_id", "spec"),
+        ("ideation_id", "ideation"),
+        ("refinement_id", "refinement"),
+    ):
+        val = d.get(key)
+        if isinstance(val, str) and val:
+            return etype, val
+    if card_id:
+        return "card", card_id
+    return None, None
+
+
+# Human-readable verbs for activity actions. Anything not in the map
+# falls back to the raw action string (so new actions still render).
+_ACTION_VERBS: dict[str, str] = {
+    "board_created": "created the board",
+    "board_updated": "updated the board",
+    "card_created": "created card",
+    "card_updated": "updated card",
+    "card_deleted": "deleted card",
+    "card_moved": "moved card",
+    "spec_created": "created spec",
+    "spec_updated": "updated spec",
+    "spec_deleted": "deleted spec",
+    "spec_moved": "moved spec",
+    "spec_draft_created": "drafted spec from ideation",
+    "spec_validation_submitted": "submitted spec validation",
+    "ideation_created": "created ideation",
+    "ideation_updated": "updated ideation",
+    "ideation_deleted": "deleted ideation",
+    "ideation_moved": "moved ideation",
+    "ideation_complexity_evaluated": "evaluated ideation complexity",
+    "refinement_created": "created refinement",
+    "refinement_updated": "updated refinement",
+    "refinement_deleted": "deleted refinement",
+    "refinement_moved": "moved refinement",
+    "sprint_created": "created sprint",
+    "sprint_updated": "updated sprint",
+    "sprint_deleted": "deleted sprint",
+    "sprint_moved": "moved sprint",
+    "sprint_tasks_assigned": "assigned tasks to sprint",
+    "sprint_evaluation_submitted": "submitted sprint evaluation",
+    "validation_submitted": "submitted task validation",
+    "evaluation_submitted": "submitted evaluation",
+    "tasks_assigned": "assigned tasks",
+    "complexity_evaluated": "evaluated complexity",
+    "status_changed": "changed status",
+    "created": "created",
+    "updated": "updated",
+}
+
+
+async def _resolve_entity_titles(
+    db: AsyncSession, refs: list[tuple[str, str]]
+) -> dict[tuple[str, str], str]:
+    """Batch-resolve (entity_type, entity_id) → title.
+
+    Avoids N+1 queries against the activity log. Unknown ids stay out of
+    the dict and the caller falls back to truncated id hints.
+    """
+    from okto_pulse.core.models.db import Card as _Card
+    from okto_pulse.core.models.db import Ideation as _Ideation
+    from okto_pulse.core.models.db import Refinement as _Refinement
+    from okto_pulse.core.models.db import Sprint as _Sprint
+
+    by_type: dict[str, set[str]] = {}
+    for etype, eid in refs:
+        by_type.setdefault(etype, set()).add(eid)
+
+    out: dict[tuple[str, str], str] = {}
+    models = {
+        "card": _Card,
+        "spec": Spec,
+        "ideation": _Ideation,
+        "refinement": _Refinement,
+        "sprint": _Sprint,
+    }
+    for etype, ids in by_type.items():
+        model = models.get(etype)
+        if not model or not ids:
+            continue
+        res = await db.execute(
+            select(model.id, model.title).where(model.id.in_(ids))
+        )
+        for row_id, row_title in res.all():
+            out[(etype, row_id)] = row_title or ""
+    return out
+
+
 async def _exec_activity_log(db: AsyncSession, board_id: str) -> dict:
+    """Discovery intent `recent_activity` — enriched (ideação 33cb4fa3).
+
+    Previously rows carried just the verb (``card_moved``) and a
+    truncated card id, forcing the user to open the card grid to learn
+    which card. Each row now resolves the affected entity (card, spec,
+    sprint, ideation, refinement) and surfaces:
+
+    - ``title`` — the entity's own title (or the verb if unknown)
+    - ``summary`` — ``"{actor} {verb} {entity_title} · {when}"``
+    - ``meta.entity_type`` / ``meta.entity_id`` / ``meta.entity_title``
+      — the drill-down pointer consumed by the frontend for the
+      "Open entity" modal action. Rows without a resolvable entity
+      (rare — mostly board-level events) leave those fields ``None``
+      and the frontend hides the action.
+
+    Also persists ``meta.action``, ``meta.actor_*`` and any status
+    transitions found in ``details`` so the modal can render the full
+    delta without a round-trip.
+    """
     q = (
         select(ActivityLog)
         .where(ActivityLog.board_id == board_id)
         .order_by(ActivityLog.created_at.desc())
         .limit(50)
     )
-    rows = []
-    for a in (await db.execute(q)).scalars().all():
+    logs = list((await db.execute(q)).scalars().all())
+
+    refs: list[tuple[str, str]] = []
+    for a in logs:
+        etype, eid = _entity_ref(a.action, a.details, a.card_id)
+        if etype and eid:
+            refs.append((etype, eid))
+    title_by_ref = await _resolve_entity_titles(db, refs)
+
+    rows: list[dict] = []
+    for a in logs:
         when = a.created_at.isoformat() if a.created_at else ""
-        summary_bits = [f"{a.actor_type}:{a.actor_name}" if a.actor_name else a.actor_id]
-        if a.card_id:
-            summary_bits.append(f"card={a.card_id[:8]}")
-        summary_bits.append(when.replace("T", " ")[:16])
+        when_short = when.replace("T", " ")[:16]
+        etype, eid = _entity_ref(a.action, a.details, a.card_id)
+        entity_title = title_by_ref.get((etype, eid)) if etype and eid else None
+
+        verb = _ACTION_VERBS.get(a.action, a.action.replace("_", " "))
+        actor_label = a.actor_name or a.actor_id
+
+        row_title = entity_title or verb
+        summary_parts = [f"{actor_label} {verb}"]
+        if entity_title:
+            summary_parts[0] = f"{actor_label} {verb} '{entity_title}'"
+        details = a.details or {}
+        if details.get("from_status") and details.get("to_status"):
+            summary_parts.append(
+                f"{details['from_status']} → {details['to_status']}"
+            )
+        summary_parts.append(when_short)
+
         rows.append(
             {
                 "id": str(a.id),
                 "type": a.action,
-                "title": a.action,
-                "summary": " · ".join(summary_bits),
+                "title": row_title,
+                "summary": " · ".join(summary_parts),
                 "meta": {
+                    "action": a.action,
+                    "entity_type": etype,
+                    "entity_id": eid,
+                    "entity_title": entity_title,
                     "card_id": a.card_id,
                     "actor_id": a.actor_id,
                     "actor_type": a.actor_type,
                     "actor_name": a.actor_name,
                     "created_at": when,
-                    "details": a.details,
+                    "from_status": details.get("from_status"),
+                    "to_status": details.get("to_status"),
+                    "details": details,
                 },
             }
         )
     return _ok(
         rows,
-        columns=["Action", "Actor", "Card", "When"],
+        columns=["Entity", "Action", "Actor", "When"],
         tool_binding="okto_pulse_get_activity_log",
     )
 
@@ -310,6 +462,9 @@ async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
                             f"{len(unresolved)} unresolved dep(s)"
                         ),
                         "meta": {
+                            "entity_type": "card",
+                            "entity_id": c.id,
+                            "entity_title": c.title,
                             "card_id": c.id,
                             "card_status": c.status.value,
                             "sprint_id": c.sprint_id,
@@ -327,6 +482,9 @@ async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
                     "title": c.title,
                     "summary": f"Sprint '{sprint_title}' · explicitly paused",
                     "meta": {
+                        "entity_type": "card",
+                        "entity_id": c.id,
+                        "entity_title": c.title,
                         "card_id": c.id,
                         "card_status": c.status.value,
                         "sprint_id": c.sprint_id,
@@ -354,6 +512,9 @@ async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
                             f"in {c.status.value}"
                         ),
                         "meta": {
+                            "entity_type": "card",
+                            "entity_id": c.id,
+                            "entity_title": c.title,
                             "card_id": c.id,
                             "card_status": c.status.value,
                             "sprint_id": c.sprint_id,
@@ -393,7 +554,14 @@ async def _exec_contradictions(board_id: str) -> dict:
                 "type": "ContradictionPair",
                 "title": f"{p['title_a']}  ⟂  {p['title_b']}",
                 "summary": f"confidence {p.get('confidence', 0):.2f}",
-                "meta": p,
+                "meta": {
+                    "entity_type": "kg_node",
+                    "entity_id": p.get("id_a"),
+                    "entity_title": p.get("title_a"),
+                    "counterpart_id": p.get("id_b"),
+                    "counterpart_title": p.get("title_b"),
+                    **p,
+                },
             }
         )
     return _ok(
@@ -419,7 +587,12 @@ async def _exec_similar_decisions(board_id: str, params: dict) -> dict:
                 "type": "Decision",
                 "title": r["title"],
                 "summary": f"similarity {r.get('similarity', 0):.2f} · combined {r.get('combined_score', 0):.2f}",
-                "meta": r,
+                "meta": {
+                    "entity_type": "kg_node",
+                    "entity_id": r.get("id"),
+                    "entity_title": r.get("title"),
+                    **r,
+                },
             }
         )
     return _ok(
@@ -449,7 +622,13 @@ async def _exec_query_natural(board_id: str, params: dict) -> dict:
                 "type": n.get("node_type") or "Node",
                 "title": n.get("title") or "(untitled)",
                 "summary": f"similarity {n.get('similarity', 0):.2f}",
-                "meta": n,
+                "meta": {
+                    "entity_type": "kg_node",
+                    "entity_id": n.get("node_id"),
+                    "entity_title": n.get("title"),
+                    "node_type": n.get("node_type"),
+                    **n,
+                },
             }
         )
     return _ok(
@@ -480,7 +659,20 @@ async def _exec_card_dependencies(db: AsyncSession, params: dict) -> dict:
                 "type": "Card",
                 "title": card.title,
                 "summary": f"status={card.status} · priority={card.priority}",
-                "meta": {"card_id": card.id, "created_at": dep.created_at.isoformat() if dep.created_at else None},
+                "meta": {
+                    "entity_type": "card",
+                    "entity_id": card.id,
+                    "entity_title": card.title,
+                    "card_id": card.id,
+                    "card_status": (
+                        card.status.value
+                        if hasattr(card.status, "value")
+                        else card.status
+                    ),
+                    "created_at": (
+                        dep.created_at.isoformat() if dep.created_at else None
+                    ),
+                },
             }
         )
     return _ok(
@@ -514,7 +706,11 @@ async def _exec_my_mentions(db: AsyncSession, user_id: str, board_id: str) -> di
                 "title": card.title,
                 "summary": (c.content or "")[:200],
                 "meta": {
+                    "entity_type": "card",
+                    "entity_id": card.id,
+                    "entity_title": card.title,
                     "card_id": card.id,
+                    "comment_id": c.id,
                     "created_at": c.created_at.isoformat() if c.created_at else None,
                     "author_id": c.author_id,
                 },
@@ -556,8 +752,13 @@ async def _exec_test_scenarios(
                     "title": sc.get("title") or "(untitled)",
                     "summary": f"spec: {spec.title} · status: {sc.get('status') or 'draft'} · linked_tasks: {len(linked_tasks)}",
                     "meta": {
+                        "entity_type": "spec",
+                        "entity_id": spec.id,
+                        "entity_title": spec.title,
                         "spec_id": spec.id,
+                        "scenario_id": sc.get("id"),
                         "scenario_type": sc.get("scenario_type"),
+                        "scenario_status": sc.get("status"),
                         "linked_task_ids": linked_tasks,
                         "linked_criteria": linked_criteria,
                     },
@@ -650,6 +851,9 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
                         + (" · skip_rules=true at validation" if skip_rules else "")
                     ),
                     "meta": {
+                        "entity_type": "spec",
+                        "entity_id": spec.id,
+                        "entity_title": spec.title,
                         "spec_id": spec.id,
                         "spec_status": status_value,
                         "in_flight": is_in_flight,
@@ -673,6 +877,9 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
                         + (" · skip_tests=true at validation" if skip_tests else "")
                     ),
                     "meta": {
+                        "entity_type": "spec",
+                        "entity_id": spec.id,
+                        "entity_title": spec.title,
                         "spec_id": spec.id,
                         "spec_status": status_value,
                         "in_flight": is_in_flight,
@@ -701,6 +908,9 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
                         + (" · skip_trs=true at validation" if skip_trs else "")
                     ),
                     "meta": {
+                        "entity_type": "spec",
+                        "entity_id": spec.id,
+                        "entity_title": spec.title,
                         "spec_id": spec.id,
                         "spec_status": status_value,
                         "in_flight": is_in_flight,
@@ -774,7 +984,14 @@ async def _exec_supersedence_chains(db: AsyncSession, board_id: str) -> dict:
                 "type": "SupersedenceChain",
                 "title": head.get("title") or "(untitled)",
                 "summary": f"{length} decisions · {trail}",
-                "meta": {"chain": chain, "length": length},
+                "meta": {
+                    "entity_type": "spec",
+                    "entity_id": head.get("spec_id"),
+                    "entity_title": head.get("spec_title"),
+                    "head_decision_id": head.get("id"),
+                    "chain": chain,
+                    "length": length,
+                },
             }
         )
     return _ok(
@@ -815,7 +1032,15 @@ async def _exec_learnings(board_id: str, params: dict) -> dict:
                 "type": "Learning",
                 "title": r.get("learning_title") or "(untitled)",
                 "summary": f"from bug: {r.get('bug_title') or r.get('bug_id')}",
-                "meta": r,
+                "meta": {
+                    "entity_type": "kg_node",
+                    "entity_id": r.get("learning_id"),
+                    "entity_title": r.get("learning_title"),
+                    "node_type": "Learning",
+                    "source_bug_id": r.get("bug_id"),
+                    "source_bug_title": r.get("bug_title"),
+                    **r,
+                },
             }
         )
     return _ok(
