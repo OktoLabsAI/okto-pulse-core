@@ -143,3 +143,100 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
             include_internal=want_internal,
         )
         return json.dumps(result, default=str)
+
+    @mcp.tool()
+    async def okto_pulse_kg_verify_grounding(
+        board_id: str,
+        answer_text: str,
+        retrieved_rows_json: str,
+        pre_extracted_entities_json: str = "",
+    ) -> str:
+        """
+        Verify that an agent answer is grounded in the retrieved KG nodes.
+
+        Deterministic entity check only in this V1 — matches entity names
+        against retrieved row titles via normalized exact match (NFKD +
+        strip diacritics + lowercase) with Jaccard fallback (threshold
+        0.7). Semantic grounding via LLM is available programmatically
+        via the Python API `verify_grounding(..., extractor_fn=,
+        grounder_fn=)` but not exposed over MCP (no LLM wired here).
+
+        Ideação d3dfdab8. Enforcement is decoupled — this tool returns
+        the verdict; the caller (agent, UI, critic loop) decides what to
+        do with it.
+
+        Args:
+            board_id: Board ID for authorization (kg.query.global).
+            answer_text: The agent's response to verify.
+            retrieved_rows_json: JSON string — list of
+                `{"node_id": ..., "title": ..., ...}` rows the answer
+                was based on.
+            pre_extracted_entities_json: Optional JSON array of strings
+                listing the entity names the caller wants to check. If
+                empty, falls back to heuristic extraction (quoted terms
+                and capitalised multi-word phrases).
+
+        Returns:
+            JSON with the GroundingResult fields: overall_grounded,
+            confidence, hallucinated_entities, unsupported_claims,
+            attribution_map.
+
+        Raises:
+            ValueError: if retrieved_rows_json is not valid JSON.
+        """
+        import re
+
+        from okto_pulse.core.kg.grounding import check_entities_present
+
+        agent = await get_agent()
+        if agent is None:
+            return _err("unauthorized", "authentication required")
+
+        try:
+            rows = json.loads(retrieved_rows_json) if retrieved_rows_json else []
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"retrieved_rows_json is not valid JSON: {e}"
+            ) from e
+        if not isinstance(rows, list):
+            raise ValueError("retrieved_rows_json must decode to a list")
+
+        # Entity source: explicit list, or heuristic from answer_text.
+        entities: list[str] = []
+        if pre_extracted_entities_json:
+            try:
+                raw = json.loads(pre_extracted_entities_json)
+                if isinstance(raw, list):
+                    entities = [str(e) for e in raw if e]
+            except json.JSONDecodeError:
+                # Invalid entities JSON is non-fatal — fall back to heuristic.
+                pass
+        if not entities:
+            # Heuristic: quoted terms + capitalised 2+ word phrases.
+            entities = re.findall(r'"([^"]{2,80})"', answer_text)
+            entities += re.findall(
+                r"\b(?:[A-Z][\w-]+(?:\s+[A-Z][\w-]+){1,4})\b",
+                answer_text,
+            )
+            # Dedupe preserving order.
+            seen: set[str] = set()
+            entities = [e for e in entities if not (e in seen or seen.add(e))]
+
+        present, hallucinated = check_entities_present(entities, rows)
+
+        overall_grounded = not hallucinated
+        confidence = 1.0 if overall_grounded else 0.0
+
+        result = {
+            "overall_grounded": overall_grounded,
+            "confidence": confidence,
+            "hallucinated_entities": sorted(hallucinated),
+            "unsupported_claims": [],
+            "attribution_map": [],
+            "note": (
+                "MCP V1 does deterministic entity-check only. "
+                "For full semantic grounding use the Python API with "
+                "an LLM callable (see okto_pulse.core.kg.grounding)."
+            ),
+        }
+        return json.dumps(result, default=str)
