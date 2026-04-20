@@ -796,6 +796,7 @@ async def _bootstrap_default_discovery_intents() -> None:
 
     dialect = get_engine().dialect.name
     seeds = [
+        # --- Coverage & Tracing ---
         {
             "name": "coverage_for_fr",
             "label": "What covers this FR?",
@@ -812,6 +813,34 @@ async def _bootstrap_default_discovery_intents() -> None:
             "min_permission": "kg.query.global",
         },
         {
+            "name": "uncovered_requirements",
+            "label": "Which requirements are uncovered?",
+            "description": (
+                "Surfaces FRs / NFRs / TRs that still have no linked card or "
+                "test scenario — the coverage gap list."
+            ),
+            "category": "coverage_tracing",
+            "tool_binding": "okto_pulse_get_spec_context",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "scenarios_without_tasks",
+            "label": "Which test scenarios have no task?",
+            "description": (
+                "Lists TestScenario nodes that are not linked to any "
+                "implementation card — likely blindspots in the sprint plan."
+            ),
+            "category": "coverage_tracing",
+            "tool_binding": "okto_pulse_list_test_scenarios",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+
+        # --- Decisions & History ---
+        {
             "name": "decisions_superseded",
             "label": "Which decisions were superseded?",
             "description": (
@@ -825,6 +854,42 @@ async def _bootstrap_default_discovery_intents() -> None:
             "min_permission": "kg.query.global",
         },
         {
+            "name": "contradictions_in_kg",
+            "label": "Where does the knowledge graph contradict itself?",
+            "description": (
+                "Runs the contradiction detector over the current board's KG "
+                "so mismatched rules, decisions and requirements can be "
+                "reconciled before they bite."
+            ),
+            "category": "decisions_history",
+            "tool_binding": "okto_pulse_kg_find_contradictions",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "decisions_by_topic",
+            "label": "Find decisions about a topic",
+            "description": (
+                "Semantic search across decisions on this board for a given "
+                "topic or phrase — useful when onboarding or revisiting a "
+                "corner of the product."
+            ),
+            "category": "decisions_history",
+            "tool_binding": "okto_pulse_kg_find_similar_decisions",
+            "params_schema": {
+                "topic": {
+                    "type": "text",
+                    "required": True,
+                    "label": "Topic / phrase",
+                }
+            },
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+
+        # --- Dependencies & Blockers ---
+        {
             "name": "blockers_current_sprint",
             "label": "What is blocking the current sprint?",
             "description": (
@@ -833,6 +898,89 @@ async def _bootstrap_default_discovery_intents() -> None:
             ),
             "category": "dependencies_blockers",
             "tool_binding": "okto_pulse_list_blockers",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "dependencies_of_card",
+            "label": "Who depends on this card?",
+            "description": (
+                "Reverse-lookup for a given card: which other cards or specs "
+                "are waiting on it to land before they can move forward."
+            ),
+            "category": "dependencies_blockers",
+            "tool_binding": "okto_pulse_get_card_dependencies",
+            "params_schema": {
+                "card_id": {
+                    "type": "text",
+                    "required": True,
+                    "label": "Card id",
+                }
+            },
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+
+        # --- Similarity & Reuse ---
+        {
+            "name": "similar_nodes_to_text",
+            "label": "Find similar nodes for a phrase",
+            "description": (
+                "Returns the most semantically similar nodes on the board for "
+                "an arbitrary phrase — handy for duplicate detection and "
+                "cross-referencing."
+            ),
+            "category": "similarity_reuse",
+            "tool_binding": "okto_pulse_kg_get_similar_nodes",
+            "params_schema": {
+                "query": {
+                    "type": "text",
+                    "required": True,
+                    "label": "Phrase",
+                }
+            },
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "learning_from_bugs",
+            "label": "Learnings extracted from bugs",
+            "description": (
+                "Surfaces the Learning nodes the KG has distilled from closed "
+                "Bug artifacts — the institutional memory of what broke and "
+                "why."
+            ),
+            "category": "similarity_reuse",
+            "tool_binding": "okto_pulse_kg_get_learning_from_bugs",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+
+        # --- Activity & Recency ---
+        {
+            "name": "recent_activity",
+            "label": "What changed recently on this board?",
+            "description": (
+                "Rolls up the activity log for the current board — recent "
+                "cards, status moves, consolidations, evaluations."
+            ),
+            "category": "activity_recency",
+            "tool_binding": "okto_pulse_get_activity_log",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "my_mentions",
+            "label": "Where was I mentioned?",
+            "description": (
+                "Lists the comments and QA items where the current user was "
+                "@mentioned, so replies don't get lost."
+            ),
+            "category": "activity_recency",
+            "tool_binding": "okto_pulse_list_my_mentions",
             "params_schema": None,
             "renderer": "table",
             "min_permission": "kg.query.global",
