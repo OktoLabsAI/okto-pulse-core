@@ -381,110 +381,147 @@ async def _exec_test_scenarios(
 
 
 async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
-    """NEW aggregator (ideação d1783b03): lists all FRs, TRs and ACs without
-    any linked card or test scenario, across the specs on the board that
-    are still **in flight** — draft, review, approved, validated and
-    in_progress.
+    """NEW aggregator (ideação d1783b03): lists FRs, ACs and TRs that have
+    no linked BR / scenario / card across the specs on the board.
 
-    Specs in status `done` are excluded: their coverage gaps were either
-    resolved at validation time, explicitly skipped via the board's
-    skip_*_coverage flags, or deliberately deferred — none of those
-    states represent an actionable "uncovered requirement" today.
+    Design after user review (conversa de fechamento da ideação):
 
-    Specs in `cancelled` are also excluded (work abandoned).
-
-    Tolerates legacy specs where TRs / BRs / scenarios are stored as
-    strings rather than dicts — those are treated as "uncovered-by-default"
-    because there is no way to attach linked_task_ids to a plain string.
+    1. **Specs `cancelled` são excluídas** — trabalho abandonado não é débito.
+    2. **Specs `done` continuam incluídas** — fechar a spec não cobre o gap;
+       ele pode ter sido aceito explicitamente via `skip_*_coverage` no
+       momento da validation. O dashboard continua enxergando o link
+       faltante e precisa reportá-lo para o usuário decidir.
+    3. **Usamos a mesma função canônica que o validation gate**
+       (`analytics_service.compute_spec_coverage`) para evitar drift entre
+       "o que o gate considera uncovered" e "o que o intent reporta".
+       Isso também descarta TRs em forma string legacy (o gate também não
+       conta esses).
+    4. Cada row carrega `meta.spec_status`, `meta.skipped_at_validation`
+       (True se o gate passou com skip=true naquela categoria — por-spec
+       OU por-board) e `meta.in_flight` — o frontend pode agrupar por
+       categoria ou filtrar "só acionáveis".
     """
-    from okto_pulse.core.models.db import SpecStatus
+    from okto_pulse.core.models.db import Board, SpecStatus
+    from okto_pulse.core.services.analytics_service import spec_coverage_summary
 
-    ACTIVE_STATUSES = {
+    board = (
+        await db.execute(select(Board).where(Board.id == board_id))
+    ).scalar_one_or_none()
+    board_settings = (board.settings or {}) if board else {}
+
+    IN_FLIGHT = {
         SpecStatus.DRAFT,
         SpecStatus.REVIEW,
         SpecStatus.APPROVED,
         SpecStatus.VALIDATED,
         SpecStatus.IN_PROGRESS,
     }
+
     specs = (
         await db.execute(
             select(Spec).where(
                 Spec.board_id == board_id,
-                Spec.status.in_(ACTIVE_STATUSES),
+                Spec.status != SpecStatus.CANCELLED,
             )
         )
     ).scalars().all()
+
     rows: list[dict] = []
     for spec in specs:
-        # Technical requirements
-        for i, tr in enumerate(getattr(spec, "technical_requirements", None) or []):
-            if isinstance(tr, dict):
-                tr_id = tr.get("id") or f"{spec.id}:tr:{i}"
-                text = tr.get("text") or ""
-                covered = bool(tr.get("linked_task_ids") or [])
-            else:
-                tr_id = f"{spec.id}:tr:{i}"
-                text = str(tr)
-                covered = False  # legacy string form — no linkage possible
-            if not covered:
-                rows.append(
-                    {
-                        "id": tr_id,
-                        "type": "UncoveredTR",
-                        "title": text[:160],
-                        "summary": f"spec: {spec.title} · no linked cards",
-                        "meta": {"spec_id": spec.id, "kind": "technical_requirement"},
-                    }
-                )
-        # FRs: covered when at least one BR references them
-        frs = getattr(spec, "functional_requirements", None) or []
-        brs = getattr(spec, "business_rules", None) or []
-        covered_fr_indices: set[int] = set()
-        for br in brs:
-            if not isinstance(br, dict):
+        cov = spec_coverage_summary(spec)
+        status_value = getattr(spec.status, "value", str(spec.status))
+        is_in_flight = spec.status in IN_FLIGHT
+
+        # Effective skip = per-spec OR per-board global
+        skip_rules = bool(
+            getattr(spec, "skip_rules_coverage", False)
+            or board_settings.get("skip_rules_coverage_global", False)
+        )
+        skip_tests = bool(
+            getattr(spec, "skip_test_coverage", False)
+            or board_settings.get("skip_test_coverage_global", False)
+        )
+        skip_trs = bool(
+            getattr(spec, "skip_trs_coverage", False)
+            or board_settings.get("skip_trs_coverage_global", False)
+        )
+
+        frs = spec.functional_requirements or []
+        for idx in cov["fr_uncovered_indices"]:
+            rows.append(
+                {
+                    "id": f"{spec.id}:fr:{idx}",
+                    "type": "UncoveredFR",
+                    "title": ((frs[idx] if idx < len(frs) else "") or "")[:160],
+                    "summary": (
+                        f"spec: {spec.title} · status: {status_value}"
+                        f" · FR #{idx}"
+                        + (" · skip_rules=true at validation" if skip_rules else "")
+                    ),
+                    "meta": {
+                        "spec_id": spec.id,
+                        "spec_status": status_value,
+                        "in_flight": is_in_flight,
+                        "skipped_at_validation": skip_rules,
+                        "kind": "functional_requirement",
+                        "index": idx,
+                    },
+                }
+            )
+
+        acs = spec.acceptance_criteria or []
+        for idx in cov["ac_uncovered_indices"]:
+            rows.append(
+                {
+                    "id": f"{spec.id}:ac:{idx}",
+                    "type": "UncoveredAC",
+                    "title": ((acs[idx] if idx < len(acs) else "") or "")[:160],
+                    "summary": (
+                        f"spec: {spec.title} · status: {status_value}"
+                        f" · AC #{idx}"
+                        + (" · skip_tests=true at validation" if skip_tests else "")
+                    ),
+                    "meta": {
+                        "spec_id": spec.id,
+                        "spec_status": status_value,
+                        "in_flight": is_in_flight,
+                        "skipped_at_validation": skip_tests,
+                        "kind": "acceptance_criterion",
+                        "index": idx,
+                    },
+                }
+            )
+
+        # TRs: iterate only structured dicts (same as the validation gate —
+        # legacy string-form TRs are outside the gate's coverage count).
+        for i, tr in enumerate(spec.technical_requirements or []):
+            if not isinstance(tr, dict):
                 continue
-            for idx in br.get("linked_requirements") or []:
-                try:
-                    covered_fr_indices.add(int(idx))
-                except (ValueError, TypeError):
-                    pass
-        for idx, fr in enumerate(frs):
-            if idx not in covered_fr_indices:
-                rows.append(
-                    {
-                        "id": f"{spec.id}:fr:{idx}",
-                        "type": "UncoveredFR",
-                        "title": (fr or "")[:160],
-                        "summary": f"spec: {spec.title} · FR #{idx} · no linked BR",
-                        "meta": {"spec_id": spec.id, "kind": "functional_requirement", "index": idx},
-                    }
-                )
-        # ACs: covered when at least one scenario references them
-        acs = getattr(spec, "acceptance_criteria", None) or []
-        scenarios = getattr(spec, "test_scenarios", None) or []
-        covered_ac_indices: set[int] = set()
-        for sc in scenarios:
-            if not isinstance(sc, dict):
+            if tr.get("linked_task_ids"):
                 continue
-            for idx in sc.get("linked_criteria") or []:
-                try:
-                    covered_ac_indices.add(int(idx))
-                except (ValueError, TypeError):
-                    pass
-        for idx, ac in enumerate(acs):
-            if idx not in covered_ac_indices:
-                rows.append(
-                    {
-                        "id": f"{spec.id}:ac:{idx}",
-                        "type": "UncoveredAC",
-                        "title": (ac or "")[:160],
-                        "summary": f"spec: {spec.title} · AC #{idx} · no linked scenario",
-                        "meta": {"spec_id": spec.id, "kind": "acceptance_criterion", "index": idx},
-                    }
-                )
+            rows.append(
+                {
+                    "id": tr.get("id") or f"{spec.id}:tr:{i}",
+                    "type": "UncoveredTR",
+                    "title": (tr.get("text") or "")[:160],
+                    "summary": (
+                        f"spec: {spec.title} · status: {status_value}"
+                        f" · no linked cards"
+                        + (" · skip_trs=true at validation" if skip_trs else "")
+                    ),
+                    "meta": {
+                        "spec_id": spec.id,
+                        "spec_status": status_value,
+                        "in_flight": is_in_flight,
+                        "skipped_at_validation": skip_trs,
+                        "kind": "technical_requirement",
+                    },
+                }
+            )
+
     return _ok(
         rows,
-        columns=["Kind", "Text", "Spec"],
+        columns=["Kind", "Text", "Spec", "Status", "Skip at validation"],
         tool_binding="okto_pulse_list_uncovered_requirements",
     )
 
