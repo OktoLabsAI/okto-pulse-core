@@ -111,6 +111,11 @@ class HybridSearchResult:
     # ("none" when the stage was skipped). Surfaced so the UI / audit
     # can tell first-stage and second-stage results apart.
     rerank_strategy: str = "none"
+    # Ideação 1fb13b51: adaptive hop count observability. ``hops_used``
+    # is the depth effectively passed to graph_expander.expand;
+    # ``hops_stopped_reason`` is the planner's reason string.
+    hops_used: int = 0
+    hops_stopped_reason: str = "fixed"
     emitted_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -267,6 +272,8 @@ def kg_search_hybrid(
     rerank: str = "none",
     rerank_pool: int = 50,
     rerank_llm_fn=None,
+    hop_strategy: str = "fixed",
+    hop_llm_fn=None,
 ) -> HybridSearchResult:
     """Run the hybrid pipeline and return the ranked result set.
 
@@ -321,14 +328,47 @@ def kg_search_hybrid(
     if (time.perf_counter() - start) * 1000 > deadline_budget:
         return _partial(resolved, query, board_id, seeds, [], vector_ms, 0.0, 0.0, sla_budget_ms)
 
-    # 2. Graph expand
+    # 2.a Adaptive hop planning (ideação 1fb13b51). Runs ONCE per call;
+    # failure always falls back to the intent's own max_hops so the
+    # pipeline never aborts on planner failure.
+    hops_used = resolved.max_hops
+    hops_reason = "fixed"
+    if hop_strategy and hop_strategy != "fixed":
+        try:
+            from okto_pulse.core.kg.adaptive_hops import (
+                clamp_hops,
+                get_hop_planner,
+            )
+
+            planner = get_hop_planner(
+                hop_strategy,
+                llm_fn=hop_llm_fn,
+                fixed_max_hops=resolved.max_hops,
+                fallback_hops=resolved.max_hops,
+            )
+            decision = planner.plan(
+                query=query,
+                intent_name=resolved.name,
+                seed_titles=[s.title for s in seeds],
+            )
+            hops_used = clamp_hops(decision.hops)
+            hops_reason = decision.reason
+        except Exception as e:  # noqa: BLE001 — planner failure degrades
+            logger.warning(
+                "kg_search_hybrid.hop_planner_failed strategy=%s error=%s",
+                hop_strategy, type(e).__name__,
+            )
+            hops_used = resolved.max_hops
+            hops_reason = "planner_error_fallback"
+
+    # 2.b Graph expand
     t1 = time.perf_counter()
     seed_ids = tuple(s.node_id for s in seeds)
     neighbors = graph_expander.expand(
         board_id=board_id,
         seed_ids=seed_ids,
         edges=resolved.expand_edges,
-        max_hops=resolved.max_hops,
+        max_hops=hops_used,
     ) if seed_ids else []
     expand_ms = (time.perf_counter() - t1) * 1000
 
@@ -416,6 +456,8 @@ def kg_search_hybrid(
         partial=partial,
         sla_budget_ms=sla_budget_ms,
         rerank_strategy=rerank_applied,
+        hops_used=hops_used,
+        hops_stopped_reason=hops_reason,
     )
 
 
