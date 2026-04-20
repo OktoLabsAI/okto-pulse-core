@@ -13,6 +13,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
+from okto_pulse.core.mcp.helpers import parse_multi_value
 from okto_pulse.core.services.main import (
     AgentService,
     AttachmentService,
@@ -3521,8 +3522,8 @@ async def okto_pulse_derive_spec_from_ideation(
     if perm_err:
         return _perm_error(perm_err)
 
-    _mockup_ids = [x.strip() for x in mockup_ids.split("|") if x.strip()] or None
-    _kb_ids = [x.strip() for x in kb_ids.split("|") if x.strip()] or None
+    _mockup_ids = parse_multi_value(mockup_ids) or None
+    _kb_ids = parse_multi_value(kb_ids) or None
 
     async with get_db_for_mcp() as db:
         service = IdeationService(db)
@@ -3995,25 +3996,20 @@ async def okto_pulse_create_refinement(
 
     from okto_pulse.core.models.schemas import RefinementCreate
 
-    def _split(val: str, sep: str) -> list[str] | None:
-        if not val:
-            return None
-        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
-
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
         refinement_data = RefinementCreate(
             ideation_id=ideation_id,
             title=title,
             description=description.replace("\\n", "\n") if description else None,
-            in_scope=_split(in_scope, "|"),
-            out_of_scope=_split(out_of_scope, "|"),
+            in_scope=parse_multi_value(in_scope) or None,
+            out_of_scope=parse_multi_value(out_of_scope) or None,
             analysis=analysis.replace("\\n", "\n") if analysis else None,
-            decisions=_split(decisions, "|"),
+            decisions=parse_multi_value(decisions) or None,
             assignee_id=assignee_id or None,
             labels=labels.split(",") if labels else None,
-            mockup_ids=[x.strip() for x in mockup_ids.split("|") if x.strip()] or None,
-            kb_ids=[x.strip() for x in kb_ids.split("|") if x.strip()] or None,
+            mockup_ids=parse_multi_value(mockup_ids) or None,
+            kb_ids=parse_multi_value(kb_ids) or None,
         )
 
         try:
@@ -4320,24 +4316,19 @@ async def okto_pulse_update_refinement(
 
     from okto_pulse.core.models.schemas import RefinementUpdate
 
-    def _split(val: str, sep: str) -> list[str] | None:
-        if not val:
-            return None
-        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
-
     update_kwargs: dict[str, Any] = {}
     if title:
         update_kwargs["title"] = title
     if description:
         update_kwargs["description"] = description.replace("\\n", "\n")
     if in_scope:
-        update_kwargs["in_scope"] = _split(in_scope, "|")
+        update_kwargs["in_scope"] = parse_multi_value(in_scope)
     if out_of_scope:
-        update_kwargs["out_of_scope"] = _split(out_of_scope, "|")
+        update_kwargs["out_of_scope"] = parse_multi_value(out_of_scope)
     if analysis:
         update_kwargs["analysis"] = analysis.replace("\\n", "\n")
     if decisions:
-        update_kwargs["decisions"] = _split(decisions, "|")
+        update_kwargs["decisions"] = parse_multi_value(decisions)
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
@@ -4493,8 +4484,8 @@ async def okto_pulse_derive_spec_from_refinement(
     if perm_err:
         return _perm_error(perm_err)
 
-    _mockup_ids = [x.strip() for x in mockup_ids.split("|") if x.strip()] or None
-    _kb_ids = [x.strip() for x in kb_ids.split("|") if x.strip()] or None
+    _mockup_ids = parse_multi_value(mockup_ids) or None
+    _kb_ids = parse_multi_value(kb_ids) or None
 
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
@@ -4872,20 +4863,15 @@ async def okto_pulse_create_spec(
             {"error": f"Invalid status. Must be one of: {[s.value for s in SpecStatus]}"}
         )
 
-    def _split(val: str, sep: str) -> list[str] | None:
-        if not val:
-            return None
-        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
-
     async with get_db_for_mcp() as db:
         service = SpecService(db)
         spec_data = SpecCreate(
             title=title,
             description=description.replace("\\n", "\n") if description else None,
             context=context.replace("\\n", "\n") if context else None,
-            functional_requirements=_split(functional_requirements, "|"),
-            technical_requirements=_trs_to_objects(_split(technical_requirements, "|")),
-            acceptance_criteria=_split(acceptance_criteria, "|"),
+            functional_requirements=parse_multi_value(functional_requirements) or None,
+            technical_requirements=_trs_to_objects(parse_multi_value(technical_requirements) or None),
+            acceptance_criteria=parse_multi_value(acceptance_criteria) or None,
             status=spec_status,
             assignee_id=assignee_id or None,
             labels=labels.split(",") if labels else None,
@@ -5259,11 +5245,6 @@ async def okto_pulse_update_spec(
 
     from okto_pulse.core.models.schemas import SpecUpdate
 
-    def _split(val: str, sep: str) -> list[str] | None:
-        if not val:
-            return None
-        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
-
     # Build update data with only non-empty fields
     update_kwargs: dict[str, Any] = {}
     if title:
@@ -5273,11 +5254,11 @@ async def okto_pulse_update_spec(
     if context:
         update_kwargs["context"] = context.replace("\\n", "\n")
     if functional_requirements:
-        update_kwargs["functional_requirements"] = _split(functional_requirements, "|")
+        update_kwargs["functional_requirements"] = parse_multi_value(functional_requirements)
     if technical_requirements:
-        update_kwargs["technical_requirements"] = _trs_to_objects(_split(technical_requirements, "|"))
+        update_kwargs["technical_requirements"] = _trs_to_objects(parse_multi_value(technical_requirements))
     if acceptance_criteria:
-        update_kwargs["acceptance_criteria"] = _split(acceptance_criteria, "|")
+        update_kwargs["acceptance_criteria"] = parse_multi_value(acceptance_criteria)
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
@@ -5430,10 +5411,7 @@ async def okto_pulse_add_test_scenario(
         criteria_list = None
         if linked_criteria:
             criteria_list = []
-            for token in linked_criteria.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_criteria):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(criteria):
@@ -6590,10 +6568,7 @@ async def okto_pulse_add_business_rule(
         req_list = None
         if linked_requirements:
             req_list = []
-            for token in linked_requirements.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_requirements):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(frs):
@@ -6700,10 +6675,7 @@ async def okto_pulse_update_business_rule(
             target["linked_requirements"] = None
         elif linked_requirements:
             req_list = []
-            for token in linked_requirements.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_requirements):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(frs):
@@ -6793,10 +6765,7 @@ def _parse_linked_requirements(raw: str, frs: list) -> tuple[list[str] | None, s
     if raw.strip().upper() == "CLEAR":
         return [], None
     out: list[str] = []
-    for token in raw.split("|"):
-        token = token.strip()
-        if not token:
-            continue
+    for token in parse_multi_value(raw):
         try:
             idx = int(token)
         except ValueError:
@@ -6869,7 +6838,7 @@ async def okto_pulse_add_decision(
 
         alts = None
         if alternatives_considered:
-            alts = [a.strip() for a in alternatives_considered.split("|") if a.strip()]
+            alts = parse_multi_value(alternatives_considered)
 
         decisions = list(spec.decisions or [])
 
@@ -6980,9 +6949,9 @@ async def okto_pulse_update_decision(
             if alternatives_considered.strip().upper() == "CLEAR":
                 target["alternatives_considered"] = None
             else:
-                target["alternatives_considered"] = [
-                    a.strip() for a in alternatives_considered.split("|") if a.strip()
-                ]
+                target["alternatives_considered"] = parse_multi_value(
+                    alternatives_considered
+                )
         if supersedes_decision_id:
             if supersedes_decision_id.strip().upper() == "CLEAR":
                 target["supersedes_decision_id"] = None
@@ -7376,10 +7345,7 @@ async def okto_pulse_add_api_contract(
         req_list = None
         if linked_requirements:
             req_list = []
-            for token in linked_requirements.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_requirements):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(frs):
@@ -7397,10 +7363,7 @@ async def okto_pulse_add_api_contract(
         if linked_rules:
             rule_ids = {r.get("id") for r in existing_rules}
             rules_list = []
-            for token in linked_rules.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_rules):
                 if token in rule_ids:
                     rules_list.append(token)
                 else:
@@ -7534,10 +7497,7 @@ async def okto_pulse_update_api_contract(
             target["linked_requirements"] = None
         elif linked_requirements:
             req_list = []
-            for token in linked_requirements.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_requirements):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(frs):
@@ -7557,10 +7517,7 @@ async def okto_pulse_update_api_contract(
         elif linked_rules:
             rule_ids = {r.get("id") for r in existing_rules}
             rules_list = []
-            for token in linked_rules.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_rules):
                 if token in rule_ids:
                     rules_list.append(token)
                 else:
@@ -8129,7 +8086,7 @@ async def okto_pulse_create_guideline(
             return json.dumps({"error": "Board not found"})
 
         from okto_pulse.core.models.schemas import GuidelineCreate
-        tag_list = [t.strip() for t in tags.split("|") if t.strip()] if tags else None
+        tag_list = parse_multi_value(tags) or None
         data = GuidelineCreate(
             title=title,
             content=content,
@@ -8189,7 +8146,7 @@ async def okto_pulse_update_guideline(
         data = GuidelineUpdate(
             title=title or None,
             content=content or None,
-            tags=[t.strip() for t in tags.split("|") if t.strip()] if tags else None,
+            tags=parse_multi_value(tags) or None,
         )
 
         service = GuidelineService(db)
