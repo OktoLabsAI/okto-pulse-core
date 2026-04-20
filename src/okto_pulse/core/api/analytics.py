@@ -68,24 +68,18 @@ def _extract_conclusion(card) -> dict | None:
 
 
 def _is_test_card(card) -> bool:
-    """True if the card is explicitly typed as a test card (card_type=test)."""
-    ct = getattr(card, "card_type", None)
-    if ct is not None and str(ct).endswith("test"):
-        return True
-    return False
+    """True if the card is explicitly typed as a test card."""
+    return getattr(card, "card_type", None) == CardType.TEST
 
 
 def _is_normal_card(card) -> bool:
-    """True if card_type is normal (not bug, not test)."""
-    ct = getattr(card, "card_type", None)
-    if ct is None:
-        return not _is_test_card(card)
-    return str(ct).endswith("normal")
+    """True if card_type is NORMAL. Contrato rígido — sem fallback."""
+    return getattr(card, "card_type", None) == CardType.NORMAL
 
 
 def _is_bug_card(card) -> bool:
-    ct = getattr(card, "card_type", None)
-    return ct is not None and str(ct).endswith("bug")
+    """True if card_type is BUG."""
+    return getattr(card, "card_type", None) == CardType.BUG
 
 
 def _resolve_linked_criteria_to_indices(
@@ -227,11 +221,18 @@ def _aggregate_spec_evaluation(specs: list) -> dict:
 
 
 def _aggregate_sprint_evaluation(sprints: list) -> dict:
-    """Aggregate Sprint Evaluation gate across sprints."""
+    """Aggregate Sprint Evaluation gate across sprints.
+
+    Shape harmonizado com _aggregate_spec_evaluation — inclui
+    avg_dimension_scores (vazio quando não há dimensões) para que
+    consumers possam processar ambos os evaluation types com o mesmo
+    código.
+    """
     total = 0
     total_approve = 0
     total_reject = 0
     overall_vals: list[float] = []
+    dimension_avgs: dict[str, list[float]] = {}
     sprints_with_eval = 0
 
     for sp in sprints:
@@ -250,6 +251,12 @@ def _aggregate_sprint_evaluation(sprints: list) -> dict:
                 total_reject += 1
             if e.get("overall_score") is not None:
                 overall_vals.append(_safe_int(e.get("overall_score")))
+            dims = e.get("dimensions", {})
+            if isinstance(dims, dict):
+                for k, v in dims.items():
+                    score = v.get("score") if isinstance(v, dict) else v
+                    if score is not None:
+                        dimension_avgs.setdefault(k, []).append(_safe_int(score))
 
     return {
         "total_submitted": total,
@@ -257,6 +264,7 @@ def _aggregate_sprint_evaluation(sprints: list) -> dict:
         "total_reject": total_reject,
         "approve_rate": round(total_approve / total * 100, 1) if total else None,
         "avg_overall_score": _avg(overall_vals),
+        "avg_dimension_scores": {k: _avg(v) for k, v in dimension_avgs.items()},
         "sprints_with_evaluation": sprints_with_eval,
     }
 
@@ -319,7 +327,18 @@ async def analytics_overview(
     db: AsyncSession = Depends(get_db),
 ):
     """Cross-board KPIs: totals, lifecycle status breakdowns, validation gates,
-    sprint summary, funnel, velocity, board list."""
+    sprint summary, funnel, velocity, board list.
+
+    Semântica de campos opcionais:
+    - ``avg_triage_hours``: null quando não há bugs triados no período
+      (sem bugs com ``linked_test_task_ids`` populado). Não é erro —
+      indica ausência do sinal.
+    - ``bug_rate_per_spec``: retorna apenas specs com ``rate > 0``.
+      Specs sem bugs são omitidas da lista para reduzir o payload.
+    - ``sprint_evaluation``: mesmo shape que ``spec_evaluation``
+      (inclui ``avg_dimension_scores`` — dict vazio quando nenhum
+      sprint_evaluation carrega dimensions).
+    """
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
@@ -498,12 +517,14 @@ async def analytics_overview(
         sid = c.spec_id or "unlinked"
         bugs_per_spec[sid] = bugs_per_spec.get(sid, 0) + 1
 
-    # Bug rate per spec (bugs / total tasks in that spec)
+    # Bug rate per spec (bugs / total tasks in that spec) — only specs
+    # with at least one bug. Specs com rate=0 poluem o payload sem trazer
+    # sinal; consumer que precisa da lista completa usa /boards/{id}/specs.
     bug_rate_per_spec = []
     for s in specs:
         s_cards = [c for c in cards if c.spec_id == s.id]
-        s_bugs = [c for c in s_cards if getattr(c, "card_type", "normal") == "bug"]
-        if s_cards:
+        s_bugs = [c for c in s_cards if _is_bug_card(c)]
+        if s_cards and s_bugs:
             bug_rate_per_spec.append({
                 "spec_id": s.id,
                 "spec_title": s.title,

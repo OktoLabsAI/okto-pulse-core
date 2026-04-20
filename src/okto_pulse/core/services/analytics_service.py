@@ -24,6 +24,7 @@ from okto_pulse.core.models.db import (
     Card,
     CardDependency,
     CardStatus,
+    CardType,
     Ideation,
     IdeationStatus,
     Refinement,
@@ -207,20 +208,15 @@ async def compute_coverage(
 
 
 def _is_test_card(card) -> bool:
-    ct = getattr(card, "card_type", None)
-    return ct is not None and str(ct).endswith("test")
+    return getattr(card, "card_type", None) == CardType.TEST
 
 
 def _is_bug_card(card) -> bool:
-    ct = getattr(card, "card_type", None)
-    return ct is not None and str(ct).endswith("bug")
+    return getattr(card, "card_type", None) == CardType.BUG
 
 
 def _is_normal_card(card) -> bool:
-    ct = getattr(card, "card_type", None)
-    if ct is None:
-        return not _is_test_card(card)
-    return str(ct).endswith("normal")
+    return getattr(card, "card_type", None) == CardType.NORMAL
 
 
 def _status_breakdown(items: list, enum_cls) -> dict[str, int]:
@@ -341,6 +337,9 @@ async def compute_funnel(
     )
     counts["specs_with_contracts"] = sum(
         1 for s in spec_objs if s.api_contracts and len(s.api_contracts) > 0
+    )
+    counts["specs_with_tests"] = sum(
+        1 for s in spec_objs if s.test_scenarios and len(s.test_scenarios) > 0
     )
 
     counts["spec_status_breakdown"] = _status_breakdown(spec_objs, SpecStatus)
