@@ -382,13 +382,38 @@ async def _exec_test_scenarios(
 
 async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
     """NEW aggregator (ideação d1783b03): lists all FRs, TRs and ACs without
-    any linked card or test scenario, across all specs on the board.
+    any linked card or test scenario, across the specs on the board that
+    are still **in flight** — draft, review, approved, validated and
+    in_progress.
 
-    Tolerates legacy specs where TRs / BRs / scenarios are stored as strings
-    rather than dicts — those are treated as "uncovered-by-default" because
-    there is no way to attach linked_task_ids to a plain string.
+    Specs in status `done` are excluded: their coverage gaps were either
+    resolved at validation time, explicitly skipped via the board's
+    skip_*_coverage flags, or deliberately deferred — none of those
+    states represent an actionable "uncovered requirement" today.
+
+    Specs in `cancelled` are also excluded (work abandoned).
+
+    Tolerates legacy specs where TRs / BRs / scenarios are stored as
+    strings rather than dicts — those are treated as "uncovered-by-default"
+    because there is no way to attach linked_task_ids to a plain string.
     """
-    specs = (await db.execute(select(Spec).where(Spec.board_id == board_id))).scalars().all()
+    from okto_pulse.core.models.db import SpecStatus
+
+    ACTIVE_STATUSES = {
+        SpecStatus.DRAFT,
+        SpecStatus.REVIEW,
+        SpecStatus.APPROVED,
+        SpecStatus.VALIDATED,
+        SpecStatus.IN_PROGRESS,
+    }
+    specs = (
+        await db.execute(
+            select(Spec).where(
+                Spec.board_id == board_id,
+                Spec.status.in_(ACTIVE_STATUSES),
+            )
+        )
+    ).scalars().all()
     rows: list[dict] = []
     for spec in specs:
         # Technical requirements
