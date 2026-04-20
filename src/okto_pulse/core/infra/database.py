@@ -820,7 +820,12 @@ async def _bootstrap_default_discovery_intents() -> None:
                 "test scenario — the coverage gap list."
             ),
             "category": "coverage_tracing",
-            "tool_binding": "okto_pulse_get_spec_context",
+            # Remap (ideação d1783b03): the previous binding to
+            # okto_pulse_get_spec_context required a spec_id that the intent
+            # did not collect, so the aggregated "uncovered across the board"
+            # question was impossible to answer. The new binding is an
+            # aggregator that walks every spec.
+            "tool_binding": "okto_pulse_list_uncovered_requirements",
             "params_schema": None,
             "renderer": "table",
             "min_permission": "kg.query.global",
@@ -848,7 +853,11 @@ async def _bootstrap_default_discovery_intents() -> None:
                 "useful for auditing why a choice was replaced."
             ),
             "category": "decisions_history",
-            "tool_binding": "okto_pulse_kg_get_supersedence_chain",
+            # Remap (ideação d1783b03): the original binding to
+            # okto_pulse_kg_get_supersedence_chain requires a decision_id, but
+            # the intent is "show all chains" — the new aggregator walks all
+            # spec.decisions on the board.
+            "tool_binding": "okto_pulse_list_supersedence_chains",
             "params_schema": None,
             "renderer": "table",
             "min_permission": "kg.query.global",
@@ -932,7 +941,12 @@ async def _bootstrap_default_discovery_intents() -> None:
                 "cross-referencing."
             ),
             "category": "similarity_reuse",
-            "tool_binding": "okto_pulse_kg_get_similar_nodes",
+            # Remap (ideação 803c1fe1): original binding was
+            # okto_pulse_kg_get_similar_nodes which requires session_id +
+            # candidate_id from an active consolidation — inadequate for
+            # user-facing queries. kg_query_natural accepts a free-form
+            # `nl_query` and runs the same HNSW search plus string fallback.
+            "tool_binding": "okto_pulse_kg_query_natural",
             "params_schema": {
                 "query": {
                     "type": "text",
@@ -990,14 +1004,6 @@ async def _bootstrap_default_discovery_intents() -> None:
     async with get_engine().begin() as conn:
         import json as _json
         for s in seeds:
-            # Exists?
-            row = await conn.execute(
-                sa_text("SELECT id FROM discovery_intents WHERE name = :name"),
-                {"name": s["name"]},
-            )
-            if row.first() is not None:
-                continue  # already seeded
-
             if dialect == "postgresql":
                 params_literal = s["params_schema"]
             else:
@@ -1006,6 +1012,51 @@ async def _bootstrap_default_discovery_intents() -> None:
                     if s["params_schema"] is not None
                     else None
                 )
+
+            row = await conn.execute(
+                sa_text(
+                    "SELECT id, tool_binding, params_schema FROM discovery_intents "
+                    "WHERE name = :name"
+                ),
+                {"name": s["name"]},
+            )
+            existing = row.first()
+            if existing is not None:
+                # Idempotent UPDATE for seed rows. Users cannot edit is_seed
+                # intents via UI, so the seed table is the source of truth —
+                # this keeps tool_binding / params_schema in sync after a
+                # catalog refactor (ideações d1783b03 + 803c1fe1). Label and
+                # description are left untouched to preserve admin edits.
+                existing_binding = existing[1]
+                # Normalize existing params_schema for comparison (SQLite
+                # stores as JSON string, Postgres as dict).
+                existing_params = existing[2]
+                if isinstance(existing_params, str):
+                    try:
+                        existing_params = _json.loads(existing_params)
+                    except Exception:
+                        existing_params = None
+                needs_update = (
+                    existing_binding != s["tool_binding"]
+                    or existing_params != s["params_schema"]
+                )
+                if needs_update:
+                    await conn.execute(
+                        sa_text(
+                            "UPDATE discovery_intents "
+                            "SET tool_binding = :tool_binding, "
+                            "    params_schema = :params_schema, "
+                            "    updated_at = CURRENT_TIMESTAMP "
+                            "WHERE name = :name AND is_seed = :is_seed"
+                        ),
+                        {
+                            "name": s["name"],
+                            "tool_binding": s["tool_binding"],
+                            "params_schema": params_literal,
+                            "is_seed": True,
+                        },
+                    )
+                continue
 
             import uuid as _uuid
             await conn.execute(

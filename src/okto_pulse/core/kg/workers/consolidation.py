@@ -335,6 +335,11 @@ class ConsolidationWorker:
                 try:
                     success = await _process_queue_entry(db, entry)
                     entry.status = "done" if success else "failed"
+                    if not success and not entry.last_error:
+                        # _process_queue_entry returned False without raising.
+                        # Record a generic marker so ops can distinguish
+                        # "returned False" from "raised exception".
+                        entry.last_error = "processing returned False"
                     await db.commit()
                     if success:
                         processed += 1
@@ -346,6 +351,10 @@ class ConsolidationWorker:
                     )
                     try:
                         entry.status = "failed"
+                        # Ideação 0605edb2: persist last_error so the
+                        # Pending Queue view and /retry flow have a
+                        # diagnosable signal instead of last_error=None.
+                        entry.last_error = f"{type(exc).__name__}: {str(exc)[:480]}"
                         await db.commit()
                     except Exception:
                         await db.rollback()

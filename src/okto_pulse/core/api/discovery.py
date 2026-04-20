@@ -10,7 +10,9 @@ GlobalSearchView.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +28,7 @@ from okto_pulse.core.models.schemas import (
     DiscoverySavedSearchResponse,
     DiscoverySearchHistoryResponse,
 )
+from okto_pulse.core.services.discovery_executor import execute_intent
 
 router = APIRouter()
 
@@ -85,3 +88,43 @@ async def list_search_history(
         .limit(50)
     )
     return list(result.scalars().all())
+
+
+@router.post("/discovery/intents/{intent_id}/execute")
+async def execute_discovery_intent(
+    intent_id: str,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Execute the real tool bound to an intent and return a normalized payload.
+
+    Ideação a4f526df — this is what closes the "semantic fallback masking
+    real tool" gap observed in the v1 catalog. Body shape::
+
+        {"board_id": "<uuid>", "params": {"topic": "...", ...}}
+
+    Missing required params listed by `intent.params_schema` yield 400 with
+    the specific field name. Unknown tool_binding yields 400 too so drift is
+    caught at runtime (a CI parity test is tracked in a separate ideation).
+    """
+    board_id = (payload or {}).get("board_id")
+    if not board_id:
+        raise HTTPException(status_code=400, detail="board_id is required")
+
+    intent = (
+        await db.execute(
+            select(DiscoveryIntent).where(DiscoveryIntent.id == intent_id)
+        )
+    ).scalar_one_or_none()
+    if intent is None or not intent.active:
+        raise HTTPException(status_code=404, detail="Intent not found")
+
+    params = (payload or {}).get("params") or {}
+    try:
+        result = await execute_intent(db, user_id, board_id, intent, params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    result["intent_id"] = intent.id
+    result["intent_name"] = intent.name
+    return result
