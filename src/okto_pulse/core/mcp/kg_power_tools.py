@@ -240,3 +240,61 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
             ),
         }
         return json.dumps(result, default=str)
+
+    @mcp.tool()
+    async def okto_pulse_kg_query_reflective(
+        board_id: str,
+        nl_query: str,
+        limit: int = 20,
+    ) -> str:
+        """
+        V1 stub of the reflective retrieve loop (ideação db8e984f).
+
+        The full agentic loop (critic_evaluate → dispatch action →
+        retrieve retry) requires an LLM callable (critic_fn) — MCP
+        tools can't receive Python callables, so this V1 delegates to
+        the standard execute_natural_query and labels the response
+        as a "v1_stub_no_critic_wired" stop reason.
+
+        To use the real loop, call
+        ``okto_pulse.core.kg.retrieve_critic.reflect()`` programmatically
+        from a Python host that wires its own LLM provider.
+
+        Args:
+            board_id: Board ID (authorization: kg.query.global).
+            nl_query: Natural-language query (same as
+                okto_pulse_kg_query_natural).
+            limit: Max rows (default 20).
+
+        Returns:
+            JSON with rows + reflection metadata:
+            ``{nodes, total_matches, stopped_reason, iterations}``.
+        """
+        agent = await get_agent()
+        if agent is None:
+            return _err("unauthorized", "authentication required")
+        try:
+            check_rate_limit(agent.id)
+            result = execute_natural_query(
+                board_id, nl_query, limit=limit,
+            )
+            payload = {
+                "nodes": result.get("nodes", []),
+                "total_matches": result.get("total_matches", 0),
+                "stopped_reason": "v1_stub_no_critic_wired",
+                "iterations": [
+                    {
+                        "iteration": 0,
+                        "adequacy": "sufficient",
+                        "action": "accept",
+                        "rows_count": len(result.get("nodes", [])),
+                        "note": (
+                            "V1 stub: no critic LLM wired over MCP. "
+                            "Use reflect() in Python for the full loop."
+                        ),
+                    }
+                ],
+            }
+            return json.dumps(payload, default=str)
+        except TierPowerError as e:
+            return _err(e.code, e.message, details=e.details)
