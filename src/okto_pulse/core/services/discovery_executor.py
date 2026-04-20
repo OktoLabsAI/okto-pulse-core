@@ -40,7 +40,6 @@ from okto_pulse.core.models.db import (
     DiscoveryIntent,
     Spec,
 )
-from okto_pulse.core.services import analytics_service
 
 
 # --------------------------------------------------------------------------- #
@@ -168,24 +167,216 @@ async def _exec_activity_log(db: AsyncSession, board_id: str) -> dict:
 
 
 async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
-    data = await analytics_service.compute_blockers(db, board_id)
-    rows = []
-    for b in data.get("blockers", []):
-        title = b.get("card_title") or b.get("spec_title") or b.get("scenario_title") or "—"
-        rows.append(
-            {
-                "id": b.get("card_id") or b.get("scenario_id") or b.get("spec_id") or title,
-                "type": b.get("type"),
-                "title": title,
-                "summary": b.get("reason"),
-                "meta": b.get("evidence") or {},
-            }
+    """Discovery intent `blockers_current_sprint` — honest implementation.
+
+    Ideação bf6a3766: the v1 dispatch called ``compute_blockers`` (a
+    board-wide triage) and returned every uncovered scenario on the board,
+    misrepresenting them as "blockers on the current sprint". Three fixes:
+
+    1. **Scope to active sprint(s)** — no active sprint ⇒ zero rows, not
+       a silent fallback to board-wide triage.
+    2. **Only real blockers** — cards whose forward progress is gated by
+       unresolved card dependencies, explicit ``on_hold``, or ``stale``
+       state. Test-coverage gaps are reported by a separate intent
+       (``scenarios_without_tasks``); surfacing them here duplicated
+       results and hid the real dependency chain.
+    3. **Emit sprint_id on every row** — the frontend can then group by
+       sprint if multiple are active concurrently.
+    """
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+    from okto_pulse.core.models.db import (
+        CardDependency,
+        CardStatus,
+        Sprint,
+        SprintStatus,
+    )
+
+    active_sprints = list(
+        (
+            await db.execute(
+                select(Sprint).where(
+                    Sprint.board_id == board_id,
+                    Sprint.status == SprintStatus.ACTIVE,
+                )
+            )
+        ).scalars().all()
+    )
+
+    if not active_sprints:
+        return _ok(
+            rows=[],
+            columns=["Type", "Title", "Reason"],
+            tool_binding="okto_pulse_list_blockers",
+            extra={
+                "summary": {},
+                "message": "No active sprint on this board — no blockers to report.",
+            },
         )
+
+    active_sprint_ids = [s.id for s in active_sprints]
+    sprint_title_by_id = {s.id: s.title for s in active_sprints}
+
+    cards = list(
+        (
+            await db.execute(
+                select(Card).where(
+                    Card.board_id == board_id,
+                    Card.archived.is_(False),
+                    Card.sprint_id.in_(active_sprint_ids),
+                )
+            )
+        ).scalars().all()
+    )
+    card_by_id = {c.id: c for c in cards}
+
+    deps_rows: list[CardDependency] = []
+    if cards:
+        deps_rows = list(
+            (
+                await db.execute(
+                    select(CardDependency).where(
+                        CardDependency.card_id.in_([c.id for c in cards])
+                    )
+                )
+            ).scalars().all()
+        )
+    deps_by_card: dict[str, list[str]] = {}
+    for d in deps_rows:
+        deps_by_card.setdefault(d.card_id, []).append(d.depends_on_id)
+
+    # Resolve dependency targets outside the sprint too (a sprint card may
+    # depend on a card that lives elsewhere on the board).
+    external_dep_ids = {
+        dep_id
+        for dep_list in deps_by_card.values()
+        for dep_id in dep_list
+        if dep_id not in card_by_id
+    }
+    if external_dep_ids:
+        external_cards = list(
+            (
+                await db.execute(
+                    select(Card).where(Card.id.in_(external_dep_ids))
+                )
+            ).scalars().all()
+        )
+        for c in external_cards:
+            card_by_id[c.id] = c
+
+    STALE_HOURS = 72
+    now = _dt.now(_tz.utc)
+    stale_cutoff = now - _td(hours=STALE_HOURS)
+    active_states = {
+        CardStatus.NOT_STARTED,
+        CardStatus.STARTED,
+        CardStatus.IN_PROGRESS,
+        CardStatus.VALIDATION,
+        CardStatus.ON_HOLD,
+    }
+    stale_states = {
+        CardStatus.STARTED,
+        CardStatus.IN_PROGRESS,
+        CardStatus.VALIDATION,
+    }
+
+    rows: list[dict] = []
+    for c in cards:
+        sprint_title = sprint_title_by_id.get(c.sprint_id, "")
+
+        if c.status in active_states:
+            unresolved: list[dict] = []
+            for dep_id in deps_by_card.get(c.id, []):
+                target = card_by_id.get(dep_id)
+                target_status = (
+                    target.status if target and target.status else None
+                )
+                if target_status != CardStatus.DONE:
+                    unresolved.append(
+                        {
+                            "id": dep_id,
+                            "title": getattr(target, "title", None),
+                            "status": target_status.value if target_status else None,
+                        }
+                    )
+            if unresolved:
+                rows.append(
+                    {
+                        "id": c.id,
+                        "type": "blocked_card",
+                        "title": c.title,
+                        "summary": (
+                            f"Sprint '{sprint_title}' · blocked by "
+                            f"{len(unresolved)} unresolved dep(s)"
+                        ),
+                        "meta": {
+                            "card_id": c.id,
+                            "card_status": c.status.value,
+                            "sprint_id": c.sprint_id,
+                            "sprint_title": sprint_title,
+                            "blocking_cards": unresolved,
+                        },
+                    }
+                )
+
+        if c.status == CardStatus.ON_HOLD:
+            rows.append(
+                {
+                    "id": c.id,
+                    "type": "on_hold_card",
+                    "title": c.title,
+                    "summary": f"Sprint '{sprint_title}' · explicitly paused",
+                    "meta": {
+                        "card_id": c.id,
+                        "card_status": c.status.value,
+                        "sprint_id": c.sprint_id,
+                        "sprint_title": sprint_title,
+                        "updated_at": (
+                            c.updated_at.isoformat() if c.updated_at else None
+                        ),
+                    },
+                }
+            )
+
+        if c.status in stale_states and c.updated_at:
+            upd = c.updated_at
+            if upd.tzinfo is None:
+                upd = upd.replace(tzinfo=_tz.utc)
+            if upd < stale_cutoff:
+                age_h = round((now - upd).total_seconds() / 3600.0, 1)
+                rows.append(
+                    {
+                        "id": c.id,
+                        "type": "stale_card",
+                        "title": c.title,
+                        "summary": (
+                            f"Sprint '{sprint_title}' · stuck for {age_h}h "
+                            f"in {c.status.value}"
+                        ),
+                        "meta": {
+                            "card_id": c.id,
+                            "card_status": c.status.value,
+                            "sprint_id": c.sprint_id,
+                            "sprint_title": sprint_title,
+                            "last_updated": upd.isoformat(),
+                            "age_hours": age_h,
+                            "stale_hours_threshold": STALE_HOURS,
+                        },
+                    }
+                )
+
+    summary: dict[str, int] = {}
+    for r in rows:
+        summary[r["type"]] = summary.get(r["type"], 0) + 1
+
     return _ok(
         rows,
         columns=["Type", "Title", "Reason"],
         tool_binding="okto_pulse_list_blockers",
-        extra={"summary": data.get("summary", {})},
+        extra={
+            "summary": summary,
+            "active_sprint_ids": active_sprint_ids,
+        },
     )
 
 

@@ -141,3 +141,37 @@ def test_no_unused_branches_in_dispatcher():
         f"Dispatcher handles bindings that no seed intent points to: "
         f"{orphans}. Either wire a seed or remove the branch."
     )
+
+
+def test_blockers_dispatcher_scoped_to_active_sprint():
+    """Ideação bf6a3766 regression guard.
+
+    Before the fix, ``_exec_blockers`` delegated to the board-wide
+    ``analytics_service.compute_blockers``, which happily surfaced every
+    ``uncovered_scenario`` on the board as a "blocker on the current
+    sprint". Two failures that must stay fixed:
+
+    1. Scope — the executor must filter by ``SprintStatus.ACTIVE``.
+       Without that, the intent silently falls back to a board-wide
+       triage and the user reads a lie.
+    2. Semantics — ``uncovered_scenario`` is the concern of a different
+       intent (``scenarios_without_tasks``). Re-introducing it here
+       duplicates results and hides the real dependency chain.
+    """
+    import inspect
+
+    src = inspect.getsource(discovery_executor._exec_blockers)
+    assert "SprintStatus.ACTIVE" in src, (
+        "discovery_executor._exec_blockers no longer filters by active "
+        "sprint — this reverts the fix for ideação bf6a3766."
+    )
+    assert "uncovered_scenario" not in src, (
+        "discovery_executor._exec_blockers re-introduced uncovered_scenario "
+        "rows. That row type belongs to scenarios_without_tasks; keeping "
+        "both intents distinct is the point of ideação bf6a3766."
+    )
+    assert "blocked_card" in src, (
+        "discovery_executor._exec_blockers no longer emits blocked_card "
+        "rows — the intent needs at least one dependency-based blocker "
+        "type to be useful."
+    )
