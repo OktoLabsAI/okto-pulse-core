@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from okto_pulse.core.models.db import (
     CardPriority,
@@ -499,6 +499,24 @@ class IdeationQAResponse(BaseSchema):
 # ============================================================================
 
 
+def _require_nonempty_in_scope(value: list[str] | None) -> list[str] | None:
+    """Reject in_scope when it is provided but has no usable entry.
+    A refinement without at least one non-whitespace in-scope item is
+    semantically empty and would let downstream tools (derive_spec,
+    get_refinement_context) work on a stub. None is allowed only on update
+    as the "no change" signal — callers that require a value must check
+    before dispatch.
+    """
+    if value is None:
+        return None
+    cleaned = [s for s in value if isinstance(s, str) and s.strip()]
+    if not cleaned:
+        raise ValueError(
+            "in_scope must contain at least one non-empty item",
+        )
+    return value
+
+
 class RefinementCreate(BaseModel):
     """Schema for creating a refinement."""
 
@@ -516,6 +534,17 @@ class RefinementCreate(BaseModel):
     mockup_ids: list[str] | None = None
     kb_ids: list[str] | None = None
 
+    @field_validator("in_scope")
+    @classmethod
+    def _validate_in_scope_on_create(cls, v: list[str] | None) -> list[str] | None:
+        # On create, in_scope is allowed to stay None (the caller may fill it
+        # in later via update before moving the refinement past draft). But
+        # if the caller did send a list, it must have at least one usable
+        # entry — an empty or whitespace-only list is always a mistake.
+        if v is None:
+            return None
+        return _require_nonempty_in_scope(v)
+
 
 class RefinementUpdate(BaseModel):
     """Schema for updating a refinement."""
@@ -529,6 +558,15 @@ class RefinementUpdate(BaseModel):
     assignee_id: str | None = None
     labels: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
+
+    @field_validator("in_scope")
+    @classmethod
+    def _validate_in_scope_on_update(cls, v: list[str] | None) -> list[str] | None:
+        # On update, None means "no change" and is allowed. A provided list
+        # must follow the same non-empty rule as create.
+        if v is None:
+            return None
+        return _require_nonempty_in_scope(v)
 
 
 class RefinementMove(BaseModel):
@@ -1659,3 +1697,53 @@ class ErrorResponse(BaseModel):
 
     detail: str
     code: str | None = None
+
+
+# ============================================================================
+# Discovery — intent catalog, saved searches, search history
+# ============================================================================
+
+
+class DiscoveryIntentResponse(BaseModel):
+    """Response shape for a single catalog intent."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    label: str
+    description: str | None = None
+    category: str
+    tool_binding: str
+    params_schema: dict[str, Any] | None = None
+    renderer: str = "table"
+    min_permission: str | None = None
+    active: bool = True
+    is_seed: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class DiscoverySavedSearchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    board_id: str
+    name: str
+    query: str | None = None
+    intent_id: str | None = None
+    filters_json: dict[str, Any] | None = None
+    created_by: str | None = None
+    created_at: datetime
+
+
+class DiscoverySearchHistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    board_id: str
+    user_id: str
+    query: str | None = None
+    intent_id: str | None = None
+    result_count: int = 0
+    searched_at: datetime
