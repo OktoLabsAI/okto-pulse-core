@@ -69,10 +69,18 @@ class HybridSearchTiming:
     vector_seed_ms: float
     graph_expand_ms: float
     ranking_ms: float
+    # Ideação 3070cd53: optional second-stage rerank. 0.0 when
+    # rerank="none" (default) — preserves backward-compat totals.
+    rerank_ms: float = 0.0
 
     @property
     def total_ms(self) -> float:
-        return self.vector_seed_ms + self.graph_expand_ms + self.ranking_ms
+        return (
+            self.vector_seed_ms
+            + self.graph_expand_ms
+            + self.ranking_ms
+            + self.rerank_ms
+        )
 
 
 @dataclass(frozen=True)
@@ -99,6 +107,10 @@ class HybridSearchResult:
     partial: bool = False
     sla_budget_ms: float = 100.0
     version: str = "v1"
+    # Ideação 3070cd53: which rerank strategy was actually applied
+    # ("none" when the stage was skipped). Surfaced so the UI / audit
+    # can tell first-stage and second-stage results apart.
+    rerank_strategy: str = "none"
     emitted_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -252,12 +264,32 @@ def kg_search_hybrid(
     graph_expander: GraphExpander,
     classifier: Callable[[str], SearchIntent] | None = None,
     now: datetime | None = None,
+    rerank: str = "none",
+    rerank_pool: int = 50,
+    rerank_llm_fn=None,
 ) -> HybridSearchResult:
     """Run the hybrid pipeline and return the ranked result set.
 
     The explicit `intent` parameter wins over classification when set —
     mirrors the MCP contract where callers may short-circuit the
     regex+LLM classifier with a known intent.
+
+    Ideação 3070cd53 — second-stage rerank (optional):
+
+    - ``rerank``: one of ``"none"`` (default, passthrough),
+      ``"token_overlap"`` (zero-dep lexical baseline),
+      ``"cross_encoder"`` (sentence-transformers MS MARCO),
+      ``"llm"`` (RankGPT-style, requires ``rerank_llm_fn``).
+    - ``rerank_pool``: how many top-K first-stage results to hand over
+      to the reranker. Larger pool = better precision but proportional
+      latency. Default 50 matches common IR practice (rerank top-50 →
+      return top-10). The reranker still returns at most ``top_k``.
+    - ``rerank_llm_fn``: only used when ``rerank="llm"``. Callable
+      ``(query, candidates) -> ordered ids``. See
+      ``kg.rerank.llm.LLMRankerFn`` for the contract.
+
+    When rerank is off, the first-stage top-K is returned as before
+    and ``rerank_strategy="none"`` is set on the result.
     """
     if not board_id:
         raise HybridSearchError("board_id required")
@@ -311,6 +343,35 @@ def kg_search_hybrid(
     ranked = _rank(resolved, seeds, neighbors, now=now)
     ranking_ms = (time.perf_counter() - t2) * 1000
 
+    # 4. Optional second-stage rerank (ideação 3070cd53).
+    rerank_ms = 0.0
+    rerank_applied = "none"
+    rerank_requested = (rerank or "none").strip().lower()
+    if rerank_requested != "none" and ranked:
+        from okto_pulse.core.kg.rerank import get_reranker
+
+        t3 = time.perf_counter()
+        reranker = get_reranker(
+            rerank_requested, llm_ranker_fn=rerank_llm_fn
+        )
+        rerank_applied = getattr(reranker, "name", rerank_requested)
+        pool = list(ranked[: max(top_k, rerank_pool)])
+        try:
+            ranked = reranker.rerank(query, pool, top_n=top_k)
+        except Exception:  # noqa: BLE001
+            # Rerank is a quality booster, not a correctness gate.
+            # Any failure (model miss, LLM timeout) falls back to the
+            # first-stage ranking so the pipeline never errors on it.
+            logger.warning(
+                "kg_search_hybrid.rerank_failed strategy=%s intent=%s "
+                "— returning first-stage results",
+                rerank_applied, resolved.name,
+                exc_info=True,
+            )
+            ranked = list(pool)
+            rerank_applied = "none"
+        rerank_ms = (time.perf_counter() - t3) * 1000
+
     elapsed = (time.perf_counter() - start) * 1000
     partial = elapsed > sla_budget_ms  # soft breach — surfaced but no abort
     if elapsed > deadline_budget:
@@ -350,9 +411,11 @@ def kg_search_hybrid(
             vector_seed_ms=vector_ms,
             graph_expand_ms=expand_ms,
             ranking_ms=ranking_ms,
+            rerank_ms=rerank_ms,
         ),
         partial=partial,
         sla_budget_ms=sla_budget_ms,
+        rerank_strategy=rerank_applied,
     )
 
 
