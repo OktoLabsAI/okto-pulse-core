@@ -1531,3 +1531,108 @@ class DomainEventHandlerExecution(Base):
     next_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True,
     )
+
+
+# ============================================================================
+# Discovery — user-facing intent catalog, saved searches, search history
+# ============================================================================
+
+
+class DiscoveryIntent(Base):
+    """Catalog of user-facing "pre-built questions" surfaced on the Global
+    Discovery screen. Each row binds a human-friendly label to an existing
+    backend tool (MCP or REST) so clicking an intent card runs a canned
+    query. Managed via an admin UI (deferred to a follow-up card).
+    """
+
+    __tablename__ = "discovery_intents"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    tool_binding: Mapped[str] = mapped_column(String(120), nullable=False)
+    params_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    renderer: Mapped[str] = mapped_column(
+        String(40), nullable=False, server_default=text("'table'")
+    )
+    min_permission: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    active: Mapped[bool] = mapped_column(
+        nullable=False, default=True, server_default=text("1")
+    )
+    is_seed: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default=text("0")
+    )
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DiscoverySavedSearch(Base):
+    """A named search saved on a board. Shared with all members of the
+    board — per-user private saved searches are a v2 concern.
+    """
+
+    __tablename__ = "discovery_saved_searches"
+    __table_args__ = (
+        UniqueConstraint("board_id", "name", name="uq_saved_search_board_name"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intent_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("discovery_intents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    filters_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DiscoverySearchHistory(Base):
+    """Per-user search history. Capped at 50 most-recent entries per
+    (board_id, user_id) via on-INSERT DELETE in the endpoint handler.
+    """
+
+    __tablename__ = "discovery_search_history"
+    __table_args__ = (
+        Index(
+            "ix_search_history_board_user_time",
+            "board_id", "user_id", "searched_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intent_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("discovery_intents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    result_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    searched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+

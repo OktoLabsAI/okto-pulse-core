@@ -782,6 +782,107 @@ async def init_db() -> None:
     await _migrate_agent_permissions()
     await _reconcile_builtin_presets()
     await _reconcile_agent_permission_flags()
+    await _bootstrap_default_discovery_intents()
+
+
+async def _bootstrap_default_discovery_intents() -> None:
+    """Upsert the v1 seed catalog of Discovery intents.
+
+    Runs after Base.metadata.create_all so the discovery_intents table is
+    guaranteed to exist. Idempotent via ON CONFLICT on the unique `name`
+    column — re-running on an already-seeded DB is a no-op.
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    seeds = [
+        {
+            "name": "coverage_for_fr",
+            "label": "What covers this FR?",
+            "description": (
+                "Lists cards, scenarios and rules that cover a given functional "
+                "requirement on the current board."
+            ),
+            "category": "coverage_tracing",
+            "tool_binding": "okto_pulse_list_test_scenarios",
+            "params_schema": {
+                "fr_id": {"type": "text", "required": True, "label": "FR id"}
+            },
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "decisions_superseded",
+            "label": "Which decisions were superseded?",
+            "description": (
+                "Shows the supersedence chain for decisions on this board — "
+                "useful for auditing why a choice was replaced."
+            ),
+            "category": "decisions_history",
+            "tool_binding": "okto_pulse_kg_get_supersedence_chain",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "blockers_current_sprint",
+            "label": "What is blocking the current sprint?",
+            "description": (
+                "Lists cards blocked by unresolved dependencies in the active "
+                "sprint so the team can focus on unblocking them first."
+            ),
+            "category": "dependencies_blockers",
+            "tool_binding": "okto_pulse_list_blockers",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+    ]
+
+    async with get_engine().begin() as conn:
+        import json as _json
+        for s in seeds:
+            # Exists?
+            row = await conn.execute(
+                sa_text("SELECT id FROM discovery_intents WHERE name = :name"),
+                {"name": s["name"]},
+            )
+            if row.first() is not None:
+                continue  # already seeded
+
+            if dialect == "postgresql":
+                params_literal = s["params_schema"]
+            else:
+                params_literal = (
+                    _json.dumps(s["params_schema"])
+                    if s["params_schema"] is not None
+                    else None
+                )
+
+            import uuid as _uuid
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO discovery_intents "
+                    "(id, name, label, description, category, tool_binding, "
+                    " params_schema, renderer, min_permission, active, is_seed) "
+                    "VALUES "
+                    "(:id, :name, :label, :description, :category, :tool_binding, "
+                    " :params_schema, :renderer, :min_permission, :active, :is_seed)"
+                ),
+                {
+                    "id": str(_uuid.uuid4()),
+                    "name": s["name"],
+                    "label": s["label"],
+                    "description": s["description"],
+                    "category": s["category"],
+                    "tool_binding": s["tool_binding"],
+                    "params_schema": params_literal,
+                    "renderer": s["renderer"],
+                    "min_permission": s["min_permission"],
+                    "active": True,
+                    "is_seed": True,
+                },
+            )
 
 
 async def _migrate_add_event_tables() -> None:

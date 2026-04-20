@@ -4012,6 +4012,21 @@ class RefinementService:
                 f"Allowed transitions: {allowed_str}."
             )
 
+        # Content gate — draft→review requires at least one non-empty in_scope
+        # entry. Prevents stub refinements (no design intent captured) from
+        # leaking into review / approved / done where downstream tools
+        # (derive_spec, get_refinement_context) would operate on them.
+        if (
+            old_status == RefinementStatus.DRAFT
+            and data.status == RefinementStatus.REVIEW
+        ):
+            in_scope_items = refinement.in_scope or []
+            if not any(isinstance(s, str) and s.strip() for s in in_scope_items):
+                raise ValueError(
+                    "Refinement must have at least one in_scope item before "
+                    "moving to review.",
+                )
+
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, refinement.board_id)
 
         # Snapshot on done
