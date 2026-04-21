@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +35,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
           pip install pytest pytest-asyncio psutil
+
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check src/ || true
+
+      - name: Type check
+        run: |
+          pip install pyright
+          pyright src/ || true
 
       - name: Run KG lifecycle + file-handle tests (strict ResourceWarning)
         run: |
@@ -55,3 +65,39 @@ jobs:
           name: pytest-report-${{ matrix.os }}-py${{ matrix.python-version }}
           path: pytest-report.xml
           retention-days: 14
+
+      - name: Build package
+        run: |
+          pip install build
+          python -m build
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Dependency audit
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit
+
+      - name: License compliance
+        run: |
+          pip install pip-licenses
+          pip-licenses --fail-on="GNU General Public License v2 (GPLv2);GNU General Public License v3 (GPLv3);GNU Affero General Public License v3 (AGPLv3)"
+
+      - name: Secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
