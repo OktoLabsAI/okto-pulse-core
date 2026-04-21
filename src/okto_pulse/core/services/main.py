@@ -1503,12 +1503,63 @@ class CardService:
         return card
 
     async def delete_card(self, card_id: str, user_id: str) -> bool:
-        """Delete a card."""
+        """Delete a card.
+
+        Cascade-cleans orphan references before the row delete so the next
+        update_spec/create_card on the same spec doesn't trip
+        _validate_spec_linked_refs. Cleans 5 JSON containers on the parent
+        spec and the linked_test_task_ids column on any bug card that pointed
+        at this one. Same transaction as the delete.
+        """
         card = await self.get_card(card_id)
         if not card:
             return False
 
         board_id = card.board_id
+
+        # Cascade cleanup: strip card_id from every reference list on the
+        # parent spec. Must run BEFORE db.delete(card) so any validator
+        # running on the same session sees a consistent state.
+        if card.spec_id:
+            spec = await self.db.get(Spec, card.spec_id)
+            if spec is not None:
+                _SPEC_LINK_CONTAINERS = (
+                    "test_scenarios",
+                    "business_rules",
+                    "api_contracts",
+                    "technical_requirements",
+                    "decisions",
+                )
+                for container_name in _SPEC_LINK_CONTAINERS:
+                    items = getattr(spec, container_name, None) or []
+                    changed = False
+                    for item in items:
+                        linked = item.get("linked_task_ids") or []
+                        if card_id in linked:
+                            item["linked_task_ids"] = [
+                                tid for tid in linked if tid != card_id
+                            ]
+                            changed = True
+                    if changed:
+                        flag_modified(spec, container_name)
+
+        # Cascade cleanup: bug cards on the same board may reference this
+        # card via their columnar linked_test_task_ids. Non-bug cards only —
+        # deleting a bug card doesn't leave references elsewhere.
+        if getattr(card, "card_type", CardType.NORMAL) != CardType.BUG:
+            bugs_q = select(Card).where(
+                Card.board_id == board_id,
+                Card.card_type == CardType.BUG,
+            )
+            bugs_res = await self.db.execute(bugs_q)
+            for bug in bugs_res.scalars().all():
+                linked = bug.linked_test_task_ids or []
+                if card_id in linked:
+                    bug.linked_test_task_ids = [
+                        tid for tid in linked if tid != card_id
+                    ]
+                    flag_modified(bug, "linked_test_task_ids")
+
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self.db.delete(card)
 
