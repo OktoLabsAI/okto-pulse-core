@@ -1,6 +1,7 @@
 """MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
+from okto_pulse.core.mcp.helpers import parse_multi_value
 from okto_pulse.core.services.main import (
     AgentService,
     AttachmentService,
@@ -161,6 +163,18 @@ def _cache_set(agent_id: str, board_id: str, ctx: "AgentContext") -> None:
     _permission_cache[(agent_id, board_id)] = (time.time(), ctx)
 
 
+def invalidate_agent_cache(agent_id: str) -> None:
+    """Drop all cached AgentContext entries for an agent across all boards.
+
+    Call after any change that affects effective permissions (preset/flags
+    update, board grant/revoke, board overrides change). Without this,
+    agents see stale permissions for up to _PERMISSION_CACHE_TTL seconds.
+    """
+    keys_to_drop = [k for k in _permission_cache if k[0] == agent_id]
+    for k in keys_to_drop:
+        del _permission_cache[k]
+
+
 async def _get_authenticated_agent():
     """Get the agent authenticated via the active API key from the request."""
     api_key = _active_api_key
@@ -246,6 +260,23 @@ async def _log_card_activity(
         action=action, actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
         details=details,
     )
+
+
+async def _safe_spec_update(service, spec_id: str, agent_id: str, payload):
+    """Wrap SpecService.update_spec so the ValueError raised by
+    `_validate_spec_linked_refs` (orphan link references) is rendered as
+    a structured JSON error instead of propagating to the MCP transport
+    as a generic 500.
+
+    Returns a tuple (spec, error_json). On success: (spec, None). On
+    validation failure: (None, '{"error": "..."}').
+    """
+    try:
+        spec = await service.update_spec(spec_id, agent_id, payload)
+        return spec, None
+    except ValueError as exc:
+        import json as _json
+        return None, _json.dumps({"error": str(exc)})
 
 
 def _auth_error() -> str:
@@ -371,91 +402,20 @@ async def _resolve_binary_content(
         return None, f"file_url fetch failed: {e}"
 
 
-def _spec_coverage(spec, *, scenarios=None, rules=None, contracts=None, trs=None) -> dict:
-    """Compute coverage stats for spec gates. Uses overrides if provided (for in-flight updates)."""
-    acs = spec.acceptance_criteria or []
-    frs = spec.functional_requirements or []
-    _ts = scenarios if scenarios is not None else (spec.test_scenarios or [])
-    _brs = rules if rules is not None else (spec.business_rules or [])
-    _contracts = contracts if contracts is not None else (spec.api_contracts or [])
-    _trs = trs if trs is not None else (spec.technical_requirements or [])
+# D-8: helpers canônicos em services/analytics_service.py — re-exports para
+# preservar import paths existentes (tests + callers legados).
+from okto_pulse.core.services.analytics_service import (
+    decisions_stats as _decisions_stats,  # noqa: F401
+    filter_decisions_by_status as _filter_decisions_by_status,  # noqa: F401
+    render_decisions_markdown as _render_decisions_markdown,  # noqa: F401
+)
 
-    # AC coverage via test scenarios' linked_criteria
-    # linked_criteria can be int indices OR resolved text strings
-    covered_ac = set()
-    ac_text_set = {ac: i for i, ac in enumerate(acs)}
-    for ts in _ts:
-        for val in (ts.get("linked_criteria") or []):
-            if isinstance(val, int):
-                covered_ac.add(val)
-            elif isinstance(val, str):
-                # Match resolved text against AC list
-                for i, ac in enumerate(acs):
-                    if val == ac or ac.startswith(val) or val.startswith(ac):
-                        covered_ac.add(i)
-                        break
-    ac_total = len(acs)
-    ac_covered = len(covered_ac & set(range(ac_total)))
 
-    # FR coverage via business rules' linked_requirements
-    # linked_requirements can be int indices OR resolved text strings
-    covered_fr = set()
-    for br in _brs:
-        for val in (br.get("linked_requirements") or []):
-            if isinstance(val, int):
-                covered_fr.add(val)
-            elif isinstance(val, str):
-                for i, fr in enumerate(frs):
-                    if val == fr or fr.startswith(val) or val.startswith(fr):
-                        covered_fr.add(i)
-                        break
-    fr_total = len(frs)
-    fr_covered = len(covered_fr & set(range(fr_total)))
-
-    # Scenario → Task linkage
-    ts_total = len(_ts)
-    ts_linked = sum(1 for ts in _ts if ts.get("linked_task_ids"))
-
-    # BR → Task linkage
-    br_total = len(_brs)
-    br_linked = sum(1 for br in _brs if br.get("linked_task_ids"))
-
-    # Contract → Task linkage
-    c_total = len(_contracts)
-    c_linked = sum(1 for c in _contracts if c.get("linked_task_ids"))
-
-    # TR → Task linkage (structured only)
-    struct_trs = [t for t in _trs if isinstance(t, dict)]
-    tr_total = len(struct_trs)
-    tr_linked = sum(1 for t in struct_trs if t.get("linked_task_ids"))
-
-    def _pct(n, d):
-        return round((n / d * 100) if d > 0 else 100, 1)
-
-    return {
-        "ac_coverage_pct": _pct(ac_covered, ac_total),
-        "ac_covered": ac_covered,
-        "ac_total": ac_total,
-        "ac_uncovered_indices": sorted(set(range(ac_total)) - covered_ac),
-        "fr_coverage_pct": _pct(fr_covered, fr_total),
-        "fr_covered": fr_covered,
-        "fr_total": fr_total,
-        "fr_uncovered_indices": sorted(set(range(fr_total)) - covered_fr),
-        "scenario_task_linkage_pct": _pct(ts_linked, ts_total),
-        "scenarios_linked": ts_linked,
-        "scenarios_total": ts_total,
-        "br_task_linkage_pct": _pct(br_linked, br_total),
-        "brs_linked": br_linked,
-        "brs_total": br_total,
-        "contract_task_linkage_pct": _pct(c_linked, c_total),
-        "contracts_linked": c_linked,
-        "contracts_total": c_total,
-        "tr_task_linkage_pct": _pct(tr_linked, tr_total),
-        "trs_linked": tr_linked,
-        "trs_total": tr_total,
-        "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
-        "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
-    }
+# D-7: spec_coverage agora canônico em services/analytics_service.py — re-export
+# preserva callers existentes em mcp/server.py + tests.
+from okto_pulse.core.services.analytics_service import (  # noqa: E402
+    spec_coverage_summary as _spec_coverage,  # noqa: F401
+)
 
 
 # ============================================================================
@@ -476,6 +436,8 @@ async def okto_pulse_get_my_profile() -> str:
     if not agent:
         return json.dumps({"error": "Authentication failed"})
 
+    from okto_pulse.core.infra.permissions import generate_role_summary
+
     return json.dumps(
         {
             "id": agent.id,
@@ -484,6 +446,7 @@ async def okto_pulse_get_my_profile() -> str:
             "objective": agent.objective,
             "is_active": agent.is_active,
             "permissions": agent.permissions,
+            "role_summary": generate_role_summary(agent.permissions),
             "created_at": agent.created_at.isoformat(),
             "last_used_at": (
                 agent.last_used_at.isoformat() if agent.last_used_at else None
@@ -1144,6 +1107,8 @@ async def okto_pulse_list_agents(board_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
+    from okto_pulse.core.infra.permissions import generate_role_summary
+
     async with get_db_for_mcp() as db:
         service = AgentService(db)
         agents = await service.list_agents(board_id)
@@ -1157,6 +1122,7 @@ async def okto_pulse_list_agents(board_id: str) -> str:
                     "description": a.description,
                     "objective": a.objective,
                     "is_active": a.is_active,
+                    "role_summary": generate_role_summary(a.permissions),
                     "created_at": a.created_at.isoformat(),
                     "last_used_at": (
                         a.last_used_at.isoformat() if a.last_used_at else None
@@ -1433,7 +1399,9 @@ async def okto_pulse_create_card(
                             changed = True
                 if changed:
                     from okto_pulse.core.models.schemas import SpecUpdate as SU
-                    await spec_service.update_spec(spec_id, ctx.agent_id, SU(test_scenarios=scenarios))
+                    _, _err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SU(test_scenarios=scenarios))
+                    if _err:
+                        return _err
 
         board_service = BoardService(db)
         await board_service._log_activity(
@@ -1557,6 +1525,7 @@ async def okto_pulse_get_task_context(
     include_mockups: str = "true",
     include_qa: str = "true",
     include_comments: str = "true",
+    include_superseded: str = "false",
 ) -> str:
     """
     Get the FULL execution context for a task card. Aggregates the card data with
@@ -1590,6 +1559,7 @@ async def okto_pulse_get_task_context(
     _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
     _inc_qa = include_qa.lower() in ("true", "1", "yes")
     _inc_comments = include_comments.lower() in ("true", "1", "yes")
+    _inc_superseded = include_superseded.lower() in ("true", "1", "yes")
 
     async with get_db_for_mcp() as db:
         card_service = CardService(db)
@@ -1681,6 +1651,17 @@ async def okto_pulse_get_task_context(
                     "test_scenarios": spec.test_scenarios or [],
                     "business_rules": spec.business_rules or [],
                     "api_contracts": spec.api_contracts or [],
+                    "decisions": _filter_decisions_by_status(
+                        getattr(spec, "decisions", None) or [],
+                        include_superseded=_inc_superseded,
+                    ),
+                    "decisions_stats": _decisions_stats(
+                        getattr(spec, "decisions", None) or []
+                    ),
+                    "decisions_markdown": _render_decisions_markdown(
+                        getattr(spec, "decisions", None) or [],
+                        include_superseded=_inc_superseded,
+                    ),
                 }
 
                 if _inc_mockups and spec.screen_mockups:
@@ -3541,8 +3522,8 @@ async def okto_pulse_derive_spec_from_ideation(
     if perm_err:
         return _perm_error(perm_err)
 
-    _mockup_ids = [x.strip() for x in mockup_ids.split("|") if x.strip()] or None
-    _kb_ids = [x.strip() for x in kb_ids.split("|") if x.strip()] or None
+    _mockup_ids = parse_multi_value(mockup_ids) or None
+    _kb_ids = parse_multi_value(kb_ids) or None
 
     async with get_db_for_mcp() as db:
         service = IdeationService(db)
@@ -4015,25 +3996,20 @@ async def okto_pulse_create_refinement(
 
     from okto_pulse.core.models.schemas import RefinementCreate
 
-    def _split(val: str, sep: str) -> list[str] | None:
-        if not val:
-            return None
-        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
-
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
         refinement_data = RefinementCreate(
             ideation_id=ideation_id,
             title=title,
             description=description.replace("\\n", "\n") if description else None,
-            in_scope=_split(in_scope, "|"),
-            out_of_scope=_split(out_of_scope, "|"),
+            in_scope=parse_multi_value(in_scope) or None,
+            out_of_scope=parse_multi_value(out_of_scope) or None,
             analysis=analysis.replace("\\n", "\n") if analysis else None,
-            decisions=_split(decisions, "|"),
+            decisions=parse_multi_value(decisions) or None,
             assignee_id=assignee_id or None,
             labels=labels.split(",") if labels else None,
-            mockup_ids=[x.strip() for x in mockup_ids.split("|") if x.strip()] or None,
-            kb_ids=[x.strip() for x in kb_ids.split("|") if x.strip()] or None,
+            mockup_ids=parse_multi_value(mockup_ids) or None,
+            kb_ids=parse_multi_value(kb_ids) or None,
         )
 
         try:
@@ -4340,24 +4316,19 @@ async def okto_pulse_update_refinement(
 
     from okto_pulse.core.models.schemas import RefinementUpdate
 
-    def _split(val: str, sep: str) -> list[str] | None:
-        if not val:
-            return None
-        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
-
     update_kwargs: dict[str, Any] = {}
     if title:
         update_kwargs["title"] = title
     if description:
         update_kwargs["description"] = description.replace("\\n", "\n")
     if in_scope:
-        update_kwargs["in_scope"] = _split(in_scope, "|")
+        update_kwargs["in_scope"] = parse_multi_value(in_scope)
     if out_of_scope:
-        update_kwargs["out_of_scope"] = _split(out_of_scope, "|")
+        update_kwargs["out_of_scope"] = parse_multi_value(out_of_scope)
     if analysis:
         update_kwargs["analysis"] = analysis.replace("\\n", "\n")
     if decisions:
-        update_kwargs["decisions"] = _split(decisions, "|")
+        update_kwargs["decisions"] = parse_multi_value(decisions)
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
@@ -4513,8 +4484,8 @@ async def okto_pulse_derive_spec_from_refinement(
     if perm_err:
         return _perm_error(perm_err)
 
-    _mockup_ids = [x.strip() for x in mockup_ids.split("|") if x.strip()] or None
-    _kb_ids = [x.strip() for x in kb_ids.split("|") if x.strip()] or None
+    _mockup_ids = parse_multi_value(mockup_ids) or None
+    _kb_ids = parse_multi_value(kb_ids) or None
 
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
@@ -4892,20 +4863,15 @@ async def okto_pulse_create_spec(
             {"error": f"Invalid status. Must be one of: {[s.value for s in SpecStatus]}"}
         )
 
-    def _split(val: str, sep: str) -> list[str] | None:
-        if not val:
-            return None
-        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
-
     async with get_db_for_mcp() as db:
         service = SpecService(db)
         spec_data = SpecCreate(
             title=title,
             description=description.replace("\\n", "\n") if description else None,
             context=context.replace("\\n", "\n") if context else None,
-            functional_requirements=_split(functional_requirements, "|"),
-            technical_requirements=_trs_to_objects(_split(technical_requirements, "|")),
-            acceptance_criteria=_split(acceptance_criteria, "|"),
+            functional_requirements=parse_multi_value(functional_requirements) or None,
+            technical_requirements=_trs_to_objects(parse_multi_value(technical_requirements) or None),
+            acceptance_criteria=parse_multi_value(acceptance_criteria) or None,
             status=spec_status,
             assignee_id=assignee_id or None,
             labels=labels.split(",") if labels else None,
@@ -5003,6 +4969,7 @@ async def okto_pulse_get_spec_context(
     include_knowledge: str = "true",
     include_mockups: str = "true",
     include_qa: str = "true",
+    include_superseded: str = "false",
 ) -> str:
     """
     Get the FULL consolidated context of a spec. Returns ALL structured data
@@ -5019,6 +4986,11 @@ async def okto_pulse_get_spec_context(
         include_knowledge: Include knowledge base entries (default "true")
         include_mockups: Include screen mockups (default "true")
         include_qa: Include Q&A items (default "true")
+        include_superseded: When "false" (default), the `decisions` array
+            returns only entries with status="active" — noise reduction for
+            the common "what rules today?" path. Set to "true" to get the
+            full history (active + superseded + revoked). A `decisions_stats`
+            summary is always included so you can see what was filtered.
 
     Returns:
         JSON with complete spec context: all requirements + structured sections + artifacts + cards + sprints
@@ -5034,6 +5006,7 @@ async def okto_pulse_get_spec_context(
     _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
     _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
     _inc_qa = include_qa.lower() in ("true", "1", "yes")
+    _inc_superseded = include_superseded.lower() in ("true", "1", "yes")
 
     async with get_db_for_mcp() as db:
         spec_service = SpecService(db)
@@ -5066,11 +5039,19 @@ async def okto_pulse_get_spec_context(
             "test_scenarios": spec.test_scenarios or [],
             "business_rules": spec.business_rules or [],
             "api_contracts": spec.api_contracts or [],
+            "decisions": _filter_decisions_by_status(
+                getattr(spec, "decisions", None) or [],
+                include_superseded=_inc_superseded,
+            ),
+            "decisions_stats": _decisions_stats(
+                getattr(spec, "decisions", None) or []
+            ),
             # Evaluations
             "evaluations": spec.evaluations or [],
             # Skip flags
             "skip_test_coverage": spec.skip_test_coverage,
             "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
+            "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", True),
             "skip_qualitative_validation": getattr(spec, "skip_qualitative_validation", False),
             "validation_threshold": getattr(spec, "validation_threshold", None),
             # Cards
@@ -5264,11 +5245,6 @@ async def okto_pulse_update_spec(
 
     from okto_pulse.core.models.schemas import SpecUpdate
 
-    def _split(val: str, sep: str) -> list[str] | None:
-        if not val:
-            return None
-        return [item.strip().replace("\\n", "\n") for item in val.split(sep) if item.strip()]
-
     # Build update data with only non-empty fields
     update_kwargs: dict[str, Any] = {}
     if title:
@@ -5278,11 +5254,11 @@ async def okto_pulse_update_spec(
     if context:
         update_kwargs["context"] = context.replace("\\n", "\n")
     if functional_requirements:
-        update_kwargs["functional_requirements"] = _split(functional_requirements, "|")
+        update_kwargs["functional_requirements"] = parse_multi_value(functional_requirements)
     if technical_requirements:
-        update_kwargs["technical_requirements"] = _trs_to_objects(_split(technical_requirements, "|"))
+        update_kwargs["technical_requirements"] = _trs_to_objects(parse_multi_value(technical_requirements))
     if acceptance_criteria:
-        update_kwargs["acceptance_criteria"] = _split(acceptance_criteria, "|")
+        update_kwargs["acceptance_criteria"] = parse_multi_value(acceptance_criteria)
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
@@ -5295,7 +5271,9 @@ async def okto_pulse_update_spec(
 
     async with get_db_for_mcp() as db:
         service = SpecService(db)
-        spec = await service.update_spec(spec_id, ctx.agent_id, spec_update)
+        spec, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, spec_update)
+        if _err:
+            return _err
         await db.commit()
 
         if not spec:
@@ -5433,10 +5411,7 @@ async def okto_pulse_add_test_scenario(
         criteria_list = None
         if linked_criteria:
             criteria_list = []
-            for token in linked_criteria.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_criteria):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(criteria):
@@ -5467,7 +5442,9 @@ async def okto_pulse_add_test_scenario(
         scenarios.append(scenario)
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, scenarios=scenarios)
@@ -5694,12 +5671,18 @@ async def okto_pulse_link_task_to_scenario(
         if not found:
             return json.dumps({"error": f"Scenario '{scenario_id}' not found"})
 
-        from okto_pulse.core.models.schemas import SpecUpdate, CardUpdate
-        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
-
-        # Update card's test_scenario_ids (with max limit check)
+        # Verify card exists BEFORE writing — prevents orphan task references.
         card_service = CardService(db)
         card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": f"Card '{card_id}' not found — cannot link a non-existent card."})
+
+        from okto_pulse.core.models.schemas import SpecUpdate, CardUpdate
+        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
+        if err:
+            return err
+
+        # Update card's test_scenario_ids (with max limit check)
         if card:
             existing_ids = list(card.test_scenario_ids or [])
             if scenario_id not in existing_ids:
@@ -5773,7 +5756,9 @@ async def okto_pulse_link_task_to_rule(
             return json.dumps({"error": f"Business rule '{rule_id}' not found in spec"})
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        if err:
+            return err
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
@@ -5831,7 +5816,9 @@ async def okto_pulse_link_task_to_contract(
             return json.dumps({"error": f"API contract '{contract_id}' not found in spec"})
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        if err:
+            return err
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=contracts)
@@ -5893,7 +5880,9 @@ async def okto_pulse_link_task_to_tr(
             })
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await spec_service.update_spec(spec_id, ctx.agent_id, SpecUpdate(technical_requirements=trs))
+        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(technical_requirements=trs))
+        if err:
+            return err
         await db.commit()
 
         cov = _spec_coverage(spec, trs=trs)
@@ -6225,6 +6214,8 @@ async def okto_pulse_get_analytics(
             return json.dumps({"error": "Board not found"})
 
         if metric_type == "overview":
+            from okto_pulse.core.models.db import Sprint, SprintStatus
+
             # Ideations
             ideation_q = select(Ideation).where(Ideation.board_id == board_id)
             if dt_from:
@@ -6233,6 +6224,14 @@ async def okto_pulse_get_analytics(
                 ideation_q = ideation_q.where(Ideation.created_at <= dt_to)
             ideations = list((await db.execute(ideation_q)).scalars().all())
 
+            # Refinements
+            refinement_q = select(Refinement).where(Refinement.board_id == board_id)
+            if dt_from:
+                refinement_q = refinement_q.where(Refinement.created_at >= dt_from)
+            if dt_to:
+                refinement_q = refinement_q.where(Refinement.created_at <= dt_to)
+            refinements = list((await db.execute(refinement_q)).scalars().all())
+
             # Specs
             spec_q = select(Spec).where(Spec.board_id == board_id)
             if dt_from:
@@ -6240,6 +6239,14 @@ async def okto_pulse_get_analytics(
             if dt_to:
                 spec_q = spec_q.where(Spec.created_at <= dt_to)
             specs = list((await db.execute(spec_q)).scalars().all())
+
+            # Sprints
+            sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+            if dt_from:
+                sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
+            if dt_to:
+                sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
+            sprints = list((await db.execute(sprint_q)).scalars().all())
 
             # Cards
             card_q = select(Card).where(Card.board_id == board_id)
@@ -6252,7 +6259,9 @@ async def okto_pulse_get_analytics(
             impl_cards = [c for c in cards if not _is_test(c)]
             test_cards = [c for c in cards if _is_test(c)]
             done_cards = [c for c in cards if c.status == CardStatus.DONE]
+            bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
 
+            # --- Self-reported quality (from card.conclusions) ---
             comp_vals = []
             drift_vals = []
             for c in cards:
@@ -6262,29 +6271,91 @@ async def okto_pulse_get_analytics(
                 if concl and "drift" in concl:
                     drift_vals.append(concl["drift"])
 
+            avg_completeness = round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None
+            avg_drift = round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None
+
+            # --- Task Validation Gate (D-2 migrado em ideação #9) ---
+            # Delega ao service; MCP converge para o shape completo do REST
+            # (+ avg_attempts_per_card, first_pass_rate, rejection_reasons).
+            from okto_pulse.core.services.analytics_service import (
+                aggregate_spec_validation_gate as _agg_sv,
+                aggregate_task_validation_gate as _agg_tv,
+            )
+            task_validation_gate = _agg_tv(cards)
+            spec_validation_gate = _agg_sv(specs)
+
+            # Fallback: use validation scores if conclusion-based averages are empty
+            if avg_completeness is None and task_validation_gate["avg_scores"]["completeness"] is not None:
+                avg_completeness = task_validation_gate["avg_scores"]["completeness"]
+            if avg_drift is None and task_validation_gate["avg_scores"]["drift"] is not None:
+                avg_drift = task_validation_gate["avg_scores"]["drift"]
+
+            # --- Cycle time (from done cards) ---
+            cycle_times = []
+            for c in done_cards:
+                if c.created_at and c.updated_at:
+                    ct = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
+                    cycle_times.append(ct)
+            avg_cycle_hours = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None
+
+            # --- Lifecycle cycle times (created_at → updated_at for done items) ---
+            def _lifecycle_cycle_time(items, done_status) -> float | None:
+                times = []
+                for item in items:
+                    if str(getattr(item, "status", "")) == str(done_status) and item.created_at and item.updated_at:
+                        times.append(round((item.updated_at - item.created_at).total_seconds() / 3600.0, 1))
+                return round(sum(times) / len(times), 1) if times else None
+
+            # --- Sprint evaluations ---
+            sprint_evals_total = 0
+            sprint_eval_scores = []
+            for sp in sprints:
+                evals = getattr(sp, "evaluations", None) or []
+                if isinstance(evals, list):
+                    sprint_evals_total += len(evals)
+                    for e in evals:
+                        if isinstance(e, dict) and e.get("overall_score") is not None:
+                            sprint_eval_scores.append(int(e["overall_score"]))
+
             funnel = {
                 "ideations": len(ideations),
+                "refinements": len(refinements),
                 "specs": len(specs),
+                "sprints": len(sprints),
                 "cards": len(cards),
                 "done": len(done_cards),
             }
 
-            # Bug metrics
-            bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
             bugs_open = sum(1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED))
 
             return json.dumps({
                 "board_id": board_id,
                 "ideation_count": len(ideations),
+                "refinement_count": len(refinements),
                 "spec_count": len(specs),
+                "sprint_count": len(sprints),
                 "task_count": {
                     "total": len(cards),
                     "impl": len(impl_cards),
                     "tests": len(test_cards),
                     "bugs": len(bug_cards),
                 },
-                "avg_completeness": round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None,
-                "avg_drift": round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None,
+                "avg_completeness": avg_completeness,
+                "avg_drift": avg_drift,
+                "avg_cycle_hours": avg_cycle_hours,
+                "cycle_time": {
+                    "ideation": _lifecycle_cycle_time(ideations, "done"),
+                    "refinement": _lifecycle_cycle_time(refinements, "done"),
+                    "spec": _lifecycle_cycle_time(specs, "done"),
+                    "sprint": _lifecycle_cycle_time(sprints, "closed"),
+                    "card": avg_cycle_hours,
+                },
+                "task_validation_gate": task_validation_gate,
+                "spec_validation_gate": spec_validation_gate,
+                "sprint_evaluation": {
+                    "total_submitted": sprint_evals_total,
+                    "avg_overall_score": round(sum(sprint_eval_scores) / len(sprint_eval_scores), 1) if sprint_eval_scores else None,
+                },
                 "funnel": funnel,
                 "bugs": {
                     "total": len(bug_cards),
@@ -6299,27 +6370,14 @@ async def okto_pulse_get_analytics(
             }, default=str)
 
         elif metric_type == "funnel":
-            counts = {}
-            for model, key in [
-                (Ideation, "ideations"),
-                (Refinement, "refinements"),
-                (Spec, "specs"),
-                (Card, "cards"),
-            ]:
-                q = select(func.count(model.id)).where(model.board_id == board_id)
-                if dt_from:
-                    q = q.where(model.created_at >= dt_from)
-                if dt_to:
-                    q = q.where(model.created_at <= dt_to)
-                counts[key] = (await db.execute(q)).scalar() or 0
-
-            done_q = select(func.count(Card.id)).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
-            if dt_from:
-                done_q = done_q.where(Card.created_at >= dt_from)
-            if dt_to:
-                done_q = done_q.where(Card.created_at <= dt_to)
-            counts["done"] = (await db.execute(done_q)).scalar() or 0
-
+            # Delegado para service (D-4). MCP agora recebe o shape completo
+            # do REST: status_breakdowns, cards_by_type, BR/contract counts,
+            # cycle_time_by_phase, bug metrics.
+            from okto_pulse.core.services.analytics_service import compute_funnel
+            counts = await compute_funnel(
+                db, board_id, dt_from=dt_from, dt_to=dt_to,
+                include_archived=True,  # MCP histórico
+            )
             return json.dumps(counts, default=str)
 
         elif metric_type == "quality":
@@ -6343,64 +6401,27 @@ async def okto_pulse_get_analytics(
             return json.dumps(result, default=str)
 
         elif metric_type == "velocity":
-            q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
-            if dt_from:
-                q = q.where(Card.created_at >= dt_from)
-            if dt_to:
-                q = q.where(Card.created_at <= dt_to)
-            cards = list((await db.execute(q)).scalars().all())
-
-            from datetime import timedelta
-            now = datetime.now(timezone.utc)
-            buckets: dict[str, dict[str, int]] = {}
-            for i in range(12):
-                ws = now - timedelta(weeks=i)
-                ws = ws - timedelta(days=ws.weekday())
-                key = ws.strftime("%Y-%m-%d")
-                buckets[key] = {"impl": 0, "test": 0}
-
-            for c in cards:
-                if not c.updated_at:
-                    continue
-                updated = c.updated_at
-                if updated.tzinfo is None:
-                    updated = updated.replace(tzinfo=timezone.utc)
-                ws = updated - timedelta(days=updated.weekday())
-                key = ws.strftime("%Y-%m-%d")
-                if key in buckets:
-                    buckets[key]["test" if _is_test(c) else "impl"] += 1
-
-            velocity = [{"week": k, "impl": v["impl"], "test": v["test"]} for k, v in sorted(buckets.items())]
+            # Delegado para service (D-5). MCP agora suporta granularity=day|week,
+            # buckets configuráveis (weeks=12, days=30) e séries extras
+            # (bug, validation_bounce, spec_done, sprint_done) além de impl/test.
+            from okto_pulse.core.services.analytics_service import compute_velocity
+            velocity = await compute_velocity(
+                db, board_id,
+                granularity="week", weeks=12,
+                dt_from=dt_from, dt_to=dt_to,
+                include_archived=True,  # MCP histórico
+            )
             return json.dumps(velocity, default=str)
 
         elif metric_type == "coverage":
-            spec_q = select(Spec).where(Spec.board_id == board_id)
-            if dt_from:
-                spec_q = spec_q.where(Spec.created_at >= dt_from)
-            if dt_to:
-                spec_q = spec_q.where(Spec.created_at <= dt_to)
-            specs = list((await db.execute(spec_q)).scalars().all())
-
-            result = []
-            for s in specs:
-                ac_list = s.acceptance_criteria or []
-                scenarios = s.test_scenarios or []
-                covered_ac_ids: set[str] = set()
-                status_counts: dict[str, int] = {}
-                for ts in scenarios:
-                    if isinstance(ts, dict):
-                        for crit in (ts.get("linked_criteria") or []):
-                            covered_ac_ids.add(crit)
-                        ts_status = ts.get("status", "unknown")
-                        status_counts[ts_status] = status_counts.get(ts_status, 0) + 1
-                result.append({
-                    "spec_id": s.id,
-                    "title": s.title,
-                    "total_ac": len(ac_list),
-                    "covered_ac": len(covered_ac_ids),
-                    "total_scenarios": len(scenarios),
-                    "scenario_status_counts": status_counts,
-                })
+            # Delegado para o service layer (ideação #9 / D-1). MCP agora recebe
+            # os 4 campos extras que o REST já expunha: business_rules_count,
+            # api_contracts_count, fr_with_rules_pct, fr_with_contracts_pct.
+            from okto_pulse.core.services.analytics_service import compute_coverage
+            result = await compute_coverage(
+                db, board_id, dt_from=dt_from, dt_to=dt_to,
+                include_archived=True,  # preserva comportamento histórico MCP
+            )
             return json.dumps(result, default=str)
 
         elif metric_type == "agents":
@@ -6433,6 +6454,62 @@ async def okto_pulse_get_analytics(
 
         else:
             return json.dumps({"error": f"Unknown metric_type: {metric_type}. Use one of: overview, funnel, quality, velocity, coverage, agents"})
+
+
+@mcp.tool()
+async def okto_pulse_list_blockers(
+    board_id: str,
+    stale_hours: int = 72,
+    filter_type: str = "",
+) -> str:
+    """
+    Triage view of everything stalling the funnel, with root-cause classification.
+
+    Every returned entry carries a `type` so the agent can act directly:
+
+    - `dependency_blocked` — card is active while at least one `depends_on`
+      target is not DONE.
+    - `on_hold` — card is explicitly paused (status=on_hold).
+    - `stale` — card is started/in_progress/validation and hasn't been
+      touched for more than `stale_hours`.
+    - `spec_pending_validation` — spec is approved but has no 'approve'
+      evaluation yet, blocking promotion to in_progress.
+    - `spec_no_cards` — spec is validated/in_progress but has zero linked
+      cards (implementation hasn't started).
+    - `uncovered_scenario` — test scenario has no linked test card, so the
+      test-coverage gate will fail.
+
+    Args:
+        board_id: Board ID
+        stale_hours: Cards unchanged longer than this while active are flagged
+            as stale (default 72, ≥1).
+        filter_type: Optional — return only blockers of this type. Empty returns all.
+
+    Returns:
+        JSON ``{summary: {<type>: count}, total: int, blockers: [...]}``
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    if stale_hours < 1:
+        return json.dumps({"error": "stale_hours must be >= 1"})
+
+    # Delegado ao service (D-6 ideação #9). REST board_blockers agora também
+    # aceita filter_type, garantindo paridade 1:1 com este tool.
+    from okto_pulse.core.services.analytics_service import compute_blockers
+
+    async with get_db_for_mcp() as db:
+        result = await compute_blockers(
+            db, board_id,
+            stale_hours=stale_hours,
+            filter_type=filter_type or None,
+        )
+        return json.dumps(result, default=str)
 
 
 # ============================================================================
@@ -6491,10 +6568,7 @@ async def okto_pulse_add_business_rule(
         req_list = None
         if linked_requirements:
             req_list = []
-            for token in linked_requirements.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_requirements):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(frs):
@@ -6521,7 +6595,9 @@ async def okto_pulse_add_business_rule(
         rules.append(br)
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
@@ -6599,10 +6675,7 @@ async def okto_pulse_update_business_rule(
             target["linked_requirements"] = None
         elif linked_requirements:
             req_list = []
-            for token in linked_requirements.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_requirements):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(frs):
@@ -6617,7 +6690,9 @@ async def okto_pulse_update_business_rule(
             target["linked_requirements"] = req_list
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
@@ -6661,11 +6736,478 @@ async def okto_pulse_remove_business_rule(
             return json.dumps({"error": f"Business rule '{rule_id}' not found"})
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(business_rules=new_rules))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(business_rules=new_rules))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, rules=new_rules)
         return json.dumps({"success": True, "removed": rule_id, "remaining": len(new_rules), "coverage": cov})
+
+
+# ============================================================================
+# Decisions — formalized design choices on a spec (spec b66d2562)
+#
+# Decision vs BusinessRule: a Decision records *why* a choice was made
+# ("We chose Kùzu over Neo4j because..."); a BusinessRule is a prescriptive
+# norm ("The system MUST clamp scores at 1.5"). They're distinct entities
+# with distinct semantics — don't mix them.
+# ============================================================================
+
+
+def _parse_linked_requirements(raw: str, frs: list) -> tuple[list[str] | None, str | None]:
+    """Parse a pipe-separated "0|2|5" into resolved FR references.
+
+    Returns (list_or_None, error_str). CLEAR empties the list explicitly.
+    """
+    if not raw:
+        return None, None
+    if raw.strip().upper() == "CLEAR":
+        return [], None
+    out: list[str] = []
+    for token in parse_multi_value(raw):
+        try:
+            idx = int(token)
+        except ValueError:
+            # Accept resolved text as-is
+            out.append(token)
+            continue
+        if 0 <= idx < len(frs):
+            # Keep the index as a string — aligned with BR/TR convention
+            out.append(str(idx))
+        else:
+            return None, f"Requirement index {idx} out of range (0-{len(frs)-1})"
+    return out, None
+
+
+@mcp.tool()
+async def okto_pulse_add_decision(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    rationale: str,
+    context: str = "",
+    alternatives_considered: str = "",
+    supersedes_decision_id: str = "",
+    linked_requirements: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Add a formalized Decision to a spec.
+
+    A Decision records a contextual CHOICE — the reasoning behind picking one
+    path over alternatives. Different from BusinessRule (which is a NORM, a
+    prescriptive "DEVE" statement): use a Decision to capture design
+    intent, tradeoffs, or team consensus. The KG extracts Decisions into
+    queryable nodes, and the optional coverage gate (opt-in) can require each
+    Decision to have ≥1 linked task.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        title: Decision title (e.g. "Use Kùzu embedded over Neo4j")
+        rationale: Why this choice was made
+        context: When/where this applies (optional)
+        alternatives_considered: Pipe-separated list of alternatives (e.g. "Neo4j|DuckDB")
+        supersedes_decision_id: id of another Decision this one replaces; it auto-moves to status=superseded
+        linked_requirements: Pipe-separated FR indices (e.g. "0|2")
+        notes: Additional notes
+
+    Returns:
+        JSON with created decision and spec coverage snapshot
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        frs = spec.functional_requirements or []
+        req_list, err = _parse_linked_requirements(linked_requirements, frs)
+        if err:
+            return json.dumps({"error": err})
+
+        alts = None
+        if alternatives_considered:
+            alts = parse_multi_value(alternatives_considered)
+
+        decisions = list(spec.decisions or [])
+
+        # Auto-supersede: if the new decision supersedes an existing one,
+        # flip the target's status to "superseded" in the same update.
+        if supersedes_decision_id:
+            found_target = False
+            for d in decisions:
+                if d.get("id") == supersedes_decision_id:
+                    d["status"] = "superseded"
+                    found_target = True
+                    break
+            if not found_target:
+                return json.dumps({
+                    "error": f"supersedes_decision_id '{supersedes_decision_id}' "
+                             f"not found in spec.decisions"
+                })
+
+        dec_id = f"dec_{_uuid.uuid4().hex[:8]}"
+        decision = {
+            "id": dec_id,
+            "title": title,
+            "rationale": rationale.replace("\\n", "\n"),
+            "context": context.replace("\\n", "\n") if context else None,
+            "alternatives_considered": alts,
+            "supersedes_decision_id": supersedes_decision_id or None,
+            "linked_requirements": req_list,
+            "linked_task_ids": None,
+            "status": "active",
+            "notes": notes.replace("\\n", "\n") if notes else None,
+        }
+        decisions.append(decision)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=decisions),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps(
+            {"success": True, "decision": decision, "decisions_total": len(decisions)},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_update_decision(
+    board_id: str,
+    spec_id: str,
+    decision_id: str,
+    title: str = "",
+    rationale: str = "",
+    context: str = "",
+    alternatives_considered: str = "",
+    supersedes_decision_id: str = "",
+    linked_requirements: str = "",
+    notes: str = "",
+    status: str = "",
+) -> str:
+    """
+    Update an existing Decision. Only non-empty fields are changed; pass "CLEAR"
+    to wipe optional string/list fields.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        decision_id: Decision ID ("dec_...")
+        title: New title (optional)
+        rationale: New rationale (optional)
+        context: New context (optional, "CLEAR" to remove)
+        alternatives_considered: Pipe-separated list (optional, "CLEAR" to remove)
+        supersedes_decision_id: New target Decision id, or "CLEAR" to unset
+        linked_requirements: Pipe-separated FR indices ("CLEAR" to empty)
+        notes: Notes (optional, "CLEAR" to remove)
+        status: One of "active", "superseded", "revoked" (optional)
+
+    Returns:
+        JSON with updated decision
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        decisions = list(spec.decisions or [])
+        target = next((d for d in decisions if d.get("id") == decision_id), None)
+        if target is None:
+            return json.dumps({"error": f"Decision '{decision_id}' not found"})
+
+        if title:
+            target["title"] = title
+        if rationale:
+            target["rationale"] = rationale.replace("\\n", "\n")
+        if context:
+            target["context"] = None if context.strip().upper() == "CLEAR" else context.replace("\\n", "\n")
+        if alternatives_considered:
+            if alternatives_considered.strip().upper() == "CLEAR":
+                target["alternatives_considered"] = None
+            else:
+                target["alternatives_considered"] = parse_multi_value(
+                    alternatives_considered
+                )
+        if supersedes_decision_id:
+            if supersedes_decision_id.strip().upper() == "CLEAR":
+                target["supersedes_decision_id"] = None
+            else:
+                target["supersedes_decision_id"] = supersedes_decision_id
+                # Also flip the referenced decision's status
+                for d in decisions:
+                    if d.get("id") == supersedes_decision_id:
+                        d["status"] = "superseded"
+                        break
+        if linked_requirements:
+            frs = spec.functional_requirements or []
+            req_list, err = _parse_linked_requirements(linked_requirements, frs)
+            if err:
+                return json.dumps({"error": err})
+            target["linked_requirements"] = req_list or None
+        if notes:
+            target["notes"] = None if notes.strip().upper() == "CLEAR" else notes.replace("\\n", "\n")
+        if status:
+            if status not in ("active", "superseded", "revoked"):
+                return json.dumps({"error": f"Invalid status '{status}'. Use active/superseded/revoked."})
+            target["status"] = status
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=decisions),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps({"success": True, "decision": target}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_remove_decision(
+    board_id: str,
+    spec_id: str,
+    decision_id: str,
+) -> str:
+    """
+    Remove a Decision (soft-delete: status becomes "revoked").
+
+    Preserves history so the KG still surfaces the decision with its
+    revocation reason. Use okto_pulse_update_decision with status=active to
+    restore.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        decision_id: Decision ID ("dec_...")
+
+    Returns:
+        JSON confirmation
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        decisions = list(spec.decisions or [])
+        target = next((d for d in decisions if d.get("id") == decision_id), None)
+        if target is None:
+            return json.dumps({"error": f"Decision '{decision_id}' not found"})
+
+        target["status"] = "revoked"
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=decisions),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps({"success": True, "revoked": decision_id, "decision": target})
+
+
+@mcp.tool()
+async def okto_pulse_link_task_to_decision(
+    board_id: str,
+    spec_id: str,
+    decision_id: str,
+    card_id: str,
+) -> str:
+    """
+    Link a task card to a Decision, creating traceability.
+
+    Idempotent — re-linking the same card is a no-op. Symmetric with
+    okto_pulse_link_task_to_rule; populates decision.linked_task_ids so the
+    opt-in coverage gate (skip_decisions_coverage=False) can verify each
+    active Decision has at least one linked task.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+        decision_id: Decision ID
+        card_id: Card ID to link
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        decisions = list(spec.decisions or [])
+        target = next((d for d in decisions if d.get("id") == decision_id), None)
+        if target is None:
+            return json.dumps({"error": f"Decision '{decision_id}' not found"})
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        if card_id not in task_ids:
+            task_ids.append(card_id)
+        target["linked_task_ids"] = task_ids
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            spec_service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=decisions),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps({
+            "success": True,
+            "decision_id": decision_id,
+            "card_id": card_id,
+            "linked_tasks": task_ids,
+        })
+
+
+@mcp.tool()
+async def okto_pulse_migrate_spec_decisions(
+    board_id: str,
+    spec_id: str,
+) -> str:
+    """
+    One-shot migrator: extract "## Decisions" markdown bullets from spec.context
+    into structured spec.decisions[] entries, then remove the block from context.
+
+    Idempotent — running twice on a migrated spec is a no-op. Existing
+    decisions are preserved; only the markdown-sourced ones are added, and
+    duplicates (same title) are skipped.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID
+
+    Returns:
+        JSON with migration summary (decisions_added, context_modified)
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    import re
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        context_text = spec.context or ""
+        # Match the ## Decisions block up to the next heading or EOF. Bullets
+        # are "- " prefixed. Mirrors the worker's existing extractor.
+        pattern = re.compile(
+            r"(?m)^##\s+Decisions\s*\n((?:(?:[-*]\s+.*\n?)|\s*\n)+?)(?=^##\s+|\Z)"
+        )
+        match = pattern.search(context_text)
+        if not match:
+            return json.dumps({
+                "success": True,
+                "decisions_added": 0,
+                "context_modified": False,
+                "note": "No '## Decisions' block found — nothing to migrate.",
+            })
+
+        bullets_block = match.group(1)
+        bullet_pat = re.compile(r"^[-*]\s+(.+?)\s*$", re.MULTILINE)
+        raw_bullets = [b.strip() for b in bullet_pat.findall(bullets_block) if b.strip()]
+
+        existing = list(spec.decisions or [])
+        existing_titles = {d.get("title", "").strip() for d in existing}
+
+        added: list[dict] = []
+        for raw in raw_bullets:
+            if raw in existing_titles:
+                continue  # idempotent dedupe
+            dec = {
+                "id": f"dec_{_uuid.uuid4().hex[:8]}",
+                "title": raw[:200],
+                "rationale": raw,  # no richer context available from bullets
+                "context": None,
+                "alternatives_considered": None,
+                "supersedes_decision_id": None,
+                "linked_requirements": None,
+                "linked_task_ids": None,
+                "status": "active",
+                "notes": "Migrated from spec.context '## Decisions' markdown",
+            }
+            existing.append(dec)
+            existing_titles.add(dec["title"])
+            added.append(dec)
+
+        # Remove the block from context (only if we consumed bullets — or always,
+        # so the markdown source disappears and the extractor's backward-compat
+        # path doesn't re-emit the same decisions on next consolidation).
+        new_context = pattern.sub("", context_text).rstrip() + "\n"
+        context_modified = new_context.strip() != (context_text or "").strip()
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id,
+            SpecUpdate(decisions=existing, context=new_context),
+        )
+        if _err:
+            return _err
+        await db.commit()
+
+        return json.dumps({
+            "success": True,
+            "decisions_added": len(added),
+            "context_modified": context_modified,
+            "added": [{"id": d["id"], "title": d["title"]} for d in added],
+        })
 
 
 @mcp.tool()
@@ -6803,10 +7345,7 @@ async def okto_pulse_add_api_contract(
         req_list = None
         if linked_requirements:
             req_list = []
-            for token in linked_requirements.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_requirements):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(frs):
@@ -6824,10 +7363,7 @@ async def okto_pulse_add_api_contract(
         if linked_rules:
             rule_ids = {r.get("id") for r in existing_rules}
             rules_list = []
-            for token in linked_rules.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_rules):
                 if token in rule_ids:
                     rules_list.append(token)
                 else:
@@ -6850,7 +7386,9 @@ async def okto_pulse_add_api_contract(
         contracts.append(contract)
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=contracts)
@@ -6959,10 +7497,7 @@ async def okto_pulse_update_api_contract(
             target["linked_requirements"] = None
         elif linked_requirements:
             req_list = []
-            for token in linked_requirements.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_requirements):
                 try:
                     idx = int(token)
                     if 0 <= idx < len(frs):
@@ -6982,10 +7517,7 @@ async def okto_pulse_update_api_contract(
         elif linked_rules:
             rule_ids = {r.get("id") for r in existing_rules}
             rules_list = []
-            for token in linked_rules.split("|"):
-                token = token.strip()
-                if not token:
-                    continue
+            for token in parse_multi_value(linked_rules):
                 if token in rule_ids:
                     rules_list.append(token)
                 else:
@@ -6993,7 +7525,9 @@ async def okto_pulse_update_api_contract(
             target["linked_rules"] = rules_list
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        if _err:
+            return _err
         await db.commit()
 
         return json.dumps({"success": True, "api_contract": target}, default=str)
@@ -7036,7 +7570,9 @@ async def okto_pulse_remove_api_contract(
             return json.dumps({"error": f"API contract '{contract_id}' not found"})
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        await service.update_spec(spec_id, ctx.agent_id, SpecUpdate(api_contracts=new_contracts))
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=new_contracts))
+        if _err:
+            return _err
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=new_contracts)
@@ -7138,7 +7674,9 @@ async def _load_entity_mockups(db, entity_type: str, entity_id: str):
 async def _save_entity_mockups(service, entity_type, entity_id, agent_id, screens, UpdateClass):
     """Save screen_mockups back to the entity."""
     if entity_type == "spec":
-        await service.update_spec(entity_id, agent_id, UpdateClass(screen_mockups=screens))
+        _, _err = await _safe_spec_update(service, entity_id, agent_id, UpdateClass(screen_mockups=screens))
+        if _err:
+            return _err
     elif entity_type == "ideation":
         await service.update_ideation(entity_id, agent_id, UpdateClass(screen_mockups=screens))
     elif entity_type == "refinement":
@@ -7548,7 +8086,7 @@ async def okto_pulse_create_guideline(
             return json.dumps({"error": "Board not found"})
 
         from okto_pulse.core.models.schemas import GuidelineCreate
-        tag_list = [t.strip() for t in tags.split("|") if t.strip()] if tags else None
+        tag_list = parse_multi_value(tags) or None
         data = GuidelineCreate(
             title=title,
             content=content,
@@ -7608,7 +8146,7 @@ async def okto_pulse_update_guideline(
         data = GuidelineUpdate(
             title=title or None,
             content=content or None,
-            tags=[t.strip() for t in tags.split("|") if t.strip()] if tags else None,
+            tags=parse_multi_value(tags) or None,
         )
 
         service = GuidelineService(db)
@@ -9169,6 +9707,8 @@ async def okto_pulse_create_sprint(
     spec_id: str,
     title: str,
     description: str = "",
+    objective: str = "",
+    expected_outcome: str = "",
     test_scenario_ids: str = "",
     business_rule_ids: str = "",
     start_date: str = "",
@@ -9182,7 +9722,9 @@ async def okto_pulse_create_sprint(
         board_id: Board ID
         spec_id: Spec ID this sprint belongs to
         title: Sprint title
-        description: Sprint objective/goal (optional)
+        description: Sprint description with scope and deliverables (optional)
+        objective: What this sprint aims to achieve (optional but recommended)
+        expected_outcome: What success looks like when this sprint is done (optional but recommended)
         test_scenario_ids: Comma-separated spec test scenario IDs scoped to this sprint (optional)
         business_rule_ids: Comma-separated spec business rule IDs scoped to this sprint (optional)
         start_date: ISO date string (optional)
@@ -9213,6 +9755,8 @@ async def okto_pulse_create_sprint(
         try:
             data = SprintCreate(
                 title=title, description=description or None, spec_id=spec_id,
+                objective=objective or None,
+                expected_outcome=expected_outcome or None,
                 test_scenario_ids=[x.strip() for x in test_scenario_ids.split(",") if x.strip()] or None,
                 business_rule_ids=[x.strip() for x in business_rule_ids.split(",") if x.strip()] or None,
                 start_date=start_date or None, end_date=end_date or None,
@@ -9844,6 +10388,161 @@ async def okto_pulse_answer_sprint_question(
 
 
 @mcp.tool()
+async def okto_pulse_delete_spec_question(board_id: str, spec_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from a spec. Use this to invalidate outdated questions
+    or remove resolved clarifications that no longer apply.
+
+    Args:
+        board_id: Board ID
+        spec_id: Spec ID (for context/logging)
+        qa_id: Q&A item ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecQAService(db)
+        deleted = await service.delete_question(qa_id)
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="spec_question_deleted",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"spec_id": spec_id, "qa_id": qa_id},
+        )
+        await db.commit()
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_delete_ideation_question(board_id: str, ideation_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from an ideation. Use this to invalidate outdated questions
+    or remove resolved clarifications that no longer apply.
+
+    Args:
+        board_id: Board ID
+        ideation_id: Ideation ID (for context/logging)
+        qa_id: Q&A item ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import IdeationQAService
+        service = IdeationQAService(db)
+        deleted = await service.delete_question(qa_id)
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="ideation_question_deleted",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"ideation_id": ideation_id, "qa_id": qa_id},
+        )
+        await db.commit()
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_delete_refinement_question(board_id: str, refinement_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from a refinement. Use this to invalidate outdated questions
+    or remove resolved clarifications that no longer apply.
+
+    Args:
+        board_id: Board ID
+        refinement_id: Refinement ID (for context/logging)
+        qa_id: Q&A item ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import RefinementQAService
+        service = RefinementQAService(db)
+        deleted = await service.delete_question(qa_id)
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="refinement_question_deleted",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"refinement_id": refinement_id, "qa_id": qa_id},
+        )
+        await db.commit()
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_delete_sprint_question(board_id: str, sprint_id: str, qa_id: str) -> str:
+    """
+    Delete a Q&A item from a sprint. Use this to invalidate outdated questions
+    or remove resolved clarifications that no longer apply.
+
+    Args:
+        board_id: Board ID
+        sprint_id: Sprint ID (for context/logging)
+        qa_id: Q&A item ID to delete
+
+    Returns:
+        JSON with success status
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.QA_DELETE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.main import SprintQAService
+        service = SprintQAService(db)
+        deleted = await service.delete_question(qa_id)
+        if not deleted:
+            return json.dumps({"error": "Q&A item not found"})
+
+        board_service = BoardService(db)
+        await board_service._log_activity(
+            board_id=board_id, action="sprint_question_deleted",
+            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+            details={"sprint_id": sprint_id, "qa_id": qa_id},
+        )
+        await db.commit()
+        return json.dumps({"success": True})
+
+
+@mcp.tool()
 async def okto_pulse_suggest_sprints(
     board_id: str,
     spec_id: str,
@@ -10179,6 +10878,20 @@ async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
 
 
 # ============================================================================
+# KG CONSOLIDATION PRIMITIVES (MVP Fase 0)
+# ============================================================================
+
+from okto_pulse.core.mcp.kg_tools import register_kg_tools as _register_kg_tools
+from okto_pulse.core.mcp.kg_query_tools import register_kg_query_tools as _register_kg_query_tools
+
+_register_kg_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
+_register_kg_query_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
+
+from okto_pulse.core.mcp.kg_power_tools import register_kg_power_tools as _register_kg_power_tools
+_register_kg_power_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
+
+
+# ============================================================================
 # SERVER STARTUP
 # ============================================================================
 
@@ -10194,7 +10907,9 @@ def run_mcp_server():
 
     http_app = mcp.http_app(transport="streamable-http")
     wrapped = ApiKeySessionMiddleware(http_app)
-    uvicorn.run(wrapped, host="0.0.0.0", port=settings.mcp_port)
+    # Read port from environment (set by CLI) or use settings
+    port = int(os.environ.get("MCP_PORT", str(settings.mcp_port)))
+    uvicorn.run(wrapped, host="127.0.0.1", port=port, ws="wsproto")
 
 
 if __name__ == "__main__":

@@ -44,8 +44,48 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await init_db()
-        yield
-        await close_db()
+
+        # Import events package BEFORE dispatcher.start — side-effect of
+        # importing handlers is @register_handler populating the registry.
+        # Dispatcher relies on the registry being complete when it drains.
+        from okto_pulse.core import events as _events  # noqa: F401
+        from okto_pulse.core.events.dispatcher import EventDispatcher, set_dispatcher
+
+        event_dispatcher = EventDispatcher(get_session_factory())
+        await event_dispatcher.start()
+        set_dispatcher(event_dispatcher)
+
+        # Start the KG session cleanup worker if enabled. Safe to call even
+        # when the KG layer is unused — the worker just sweeps an empty
+        # SessionManager and costs one asyncio.sleep per interval.
+        cleanup_worker = None
+        if getattr(settings, "kg_cleanup_enabled", True):
+            from okto_pulse.core.kg.workers import get_cleanup_worker
+
+            cleanup_worker = get_cleanup_worker()
+            await cleanup_worker.start()
+        # Start the global discovery outbox worker. Populates the meta-graph
+        # from GlobalUpdateOutbox events so cross-board search works.
+        outbox_worker = None
+        try:
+            from okto_pulse.core.kg.global_discovery.outbox_worker import get_outbox_worker
+            outbox_worker = get_outbox_worker()
+            await outbox_worker.start()
+        except Exception:
+            # Kùzu may not be installed — log and continue
+            pass
+        try:
+            yield
+        finally:
+            # Reverse order: stop dispatcher first so in-flight handlers
+            # finish before the downstream workers they depend on exit.
+            await event_dispatcher.stop(timeout=5.0)
+            set_dispatcher(None)
+            if cleanup_worker is not None:
+                await cleanup_worker.stop()
+            if outbox_worker is not None:
+                await outbox_worker.stop()
+            await close_db()
 
     app = FastAPI(
         title=settings.app_name,

@@ -15,12 +15,14 @@ from okto_pulse.core.models.db import (
     ActivityLog,
     Board,
     Card,
+    CardDependency,
     CardStatus,
     CardType,
     Ideation,
     IdeationQAItem,
     IdeationStatus,
     Refinement,
+    RefinementStatus,
     Spec,
     SpecStatus,
     Sprint,
@@ -66,26 +68,65 @@ def _extract_conclusion(card) -> dict | None:
 
 
 def _is_test_card(card) -> bool:
-    """True if the card is a test card. Prefers card_type=TEST; falls back to
-    non-empty test_scenario_ids for pre-card_type cards."""
-    ct = getattr(card, "card_type", None)
-    if ct is not None and str(ct).endswith("test"):
-        return True
-    ids = card.test_scenario_ids
-    return bool(ids and isinstance(ids, list) and len(ids) > 0)
+    """True if the card is explicitly typed as a test card."""
+    return getattr(card, "card_type", None) == CardType.TEST
 
 
 def _is_normal_card(card) -> bool:
-    """True if card_type is normal (not bug, not test)."""
-    ct = getattr(card, "card_type", None)
-    if ct is None:
-        return not _is_test_card(card)
-    return str(ct).endswith("normal")
+    """True if card_type is NORMAL. Contrato rígido — sem fallback."""
+    return getattr(card, "card_type", None) == CardType.NORMAL
 
 
 def _is_bug_card(card) -> bool:
-    ct = getattr(card, "card_type", None)
-    return ct is not None and str(ct).endswith("bug")
+    """True if card_type is BUG."""
+    return getattr(card, "card_type", None) == CardType.BUG
+
+
+def _resolve_linked_criteria_to_indices(
+    linked_list: list | None, ac_list: list[str]
+) -> set[int]:
+    """Normalize heterogeneous `linked_criteria` entries into a deduplicated set of
+    0-based AC indices.
+
+    Scenarios in the wild store entries in three shapes (historical drift across
+    code paths): `int`, numeric `str` (e.g. ``"3"``), or full AC text. Without
+    normalization, a set over raw values double-counts the same AC when multiple
+    shapes coexist in one spec — producing `covered_ac > total_ac`.
+
+    Out-of-range indices and unmatched texts are dropped silently so the invariant
+    `covered_ac <= total_ac` holds even for degenerate inputs.
+    """
+    if not linked_list or not ac_list:
+        return set()
+    valid_range = range(len(ac_list))
+    resolved: set[int] = set()
+    for entry in linked_list:
+        if isinstance(entry, bool):
+            # bool is a subclass of int in Python; reject to avoid True→1 coincidences
+            continue
+        if isinstance(entry, int):
+            if entry in valid_range:
+                resolved.add(entry)
+            continue
+        if isinstance(entry, str):
+            stripped = entry.strip()
+            if not stripped:
+                continue
+            # numeric-string index
+            try:
+                idx = int(stripped)
+            except ValueError:
+                pass
+            else:
+                if idx in valid_range:
+                    resolved.add(idx)
+                continue
+            # text match — tolerant, aligned with mcp/server.py::_spec_coverage
+            for i, ac in enumerate(ac_list):
+                if stripped == ac or ac.startswith(stripped) or stripped.startswith(ac):
+                    resolved.add(i)
+                    break
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -107,41 +148,14 @@ def _is_bug_card(card) -> bool:
 # D4 (all history): aggregations walk the full array regardless of active flag.
 
 
-def _classify_spec_violation(violations: list[str], recommendation: str) -> list[str]:
-    """Map a spec validation's threshold_violations + recommendation to reason
-    buckets. Returns a list of 0..N reasons from:
-    {completeness_below, assertiveness_below, ambiguity_above, reject_recommendation}.
-    """
-    reasons: list[str] = []
-    for v in violations or []:
-        v_lower = str(v).lower()
-        if "completeness" in v_lower:
-            reasons.append("completeness_below")
-        elif "assertiveness" in v_lower:
-            reasons.append("assertiveness_below")
-        elif "ambiguity" in v_lower:
-            reasons.append("ambiguity_above")
-    if recommendation == "reject":
-        reasons.append("reject_recommendation")
-    return reasons
-
-
-def _classify_task_violation(violations: list[str], recommendation: str) -> list[str]:
-    """Map a task validation's threshold_violations + recommendation to reason
-    buckets: {confidence_below, completeness_below, drift_above, reject_recommendation}.
-    """
-    reasons: list[str] = []
-    for v in violations or []:
-        v_lower = str(v).lower()
-        if "confidence" in v_lower:
-            reasons.append("confidence_below")
-        elif "completeness" in v_lower:
-            reasons.append("completeness_below")
-        elif "drift" in v_lower:
-            reasons.append("drift_above")
-    if recommendation == "reject":
-        reasons.append("reject_recommendation")
-    return reasons
+# D-2/D-3 migrados (ideação #9): classify helpers + aggregators vivem no
+# service layer. Mantemos aliases locais para preservar call sites existentes.
+from okto_pulse.core.services.analytics_service import (  # noqa: E402
+    aggregate_spec_validation_gate as _aggregate_spec_validation_gate,
+    aggregate_task_validation_gate as _aggregate_task_validation_gate,
+    classify_spec_violation as _classify_spec_violation,
+    classify_task_violation as _classify_task_violation,
+)
 
 
 def _safe_int(val, default: int = 0) -> int:
@@ -153,148 +167,6 @@ def _safe_int(val, default: int = 0) -> int:
 
 def _avg(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 1) if values else None
-
-
-def _aggregate_spec_validation_gate(specs: list) -> dict:
-    """Aggregate Spec Validation Gate metrics across a collection of specs.
-
-    Returns:
-        {
-          total_submitted, total_success, total_failed, success_rate (0-100),
-          avg_attempts_per_spec, avg_scores: {completeness, assertiveness, ambiguity},
-          rejection_reasons: {completeness_below, assertiveness_below,
-                              ambiguity_above, reject_recommendation},
-          specs_with_validation: int,
-        }
-    """
-    total_submitted = 0
-    total_success = 0
-    total_failed = 0
-    completeness_vals: list[float] = []
-    assertiveness_vals: list[float] = []
-    ambiguity_vals: list[float] = []
-    reasons: dict[str, int] = {
-        "completeness_below": 0,
-        "assertiveness_below": 0,
-        "ambiguity_above": 0,
-        "reject_recommendation": 0,
-    }
-    specs_with_validation = 0
-    attempts_per_spec: list[int] = []
-
-    for s in specs:
-        vals = getattr(s, "validations", None) or []
-        if not isinstance(vals, list) or len(vals) == 0:
-            continue
-        specs_with_validation += 1
-        attempts_per_spec.append(len(vals))
-        for v in vals:
-            if not isinstance(v, dict):
-                continue
-            total_submitted += 1
-            outcome = v.get("outcome")
-            if outcome == "success":
-                total_success += 1
-            elif outcome == "failed":
-                total_failed += 1
-                for r in _classify_spec_violation(
-                    v.get("threshold_violations") or [],
-                    v.get("recommendation", ""),
-                ):
-                    reasons[r] = reasons.get(r, 0) + 1
-            completeness_vals.append(_safe_int(v.get("completeness")))
-            assertiveness_vals.append(_safe_int(v.get("assertiveness")))
-            ambiguity_vals.append(_safe_int(v.get("ambiguity")))
-
-    return {
-        "total_submitted": total_submitted,
-        "total_success": total_success,
-        "total_failed": total_failed,
-        "success_rate": round(total_success / total_submitted * 100, 1) if total_submitted else None,
-        "avg_attempts_per_spec": round(sum(attempts_per_spec) / len(attempts_per_spec), 2) if attempts_per_spec else None,
-        "avg_scores": {
-            "completeness": _avg(completeness_vals),
-            "assertiveness": _avg(assertiveness_vals),
-            "ambiguity": _avg(ambiguity_vals),
-        },
-        "rejection_reasons": reasons,
-        "specs_with_validation": specs_with_validation,
-    }
-
-
-def _aggregate_task_validation_gate(cards: list) -> dict:
-    """Aggregate Task Validation Gate metrics across a collection of cards.
-
-    Returns similar shape as _aggregate_spec_validation_gate but for
-    confidence/completeness/drift dimensions.
-    """
-    total_submitted = 0
-    total_success = 0
-    total_failed = 0
-    confidence_vals: list[float] = []
-    completeness_vals: list[float] = []
-    drift_vals: list[float] = []
-    reasons: dict[str, int] = {
-        "confidence_below": 0,
-        "completeness_below": 0,
-        "drift_above": 0,
-        "reject_recommendation": 0,
-    }
-    cards_with_validation = 0
-    attempts_per_card: list[int] = []
-    first_pass_count = 0  # cards where the FIRST validation had outcome=success
-
-    for c in cards:
-        vals = getattr(c, "validations", None) or []
-        if not isinstance(vals, list) or len(vals) == 0:
-            continue
-        cards_with_validation += 1
-        attempts_per_card.append(len(vals))
-        if isinstance(vals[0], dict) and vals[0].get("outcome") == "success":
-            first_pass_count += 1
-        for v in vals:
-            if not isinstance(v, dict):
-                continue
-            total_submitted += 1
-            outcome = v.get("outcome")
-            verdict = v.get("verdict")
-            is_success = outcome == "success" or verdict == "pass"
-            is_failed = outcome == "failed" or verdict == "fail"
-            if is_success:
-                total_success += 1
-            elif is_failed:
-                total_failed += 1
-                for r in _classify_task_violation(
-                    v.get("threshold_violations") or [],
-                    v.get("recommendation", ""),
-                ):
-                    reasons[r] = reasons.get(r, 0) + 1
-            # Dual-naming support: completeness/drift were renamed from estimated_*
-            confidence_vals.append(_safe_int(v.get("confidence")))
-            completeness_vals.append(_safe_int(
-                v.get("completeness") if v.get("completeness") is not None
-                else v.get("estimated_completeness")
-            ))
-            drift_vals.append(_safe_int(
-                v.get("drift") if v.get("drift") is not None
-                else v.get("estimated_drift")
-            ))
-
-    return {
-        "total_submitted": total_submitted,
-        "total_success": total_success,
-        "total_failed": total_failed,
-        "success_rate": round(total_success / total_submitted * 100, 1) if total_submitted else None,
-        "avg_attempts_per_card": round(sum(attempts_per_card) / len(attempts_per_card), 2) if attempts_per_card else None,
-        "first_pass_rate": round(first_pass_count / cards_with_validation * 100, 1) if cards_with_validation else None,
-        "avg_scores": {
-            "confidence": _avg(confidence_vals),
-            "completeness": _avg(completeness_vals),
-            "drift": _avg(drift_vals),
-        },
-        "rejection_reasons": reasons,
-        "cards_with_validation": cards_with_validation,
-    }
 
 
 def _aggregate_spec_evaluation(specs: list) -> dict:
@@ -349,11 +221,18 @@ def _aggregate_spec_evaluation(specs: list) -> dict:
 
 
 def _aggregate_sprint_evaluation(sprints: list) -> dict:
-    """Aggregate Sprint Evaluation gate across sprints."""
+    """Aggregate Sprint Evaluation gate across sprints.
+
+    Shape harmonizado com _aggregate_spec_evaluation — inclui
+    avg_dimension_scores (vazio quando não há dimensões) para que
+    consumers possam processar ambos os evaluation types com o mesmo
+    código.
+    """
     total = 0
     total_approve = 0
     total_reject = 0
     overall_vals: list[float] = []
+    dimension_avgs: dict[str, list[float]] = {}
     sprints_with_eval = 0
 
     for sp in sprints:
@@ -372,6 +251,12 @@ def _aggregate_sprint_evaluation(sprints: list) -> dict:
                 total_reject += 1
             if e.get("overall_score") is not None:
                 overall_vals.append(_safe_int(e.get("overall_score")))
+            dims = e.get("dimensions", {})
+            if isinstance(dims, dict):
+                for k, v in dims.items():
+                    score = v.get("score") if isinstance(v, dict) else v
+                    if score is not None:
+                        dimension_avgs.setdefault(k, []).append(_safe_int(score))
 
     return {
         "total_submitted": total,
@@ -379,6 +264,7 @@ def _aggregate_sprint_evaluation(sprints: list) -> dict:
         "total_reject": total_reject,
         "approve_rate": round(total_approve / total * 100, 1) if total else None,
         "avg_overall_score": _avg(overall_vals),
+        "avg_dimension_scores": {k: _avg(v) for k, v in dimension_avgs.items()},
         "sprints_with_evaluation": sprints_with_eval,
     }
 
@@ -441,7 +327,18 @@ async def analytics_overview(
     db: AsyncSession = Depends(get_db),
 ):
     """Cross-board KPIs: totals, lifecycle status breakdowns, validation gates,
-    sprint summary, funnel, velocity, board list."""
+    sprint summary, funnel, velocity, board list.
+
+    Semântica de campos opcionais:
+    - ``avg_triage_hours``: null quando não há bugs triados no período
+      (sem bugs com ``linked_test_task_ids`` populado). Não é erro —
+      indica ausência do sinal.
+    - ``bug_rate_per_spec``: retorna apenas specs com ``rate > 0``.
+      Specs sem bugs são omitidas da lista para reduzir o payload.
+    - ``sprint_evaluation``: mesmo shape que ``spec_evaluation``
+      (inclui ``avg_dimension_scores`` — dict vazio quando nenhum
+      sprint_evaluation carrega dimensions).
+    """
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
@@ -464,7 +361,7 @@ async def analytics_overview(
             "task_validation_gate": _aggregate_task_validation_gate([]),
             "spec_evaluation": _aggregate_spec_evaluation([]),
             "sprint_evaluation": _aggregate_sprint_evaluation([]),
-            "funnel": {"ideations": 0, "refinements": 0, "specs": 0, "sprints": 0, "cards": 0, "done": 0},
+            "funnel": {"ideations": 0, "refinements": 0, "specs": 0, "sprints": 0, "cards": 0, "tests": 0, "bugs": 0, "done": 0},
             "velocity": [],
             "boards": [],
             "total_bugs": 0, "bugs_open": 0, "bugs_done": 0,
@@ -474,7 +371,10 @@ async def analytics_overview(
         }
 
     # --- Ideations ---
-    ideation_q = select(Ideation).where(Ideation.board_id.in_(board_ids))
+    ideation_q = select(Ideation).where(
+        Ideation.board_id.in_(board_ids),
+        Ideation.archived.is_(False),
+    )
     if dt_from:
         ideation_q = ideation_q.where(Ideation.created_at >= dt_from)
     if dt_to:
@@ -482,7 +382,10 @@ async def analytics_overview(
     ideations = list((await db.execute(ideation_q)).scalars().all())
 
     # --- Refinements ---
-    refinement_q = select(Refinement).where(Refinement.board_id.in_(board_ids))
+    refinement_q = select(Refinement).where(
+        Refinement.board_id.in_(board_ids),
+        Refinement.archived.is_(False),
+    )
     if dt_from:
         refinement_q = refinement_q.where(Refinement.created_at >= dt_from)
     if dt_to:
@@ -490,7 +393,10 @@ async def analytics_overview(
     refinements = list((await db.execute(refinement_q)).scalars().all())
 
     # --- Specs ---
-    spec_q = select(Spec).where(Spec.board_id.in_(board_ids))
+    spec_q = select(Spec).where(
+        Spec.board_id.in_(board_ids),
+        Spec.archived.is_(False),
+    )
     if dt_from:
         spec_q = spec_q.where(Spec.created_at >= dt_from)
     if dt_to:
@@ -498,7 +404,10 @@ async def analytics_overview(
     specs = list((await db.execute(spec_q)).scalars().all())
 
     # --- Cards ---
-    card_q = select(Card).where(Card.board_id.in_(board_ids))
+    card_q = select(Card).where(
+        Card.board_id.in_(board_ids),
+        Card.archived.is_(False),
+    )
     if dt_from:
         card_q = card_q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -510,7 +419,10 @@ async def analytics_overview(
     bug_cards_all = [c for c in cards if _is_bug_card(c)]
 
     # --- Sprints ---
-    sprint_q = select(Sprint).where(Sprint.board_id.in_(board_ids))
+    sprint_q = select(Sprint).where(
+        Sprint.board_id.in_(board_ids),
+        Sprint.archived.is_(False),
+    )
     if dt_from:
         sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
     if dt_to:
@@ -526,6 +438,9 @@ async def analytics_overview(
             concl_completeness.append(concl.get("completeness", 100))
             concl_drift.append(concl.get("drift", 0))
 
+    avg_completeness = _avg(concl_completeness)
+    avg_drift = _avg(concl_drift)
+
     # Reviewer-reported scores come from _aggregate_task_validation_gate.
 
     # Funnel
@@ -536,6 +451,8 @@ async def analytics_overview(
         "specs": len(specs),
         "sprints": len(sprints),
         "cards": len(cards),
+        "tests": len(test_cards),
+        "bugs": len(bug_cards_all),
         "done": len(done_cards),
     }
 
@@ -600,12 +517,14 @@ async def analytics_overview(
         sid = c.spec_id or "unlinked"
         bugs_per_spec[sid] = bugs_per_spec.get(sid, 0) + 1
 
-    # Bug rate per spec (bugs / total tasks in that spec)
+    # Bug rate per spec (bugs / total tasks in that spec) — only specs
+    # with at least one bug. Specs com rate=0 poluem o payload sem trazer
+    # sinal; consumer que precisa da lista completa usa /boards/{id}/specs.
     bug_rate_per_spec = []
     for s in specs:
         s_cards = [c for c in cards if c.spec_id == s.id]
-        s_bugs = [c for c in s_cards if getattr(c, "card_type", "normal") == "bug"]
-        if s_cards:
+        s_bugs = [c for c in s_cards if _is_bug_card(c)]
+        if s_cards and s_bugs:
             bug_rate_per_spec.append({
                 "spec_id": s.id,
                 "spec_title": s.title,
@@ -632,6 +551,35 @@ async def analytics_overview(
 
     avg_triage_hours = round(sum(triage_times) / len(triage_times), 1) if triage_times else None
 
+    # Fallback: use validation scores if conclusion-based averages are empty
+    if avg_completeness is None and task_validation_gate["avg_scores"]["completeness"] is not None:
+        avg_completeness = task_validation_gate["avg_scores"]["completeness"]
+    if avg_drift is None and task_validation_gate["avg_scores"]["drift"] is not None:
+        avg_drift = task_validation_gate["avg_scores"]["drift"]
+
+    # Cycle time: avg hours from created_at to updated_at for done cards
+    cycle_times: list[float] = []
+    for c in done_cards:
+        if c.created_at and c.updated_at:
+            ct = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
+            cycle_times.append(ct)
+    avg_cycle_hours = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None
+
+    def _lifecycle_ct(items, done_status_str: str) -> float | None:
+        times = []
+        for item in items:
+            if str(item.status) == done_status_str and item.created_at and item.updated_at:
+                times.append((item.updated_at - item.created_at).total_seconds() / 3600.0)
+        return round(sum(times) / len(times), 1) if times else None
+
+    cycle_time_by_level = {
+        "ideation": _lifecycle_ct(ideations, str(IdeationStatus.DONE)),
+        "refinement": _lifecycle_ct(refinements, str(RefinementStatus.DONE)),
+        "spec": _lifecycle_ct(specs, str(SpecStatus.DONE)),
+        "sprint": _lifecycle_ct(sprints, str(SprintStatus.CLOSED)),
+        "card": avg_cycle_hours,
+    }
+
     return {
         "total_ideations": len(ideations),
         "ideations_done": ideations_done,
@@ -649,6 +597,12 @@ async def analytics_overview(
         "total_cards_impl": len(impl_cards),
         "total_cards_test": len(test_cards),
         "total_cards_bug": len(bug_cards_all),
+        # Self-reported quality (with validation fallback)
+        "avg_completeness": avg_completeness,
+        "avg_drift": avg_drift,
+        # Cycle time
+        "avg_cycle_hours": avg_cycle_hours,
+        "cycle_time": cycle_time_by_level,
         # Validation gates — reviewer-reported metrics
         "spec_validation_gate": spec_validation_gate,
         "task_validation_gate": task_validation_gate,
@@ -668,6 +622,54 @@ async def analytics_overview(
 
 
 # ---------------------------------------------------------------------------
+# 2b) GET /boards/{board_id}/analytics/blockers — Triage with root-cause
+# ---------------------------------------------------------------------------
+
+
+@router.get("/boards/{board_id}/analytics/blockers")
+async def board_blockers(
+    board_id: str,
+    stale_hours: int = Query(
+        72,
+        description="Cards unchanged for more than this many hours while in an active state are flagged as stale.",
+        ge=1,
+    ),
+    filter_type: str | None = Query(
+        None,
+        description=(
+            "Optional: return only blockers of this type. "
+            "One of: dependency_blocked, on_hold, stale, "
+            "spec_pending_validation, spec_no_cards, uncovered_scenario."
+        ),
+    ),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Triage endpoint: every artifact blocking the funnel, classified by
+    root cause so an agent can act directly instead of scanning each level.
+
+    Categories (non-overlapping; a card can appear in multiple):
+
+    - ``dependency_blocked`` — card is not_started/started while at least one
+      of its `depends_on_id` targets has NOT reached the DONE status.
+    - ``on_hold`` — card is explicitly paused (status=on_hold).
+    - ``stale`` — card is in_progress/started/validation but
+      ``now() - updated_at > stale_hours``.
+    - ``spec_pending_validation`` — spec is approved but lacks an 'approve'
+      validation gate (unable to promote to in_progress).
+    - ``spec_no_cards`` — spec is validated/in_progress but has ZERO
+      non-archived cards linked to it.
+    - ``uncovered_scenarios`` — scenarios with no linked test cards.
+    """
+    from okto_pulse.core.services.analytics_service import compute_blockers
+
+    await _ensure_board(db, board_id, user_id)
+    return await compute_blockers(
+        db, board_id, stale_hours=stale_hours, filter_type=filter_type,
+    )
+
+
+# ---------------------------------------------------------------------------
 # 2) GET /boards/{board_id}/analytics/funnel — Board funnel
 # ---------------------------------------------------------------------------
 
@@ -681,102 +683,14 @@ async def board_funnel(
     db: AsyncSession = Depends(get_db),
 ):
     """Funnel for a single board: ideations -> refinements -> specs -> cards -> done."""
+    from okto_pulse.core.services.analytics_service import compute_funnel
+
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
     await _ensure_board(db, board_id, user_id)
 
-    counts: dict = {}
-    for model, key in [
-        (Ideation, "ideations"),
-        (Refinement, "refinements"),
-        (Spec, "specs"),
-        (Sprint, "sprints"),
-        (Card, "cards"),
-    ]:
-        q = select(func.count(model.id)).where(model.board_id == board_id)
-        if dt_from:
-            q = q.where(model.created_at >= dt_from)
-        if dt_to:
-            q = q.where(model.created_at <= dt_to)
-        counts[key] = (await db.execute(q)).scalar() or 0
-
-    # Done cards
-    done_q = (
-        select(func.count(Card.id))
-        .where(Card.board_id == board_id, Card.status == CardStatus.DONE)
-    )
-    if dt_from:
-        done_q = done_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        done_q = done_q.where(Card.created_at <= dt_to)
-    counts["done"] = (await db.execute(done_q)).scalar() or 0
-
-    # Status breakdowns for KPIs
-    ideations_done_q = select(func.count(Ideation.id)).where(
-        Ideation.board_id == board_id, Ideation.status == IdeationStatus.DONE
-    )
-    specs_done_q = select(func.count(Spec.id)).where(
-        Spec.board_id == board_id, Spec.status == SpecStatus.DONE
-    )
-    if dt_from:
-        ideations_done_q = ideations_done_q.where(Ideation.created_at >= dt_from)
-        specs_done_q = specs_done_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        ideations_done_q = ideations_done_q.where(Ideation.created_at <= dt_to)
-        specs_done_q = specs_done_q.where(Spec.created_at <= dt_to)
-
-    counts["ideations_done"] = (await db.execute(ideations_done_q)).scalar() or 0
-    counts["specs_done"] = (await db.execute(specs_done_q)).scalar() or 0
-
-    # Impl / test / bug cards (Python-side filtering — JSON-backed card_type)
-    all_cards_q = select(Card).where(Card.board_id == board_id)
-    if dt_from:
-        all_cards_q = all_cards_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        all_cards_q = all_cards_q.where(Card.created_at <= dt_to)
-    all_cards = list((await db.execute(all_cards_q)).scalars().all())
-    counts["cards_impl"] = sum(1 for c in all_cards if _is_normal_card(c))
-    counts["cards_test"] = sum(1 for c in all_cards if _is_test_card(c))
-    counts["cards_bug"] = sum(1 for c in all_cards if _is_bug_card(c))
-
-    # Business Rules & API Contracts for the board
-    spec_objs_q = select(Spec).where(Spec.board_id == board_id)
-    if dt_from:
-        spec_objs_q = spec_objs_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        spec_objs_q = spec_objs_q.where(Spec.created_at <= dt_to)
-    spec_objs = list((await db.execute(spec_objs_q)).scalars().all())
-
-    counts["rules_count"] = sum(len(s.business_rules or []) for s in spec_objs)
-    counts["contracts_count"] = sum(len(s.api_contracts or []) for s in spec_objs)
-    counts["specs_with_rules"] = sum(1 for s in spec_objs if s.business_rules and len(s.business_rules) > 0)
-    counts["specs_with_contracts"] = sum(1 for s in spec_objs if s.api_contracts and len(s.api_contracts) > 0)
-
-    # Status breakdowns — full lifecycle visibility
-    counts["spec_status_breakdown"] = _spec_status_breakdown(spec_objs)
-    counts["card_status_breakdown"] = _card_status_breakdown(all_cards)
-
-    # Sprint breakdown
-    sprint_objs_q = select(Sprint).where(Sprint.board_id == board_id)
-    if dt_from:
-        sprint_objs_q = sprint_objs_q.where(Sprint.created_at >= dt_from)
-    if dt_to:
-        sprint_objs_q = sprint_objs_q.where(Sprint.created_at <= dt_to)
-    sprint_objs = list((await db.execute(sprint_objs_q)).scalars().all())
-    counts["sprint_status_breakdown"] = _sprint_status_breakdown(sprint_objs)
-
-    # Bug metrics for board
-    bug_cards = [c for c in all_cards if _is_bug_card(c)]
-    counts["bugs_total"] = len(bug_cards)
-    counts["bugs_open"] = sum(1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED))
-    counts["bugs_by_severity"] = {
-        "critical": sum(1 for c in bug_cards if getattr(c, "severity", None) == "critical"),
-        "major": sum(1 for c in bug_cards if getattr(c, "severity", None) == "major"),
-        "minor": sum(1 for c in bug_cards if getattr(c, "severity", None) == "minor"),
-    }
-
-    return counts
+    return await compute_funnel(db, board_id, dt_from=dt_from, dt_to=dt_to)
 
 
 # ---------------------------------------------------------------------------
@@ -804,7 +718,11 @@ async def board_quality(
 
     await _ensure_board(db, board_id, user_id)
 
-    q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
+    q = select(Card).where(
+        Card.board_id == board_id,
+        Card.status == CardStatus.DONE,
+        Card.archived.is_(False),
+    )
     if dt_from:
         q = q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -859,25 +777,36 @@ async def board_quality(
 async def board_velocity(
     board_id: str,
     weeks: int = Query(12, ge=1, le=52),
+    days: int = Query(30, ge=1, le=365),
+    granularity: str = Query(
+        "week",
+        description="'week' (default) buckets by Monday-aligned week and uses `weeks`; 'day' buckets per calendar day and uses `days`.",
+    ),
     date_from: str | None = Query(None, alias="from"),
     date_to: str | None = Query(None, alias="to"),
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Cards done per week, stacked by impl/test/bug + validation_bounce series."""
+    """Velocity stacked by impl/test/bug with validation_bounce +
+    spec_done/sprint_done overlays. Supports week or day granularity.
+    """
+    if granularity not in ("week", "day"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"granularity must be 'week' or 'day', got {granularity!r}",
+        )
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
     await _ensure_board(db, board_id, user_id)
 
-    all_q = select(Card).where(Card.board_id == board_id)
-    if dt_from:
-        all_q = all_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        all_q = all_q.where(Card.created_at <= dt_to)
-    all_cards = list((await db.execute(all_q)).scalars().all())
-    done_cards = [c for c in all_cards if c.status == CardStatus.DONE]
-    return _compute_velocity(done_cards, weeks, all_cards=all_cards)
+    from okto_pulse.core.services.analytics_service import compute_velocity
+
+    return await compute_velocity(
+        db, board_id,
+        granularity=granularity, weeks=weeks, days=days,
+        dt_from=dt_from, dt_to=dt_to,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -894,67 +823,14 @@ async def board_coverage(
     db: AsyncSession = Depends(get_db),
 ):
     """Test coverage per spec: AC count, covered ACs, test scenario status counts."""
+    from okto_pulse.core.services.analytics_service import compute_coverage
+
     dt_from = _parse_date(date_from)
     dt_to = _parse_date(date_to, end_of_day=True)
 
     await _ensure_board(db, board_id, user_id)
 
-    spec_q = select(Spec).where(Spec.board_id == board_id)
-    if dt_from:
-        spec_q = spec_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        spec_q = spec_q.where(Spec.created_at <= dt_to)
-    specs = list((await db.execute(spec_q)).scalars().all())
-
-    result = []
-    for s in specs:
-        ac_list = s.acceptance_criteria or []
-        total_ac = len(ac_list)
-
-        scenarios = s.test_scenarios or []
-        # Covered ACs: ACs referenced in at least one test scenario's linked_criteria
-        covered_ac_ids: set[str] = set()
-        status_counts: dict[str, int] = {}
-        for ts in scenarios:
-            if isinstance(ts, dict):
-                for crit in (ts.get("linked_criteria") or []):
-                    covered_ac_ids.add(crit)
-                ts_status = ts.get("status", "unknown")
-                status_counts[ts_status] = status_counts.get(ts_status, 0) + 1
-
-        # Business rules & API contracts coverage
-        brs = s.business_rules or []
-        contracts = s.api_contracts or []
-        frs = s.functional_requirements or []
-        total_frs = len(frs)
-
-        # FRs with at least one BR linked
-        fr_indices_with_rules: set[int] = set()
-        for br in brs:
-            if isinstance(br, dict):
-                fr_indices_with_rules |= _resolve_linked_fr_indices(br.get("linked_requirements") or [], frs)
-        fr_with_rules_pct = round(len(fr_indices_with_rules) / total_frs * 100, 1) if total_frs > 0 else 0
-
-        # FRs with at least one contract linked
-        fr_indices_with_contracts: set[int] = set()
-        for ct in contracts:
-            if isinstance(ct, dict):
-                fr_indices_with_contracts |= _resolve_linked_fr_indices(ct.get("linked_requirements") or [], frs)
-        fr_with_contracts_pct = round(len(fr_indices_with_contracts) / total_frs * 100, 1) if total_frs > 0 else 0
-
-        result.append({
-            "spec_id": s.id,
-            "title": s.title,
-            "total_ac": total_ac,
-            "covered_ac": len(covered_ac_ids),
-            "total_scenarios": len(scenarios),
-            "scenario_status_counts": status_counts,
-            "business_rules_count": len(brs),
-            "api_contracts_count": len(contracts),
-            "fr_with_rules_pct": fr_with_rules_pct,
-            "fr_with_contracts_pct": fr_with_contracts_pct,
-        })
-    return result
+    return await compute_coverage(db, board_id, dt_from=dt_from, dt_to=dt_to)
 
 
 # ---------------------------------------------------------------------------
@@ -983,21 +859,30 @@ async def board_validations(
 
     await _ensure_board(db, board_id, user_id)
 
-    spec_q = select(Spec).where(Spec.board_id == board_id)
+    spec_q = select(Spec).where(
+        Spec.board_id == board_id,
+        Spec.archived.is_(False),
+    )
     if dt_from:
         spec_q = spec_q.where(Spec.created_at >= dt_from)
     if dt_to:
         spec_q = spec_q.where(Spec.created_at <= dt_to)
     specs = list((await db.execute(spec_q)).scalars().all())
 
-    card_q = select(Card).where(Card.board_id == board_id)
+    card_q = select(Card).where(
+        Card.board_id == board_id,
+        Card.archived.is_(False),
+    )
     if dt_from:
         card_q = card_q.where(Card.created_at >= dt_from)
     if dt_to:
         card_q = card_q.where(Card.created_at <= dt_to)
     cards = list((await db.execute(card_q)).scalars().all())
 
-    sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+    sprint_q = select(Sprint).where(
+        Sprint.board_id == board_id,
+        Sprint.archived.is_(False),
+    )
     if dt_from:
         sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
     if dt_to:
@@ -1098,14 +983,20 @@ async def board_sprints_analytics(
 
     await _ensure_board(db, board_id, user_id)
 
-    sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+    sprint_q = select(Sprint).where(
+        Sprint.board_id == board_id,
+        Sprint.archived.is_(False),
+    )
     if dt_from:
         sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
     if dt_to:
         sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
     sprints = list((await db.execute(sprint_q)).scalars().all())
 
-    card_q = select(Card).where(Card.board_id == board_id)
+    card_q = select(Card).where(
+        Card.board_id == board_id,
+        Card.archived.is_(False),
+    )
     if dt_from:
         card_q = card_q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -1129,6 +1020,26 @@ async def board_sprints_analytics(
                 "created_at": evals[-1].get("created_at"),
             }
         task_gate = _aggregate_task_validation_gate(sp_cards)
+
+        # Self-reported quality from card.conclusions on this sprint's cards.
+        # Falls back to the validation gate's reviewer-reported avg_scores when
+        # no implementer conclusions exist (e.g. validation-gate-only flow).
+        sp_completeness: list[float] = []
+        sp_drift: list[float] = []
+        for c in sp_cards:
+            concl = _extract_conclusion(c)
+            if concl:
+                if concl.get("completeness") is not None:
+                    sp_completeness.append(concl["completeness"])
+                if concl.get("drift") is not None:
+                    sp_drift.append(concl["drift"])
+        avg_completeness = _avg(sp_completeness)
+        avg_drift = _avg(sp_drift)
+        if avg_completeness is None:
+            avg_completeness = task_gate["avg_scores"].get("completeness")
+        if avg_drift is None:
+            avg_drift = task_gate["avg_scores"].get("drift")
+
         per_sprint.append({
             "sprint_id": sp.id,
             "title": sp.title,
@@ -1137,6 +1048,8 @@ async def board_sprints_analytics(
             "total_cards": total,
             "done_cards": done,
             "completion_rate": completion_rate,
+            "avg_completeness": avg_completeness,
+            "avg_drift": avg_drift,
             "card_status_breakdown": _card_status_breakdown(sp_cards),
             "evaluations_count": len(evals),
             "last_evaluation": last_eval,
@@ -1185,7 +1098,7 @@ async def board_spec_analytics(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
 
     cards = list((await db.execute(
-        select(Card).where(Card.spec_id == spec_id)
+        select(Card).where(Card.spec_id == spec_id, Card.archived.is_(False))
     )).scalars().all())
 
     # Validation timeline: all submissions (D4), oldest first
@@ -1260,7 +1173,7 @@ async def board_sprint_analytics(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found")
 
     cards = list((await db.execute(
-        select(Card).where(Card.sprint_id == sprint_id)
+        select(Card).where(Card.sprint_id == sprint_id, Card.archived.is_(False))
     )).scalars().all())
     done_cards = [c for c in cards if c.status == CardStatus.DONE]
 
@@ -1333,7 +1246,7 @@ async def board_agents(
 
     await _ensure_board(db, board_id, user_id)
 
-    q = select(Card).where(Card.board_id == board_id)
+    q = select(Card).where(Card.board_id == board_id, Card.archived.is_(False))
     if dt_from:
         q = q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -1341,7 +1254,7 @@ async def board_agents(
     cards = list((await db.execute(q)).scalars().all())
 
     specs = list((await db.execute(
-        select(Spec).where(Spec.board_id == board_id)
+        select(Spec).where(Spec.board_id == board_id, Spec.archived.is_(False))
     )).scalars().all())
 
     # Collect actors from both cards and validations
@@ -1666,25 +1579,57 @@ async def _ensure_board(db: AsyncSession, board_id: str, user_id: str):
 
 
 def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = None) -> list[dict]:
-    """Compute weekly velocity for the last N weeks, stacked by card type.
+    """Weekly velocity — backward-compat shim for callers that don't need
+    spec/sprint overlays. Delegates to the bucket builder with spec/sprint
+    event dicts empty."""
+    return _build_velocity_buckets(
+        done_cards=done_cards,
+        all_cards=all_cards,
+        periods=weeks,
+        granularity="week",
+        spec_moves=[],
+        sprint_moves=[],
+    )
 
-    Series:
-    - impl: normal cards moved to done that week
-    - test: test cards moved to done that week
-    - bug:  bug cards moved to done that week
-    - validation_bounce: count of task validations with outcome=failed created
-      that week (approximates "how many revalidations happened"). Uses
-      `all_cards` (not just done_cards) to catch failures on cards still
-      in-progress. When all_cards is None, falls back to done_cards only.
+
+def _bucket_key(dt: datetime, granularity: str) -> str:
+    """Build the bucket key for a datetime under the chosen granularity."""
+    if granularity == "day":
+        return dt.strftime("%Y-%m-%d")
+    # week — Monday-aligned
+    monday = dt - timedelta(days=dt.weekday())
+    return monday.strftime("%Y-%m-%d")
+
+
+def _build_velocity_buckets(
+    *,
+    done_cards: list,
+    all_cards: list | None,
+    periods: int,
+    granularity: str,
+    spec_moves: list[tuple[datetime, str]],
+    sprint_moves: list[tuple[datetime, str]],
+) -> list[dict]:
+    """Shared bucket builder for week and day granularities.
+
+    Series per bucket:
+    - ``impl`` / ``test`` / ``bug`` — cards of that type moved to done in the bucket.
+    - ``validation_bounce`` — task validations that failed in the bucket.
+    - ``spec_done`` — spec_moved events where details.new_status == 'done'.
+    - ``sprint_done`` — sprint_moved events where details.new_status == 'closed'.
     """
     now = datetime.now(timezone.utc)
-    # Build week buckets (Monday-aligned)
     buckets: dict[str, dict[str, int]] = {}
-    for i in range(weeks):
-        week_start = now - timedelta(weeks=i)
-        week_start = week_start - timedelta(days=week_start.weekday())
-        key = week_start.strftime("%Y-%m-%d")
-        buckets[key] = {"impl": 0, "test": 0, "bug": 0, "validation_bounce": 0}
+    # Seed buckets backwards so the axis has a stable shape even when no
+    # events landed in a given period.
+    for i in range(periods):
+        anchor = now - (timedelta(days=i) if granularity == "day" else timedelta(weeks=i))
+        key = _bucket_key(anchor, granularity)
+        buckets[key] = {
+            "impl": 0, "test": 0, "bug": 0,
+            "validation_bounce": 0,
+            "spec_done": 0, "sprint_done": 0,
+        }
 
     for c in done_cards:
         if not c.updated_at:
@@ -1692,8 +1637,7 @@ def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = Non
         updated = c.updated_at
         if updated.tzinfo is None:
             updated = updated.replace(tzinfo=timezone.utc)
-        week_start = updated - timedelta(days=updated.weekday())
-        key = week_start.strftime("%Y-%m-%d")
+        key = _bucket_key(updated, granularity)
         if key in buckets:
             if _is_bug_card(c):
                 buckets[key]["bug"] += 1
@@ -1702,7 +1646,6 @@ def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = Non
             else:
                 buckets[key]["impl"] += 1
 
-    # validation_bounce: count failed task validations by week
     pool = all_cards if all_cards is not None else done_cards
     for c in pool:
         vals = getattr(c, "validations", None) or []
@@ -1721,21 +1664,89 @@ def _compute_velocity(done_cards: list, weeks: int, all_cards: list | None = Non
                     continue
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
-                week_start = dt - timedelta(days=dt.weekday())
-                key = week_start.strftime("%Y-%m-%d")
+                key = _bucket_key(dt, granularity)
                 if key in buckets:
                     buckets[key]["validation_bounce"] += 1
 
-    # Return sorted oldest first
-    result = [
+    for dt, status_val in spec_moves:
+        if status_val != "done":
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        key = _bucket_key(dt, granularity)
+        if key in buckets:
+            buckets[key]["spec_done"] += 1
+
+    for dt, status_val in sprint_moves:
+        if status_val != "closed":
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        key = _bucket_key(dt, granularity)
+        if key in buckets:
+            buckets[key]["sprint_done"] += 1
+
+    period_label = "day" if granularity == "day" else "week"
+    return [
         {
-            "week": k,
+            period_label: k,
             "impl": v["impl"], "test": v["test"], "bug": v["bug"],
             "validation_bounce": v["validation_bounce"],
+            "spec_done": v["spec_done"], "sprint_done": v["sprint_done"],
         }
         for k, v in sorted(buckets.items())
     ]
-    return result
+
+
+async def _load_lifecycle_moves(
+    db: AsyncSession, board_id: str, action: str,
+) -> list[tuple[datetime, str]]:
+    """Read ActivityLog rows for a lifecycle action (spec_moved / sprint_moved)
+    and return (created_at, new_status) tuples for the aggregator."""
+    q = select(ActivityLog).where(
+        ActivityLog.board_id == board_id,
+        ActivityLog.action == action,
+    )
+    rows = list((await db.execute(q)).scalars().all())
+    out: list[tuple[datetime, str]] = []
+    for row in rows:
+        details = row.details or {}
+        if not isinstance(details, dict):
+            continue
+        # Different writers stamp the terminal-state field under slightly
+        # different keys — accept the full set we've observed in the wild.
+        for key in ("to_status", "new_status", "status"):
+            val = details.get(key)
+            if isinstance(val, str):
+                out.append((row.created_at, val))
+                break
+    return out
+
+
+async def _compute_velocity_weekly(
+    db: AsyncSession, board_id: str, done_cards: list,
+    weeks: int, all_cards: list | None,
+) -> list[dict]:
+    spec_moves = await _load_lifecycle_moves(db, board_id, "spec_moved")
+    sprint_moves = await _load_lifecycle_moves(db, board_id, "sprint_moved")
+    return _build_velocity_buckets(
+        done_cards=done_cards, all_cards=all_cards,
+        periods=weeks, granularity="week",
+        spec_moves=spec_moves, sprint_moves=sprint_moves,
+    )
+
+
+async def _compute_velocity_daily(
+    db: AsyncSession, board_id: str, done_cards: list,
+    days: int, all_cards: list | None,
+) -> list[dict]:
+    spec_moves = await _load_lifecycle_moves(db, board_id, "spec_moved")
+    sprint_moves = await _load_lifecycle_moves(db, board_id, "sprint_moved")
+    return _build_velocity_buckets(
+        done_cards=done_cards, all_cards=all_cards,
+        periods=days, granularity="day",
+        spec_moves=spec_moves, sprint_moves=sprint_moves,
+    )
 
 
 async def _list_ideation_entities(
@@ -1747,7 +1758,10 @@ async def _list_ideation_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Ideation).where(Ideation.board_id == board_id)
+    q = select(Ideation).where(
+        Ideation.board_id == board_id,
+        Ideation.archived.is_(False),
+    )
     if dt_from:
         q = q.where(Ideation.created_at >= dt_from)
     if dt_to:
@@ -1764,12 +1778,18 @@ async def _list_ideation_entities(
     for i in ideations:
         ref_count = (
             await db.execute(
-                select(func.count(Refinement.id)).where(Refinement.ideation_id == i.id)
+                select(func.count(Refinement.id)).where(
+                    Refinement.ideation_id == i.id,
+                    Refinement.archived.is_(False),
+                )
             )
         ).scalar() or 0
         spec_count = (
             await db.execute(
-                select(func.count(Spec.id)).where(Spec.ideation_id == i.id)
+                select(func.count(Spec.id)).where(
+                    Spec.ideation_id == i.id,
+                    Spec.archived.is_(False),
+                )
             )
         ).scalar() or 0
         result_items.append({
@@ -1794,7 +1814,10 @@ async def _list_spec_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Spec).where(Spec.board_id == board_id)
+    q = select(Spec).where(
+        Spec.board_id == board_id,
+        Spec.archived.is_(False),
+    )
     if dt_from:
         q = q.where(Spec.created_at >= dt_from)
     if dt_to:
@@ -1812,7 +1835,10 @@ async def _list_spec_entities(
         scenarios = s.test_scenarios or []
         card_count = (
             await db.execute(
-                select(func.count(Card.id)).where(Card.spec_id == s.id)
+                select(func.count(Card.id)).where(
+                    Card.spec_id == s.id,
+                    Card.archived.is_(False),
+                )
             )
         ).scalar() or 0
 
@@ -1840,7 +1866,10 @@ async def _list_card_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Card).where(Card.board_id == board_id)
+    q = select(Card).where(
+        Card.board_id == board_id,
+        Card.archived.is_(False),
+    )
     if dt_from:
         q = q.where(Card.created_at >= dt_from)
     if dt_to:
@@ -1880,21 +1909,27 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
     ac_list = spec.acceptance_criteria or []
     scenarios = spec.test_scenarios or []
 
-    # Coverage
-    covered_ac_ids: set[str] = set()
+    # Coverage — normalize mixed linked_criteria formats (int / str-idx / AC text)
+    # to int indices so the `covered_ac <= total_ac` invariant holds.
+    covered_ac_indices: set[int] = set()
     scenario_statuses: list[dict] = []
     for ts in scenarios:
         if isinstance(ts, dict):
-            for crit in (ts.get("linked_criteria") or []):
-                covered_ac_ids.add(crit)
+            covered_ac_indices |= _resolve_linked_criteria_to_indices(
+                ts.get("linked_criteria"), ac_list
+            )
             scenario_statuses.append({
                 "id": ts.get("id"),
                 "title": ts.get("title"),
                 "status": ts.get("status", "unknown"),
             })
+    covered_ac_count = min(len(covered_ac_indices), len(ac_list))
 
     # Cards linked to this spec
-    cards_q = select(Card).where(Card.spec_id == spec_id)
+    cards_q = select(Card).where(
+        Card.spec_id == spec_id,
+        Card.archived.is_(False),
+    )
     cards = list((await db.execute(cards_q)).scalars().all())
     card_data = []
     for c in cards:
@@ -1948,7 +1983,7 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         ac_details.append({
             "index": idx,
             "text": ac_text,
-            "covered": str(idx) in covered_ac_ids or ac_text in covered_ac_ids,
+            "covered": idx in covered_ac_indices,
         })
 
     # FR details with coverage status (rules + contracts)
@@ -1993,7 +2028,7 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         "title": spec.title,
         "status": spec.status.value if spec.status else None,
         "total_ac": len(ac_list),
-        "covered_ac": len(covered_ac_ids),
+        "covered_ac": covered_ac_count,
         "ac_details": ac_details,
         "total_fr": total_frs,
         "fr_details": fr_details,
@@ -2128,15 +2163,21 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
     if not sprint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sprint not found")
 
-    # Cards in this sprint
-    cards_q = select(Card).where(Card.sprint_id == sprint_id)
+    # Cards in this sprint (skip archived to keep counts honest)
+    cards_q = select(Card).where(
+        Card.sprint_id == sprint_id,
+        Card.archived.is_(False),
+    )
     cards = list((await db.execute(cards_q)).scalars().all())
 
     done_cards = [c for c in cards if c.status == CardStatus.DONE]
     cancelled = [c for c in cards if c.status == CardStatus.CANCELLED]
     in_progress = [c for c in cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED)]
 
-    # Completeness and drift from conclusions
+    # Completeness and drift: prefer self-reported conclusions, fall back to
+    # the validation gate's reviewer score when no conclusion exists. This
+    # ensures sprints that use the task validation gate flow still surface
+    # quality metrics instead of showing "--".
     completeness_vals: list[float] = []
     drift_vals: list[float] = []
     cycle_times: list[float] = []
@@ -2145,6 +2186,17 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
         concl = _extract_conclusion(c)
         comp = concl.get("completeness") if concl else None
         dr = concl.get("drift") if concl else None
+        if comp is None or dr is None:
+            vals = getattr(c, "validations", None) or []
+            last_val = next(
+                (v for v in reversed(vals) if isinstance(v, dict)),
+                None,
+            )
+            if last_val:
+                if comp is None:
+                    comp = last_val.get("completeness") or last_val.get("estimated_completeness")
+                if dr is None:
+                    dr = last_val.get("drift") or last_val.get("estimated_drift")
         ct_hours = None
         if c.status == CardStatus.DONE and c.created_at and c.updated_at:
             ct_hours = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
@@ -2188,7 +2240,10 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
         )
         siblings = list((await db.execute(siblings_q)).scalars().all())
         for sib in siblings:
-            sib_cards_q = select(Card).where(Card.sprint_id == sib.id)
+            sib_cards_q = select(Card).where(
+                Card.sprint_id == sib.id,
+                Card.archived.is_(False),
+            )
             sib_cards = list((await db.execute(sib_cards_q)).scalars().all())
             sib_done = [c for c in sib_cards if c.status == CardStatus.DONE]
             sib_concls = [_extract_conclusion(c) for c in sib_done if _extract_conclusion(c)]
