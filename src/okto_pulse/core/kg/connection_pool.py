@@ -1,6 +1,10 @@
 """LRU pool of :class:`BoardConnection` instances keyed by ``board_id``.
 
-Sized from env ``KG_CONNECTION_POOL_SIZE`` (default 8, ``0`` disables pooling).
+Sized from :class:`CoreSettings`.kg_connection_pool_size (default 8) with the
+env var ``KG_CONNECTION_POOL_SIZE`` kept as an opt-in override for CI/deploy
+scripts (soft-deprecated in 0.1.4 — logs a warning when applied). ``0``
+disables pooling.
+
 Thread-safe via a single ``threading.Lock`` around the ``OrderedDict`` —
 access is expected to be low-frequency (per-board consolidation sessions),
 so a coarse lock is fine and simpler than per-entry locking.
@@ -29,21 +33,55 @@ logger = logging.getLogger("okto_pulse.kg.connection_pool")
 
 
 _DEFAULT_CAP = 8
+_ENV_VAR = "KG_CONNECTION_POOL_SIZE"
 
 
 def _read_cap_from_env() -> int:
-    raw = os.environ.get("KG_CONNECTION_POOL_SIZE")
-    if raw is None or raw.strip() == "":
-        return _DEFAULT_CAP
-    try:
-        cap = int(raw)
-    except ValueError:
+    """Resolve the pool cap with precedence: env var > CoreSettings > default.
+
+    Env var is only applied when **non-empty**. When applied, it logs a
+    soft-deprecation warning so operators know the value came from the
+    environment and not the UI-persisted settings.
+    """
+    raw = os.environ.get(_ENV_VAR)
+    if raw is not None and raw.strip() != "":
+        try:
+            cap = int(raw)
+        except ValueError:
+            logger.warning(
+                "connection_pool.invalid_cap value=%r falling_back_to_settings",
+                raw,
+            )
+            return _cap_from_settings()
+        resolved = max(0, cap)
         logger.warning(
-            "connection_pool.invalid_cap value=%r falling_back=%d",
-            raw, _DEFAULT_CAP,
+            "kg.config.env_override_detected var=%s value=%d "
+            "(prefer the runtime Settings menu)",
+            _ENV_VAR, resolved,
+            extra={"event": "kg.config.env_override_detected", "var": _ENV_VAR,
+                   "value": resolved},
+        )
+        return resolved
+    return _cap_from_settings()
+
+
+def _cap_from_settings() -> int:
+    """Read the cap from CoreSettings, falling back to _DEFAULT_CAP on any error.
+
+    Wrapped to survive early-boot scenarios where the settings singleton is
+    not yet configured (pool is occasionally initialized before main.py
+    populates CoreSettings from the persisted table).
+    """
+    try:
+        from okto_pulse.core.infra.config import get_settings
+
+        return max(0, int(get_settings().kg_connection_pool_size))
+    except Exception as exc:
+        logger.warning(
+            "connection_pool.settings_read_failed err=%s falling_back=%d",
+            exc, _DEFAULT_CAP,
         )
         return _DEFAULT_CAP
-    return max(0, cap)
 
 
 class ConnectionPool:

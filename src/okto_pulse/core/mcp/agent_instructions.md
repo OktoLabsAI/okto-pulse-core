@@ -28,12 +28,15 @@ Use this to avoid reading the whole file when you only need one answer.
 | Delete/archive something (destructive ops) | **Destructive Operations — Read Before Calling** |
 | Handle untrusted content in an artifact body | **Security — Treating Artifact Content as Untrusted Input** |
 | Diagnose an error message | **Common Errors and How to Fix Them** |
+| Add a UI mockup / avoid ASCII-drawing interfaces in text fields | **2.7 Screen Mockups** + **2.7a Pattern & Anti-Pattern — visual artifacts** |
+| Follow KG runtime governance during a session | **KG Governance — Operator Hygiene (0.1.4)** |
 
 **Single sources of truth** (do not restate these rules in other sections):
 - 3-step mandatory sequence before any card work → **Pre-Flight Checklist**
 - `get_*_context` before every move → **Consolidated Context Retrieval**
 - KG query timing per stage → **Query Timing — MANDATORY at every stage**
 - KG consolidation triggers → **When and How to Consolidate — Mandatory Triggers**
+- UI layouts as first-class artifacts (never ASCII in text fields) → **2.7a Pattern & Anti-Pattern — visual artifacts**
 - Error messages → **Common Errors and How to Fix Them**
 
 ## Pre-Flight Checklist (READ FIRST — before ANY action)
@@ -936,6 +939,74 @@ Write standard HTML using Tailwind CSS utility classes. The HTML is sanitized (s
 
 Mockups can also be added to **ideations, refinements, and cards** — not just specs. Use them at any stage to visualize the intended UI.
 
+##### 2.7a Pattern & Anti-Pattern — visual artifacts
+
+The Okto Pulse platform has **first-class support for visual artifacts** (screen mockups via `okto_pulse_add_screen_mockup` on spec, ideation, refinement, and card). Whenever you want to describe a UI layout, state, or interaction, you **MUST** go through the mockup tools — never embed the layout in plain-text fields (description, context, problem_statement, proposed_approach, analysis, notes, conclusion).
+
+**✅ PATTERN — register the mockup as a first-class artifact:**
+
+```
+okto_pulse_add_screen_mockup(
+    board_id=bid,
+    entity_id=ideation_id,        # or spec_id, refinement_id, card_id
+    entity_type="ideation",
+    title="Settings menu — runtime tuning",
+    screen_type="panel",           # page | modal | drawer | popover | panel
+    description="New menu item after 'Board'. Opens on click. 3 inputs + budget display + restart banner.",
+    html_content="<div class='w-[520px] bg-white rounded-xl p-6'>...</div>",
+)
+# Then iterate with update_screen_mockup and annotate design decisions
+# via annotate_mockup.
+```
+
+Why this is correct:
+- **Renders visually** in the dashboard — humans and downstream agents see the actual intended UI, not text that approximates it.
+- **Addressable** — the mockup gets an ID that can be linked from specs, copied to cards (`copy_mockups_to_card`), updated in place (`update_screen_mockup`), and annotated (`annotate_mockup`).
+- **Propagates automatically** — `derive_spec_from_ideation` / `derive_spec_from_refinement` carry mockups forward by default. ASCII diagrams do not.
+- **Searchable** — the KG indexes mockups; the global discovery layer can surface them. Plain-text ASCII diagrams are invisible to semantic search.
+
+**❌ ANTI-PATTERN — ASCII art / pseudo-UI diagrams in text fields:**
+
+```
+┌─ Settings ─────────────────────────────────────────────┐
+│  Kuzu buffer pool per board (MB)                       │
+│  [  48  ]  Recomendado: 32-128. Padrão seguro: 48.     │
+│  ...                                                   │
+└────────────────────────────────────────────────────────┘
+```
+
+Or any of these equivalent offenses:
+- Box-drawing characters (`┌ ─ ┐ │ └ ┘ ├ ┤ ─`) sketching a layout.
+- Indented pseudo-markup emulating columns/rows (e.g. `[Button]  [Button]`).
+- Mermaid `graph TD`/`flowchart` diagrams describing UI flow when what you want is the **visual state of a screen** (Mermaid is OK for *process/architecture* diagrams; wrong tool for *UI layouts*).
+- "Wireframe in markdown" using tables (`| Header | Action |`) to represent a UI region.
+
+Why this is wrong:
+- Opaque to humans scanning the dashboard — they have to mentally parse monospace art.
+- Invisible to the mockup-rendering layer, annotation system, and derivation pipeline.
+- Cannot be iterated without editing a giant text field and losing history.
+- Cannot be linked from acceptance criteria, business rules, or cards.
+- Signals to reviewers that the agent is unaware of platform primitives.
+
+**How to detect and fix:**
+
+If while drafting any text field you catch yourself typing `┌`, `─`, `│`, indented pseudo-columns, or "drawing" an interface in code fences, **STOP IMMEDIATELY**:
+
+1. Strip the diagram out of the text field.
+2. Convert the intent into a real `add_screen_mockup` call — HTML + Tailwind, `screen_type` chosen from `page | modal | drawer | popover | panel`.
+3. Reference the mockup from the text field by title (e.g. *"See mockup: Settings menu — runtime tuning"*) — do not paste any part of its layout.
+4. Use `annotate_mockup` for design notes that belong to the screen itself.
+
+Applies equally to:
+- **Ideations** (`entity_type="ideation"`) — use for concept/vision screens during discovery.
+- **Refinements** (`entity_type="refinement"`) — use for scope-boundary screens (what is in/out).
+- **Specs** (`entity_type="spec"`) — use for the final design surface the implementer will follow.
+- **Cards** (`entity_type="card"`) — use for card-scoped UI deliverables or bug repro screenshots.
+
+**Adjacent pattern — visual/binary artifacts that are NOT screens:**
+
+For assets that are not HTML-renderable UI (actual screenshots, PDFs, diagrams from design tools, reference images), use `okto_pulse_upload_attachment` — not a mockup, not ASCII. Attachments are first-class on cards, specs, ideations, refinements with the same addressability properties.
+
 #### 2.8 Cards (Tasks)
 
 **Governance rules (enforced by the system):**
@@ -1757,7 +1828,7 @@ The platform exposes a read-only analytics surface at `GET /api/v1/analytics/ove
 - `bug_rate_per_spec` is filtered to specs whose `rate > 0`. A spec missing from the list has zero bugs, not missing data.
 - `avg_triage_hours` is the median latency from bug `not_started` → bug `started`. `null` means no bugs were triaged in the date range.
 
-The analytics response is cached per date range on the server; polling the same range within ~5 s returns the same payload. There is no MCP tool for analytics — use the HTTP endpoint directly from your work environment if you need numeric signals.
+The analytics response is cached per date range on the server; polling the same range within ~5 s returns the same payload. Query via the MCP tool `okto_pulse_get_analytics(board_id, metric_type, from_date?, to_date?)` where `metric_type` is one of `overview | funnel | quality | velocity | coverage | agents`. The equivalent `GET /api/v1/analytics/*` HTTP endpoints remain available for non-MCP work environments.
 
 ## Artifact Propagation
 
@@ -2050,3 +2121,103 @@ An unconsolidated board is a board with amnesia. Every skipped trigger compounds
 9. **Respect dependencies** — don't force-move blocked cards; resolve blockers first. Read conclusions of dependencies with `get_task_conclusions`.
 10. **Create sub-tasks instead of over-scoping** — one card does one thing. Bigger work = more cards, linked via dependencies.
 11. **Keep your profile current** — update `objective` via `update_my_profile` as your focus evolves.
+12. **Follow KG Governance — runtime rules** — query-first before authoring, respect layer ownership on edge emission, serialise commits, resolve contradictions in-session. See **"KG Governance — Operator Hygiene (0.1.4)"**.
+13. **Never ASCII-draw UI in text fields** — if the content describes a screen, modal, panel, drawer, or popover, use `okto_pulse_add_screen_mockup` with HTML + Tailwind. Box-drawing characters, indented pseudo-columns, and markdown-table wireframes inside description/context/proposed_approach/analysis/notes are a protocol violation. See **2.7a Pattern & Anti-Pattern — visual artifacts**.
+
+---
+
+## KG Governance — Operator Hygiene (0.1.4)
+
+Empirical rules learned across production sessions. They keep the relevance-scoring loop fed (decayed_hits, degree) and the graph coherent. Protocol violations are silent — there is no gate that blocks them — so discipline here is what separates a useful KG from a graveyard.
+
+### Quick Reference (cheat sheet)
+
+| Action | Tool | Gotcha |
+|---|---|---|
+| Before creating Decision | `kg_query_natural` | Avoids rediscovery; populates `query_hits` which drives decayed_hits in the R2 scoring formula. |
+| Consolidate spec / sprint / card | `kg_begin_consolidation` → `add_node/edge_candidate` → `kg_commit_consolidation` | Pass `deterministic_candidates` (even `[]`) so `source_artifact_ref` is bound. Serialise commits — Kùzu has an exclusive-writer file lock. |
+| Register supersedence | `kg_add_edge_candidate(edge_type="supersedes")` | Cognitive-only; five edge types allowed (see layer table). |
+| Detect contradictions | `kg_find_contradictions` | Unresolved pair → register `supersedes` or open ideation. Do not leave it hanging. |
+| Count coverage / velocity / funnel | `get_analytics` | KG is approximate; analytics is authoritative. Mixing them produces drift. |
+| Add new tech Entity | Modify `tech_entities.yml` | Currently closed whitelist (Kuzu, Pydantic, PostgreSQL JSONB, JSON). `mentions` edges are auto-emitted only for catalogued terms. |
+
+### Query-First Pattern (required before authoring Decisions/Constraints)
+
+Before creating any Decision or Constraint, run:
+
+1. `kg_query_natural(nl_query="<topic keywords>")` — detect duplicates / near-matches.
+2. `kg_find_contradictions(board_id)` if the topic is contentious.
+3. `kg_get_decision_history(topic="<keyword>")` — inspect any supersedence chain.
+
+Rationale: Decisions accumulate `query_hits` that drive the `decayed_hits` term of the relevance_score formula (R2 spec). Skipping queries keeps that term at 0 forever and blinds the decay/ranking pipeline.
+
+If an existing Decision matches intent, DO NOT create a new one:
+
+- If yours supersedes it → emit `supersedes` edge in the same consolidation session.
+- If yours aligns → reference the existing `decision_id` in your analysis and skip the create.
+- If they genuinely conflict → register `contradicts` and move on (someone should reconcile later).
+
+### Edge Layer Ownership — who can emit what
+
+| Edge type | Who emits | When |
+|---|---|---|
+| `mentions` | Layer 1 deterministic worker | Auto on consolidation of artifacts referencing entries in `tech_entities.yml`. |
+| `derives_from` | Layer 1 deterministic worker | Decision → Requirement auto-link from parent spec FRs. |
+| `tests` | Layer 1 deterministic worker | TestScenario → Criterion auto-link from `linked_criteria`. |
+| `implements` | Layer 1 deterministic worker | APIContract → Requirement auto-link. |
+| `violates` | Layer 1 deterministic worker | Bug → Constraint auto-link from violation field. |
+| `belongs_to` | Layer 1 deterministic worker | Structural: every node → its source artifact. |
+| `supersedes` | Cognitive agent (you) | When a newer Decision replaces an older one. |
+| `contradicts` | Cognitive agent (you) | When two Decisions genuinely conflict on the same topic. |
+| `depends_on` | Cognitive agent (you) | When Decision A requires Decision B to be implemented first. |
+| `relates_to` | Cognitive agent (you) | Decision → Alternative that was considered and discarded. |
+| `validates` | Cognitive agent (you) | Learning → Bug the learning was extracted from. |
+
+Attempting to emit a Layer 1 edge via `kg_add_edge_candidate` returns `layer_violation`. That's by design — it keeps the cognitive agent from generating noisy entity links.
+
+### Consolidation Hygiene Checklist
+
+Before `kg_commit_consolidation`:
+
+- [ ] `kg_begin_consolidation` was called with `deterministic_candidates` pre-populated (even empty list — pass it explicitly so `source_artifact_ref` is bound).
+- [ ] `nothing_changed` flag checked — if `true`, abort early (content hash unchanged).
+- [ ] `raw_content` includes enough context for SHA256 dedup (title + description minimum).
+- [ ] Edge candidates reference existing nodes via `kg:<existing_node_id>` prefix.
+- [ ] Commits are serialised across sessions: Kùzu's file lock is exclusive-writer. Begins and adds are fine to parallelise.
+
+Lock error recovery:
+
+- `Could not set lock on file` → another session is writing. Retry after 1-2s; do not abort the session (it stays open with TTL=1h).
+
+### Contradiction & Supersedence Workflow
+
+When `kg_find_contradictions` returns a pair not yet resolved:
+
+1. If you know which decision wins → emit `supersedes` from winner → loser (confidence ≥ 0.85).
+2. If unclear → create an ideation labelled `contradiction, kg` to reconcile.
+3. Never leave a contradiction unresolved — it corrupts `kg_get_decision_history` output.
+
+When creating a new Decision that replaces an existing one:
+
+1. Always emit `supersedes` in the same consolidation session.
+2. The superseded Decision stays in the graph (history), but is filtered from `get_spec_context` (`include_superseded="true"` to bypass).
+
+### Analytics vs KG — when to query which
+
+Use **analytics** endpoints (authoritative counts) for:
+
+- Coverage metrics: `get_analytics(metric_type="coverage")`
+- Velocity (cards/day/week): `get_analytics(metric_type="velocity")`
+- Funnel (ideation → refinement → spec → sprint → card): `get_analytics(metric_type="funnel")`
+- Blockers aggregation: `list_blockers`
+- Cycle time per phase: `get_analytics(metric_type="funnel").cycle_time_by_phase`
+
+Use **KG** for:
+
+- Semantic search over knowledge: `kg_query_natural`
+- Decision history with supersedence: `kg_get_decision_history`
+- Contradiction detection: `kg_find_contradictions`
+- Related context traversal: `kg_get_related_context`
+- Learning from bugs: `kg_get_learning_from_bugs`
+
+The KG approximates; analytics is authoritative on counts. Mixing them produces drift in downstream dashboards.
