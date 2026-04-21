@@ -90,12 +90,12 @@ def bootstrap_global_discovery() -> Path:
     except ImportError as exc:
         raise RuntimeError("kuzu required") from exc
 
-    from okto_pulse.core.kg.schema import load_vector_extension
+    from okto_pulse.core.kg.schema import _open_kuzu_db, load_vector_extension
 
     path = _global_kuzu_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    db = kuzu.Database(str(path))
+    db = _open_kuzu_db(path)
     conn = kuzu.Connection(db)
     try:
         load_vector_extension(conn)
@@ -129,14 +129,14 @@ def open_global_connection():
     """
     global _global_db
     import kuzu
-    from okto_pulse.core.kg.schema import load_vector_extension
+    from okto_pulse.core.kg.schema import _open_kuzu_db, load_vector_extension
 
     path = _global_kuzu_path()
     if not path.exists():
         bootstrap_global_discovery()
 
     if _global_db is None:
-        _global_db = kuzu.Database(str(path))
+        _global_db = _open_kuzu_db(path)
     conn = kuzu.Connection(_global_db)
     load_vector_extension(conn)
     return _global_db, conn

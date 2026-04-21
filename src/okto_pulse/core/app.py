@@ -43,7 +43,24 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+        # Ensure the AppSetting model is registered with Base before init_db
+        # creates the schema. Side-effect import only.
+        from okto_pulse.core.services import settings_service as _settings_svc  # noqa: F401
+
         await init_db()
+
+        # Apply persisted runtime settings BEFORE any module opens a Kùzu
+        # Database instance. _open_kuzu_db reads CoreSettings at call time,
+        # so we just need configure_settings() to be updated by then.
+        try:
+            from okto_pulse.core.services.settings_service import (
+                apply_persisted_settings_to_core_settings,
+            )
+            await apply_persisted_settings_to_core_settings()
+        except Exception:
+            # Fresh install, table may not exist yet — that's fine, defaults
+            # already cover the safe budget.
+            pass
 
         # Import events package BEFORE dispatcher.start — side-effect of
         # importing handlers is @register_handler populating the registry.
