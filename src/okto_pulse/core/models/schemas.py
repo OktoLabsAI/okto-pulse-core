@@ -1,9 +1,9 @@
 """Pydantic schemas for API request/response models."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from okto_pulse.core.models.db import (
     CardPriority,
@@ -39,6 +39,8 @@ class AgentCreate(BaseModel):
     description: str | None = None
     objective: str | None = None
     permissions: list[str] | None = None
+    preset_id: str | None = None
+    permission_flags: dict[str, Any] | None = None
 
 
 class AgentUpdate(BaseModel):
@@ -49,6 +51,8 @@ class AgentUpdate(BaseModel):
     objective: str | None = None
     is_active: bool | None = None
     permissions: list[str] | None = None
+    preset_id: str | None = None
+    permission_flags: dict[str, Any] | None = None
 
 
 class AgentSelfUpdate(BaseModel):
@@ -68,6 +72,8 @@ class AgentResponse(BaseSchema):
     api_key: str
     is_active: bool
     permissions: list[str] | None
+    preset_id: str | None = None
+    permission_flags: dict[str, Any] | None = None
     created_by: str
     created_at: datetime
     last_used_at: datetime | None
@@ -81,6 +87,8 @@ class AgentSummary(BaseSchema):
     description: str | None
     objective: str | None = None
     is_active: bool
+    preset_id: str | None = None
+    permission_flags: dict[str, Any] | None = None
     created_at: datetime
     last_used_at: datetime | None
 
@@ -296,6 +304,30 @@ class ApiContract(BaseModel):
     notes: str | None = None
 
 
+DecisionStatus = Literal["active", "superseded", "revoked"]
+
+
+class Decision(BaseModel):
+    """A decision formalized on a spec — causal/contextual choice.
+
+    Different from BusinessRule (which is prescriptive, "system DEVE do X"):
+    a Decision records *why* a choice was made, with alternatives and
+    supersedence. Formalized so the spec carries full traceability and the
+    validation gate can optionally require linked tasks.
+    """
+
+    id: str  # "dec_" + 8 hex
+    title: str
+    rationale: str  # why this choice was made
+    context: str | None = None  # when/where it applies
+    alternatives_considered: list[str] | None = None
+    supersedes_decision_id: str | None = None  # id of a Decision on the same spec
+    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_task_ids: list[str] | None = None
+    status: DecisionStatus = "active"
+    notes: str | None = None
+
+
 # ============================================================================
 # Ideation Schemas
 # ============================================================================
@@ -467,6 +499,24 @@ class IdeationQAResponse(BaseSchema):
 # ============================================================================
 
 
+def _require_nonempty_in_scope(value: list[str] | None) -> list[str] | None:
+    """Reject in_scope when it is provided but has no usable entry.
+    A refinement without at least one non-whitespace in-scope item is
+    semantically empty and would let downstream tools (derive_spec,
+    get_refinement_context) work on a stub. None is allowed only on update
+    as the "no change" signal — callers that require a value must check
+    before dispatch.
+    """
+    if value is None:
+        return None
+    cleaned = [s for s in value if isinstance(s, str) and s.strip()]
+    if not cleaned:
+        raise ValueError(
+            "in_scope must contain at least one non-empty item",
+        )
+    return value
+
+
 class RefinementCreate(BaseModel):
     """Schema for creating a refinement."""
 
@@ -484,6 +534,17 @@ class RefinementCreate(BaseModel):
     mockup_ids: list[str] | None = None
     kb_ids: list[str] | None = None
 
+    @field_validator("in_scope")
+    @classmethod
+    def _validate_in_scope_on_create(cls, v: list[str] | None) -> list[str] | None:
+        # On create, in_scope is allowed to stay None (the caller may fill it
+        # in later via update before moving the refinement past draft). But
+        # if the caller did send a list, it must have at least one usable
+        # entry — an empty or whitespace-only list is always a mistake.
+        if v is None:
+            return None
+        return _require_nonempty_in_scope(v)
+
 
 class RefinementUpdate(BaseModel):
     """Schema for updating a refinement."""
@@ -497,6 +558,15 @@ class RefinementUpdate(BaseModel):
     assignee_id: str | None = None
     labels: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
+
+    @field_validator("in_scope")
+    @classmethod
+    def _validate_in_scope_on_update(cls, v: list[str] | None) -> list[str] | None:
+        # On update, None means "no change" and is allowed. A provided list
+        # must follow the same non-empty rule as create.
+        if v is None:
+            return None
+        return _require_nonempty_in_scope(v)
 
 
 class RefinementMove(BaseModel):
@@ -687,6 +757,7 @@ class SpecCreate(BaseModel):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    decisions: list[Decision] | None = None
     status: SpecStatus = SpecStatus.DRAFT
     assignee_id: str | None = None
     labels: list[str] | None = None
@@ -707,9 +778,11 @@ class SpecUpdate(BaseModel):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    decisions: list[Decision] | None = None
     skip_test_coverage: bool | None = None
     skip_rules_coverage: bool | None = None
     skip_trs_coverage: bool | None = None
+    skip_decisions_coverage: bool | None = None
     assignee_id: str | None = None
     labels: list[str] | None = None
     ideation_id: str | None = None
@@ -1015,8 +1088,10 @@ class SpecResponse(BaseSchema):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    decisions: list[Decision] | None = None
     skip_test_coverage: bool = False
     skip_rules_coverage: bool = False
+    skip_decisions_coverage: bool = False  # default False (ideação #10 Fase 1 parity)
     skip_trs_coverage: bool = False
     skip_contract_coverage: bool = False
     archived: bool = False
@@ -1356,6 +1431,7 @@ class BoardSettings(BaseModel):
     skip_rules_coverage_global: bool = False  # if True, all specs bypass FR→BR coverage checks
     skip_trs_coverage_global: bool = False  # if True, all specs bypass TR→Task coverage checks
     skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
+    skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = False  # if True, cards must pass validation before moving to done
     min_confidence: int = 70  # min reviewer confidence score
@@ -1621,3 +1697,53 @@ class ErrorResponse(BaseModel):
 
     detail: str
     code: str | None = None
+
+
+# ============================================================================
+# Discovery — intent catalog, saved searches, search history
+# ============================================================================
+
+
+class DiscoveryIntentResponse(BaseModel):
+    """Response shape for a single catalog intent."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    label: str
+    description: str | None = None
+    category: str
+    tool_binding: str
+    params_schema: dict[str, Any] | None = None
+    renderer: str = "table"
+    min_permission: str | None = None
+    active: bool = True
+    is_seed: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class DiscoverySavedSearchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    board_id: str
+    name: str
+    query: str | None = None
+    intent_id: str | None = None
+    filters_json: dict[str, Any] | None = None
+    created_by: str | None = None
+    created_at: datetime
+
+
+class DiscoverySearchHistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    board_id: str
+    user_id: str
+    query: str | None = None
+    intent_id: str | None = None
+    result_count: int = 0
+    searched_at: datetime

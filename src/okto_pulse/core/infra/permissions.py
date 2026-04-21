@@ -258,6 +258,40 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "conclusion": {"read": True, "write": True},
         "activity_read": True,
     },
+    # ---- Knowledge Graph ----
+    "kg": {
+        "query": {
+            "decision_history": True,
+            "related_context": True,
+            "supersedence_chain": True,
+            "contradictions": True,
+            "similar_decisions": True,
+            "constraint_explain": True,
+            "alternatives": True,
+            "learning_from_bugs": True,
+            "global": True,
+        },
+        "power": {
+            "cypher": True,
+            "natural": True,
+            "schema_info": True,
+        },
+        "session": {
+            "begin": True,
+            "add_node": True,
+            "add_edge": True,
+            "get_similar": True,
+            "propose": True,
+            "commit": True,
+            "abort": True,
+        },
+        "admin": {
+            "wipe_board": True,
+            "settings_write": True,
+            "settings_read": True,
+            "historical_consolidation": True,
+        },
+    },
 }
 
 
@@ -619,7 +653,16 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.entity.archive", "spec.entity.restore", "spec.entity.delete",
         "spec.move.draft_to_review", "spec.move.review_to_approved",
         "spec.move.any_to_cancelled",
+        # Spec interacts in every forward status. Post-validated edits are
+        # allowed to reduce the "dance back to draft" friction for cosmetic
+        # fixes (knowledge typo, mockup annotation). Convention in
+        # agent_instructions.md guides Spec away from structural edits
+        # (BR/TR/contract/rules) in validated/in_progress — those still
+        # require validated_to_draft. Opção A (permissiva) do refinement
+        # de Ideação 3 — Opção B (granularização por flag .edit_in_validated)
+        # fica como evolução se drift materializar.
         "spec.interact_in.draft", "spec.interact_in.review", "spec.interact_in.approved",
+        "spec.interact_in.validated", "spec.interact_in.in_progress",
         "spec.qa.read", "spec.qa.ask", "spec.qa.ask_choice", "spec.qa.answer",
         "spec.tests.read", "spec.tests.create", "spec.tests.update_status",
         "spec.rules.read", "spec.rules.create", "spec.rules.edit", "spec.rules.delete",
@@ -658,6 +701,18 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.validation.read",
         "card.activity_read",
         "card.interact_in.not_started",
+        # KG — spec is the content owner: full power + full session + admin.
+        # Cypher here because Spec runs deep supersedence/contradiction
+        # investigation when closing a refinement. settings_write +
+        # historical_consolidation are exclusive to Spec (they tune the
+        # consolidation that produces the content Spec owns).
+        "kg.query.*",
+        "kg.power.natural", "kg.power.schema_info", "kg.power.cypher",
+        "kg.session.begin", "kg.session.add_node", "kg.session.add_edge",
+        "kg.session.get_similar", "kg.session.propose",
+        "kg.session.commit", "kg.session.abort",
+        "kg.admin.settings_read", "kg.admin.settings_write",
+        "kg.admin.historical_consolidation",
     ])
 
     # ------------------------------------------------------------------
@@ -690,8 +745,13 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "sprint.evaluations.read",
         "sprint.history_read",
         "sprint.interact_in.active",
-        # Card — implementer: owns everything up to moving into validation
+        # Card — implementer: owns everything up to moving into validation.
+        # card.entity.create here unlocks bug/subtask creation when a problem
+        # surfaces mid-implementation (convention: only card_type="bug" or a
+        # subtask linked to the in_progress card — NOT fresh normal tasks;
+        # those remain Spec territory as part of the breakdown).
         "card.entity.read", "card.entity.context_read",
+        "card.entity.create",
         "card.entity.edit_fields", "card.entity.edit_bug_fields",
         "card.entity.assign", "card.entity.label",
         "card.interact_in.not_started", "card.interact_in.started",
@@ -710,6 +770,13 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.conclusion.read", "card.conclusion.write",
         "card.validation.read",  # read-only — cannot submit, cannot delete
         "card.activity_read",
+        # KG — read-only queries for implementation context.
+        # Natural + schema_info are baseline exploration (zero risk).
+        # Cypher stays gated (expert mode) and session is not exposed —
+        # executor focuses on executing cards, not enriching the KG.
+        "kg.query.*",
+        "kg.power.natural", "kg.power.schema_info",
+        "kg.admin.settings_read",
     ])
 
     # ------------------------------------------------------------------
@@ -756,9 +823,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "sprint.evaluations.read",   # read-only — Validator submits
         "sprint.history_read",
         "sprint.interact_in.active", "sprint.interact_in.review",
-        # Card — test cards lifecycle (create, implement, complete) + read others
+        # Card — test cards lifecycle (create, implement, complete) + read others.
+        # card.entity.create added alongside create_test: QA opens bug cards
+        # when it spots defects during test execution (convention: QA creates
+        # card_type="bug" or "test", never "normal").
         "card.entity.read", "card.entity.context_read",
-        "card.entity.create_test", "card.entity.edit_fields",
+        "card.entity.create", "card.entity.create_test", "card.entity.edit_fields",
         "card.link_to.scenario",
         "card.qa.read", "card.qa.ask", "card.qa.answer",
         "card.comments.read", "card.comments.create",
@@ -776,6 +846,14 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.move.in_progress_to_on_hold", "card.move.on_hold_to_in_progress",
         "card.move.in_progress_to_done",   # test cards bypass validation gate
         "card.move.any_to_cancelled",
+        # KG — QA reads and surfaces gaps. Propose-only session (no commit
+        # or abort); Spec/Validator commit on review. Natural + schema
+        # help QA investigate, cypher stays gated.
+        "kg.query.*",
+        "kg.power.natural", "kg.power.schema_info",
+        "kg.session.begin", "kg.session.add_node", "kg.session.add_edge",
+        "kg.session.get_similar", "kg.session.propose",
+        "kg.admin.settings_read",
     ])
 
     # ------------------------------------------------------------------
@@ -824,12 +902,19 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         # fix-and-revalidate loop after a gate failure).
         "spec.move.approved_to_draft", "spec.move.validated_to_draft",
         "spec.interact_in.approved", "spec.interact_in.validated", "spec.interact_in.in_progress",
-        # Sprint — evaluation gate EXCLUSIVE + review→closed
+        # Sprint — evaluation gate EXCLUSIVE + active→review→closed.
+        # active→review lives here because Validator owns the sprint-close
+        # ceremony: it promotes active→review then runs submit_sprint_evaluation
+        # (allowed only in review) then moves review→closed. Without
+        # active_to_review + interact_in.active the cycle deadlocks for any
+        # team without a Full Control agent.
         "sprint.entity.read",
         "sprint.qa.read", "sprint.qa.ask", "sprint.qa.answer",
         "sprint.evaluations.read", "sprint.evaluations.submit",
         "sprint.history_read",
+        "sprint.interact_in.active",
         "sprint.interact_in.review",
+        "sprint.move.active_to_review",
         "sprint.move.review_to_closed",
         # Card — ONLY the validation status, EXCLUSIVE task_validation submit
         "card.entity.read", "card.entity.context_read",
@@ -847,6 +932,141 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         # submit_task_validation auto-routes via these flags.
         "card.move.validation_to_done",
         "card.move.validation_to_not_started",
+        # KG — Validator investigates deeply and consolidates autonomously.
+        # Cypher to trace supersedence/contradictions during spec validation;
+        # full session to commit decisions emerged from the gate. Admin stays
+        # read-only (thresholds + historical are Spec territory).
+        "kg.query.*",
+        "kg.power.natural", "kg.power.schema_info", "kg.power.cypher",
+        "kg.session.begin", "kg.session.add_node", "kg.session.add_edge",
+        "kg.session.get_similar", "kg.session.propose",
+        "kg.session.commit", "kg.session.abort",
+        "kg.admin.settings_read",
+    ])
+
+    # ------------------------------------------------------------------
+    # Reporter — observer who opens bugs, asks questions, votes on choices
+    # ------------------------------------------------------------------
+    # Owns: read across every entity/state, opening bug cards, Q&A (ask
+    # only — not answer), responding to choice comments, uploading
+    # attachments, and KG query + natural + schema_info.
+    # Cannot: submit any gate, promote any state, create/edit specs,
+    # answer Q&A (observer asks, doesn't answer), consolidate in the KG,
+    # use cypher or admin writes.
+    # Convention: bug cards only (enforced in agent_instructions, not flags).
+    # Use case: PO / stakeholder / onboarding contributor / external auditor.
+    reporter = _build_preset_flags([
+        # Board baseline
+        "board.read", "board.activity_read", "board.analytics_read",
+        "board.mentions_read", "board.mentions_mark_seen",
+        "guidelines.read",
+        "profile.update",
+        # Ideation — read + Q&A ask
+        "ideation.entity.read",
+        "ideation.qa.read", "ideation.qa.ask",
+        "ideation.mockups.read",
+        "ideation.versions_read", "ideation.history_read",
+        "ideation.interact_in.draft", "ideation.interact_in.evaluating",
+        "ideation.interact_in.refined",
+        # Refinement — read + Q&A ask
+        "refinement.entity.read",
+        "refinement.qa.read", "refinement.qa.ask",
+        "refinement.mockups.read", "refinement.knowledge.read",
+        "refinement.versions_read", "refinement.history_read",
+        "refinement.interact_in.draft", "refinement.interact_in.in_progress",
+        "refinement.interact_in.review", "refinement.interact_in.approved",
+        # Spec — full read (all states, all artifacts) + Q&A ask
+        "spec.entity.read",
+        "spec.qa.read", "spec.qa.ask",
+        "spec.tests.read", "spec.rules.read", "spec.contracts.read",
+        "spec.mockups.read", "spec.skills.read", "spec.knowledge.read",
+        "spec.evaluations.read", "spec.validation.read",
+        "spec.history_read",
+        "spec.interact_in.draft", "spec.interact_in.review",
+        "spec.interact_in.approved", "spec.interact_in.validated",
+        "spec.interact_in.in_progress", "spec.interact_in.done",
+        # Sprint — read + Q&A ask
+        "sprint.entity.read",
+        "sprint.qa.read", "sprint.qa.ask",
+        "sprint.evaluations.read",
+        "sprint.history_read",
+        "sprint.interact_in.draft", "sprint.interact_in.active",
+        "sprint.interact_in.review", "sprint.interact_in.closed",
+        # Card — read + bug creation (by convention) + comments + choice voting
+        "card.entity.read", "card.entity.context_read",
+        "card.entity.create",
+        "card.qa.read", "card.qa.ask",
+        "card.comments.read", "card.comments.create",
+        "card.comments.respond_choice", "card.comments.get_responses",
+        "card.attachments.read", "card.attachments.upload",
+        "card.mockups.read",
+        "card.tests.read",
+        "card.validation.read",
+        "card.activity_read",
+        "card.interact_in.not_started",
+        # KG — read-only exploration (zero session, no cypher, no admin write)
+        "kg.query.*",
+        "kg.power.natural", "kg.power.schema_info",
+        "kg.admin.settings_read",
+    ])
+
+    # ------------------------------------------------------------------
+    # Sprint Manager — owns the sprint lifecycle end-to-end
+    # ------------------------------------------------------------------
+    # Owns: sprint CRUD + full state machine (draft→active→review→closed)
+    # + sprint_evaluation submission + card.assign for planning.
+    # Reads ideation/refinement/spec for context. Card interact_in wide so
+    # the sprint can observe execution without touching implementation.
+    # Cannot: create cards, submit tech gates, edit spec content, run KG
+    # session or cypher.
+    # Coexists with Validator on sprint.evaluations.submit — both can
+    # submit; audit log differentiates. Adoption is opt-in per team.
+    sprint_manager = _build_preset_flags([
+        # Board + context read
+        "board.read", "board.activity_read", "board.analytics_read",
+        "board.mentions_read", "board.mentions_mark_seen",
+        "guidelines.read",
+        "profile.update",
+        # Ideation / Refinement — read + Q&A for planning context
+        "ideation.entity.read", "ideation.qa.read", "ideation.qa.ask",
+        "ideation.history_read",
+        "refinement.entity.read", "refinement.qa.read", "refinement.qa.ask",
+        "refinement.history_read",
+        # Spec — read full content + artifacts (planner needs scope)
+        "spec.entity.read",
+        "spec.qa.read", "spec.qa.ask",
+        "spec.tests.read", "spec.rules.read", "spec.contracts.read",
+        "spec.mockups.read", "spec.knowledge.read",
+        "spec.evaluations.read", "spec.validation.read",
+        "spec.history_read",
+        "spec.interact_in.validated", "spec.interact_in.in_progress", "spec.interact_in.done",
+        # Sprint — full ownership
+        "sprint.entity.read", "sprint.entity.create", "sprint.entity.edit_fields",
+        "sprint.entity.edit_coverage_flags", "sprint.entity.assign", "sprint.entity.label",
+        "sprint.entity.archive", "sprint.entity.restore", "sprint.entity.delete",
+        "sprint.move.draft_to_active", "sprint.move.active_to_review",
+        "sprint.move.review_to_closed", "sprint.move.any_to_cancelled",
+        "sprint.interact_in.draft", "sprint.interact_in.active",
+        "sprint.interact_in.review", "sprint.interact_in.closed",
+        "sprint.qa.read", "sprint.qa.ask", "sprint.qa.answer",
+        "sprint.evaluations.read", "sprint.evaluations.submit", "sprint.evaluations.delete",
+        "sprint.history_read",
+        # Card — read, assign, label, observe every state
+        "card.entity.read", "card.entity.context_read",
+        "card.entity.assign", "card.entity.label",
+        "card.qa.read", "card.qa.ask",
+        "card.comments.read", "card.comments.create",
+        "card.conclusion.read",
+        "card.tests.read", "card.mockups.read", "card.attachments.read",
+        "card.validation.read",
+        "card.activity_read",
+        "card.interact_in.not_started", "card.interact_in.started",
+        "card.interact_in.in_progress", "card.interact_in.on_hold",
+        "card.interact_in.validation", "card.interact_in.done",
+        # KG baseline — query + natural + schema. No cypher/session/write.
+        "kg.query.*",
+        "kg.power.natural", "kg.power.schema_info",
+        "kg.admin.settings_read",
     ])
 
     return [
@@ -854,8 +1074,110 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         {"name": "Executor", "description": "Implement normal cards. Moves not_started→validation. Cannot submit gates or promote validation→done.", "flags": executor},
         {"name": "Validator", "description": "Exclusive gate-holder. Submits spec/task/sprint validations and evaluations. On cards, only touches validation status.", "flags": validator},
         {"name": "QA", "description": "Owns test scenarios and test card lifecycle. No gate submissions.", "flags": qa},
+        {"name": "Reporter", "description": "Observador — lê tudo, abre bug card, pergunta e vota em choice. Zero submit de gate, zero edit, zero consolidação KG. Ideal para PO/stakeholder/onboarding.", "flags": reporter},
+        {"name": "Sprint Manager", "description": "Dono do ciclo de sprint (create → active → review → closed + evaluation). Lê contexto de spec/refinement/ideation e orquestra assign de cards. Não cria cards nem submete gates técnicos. Coexiste com Validator.", "flags": sprint_manager},
         {"name": "Spec", "description": "Defines the spec (ideation→refinement→spec content, sprint plan, card breakdown). No gate submissions, no card execution.", "flags": spec_writer},
     ]
+
+
+# ---------------------------------------------------------------------------
+# role_summary — self-describing agent role, derived from effective flags
+# ---------------------------------------------------------------------------
+
+
+# Flag → short label used to build the "Owns" section.
+_OWNS_LABELS: list[tuple[str, str]] = [
+    ("spec.validation.submit", "submit spec validations"),
+    ("spec.evaluations.submit", "submit spec evaluations"),
+    ("card.validation.submit", "submit task validations"),
+    ("sprint.evaluations.submit", "submit sprint evaluations"),
+    ("spec.entity.create", "create specs"),
+    ("card.entity.create", "create cards"),
+    ("card.entity.create_test", "create test cards"),
+    ("kg.session.commit", "commit KG consolidation"),
+    ("kg.admin.settings_write", "edit KG settings"),
+    ("kg.admin.historical_consolidation", "run historical KG consolidation"),
+]
+
+
+# Flag → short label for "Cannot" — only when flag is False (to highlight gaps).
+_CANNOT_LABELS: list[tuple[str, str]] = [
+    ("spec.validation.submit", "submit gates"),
+    ("card.entity.create", "create cards"),
+    ("spec.entity.create", "create specs"),
+]
+
+
+_KG_LABELS: list[tuple[str, str]] = [
+    ("kg.query.global", "query"),
+    ("kg.power.natural", "natural"),
+    ("kg.power.cypher", "cypher"),
+    ("kg.session.commit", "consolidate"),
+]
+
+
+def _match_builtin_preset_name(flags: dict) -> str | None:
+    """Return the built-in preset name whose flags match, or None for custom."""
+    for preset in get_builtin_presets():
+        if preset["flags"] == flags:
+            return preset["name"]
+    return None
+
+
+def generate_role_summary(permissions: Any) -> str:
+    """Produce a human-readable, one-line summary of an agent's effective role.
+
+    Format: ``Role: <preset> | Owns: <a, b> | Cannot: <x> | KG: <caps>``.
+    Empty sections are omitted. The value is always recomputed — never cached —
+    so preset edits and board overrides propagate immediately.
+
+    Accepts:
+    - ``None``: legacy agent (permissions column NULL) — grants all by compat.
+    - ``list[str]``: legacy flat permissions — mapped to granular for analysis.
+    - ``dict``: granular flags (the current canonical form).
+
+    The returned string always starts with ``Role: `` and never contains
+    newlines.
+    """
+    # Legacy permissions=null — unrestricted by backward-compat path in
+    # has_permission/check_permission. Signal it explicitly so the agent
+    # understands the source of its access.
+    if permissions is None:
+        return (
+            "Role: Full Control (legacy) | "
+            "Owns: unrestricted (permissions=null grants all)"
+        )
+
+    # Normalize to granular dict + guess preset name.
+    if isinstance(permissions, list):
+        flags = map_legacy_permissions(permissions)
+        preset_name = _match_builtin_preset_name(flags) or "Custom (legacy)"
+    elif isinstance(permissions, dict):
+        flags = permissions
+        preset_name = _match_builtin_preset_name(flags) or "Custom"
+    else:
+        return "Role: unknown"
+
+    owns = [label for flag, label in _OWNS_LABELS if _get_nested(flags, flag) is True]
+    cannot = [
+        label
+        for flag, label in _CANNOT_LABELS
+        if _get_nested(flags, flag) is False
+    ]
+    # Dedupe cannot against owns (in case the flag is both True and False
+    # across entities — shouldn't happen but defensive).
+    cannot = [c for c in cannot if c not in owns]
+
+    kg = [label for flag, label in _KG_LABELS if _get_nested(flags, flag) is True]
+
+    parts = [f"Role: {preset_name}"]
+    if owns:
+        parts.append(f"Owns: {', '.join(owns)}")
+    if cannot:
+        parts.append(f"Cannot: {', '.join(cannot)}")
+    if kg:
+        parts.append(f"KG: {', '.join(kg)}")
+    return " | ".join(parts)
 
 
 # ---------------------------------------------------------------------------

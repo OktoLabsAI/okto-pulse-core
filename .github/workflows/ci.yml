@@ -6,12 +6,18 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: test ${{ matrix.os }} py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
@@ -21,9 +27,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio psutil
 
       - name: Lint
         run: |
@@ -35,10 +46,25 @@ jobs:
           pip install pyright
           pyright src/ || true
 
-      - name: Test
+      - name: Run KG lifecycle + file-handle tests (strict ResourceWarning)
         run: |
-          pip install pytest
-          pytest -v || true
+          python -W error::ResourceWarning -m pytest -x --tb=short -q tests/test_kg_schema_lifecycle.py tests/test_kg_file_handles.py
+
+      - name: Run full KG suite
+        run: |
+          python -m pytest --tb=short -q -k "kg" --junitxml=pytest-report.xml
+
+      - name: Run E2E KG pipeline tests
+        run: |
+          python -m pytest -m e2e --tb=short -q
+
+      - name: Upload pytest report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: pytest-report.xml
+          retention-days: 14
 
       - name: Build package
         run: |

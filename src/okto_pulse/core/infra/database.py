@@ -318,6 +318,74 @@ async def _migrate_add_skip_trs_coverage() -> None:
                 pass
 
 
+async def _migrate_add_decisions_columns() -> None:
+    """Add decisions JSON column and skip_decisions_coverage flag to specs.
+
+    Spec 0eb51d3e+decisions formalization — idempotent, defaults preserve
+    backward-compat (skip=True means no gate change on existing specs).
+    """
+    from sqlalchemy import text as sa_text
+
+    columns = [
+        ("decisions", "JSON"),
+        ("skip_decisions_coverage", "BOOLEAN DEFAULT true NOT NULL"),
+    ]
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'specs')"
+            ))
+            if not table_check.scalar():
+                return
+            for col_name, col_type in columns:
+                await conn.execute(sa_text(
+                    f"ALTER TABLE specs ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                ))
+        else:
+            for col_name, col_type in columns:
+                try:
+                    col_type_sqlite = col_type.replace("true", "1").replace("false", "0")
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE specs ADD COLUMN {col_name} {col_type_sqlite}"
+                    ))
+                except Exception:
+                    pass
+
+
+async def _migrate_decisions_default_false() -> None:
+    """Ideação #10 Fase 1: flip spec.skip_decisions_coverage default from True→False.
+
+    Backward-compat: only NEW inserts get False; existing rows keep their
+    current value (True for most pré-ideação #10 specs). On Postgres we
+    ALTER COLUMN SET DEFAULT so raw SQL inserts honor the flip too. On
+    SQLite, ALTER COLUMN DEFAULT is not supported — Python-side default
+    (set on the SQLAlchemy model) handles future ORM inserts. Idempotent.
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    if dialect != "postgresql":
+        # SQLite handled via Python-side default on the Mapped column
+        return
+    async with get_engine().begin() as conn:
+        table_check = await conn.execute(sa_text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'specs')"
+        ))
+        if not table_check.scalar():
+            return
+        col_check = await conn.execute(sa_text(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_name = 'specs' AND column_name = 'skip_decisions_coverage'"
+        ))
+        current_default = col_check.scalar()
+        if current_default and "false" in str(current_default).lower():
+            return
+        await conn.execute(sa_text(
+            "ALTER TABLE specs ALTER COLUMN skip_decisions_coverage SET DEFAULT false"
+        ))
+
+
 async def _migrate_add_spec_validation_columns() -> None:
     """Add spec validation columns: skip_contract_coverage, skip_qualitative_validation, validation_threshold, evaluations."""
     from sqlalchemy import text as sa_text
@@ -694,12 +762,15 @@ async def init_db() -> None:
     await _migrate_add_bug_card_columns()
     await _migrate_add_skip_rules_coverage()
     await _migrate_add_skip_trs_coverage()
+    await _migrate_add_decisions_columns()
+    await _migrate_decisions_default_false()
     await _migrate_add_archive_columns()
     await _migrate_add_spec_validation_columns()
     await _migrate_add_spec_validation_gate_columns()
     await _migrate_heal_task_validation_field_names()
     await _migrate_status_renames()
     await _migrate_add_permission_columns()
+    await _migrate_add_event_tables()
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _migrate_add_card_sprint_id()
@@ -711,6 +782,365 @@ async def init_db() -> None:
     await _migrate_agent_permissions()
     await _reconcile_builtin_presets()
     await _reconcile_agent_permission_flags()
+    await _bootstrap_default_discovery_intents()
+
+
+async def _bootstrap_default_discovery_intents() -> None:
+    """Upsert the v1 seed catalog of Discovery intents.
+
+    Runs after Base.metadata.create_all so the discovery_intents table is
+    guaranteed to exist. Idempotent via ON CONFLICT on the unique `name`
+    column — re-running on an already-seeded DB is a no-op.
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    seeds = [
+        # --- Coverage & Tracing ---
+        {
+            "name": "coverage_for_fr",
+            "label": "What covers this FR?",
+            "description": (
+                "Lists cards, scenarios and rules that cover a given functional "
+                "requirement on the current board."
+            ),
+            "category": "coverage_tracing",
+            "tool_binding": "okto_pulse_list_test_scenarios",
+            "params_schema": {
+                "fr_id": {"type": "text", "required": True, "label": "FR id"}
+            },
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "uncovered_requirements",
+            "label": "Which requirements are uncovered?",
+            "description": (
+                "Surfaces FRs / NFRs / TRs that still have no linked card or "
+                "test scenario — the coverage gap list."
+            ),
+            "category": "coverage_tracing",
+            # Remap (ideação d1783b03): the previous binding to
+            # okto_pulse_get_spec_context required a spec_id that the intent
+            # did not collect, so the aggregated "uncovered across the board"
+            # question was impossible to answer. The new binding is an
+            # aggregator that walks every spec.
+            "tool_binding": "okto_pulse_list_uncovered_requirements",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "scenarios_without_tasks",
+            "label": "Which test scenarios have no task?",
+            "description": (
+                "Lists TestScenario nodes that are not linked to any "
+                "implementation card — likely blindspots in the sprint plan."
+            ),
+            "category": "coverage_tracing",
+            "tool_binding": "okto_pulse_list_test_scenarios",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+
+        # --- Decisions & History ---
+        {
+            "name": "decisions_superseded",
+            "label": "Which decisions were superseded?",
+            "description": (
+                "Shows the supersedence chain for decisions on this board — "
+                "useful for auditing why a choice was replaced."
+            ),
+            "category": "decisions_history",
+            # Remap (ideação d1783b03): the original binding to
+            # okto_pulse_kg_get_supersedence_chain requires a decision_id, but
+            # the intent is "show all chains" — the new aggregator walks all
+            # spec.decisions on the board.
+            "tool_binding": "okto_pulse_list_supersedence_chains",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "contradictions_in_kg",
+            "label": "Where does the knowledge graph contradict itself?",
+            "description": (
+                "Runs the contradiction detector over the current board's KG "
+                "so mismatched rules, decisions and requirements can be "
+                "reconciled before they bite."
+            ),
+            "category": "decisions_history",
+            "tool_binding": "okto_pulse_kg_find_contradictions",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "decisions_by_topic",
+            "label": "Find decisions about a topic",
+            "description": (
+                "Semantic search across decisions on this board for a given "
+                "topic or phrase — useful when onboarding or revisiting a "
+                "corner of the product."
+            ),
+            "category": "decisions_history",
+            "tool_binding": "okto_pulse_kg_find_similar_decisions",
+            "params_schema": {
+                "topic": {
+                    "type": "text",
+                    "required": True,
+                    "label": "Topic / phrase",
+                }
+            },
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+
+        # --- Dependencies & Blockers ---
+        {
+            "name": "blockers_current_sprint",
+            "label": "What is blocking the current sprint?",
+            "description": (
+                "Lists cards blocked by unresolved dependencies in the active "
+                "sprint so the team can focus on unblocking them first."
+            ),
+            "category": "dependencies_blockers",
+            "tool_binding": "okto_pulse_list_blockers",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "dependencies_of_card",
+            "label": "Who depends on this card?",
+            "description": (
+                "Reverse-lookup for a given card: which other cards or specs "
+                "are waiting on it to land before they can move forward."
+            ),
+            "category": "dependencies_blockers",
+            "tool_binding": "okto_pulse_get_card_dependencies",
+            "params_schema": {
+                "card_id": {
+                    "type": "text",
+                    "required": True,
+                    "label": "Card id",
+                }
+            },
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+
+        # --- Similarity & Reuse ---
+        {
+            "name": "similar_nodes_to_text",
+            "label": "Find similar nodes for a phrase",
+            "description": (
+                "Returns the most semantically similar nodes on the board for "
+                "an arbitrary phrase — handy for duplicate detection and "
+                "cross-referencing."
+            ),
+            "category": "similarity_reuse",
+            # Remap (ideação 803c1fe1): original binding was
+            # okto_pulse_kg_get_similar_nodes which requires session_id +
+            # candidate_id from an active consolidation — inadequate for
+            # user-facing queries. kg_query_natural accepts a free-form
+            # `nl_query` and runs the same HNSW search plus string fallback.
+            "tool_binding": "okto_pulse_kg_query_natural",
+            "params_schema": {
+                "query": {
+                    "type": "text",
+                    "required": True,
+                    "label": "Phrase",
+                }
+            },
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "learning_from_bugs",
+            "label": "Learnings extracted from bugs",
+            "description": (
+                "Surfaces the Learning nodes the KG has distilled from closed "
+                "Bug artifacts — the institutional memory of what broke and "
+                "why."
+            ),
+            "category": "similarity_reuse",
+            "tool_binding": "okto_pulse_kg_get_learning_from_bugs",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+
+        # --- Activity & Recency ---
+        {
+            "name": "recent_activity",
+            "label": "What changed recently on this board?",
+            "description": (
+                "Rolls up the activity log for the current board — recent "
+                "cards, status moves, consolidations, evaluations."
+            ),
+            "category": "activity_recency",
+            "tool_binding": "okto_pulse_get_activity_log",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "my_mentions",
+            "label": "Where was I mentioned?",
+            "description": (
+                "Lists the comments and QA items where the current user was "
+                "@mentioned, so replies don't get lost."
+            ),
+            "category": "activity_recency",
+            "tool_binding": "okto_pulse_list_my_mentions",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+    ]
+
+    async with get_engine().begin() as conn:
+        import json as _json
+        for s in seeds:
+            if dialect == "postgresql":
+                params_literal = s["params_schema"]
+            else:
+                params_literal = (
+                    _json.dumps(s["params_schema"])
+                    if s["params_schema"] is not None
+                    else None
+                )
+
+            row = await conn.execute(
+                sa_text(
+                    "SELECT id, tool_binding, params_schema FROM discovery_intents "
+                    "WHERE name = :name"
+                ),
+                {"name": s["name"]},
+            )
+            existing = row.first()
+            if existing is not None:
+                # Idempotent UPDATE for seed rows. Users cannot edit is_seed
+                # intents via UI, so the seed table is the source of truth —
+                # this keeps tool_binding / params_schema in sync after a
+                # catalog refactor (ideações d1783b03 + 803c1fe1). Label and
+                # description are left untouched to preserve admin edits.
+                existing_binding = existing[1]
+                # Normalize existing params_schema for comparison (SQLite
+                # stores as JSON string, Postgres as dict).
+                existing_params = existing[2]
+                if isinstance(existing_params, str):
+                    try:
+                        existing_params = _json.loads(existing_params)
+                    except Exception:
+                        existing_params = None
+                needs_update = (
+                    existing_binding != s["tool_binding"]
+                    or existing_params != s["params_schema"]
+                )
+                if needs_update:
+                    await conn.execute(
+                        sa_text(
+                            "UPDATE discovery_intents "
+                            "SET tool_binding = :tool_binding, "
+                            "    params_schema = :params_schema, "
+                            "    updated_at = CURRENT_TIMESTAMP "
+                            "WHERE name = :name AND is_seed = :is_seed"
+                        ),
+                        {
+                            "name": s["name"],
+                            "tool_binding": s["tool_binding"],
+                            "params_schema": params_literal,
+                            "is_seed": True,
+                        },
+                    )
+                continue
+
+            import uuid as _uuid
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO discovery_intents "
+                    "(id, name, label, description, category, tool_binding, "
+                    " params_schema, renderer, min_permission, active, is_seed) "
+                    "VALUES "
+                    "(:id, :name, :label, :description, :category, :tool_binding, "
+                    " :params_schema, :renderer, :min_permission, :active, :is_seed)"
+                ),
+                {
+                    "id": str(_uuid.uuid4()),
+                    "name": s["name"],
+                    "label": s["label"],
+                    "description": s["description"],
+                    "category": s["category"],
+                    "tool_binding": s["tool_binding"],
+                    "params_schema": params_literal,
+                    "renderer": s["renderer"],
+                    "min_permission": s["min_permission"],
+                    "active": True,
+                    "is_seed": True,
+                },
+            )
+
+
+async def _migrate_add_event_tables() -> None:
+    """Create domain_events + domain_event_handler_executions tables.
+
+    Idempotent: uses CREATE TABLE IF NOT EXISTS. Must run BEFORE
+    Base.metadata.create_all so the two tables exist by the time the
+    dispatcher starts consuming them.
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    ts_type = "TIMESTAMP WITH TIME ZONE" if dialect == "postgresql" else "TIMESTAMP"
+    json_type = "JSONB" if dialect == "postgresql" else "JSON"
+
+    async with get_engine().begin() as conn:
+        await conn.execute(sa_text(f"""
+            CREATE TABLE IF NOT EXISTS domain_events (
+                id VARCHAR(36) PRIMARY KEY,
+                event_type VARCHAR(100) NOT NULL,
+                board_id VARCHAR(36) NOT NULL,
+                actor_id VARCHAR(36),
+                actor_type VARCHAR(20) NOT NULL DEFAULT 'user',
+                payload_json {json_type} NOT NULL,
+                occurred_at {ts_type} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_domain_events_event_type "
+            "ON domain_events(event_type)"
+        ))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_domain_events_board_id "
+            "ON domain_events(board_id)"
+        ))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_domain_events_occurred_at "
+            "ON domain_events(occurred_at)"
+        ))
+
+        await conn.execute(sa_text(f"""
+            CREATE TABLE IF NOT EXISTS domain_event_handler_executions (
+                id VARCHAR(36) PRIMARY KEY,
+                event_id VARCHAR(36) NOT NULL,
+                handler_name VARCHAR(100) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error VARCHAR(500),
+                processed_at {ts_type},
+                next_attempt_at {ts_type},
+                FOREIGN KEY (event_id) REFERENCES domain_events(id) ON DELETE CASCADE,
+                CONSTRAINT uq_deh_event_handler UNIQUE (event_id, handler_name)
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_deh_status_next_attempt "
+            "ON domain_event_handler_executions(status, next_attempt_at)"
+        ))
 
 
 async def _migrate_add_task_validation_columns() -> None:
@@ -853,21 +1283,27 @@ def _merge_missing_flags(stored: dict, registry: dict) -> tuple[dict, int]:
     """Deep-merge: add missing keys from registry to stored, preserve existing values.
 
     Registry leaves are booleans; for any key present in registry but missing
-    in stored, the stored dict gets the key with default False. Existing leaf
+    in stored, the stored dict gets the key with default True. Existing leaf
     values in stored are never overwritten. Returns (merged_dict, added_count).
+
+    Why default True? `PermissionSet.has()` already treats absent flags as
+    allowed. Backfilling as False would silently DEMOTE existing agents when
+    the registry grows — e.g. adding `sprint.entity.create` would deny it to
+    every agent that predates the flag. Backfilling as True preserves the
+    "absent = allowed" semantics that the rest of the system relies on.
     """
     added = 0
     for key, reg_val in registry.items():
         if key not in stored:
-            # Entire subtree missing — copy structure with False leaves
+            # Entire subtree missing — copy structure with True leaves
             if isinstance(reg_val, dict):
                 import copy as _copy
                 subtree = _copy.deepcopy(reg_val)
-                _set_all_leaves(subtree, False)
+                _set_all_leaves(subtree, True)
                 stored[key] = subtree
                 added += _count_leaves(subtree)
             else:
-                stored[key] = False
+                stored[key] = True
                 added += 1
         elif isinstance(reg_val, dict) and isinstance(stored[key], dict):
             _, sub_added = _merge_missing_flags(stored[key], reg_val)

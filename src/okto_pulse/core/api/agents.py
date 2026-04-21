@@ -97,6 +97,10 @@ async def update_agent(
 
     updated = await service.update_agent(agent_id, data)
     await db.commit()
+
+    from okto_pulse.core.mcp.server import invalidate_agent_cache
+    invalidate_agent_cache(agent_id)
+
     updated = await service.get_agent(agent_id)
     return updated
 
@@ -188,6 +192,10 @@ async def update_board_overrides(
     if not ab:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board access not found")
     await db.commit()
+
+    from okto_pulse.core.mcp.server import invalidate_agent_cache
+    invalidate_agent_cache(agent_id)
+
     return ab
 
 

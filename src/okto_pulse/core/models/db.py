@@ -9,6 +9,7 @@ from sqlalchemy import (
     JSON,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -570,12 +571,22 @@ class Spec(Base):
     business_rules: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # API contracts: [{id, method, path, description, request_body, response_success, response_errors, linked_requirements, linked_rules, notes}]
     api_contracts: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Decisions (spec 0eb51d3e R2.1 + Decisions formalization):
+    # [{id, title, rationale, context, alternatives_considered, supersedes_decision_id,
+    #   linked_requirements, linked_task_ids, status, notes}]
+    decisions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # If true, spec can move to Done without full test coverage — set by user only
     skip_test_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, cards can start without full FR→BR coverage — set by user only
     skip_rules_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, cards can start without full TR→Task coverage
     skip_trs_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    # Decisions coverage gate — default False (enforced) since ideação #10
+    # Fase 1 para paridade com TR/BR/Contract. Specs migradas pré-ideação #10
+    # mantêm True via migration backward-compat.
+    skip_decisions_coverage: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default=text("false")
+    )
     # If true, spec can move to validated without full API contract coverage
     skip_contract_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
@@ -1317,3 +1328,311 @@ class ActivityLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Graph Foundation (MVP Fase 0)
+# ---------------------------------------------------------------------------
+# Four operational tables that bridge SQLite state to the per-board Kùzu
+# graphs: consolidation_queue (pending triggers), consolidation_audit (session
+# history + undo), kuzu_node_refs (back-references for compensating delete),
+# global_update_outbox (transactional outbox for the global discovery layer).
+
+
+class ConsolidationQueue(Base):
+    """Pending consolidation triggers — populated by state transitions,
+    consumed by the agent on-demand via the primitives MCP."""
+
+    __tablename__ = "consolidation_queue"
+    __table_args__ = (
+        UniqueConstraint(
+            "board_id", "artifact_type", "artifact_id",
+            name="uq_queue_board_artifact",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    priority: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="high"
+    )  # "high" (runtime trigger) | "low" (historical backfill)
+    source: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="state_transition"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", index=True,
+    )  # pending | claimed | done | paused | failed
+    triggered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    triggered_by_event: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    claimed_by_session_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ConsolidationAudit(Base):
+    """Per-session audit trail — primary log of every consolidation commit.
+    session_id is the PK because everything else (kuzu_node_refs, undo chain)
+    joins back here."""
+
+    __tablename__ = "consolidation_audit"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    committed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True,
+    )
+    nodes_added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    nodes_updated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    nodes_superseded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    edges_added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    undo_status: Mapped[str] = mapped_column(
+        String(20), default="none", nullable=False
+    )  # none | undone | undo_blocked
+    undone_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class KuzuNodeRef(Base):
+    """Back-reference from SQLite to Kùzu nodes created by a session.
+    Powers compensating delete on abort and undo on demand."""
+
+    __tablename__ = "kuzu_node_refs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("consolidation_audit.session_id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    board_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    kuzu_node_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    kuzu_node_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    operation: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # add | update | supersede
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class GlobalUpdateOutbox(Base):
+    """Transactional outbox for the global discovery layer sync worker.
+    Events are INSERTed in the same SQLite transaction as the audit row;
+    a background worker later drains them into the global Kùzu meta-graph
+    with retry + dead-letter semantics."""
+
+    __tablename__ = "global_update_outbox"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    board_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True,
+    )
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DomainEventRow(Base):
+    """Append-only log of domain events (outbox pattern).
+
+    Every state change in card/spec/sprint/ideation/refinement publishes a
+    row here inside the same transaction as the data change. Readers
+    (EventDispatcher worker) consume via domain_event_handler_executions.
+    """
+
+    __tablename__ = "domain_events"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    actor_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'user'")
+    )
+    payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        server_default=func.now(), index=True,
+    )
+
+
+class DomainEventHandlerExecution(Base):
+    """One row per (event, handler) pair. Tracks retry state for the
+    async dispatcher; events with multiple handlers get multiple executions.
+    """
+
+    __tablename__ = "domain_event_handler_executions"
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id", "handler_name", name="uq_deh_event_handler",
+        ),
+        Index("ix_deh_status_next_attempt", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    event_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("domain_events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    handler_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'pending'"),
+    )  # pending | processing | done | failed | dlq
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
+
+# ============================================================================
+# Discovery — user-facing intent catalog, saved searches, search history
+# ============================================================================
+
+
+class DiscoveryIntent(Base):
+    """Catalog of user-facing "pre-built questions" surfaced on the Global
+    Discovery screen. Each row binds a human-friendly label to an existing
+    backend tool (MCP or REST) so clicking an intent card runs a canned
+    query. Managed via an admin UI (deferred to a follow-up card).
+    """
+
+    __tablename__ = "discovery_intents"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    tool_binding: Mapped[str] = mapped_column(String(120), nullable=False)
+    params_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    renderer: Mapped[str] = mapped_column(
+        String(40), nullable=False, server_default=text("'table'")
+    )
+    min_permission: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    active: Mapped[bool] = mapped_column(
+        nullable=False, default=True, server_default=text("1")
+    )
+    is_seed: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default=text("0")
+    )
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DiscoverySavedSearch(Base):
+    """A named search saved on a board. Shared with all members of the
+    board — per-user private saved searches are a v2 concern.
+    """
+
+    __tablename__ = "discovery_saved_searches"
+    __table_args__ = (
+        UniqueConstraint("board_id", "name", name="uq_saved_search_board_name"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intent_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("discovery_intents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    filters_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DiscoverySearchHistory(Base):
+    """Per-user search history. Capped at 50 most-recent entries per
+    (board_id, user_id) via on-INSERT DELETE in the endpoint handler.
+    """
+
+    __tablename__ = "discovery_search_history"
+    __table_args__ = (
+        Index(
+            "ix_search_history_board_user_time",
+            "board_id", "user_id", "searched_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intent_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("discovery_intents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    result_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    searched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+

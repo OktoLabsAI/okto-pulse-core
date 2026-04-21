@@ -33,6 +33,7 @@ from okto_pulse.core.models.db import (
     IdeationHistory,
     IdeationQAItem,
     IdeationStatus,
+    PermissionPreset,
     QAItem,
     Refinement,
     RefinementHistory,
@@ -224,14 +225,46 @@ async def propagate_artifacts(
                 db.add(new_kb)
             await db.flush()
 
-    # Compile Q&A into context (append)
-    qa_context = _compile_qa_context(source_qa_items)
-    if qa_context:
-        existing_context = getattr(target_entity, "context", None) or getattr(target_entity, "description", None) or ""
-        if hasattr(target_entity, "context"):
-            target_entity.context = (existing_context + "\n\n" + qa_context).strip() if existing_context else qa_context
-        elif hasattr(target_entity, "description"):
-            target_entity.description = (existing_context + "\n\n" + qa_context).strip() if existing_context else qa_context
+    # Propagate Q&A items as proper QA rows on the target entity
+    if source_qa_items:
+        from okto_pulse.core.models.db import SpecQAItem, RefinementQAItem
+        # Determine target QA class based on entity type
+        target_qa_class = None
+        target_fk_field = None
+        if hasattr(target_entity, "spec_id") or target_entity.__tablename__ == "specs":
+            target_qa_class = SpecQAItem
+            target_fk_field = "spec_id"
+        elif hasattr(target_entity, "refinement_id") or (hasattr(target_entity, "__tablename__") and target_entity.__tablename__ == "refinements"):
+            target_qa_class = RefinementQAItem
+            target_fk_field = "refinement_id"
+
+        if target_qa_class and target_fk_field:
+            for qa in source_qa_items:
+                _get = (lambda k: qa.get(k)) if isinstance(qa, dict) else (lambda k: getattr(qa, k, None))
+                # Only copy ANSWERED Q&A items. Choice questions (choice/
+                # single_choice/multi_choice) store the answer in `selected`
+                # and leave `answer` as None — the original `if not answer`
+                # silently dropped every choice-type response, so derived
+                # entities lost the decisions made on the parent. Treat the
+                # item as answered when EITHER `answer` OR `selected` is set.
+                answer = _get("answer")
+                selected = _get("selected")
+                has_selection = bool(selected) and len(selected) > 0
+                if not answer and not has_selection:
+                    continue
+                new_qa = target_qa_class(
+                    **{target_fk_field: target_entity.id},
+                    question=_get("question") or "",
+                    question_type=_get("question_type") or "text",
+                    choices=_get("choices"),
+                    allow_free_text=_get("allow_free_text") or False,
+                    answer=answer,
+                    selected=selected,
+                    asked_by=_get("asked_by") or user_id,
+                    answered_by=_get("answered_by"),
+                )
+                db.add(new_qa)
+            await db.flush()
 
 
 async def resolve_actor_name(db: AsyncSession, user_id: str, board_id: str) -> str:
@@ -535,6 +568,22 @@ class CardService:
         )
         self.db.add(card)
         await self.db.flush()
+
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import CardCreated
+
+        await event_publish(
+            CardCreated(
+                board_id=board_id,
+                actor_id=user_id,
+                card_id=card.id,
+                spec_id=card.spec_id,
+                sprint_id=card.sprint_id,
+                card_type=card_type_val,
+                priority=data.priority.value,
+            ),
+            session=self.db,
+        )
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
@@ -1081,6 +1130,39 @@ class CardService:
                 f"Alternatively, enable 'skip contract coverage' on the spec or board."
             )
 
+    async def check_decisions_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every active Decision has a linked task (OPT-IN).
+
+        Specs and boards default `skip_decisions_coverage=True`, so this is a
+        no-op unless the user explicitly enables the gate. Only `active`
+        decisions are checked — `superseded` and `revoked` are historical and
+        don't need linkage.
+        """
+        skip_global = (board.settings or {}).get("skip_decisions_coverage_global", False) if board else False
+        # Default True at both levels — if either says skip, skip.
+        skip_spec = getattr(spec, "skip_decisions_coverage", True)
+        if skip_spec or skip_global:
+            return
+        decisions = list(spec.decisions or [])
+        active = [d for d in decisions if isinstance(d, dict) and d.get("status", "active") == "active"]
+        if not active:
+            return
+        unlinked = [d for d in active if not d.get("linked_task_ids")]
+        if unlinked:
+            titles = ", ".join(
+                f'"{d.get("title", d.get("id", "?"))}"'
+                for d in unlinked[:3]
+            )
+            suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(unlinked)} Decision(s) "
+                f"in spec '{spec.title}' have no linked task cards "
+                f"({titles}{suffix}). "
+                f"REQUIRED ACTION: Link task cards to each Decision via "
+                f"okto_pulse_link_task_to_decision. "
+                f"Alternatively, enable 'skip decisions coverage' on the spec or board."
+            )
+
     async def move_card(
         self, card_id: str, user_id: str, data: CardMove, actor_name: str | None = None
     ) -> Card | None:
@@ -1362,6 +1444,48 @@ class CardService:
                 )
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, card.board_id)
+
+        # Emit CardMoved + optional CardCancelled / CardRestored so downstream
+        # handlers (e.g. KG decay on cancel) can react.
+        if old_status != data.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import (
+                CardCancelled,
+                CardMoved,
+                CardRestored,
+            )
+
+            await event_publish(
+                CardMoved(
+                    board_id=card.board_id,
+                    actor_id=user_id,
+                    card_id=card.id,
+                    from_status=old_status.value,
+                    to_status=data.status.value,
+                ),
+                session=self.db,
+            )
+            if data.status == CardStatus.CANCELLED:
+                await event_publish(
+                    CardCancelled(
+                        board_id=card.board_id,
+                        actor_id=user_id,
+                        card_id=card.id,
+                        previous_status=old_status.value,
+                    ),
+                    session=self.db,
+                )
+            elif old_status == CardStatus.CANCELLED:
+                await event_publish(
+                    CardRestored(
+                        board_id=card.board_id,
+                        actor_id=user_id,
+                        card_id=card.id,
+                        to_status=data.status.value,
+                    ),
+                    session=self.db,
+                )
+
         await self._log_activity(
             board_id=card.board_id,
             card_id=card_id,
@@ -1379,12 +1503,63 @@ class CardService:
         return card
 
     async def delete_card(self, card_id: str, user_id: str) -> bool:
-        """Delete a card."""
+        """Delete a card.
+
+        Cascade-cleans orphan references before the row delete so the next
+        update_spec/create_card on the same spec doesn't trip
+        _validate_spec_linked_refs. Cleans 5 JSON containers on the parent
+        spec and the linked_test_task_ids column on any bug card that pointed
+        at this one. Same transaction as the delete.
+        """
         card = await self.get_card(card_id)
         if not card:
             return False
 
         board_id = card.board_id
+
+        # Cascade cleanup: strip card_id from every reference list on the
+        # parent spec. Must run BEFORE db.delete(card) so any validator
+        # running on the same session sees a consistent state.
+        if card.spec_id:
+            spec = await self.db.get(Spec, card.spec_id)
+            if spec is not None:
+                _SPEC_LINK_CONTAINERS = (
+                    "test_scenarios",
+                    "business_rules",
+                    "api_contracts",
+                    "technical_requirements",
+                    "decisions",
+                )
+                for container_name in _SPEC_LINK_CONTAINERS:
+                    items = getattr(spec, container_name, None) or []
+                    changed = False
+                    for item in items:
+                        linked = item.get("linked_task_ids") or []
+                        if card_id in linked:
+                            item["linked_task_ids"] = [
+                                tid for tid in linked if tid != card_id
+                            ]
+                            changed = True
+                    if changed:
+                        flag_modified(spec, container_name)
+
+        # Cascade cleanup: bug cards on the same board may reference this
+        # card via their columnar linked_test_task_ids. Non-bug cards only —
+        # deleting a bug card doesn't leave references elsewhere.
+        if getattr(card, "card_type", CardType.NORMAL) != CardType.BUG:
+            bugs_q = select(Card).where(
+                Card.board_id == board_id,
+                Card.card_type == CardType.BUG,
+            )
+            bugs_res = await self.db.execute(bugs_q)
+            for bug in bugs_res.scalars().all():
+                linked = bug.linked_test_task_ids or []
+                if card_id in linked:
+                    bug.linked_test_task_ids = [
+                        tid for tid in linked if tid != card_id
+                    ]
+                    flag_modified(bug, "linked_test_task_ids")
+
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self.db.delete(card)
 
@@ -1423,8 +1598,27 @@ class AgentService:
     async def create_agent(
         self, user_id: str, data: AgentCreate
     ) -> tuple[Agent, str]:
-        """Create a new global agent (no board_id)."""
+        """Create a new global agent (no board_id).
+
+        If preset_id is provided, agent.permission_flags is initialised from
+        that preset's flags so the agent immediately reflects the preset.
+        Otherwise, permission_flags defaults to a deep copy of the full
+        registry (all True), giving new agents full access by default.
+        """
+        import copy
+        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
+
         api_key = self.generate_api_key()
+
+        flags: dict | None = data.permission_flags
+        preset_id = data.preset_id
+        if preset_id and flags is None:
+            preset = await self.db.get(PermissionPreset, preset_id)
+            if preset and preset.flags:
+                flags = copy.deepcopy(preset.flags)
+        if flags is None:
+            flags = copy.deepcopy(PERMISSION_REGISTRY)
+
         agent = Agent(
             name=data.name,
             description=data.description,
@@ -1432,6 +1626,8 @@ class AgentService:
             api_key=api_key,
             api_key_hash=self.hash_api_key(api_key),
             permissions=data.permissions,
+            preset_id=preset_id,
+            permission_flags=flags,
             created_by=user_id,
         )
         self.db.add(agent)
@@ -1533,14 +1729,45 @@ class AgentService:
         return list(result.scalars().all())
 
     async def update_agent(self, agent_id: str, data: AgentUpdate) -> Agent | None:
-        """Update an agent."""
+        """Update an agent.
+
+        Special handling:
+        - If `preset_id` is set (and `permission_flags` is NOT in the same
+          payload), agent.permission_flags is reset from the preset's flags.
+          This makes selecting a preset in the UI behave intuitively: the
+          agent's effective permissions immediately match the preset.
+        - If `preset_id` is explicitly cleared (None), permission_flags is
+          reset to the full registry (all True) — i.e. "Full Control".
+        """
+        import copy
+        from sqlalchemy.orm.attributes import flag_modified
+        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
+
         agent = await self.get_agent(agent_id)
         if not agent:
             return None
 
         update_data = data.model_dump(exclude_unset=True)
+
+        preset_id_in_payload = "preset_id" in update_data
+        flags_in_payload = "permission_flags" in update_data
+
         for key, value in update_data.items():
             setattr(agent, key, value)
+
+        if preset_id_in_payload and not flags_in_payload:
+            new_preset_id = update_data.get("preset_id")
+            if new_preset_id:
+                preset = await self.db.get(PermissionPreset, new_preset_id)
+                if preset and preset.flags:
+                    agent.permission_flags = copy.deepcopy(preset.flags)
+                    flag_modified(agent, "permission_flags")
+            else:
+                agent.permission_flags = copy.deepcopy(PERMISSION_REGISTRY)
+                flag_modified(agent, "permission_flags")
+        elif flags_in_payload:
+            flag_modified(agent, "permission_flags")
+
         return agent
 
     async def regenerate_key(self, agent_id: str) -> tuple[Agent | None, str | None]:
@@ -1743,6 +1970,177 @@ class CommentService:
         return True
 
 
+async def _validate_spec_linked_refs(
+    db: AsyncSession,
+    current_spec: Any,
+    update_data: dict[str, Any],
+) -> None:
+    """Reject orphan references in linked_* fields before they hit the DB.
+
+    Computes the *final* state of each spec collection (incoming value when
+    the field is in `update_data`, otherwise the current persisted value)
+    and validates that every `linked_*` reference points to an existing
+    target:
+
+    - linked_criteria (test_scenarios → AC):
+        Must be a 0-based string index "0".."N-1" OR the exact AC text.
+        AC labels like "AC1" are rejected — the SpecModal coverage widget
+        does not recognise them and they would silently appear uncovered.
+
+    - linked_requirements (business_rules + api_contracts → FR):
+        Same rule — index "0".."N-1" OR exact FR text. Anything else
+        (including "FR1" labels) is rejected.
+
+    - linked_rules (api_contracts → BR):
+        Must match an existing business_rule.id in the same spec.
+
+    - linked_task_ids (test_scenarios + business_rules + api_contracts +
+      structured_trs → Card):
+        Each id must resolve to an existing Card row in the DB.
+
+    Raises ValueError with all offenders enumerated so the caller can fix
+    them in one round-trip instead of one-by-one.
+    """
+    def _final(field: str, default: Any):
+        if field in update_data:
+            return update_data[field] if update_data[field] is not None else default
+        return getattr(current_spec, field, None) or default
+
+    final_frs: list[str] = list(_final("functional_requirements", []) or [])
+    final_acs: list[str] = list(_final("acceptance_criteria", []) or [])
+    final_brs: list[dict] = [
+        b if isinstance(b, dict) else b.model_dump()
+        for b in (_final("business_rules", []) or [])
+    ]
+    final_contracts: list[dict] = [
+        c if isinstance(c, dict) else c.model_dump()
+        for c in (_final("api_contracts", []) or [])
+    ]
+    final_scenarios: list[dict] = [
+        s if isinstance(s, dict) else s.model_dump()
+        for s in (_final("test_scenarios", []) or [])
+    ]
+    final_decisions: list[dict] = [
+        d if isinstance(d, dict) else d.model_dump()
+        for d in (_final("decisions", []) or [])
+    ]
+    final_trs_raw: list = list(_final("technical_requirements", []) or [])
+    final_trs_structured: list[dict] = []
+    for tr in final_trs_raw:
+        if isinstance(tr, dict) and tr.get("id"):
+            final_trs_structured.append(tr)
+        elif hasattr(tr, "model_dump") and getattr(tr, "id", None):
+            final_trs_structured.append(tr.model_dump())
+
+    valid_fr_indices = {str(i) for i in range(len(final_frs))}
+    valid_ac_indices = {str(i) for i in range(len(final_acs))}
+    valid_fr_texts = set(final_frs)
+    valid_ac_texts = set(final_acs)
+    valid_br_ids = {br.get("id") for br in final_brs if br.get("id")}
+
+    errors: list[str] = []
+
+    _DIM_TARGET = {"requirements": "FR", "criteria": "AC"}
+    def _check_index_or_text(refs: list[str], valid_indices: set, valid_texts: set, dim: str, owner_label: str):
+        target = _DIM_TARGET.get(dim, dim.upper()[:2])
+        for ref in refs or []:
+            ref_str = str(ref)
+            if ref_str in valid_indices or ref_str in valid_texts:
+                continue
+            max_idx = max(0, len(valid_indices) - 1)
+            errors.append(
+                f"{owner_label}: linked_{dim} reference '{ref_str}' is not a valid 0-based index "
+                f"(0..{max_idx}) nor matches any existing {target} text."
+            )
+
+    # business_rules.linked_requirements → FR
+    for br in final_brs:
+        owner = f"BR '{br.get('id') or br.get('title') or '?'}'"
+        _check_index_or_text(br.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+
+    # api_contracts.linked_requirements → FR
+    # api_contracts.linked_rules → BR.id
+    for ct in final_contracts:
+        owner = f"Contract '{ct.get('id') or (ct.get('method', '?') + ' ' + ct.get('path', '?'))}'"
+        _check_index_or_text(ct.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+        for ref in ct.get("linked_rules") or []:
+            if str(ref) not in valid_br_ids:
+                errors.append(
+                    f"{owner}: linked_rules reference '{ref}' does not match any business_rule.id "
+                    f"in the spec (valid: {sorted(valid_br_ids) or 'none'})."
+                )
+
+    # test_scenarios.linked_criteria → AC
+    for sc in final_scenarios:
+        owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
+        _check_index_or_text(sc.get("linked_criteria") or [], valid_ac_indices, valid_ac_texts, "criteria", owner)
+
+    # decisions.linked_requirements → FR  +  supersedes_decision_id → Decision.id
+    valid_decision_ids = {d.get("id") for d in final_decisions if d.get("id")}
+    for dec in final_decisions:
+        owner = f"Decision '{dec.get('id') or dec.get('title') or '?'}'"
+        _check_index_or_text(
+            dec.get("linked_requirements") or [],
+            valid_fr_indices, valid_fr_texts, "requirements", owner,
+        )
+        sup = dec.get("supersedes_decision_id")
+        if sup and sup not in valid_decision_ids:
+            errors.append(
+                f"{owner}: supersedes_decision_id '{sup}' does not match any decision.id "
+                f"in the spec (valid: {sorted(valid_decision_ids) or 'none'})."
+            )
+
+    # linked_task_ids → Card.id (DB existence check). Collect all in one batch.
+    all_task_ids: set[str] = set()
+    task_owners: dict[str, list[str]] = {}
+    for sc in final_scenarios:
+        owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
+        for tid in sc.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for br in final_brs:
+        owner = f"BR '{br.get('id') or br.get('title') or '?'}'"
+        for tid in br.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for ct in final_contracts:
+        owner = f"Contract '{ct.get('id') or '?'}'"
+        for tid in ct.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for tr in final_trs_structured:
+        owner = f"TR '{tr.get('id')}'"
+        for tid in tr.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for dec in final_decisions:
+        owner = f"Decision '{dec.get('id') or dec.get('title') or '?'}'"
+        for tid in dec.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+
+    if all_task_ids:
+        existing_ids: set[str] = set()
+        result = await db.execute(select(Card.id).where(Card.id.in_(all_task_ids)))
+        for (cid,) in result.all():
+            existing_ids.add(cid)
+        for missing in all_task_ids - existing_ids:
+            owners = ", ".join(task_owners.get(missing, []))
+            errors.append(
+                f"linked_task_ids reference card '{missing}' that does not exist in the database. "
+                f"Referenced by: {owners}."
+            )
+
+    if errors:
+        joined = "; ".join(errors[:10])
+        more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
+        raise ValueError(
+            f"Cannot update spec: {len(errors)} orphan link reference(s) found. {joined}{more}. "
+            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC, the BR.id for linked_rules, "
+            f"and an existing Card.id for linked_task_ids."
+        )
+
+
 class SpecService:
     """Service for spec operations."""
 
@@ -1832,6 +2230,7 @@ class SpecService:
             technical_requirements=data.technical_requirements,
             acceptance_criteria=data.acceptance_criteria,
             test_scenarios=[s.model_dump() for s in data.test_scenarios] if data.test_scenarios else None,
+            decisions=[d.model_dump() for d in data.decisions] if data.decisions else None,
             status=data.status,
             assignee_id=data.assignee_id,
             created_by=user_id,
@@ -1841,6 +2240,29 @@ class SpecService:
         )
         self.db.add(spec)
         await self.db.flush()
+
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import SpecCreated
+
+        spec_source: str = "manual"
+        origin_id: str | None = None
+        if data.refinement_id:
+            spec_source = "derived_refinement"
+            origin_id = data.refinement_id
+        elif data.ideation_id:
+            spec_source = "derived_ideation"
+            origin_id = data.ideation_id
+
+        await event_publish(
+            SpecCreated(
+                board_id=board_id,
+                actor_id=user_id,
+                spec_id=spec.id,
+                source=spec_source,
+                origin_id=origin_id,
+            ),
+            session=self.db,
+        )
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
@@ -1896,6 +2318,10 @@ class SpecService:
         (business rules, contracts, scenarios, mockups, knowledge, skills) flow
         through this method via SpecUpdate, so applying the lock check here covers
         the whole surface in one place.
+
+        Also enforces referential integrity for `linked_*` fields: any
+        `linked_criteria`/`linked_requirements`/`linked_rules`/`linked_task_ids`
+        that points to a non-existent target raises ValueError before any write.
         """
         await _require_spec_unlocked(self.db, spec_id)
 
@@ -1918,25 +2344,49 @@ class SpecService:
         # Capture old values for diff
         old_data = {k: getattr(spec, k) for k in update_data.keys()}
 
-        # Serialize test_scenarios, screen_mockups, business_rules, api_contracts if present
-        for json_list_field in ("test_scenarios", "screen_mockups", "business_rules", "api_contracts"):
+        # Serialize test_scenarios, screen_mockups, business_rules, api_contracts, decisions if present
+        for json_list_field in ("test_scenarios", "screen_mockups", "business_rules", "api_contracts", "decisions"):
             if json_list_field in update_data and update_data[json_list_field] is not None:
                 update_data[json_list_field] = [
                     s.model_dump() if hasattr(s, "model_dump") else s
                     for s in update_data[json_list_field]
                 ]
 
-        json_fields = {"test_scenarios", "screen_mockups", "business_rules", "api_contracts", "functional_requirements", "technical_requirements", "acceptance_criteria", "labels"}
+        # Validate referential integrity of all `linked_*` fields BEFORE
+        # mutating the spec. The validator computes the final state of each
+        # collection (incoming value OR current state if untouched) and
+        # rejects orphan references with a precise error message.
+        await _validate_spec_linked_refs(self.db, spec, update_data)
+
+        json_fields = {"test_scenarios", "screen_mockups", "business_rules", "api_contracts", "decisions", "functional_requirements", "technical_requirements", "acceptance_criteria", "labels"}
         for key, value in update_data.items():
             setattr(spec, key, value)
             if key in json_fields:
                 flag_modified(spec, key)
 
+        old_version = spec.version
         if bumps_version:
             spec.version += 1
 
         # Compute diffs
         changes = self._compute_diff(old_data, update_data, list(update_data.keys()))
+
+        if bumps_version:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecVersionBumped
+
+            changed_struct_fields = sorted(content_fields & update_data.keys())
+            await event_publish(
+                SpecVersionBumped(
+                    board_id=spec.board_id,
+                    actor_id=user_id,
+                    spec_id=spec.id,
+                    old_version=old_version,
+                    new_version=spec.version,
+                    changed_fields=changed_struct_fields,
+                ),
+                session=self.db,
+            )
 
         actor_name = await resolve_actor_name(self.db, user_id, spec.board_id)
         await self._log_activity(
@@ -2157,6 +2607,21 @@ class SpecService:
         ):
             spec.current_validation_id = None
 
+        if old_status != data.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecMoved
+
+            await event_publish(
+                SpecMoved(
+                    board_id=spec.board_id,
+                    actor_id=user_id,
+                    spec_id=spec.id,
+                    from_status=old_status.value,
+                    to_status=data.status.value,
+                ),
+                session=self.db,
+            )
+
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, spec.board_id)
         await self._log_activity(
             board_id=spec.board_id,
@@ -2284,6 +2749,9 @@ class SpecService:
         await card_service.check_rules_coverage(spec, board)
         await card_service.check_trs_coverage(spec, board)
         await card_service.check_contract_coverage(spec, board)
+        # Decisions coverage is OPT-IN — no-op when skip_decisions_coverage=True
+        # (spec or board). See check_decisions_coverage for details.
+        await card_service.check_decisions_coverage(spec, board)
 
         # Extract and validate inputs
         completeness = int(data["completeness"])
@@ -2435,23 +2903,32 @@ class SpecQAService:
         return qa
 
     async def answer_question(self, qa_id: str, user_id: str, data: SpecQAAnswer) -> SpecQAItem | None:
-        """Answer a spec Q&A question (text or choice selection)."""
+        """Answer a spec Q&A question (text or choice selection).
+        Mirrors IdeationQAService.answer_question — accepts `single_choice`
+        as alias of `choice`, and only commits when something was persisted.
+        """
         qa = await self.db.get(SpecQAItem, qa_id)
         if not qa:
             return None
 
-        if qa.question_type in ("choice", "multi_choice") and data.selected:
-            # Validate selected options
+        saved_something = False
+        choice_types = ("choice", "single_choice", "multi_choice")
+        if qa.question_type in choice_types and data.selected:
             valid_ids = {c["id"] for c in (qa.choices or [])}
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type == "choice" and len(data.selected) > 1:
+            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
                 data.selected = data.selected[:1]
             qa.selected = data.selected
+            saved_something = True
 
         if data.answer:
             qa.answer = data.answer
+            saved_something = True
+
+        if not saved_something:
+            return None
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
@@ -3153,15 +3630,10 @@ class IdeationService:
                 f"- Dependencies: {sa.get('dependencies', '?')}/5\n"
                 f"- Complexity: {ideation.complexity.value if ideation.complexity else 'not evaluated'}"
             )
-        # Include answered Q&A as context
-        qa_items = [qa for qa in (ideation.qa_items or []) if qa.answer]
-        if qa_items:
-            qa_lines = []
-            for qa in qa_items:
-                qa_lines.append(f"**Q:** {qa.question}\n**A:** {qa.answer}")
-            context_parts.append(f"## Q&A Decisions\n" + "\n\n".join(qa_lines))
-
         context = "\n\n".join(context_parts) if context_parts else ideation.description
+
+        # Snapshot Q&A before flush (eager-loaded collections expire after flush)
+        snapshot_qa = list(ideation.qa_items or [])
 
         spec_data = SpecCreate(
             title=ideation.title,
@@ -3175,11 +3647,11 @@ class IdeationService:
             ideation.board_id, user_id, spec_data, skip_ownership_check=skip_ownership_check
         )
         if spec:
-            # Propagate mockups from ideation to spec
+            # Propagate mockups and Q&A from ideation to spec
             await propagate_artifacts(
                 db=self.db,
                 source_mockups=ideation.screen_mockups,
-                source_qa_items=None,  # Q&A already compiled in context above
+                source_qa_items=snapshot_qa,
                 source_knowledge_bases=None,
                 target_entity=spec,
                 target_kb_class=SpecKnowledgeBase,
@@ -3187,6 +3659,20 @@ class IdeationService:
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
             )
+
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import IdeationDerivedToSpec
+
+            await event_publish(
+                IdeationDerivedToSpec(
+                    board_id=ideation.board_id,
+                    actor_id=user_id,
+                    ideation_id=ideation_id,
+                    spec_id=spec.id,
+                ),
+                session=self.db,
+            )
+
             actor_name = await resolve_actor_name(self.db, user_id, ideation.board_id)
             await self._record_history(
                 ideation_id=ideation_id, action="spec_draft_created", actor_id=user_id, actor_name=actor_name,
@@ -3226,22 +3712,40 @@ class IdeationQAService:
         return qa
 
     async def answer_question(self, qa_id: str, user_id: str, data: IdeationQAAnswer) -> IdeationQAItem | None:
-        """Answer an ideation Q&A question (text or choice selection)."""
+        """Answer an ideation Q&A question (text or choice selection).
+
+        Accepts `question_type in {"choice","single_choice","multi_choice"}`
+        — `single_choice` is treated as an alias of `choice`. Only commits
+        `answered_at`/`answered_by` when something was actually persisted,
+        otherwise returns None so the route surfaces a 404 instead of a
+        false-positive 200 (which caused the "toast says saved but the
+        question flips back to unanswered" UX bug).
+        """
         qa = await self.db.get(IdeationQAItem, qa_id)
         if not qa:
             return None
 
-        if qa.question_type in ("choice", "multi_choice") and data.selected:
+        saved_something = False
+        choice_types = ("choice", "single_choice", "multi_choice")
+        if qa.question_type in choice_types and data.selected:
             valid_ids = {c["id"] for c in (qa.choices or [])}
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type == "choice" and len(data.selected) > 1:
+            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
                 data.selected = data.selected[:1]
             qa.selected = data.selected
+            saved_something = True
 
         if data.answer:
             qa.answer = data.answer
+            saved_something = True
+        elif qa.question_type not in choice_types and data.answer == "":
+            # Explicit clear of a free-text answer.
+            qa.answer = None
+
+        if not saved_something:
+            return None
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
@@ -3559,6 +4063,21 @@ class RefinementService:
                 f"Allowed transitions: {allowed_str}."
             )
 
+        # Content gate — draft→review requires at least one non-empty in_scope
+        # entry. Prevents stub refinements (no design intent captured) from
+        # leaking into review / approved / done where downstream tools
+        # (derive_spec, get_refinement_context) would operate on them.
+        if (
+            old_status == RefinementStatus.DRAFT
+            and data.status == RefinementStatus.REVIEW
+        ):
+            in_scope_items = refinement.in_scope or []
+            if not any(isinstance(s, str) and s.strip() for s in in_scope_items):
+                raise ValueError(
+                    "Refinement must have at least one in_scope item before "
+                    "moving to review.",
+                )
+
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, refinement.board_id)
 
         # Snapshot on done
@@ -3701,18 +4220,11 @@ class RefinementService:
         if refinement.decisions:
             decisions_text = "\n".join(f"- {d}" for d in refinement.decisions)
             context_parts.append(f"## Decisions\n{decisions_text}")
-        # Include answered Q&A as context
-        qa_items = [qa for qa in (refinement.qa_items or []) if qa.answer]
-        if qa_items:
-            qa_lines = []
-            for qa in qa_items:
-                qa_lines.append(f"**Q:** {qa.question}\n**A:** {qa.answer}")
-            context_parts.append(f"## Q&A Decisions\n" + "\n\n".join(qa_lines))
-
         context = "\n\n".join(context_parts) if context_parts else refinement.description
 
         # Snapshot artifact data BEFORE create_spec — flush() in create_spec
         # expires all session objects, making eagerly-loaded collections inaccessible.
+        snapshot_qa = list(refinement.qa_items or [])
         snapshot_mockups = list(refinement.screen_mockups or [])
         snapshot_kbs = [
             {"title": kb.title, "description": kb.description, "content": kb.content,
@@ -3737,13 +4249,26 @@ class RefinementService:
             await propagate_artifacts(
                 db=self.db,
                 source_mockups=snapshot_mockups,
-                source_qa_items=None,  # Q&A already compiled in context above
+                source_qa_items=snapshot_qa,
                 source_knowledge_bases=snapshot_kbs,
                 target_entity=spec,
                 target_kb_class=SpecKnowledgeBase,
                 user_id=user_id,
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
+            )
+
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import RefinementDerivedToSpec
+
+            await event_publish(
+                RefinementDerivedToSpec(
+                    board_id=refinement.board_id,
+                    actor_id=user_id,
+                    refinement_id=refinement_id,
+                    spec_id=spec.id,
+                ),
+                session=self.db,
             )
 
             actor_name = await resolve_actor_name(self.db, user_id, refinement.board_id)
@@ -3785,22 +4310,32 @@ class RefinementQAService:
         return qa
 
     async def answer_question(self, qa_id: str, user_id: str, data: RefinementQAAnswer) -> RefinementQAItem | None:
-        """Answer a refinement Q&A question (text or choice selection)."""
+        """Answer a refinement Q&A question (text or choice selection).
+        Mirrors IdeationQAService.answer_question — accepts `single_choice`
+        as alias of `choice`, and only commits when something was persisted.
+        """
         qa = await self.db.get(RefinementQAItem, qa_id)
         if not qa:
             return None
 
-        if qa.question_type in ("choice", "multi_choice") and data.selected:
+        saved_something = False
+        choice_types = ("choice", "single_choice", "multi_choice")
+        if qa.question_type in choice_types and data.selected:
             valid_ids = {c["id"] for c in (qa.choices or [])}
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type == "choice" and len(data.selected) > 1:
+            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
                 data.selected = data.selected[:1]
             qa.selected = data.selected
+            saved_something = True
 
         if data.answer:
             qa.answer = data.answer
+            saved_something = True
+
+        if not saved_something:
+            return None
 
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
@@ -4274,6 +4809,8 @@ class SprintService:
         sprint = Sprint(
             board_id=board_id, spec_id=data.spec_id,
             title=data.title, description=data.description,
+            objective=data.objective,
+            expected_outcome=data.expected_outcome,
             spec_version=spec.version,
             test_scenario_ids=data.test_scenario_ids,
             business_rule_ids=data.business_rule_ids,
@@ -4282,6 +4819,19 @@ class SprintService:
         )
         self.db.add(sprint)
         await self.db.flush()
+
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import SprintCreated as SprintCreatedEvent
+
+        await event_publish(
+            SprintCreatedEvent(
+                board_id=board_id,
+                actor_id=user_id,
+                sprint_id=sprint.id,
+                spec_id=data.spec_id,
+            ),
+            session=self.db,
+        )
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
@@ -4475,6 +5025,33 @@ class SprintService:
 
         old_status = sprint.status
         sprint.status = data.status
+
+        if old_status != data.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import (
+                SprintClosed as SprintClosedEvent,
+                SprintMoved as SprintMovedEvent,
+            )
+
+            await event_publish(
+                SprintMovedEvent(
+                    board_id=sprint.board_id,
+                    actor_id=user_id,
+                    sprint_id=sprint.id,
+                    from_status=old_status.value,
+                    to_status=data.status.value,
+                ),
+                session=self.db,
+            )
+            if data.status == SprintStatus.CLOSED:
+                await event_publish(
+                    SprintClosedEvent(
+                        board_id=sprint.board_id,
+                        actor_id=user_id,
+                        sprint_id=sprint.id,
+                    ),
+                    session=self.db,
+                )
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, sprint.board_id)
         await self._log_activity(
@@ -4784,3 +5361,11 @@ class SprintQAService:
         )
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def delete_question(self, qa_id: str) -> bool:
+        """Delete a Q&A item."""
+        qa = await self.db.get(SprintQAItem, qa_id)
+        if not qa:
+            return False
+        await self.db.delete(qa)
+        return True
