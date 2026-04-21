@@ -2135,7 +2135,7 @@ Empirical rules learned across production sessions. They keep the relevance-scor
 | Action | Tool | Gotcha |
 |---|---|---|
 | Before creating Decision | `kg_query_natural` | Avoids rediscovery; populates `query_hits` which drives decayed_hits in the R2 scoring formula. |
-| Consolidate spec / sprint / card | `kg_begin_consolidation` → `add_node/edge_candidate` → `kg_commit_consolidation` | Pass `deterministic_candidates` (even `[]`) so `source_artifact_ref` is bound. Serialise commits — Kùzu has an exclusive-writer file lock. |
+| Consolidate spec / sprint / card | `kg_begin_consolidation` → `add_node/edge_candidate` → `kg_commit_consolidation` | Pass `deterministic_candidates` (even `[]`) so `source_artifact_ref` is bound. Server serialises commits per board automatically (since 0.1.4 patch) — agents may fire them in parallel. |
 | Register supersedence | `kg_add_edge_candidate(edge_type="supersedes")` | Cognitive-only; five edge types allowed (see layer table). |
 | Detect contradictions | `kg_find_contradictions` | Unresolved pair → register `supersedes` or open ideation. Do not leave it hanging. |
 | Count coverage / velocity / funnel | `get_analytics` | KG is approximate; analytics is authoritative. Mixing them produces drift. |
@@ -2183,11 +2183,12 @@ Before `kg_commit_consolidation`:
 - [ ] `nothing_changed` flag checked — if `true`, abort early (content hash unchanged).
 - [ ] `raw_content` includes enough context for SHA256 dedup (title + description minimum).
 - [ ] Edge candidates reference existing nodes via `kg:<existing_node_id>` prefix.
-- [ ] Commits are serialised across sessions: Kùzu's file lock is exclusive-writer. Begins and adds are fine to parallelise.
+- [ ] Server serialises commits per board automatically (since 0.1.4 patch). Agents may parallelise all commit calls — the handler queues them internally and retries transient inter-process lock contention with exponential backoff.
 
 Lock error recovery:
 
-- `Could not set lock on file` → another session is writing. Retry after 1-2s; do not abort the session (it stays open with TTL=1h).
+- Since the 0.1.4 patch the server auto-serialises per-board and retries transient lock contention 3× with exponential backoff (100/200/400 ms + jitter). The old guidance "retry after 1-2s" is no longer necessary for same-process callers.
+- If you still observe `Could not set lock on file` escaping, another process (CLI, second MCP server) is holding the file. The session stays open with TTL=1h — retry the commit once more before aborting.
 
 ### Contradiction & Supersedence Workflow
 
