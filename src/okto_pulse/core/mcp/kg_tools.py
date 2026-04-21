@@ -18,8 +18,10 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from okto_pulse.core.kg.commit_coordinator import run_with_commit_lock_and_retry
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
+    _require_open_session,
     abort_consolidation,
     add_edge_candidate,
     add_node_candidate,
@@ -276,9 +278,26 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
             )
         except ValidationError as e:
             return _err("invalid_candidate", str(e))
+        # Resolve the session before taking the commit lock so we can key the
+        # lock on the correct board_id. _require_open_session also enforces
+        # ownership — if it raises here the agent hears the same error they
+        # would have heard from commit_consolidation directly.
+        try:
+            session = await _require_open_session(req.session_id, agent.id)
+        except KGPrimitiveError as e:
+            return _err(e.code, e.message, session_id=e.session_id,
+                        details=e.details)
         async with get_db() as db:
             try:
-                resp = await commit_consolidation(req, agent_id=agent.id, db=db)
+                # Wrap the actual commit in the per-board lock + retry
+                # coordinator. This serialises concurrent commits on the
+                # same board (Kùzu holds an exclusive writer lock at the
+                # OS file level) and absorbs transient inter-process
+                # lock contention — see core/kg/commit_coordinator.py.
+                resp = await run_with_commit_lock_and_retry(
+                    session.board_id,
+                    lambda: commit_consolidation(req, agent_id=agent.id, db=db),
+                )
                 return _ok(resp)
             except KGPrimitiveError as e:
                 return _err(e.code, e.message, session_id=e.session_id,
