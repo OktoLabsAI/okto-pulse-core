@@ -178,6 +178,28 @@ def board_kuzu_path(board_id: str) -> Path:
     return _kg_base_dir() / "boards" / board_id / "graph.kuzu"
 
 
+def _open_kuzu_db(path: Path):
+    """Single factory for every ``kuzu.Database()`` call in the core.
+
+    Reads ``kg_kuzu_buffer_pool_mb`` and ``kg_kuzu_max_db_size_gb`` from
+    :class:`CoreSettings` and passes them in bytes. Replaces Kùzu's own
+    defaults (``buffer_pool_size=0`` → ~80% system RAM, ``max_db_size=1<<43``
+    → 8 TB VA) which caused 128 GB RSS with 3 instances in field reports.
+
+    Keeping this factory as the unique entry point lets ops re-tune memory
+    from a single place and enables the runtime Settings menu (0.1.4).
+    """
+    import kuzu  # type: ignore
+    from okto_pulse.core.infra.config import get_settings
+
+    s = get_settings()
+    return kuzu.Database(
+        str(path),
+        buffer_pool_size=s.kg_kuzu_buffer_pool_mb * 1024 * 1024,
+        max_db_size=s.kg_kuzu_max_db_size_gb * 1024 * 1024 * 1024,
+    )
+
+
 def _build_node_ddl(node_type: str) -> str:
     return f"CREATE NODE TABLE IF NOT EXISTS {node_type} ({_COMMON_NODE_ATTRS})"
 
@@ -602,7 +624,7 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     # the migration must run BEFORE the BoardConnection bootstrap path
     # ever owns the handle.
     import kuzu  # type: ignore
-    db = kuzu.Database(str(path))
+    db = _open_kuzu_db(path)
     conn = kuzu.Connection(db)
     try:
         for node_type in NODE_TYPES:
@@ -680,7 +702,7 @@ def _board_needs_migration(board_id: str) -> bool:
     try:
         import kuzu  # type: ignore
         path = board_kuzu_path(board_id)
-        db = kuzu.Database(str(path))
+        db = _open_kuzu_db(path)
         conn = kuzu.Connection(db)
         try:
             res = conn.execute("CALL show_tables() WHERE type='REL' RETURN name")
@@ -716,7 +738,7 @@ def _board_needs_priority_boost_migration(board_id: str) -> bool:
     try:
         import kuzu  # type: ignore
         path = board_kuzu_path(board_id)
-        db = kuzu.Database(str(path))
+        db = _open_kuzu_db(path)
         conn = kuzu.Connection(db)
         try:
             # TABLE_INFO on the first node type is representative: the
@@ -757,7 +779,7 @@ def _board_needs_v030_migration(board_id: str) -> bool:
         path = board_kuzu_path(board_id)
         if not path.exists():
             return False
-        db = kuzu.Database(str(path))
+        db = _open_kuzu_db(path)
         conn = kuzu.Connection(db)
         try:
             for node_type in NODE_TYPES:
@@ -778,7 +800,7 @@ def _migrate_board_schema(board_id: str) -> None:
     try:
         import kuzu  # type: ignore
         path = board_kuzu_path(board_id)
-        db = kuzu.Database(str(path))
+        db = _open_kuzu_db(path)
         conn = kuzu.Connection(db)
         try:
             apply_schema_to_connection(conn)
@@ -841,7 +863,7 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
     path = board_kuzu_path(board_id)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    db = kuzu.Database(str(path))
+    db = _open_kuzu_db(path)
     conn = kuzu.Connection(db)
     try:
         apply_schema_to_connection(conn)
@@ -881,6 +903,11 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
     finally:
         del conn
         del db
+        # gc.collect is mandatory on Windows — with 0.1.4 we pass an explicit
+        # buffer_pool_size so Kùzu allocates eagerly and holds the file lock
+        # slightly longer than the lazy default. Without the collect, the next
+        # open_board_connection on the same path races the finaliser.
+        gc.collect()
 
     _MIGRATED_BOARDS.add(board_id)
 
@@ -956,7 +983,7 @@ class BoardConnection:
                 _migrate_board_schema(board_id)
 
         self._board_id = board_id
-        self._db = kuzu.Database(str(path))
+        self._db = _open_kuzu_db(path)
         self._conn = kuzu.Connection(self._db)
         load_vector_extension(self._conn)
         self._closed = False

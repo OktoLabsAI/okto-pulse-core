@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +18,7 @@ class CoreSettings(BaseSettings):
 
     # Application
     app_name: str = "Okto Pulse"
-    app_version: str = "0.1.0"
+    app_version: str = "0.1.4"
     debug: bool = False
     environment: str = "development"
 
@@ -34,7 +35,7 @@ class CoreSettings(BaseSettings):
 
     # MCP Server
     mcp_server_name: str = "okto-pulse"
-    mcp_server_version: str = "0.1.0"
+    mcp_server_version: str = "0.1.4"
     mcp_port: int = 8101
 
     # CORS
@@ -48,6 +49,13 @@ class CoreSettings(BaseSettings):
     kg_session_ttl_seconds: int = 3600
     kg_cleanup_interval_seconds: int = 60
     kg_cleanup_enabled: bool = True
+
+    # Kùzu runtime tuning (0.1.4) — defaults target ≤1.5GB total RAM with 8 pooled boards.
+    # Kùzu's own defaults (buffer_pool_size=0 → ~80% system RAM, max_db_size=1<<43=8TB VA)
+    # caused 128GB RSS with 3 instances in field reports.
+    kg_kuzu_buffer_pool_mb: int = Field(48, ge=16, le=512)
+    kg_kuzu_max_db_size_gb: int = Field(1, ge=1, le=64)
+    kg_connection_pool_size: int = Field(8, ge=1, le=32)
 
     @property
     def cors_origins_list(self) -> list[str]:
