@@ -49,6 +49,7 @@ class CoreSettings(BaseSettings):
     kg_session_ttl_seconds: int = 3600
     kg_cleanup_interval_seconds: int = 60
     kg_cleanup_enabled: bool = True
+    kg_max_queue_depth: int = Field(200, ge=10, le=10000)
 
     # Kùzu runtime tuning (0.1.4) — defaults target ≤1.5GB total RAM with 8 pooled boards.
     # Kùzu's own defaults (buffer_pool_size=0 → ~80% system RAM, max_db_size=1<<43=8TB VA)

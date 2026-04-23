@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time as _time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -30,37 +31,170 @@ from okto_pulse.core.kg.schema import SCHEMA_VERSION
 logger = logging.getLogger("okto_pulse.kg.service")
 
 # ---------------------------------------------------------------------------
-# v0.3.0 R2 — hit counter with lazy flush
+# v0.3.0 R2 — hit counter with lazy flush (bounded LRU cache)
 # ---------------------------------------------------------------------------
-
-# Module-level cache shared across requests. A defaultdict keyed by
-# (board_id, node_id). Values are int counters. On flush the delta is
-# added to n.query_hits in Kùzu and the cache entry is reset to 0.
-_PENDING_HITS: dict[tuple[str, str], int] = defaultdict(int)
-
-# Timestamp (UTC) of the last successful flush per node. Used by the age
-# trigger: if the last flush was >24h ago, force a flush even if the count
-# hasn't reached the threshold.
-_LAST_FLUSH: dict[tuple[str, str], datetime] = {}
-
-# Per-node asyncio.Lock instances to serialise concurrent hits against the
-# same node without blocking hits against other nodes.
-_HIT_LOCKS: dict[tuple[str, str], asyncio.Lock] = defaultdict(asyncio.Lock)
 
 HIT_FLUSH_THRESHOLD = 10
 HIT_FLUSH_MAX_AGE_S = 24 * 3600  # 24h in seconds
 
 
+class _HitCacheRegistry:
+    """Shared eviction registry for the three hit-counter dicts.
+
+    Keeps ``_pending_hits``, ``_last_flush``, and ``_hit_locks`` in sync
+    under a single OrderedDict-based LRU with configurable max size.
+    Uses a threading.Lock — safe because asyncio runs in a single thread.
+    """
+
+    def __init__(self, max_size: int = 5000) -> None:
+        self._max_size = max_size
+        self._order: OrderedDict[tuple[str, str], None] = OrderedDict()
+        self._pending_hits: dict[tuple[str, str], int] = {}
+        self._last_flush: dict[tuple[str, str], datetime] = {}
+        self._hit_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._has_lock: set[tuple[str, str]] = set()
+        self._lock = threading.Lock()
+
+    def get_pending(self, key: tuple[str, str]) -> int:
+        """Return pending-hit count, creating the entry if absent."""
+        with self._lock:
+            if key not in self._order:
+                self._order[key] = None
+                self._pending_hits[key] = 0
+            else:
+                self._order.move_to_end(key)
+            return self._pending_hits[key]
+
+    def set_pending(self, key: tuple[str, str], value: int) -> None:
+        """Set pending-hit count; evicts oldest if over capacity."""
+        with self._lock:
+            if key in self._order:
+                self._order.move_to_end(key)
+            else:
+                self._order[key] = None
+            self._pending_hits[key] = value
+            self._evict()
+
+    def get_flush(self, key: tuple[str, str]) -> datetime | None:
+        """Return last-flush timestamp without touching LRU order."""
+        return self._last_flush.get(key)
+
+    def set_flush(self, key: tuple[str, str], value: datetime) -> None:
+        """Set last-flush timestamp; evicts oldest if over capacity."""
+        with self._lock:
+            if key in self._order:
+                self._order.move_to_end(key)
+            else:
+                self._order[key] = None
+            self._last_flush[key] = value
+            self._evict()
+
+    def get_lock(self, key: tuple[str, str]) -> asyncio.Lock:
+        """Return per-node lock, creating it lazily if absent."""
+        with self._lock:
+            if key not in self._order:
+                self._order[key] = None
+                self._pending_hits[key] = 0
+            else:
+                self._order.move_to_end(key)
+            if key not in self._has_lock:
+                self._hit_locks[key] = asyncio.Lock()
+                self._has_lock.add(key)
+            return self._hit_locks[key]
+
+    def clear(self) -> None:
+        """Clear all caches."""
+        with self._lock:
+            self._order.clear()
+            self._pending_hits.clear()
+            self._last_flush.clear()
+            self._hit_locks.clear()
+            self._has_lock.clear()
+
+    def snapshot(self) -> dict[tuple[str, str], int]:
+        """Return a shallow copy of pending hits. For debugging/metrics."""
+        return dict(self._pending_hits)
+
+    def _evict(self) -> None:
+        """Remove the oldest entry from ALL dicts. Must be called with lock held."""
+        while len(self._order) > self._max_size:
+            oldest_key, _ = self._order.popitem(last=False)
+            self._pending_hits.pop(oldest_key, None)
+            self._last_flush.pop(oldest_key, None)
+            self._hit_locks.pop(oldest_key, None)
+            self._has_lock.discard(oldest_key)
+
+
+# Module-level registry — single instance shared by all three proxies.
+_registry = _HitCacheRegistry(max_size=5000)
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible proxy objects
+# ---------------------------------------------------------------------------
+
+class _PendingHitsProxy:
+    """Proxy for _PENDING_HITS supporting ``d[key]``, ``d[key] += 1``, ``d.get(k)``."""
+
+    def __getitem__(self, key: tuple[str, str]) -> int:
+        return _registry.get_pending(key)
+
+    def __setitem__(self, key: tuple[str, str], value: int) -> None:
+        _registry.set_pending(key, value)
+
+    def get(self, key: tuple[str, str], default: int = 0) -> int:
+        return _registry._pending_hits.get(key, default)
+
+
+class _LastFlushProxy:
+    """Proxy for _LAST_FLUSH supporting ``d[key]``, ``d.get(k)``."""
+
+    def __getitem__(self, key: tuple[str, str]) -> datetime:
+        val = _registry.get_flush(key)
+        if val is None:
+            raise KeyError(key)
+        return val
+
+    def __setitem__(self, key: tuple[str, str], value: datetime) -> None:
+        _registry.set_flush(key, value)
+
+    def get(self, key: tuple[str, str], default: Any = None) -> datetime | None:
+        return _registry.get_flush(key)
+
+
+class _HitLocksProxy:
+    """Proxy for _HIT_LOCKS supporting ``async with d[key]``."""
+
+    class _LockCtx:
+        """Async context manager wrapping an asyncio.Lock."""
+
+        def __init__(self, lock: asyncio.Lock) -> None:
+            self._lock = lock
+
+        async def __aenter__(self) -> asyncio.Lock:
+            await self._lock.acquire()
+            return self._lock
+
+        async def __aexit__(self, *args) -> None:
+            self._lock.release()
+
+    def __getitem__(self, key: tuple[str, str]) -> _HitLocksProxy._LockCtx:
+        return self._LockCtx(_registry.get_lock(key))
+
+
+_PENDING_HITS = _PendingHitsProxy()
+_LAST_FLUSH = _LastFlushProxy()
+_HIT_LOCKS = _HitLocksProxy()
+
+
 def _reset_hit_state_for_tests() -> None:
     """Clear every bit of module-level hit state. Test-only helper."""
-    _PENDING_HITS.clear()
-    _LAST_FLUSH.clear()
-    _HIT_LOCKS.clear()
+    _registry.clear()
 
 
 def _hits_snapshot() -> dict[tuple[str, str], int]:
     """Return a shallow copy of the pending cache. For debugging/metrics."""
-    return dict(_PENDING_HITS)
+    return _registry.snapshot()
 
 
 @dataclass(frozen=True)
