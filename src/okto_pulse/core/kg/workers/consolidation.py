@@ -22,7 +22,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -313,16 +313,48 @@ class ConsolidationWorker:
         logger.info("kg.consolidation_worker.stopped")
 
     async def process_batch(self) -> int:
-        """Process up to batch_size pending entries. Returns count processed."""
+        """Process up to batch_size pending entries. Returns count processed.
+
+        Adaptive batch sizing: when the queue is deep, process more entries
+        per batch to catch up faster.
+
+        Each entry is processed with its own session to keep transactions
+        short and reduce SQLite contention (Fix #4).
+        """
         processed = 0
+
+        # Step 1: Claim entries (fast DB update, single session).
         async with self.session_factory() as db:
+            # Compute adaptive batch size based on current pending depth.
+            depth_result = await db.execute(
+                select(func.count()).where(
+                    ConsolidationQueue.status == "pending",
+                )
+            )
+            pending_depth = depth_result.scalar_one()
+
+            if pending_depth > 200:
+                effective_batch = 50
+            elif pending_depth > 100:
+                effective_batch = 20
+            elif pending_depth > 50:
+                effective_batch = 10
+            else:
+                effective_batch = self.batch_size
+
+            if effective_batch != self.batch_size:
+                logger.info(
+                    "consolidation.adaptive_batch depth=%d batch_size=%d",
+                    pending_depth, effective_batch,
+                )
+
             result = await db.execute(
                 select(ConsolidationQueue).where(
                     ConsolidationQueue.status == "pending",
                 ).order_by(
                     ConsolidationQueue.priority.asc(),
                     ConsolidationQueue.triggered_at.asc(),
-                ).limit(self.batch_size)
+                ).limit(effective_batch)
             )
             entries = list(result.scalars().all())
 
@@ -330,34 +362,32 @@ class ConsolidationWorker:
                 entry.status = "claimed"
                 entry.claimed_at = datetime.now(timezone.utc)
                 entry.claimed_by_session_id = f"worker_{uuid.uuid4().hex[:8]}"
-                await db.commit()
+            await db.commit()
 
-                try:
+        # Step 2: Process each entry with its own session (short-lived tx).
+        for entry in entries:
+            try:
+                async with self.session_factory() as db:
                     success = await _process_queue_entry(db, entry)
                     entry.status = "done" if success else "failed"
                     if not success and not entry.last_error:
-                        # _process_queue_entry returned False without raising.
-                        # Record a generic marker so ops can distinguish
-                        # "returned False" from "raised exception".
                         entry.last_error = "processing returned False"
                     await db.commit()
-                    if success:
-                        processed += 1
-                except Exception as exc:
-                    logger.error(
-                        "consolidation failed for %s:%s: %s",
-                        entry.artifact_type, entry.artifact_id, exc,
-                        exc_info=True,
-                    )
-                    try:
+                if success:
+                    processed += 1
+            except Exception as exc:
+                logger.error(
+                    "consolidation failed for %s:%s: %s",
+                    entry.artifact_type, entry.artifact_id, exc,
+                    exc_info=True,
+                )
+                try:
+                    async with self.session_factory() as db:
                         entry.status = "failed"
-                        # Ideação 0605edb2: persist last_error so the
-                        # Pending Queue view and /retry flow have a
-                        # diagnosable signal instead of last_error=None.
                         entry.last_error = f"{type(exc).__name__}: {str(exc)[:480]}"
                         await db.commit()
-                    except Exception:
-                        await db.rollback()
+                except Exception:
+                    pass
 
         return processed
 

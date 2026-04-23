@@ -19,8 +19,11 @@ writes the audit row + outbox event in a single SQLite transaction.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
+
+logger = logging.getLogger("okto_pulse.kg.primitives")
 
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.kg.schemas import (
@@ -335,25 +338,40 @@ async def propose_reconciliation(
 
     existing_matches_by_candidate: dict[str, list] = {}
     if not nothing_changed:
+        from okto_pulse.core.kg.schema import open_board_connection
         from okto_pulse.core.kg.search import find_similar_for_candidate
 
         embedder = registry.embedding_provider
-        for cand_id, cand in session.node_candidates.items():
-            node_type = (
-                cand.node_type.value
-                if hasattr(cand.node_type, "value")
-                else cand.node_type
+        conn = open_board_connection(session.board_id)
+        try:
+            with conn as (_db, kconn):
+                for cand_id, cand in session.node_candidates.items():
+                    node_type = (
+                        cand.node_type.value
+                        if hasattr(cand.node_type, "value")
+                        else cand.node_type
+                    )
+                    query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+                    matches = find_similar_for_candidate(
+                        board_id=session.board_id,
+                        node_type=node_type,
+                        query_vector=query_vec,
+                        top_k=5,
+                        min_similarity=0.3,
+                        conn=kconn,
+                    )
+                    if matches:
+                        existing_matches_by_candidate[cand_id] = matches
+        except Exception as exc:
+            logger.warning(
+                "kg.primitives.reconciliation_search_failed session=%s err=%s",
+                req.session_id, exc,
             )
-            query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
-            matches = find_similar_for_candidate(
-                board_id=session.board_id,
-                node_type=node_type,
-                query_vector=query_vec,
-                top_k=5,
-                min_similarity=0.3,
-            )
-            if matches:
-                existing_matches_by_candidate[cand_id] = matches
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     hints_by_cid = reconcile_session(
         session.node_candidates,

@@ -15,12 +15,17 @@ If one exists we return silently; the existing row will serve the work.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+import logging
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import DomainEvent
+from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.models.db import ConsolidationQueue
+
+logger = logging.getLogger("okto_pulse.core.events.consolidation_enqueuer")
 
 
 _CARD_EVENT_PREFIX = "card."
@@ -68,6 +73,21 @@ class ConsolidationEnqueuer:
             ).limit(1)
         )
         if dup is not None:
+            return
+
+        # Queue depth limit — reject new enqueues when the board queue is full.
+        max_depth = get_settings().kg_max_queue_depth
+        count = await session.scalar(
+            select(func.count()).where(
+                ConsolidationQueue.board_id == event.board_id,
+                ConsolidationQueue.status.in_(["pending", "claimed"]),
+            )
+        )
+        if count >= max_depth:
+            logger.warning(
+                "consolidation.queue_full board=%s depth=%d rejecting event=%s",
+                event.board_id, count, event.event_type,
+            )
             return
 
         session.add(
