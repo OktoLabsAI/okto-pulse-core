@@ -1,7 +1,7 @@
 """Core application factory."""
 
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Callable, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +19,7 @@ def create_app(
     storage_provider: StorageProvider,
     *,
     cors_origins: list[str] | None = None,
+    lifespan: Optional[Callable] = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -42,7 +43,7 @@ def create_app(
     create_database(settings.database_url, echo=settings.debug)
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async def _default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Ensure the AppSetting model is registered with Base before init_db
         # creates the schema. Side-effect import only.
         from okto_pulse.core.services import settings_service as _settings_svc  # noqa: F401
@@ -107,7 +108,7 @@ def create_app(
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        lifespan=lifespan,
+        lifespan=lifespan if lifespan else _default_lifespan,
     )
 
     # CORS

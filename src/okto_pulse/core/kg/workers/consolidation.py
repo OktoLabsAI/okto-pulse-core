@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -253,15 +253,20 @@ class ConsolidationWorker:
     when the signal is dropped (e.g. singleton was restarted mid-flight).
     """
 
+    # Entries claimed longer than this (minutes) are considered stuck.
+    STALE_CLAIM_MINUTES: int = 30
+
     def __init__(
         self,
         session_factory,
         heartbeat_seconds: int = 30,
         batch_size: int = 5,
+        stale_claim_minutes: int | None = None,
     ):
         self.session_factory = session_factory
         self.heartbeat_seconds = heartbeat_seconds
         self.batch_size = batch_size
+        self._stale_claim_minutes = stale_claim_minutes or self.STALE_CLAIM_MINUTES
         self._task: asyncio.Task | None = None
         self._running = False
         # Lazily created in start() so the event binds to the running loop.
@@ -284,9 +289,39 @@ class ConsolidationWorker:
                 # processes) — ignore, heartbeat will pick the work up.
                 pass
 
+    async def _reclaim_stale_claims(self) -> int:
+        """Reset queue entries stuck in 'claimed' status back to 'pending'.
+
+        If the worker crashes after claiming but before completing an entry,
+        that entry stays claimed forever. This startup sweep recovers them.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self._stale_claim_minutes)
+        async with self.session_factory() as db:
+            result = await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.status == "claimed",
+                    ConsolidationQueue.claimed_at < cutoff,
+                )
+            )
+            stale = list(result.scalars().all())
+            if not stale:
+                return 0
+            for entry in stale:
+                entry.status = "pending"
+                entry.claimed_at = None
+                entry.claimed_by_session_id = None
+            await db.commit()
+        logger.info(
+            "kg.consolidation_worker.reclaimed count=%d threshold_min=%d",
+            len(stale), self._stale_claim_minutes,
+        )
+        return len(stale)
+
     async def start(self) -> None:
         if self.is_running:
             return
+        # Reclaim any entries left in 'claimed' from a previous crash.
+        await self._reclaim_stale_claims()
         self._running = True
         self._wake_event = asyncio.Event()
         self._task = asyncio.create_task(
@@ -369,9 +404,12 @@ class ConsolidationWorker:
             try:
                 async with self.session_factory() as db:
                     success = await _process_queue_entry(db, entry)
-                    entry.status = "done" if success else "failed"
-                    if not success and not entry.last_error:
-                        entry.last_error = "processing returned False"
+                    # Re-fetch to attach to this session (entry is detached from Step 1's session)
+                    fresh = await db.get(ConsolidationQueue, entry.id)
+                    if fresh:
+                        fresh.status = "done" if success else "failed"
+                        if not success and not fresh.last_error:
+                            fresh.last_error = "processing returned False"
                     await db.commit()
                 if success:
                     processed += 1
@@ -383,8 +421,10 @@ class ConsolidationWorker:
                 )
                 try:
                     async with self.session_factory() as db:
-                        entry.status = "failed"
-                        entry.last_error = f"{type(exc).__name__}: {str(exc)[:480]}"
+                        fresh = await db.get(ConsolidationQueue, entry.id)
+                        if fresh:
+                            fresh.status = "failed"
+                            fresh.last_error = f"{type(exc).__name__}: {str(exc)[:480]}"
                         await db.commit()
                 except Exception:
                     pass

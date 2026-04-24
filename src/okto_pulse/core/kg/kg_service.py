@@ -7,10 +7,9 @@ Responsibilities:
 - Delegates to graph_store (SemanticGraphStore) via the provider registry
 - Returns typed dicts; callers (MCP/REST) wrap into Pydantic models
 
-All public methods are sync because Kuzu's Python API is synchronous. The
-MCP/REST adapters call them from async handlers via run_in_executor when
-needed for high-concurrency workloads (MVP: direct call is fine since Kuzu
-is embedded and single-writer).
+Async methods that call Kùzu use ``_run_kuzu`` to offload the synchronous
+``Connection.execute()`` calls to a dedicated thread pool, keeping the
+event loop responsive under concurrent load.
 """
 
 from __future__ import annotations
@@ -20,8 +19,10 @@ import logging
 import threading
 import time as _time
 from collections import OrderedDict, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
+from functools import partial
 from typing import Any
 
 from okto_pulse.core.kg import cypher_templates as tpl
@@ -29,6 +30,22 @@ from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 from okto_pulse.core.kg.schema import SCHEMA_VERSION
 
 logger = logging.getLogger("okto_pulse.kg.service")
+
+# ---------------------------------------------------------------------------
+# Thread pool for offloading synchronous Kùzu operations from the event loop
+# ---------------------------------------------------------------------------
+
+_kuzu_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="kuzu")
+
+
+async def _run_kuzu(func, *args, **kwargs):
+    """Run a synchronous Kùzu operation in a dedicated thread pool."""
+    loop = asyncio.get_running_loop()
+    if kwargs:
+        pfunc = partial(func, *args, **kwargs)
+        return await loop.run_in_executor(_kuzu_executor, pfunc)
+    return await loop.run_in_executor(_kuzu_executor, func, *args)
+
 
 # ---------------------------------------------------------------------------
 # v0.3.0 R2 — hit counter with lazy flush (bounded LRU cache)
@@ -258,6 +275,21 @@ def _filters(
     )
 
 
+def _flush_to_kuzu(
+    board_id: str, node_type: str, node_id: str, delta: int, now_iso: str,
+) -> None:
+    """Sync helper: write hit counter delta to Kùzu (runs in thread pool)."""
+    from okto_pulse.core.kg.schema import open_board_connection
+
+    with open_board_connection(board_id) as (_db, conn):
+        conn.execute(
+            f"MATCH (n:{node_type} {{id: $nid}}) "
+            f"SET n.query_hits = COALESCE(n.query_hits, 0) + $delta, "
+            f"n.last_queried_at = $ts",
+            {"nid": node_id, "delta": delta, "ts": now_iso},
+        )
+
+
 class KGService:
     """Stateless service layer. Instantiate per-request or share across calls."""
 
@@ -324,8 +356,6 @@ class KGService:
         node_id: str,
     ) -> None:
         """Write the pending hit counter to Kùzu. Caller holds the lock."""
-        from okto_pulse.core.kg.schema import open_board_connection
-
         key = (board_id, node_id)
         delta = _PENDING_HITS.get(key, 0)
         if delta <= 0:
@@ -334,13 +364,9 @@ class KGService:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         try:
-            with open_board_connection(board_id) as (_db, conn):
-                conn.execute(
-                    f"MATCH (n:{node_type} {{id: $nid}}) "
-                    f"SET n.query_hits = COALESCE(n.query_hits, 0) + $delta, "
-                    f"n.last_queried_at = $ts",
-                    {"nid": node_id, "delta": delta, "ts": now_iso},
-                )
+            await _run_kuzu(
+                _flush_to_kuzu, board_id, node_type, node_id, delta, now_iso,
+            )
         except Exception as exc:
             logger.error(
                 "kg.scoring.hit_flush_failed board=%s node=%s delta=%d err=%s",
@@ -459,6 +485,7 @@ class KGService:
         """
         from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
 
+        logger.debug("[KG] KGService.get_node_detail board_id=%s node_id=%s", board_id, node_id)
         with open_board_connection(board_id) as (_db, conn):
             for ntype in NODE_TYPES:
                 cypher = (
@@ -468,26 +495,33 @@ class KGService:
                     f"n.relevance_score, n.query_hits, n.last_queried_at, "
                     f"n.created_at, n.superseded_by"
                 )
+                res = None
                 try:
                     res = conn.execute(cypher, {"nid": node_id})
+                    if res.has_next():
+                        r = res.get_next()
+                        return {
+                            "id": r[0],
+                            "title": r[1] or "",
+                            "content": r[2] or "",
+                            "justification": r[3] or "",
+                            "source_artifact_ref": r[4],
+                            "source_confidence": r[5] if r[5] is not None else 0.0,
+                            "relevance_score": r[6] if r[6] is not None else 0.5,
+                            "query_hits": r[7] if r[7] is not None else 0,
+                            "last_queried_at": r[8],
+                            "created_at": r[9].isoformat() if r[9] else None,
+                            "superseded_by": r[10],
+                            "node_type": ntype,
+                        }
                 except Exception:
                     continue
-                if res.has_next():
-                    r = res.get_next()
-                    return {
-                        "id": r[0],
-                        "title": r[1] or "",
-                        "content": r[2] or "",
-                        "justification": r[3] or "",
-                        "source_artifact_ref": r[4],
-                        "source_confidence": r[5] if r[5] is not None else 0.0,
-                        "relevance_score": r[6] if r[6] is not None else 0.5,
-                        "query_hits": r[7] if r[7] is not None else 0,
-                        "last_queried_at": r[8],
-                        "created_at": r[9].isoformat() if r[9] else None,
-                        "superseded_by": r[10],
-                        "node_type": ntype,
-                    }
+                finally:
+                    if res is not None:
+                        try:
+                            res.close()
+                        except Exception:
+                            pass
         return None
 
     # ------------------------------------------------------------------
@@ -529,10 +563,16 @@ class KGService:
         def _query():
             with open_board_connection(board_id) as (_db, conn):
                 result = conn.execute(template, params)
-                rows = []
-                while result.has_next():
-                    rows.append(result.get_next())
-                return rows
+                try:
+                    rows = []
+                    while result.has_next():
+                        rows.append(result.get_next())
+                    return rows
+                finally:
+                    try:
+                        result.close()
+                    except Exception:
+                        pass
 
         rows = self._cached_call("get_all_nodes", board_id, params, _query)
         return [
@@ -570,6 +610,8 @@ class KGService:
         When ``use_semantic=False`` only title-CONTAINS is used (preserved for
         callers that want deterministic string matching).
         """
+        logger.debug("[KG] KGService.get_decision_history board_id=%s topic=%r use_semantic=%s",
+                     board_id, topic, use_semantic)
         store = _get_graph_store()
         f = _filters(min_confidence, max_rows, defaults=self.defaults)
 
@@ -757,6 +799,7 @@ class KGService:
         *,
         max_rows: int | None = None,
     ) -> list[dict]:
+        logger.debug("[KG] KGService.find_contradictions board_id=%s node_id=%s", board_id, node_id)
         store = _get_graph_store()
         limit = max_rows or min(50, self.defaults.max_rows)
 
@@ -788,6 +831,8 @@ class KGService:
     ) -> list[dict]:
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
+        logger.debug("[KG] KGService.find_similar_decisions board_id=%s topic=%r top_k=%d",
+                     board_id, topic, top_k)
         w = weights or self.weights
         store = _get_graph_store()
         embedder = get_kg_registry().embedding_provider
@@ -939,6 +984,7 @@ class KGService:
         results: list[dict] = []
         try:
             _, conn = open_global_connection()
+            res = None
             try:
                 # HNSW over DecisionDigest.embedding, joined to Board via
                 # CONTAINS_DECISION so we can filter to the caller's scope.
@@ -972,7 +1018,15 @@ class KGService:
                         "similarity": sim,
                     })
             finally:
-                del conn
+                if res is not None:
+                    try:
+                        res.close()
+                    except Exception:
+                        pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         except Exception as exc:
             logger.debug("kg.query_global.failed err=%s", exc)
             return []
@@ -986,6 +1040,7 @@ class KGService:
         # the meta-graph is still warming up.
         try:
             _, conn = open_global_connection()
+            res = None
             try:
                 cypher = (
                     "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
@@ -1019,7 +1074,15 @@ class KGService:
                 scored.sort(key=lambda r: r["similarity"], reverse=True)
                 return scored[:top_k]
             finally:
-                del conn
+                if res is not None:
+                    try:
+                        res.close()
+                    except Exception:
+                        pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         except Exception as exc:
             logger.debug("kg.query_global.fallback_failed err=%s", exc)
             return []

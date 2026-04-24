@@ -7,7 +7,9 @@ server.py. Each tool authenticates, resolves board ACL, delegates to
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from typing import Any
 
 from okto_pulse.core.kg.kg_service import KGService, KGToolError, get_kg_service
@@ -31,6 +33,8 @@ from okto_pulse.core.kg.tool_schemas import (
     SupersedenceChainResponse,
     SupersedenceEntry,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _err(code: str, message: str, **extra: Any) -> str:
@@ -115,14 +119,18 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_get_decision_history called: board_id=%s topic=%r", board_id, topic)
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
-            rows = svc.get_decision_history(
+            logger.debug("[KG] kg_get_decision_history offloading to thread")
+            rows = await asyncio.to_thread(
+                svc.get_decision_history,
                 board_id, topic,
                 min_confidence=min_confidence, max_rows=max_rows,
                 use_semantic=use_semantic, min_similarity=min_similarity,
             )
+            logger.debug("[KG] kg_get_decision_history thread returned: count=%d", len(rows))
             resp = DecisionHistoryResponse(
                 decisions=[KGNodeResult(**r) for r in rows],
                 count=len(rows),
@@ -166,6 +174,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_get_related_context called: board_id=%s artifact_id=%s", board_id, artifact_id)
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
@@ -173,11 +182,14 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             if rel_types:
                 tokens = [t.strip() for t in rel_types.replace("|", ",").split(",")]
                 parsed_types = [t for t in tokens if t]
-            rows = svc.get_related_context(
+            logger.debug("[KG] kg_get_related_context offloading to thread")
+            rows = await asyncio.to_thread(
+                svc.get_related_context,
                 board_id, artifact_id,
                 min_confidence=min_confidence, max_rows=max_rows,
                 rel_types=parsed_types, direction=direction, max_depth=max_depth,
             )
+            logger.debug("[KG] kg_get_related_context thread returned: count=%d", len(rows))
             resp = RelatedContextResponse(
                 context=[ContextHop(**r) for r in rows],
                 count=len(rows),
@@ -207,10 +219,13 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_get_supersedence_chain called: board_id=%s decision_id=%s", board_id, decision_id)
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
-            result = svc.get_supersedence_chain(board_id, decision_id)
+            logger.debug("[KG] kg_get_supersedence_chain offloading to thread")
+            result = await asyncio.to_thread(svc.get_supersedence_chain, board_id, decision_id)
+            logger.debug("[KG] kg_get_supersedence_chain thread returned: depth=%d", result.get("depth", 0))
             resp = SupersedenceChainResponse(
                 chain=[SupersedenceEntry(**e) for e in result["chain"]],
                 depth=result["depth"],
@@ -242,12 +257,16 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_find_contradictions called: board_id=%s node_id=%s", board_id, node_id)
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
-            rows = svc.find_contradictions(
+            logger.debug("[KG] kg_find_contradictions offloading to thread")
+            rows = await asyncio.to_thread(
+                svc.find_contradictions,
                 board_id, node_id=node_id or None, max_rows=max_rows,
             )
+            logger.debug("[KG] kg_find_contradictions thread returned: count=%d", len(rows))
             resp = ContradictionsResponse(
                 pairs=[ContradictionPair(**r) for r in rows],
                 count=len(rows),
@@ -279,12 +298,16 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_find_similar_decisions called: board_id=%s topic=%r", board_id, topic)
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
-            rows = svc.find_similar_decisions(
+            logger.debug("[KG] kg_find_similar_decisions offloading to thread")
+            rows = await asyncio.to_thread(
+                svc.find_similar_decisions,
                 board_id, topic, top_k=top_k, min_similarity=min_similarity,
             )
+            logger.debug("[KG] kg_find_similar_decisions thread returned: count=%d", len(rows))
             resp = SimilarDecisionsResponse(
                 decisions=[SimilarDecisionResult(**r) for r in rows],
                 count=len(rows),
@@ -312,10 +335,13 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_explain_constraint called: board_id=%s constraint_id=%s", board_id, constraint_id)
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
-            result = svc.explain_constraint(board_id, constraint_id)
+            logger.debug("[KG] kg_explain_constraint offloading to thread")
+            result = await asyncio.to_thread(svc.explain_constraint, board_id, constraint_id)
+            logger.debug("[KG] kg_explain_constraint thread returned: id=%s", result.get("id", "unknown"))
             resp = ConstraintExplanationResponse(
                 constraint=ConstraintExplanation(**result),
             )
@@ -344,12 +370,16 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_list_alternatives called: board_id=%s decision_id=%s", board_id, decision_id)
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
-            rows = svc.list_alternatives(
+            logger.debug("[KG] kg_list_alternatives offloading to thread")
+            rows = await asyncio.to_thread(
+                svc.list_alternatives,
                 board_id, decision_id, max_rows=max_rows,
             )
+            logger.debug("[KG] kg_list_alternatives thread returned: count=%d", len(rows))
             resp = AlternativesResponse(
                 alternatives=[AlternativeResult(**r) for r in rows],
                 count=len(rows),
@@ -381,12 +411,16 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_get_learning_from_bugs called: board_id=%s area=%r", board_id, area)
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
-            rows = svc.get_learning_from_bugs(
+            logger.debug("[KG] kg_get_learning_from_bugs offloading to thread")
+            rows = await asyncio.to_thread(
+                svc.get_learning_from_bugs,
                 board_id, area, min_confidence=min_confidence, max_rows=max_rows,
             )
+            logger.debug("[KG] kg_get_learning_from_bugs thread returned: count=%d", len(rows))
             resp = LearningsResponse(
                 learnings=[LearningResult(**r) for r in rows],
                 count=len(rows),
@@ -417,10 +451,13 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_query_global called: board_id=%s nl_query=%r", board_id, nl_query)
         svc = get_kg_service()
         try:
             target_boards = [board_id] if board_id else boards
-            rows = svc.query_global(nl_query, user_boards=target_boards, top_k=top_k)
+            logger.debug("[KG] kg_query_global offloading to thread, target_boards=%d", len(target_boards))
+            rows = await asyncio.to_thread(svc.query_global, nl_query, user_boards=target_boards, top_k=top_k)
+            logger.debug("[KG] kg_query_global thread returned: count=%d", len(rows))
             resp = GlobalQueryResponse(
                 results=[GlobalResult(**r) for r in rows],
                 count=len(rows),

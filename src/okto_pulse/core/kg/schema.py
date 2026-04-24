@@ -11,9 +11,11 @@ from __future__ import annotations
 import gc
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+import kuzu  # type: ignore
 from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
@@ -163,6 +165,62 @@ class BoardGraphHandle:
     schema_version: str
 
 
+class BoardConnection:
+    """Context-managed Kùzu per-board database connection.
+
+    Opens a :class:`kuzu.Database` and :class:`kuzu.Connection` for the
+    board's ``.kuzu`` directory.  Use as a context manager::
+
+        with BoardConnection(board_id) as (db, conn):
+            conn.execute("MATCH (m:BoardMeta) RETURN count(m)")
+
+    The connection is released (db.close + gc.collect) on exit.
+    Calling ``close()`` is idempotent.
+    """
+
+    def __init__(self, board_id: str) -> None:
+        self._board_id = board_id
+        self._closed = False
+        # Defensive: self-heal missing or partial graphs before we open our
+        # own handle. No-op on hot boards (cache hit in
+        # ensure_board_graph_bootstrapped).
+        ensure_board_graph_bootstrapped(board_id)
+        path = board_kuzu_path(board_id)
+        logger.debug("[KG] BoardConnection.__init__ board_id=%s path=%s", board_id, path)
+        self.db = _open_kuzu_db(path)
+        logger.debug("[KG] Kùzu database opened successfully for board_id=%s", board_id)
+        self.conn = kuzu.Connection(self.db)  # type: ignore[attr-defined]
+        logger.debug("[KG] Kùzu connection created successfully for board_id=%s", board_id)
+
+    def __enter__(self) -> tuple[Any, Any]:
+        return self.db, self.conn
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+        gc.collect()
+
+    def __iter__(self) -> Any:
+        """Yield (db, conn) so ``tuple(BoardConnection(bid))`` works."""
+        yield self.db
+        yield self.conn
+
+    def close(self) -> None:
+        """Close the database and connection. Idempotent."""
+        if self._closed:
+            return
+        logger.debug("[KG] BoardConnection.close board_id=%s", self._board_id)
+        self._closed = True
+        try:
+            del self.conn
+        except Exception:
+            pass
+        try:
+            self.db.close()
+            logger.debug("[KG] Kùzu database closed board_id=%s", self._board_id)
+        except Exception:
+            pass
+
+
 def _kg_base_dir() -> Path:
     """Resolve the KG base directory (defaults to ~/.okto-pulse)."""
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
@@ -188,16 +246,61 @@ def _open_kuzu_db(path: Path):
 
     Keeping this factory as the unique entry point lets ops re-tune memory
     from a single place and enables the runtime Settings menu (0.1.4).
+
+    Raises a clear ``RuntimeError`` when the underlying Kùzu storage is
+    corrupted due to a version incompatibility (SIGBUS / BusError) instead
+    of letting the signal crash the process.
     """
     import kuzu  # type: ignore
     from okto_pulse.core.infra.config import get_settings
 
+    logger.debug("[KG] _open_kuzu_db path=%s", path)
     s = get_settings()
-    return kuzu.Database(
-        str(path),
-        buffer_pool_size=s.kg_kuzu_buffer_pool_mb * 1024 * 1024,
-        max_db_size=s.kg_kuzu_max_db_size_gb * 1024 * 1024 * 1024,
-    )
+    bp = s.kg_kuzu_buffer_pool_mb * 1024 * 1024
+    mds = s.kg_kuzu_max_db_size_gb * 1024 * 1024 * 1024
+    logger.debug("[KG] _open_kuzu_db buffer_pool=%dMB max_db=%dGB", s.kg_kuzu_buffer_pool_mb, s.kg_kuzu_max_db_size_gb)
+    try:
+        db = kuzu.Database(
+            str(path),
+            buffer_pool_size=bp,
+            max_db_size=mds,
+        )
+        logger.debug("[KG] kuzu.Database() created successfully for path=%s", path)
+        return db
+    except Exception as e:
+        logger.error(
+            "[KG] Failed to open Kùzu database at %s: %s: %s",
+            path, type(e).__name__, e,
+        )
+        raise RuntimeError(
+            f"Failed to open Kùzu database at {path}: "
+            f"{type(e).__name__}: {e}. "
+            "This usually means the storage version is incompatible with the "
+            "installed kuzu library. Delete graph.kuzu and re-bootstrap."
+        ) from e
+
+
+def verify_kuzu_db_health(board_id: str) -> dict[str, Any]:
+    """Check if the Kùzu database for a board is healthy.
+
+    Returns a dict with ``ok`` (bool), ``node_count`` (int), and ``error``
+    (str or None). Safe to call during server startup or as a health-check
+    endpoint — opens a short-lived connection, counts all nodes, and closes
+    cleanly.
+    """
+    path = board_kuzu_path(board_id)
+    if not path.exists():
+        return {"ok": True, "node_count": 0, "error": None,
+                "note": "graph.kuzu does not exist yet — will be created on first access"}
+    try:
+        with open_board_connection(board_id) as (db, conn):
+            res = conn.execute("MATCH (n) RETURN count(n) AS cnt")
+            row = res.get_next()
+            cnt = int(row[0])
+            res.close()
+        return {"ok": True, "node_count": cnt, "error": None}
+    except Exception as e:
+        return {"ok": False, "node_count": 0, "error": f"{type(e).__name__}: {e}"}
 
 
 def _build_node_ddl(node_type: str) -> str:
@@ -454,6 +557,7 @@ def _node_has_legacy_columns(conn, node_type: str) -> bool:
     A best-effort probe — any error is treated as "no legacy columns" so we
     don't try to re-drop on a fresh v0.3.0 board.
     """
+    res = None
     try:
         res = conn.execute(f"CALL TABLE_INFO('{node_type}') RETURN *")
         cols: set[str] = set()
@@ -467,10 +571,17 @@ def _node_has_legacy_columns(conn, node_type: str) -> bool:
         return any(c in cols for c in LEGACY_NODE_COLUMNS)
     except Exception:
         return False
+    finally:
+        if res is not None:
+            try:
+                res.close()
+            except Exception:
+                pass
 
 
 def _node_has_relevance_columns(conn, node_type: str) -> bool:
     """Returns True iff ``node_type`` already has the v0.3.0 columns."""
+    res = None
     try:
         res = conn.execute(f"CALL TABLE_INFO('{node_type}') RETURN *")
         cols: set[str] = set()
@@ -482,6 +593,12 @@ def _node_has_relevance_columns(conn, node_type: str) -> bool:
         return all(c in cols for c in (name for name, _ in RELEVANCE_COLUMNS))
     except Exception:
         return False
+    finally:
+        if res is not None:
+            try:
+                res.close()
+            except Exception:
+                pass
 
 
 def _migrate_node_table_v030(conn, node_type: str) -> int:
@@ -501,6 +618,7 @@ def _migrate_node_table_v030(conn, node_type: str) -> int:
     lives in ``bootstrap_board_graph``).
     """
     dumped: list[dict[str, Any]] = []
+    res = None
     try:
         res = conn.execute(
             f"MATCH (n:{node_type}) RETURN n.id AS id, n.title AS title, "
@@ -540,6 +658,12 @@ def _migrate_node_table_v030(conn, node_type: str) -> int:
             node_type, exc,
         )
         return 0
+    finally:
+        if res is not None:
+            try:
+                res.close()
+            except Exception:
+                pass
 
     try:
         conn.execute(f"DROP TABLE {node_type}")
@@ -649,8 +773,14 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
                 board_id, exc,
             )
     finally:
-        del conn
-        del db
+        try:
+            conn.close()
+        except Exception:
+            pass
+        try:
+            db.close()
+        except Exception:
+            pass
         gc.collect()
 
     _MIGRATED_BOARDS.add(board_id)
@@ -704,13 +834,26 @@ def _board_needs_migration(board_id: str) -> bool:
         path = board_kuzu_path(board_id)
         db = _open_kuzu_db(path)
         conn = kuzu.Connection(db)
+        res = None
         try:
             res = conn.execute("CALL show_tables() WHERE type='REL' RETURN name")
             existing = set()
             while res.has_next():
                 existing.add(res.get_next()[0])
         finally:
-            del conn, db
+            if res is not None:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+            try:
+                db.close()
+            except Exception:
+                pass
         expected = {r[0] for r in REL_TYPES} | {m[0] for m in MULTI_REL_TYPES}
         if expected.issubset(existing):
             _MIGRATED_BOARDS.add(board_id)
@@ -740,6 +883,7 @@ def _board_needs_priority_boost_migration(board_id: str) -> bool:
         path = board_kuzu_path(board_id)
         db = _open_kuzu_db(path)
         conn = kuzu.Connection(db)
+        res = None
         try:
             # TABLE_INFO on the first node type is representative: the
             # migration adds priority_boost to every node type in a loop,
@@ -753,7 +897,19 @@ def _board_needs_priority_boost_migration(board_id: str) -> bool:
                 # TABLE_INFO row: [index, name, type, default, pk]
                 existing_cols.add(str(row[1]))
         finally:
-            del conn, db
+            if res is not None:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+            try:
+                db.close()
+            except Exception:
+                pass
         expected = {c for c, _ in PRIORITY_BOOST_COLUMNS}
         return not expected.issubset(existing_cols)
     except Exception:
@@ -788,7 +944,14 @@ def _board_needs_v030_migration(board_id: str) -> bool:
                 break  # one probe is enough — all node types share _COMMON_NODE_ATTRS
             return False
         finally:
-            del conn, db
+            try:
+                conn.close()
+            except Exception:
+                pass
+            try:
+                db.close()
+            except Exception:
+                pass
     except Exception:
         return False
 
@@ -805,7 +968,14 @@ def _migrate_board_schema(board_id: str) -> None:
         try:
             apply_schema_to_connection(conn)
         finally:
-            del conn, db
+            try:
+                conn.close()
+            except Exception:
+                pass
+            try:
+                db.close()
+            except Exception:
+                pass
         _MIGRATED_BOARDS.add(board_id)
     except Exception as exc:
         logger.warning(
@@ -901,145 +1071,118 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
             },
         )
     finally:
-        del conn
-        del db
-        # gc.collect is mandatory on Windows — with 0.1.4 we pass an explicit
-        # buffer_pool_size so Kùzu allocates eagerly and holds the file lock
-        # slightly longer than the lazy default. Without the collect, the next
-        # open_board_connection on the same path races the finaliser.
-        gc.collect()
+        try:
+            conn.close()
+        except Exception:
+            pass
+        try:
+            db.close()
+        except Exception:
+            pass
 
-    _MIGRATED_BOARDS.add(board_id)
-
-    return BoardGraphHandle(
-        board_id=board_id,
-        path=path,
-        schema_version=SCHEMA_VERSION,
-    )
+    return BoardGraphHandle(board_id=board_id, path=path, schema_version=SCHEMA_VERSION)
 
 
-class BoardConnection:
-    """Context manager for a per-board Kùzu connection.
+# Process-local cache of boards whose Kùzu graph has been bootstrapped in
+# this process. Parallel to _MIGRATED_BOARDS but for the cold-path
+# bootstrap step, not the ALTER-based migrations. Populated by
+# ensure_board_graph_bootstrapped() which is called from BoardConnection.
+_BOOTSTRAPPED_BOARDS: set[str] = set()
 
-    Preferred usage:
-        with BoardConnection(board_id) as (db, conn):
-            conn.execute(...)
+# Per-board lock so concurrent openers serialize the bootstrap. Kùzu's own
+# file lock would catch cross-process races, but within one process asyncio
+# tasks could both see the empty cache and both try to bootstrap.
+_BOOTSTRAP_LOCKS: dict[str, threading.Lock] = {}
+_BOOTSTRAP_LOCKS_GUARD = threading.Lock()
 
-    On ``__exit__`` (or explicit ``.close()``) the connection is released via
-    ``conn.close()`` when available, followed by ``del`` and ``gc.collect()``.
-    The gc call is mandatory on Windows — Kùzu holds an exclusive file lock
-    on the ``.kuzu`` directory for the lifetime of the Python-side handle,
-    and without a gc pass the lock can outlive the ``del`` and block any
-    subsequent rmtree/bootstrap on the same board.
 
-    Exceptions raised by ``conn.close()`` are swallowed with a warning log:
-    the caller is already unwinding and a close failure should not mask the
-    original error or prevent the file lock from being released.
+def _get_bootstrap_lock(board_id: str) -> threading.Lock:
+    with _BOOTSTRAP_LOCKS_GUARD:
+        lock = _BOOTSTRAP_LOCKS.get(board_id)
+        if lock is None:
+            lock = threading.Lock()
+            _BOOTSTRAP_LOCKS[board_id] = lock
+        return lock
 
-    Also iterable — ``db, conn = BoardConnection(bid)`` works as a drop-in
-    for the legacy ``open_board_connection`` tuple signature during the
-    retrofit. Legacy callers must ``del`` both handles themselves to release
-    the lock; prefer the ``with`` form in new code.
+
+def _graph_needs_bootstrap(board_id: str) -> bool:
+    """Cheap probe: does the board's .kuzu path exist AND contain the
+    BoardMeta node table?
+
+    Returns True when the graph is missing entirely OR when it exists but
+    lacks the BoardMeta table (signaling a partial bootstrap). False when
+    the graph is present AND BoardMeta exists.
     """
-
-    def __init__(self, board_id: str) -> None:
-        import kuzu  # type: ignore
-
-        path = board_kuzu_path(board_id)
-        first_open = not path.exists()
-        if first_open:
-            # Brand-new board — full bootstrap (creates path, vector indexes,
-            # BoardMeta singleton).
-            bootstrap_board_graph(board_id)
-        else:
-            # v0.3.0 pivot: if the board still carries validation_status /
-            # corroboration_count, run the destructive column migration BEFORE
-            # the rel-table apply so apply_schema_to_connection operates on
-            # the new DDL. Idempotent: the probe short-circuits once the
-            # BoardMeta version is bumped or the cache is populated.
-            if _board_needs_v030_migration(board_id):
-                try:
-                    migrate_board_to_v030(board_id)
-                except Exception as exc:
-                    logger.warning(
-                        "board_v030_migrate.failed board=%s err=%s",
-                        board_id, exc,
-                    )
-            if _board_needs_migration(board_id):
-                # Pre-existing board missing a rel table (e.g. `belongs_to`
-                # added post-bootstrap). Run schema apply ONCE to backfill,
-                # then mark the board as migrated so subsequent opens skip
-                # the (write-heavy) DDL pass.
-                _migrate_board_schema(board_id)
-            elif _board_needs_priority_boost_migration(board_id):
-                # v0.3.1 targeted migration — legacy boards that passed both
-                # rel-table and v0.3.0 probes but were bootstrapped before
-                # commit 7c032ee have no priority_boost column. Single
-                # apply_schema pass adds it via _ensure_priority_boost_columns.
-                logger.info(
-                    "board_priority_boost_migrate.start board=%s",
-                    board_id,
-                )
-                _migrate_board_schema(board_id)
-
-        self._board_id = board_id
-        self._db = _open_kuzu_db(path)
-        self._conn = kuzu.Connection(self._db)
-        load_vector_extension(self._conn)
-        self._closed = False
-
-    def __enter__(self):
-        return self._db, self._conn
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+    if board_id in _BOOTSTRAPPED_BOARDS:
         return False
-
-    def __iter__(self):
-        # Tuple unpacking transfers ownership to the caller (matches the
-        # legacy `db, conn = open_board_connection(bid)` contract — caller
-        # is responsible for `del conn, db` to release the Kùzu file lock).
-        # Suppress close() on this wrapper so the temporary instance going
-        # out of scope doesn't invalidate the handles we just yielded.
-        self._closed = True
-        yield self._db
-        yield self._conn
-
-    @property
-    def db(self):
-        return self._db
-
-    @property
-    def conn(self):
-        return self._conn
-
-    def close(self) -> None:
-        """Release the Kùzu connection + file lock. Idempotent and best-effort."""
-        if self._closed:
-            return
-        self._closed = True
-        conn = getattr(self, "_conn", None)
-        if conn is not None and hasattr(conn, "close"):
+    path = board_kuzu_path(board_id)
+    if not path.exists():
+        return True
+    try:
+        import kuzu  # type: ignore
+        db = _open_kuzu_db(path)
+        conn = kuzu.Connection(db)
+        try:
+            res = conn.execute(
+                "CALL SHOW_TABLES() WHERE name = 'BoardMeta' RETURN name"
+            )
+            has_meta = res.has_next()
+            res.close()
+        finally:
             try:
                 conn.close()
-            except Exception as exc:
-                logger.warning(
-                    "board_connection.close_failed board=%s err=%s",
-                    self._board_id, exc,
-                    extra={
-                        "event": "board_connection.close_failed",
-                        "board_id": self._board_id,
-                    },
-                )
-        try:
-            del self._conn
-        except Exception:
-            pass
-        try:
-            del self._db
-        except Exception:
-            pass
-        gc.collect()
+            except Exception:
+                pass
+            try:
+                db.close()
+            except Exception:
+                pass
+        if has_meta:
+            _BOOTSTRAPPED_BOARDS.add(board_id)
+            return False
+        return True
+    except Exception as exc:
+        logger.debug(
+            "kg.schema.bootstrap_probe_failed board=%s err=%s — will bootstrap",
+            board_id, exc,
+        )
+        return True
+
+
+def ensure_board_graph_bootstrapped(board_id: str) -> None:
+    """Idempotent, thread-safe guarantee that the board's Kùzu graph exists
+    with the current schema. Safe to call from any entry point — CLI, API,
+    worker, MCP tool, search, health check.
+
+    Called automatically by BoardConnection.__init__ so direct callers of
+    open_board_connection and all primitives that open connections get
+    the guarantee for free.
+    """
+    if board_id in _BOOTSTRAPPED_BOARDS:
+        return
+    lock = _get_bootstrap_lock(board_id)
+    with lock:
+        if board_id in _BOOTSTRAPPED_BOARDS:
+            return
+        if not _graph_needs_bootstrap(board_id):
+            return
+        logger.info(
+            "kg.schema.autobootstrap board=%s path=%s",
+            board_id, board_kuzu_path(board_id),
+            extra={"event": "kg.schema.autobootstrap", "board_id": board_id},
+        )
+        bootstrap_board_graph(board_id)
+        _BOOTSTRAPPED_BOARDS.add(board_id)
+
+
+def reset_bootstrap_cache_for_tests() -> None:
+    """Test helper — clear the process-local bootstrap cache so the next
+    open triggers a fresh bootstrap probe. Call from pytest fixtures that
+    delete board directories mid-test."""
+    _BOOTSTRAPPED_BOARDS.clear()
+    with _BOOTSTRAP_LOCKS_GUARD:
+        _BOOTSTRAP_LOCKS.clear()
+
 
 def open_board_connection(board_id: str) -> BoardConnection:
     """Open a fresh Kùzu connection for a board as a :class:`BoardConnection`.

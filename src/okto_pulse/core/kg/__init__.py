@@ -13,8 +13,10 @@ from okto_pulse.core.kg.schema import (
     SCHEMA_VERSION,
     bootstrap_board_graph,
     board_kuzu_path,
+    ensure_board_graph_bootstrapped,
     migrate_edge_metadata,
     open_board_connection,
+    reset_bootstrap_cache_for_tests,
     vector_index_name,
 )
 
@@ -29,7 +31,9 @@ __all__ = [
     "SCHEMA_VERSION",
     "bootstrap_board_graph",
     "board_kuzu_path",
+    "ensure_board_graph_bootstrapped",
     "migrate_edge_metadata",
     "open_board_connection",
+    "reset_bootstrap_cache_for_tests",
     "vector_index_name",
 ]
