@@ -25,6 +25,9 @@ Thumbs.db
 # Claude Code
 .claude/
 
+# Test output logs
+.test-logs/
+
 # Dev runtime logs
 cli_output.log
 *.output.log

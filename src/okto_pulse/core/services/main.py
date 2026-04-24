@@ -305,6 +305,20 @@ class BoardService:
             actor_name=actor_name,
             details={"name": data.name},
         )
+        # Eagerly bootstrap the per-board Kùzu graph. This keeps board
+        # creation on the slow path (~1-2s) so subsequent consolidation /
+        # MCP query paths stay on the hot path.
+        # Failures are logged but don't abort board creation — the
+        # lazy bootstrap in BoardConnection.__init__ is the safety net.
+        try:
+            from okto_pulse.core.kg.schema import ensure_board_graph_bootstrapped
+            ensure_board_graph_bootstrapped(board.id)
+        except Exception as exc:
+            import logging
+            logging.getLogger("okto_pulse.core.services.main").warning(
+                "board_create.bootstrap_failed board=%s err=%s — lazy path will retry",
+                board.id, exc,
+            )
         return board
 
     async def get_board(self, board_id: str, user_id: str | None = None) -> Board | None:

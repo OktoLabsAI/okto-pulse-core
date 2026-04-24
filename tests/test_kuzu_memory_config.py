@@ -39,7 +39,7 @@ def _restore_core_settings():
 def test_core_settings_defaults_are_safe():
     """AC3: fresh CoreSettings exposes the 0.1.4 safe defaults."""
     s = CoreSettings()
-    assert s.kg_kuzu_buffer_pool_mb == 48
+    assert s.kg_kuzu_buffer_pool_mb == 256
     assert s.kg_kuzu_max_db_size_gb == 1
     assert s.kg_connection_pool_size == 8
 
@@ -51,7 +51,7 @@ def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
     # Pin CoreSettings to explicit values so the test is deterministic even
     # if the suite-wide fixture wiggled the singleton.
     configure_settings(CoreSettings(
-        kg_kuzu_buffer_pool_mb=48,
+        kg_kuzu_buffer_pool_mb=256,
         kg_kuzu_max_db_size_gb=1,
         kg_connection_pool_size=8,
     ))
@@ -73,7 +73,7 @@ def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
         schema_module._open_kuzu_db(fake_path)
 
     assert captured["path"] == str(fake_path)
-    assert captured["buffer_pool_size"] == 48 * 1024 * 1024  # 50_331_648
+    assert captured["buffer_pool_size"] == 256 * 1024 * 1024  # 268_435_456
     assert captured["max_db_size"] == 1 * 1024 * 1024 * 1024  # 1_073_741_824
 
 
@@ -180,7 +180,7 @@ async def test_settings_runtime_get_returns_defaults(settings_client):
     response = await settings_client.get("/api/v1/settings/runtime")
     assert response.status_code == 200
     data = response.json()
-    assert data["kg_kuzu_buffer_pool_mb"] == 48
+    assert data["kg_kuzu_buffer_pool_mb"] == 256
     assert data["kg_kuzu_max_db_size_gb"] == 1
     assert data["kg_connection_pool_size"] == 8
     assert isinstance(data["restart_required"], bool)
@@ -199,7 +199,7 @@ async def test_settings_runtime_put_persists_and_flips_restart(settings_client):
     )
     assert put_resp.status_code == 200
     put_data = put_resp.json()
-    assert put_data["kg_kuzu_buffer_pool_mb"] == 48  # effective still the boot value
+    assert put_data["kg_kuzu_buffer_pool_mb"] == 256  # effective still the boot value
     assert put_data["restart_required"] is True
 
     # Second GET confirms persistence.

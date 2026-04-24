@@ -113,7 +113,14 @@ def bootstrap_global_discovery() -> Path:
             except Exception:
                 pass
     finally:
-        del conn, db
+        try:
+            conn.close()
+        except Exception:
+            pass
+        try:
+            db.close()
+        except Exception:
+            pass
     return path
 
 

@@ -34,7 +34,7 @@ dependencies = [
     "asyncpg>=0.29,<1.0.0",
     "fastmcp>=2.0.0,<3.0.0",
     "mcp>=1.0.0,<2.0.0",
-    "kuzu>=0.6.0,<1.0.0",
+    "kuzu>=0.11.0,<0.12.0",
     "numpy>=1.26.0,<3.0.0",
     "requests>=2.32.0,<3.0.0",
     "chardet>=3.0.2,<6.0.0",
@@ -75,6 +75,12 @@ asyncio_mode = "auto"
 # objects created on a session-scoped one. This pairs with the conftest no
 # longer overriding `event_loop` itself (deprecated in pytest-asyncio 1.x).
 asyncio_default_fixture_loop_scope = "session"
+# Default per-test timeout (seconds). Override per-test with @pytest.mark.timeout(N).
+timeout = 120
+# Timeout method: "thread" kills the test thread; "signal" kills the process.
+# "thread" is safer for tests that use forked children; "signal" is more reliable.
+timeout_method = "thread"
 markers = [
     "e2e: end-to-end pipeline contract tests — slow, open Kùzu handles, exercise outbox worker; excluded by the fast unit run via `pytest -m 'not e2e'`",
+    "timeout(seconds): override per-test timeout (default 120s)",
 ]

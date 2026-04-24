@@ -5,7 +5,9 @@ Registered via `register_kg_power_tools(mcp, get_agent, get_db)`.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from typing import Any
 
 from okto_pulse.core.kg.tier_power import (
@@ -16,6 +18,8 @@ from okto_pulse.core.kg.tier_power import (
     execute_natural_query,
     get_schema_info,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _err(code: str, message: str, **extra: Any) -> str:
@@ -59,13 +63,25 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_query_cypher called: board_id=%s cypher_len=%d max_rows=%d timeout_ms=%d",
+                     board_id, len(cypher), max_rows, timeout_ms)
         try:
             check_rate_limit(agent.id)
-            result = execute_cypher_read_only(
-                board_id, cypher, params,
-                max_rows=max_rows, timeout_ms=timeout_ms,
+            logger.debug("[KG] kg_query_cypher offloading to thread")
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    execute_cypher_read_only,
+                    board_id, cypher, params,
+                    max_rows=max_rows, timeout_ms=timeout_ms,
+                ),
+                timeout=30.0,
             )
+            logger.debug("[KG] kg_query_cypher thread returned: row_count=%d",
+                         result.get("row_count", "unknown"))
             return json.dumps(result, default=str)
+        except asyncio.TimeoutError:
+            logger.error("[KG] kg_query_cypher timed out after 30s: board_id=%s", board_id)
+            return _err("timeout", "Query exceeded 30s timeout")
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
 
@@ -105,14 +121,26 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_query_natural called: board_id=%s query=%r limit=%d",
+                     board_id, nl_query[:80], limit)
         try:
             check_rate_limit(agent.id)
-            result = execute_natural_query(
-                board_id, nl_query,
-                limit=limit, min_confidence=min_confidence,
-                since=since or None, until=until or None,
+            logger.debug("[KG] kg_query_natural offloading to thread")
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    execute_natural_query,
+                    board_id, nl_query,
+                    limit=limit, min_confidence=min_confidence,
+                    since=since or None, until=until or None,
+                ),
+                timeout=30.0,
             )
+            logger.debug("[KG] kg_query_natural thread returned: total_matches=%d",
+                         result.get("total_matches", "unknown"))
             return json.dumps(result, default=str)
+        except asyncio.TimeoutError:
+            logger.error("[KG] kg_query_natural timed out after 30s: board_id=%s", board_id)
+            return _err("timeout", "Query exceeded 30s timeout")
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
 
@@ -137,11 +165,20 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         if agent is None:
             return _err("unauthorized", "authentication required")
 
+        logger.debug("[KG] kg_schema_info called: board_id=%s include_internal=%s",
+                     board_id, include_internal)
         want_internal = include_internal.lower() in ("true", "1", "yes")
-        result = get_schema_info(
-            board_id or "default",
-            include_internal=want_internal,
+        logger.debug("[KG] kg_schema_info offloading to thread")
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                get_schema_info,
+                board_id or "default",
+                include_internal=want_internal,
+            ),
+            timeout=30.0,
         )
+        logger.debug("[KG] kg_schema_info thread returned: schema_version=%s",
+                     result.get("schema_version", "unknown"))
         return json.dumps(result, default=str)
 
     @mcp.tool()
@@ -275,8 +312,12 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
             return _err("unauthorized", "authentication required")
         try:
             check_rate_limit(agent.id)
-            result = execute_natural_query(
-                board_id, nl_query, limit=limit,
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    execute_natural_query,
+                    board_id, nl_query, limit=limit,
+                ),
+                timeout=30.0,
             )
             payload = {
                 "nodes": result.get("nodes", []),
@@ -296,5 +337,7 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
                 ],
             }
             return json.dumps(payload, default=str)
+        except asyncio.TimeoutError:
+            return _err("timeout", "Query exceeded 30s timeout")
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)

@@ -235,10 +235,15 @@ def execute_cypher_read_only(
     """
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
+    logger.debug("[KG] execute_cypher_read_only board_id=%s cypher_len=%d params=%s",
+                 board_id, len(cypher), "yes" if params else "no")
+    logger.debug("[KG] execute_cypher_read_only cypher=%s", cypher[:200])
+
     max_rows = clamp_max_rows(max_rows)
 
     executor = get_kg_registry().cypher_executor
     if executor is not None:
+        logger.debug("[KG] execute_cypher_read_only delegating to registry.cypher_executor")
         return executor.execute_read_only(
             board_id, cypher, params, max_rows=max_rows,
         )
@@ -253,9 +258,11 @@ def execute_cypher_read_only(
     cleaned = _auto_inject_limit(cleaned, max_rows)
     cleaned = _auto_bound_var_length_path(cleaned, MAX_TRAVERSAL_DEPTH)
 
+    logger.debug("[KG] execute_cypher_read_only opening board connection board_id=%s", board_id)
     t0 = _time.monotonic()
     with open_board_connection(board_id) as (_db, conn):
         try:
+            logger.debug("[KG] execute_cypher_read_only executing cleaned cypher (first 200 chars): %s", cleaned[:200])
             result = conn.execute(cleaned, params or {})
             rows = []
             while result.has_next():
@@ -263,6 +270,7 @@ def execute_cypher_read_only(
                 if len(rows) > max_rows:
                     break
         except Exception as exc:
+            logger.error("[KG] execute_cypher_read_only cypher execution failed: %s", exc)
             raise TierPowerError(
                 "invalid_cypher",
                 f"Cypher execution failed: {exc}",
@@ -274,6 +282,8 @@ def execute_cypher_read_only(
     if truncated:
         rows = rows[:max_rows]
 
+    logger.debug("[KG] execute_cypher_read_only done row_count=%d truncated=%s time_ms=%.1f",
+                 len(rows), truncated, dur)
     return {
         "rows": [list(r) for r in rows],
         "row_count": len(rows),
@@ -353,6 +363,9 @@ def execute_natural_query(
     from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
     from okto_pulse.core.kg.query_rewrite import get_rewriter, merge_rrf
     from okto_pulse.core.kg.query_rewrite.interfaces import RewriteResult
+
+    logger.debug("[KG] execute_natural_query board_id=%s query=%r limit=%d min_confidence=%.2f",
+                 board_id, nl_query[:80], limit, min_confidence)
 
     registry = get_kg_registry()
     embedder = registry.embedding_provider
@@ -663,6 +676,8 @@ def get_schema_info(
 ) -> dict:
     """Return schema introspection: node types, rel types, vector indexes."""
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    logger.debug("[KG] get_schema_info board_id=%s include_internal=%s", board_id, include_internal)
 
     store = get_kg_registry().graph_store
     if store is not None:
