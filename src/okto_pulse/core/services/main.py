@@ -4955,6 +4955,7 @@ class SprintService:
                 changes=changes, version=sprint.version,
                 summary=f"Updated: {', '.join(c['field'] for c in changes)}",
             )
+        await self.db.commit()
         return sprint
 
     async def move_sprint(
@@ -5083,6 +5084,7 @@ class SprintService:
             summary=f"Status: {old_status.value} → {data.status.value}",
             version=sprint.version,
         )
+        await self.db.commit()
         return sprint
 
     async def delete_sprint(self, sprint_id: str, user_id: str) -> bool:
@@ -5101,6 +5103,7 @@ class SprintService:
             actor_type="user", actor_id=user_id, actor_name=actor_name,
             details={"sprint_id": sprint_id},
         )
+        await self.db.commit()
         return True
 
     async def assign_tasks(
@@ -5136,6 +5139,7 @@ class SprintService:
                 summary=f"Assigned {assigned} card(s) to sprint",
                 version=sprint.version,
             )
+        await self.db.commit()
         return assigned
 
     async def submit_evaluation(
@@ -5182,6 +5186,7 @@ class SprintService:
             summary=f"Evaluation submitted: {evaluation.get('recommendation')} (score: {evaluation.get('overall_score')})",
             version=sprint.version,
         )
+        await self.db.commit()
         return sprint
 
     async def list_history(self, sprint_id: str, limit: int = 50) -> list[SprintHistory]:
