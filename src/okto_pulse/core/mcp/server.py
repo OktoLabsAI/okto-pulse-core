@@ -14,6 +14,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.helpers import parse_multi_value
+from okto_pulse.core.mcp.trace_middleware import install_if_enabled as _install_trace
 from okto_pulse.core.services.main import (
     AgentService,
     AttachmentService,
@@ -10904,6 +10905,9 @@ def run_mcp_server():
     settings = get_settings()
     create_database(settings.database_url, echo=settings.debug)
     register_session_factory(get_session_factory())
+
+    # Optional request/response tracing — env-gated, no-op when disabled.
+    _install_trace(mcp)
 
     http_app = mcp.http_app(transport="streamable-http")
     wrapped = ApiKeySessionMiddleware(http_app)
