@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     JSON,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -1385,6 +1386,62 @@ class ConsolidationQueue(Base):
         Text, nullable=True
     )  # Error message from failed processing
 
+    # Spec bdcda842 (Consolidation Queue resilience) — v0.1.6 columns.
+    # Added by _migrate_add_consolidation_resilience_columns; ORM model
+    # mirrors the schema so newly-created rows from the model stay in sync.
+    worker_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )  # Worker pool worker UUID that holds the claim
+    claim_timeout_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Recovery scan re-pendings rows past this timestamp
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )  # Consecutive failure count for dead-letter routing
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Exp-backoff scheduling: claim ignores rows with next_retry_at > now()
+
+
+class ConsolidationDeadLetter(Base):
+    """Dead-letter queue for items that exceeded ``kg_queue_max_attempts``
+    consecutive failures. Spec bdcda842 (TR2) — items move here after the
+    last failed attempt and are removed from ConsolidationQueue.
+
+    The ``errors`` JSON array preserves the full attempt history so an
+    operator can inspect what went wrong without scrubbing logs. Each entry
+    follows the schema defined in TR16/AC17:
+        {attempt: int (1-based),
+         occurred_at: ISO8601 UTC string,
+         error_type: str (exc class name),
+         message: str (str(exc) truncated to 500 chars),
+         traceback: str|None (traceback.format_exc() truncated to 2000 chars,
+                              or null when logging level > DEBUG)}
+    """
+
+    __tablename__ = "consolidation_dead_letter"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    original_queue_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )  # The ConsolidationQueue.id the item came from (kept for traceability)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    errors: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    dead_lettered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
 
 class ConsolidationAudit(Base):
     """Per-session audit trail — primary log of every consolidation commit.
@@ -1637,5 +1694,48 @@ class DiscoverySearchHistory(Base):
     result_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     searched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+# ============================================================================
+# KG operational telemetry — daily decay tick run log (spec 28583299, IMPL-F)
+# ============================================================================
+
+
+class KGTickRun(Base):
+    """Operational log of the daily KG relevance recompute tick.
+
+    One row per execution (success or failure). The kg_health endpoint reads
+    the most recent ``completed_at IS NOT NULL`` row to surface
+    ``last_decay_tick_at`` and ``nodes_recomputed_in_last_tick``. Distinct
+    from KG Decision nodes (which audit BUSINESS-meaningful boost changes
+    on individual nodes) — this table is purely operational.
+
+    Created via Base.metadata.create_all on first server startup, no Alembic
+    migration required (the codebase uses a create_all-based bootstrap).
+    """
+
+    __tablename__ = "kg_tick_runs"
+    __table_args__ = (
+        Index("idx_kg_tick_runs_completed_at", "completed_at"),
+    )
+
+    tick_id: Mapped[str] = mapped_column(
+        String(64), primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    nodes_recomputed: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0"),
+    )
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    boards_processed: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0"),
     )
 

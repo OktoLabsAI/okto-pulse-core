@@ -161,6 +161,24 @@ async def begin_consolidation(
         nothing_changed = False
         previous_session_id = None
 
+    # Spec 4007e4a3 (Ideação #3, FR6): structured counter for the
+    # nothing_changed short-circuit. Lets observability tooling track how
+    # often the begin_consolidation idempotency path saves downstream
+    # extraction + reconciliation work for unchanged artifacts.
+    if nothing_changed:
+        logger.info(
+            "kg.consolidation.nothing_changed.short_circuit board=%s "
+            "artifact_type=%s artifact_id=%s previous_session=%s",
+            req.board_id, req.artifact_type, req.artifact_id, previous_session_id,
+            extra={
+                "event": "kg.consolidation.nothing_changed.short_circuit",
+                "board_id": req.board_id,
+                "artifact_type": req.artifact_type,
+                "artifact_id": req.artifact_id,
+                "previous_session_id": previous_session_id,
+            },
+        )
+
     session = await store.create(
         session_id=session_id,
         board_id=req.board_id,
@@ -481,8 +499,23 @@ def _compensate_kuzu_writes(board_id: str, session_id: str, records: list) -> No
                 except Exception:
                     pass
     except Exception as exc:
-        logger.error(
-            "kg.compensate_sync.failed session=%s err=%s", session_id, exc,
+        # Spec 818748f2 — FR4 + BR4: downgrade to warning. The compensation
+        # failure is recoverable (lock contention, schema drift) and the
+        # message must NOT instruct the operator to delete graph.kuzu —
+        # use migrate-schema instead.
+        logger.warning(
+            "kg.compensate_sync.failed session=%s board=%s err=%s. "
+            "Schema migration may be needed — run "
+            "`python -m okto_pulse.tools.kg_migrate_schema --board %s` "
+            "or call MCP tool `okto_pulse_kg_migrate_schema`. "
+            "Do NOT delete graph.kuzu (destructive).",
+            session_id, board_id, exc, board_id,
+            extra={
+                "event": "kg.compensate_sync.failed",
+                "session_id": session_id,
+                "board_id": board_id,
+                "remediation": "migrate-schema",
+            },
         )
 
 
@@ -528,7 +561,102 @@ def _do_kuzu_commit(
                         candidate_to_kuzu_id[cand_id] = existing_id
                     continue
 
+                # Spec 4007e4a3 (Ideação #3, BR4 + BR5): UPDATE path must
+                # preserve nodes that a human curator has explicitly marked
+                # as human_curated. Without an explicit override (extension
+                # point — currently signalled by hint.confidence >= 1.0 from
+                # an agent-supplied override), the UPDATE is converted to
+                # NOOP-with-mapping so downstream edges still resolve. With
+                # an override, the agent reasserts ownership and the new
+                # node defaults to human_curated=False (BR5 reset).
+                if op == ReconciliationOperation.UPDATE and hint and getattr(hint, "target_node_id", None):
+                    target_node_id = hint.target_node_id
+                    node_type_check = _enum_value(cand.node_type)
+                    is_curated = _node_is_human_curated(kconn, node_type_check, target_node_id)
+                    has_override = bool(hint.confidence and hint.confidence >= 1.0)
+                    if is_curated and not has_override:
+                        logger.info(
+                            "kg.consolidation.manual_edit_preserved candidate=%s "
+                            "target_node_id=%s session=%s",
+                            cand_id, target_node_id, session_id,
+                            extra={
+                                "event": "kg.consolidation.manual_edit_preserved",
+                                "candidate_id": cand_id,
+                                "target_node_id": target_node_id,
+                                "session_id": session_id,
+                            },
+                        )
+                        candidate_to_kuzu_id[cand_id] = target_node_id
+                        continue
+                    if is_curated and has_override:
+                        # BR5 reset: agent reclaims authorship via override.
+                        # The downstream create_node already initialises
+                        # human_curated=False, so the reset is implicit. We
+                        # just emit the counter so observability tooling can
+                        # distinguish overrides from green-field UPDATEs.
+                        logger.info(
+                            "kg.consolidation.reset_manual_flag candidate=%s "
+                            "target_node_id=%s session=%s",
+                            cand_id, target_node_id, session_id,
+                            extra={
+                                "event": "kg.consolidation.reset_manual_flag",
+                                "candidate_id": cand_id,
+                                "target_node_id": target_node_id,
+                                "session_id": session_id,
+                            },
+                        )
+
                 node_type = _enum_value(cand.node_type)
+
+                # Spec 7f23535f (NC-8): natural dedup by source_artifact_ref.
+                # Before generating a fresh UUID, check whether this artifact
+                # already has a Kuzu node from a prior session. If yes, reuse
+                # it (UPDATE attrs unless human_curated). Without this branch
+                # every spec.semantic_changed / spec.moved / spec.version_bumped
+                # event spawns a duplicate Entity for the same source.
+                source_ref = cand.source_artifact_ref or ""
+                if source_ref:
+                    existing_id = _lookup_existing_node(
+                        kconn, node_type, source_ref
+                    )
+                    if existing_id:
+                        is_curated = _node_is_human_curated(
+                            kconn, node_type, existing_id
+                        )
+                        if not is_curated:
+                            embedding = embedder.encode(
+                                f"{cand.title}\n{cand.content or ''}"
+                            )
+                            update_attrs = {
+                                "title": cand.title,
+                                "content": cand.content or "",
+                                "context": cand.context or "",
+                                "justification": cand.justification or "",
+                                "source_confidence": cand.source_confidence,
+                                "priority_boost": getattr(cand, "priority_boost", 0.0),
+                                "embedding": embedding,
+                            }
+                            _apply_kuzu_node_update_partial(
+                                orch, node_type, existing_id, update_attrs
+                            )
+                        candidate_to_kuzu_id[cand_id] = existing_id
+                        logger.info(
+                            "kg.consolidation.dedup_reused candidate=%s "
+                            "existing=%s type=%s ref=%s session=%s curated=%s",
+                            cand_id, existing_id, node_type, source_ref,
+                            session_id, is_curated,
+                            extra={
+                                "event": "kg.consolidation.dedup_reused",
+                                "cand_id": cand_id,
+                                "existing_id": existing_id,
+                                "node_type": node_type,
+                                "source_artifact_ref": source_ref,
+                                "session_id": session_id,
+                                "was_curated_preserved": is_curated,
+                            },
+                        )
+                        continue
+
                 node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
                 embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
 
@@ -545,6 +673,11 @@ def _do_kuzu_commit(
                     "query_hits": 0,
                     "last_queried_at": None,
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
+                    # Spec 4007e4a3 (Ideação #3): nodes are agent-managed by
+                    # default. A human curator may set human_curated=TRUE
+                    # later via back-office; the UPDATE path then skips
+                    # writes unless the agent passes an explicit override.
+                    "human_curated": False,
                     "embedding": embedding,
                 }
                 _apply_kuzu_node_create_with_timestamp(
@@ -754,6 +887,37 @@ def _lookup_existing_node(
     return None
 
 
+def _node_is_human_curated(kconn, node_type: str, node_id: str) -> bool:
+    """Check whether a Kùzu node has the human_curated flag set.
+
+    Treats NULL as FALSE — legacy nodes from before v0.3.2 have no value
+    set and must default to agent-managed semantics for retrocompat.
+    Returns False on any read error so the UPDATE path defaults to the
+    legacy behaviour rather than silently swallowing edits.
+    """
+    if not node_id:
+        return False
+    cypher = (
+        f"MATCH (n:{node_type}) "
+        f"WHERE n.id = $id "
+        f"RETURN n.human_curated LIMIT 1"
+    )
+    try:
+        res = kconn.execute(cypher, {"id": node_id})
+        try:
+            if res.has_next():
+                value = res.get_next()[0]
+                return bool(value) if value is not None else False
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return False
+
+
 _CROSS_SESSION_PREFIXES: tuple[str, ...] = ("spec_", "sprint_", "card_")
 
 
@@ -828,6 +992,58 @@ def _resolve_endpoint(
                     pass
                 break
     return None, None
+
+
+_NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset({
+    "title", "content", "context", "justification",
+    "priority_boost", "source_confidence",
+})
+
+# Kuzu HNSW vector indexes (see `VECTOR_INDEX_TYPES` in schema.py) own
+# the `embedding` column on Decision/Criterion/Constraint/Entity/Learning
+# tables and reject direct `SET n.embedding = ...` writes with
+# "Cannot set property vec in table embeddings because it is used in one
+# or more indexes." A safe rewrite would require DROP INDEX → UPDATE →
+# CREATE INDEX which rebuilds the entire HNSW for the table — too costly
+# for a per-commit dedup branch. Embeddings therefore stay frozen at
+# creation time on the dedup-reuse path. Acceptable trade-off: title /
+# content drift is small per re-consolidation; a follow-up worker can
+# rebuild stale embeddings in batch when the gap exceeds a threshold.
+
+
+def _apply_kuzu_node_update_partial(
+    orch, node_type: str, node_id: str, attrs: dict
+) -> None:
+    """Spec 7f23535f (NC-8): UPDATE attrs on existing Kuzu node by id.
+
+    Used by `_do_kuzu_commit` when source_artifact_ref already maps to a
+    node — preserves historical fields (created_at, created_by_agent,
+    query_hits, last_queried_at, relevance_score, source_session_id,
+    human_curated) and refreshes only content-derived attrs.
+
+    Filters input via `_NODE_UPDATEABLE_ATTRS` to ensure no historical
+    field can be accidentally clobbered if the caller passes extras —
+    notably `embedding` (HNSW-locked) and `created_at` / `query_hits`
+    (historical).
+    """
+    set_pairs: list[str] = []
+    params: dict = {"node_id": node_id}
+    for k, v in attrs.items():
+        if k in _NODE_UPDATEABLE_ATTRS:
+            set_pairs.append(f"n.{k} = ${k}")
+            params[k] = v
+    if not set_pairs:
+        return
+    cypher = (
+        f"MATCH (n:{node_type}) "
+        f"WHERE n.id = $node_id "
+        f"SET {', '.join(set_pairs)}"
+    )
+    orch.kuzu_conn.execute(cypher, params)
+    # Note: do NOT append a KuzuWriteRecord — the existing node was created
+    # by a prior session, and compensation rollback uses source_session_id
+    # to scope deletes. Re-recording here would risk deleting the node on
+    # rollback of the current session despite belonging to the prior one.
 
 
 def _apply_kuzu_node_create_with_timestamp(

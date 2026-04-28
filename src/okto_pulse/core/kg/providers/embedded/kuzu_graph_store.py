@@ -150,22 +150,67 @@ class KuzuGraphStore:
         # the relevance_score threshold (default 0.3 — below the neutral
         # 0.5 so freshly created nodes still pass). Ranking order uses
         # relevance_score DESC so hot nodes bubble to the top.
+        #
+        # v0.3.2 (spec 20f67c2a — Ideação #5): the Cypher ORDER BY clause is
+        # preserved (BR4) — but we now over-fetch a pool of
+        # max_rows * DECAY_REORDER_POOL_MULTIPLIER and run
+        # _apply_decay_reorder in Python so stale-but-high-scoring nodes
+        # don't outrank fresh-and-active ones. We additionally select
+        # query_hits and last_queried_at to feed the reorder helper.
+        from okto_pulse.core.kg.scoring import (
+            DECAY_REORDER_POOL_MULTIPLIER,
+            _apply_decay_reorder,
+        )
+
+        pool_size = max(filters.max_rows, filters.max_rows * DECAY_REORDER_POOL_MULTIPLIER)
         cypher = (
             f"MATCH (n:{node_type}) "
             f"WHERE n.title CONTAINS $topic "
             f"AND n.source_confidence >= $min_confidence "
             f"AND n.relevance_score >= $min_relevance "
             f"RETURN n.id, n.title, n.content, n.created_at, n.source_confidence, "
-            f"n.relevance_score, n.superseded_by "
+            f"n.relevance_score, n.superseded_by, n.query_hits, n.last_queried_at "
             f"ORDER BY n.relevance_score DESC, n.created_at DESC "
             f"LIMIT $max_rows"
         )
-        return self._exec(board_id, cypher, {
+        rows = self._exec(board_id, cypher, {
             "topic": topic,
             "min_confidence": filters.min_confidence,
             "min_relevance": filters.min_relevance,
-            "max_rows": filters.max_rows,
+            "max_rows": pool_size,
         })
+        if not rows:
+            return rows
+
+        # Map Kùzu rows to dicts for the reorder helper, then back to the
+        # 7-column legacy row shape that downstream callers expect.
+        enriched = [
+            {
+                "node_id": r[0],
+                "title": r[1],
+                "content": r[2],
+                "created_at": r[3],
+                "source_confidence": r[4],
+                "relevance_score": r[5],
+                "superseded_by": r[6],
+                "query_hits": r[7] or 0,
+                "last_queried_at": r[8],
+            }
+            for r in rows
+        ]
+        reordered = _apply_decay_reorder(enriched, filters.max_rows)
+        return [
+            [
+                row["node_id"],
+                row["title"],
+                row["content"],
+                row["created_at"],
+                row["source_confidence"],
+                row["relevance_score"],
+                row["superseded_by"],
+            ]
+            for row in reordered
+        ]
 
     def find_by_topic_semantic(
         self,
@@ -368,6 +413,7 @@ class KuzuGraphStore:
         return self._exec(board_id, tpl.GET_LEARNING_FROM_BUGS, {
             "area": area,
             "min_confidence": filters.min_confidence,
+            "min_relevance": filters.min_relevance,
             "max_rows": filters.max_rows,
         })
 

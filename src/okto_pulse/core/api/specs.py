@@ -161,7 +161,7 @@ async def link_card_to_spec(
 ):
     """Link an existing card to a spec."""
     service = SpecService(db)
-    linked = await service.link_card(spec_id, card_id)
+    linked = await service.link_card(spec_id, card_id, user_id=user_id)
     if not linked:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -180,7 +180,7 @@ async def unlink_card_from_spec(
 ):
     """Unlink a card from a spec."""
     service = SpecService(db)
-    unlinked = await service.unlink_card(card_id)
+    unlinked = await service.unlink_card(card_id, user_id=user_id)
     if not unlinked:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

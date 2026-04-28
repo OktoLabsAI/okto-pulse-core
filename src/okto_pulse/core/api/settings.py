@@ -27,25 +27,52 @@ router = APIRouter()
 
 
 class RuntimeSettingsResponse(BaseModel):
-    """GET/PUT response shape."""
+    """GET/PUT response shape — Graph DB keys + Event Queue keys (spec bdcda842).
 
+    ``restart_required`` is true only when a Graph DB key (Kùzu constructor-time)
+    diverges from the boot snapshot. Event Queue keys hot-reload via the
+    worker pool's 5s settings cache.
+    """
+
+    # Graph DB tab — restart-required on change.
     kg_kuzu_buffer_pool_mb: int
     kg_kuzu_max_db_size_gb: int
     kg_connection_pool_size: int
+    # Event Queue tab — hot-reload (no restart needed).
+    kg_queue_max_concurrent_workers: int
+    kg_queue_min_interval_ms: int
+    kg_queue_claim_timeout_s: int
+    kg_queue_max_attempts: int
+    kg_queue_alert_threshold: int
+    # Decay Tick tab (spec 54399628) — hot-reload via APScheduler.reschedule_job.
+    kg_decay_tick_interval_minutes: int
+    kg_decay_tick_staleness_days: int
+    kg_decay_tick_max_age_days: int
     restart_required: bool
 
 
 class RuntimeSettingsPayload(BaseModel):
     """PUT body — every field optional; partial updates are allowed.
 
-    Ranges are the same as :class:`CoreSettings`. Pydantic emits 422 with a
-    clear ``greater than or equal to`` / ``less than or equal to`` message
-    for violations — no custom error handling needed.
+    Ranges mirror :class:`CoreSettings` Field validators. Pydantic emits 422
+    (FastAPI maps to 400 in the error envelope) with a clear ``greater than
+    or equal to`` / ``less than or equal to`` message for violations.
     """
 
+    # Graph DB tab.
     kg_kuzu_buffer_pool_mb: int | None = Field(default=None, ge=16, le=512)
     kg_kuzu_max_db_size_gb: int | None = Field(default=None, ge=1, le=64)
     kg_connection_pool_size: int | None = Field(default=None, ge=1, le=32)
+    # Event Queue tab (spec bdcda842).
+    kg_queue_max_concurrent_workers: int | None = Field(default=None, ge=1, le=16)
+    kg_queue_min_interval_ms: int | None = Field(default=None, ge=0, le=1000)
+    kg_queue_claim_timeout_s: int | None = Field(default=None, ge=60, le=3600)
+    kg_queue_max_attempts: int | None = Field(default=None, ge=1, le=10)
+    kg_queue_alert_threshold: int | None = Field(default=None, ge=100, le=100000)
+    # Decay Tick (spec 54399628 — Wave 2 NC f9732afc).
+    kg_decay_tick_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
+    kg_decay_tick_staleness_days: int | None = Field(default=None, ge=1, le=365)
+    kg_decay_tick_max_age_days: int | None = Field(default=None, ge=0, le=365)
 
 
 @router.get("/settings/runtime", response_model=RuntimeSettingsResponse)

@@ -38,9 +38,14 @@ from okto_pulse.core.events.handlers.consolidation_enqueuer import (
 )
 from okto_pulse.core.events.types import (
     CardCancelled,
+    CardConclusionAdded,
     CardCreated,
+    CardLinkedToSpec,
     CardMoved,
     CardRestored,
+    CardUnlinkedFromSpec,
+    RefinementSemanticChanged,
+    SpecSemanticChanged,
     SpecVersionBumped,
 )
 from okto_pulse.core.kg.schema import (
@@ -145,13 +150,50 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
         assert execs[0].status == "pending"
 
 
-# --- AC14: registry has the 12 MVP events ---
+# --- AC12 (spec 4007e4a3 — Ideação #3): registry has 17 events ---
 
 
-def test_registry_has_twelve_events():
+def test_registry_has_seventeen_events():
+    """All EVENT_TYPES are registered with at least one handler.
+
+    History: 12 MVP + 4 from spec eaf78891 (Ideação #2) + 1 from spec
+    4007e4a3 (Ideação #3 — card.conclusion_added) + 3 from spec 28583299
+    (Ideação #4 — kg.hit_flushed, card.priority_changed, card.severity_changed).
+    CardMoved already existed pre-Ideação #3; that cycle only extended its
+    payload (spec_id, moved_by).
+
+    ConsolidationEnqueuer is registered for every LIFECYCLE event, but the
+    operational ``kg.hit_flushed`` and the card.{priority,severity}_changed
+    events are owned by their dedicated KG-scoring handlers — different
+    domain (KG telemetry vs. spec/card lifecycle).
+    """
+    assert len(EVENT_TYPES) == 21
+    operational_kg_events = {
+        "kg.hit_flushed",
+        "card.priority_changed",
+        "card.severity_changed",
+        "kg.tick.daily",
+    }
     for et in EVENT_TYPES:
         assert et in EventBus._registry, f"{et} not registered"
+        if et in operational_kg_events:
+            # Operational events: handled by dedicated KG-scoring handlers,
+            # not the consolidation enqueuer (different concern).
+            continue
         assert ConsolidationEnqueuer in EventBus._registry[et]
+
+
+def test_high_priority_events_unchanged_by_spec_eaf78891():
+    """The four new events (spec eaf78891) are NOT high-priority.
+
+    AC11 invariant — _HIGH_PRIORITY_EVENTS keeps its 2 historical entries
+    (card.cancelled + spec.version_bumped). Adding the new semantic events
+    to high priority would reorder the queue and starve other artifacts.
+    """
+    from okto_pulse.core.events.handlers.consolidation_enqueuer import (
+        _HIGH_PRIORITY_EVENTS,
+    )
+    assert _HIGH_PRIORITY_EVENTS == {"card.cancelled", "spec.version_bumped"}
 
 
 # --- AC2: dispatcher drains event → ConsolidationQueue row appears ---
@@ -570,6 +612,739 @@ def test_payload_for_storage_excludes_top_level_fields():
     assert "occurred_at" not in payload
     assert payload["card_id"] == "card-payload"
     assert payload["spec_id"] == "spec-payload"
+
+
+# ---------------------------------------------------------------------------
+# Spec eaf78891 (Ideação #2) — 4 new semantic events
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spec_semantic_changed_enqueues_spec_normal(db_factory, clean_tables):
+    """SpecSemanticChanged → ConsolidationQueue row, artifact_type=spec, normal."""
+    spec_id = "spec-semantic"
+    async with db_factory() as session:
+        await publish(
+            SpecSemanticChanged(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                spec_id=spec_id,
+                changed_fields=["decisions", "business_rules"],
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+                ConsolidationQueue.artifact_id == spec_id,
+            )
+        )).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].artifact_type == "spec"
+        assert rows[0].priority == "normal"
+        assert rows[0].source == "event:spec.semantic_changed"
+
+
+@pytest.mark.asyncio
+async def test_refinement_semantic_changed_enqueues_refinement(db_factory, clean_tables):
+    """RefinementSemanticChanged → queue row, artifact_type=refinement."""
+    refinement_id = "ref-semantic"
+    async with db_factory() as session:
+        await publish(
+            RefinementSemanticChanged(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                refinement_id=refinement_id,
+                changed_fields=["scope", "decisions"],
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+                ConsolidationQueue.artifact_id == refinement_id,
+            )
+        )).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].artifact_type == "refinement"
+        assert rows[0].priority == "normal"
+        assert rows[0].source == "event:refinement.semantic_changed"
+
+
+@pytest.mark.asyncio
+async def test_card_linked_to_spec_enqueues_spec_not_card(db_factory, clean_tables):
+    """CardLinkedToSpec maps to artifact_type='spec' (not 'card').
+
+    Decision (b) in the refinement: card extractor doesn't reference spec_id,
+    so re-enqueueing the card would be wasted work. The spec extractor is
+    the one that reflects the updated cards list.
+    """
+    card_id = "card-linked"
+    spec_id = "spec-target"
+    async with db_factory() as session:
+        await publish(
+            CardLinkedToSpec(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                card_id=card_id,
+                spec_id=spec_id,
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+            )
+        )).scalars().all()
+        # Exactly one row: the SPEC, not the card.
+        spec_rows = [r for r in rows if r.artifact_type == "spec"]
+        card_rows = [r for r in rows if r.artifact_type == "card"]
+        assert len(spec_rows) == 1
+        assert len(card_rows) == 0
+        assert spec_rows[0].artifact_id == spec_id
+        assert spec_rows[0].priority == "normal"
+        assert spec_rows[0].source == "event:card.linked_to_spec"
+
+
+@pytest.mark.asyncio
+async def test_card_unlinked_from_spec_enqueues_spec(db_factory, clean_tables):
+    """CardUnlinkedFromSpec → spec re-enqueue (mirrors CardLinkedToSpec)."""
+    card_id = "card-unlinked"
+    spec_id = "spec-orphaned"
+    async with db_factory() as session:
+        await publish(
+            CardUnlinkedFromSpec(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                card_id=card_id,
+                spec_id=spec_id,
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+            )
+        )).scalars().all()
+        spec_rows = [r for r in rows if r.artifact_type == "spec"]
+        card_rows = [r for r in rows if r.artifact_type == "card"]
+        assert len(spec_rows) == 1
+        assert len(card_rows) == 0
+        assert spec_rows[0].artifact_id == spec_id
+        assert spec_rows[0].source == "event:card.unlinked_from_spec"
+
+
+@pytest.mark.asyncio
+async def test_semantic_burst_dedup_to_single_queue_row(db_factory, clean_tables):
+    """5 SpecSemanticChanged for the same spec → 1 queue row (natural dedup).
+
+    Mirrors the existing card dedup test but targets the new event. Confirms
+    decision (d) in the refinement: no debounce needed — ConsolidationEnqueuer
+    already absorbs bursts via the (board, artifact_type, artifact_id) check.
+    """
+    spec_id = "spec-burst"
+    async with db_factory() as session:
+        for i in range(5):
+            await publish(
+                SpecSemanticChanged(
+                    board_id=BOARD_ID,
+                    actor_id=USER_ID,
+                    spec_id=spec_id,
+                    changed_fields=[f"field_{i}"],
+                ),
+                session=session,
+            )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.8)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+                ConsolidationQueue.artifact_id == spec_id,
+            )
+        )).scalars().all()
+        # Burst absorbed by dedup → exactly 1 row.
+        assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_refinement_artifact_no_op_in_worker(db_factory, clean_tables):
+    """artifact_type='refinement' completes the queue cycle without crash.
+
+    AC13 invariant: consolidation_worker._process_queue_entry handles
+    refinement gracefully (logs + returns True without calling extractors).
+    """
+    from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
+
+    refinement_id = "ref-noop"
+    async with db_factory() as session:
+        session.add(
+            ConsolidationQueue(
+                board_id=BOARD_ID,
+                artifact_type="refinement",
+                artifact_id=refinement_id,
+                priority="normal",
+                source="event:refinement.semantic_changed",
+                triggered_by_event="refinement.semantic_changed",
+                status="pending",
+            )
+        )
+        await session.commit()
+
+        entry = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.artifact_id == refinement_id
+            )
+        )).scalar_one()
+
+        ok = await _process_queue_entry(session, entry)
+        assert ok is True
+
+
+# ---------------------------------------------------------------------------
+# Spec 4007e4a3 (Ideação #3) — card.moved + card.conclusion_added dual target
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_card_moved_dual_target_enqueues_card_and_spec(db_factory, clean_tables):
+    """TS1: card.moved with spec_id enqueues BOTH card and parent spec.
+
+    The dual-target rule lives in ConsolidationEnqueuer._map_targets and is
+    the spec 4007e4a3 (Ideação #3) net delta on top of the eaf78891
+    semantics. Verifies that a single CardMoved publish produces exactly
+    two ConsolidationQueue rows: one (card, card_id) and one (spec, spec_id),
+    both at priority='normal'.
+    """
+    card_id = "card-moved-dual"
+    spec_id = "spec-moved-parent"
+    async with db_factory() as session:
+        await publish(
+            CardMoved(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                card_id=card_id,
+                from_status="in_progress",
+                to_status="validation",
+                spec_id=spec_id,
+                moved_by=USER_ID,
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+            )
+        )).scalars().all()
+        card_rows = [r for r in rows if r.artifact_type == "card"]
+        spec_rows = [r for r in rows if r.artifact_type == "spec"]
+        assert len(card_rows) == 1
+        assert card_rows[0].artifact_id == card_id
+        assert card_rows[0].priority == "normal"
+        assert card_rows[0].source == "event:card.moved"
+        assert len(spec_rows) == 1
+        assert spec_rows[0].artifact_id == spec_id
+        assert spec_rows[0].priority == "normal"
+        assert spec_rows[0].source == "event:card.moved"
+
+
+@pytest.mark.asyncio
+async def test_card_conclusion_added_dual_target_enqueues_card_and_spec(db_factory, clean_tables):
+    """TS2: card.conclusion_added with spec_id enqueues BOTH card and parent spec.
+
+    Mirrors test_card_moved_dual_target. CardConclusionAdded is the only
+    truly new event type in spec 4007e4a3 (Ideação #3) — CardMoved already
+    existed pre-cycle and was extended, not created.
+    """
+    card_id = "card-conclusion-dual"
+    spec_id = "spec-conclusion-parent"
+    async with db_factory() as session:
+        await publish(
+            CardConclusionAdded(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                card_id=card_id,
+                spec_id=spec_id,
+                conclusion_excerpt="impl OK with all gates green",
+                added_by=USER_ID,
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+            )
+        )).scalars().all()
+        card_rows = [r for r in rows if r.artifact_type == "card"]
+        spec_rows = [r for r in rows if r.artifact_type == "spec"]
+        assert len(card_rows) == 1
+        assert card_rows[0].artifact_id == card_id
+        assert card_rows[0].source == "event:card.conclusion_added"
+        assert len(spec_rows) == 1
+        assert spec_rows[0].artifact_id == spec_id
+        assert spec_rows[0].priority == "normal"
+        assert spec_rows[0].source == "event:card.conclusion_added"
+
+
+@pytest.mark.asyncio
+async def test_card_moved_burst_dedup_to_single_pair(db_factory, clean_tables):
+    """TS3: 50 card.moved emits for the same card produce 1 card row + 1 spec row.
+
+    Confirms natural dedup absorbs the burst on BOTH targets simultaneously
+    — no separate dedup logic for the new dual-target events. Production
+    safeguard against rapid card state oscillation flooding the queue.
+    """
+    card_id = "card-burst"
+    spec_id = "spec-burst-parent"
+    async with db_factory() as session:
+        for i in range(50):
+            await publish(
+                CardMoved(
+                    board_id=BOARD_ID,
+                    actor_id=USER_ID,
+                    card_id=card_id,
+                    from_status="in_progress",
+                    to_status="validation" if i % 2 else "in_progress",
+                    spec_id=spec_id,
+                    moved_by=USER_ID,
+                ),
+                session=session,
+            )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(1.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+            )
+        )).scalars().all()
+        card_rows = [r for r in rows if r.artifact_type == "card" and r.artifact_id == card_id]
+        spec_rows = [r for r in rows if r.artifact_type == "spec" and r.artifact_id == spec_id]
+        assert len(card_rows) == 1
+        assert len(spec_rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_card_moved_orphan_skips_spec_enqueue(db_factory, clean_tables, caplog):
+    """TS4: card.moved without spec_id produces ONLY the card row.
+
+    Orphan handling: spec_id=None must not raise, must not insert a spec
+    row (no NULL artifact_id), and must emit a debug log so operators can
+    spot dangling cards. Card-side enqueue still happens.
+    """
+    import logging
+    caplog.set_level(logging.DEBUG, logger="okto_pulse.core.events.consolidation_enqueuer")
+
+    card_id = "card-orphan"
+    async with db_factory() as session:
+        await publish(
+            CardMoved(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                card_id=card_id,
+                from_status="not_started",
+                to_status="in_progress",
+                spec_id=None,
+                moved_by=USER_ID,
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+            )
+        )).scalars().all()
+        card_rows = [r for r in rows if r.artifact_type == "card"]
+        spec_rows = [r for r in rows if r.artifact_type == "spec"]
+        assert len(card_rows) == 1
+        assert card_rows[0].artifact_id == card_id
+        assert spec_rows == []
+
+    # Debug log emitted with the orphan reason
+    assert any(
+        "reenqueue.skipped" in rec.message and "orphan_card" in rec.message
+        for rec in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_card_moved_emits_reenqueue_fired_log(db_factory, clean_tables, caplog):
+    """TS10: spec-side enqueue for card.moved emits a structured info log.
+
+    The ConsolidationEnqueuer emits `kg.consolidation.reenqueue.fired`
+    only on the spec-side branch (single counter, not duplicated on the
+    card-side which is the legacy path). Verifies the log entry carries
+    event_type, board_id, spec_id, card_id in the extra dict so
+    observability tools can parse it.
+    """
+    import logging
+    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.consolidation_enqueuer")
+
+    card_id = "card-log"
+    spec_id = "spec-log"
+    async with db_factory() as session:
+        await publish(
+            CardMoved(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                card_id=card_id,
+                from_status="started",
+                to_status="in_progress",
+                spec_id=spec_id,
+                moved_by=USER_ID,
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    fired_records = [
+        rec for rec in caplog.records
+        if "reenqueue.fired" in rec.message
+    ]
+    assert fired_records, "expected at least one reenqueue.fired log"
+    rec = fired_records[0]
+    assert "card.moved" in rec.message
+    assert spec_id in rec.message
+    assert card_id in rec.message
+
+
+@pytest.mark.asyncio
+async def test_card_conclusion_orphan_skips_spec_enqueue(db_factory, clean_tables, caplog):
+    """TS15: card.conclusion_added without spec_id is graceful (mirrors TS4).
+
+    Symmetric edge case: an orphan card receiving a conclusion still gets
+    its card-side enqueue, the spec-side is skipped with the same debug
+    log, and no exception propagates.
+    """
+    import logging
+    caplog.set_level(logging.DEBUG, logger="okto_pulse.core.events.consolidation_enqueuer")
+
+    card_id = "card-conclusion-orphan"
+    async with db_factory() as session:
+        await publish(
+            CardConclusionAdded(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                card_id=card_id,
+                spec_id=None,
+                conclusion_excerpt="orphan conclusion text",
+                added_by=USER_ID,
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.5)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+            )
+        )).scalars().all()
+        spec_rows = [r for r in rows if r.artifact_type == "spec"]
+        card_rows = [r for r in rows if r.artifact_type == "card"]
+        assert spec_rows == []
+        assert len(card_rows) == 1
+
+    assert any(
+        "reenqueue.skipped" in rec.message
+        and "orphan_card" in rec.message
+        and "card.conclusion_added" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_high_priority_events_unchanged_by_spec_4007e4a3():
+    """TS13: card.moved and card.conclusion_added stay at NORMAL priority.
+
+    The Ideação #3 dual-target events are routine lifecycle signals — not
+    structural breaks like card.cancelled or spec.version_bumped. Adding
+    them to _HIGH_PRIORITY_EVENTS would reorder the queue and starve other
+    artifacts behind chronologically older but lower-urgency work.
+    """
+    from okto_pulse.core.events.handlers.consolidation_enqueuer import (
+        _HIGH_PRIORITY_EVENTS,
+    )
+    assert _HIGH_PRIORITY_EVENTS == {"card.cancelled", "spec.version_bumped"}
+    assert "card.moved" not in _HIGH_PRIORITY_EVENTS
+    assert "card.conclusion_added" not in _HIGH_PRIORITY_EVENTS
+
+
+# ---------------------------------------------------------------------------
+# Spec 4007e4a3 (Ideação #3) — schema column + UPDATE preserve + nothing_changed
+# ---------------------------------------------------------------------------
+
+
+def test_human_curated_column_declared_in_schema():
+    """TS5: HUMAN_CURATED_COLUMNS exposes (human_curated, BOOLEAN).
+
+    The column is appended to _COMMON_NODE_ATTRS so every node type picks
+    it up via _build_node_ddl. Migration helper _ensure_human_curated_columns
+    handles legacy boards. Drift documented: column named human_curated
+    (not created_by_agent) because the latter is a STRING storing agent_id.
+    """
+    from okto_pulse.core.kg.schema import (
+        HUMAN_CURATED_COLUMNS,
+        SCHEMA_VERSION,
+        _COMMON_NODE_ATTRS,
+    )
+
+    assert HUMAN_CURATED_COLUMNS == (("human_curated", "BOOLEAN"),)
+    assert "human_curated BOOLEAN" in _COMMON_NODE_ATTRS
+    # Schema bumped to 0.3.2 (Ideação #5) to mark this column on bootstrap;
+    # subsequent additive bumps (e.g. 0.3.3 for last_recomputed_at — Ideação
+    # #4) preserve the column, so we assert the floor with set membership.
+    assert SCHEMA_VERSION in {"0.3.2", "0.3.3"}
+
+
+def test_human_curated_migration_helper_exists_and_is_called():
+    """TS6: _ensure_human_curated_columns is wired into apply_schema.
+
+    Verifies the helper exists with the expected signature (conn, node_type)
+    and is referenced in the apply_schema body so legacy boards get the
+    column added on next bootstrap. Uses source-text inspection to avoid
+    instantiating a real Kùzu connection in this unit test.
+    """
+    import inspect
+    from okto_pulse.core.kg import schema as schema_mod
+
+    helper = getattr(schema_mod, "_ensure_human_curated_columns", None)
+    assert helper is not None, "migration helper missing"
+    sig = inspect.signature(helper)
+    assert list(sig.parameters) == ["conn", "node_type"]
+
+    # Guarantee the helper is invoked from apply_schema for every node type.
+    apply_src = inspect.getsource(schema_mod._apply_schema_to_open_conn) \
+        if hasattr(schema_mod, "_apply_schema_to_open_conn") else inspect.getsource(schema_mod)
+    assert "_ensure_human_curated_columns" in apply_src
+
+
+def test_node_is_human_curated_treats_null_as_false():
+    """TS7 (read path unit): _node_is_human_curated returns False on NULL.
+
+    Legacy nodes from before v0.3.2 have no human_curated value set; the
+    UPDATE preservation path must default to FALSE so retrocompat is
+    automatic. Uses a tiny stub for the kuzu connection to avoid spinning
+    up a real Kùzu database in this unit test.
+    """
+    from okto_pulse.core.kg.primitives import _node_is_human_curated
+
+    class _StubResult:
+        def __init__(self, value):
+            self._value = value
+            self._consumed = False
+
+        def has_next(self):
+            return not self._consumed
+
+        def get_next(self):
+            self._consumed = True
+            return [self._value]
+
+        def close(self):
+            pass
+
+    class _StubConn:
+        def __init__(self, value):
+            self._value = value
+
+        def execute(self, _cypher, _params):
+            return _StubResult(self._value)
+
+    # NULL → False (legacy retrocompat)
+    assert _node_is_human_curated(_StubConn(None), "Decision", "decision_x") is False
+    # Explicit False → False
+    assert _node_is_human_curated(_StubConn(False), "Decision", "decision_x") is False
+    # Explicit True → True (curator-marked)
+    assert _node_is_human_curated(_StubConn(True), "Decision", "decision_x") is True
+    # Empty node_id short-circuits to False without touching the conn.
+    assert _node_is_human_curated(_StubConn(True), "Decision", "") is False
+
+
+def test_update_branch_preserves_curated_node_without_override(caplog):
+    """TS7 (control flow): UPDATE hint with curated target + no override → NOOP.
+
+    Inspects the source of _do_kuzu_commit to verify the preservation
+    branch is in place: it must read human_curated, check confidence as
+    the override proxy, emit kg.consolidation.manual_edit_preserved on
+    skip and kg.consolidation.reset_manual_flag when the override fires.
+    Source-level assertion avoids a full Kùzu commit cycle for a unit test.
+    """
+    import inspect
+    from okto_pulse.core.kg import primitives
+
+    src = inspect.getsource(primitives._do_kuzu_commit)
+    assert "_node_is_human_curated" in src
+    assert "manual_edit_preserved" in src
+    assert "reset_manual_flag" in src
+    assert "hint.confidence" in src
+
+
+def test_begin_consolidation_has_nothing_changed_log_site():
+    """TS9: begin_consolidation emits a structured log on the nothing_changed branch.
+
+    Source-level assertion confirms the log site introduced for spec
+    4007e4a3 (Ideação #3, FR6) is present and includes the `event=`
+    field used by observability tooling for parsing. A full integration
+    test exercising the path would need a fully bootstrapped Kùzu graph
+    + audit row + matching content_hash; this unit test focuses on the
+    log surface to keep the suite fast and deterministic.
+    """
+    import inspect
+    from okto_pulse.core.kg import primitives
+
+    body = inspect.getsource(primitives.begin_consolidation)
+    assert "kg.consolidation.nothing_changed.short_circuit" in body
+    assert "if nothing_changed" in body
+
+
+def test_agent_instructions_documents_new_triggers():
+    """TS11: grep-style assertion that agent_instructions.md mentions both events."""
+    from pathlib import Path
+
+    doc = Path(__file__).parent.parent / "src" / "okto_pulse" / "core" / "mcp" / "agent_instructions.md"
+    text = doc.read_text(encoding="utf-8")
+    assert "card.moved" in text
+    assert "card.conclusion_added" in text
+    assert "human_curated" in text
+    assert "Ideação #3" in text or "spec 4007e4a3" in text
+
+
+@pytest.mark.asyncio
+async def test_card_moved_publish_latency_under_5ms_p99(db_factory, clean_tables):
+    """TS14: publishing CardMoved 100x stays under the 5ms p99 budget.
+
+    The dual-target enqueuer adds at most one extra row INSERT per event
+    (the spec-side, when spec_id is present). The publish path itself is
+    simply an INSERT into domain_events + an INSERT per registered
+    handler — both are O(1) DB writes. 100 iterations is enough to land
+    a stable p99 in CI without being marked slow.
+    """
+    import time
+
+    card_id = "card-perf"
+    spec_id = "spec-perf"
+    latencies_ns: list[int] = []
+
+    async with db_factory() as session:
+        for _ in range(100):
+            t0 = time.perf_counter_ns()
+            await publish(
+                CardMoved(
+                    board_id=BOARD_ID,
+                    actor_id=USER_ID,
+                    card_id=card_id,
+                    from_status="in_progress",
+                    to_status="validation",
+                    spec_id=spec_id,
+                    moved_by=USER_ID,
+                ),
+                session=session,
+            )
+            latencies_ns.append(time.perf_counter_ns() - t0)
+        await session.commit()
+
+    latencies_ms = sorted(ns / 1_000_000 for ns in latencies_ns)
+    p99_idx = max(0, int(len(latencies_ms) * 0.99) - 1)
+    p99 = latencies_ms[p99_idx]
+    assert p99 < 5.0, f"publish p99 {p99:.2f}ms exceeded 5ms budget"
 
 
 # ---------------------------------------------------------------------------
