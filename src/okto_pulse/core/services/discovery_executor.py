@@ -740,10 +740,14 @@ async def _exec_test_scenarios(
             linked_criteria = sc.get("linked_criteria") or []
             if scenarios_without_tasks and linked_tasks:
                 continue
-            if fr_id_filter and fr_id_filter not in (linked_criteria or []):
-                # coverage_for_fr expects fr_id index (e.g. "0", "1"). We
-                # match against the linked_criteria list as a string list.
-                if str(fr_id_filter) not in [str(x) for x in linked_criteria]:
+            if fr_id_filter:
+                # Spec 3d907a87 D4: linked_criteria stores resolved text
+                # (e.g. "FR1 — handler ..."), not short ids. Match the
+                # user-typed fr_id as a case-insensitive substring against
+                # any item — accepts the FR1↔FR10 false-positive tradeoff
+                # registered in TR5.
+                needle = fr_id_filter.lower()
+                if not any(needle in str(c).lower() for c in (linked_criteria or [])):
                     continue
             rows.append(
                 {

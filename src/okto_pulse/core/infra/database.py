@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
@@ -33,6 +34,24 @@ def create_database(url: str, *, echo: bool = False) -> None:
         })
 
     _engine = create_async_engine(url, **engine_kwargs)
+
+    # Bug d0f6bab2: SQLite under aiosqlite needs WAL + busy_timeout to
+    # survive concurrent writers (consolidation_worker + event handlers +
+    # MCP tools all hit the same .db). Without WAL, every UPDATE blocks
+    # every SELECT; without busy_timeout, contention raises "database is
+    # locked" instead of waiting. Applied via @event.listens_for so it
+    # fires per-connection in the pool, not just the first one.
+    if url.startswith("sqlite"):
+        @event.listens_for(_engine.sync_engine, "connect")
+        def _enable_sqlite_wal_and_busy(dbapi_conn, _conn_record):  # noqa: ANN001
+            cursor = dbapi_conn.cursor()
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=30000")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+            finally:
+                cursor.close()
+
     _session_factory = async_sessionmaker(
         _engine,
         class_=AsyncSession,
@@ -747,6 +766,53 @@ async def _migrate_add_card_knowledge_bases() -> None:
                 pass
 
 
+async def _migrate_add_consolidation_resilience_columns() -> None:
+    """Add resilience columns to consolidation_queue + create
+    consolidation_dead_letter table.
+
+    Spec bdcda842 (Consolidation Queue resilience) — TR1 + TR2:
+        consolidation_queue gains worker_id, claim_timeout_at, attempts,
+        next_retry_at so the at-least-once worker can claim with timeout
+        recovery and route exhausted items to a dead-letter table.
+
+    Idempotent: ALTER TABLE IF NOT EXISTS on Postgres; try/except per
+    column on SQLite (which lacks IF NOT EXISTS for ADD COLUMN).
+    create_all on Base.metadata builds the dead-letter table on first run.
+    """
+    from sqlalchemy import text as sa_text
+
+    queue_columns = [
+        ("worker_id", "VARCHAR(64)"),
+        ("claim_timeout_at", "TIMESTAMP"),
+        ("attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("next_retry_at", "TIMESTAMP"),
+    ]
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'consolidation_queue')"
+            ))
+            if not table_check.scalar():
+                return
+            for col_name, col_type in queue_columns:
+                await conn.execute(sa_text(
+                    f"ALTER TABLE consolidation_queue "
+                    f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                ))
+        else:
+            for col_name, col_type in queue_columns:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE consolidation_queue "
+                        f"ADD COLUMN {col_name} {col_type}"
+                    ))
+                except Exception:
+                    pass
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -778,6 +844,7 @@ async def init_db() -> None:
     await _migrate_add_sprint_scope_fields()
     await _migrate_agent_boards()
     await _migrate_add_task_validation_columns()
+    await _migrate_add_consolidation_resilience_columns()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()
     await _reconcile_builtin_presets()

@@ -243,9 +243,15 @@ def test_instructions_drop_manual_serialisation_line():
         or "Server serializes commits per board automatically" in content
 
 
-def test_version_stays_at_0_1_4():
-    """AC10: core + community pyproject still on 0.1.4 (no bump for this spec)."""
+def test_version_pinned_in_pyproject():
+    """AC10 (refactored): core pyproject declares a stable, pinned version
+    string. Original AC pinned to 0.1.4 (no bump for spec 194583e5); after
+    the v0.1.5 release, this asserts only that pyproject still carries a
+    well-formed semver, decoupling the test from future bumps."""
+    import re
+
     core_pyproject = (
         Path(__file__).resolve().parent.parent / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    assert 'version = "0.1.4"' in core_pyproject
+    match = re.search(r'^version\s*=\s*"(\d+\.\d+\.\d+)"', core_pyproject, re.MULTILINE)
+    assert match, "pyproject.toml must declare a top-level semver version"

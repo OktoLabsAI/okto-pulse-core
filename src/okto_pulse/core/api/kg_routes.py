@@ -1286,3 +1286,56 @@ async def boost_node(
 async def openapi_spec():
     """Auto-generated OpenAPI 3.1 spec."""
     return {"info": {"title": "Okto Pulse KG API", "version": "0.1.0"}}
+
+
+# ---------------------------------------------------------------------------
+# Schema migration self-heal (spec 818748f2 — FR5)
+# ---------------------------------------------------------------------------
+
+
+class MigrateSchemaResponse(BaseModel):
+    board_id: str
+    migrated: bool = Field(
+        ..., description="True if the migration completed without errors."
+    )
+    columns_added: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Per-node-type list of columns ALTER ADDed this run.",
+    )
+    errors: list[str] = Field(
+        default_factory=list,
+        description="Non-fatal warnings collected during migration.",
+    )
+    duration_ms: int
+
+
+@router.post(
+    "/{board_id}/migrate-schema",
+    response_model=MigrateSchemaResponse,
+)
+def post_migrate_schema(board_id: str):
+    """Force-apply schema migrations for a board (idempotent).
+
+    Use when consolidation fails with `Binder exception: Cannot find
+    property X for n` — usually means an ALTER ADD migration was missed
+    for a board bootstrapped before that schema column was introduced.
+
+    Re-runs all v0.3.x ALTER TABLE ADD on every node type. Idempotent:
+    calling on a board already migrated returns ``migrated=true`` with
+    ``columns_added`` empty (no-op).
+
+    Spec 818748f2.
+    """
+    from okto_pulse.core.kg.schema import migrate_schema_for_board
+
+    summary = migrate_schema_for_board(board_id)
+    if not summary["migrated"] and any(
+        "board_not_found" in e for e in summary["errors"]
+    ):
+        return _problem(
+            status=404,
+            title="Board not found",
+            detail=summary["errors"][0],
+            error_type="not_found",
+        )
+    return MigrateSchemaResponse(**summary)

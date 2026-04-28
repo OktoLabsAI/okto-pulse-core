@@ -239,13 +239,20 @@ def find_similar_nodes_by_type(
             "kg.search.vector_index_empty board=%s type=%s using_fallback",
             board_id, node_type,
         )
+        # Bug fix (kg.search.fallback_failed: Connection is closed): when
+        # we own the connection it has already been released by the
+        # ``with conn as (_db, conn):`` block above (BoardConnection.close
+        # ran __exit__). Passing the dead handle to the fallback raises
+        # "Connection is closed" the moment it tries .execute(). Force
+        # the fallback to open its own fresh connection by passing None
+        # whenever we owned it; only forward externally-managed conns.
         return _fallback_manual_similarity_search(
             board_id=board_id,
             node_type=node_type,
             query_vector=query_vector,
             top_k=top_k,
             min_similarity=min_similarity,
-            conn=conn,
+            conn=None if own_conn else conn,
         )
 
     # Kùzu returns ordered by distance ascending; our SimilarNodeRaw exposes

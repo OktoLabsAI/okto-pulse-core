@@ -290,6 +290,58 @@ def _flush_to_kuzu(
         )
 
 
+async def _emit_hit_flushed_event(
+    board_id: str, node_type: str, node_id: str, delta: int, now_iso: str,
+) -> None:
+    """Fire-and-forget publisher for KGHitFlushed (spec 28583299, IMPL-B).
+
+    Opens its own SQLAlchemy session via the application session factory so
+    the search hot path (record_query_hit → _flush_hits) doesn't have to
+    plumb a ``db`` argument through internal helpers. Best-effort: any
+    failure (no session factory in test mode, dispatcher down, etc.) is
+    logged and swallowed because the event is operational telemetry — the
+    underlying hit flush has already succeeded.
+    """
+    try:
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import KGHitFlushed
+        from okto_pulse.core.infra.database import get_session_factory
+    except Exception as exc:  # pragma: no cover — import-time guard
+        logger.debug(
+            "kg.hit_flushed.import_failed err=%s", exc,
+        )
+        return
+
+    try:
+        factory = get_session_factory()
+    except AssertionError:
+        # No DB initialised (sync test suites that exercise scoring only).
+        return
+
+    event = KGHitFlushed(
+        board_id=board_id,
+        node_type=node_type,
+        node_id=node_id,
+        hits_delta=int(delta),
+        flushed_at=now_iso,
+    )
+    try:
+        async with factory() as session:
+            await event_publish(event, session=session)
+            await session.commit()
+    except Exception as exc:
+        logger.warning(
+            "kg.hit_flushed.publish_failed board=%s node=%s err=%s",
+            board_id, node_id, exc,
+            extra={
+                "event": "kg.hit_flushed.publish_failed",
+                "board_id": board_id,
+                "node_id": node_id,
+                "error": str(exc),
+            },
+        )
+
+
 class KGService:
     """Stateless service layer. Instantiate per-request or share across calls."""
 
@@ -396,6 +448,24 @@ class KGService:
         )
         _PENDING_HITS[key] = 0
         _LAST_FLUSH[key] = datetime.now(timezone.utc)
+
+        # spec 28583299 (Ideação #4, BR3 + dec_3a6eb8ad): emit KGHitFlushed
+        # via fire-and-forget so the recompute handler ranks the refreshed
+        # hits without blocking the search hot path. Independent session
+        # (B-1.b in KE-B) avoids polluting the search call-chain. Fire-and-
+        # forget is safe — flush failure already discards counts (line 383),
+        # and the worst case for losing the event is the score lagging by
+        # one tick (decay half-life is 30 days, so seconds don't matter).
+        try:
+            asyncio.create_task(
+                _emit_hit_flushed_event(
+                    board_id, node_type, node_id, delta, now_iso,
+                )
+            )
+        except RuntimeError:
+            # No running loop (sync test contexts) — ignore. The event is
+            # operational telemetry, not a correctness invariant.
+            pass
 
     # ------------------------------------------------------------------
     # Schema version (FR-6)

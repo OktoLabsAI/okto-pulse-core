@@ -1852,6 +1852,35 @@ Card creation does NOT auto-propagate. Use `okto_pulse_copy_mockups_to_card` and
 ### Best practice:
 Always use create/derive with parent ID instead of creating orphan entities. This ensures context, decisions, and visual artifacts flow through the pipeline.
 
+## Multi-field tool calls — pattern correto vs anti-pattern
+
+The tool-use harness wrapping the agent has a parser bug: literal `<parameter>`, `</parameter>`, `<function_calls>`, `</function_calls>`, `<invoke>` and `</invoke>` tags inside string content collapse into the outer XML stream, dropping the rest of the value and producing null fields downstream. The server cannot recover the lost information — payload arrives already corrupted.
+
+The server emits a structured warning on the `okto_pulse.mcp.parser_safety` logger whenever a string argument contains a literal protocol tag, with payload:
+
+- `event = "mcp.tool.suspicious_xml_field"`
+- `tool_name`, `field_name`, `value_preview` (first 200 chars)
+
+Use that log for forensics when a tool call mysteriously stored null/truncated content.
+
+### Anti-pattern (NEVER do this)
+
+Composing nested XML by hand inside a string field:
+
+> calling `okto_pulse_update_card` with `details = "...<parameter name=\"foo\">x</parameter>..."` — the parser will collapse the inner `</parameter>` and the outer call breaks.
+
+### Pattern A — Single call, plain JSON values (preferred)
+
+Pass each parameter as a top-level JSON value. No nested XML composition. The Anthropic JSON tool-use mode handles arbitrary string content safely as long as it does not contain literal protocol tags.
+
+### Pattern B — Multiple calls (when A doesn't fit)
+
+Split the work across calls: `create_X(title=...)` followed by `update_X(field=value)` and `add_Y(content=...)` for each field separately.
+
+### Pattern C — HTML escape when you must cite tags literally
+
+When the legitimate content needs to mention `<parameter>` literally (specs about tooling, this very document), escape it as `&lt;parameter&gt;`. The detection regex matches only literal opening `<` followed by a protocol keyword, not the HTML entity.
+
 ## Knowledge Graph — Consolidation, Query, and Discovery
 
 The Okto Pulse platform includes an incremental knowledge graph (KG) layer that captures decisions, criteria, constraints, learnings, and relationships extracted from board artifacts (specs, sprints, Q&A). The KG is embedded (Kuzu + SQLite) and runs in the same process — no external infrastructure.
@@ -1862,6 +1891,15 @@ The Okto Pulse platform includes an incremental knowledge graph (KG) layer that 
 - **Global discovery meta-graph** at `~/.okto-pulse/global/discovery.kuzu` — board summaries, topic clusters, canonical entities (digest-only, no sensitive content)
 - **SQLite operational tables**: `consolidation_queue` (pending triggers), `consolidation_audit` (session history), `kuzu_node_refs` (back-references for undo), `global_update_outbox` (eventual consistency to global layer)
 - **Agent-as-LLM premise**: the platform NEVER invokes LLM. All cognitive work (extraction, reasoning, reconciliation decisions) is done by YOU, the code agent. The platform provides deterministic primitives and hints.
+
+#### Auto-extraction trigger (spec 3d907a87)
+
+`CognitiveExtractionHandler` (registered on `card.moved`) emits structured `cognitive.extraction.*.candidate` log lines whenever a card transitions to `done`:
+
+- **Bug cards** with `action_plan ≥ 50 chars` → fires the Learning extractor. **Opt-in to LLM**: requires `Board.settings.cognitive_llm_config = {provider, model, api_key_env, max_tokens, timeout_s}`. When the config is absent, Learning is skipped with `cognitive.extraction.learning.skipped reason=no_llm_config`.
+- **Cards with `spec_id`** → fires the Alternative + Assumption regex extractors over `spec.context`. These run regardless of LLM config (deterministic).
+
+The handler does NOT push candidates into Kuzu directly; the structured log is the v1 surface for downstream cognitive consumers (the cognitive agent or a follow-up worker registered in this spec's out-of-scope list). The eventual persistence path remains the standard `begin_consolidation → add_node_candidate → commit_consolidation` flow.
 
 ### Consolidation Primitives (7 tools)
 
@@ -1969,6 +2007,18 @@ Flexible query tools for the ~20% of cases that don't fit the intent-based tools
 - Max rows: 1000 default, 10000 max.
 - Rate limit: **30 queries/min per agent** across all KG tools (primario + power combined).
 - Cypher injection: blacklist keywords (CREATE/DELETE/SET/MERGE/DROP) are rejected, comments stripped, unicode normalised.
+
+**Hit-counting parity with `kg_query_natural` (spec 28583299, Ideação #4):**
+`kg_query_cypher` increments the per-node hit counter for every node it returns, the same way `kg_query_natural` does for its top-K. The counter feeds `relevance_score` over time and biases ranking toward nodes the agents actually consult. To get credit for a hit, **shape the RETURN so the result row carries the node's id**:
+
+- `RETURN n.id` — the column named `id` is detected directly.
+- `RETURN n.id AS node_id` — alias works too (`node_id`/`*_id`/`*.id`).
+- `RETURN n` — when the row carries a UUID-like scalar anywhere, it's recognised as a node id.
+- `RETURN labels(n) AS node_type, n.id AS id` — pair labels with the id so the counter tags the right node type instead of `unknown`.
+
+Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment the counter — there's no row-level node id to attribute to. That's intentional: aggregations are diagnostic, not consumption.
+
+**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at` and `nodes_recomputed_in_last_tick`, populated by the daily APScheduler tick (03:00 UTC). When `last_decay_tick_at` is `null` the daily worker hasn't run yet on this deployment — score freshness is bounded by the on-read `_apply_decay_reorder` until the first tick lands.
 
 **When a rate-limit or timeout fires, here is how to handle it:**
 
@@ -2097,6 +2147,217 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
 | Bug fix without Learning consolidation | Fix is in commit history but not the KG. | Future investigations of similar bugs re-run the same diagnosis. |
 | Backlog in `consolidation_queue` > 48h | N artifacts to consolidate, each needing its own session. | Incremental consolidation is O(1) per artifact; backfill is O(N) of expensive extraction work and destroys trust in the "queryable memory" contract. |
 
+### Automatic consolidation triggers — domain events you don't have to fire by hand
+
+Most consolidation enqueues happen automatically. The internal event bus
+(`core/events/`) emits typed `DomainEvent`s on state changes; the
+`ConsolidationEnqueuer` handler subscribes to all of them and inserts
+the matching `ConsolidationQueue` row with natural dedup. You should
+understand which mutations trigger which events so you can predict KG
+freshness — and so you don't try to "force" an enqueue that the system
+already did.
+
+**The 17 event types that auto-enqueue** (since spec 4007e4a3, Ideação #3):
+
+| Event | Fired by | Re-enqueues | Priority |
+|---|---|---|---|
+| `card.created` / `card.restored` | card lifecycle methods | card | normal |
+| `card.moved` | `move_card(status=...)` (any state transition) | **card AND parent spec** (dual target) | normal |
+| `card.conclusion_added` | `submit_task_validation` with `conclusion_text` non-empty | **card AND parent spec** (dual target) | normal |
+| `card.cancelled` | `move_card(status='cancelled')` | card | **high** |
+| `card.linked_to_spec` | `link_card(spec_id, card_id)` | **spec** (not card) | normal |
+| `card.unlinked_from_spec` | `unlink_card(card_id)` | **spec** (not card) | normal |
+| `spec.created` / `spec.moved` | spec lifecycle methods | spec | normal |
+| `spec.version_bumped` | `update_spec` when content_fields change (FRs/TRs/ACs/context/description) | spec | **high** |
+| `spec.semantic_changed` | `update_spec` when semantic_fields change (decisions/business_rules/api_contracts/test_scenarios/screen_mockups) **and** version was NOT bumped | spec | normal |
+| `refinement.semantic_changed` | `update_refinement` (any field) | refinement (no-op extractor today) | normal |
+| `sprint.created` / `sprint.moved` / `sprint.closed` | sprint lifecycle methods | sprint | normal |
+| `ideation.derived_to_spec` / `refinement.derived_to_spec` | derivation methods | spec | normal |
+
+**Read this carefully — the four 0.1.5+ semantic events are easy to miss:**
+
+- `spec.semantic_changed` fires when you mutate decisions / business_rules /
+  api_contracts / test_scenarios / screen_mockups via `update_spec` (or
+  any of the `add_decision`, `add_business_rule`, `add_test_scenario`,
+  etc. tools that converge to `update_spec` internally). It does **not**
+  bump the spec version, but it **does** re-enqueue the spec for KG
+  re-extraction. Without this event, those mutations would silently
+  drift from the KG until the next content change.
+- `refinement.semantic_changed` fires on any refinement update.
+  Refinements have a small surface, so we treat any mutation as
+  KG-relevant. The worker currently no-ops on refinement (graceful
+  fallback) — the queue entry is logged + cleared without touching the
+  KG. Refinement extraction is a follow-up.
+- `card.linked_to_spec` and `card.unlinked_from_spec` re-enqueue the
+  **spec**, not the card. The card extractor doesn't reference
+  `spec_id`, so a card re-enqueue would be wasted work; the spec
+  extractor reflects the updated cards list.
+- **`card.moved` and `card.conclusion_added` are dual-target** (since
+  spec 4007e4a3, Ideação #3): each one inserts **two** queue rows — one
+  for the card itself (its `status` / `conclusions` are extracted as
+  node properties) and one for the parent spec (whose aggregate KG view
+  reflects the cards' lifecycle state). Orphan cards (no `spec_id`)
+  skip the spec-side enqueue gracefully and log
+  `kg.consolidation.reenqueue.skipped reason=orphan_card`.
+- **Manual edit preservation in Kùzu** (since v0.3.2 schema, Ideação #3):
+  every node carries a `human_curated BOOLEAN` flag (default FALSE,
+  agent-managed). When a curator edits a node directly via back-office
+  tooling and sets the flag to TRUE, the next agent UPDATE for that
+  node converts to NOOP — the node's properties are preserved and the
+  candidate maps to the existing kuzu_node_id so downstream edges still
+  resolve. Counter `kg.consolidation.manual_edit_preserved` is emitted.
+  To force an overwrite, the agent passes a reconciliation hint with
+  `confidence >= 1.0` (extension-point proxy for an explicit override);
+  the new node defaults back to `human_curated=FALSE` and counter
+  `kg.consolidation.reset_manual_flag` is emitted. The agent should
+  always include a justification narrative in the commit when forcing
+  an override.
+
+**Dedup is natural.** ConsolidationEnqueuer skips the insert when a
+pending/claimed row already exists for `(board_id, artifact_type,
+artifact_id)`. So a burst of 5 `add_decision` calls produces 1 queue
+row, not 5. You don't need to debounce on the caller side.
+
+**Priority routing.** Only `card.cancelled` and `spec.version_bumped`
+enqueue with priority `high`. The semantic and lifecycle events
+(including `card.moved`, `card.conclusion_added`, the four
+`*.semantic_changed` / `card.linked_to_spec` / `card.unlinked_from_spec`)
+route to `normal` — they reflect routine content evolution, not
+structural breaks.
+
+**Outbox guarantees.** Events are inserted in the same DB transaction as
+the data mutation. If the caller rolls back, the events disappear too.
+A successful commit guarantees the queue row will eventually appear (the
+dispatcher worker picks up pending event handler executions and runs
+them with retry + DLQ).
+
+### KG schema migration self-heal
+
+Spec 818748f2 (board Okto Pulse Evolution). Boards bootstrapped before
+v0.3.2 may lack the `human_curated` and/or `last_recomputed_at` columns
+on Kùzu node tables. Symptom: consolidations fail with
+`Binder exception: Cannot find property X for n` and the silent log
+`kg.compensate_sync.failed` mentions migrate-schema.
+
+**Auto-heal (default, zero-touch).** `BoardConnection.__init__` runs
+`_board_needs_post_v030_migration` on every open — if any v0.3.1+ column
+is missing, `_migrate_board_schema` is dispatched in the same lock window
+before the consolidation can hit the binder exception. The cache add
+to `_BOOTSTRAPPED_BOARDS` happens AFTER the migration (BR3 — never
+cache a broken state).
+
+**Manual via MCP tool (use this when you see the binder exception
+pre-restart, or when log warning `kg.compensate_sync.failed` references
+migrate-schema):**
+
+```
+okto_pulse_kg_migrate_schema(board_id="<id>")
+```
+
+For every board on the server:
+```
+okto_pulse_kg_migrate_schema(all_boards=true)
+```
+
+Idempotent — re-running on a migrated board returns
+`{migrated: true, columns_added: {}, errors: []}` (no-op).
+
+**REST gemellar (for human operators / dashboards):**
+`POST /api/kg/{board_id}/migrate-schema` — same payload as the MCP tool.
+
+**CLI substitute (project does not ship Click; use Python directly):**
+```
+python -m okto_pulse.tools.kg_migrate_schema --board <id>
+python -m okto_pulse.tools.kg_migrate_schema --all-boards
+```
+
+**NUNCA delete `graph.kuzu`** — the directory holds the entire KG
+history of the board (decisions, learnings, contradictions). The
+deprecated error message used to suggest this; the suggestion was
+removed in spec 818748f2 (FR4) — current messages always orient to
+migrate-schema.
+
+### KG health and operational signals
+
+Spec 20f67c2a (Ideação #5) introduced an operational pulse so you don't
+fly blind on the KG. Two surfaces ship today; **agents always use the MCP
+tool** — the REST endpoint is for human operators / dashboards.
+
+- **MCP tool (use this):** `okto_pulse_kg_health(board_id)` — auth and
+  board-access checks happen automatically via your MCP session. Returns
+  JSON with 12 fields: `queue_depth`, `oldest_pending_age_s`,
+  `dead_letter_count`, `total_nodes`, `default_score_count`,
+  `default_score_ratio`, `avg_relevance`, `top_disconnected_nodes`,
+  `schema_version` (string, currently "1.0"), `contradict_warn_count`,
+  `last_decay_tick_at` (ISO datetime or `null`), `nodes_recomputed_in_last_tick`
+  (int). Computed in-process; cheap to poll a few times per minute when
+  diagnosing.
+
+  **Reading the new tick fields (spec 28583299, Ideação #4):**
+  - `last_decay_tick_at` — when the daily APScheduler tick last completed.
+    `null` means no tick has run yet on this deployment (fresh boot).
+    A value older than 24h plus the cron's 03:00 UTC slot suggests the
+    tick is silently failing — check the dispatcher dead-letter and
+    structured log `kg.relevance.tick.completed`.
+  - `nodes_recomputed_in_last_tick` — count of nodes the most recent tick
+    touched. Sustained `0` while `total_nodes > 0` means the staleness
+    cutoff (`KG_DECAY_TICK_STALENESS_DAYS`, default 7d) hasn't been
+    reached for any node — usually fine on a quiet board, suspicious on
+    a busy one.
+- **REST endpoint (operator use):** `GET /api/v1/kg/health?board_id=<X>`
+  returns the same shape under bearer-token auth. Agents do not have the
+  token nor the host port — call the MCP tool above instead. Operators
+  with a session token can use it from a browser or HTTP client.
+
+**Two scoring guarantees from the same spec, useful when reading the
+metrics:**
+
+1. **`contradict_penalty` is now capped at 0.5** before reaching
+   `_compute_relevance` (`scoring.CONTRADICT_PENALTY_CAP`). A node with
+   5+ incoming `:contradicts` edges no longer gets silently zeroed via
+   the `[0, 1.5]` clamp. The structured log `kg.scoring.contradict_penalty_capped`
+   fires whenever the cap kicks in, and `contradict_warn_count` in the
+   health response counts those events per board. A high
+   `contradict_warn_count` is a signal that some spec section is overly
+   contradictory and the curator should review it.
+2. **`relevance_score` decay is reapplied on read** in `find_by_topic`
+   (`kuzu_graph_store.py`) via `_apply_decay_reorder`. The Cypher
+   `ORDER BY relevance_score DESC` clause is preserved (BR4) — the
+   helper over-fetches a pool of `top_k * DECAY_REORDER_POOL_MULTIPLIER`
+   rows and reorders in Python so a stale-but-high-scoring node doesn't
+   outrank a fresh-and-active one.
+
+**When to consult `/api/v1/kg/health`:**
+
+- Before kicking off a long consolidation cycle: if `queue_depth > 100`
+  or `oldest_pending_age_s > 3600`, the consolidation worker is behind
+  and your enqueue may sit pending for a while.
+- After flagging contradictions: spike in `contradict_warn_count`
+  between two snapshots tells you the curator probably needs to
+  reconcile a spec section.
+- When debugging stale ranking: `default_score_ratio > 0.7` (a WARN log
+  also fires) means most nodes are clustered around the neutral 0.5 —
+  scoring isn't differentiating yet, search results will look flat.
+- Periodically as a smoke test: `total_nodes` + `avg_relevance` jumping
+  unexpectedly between snapshots can flag a bad consolidation that
+  flooded the board with low-quality nodes.
+
+#### KG Health UI (frontend, spec d754d004)
+
+The same 12 fields are also surfaced to human operators via a
+fullscreen overlay in the community frontend
+(`okto_labs_pulse_community/frontend/src/components/knowledge/KGHealthView.tsx`).
+Operators reach it via the Header → Menu → "KG Health" entry, which
+opens `/kg-health`. The view polls `GET /api/v1/kg/health` every 30s,
+pauses while the tab is hidden, surfaces a red banner when
+`schema_version` drifts from `EXPECTED_SCHEMA_VERSION` in
+`frontend/src/constants/kg.ts`, and an amber badge when
+`last_decay_tick_at` is more than 24h old. Operational actions
+(re-enqueue, reprocess dead letter, force snapshot) are intentionally
+deferred to a future ideation — the MVP is visualization-only.
+
+Agents do not consume this UI. Always call the MCP tool above.
+
 ### Why consolidation discipline matters — the one-liner
 
 An unconsolidated board is a board with amnesia. Every skipped trigger compounds: next session starts from zero, `find_similar_decisions` returns noise, `find_contradictions` misses silent conflicts, `get_learning_from_bugs` returns nothing, and right-to-erasure becomes incomplete because un-consolidated decisions still live as raw text. All specific triggers, patterns, anti-patterns and per-skipped-trigger consequences are in "When and How to Consolidate — Mandatory Triggers" above — do not duplicate them elsewhere.
@@ -2174,6 +2435,136 @@ If an existing Decision matches intent, DO NOT create a new one:
 | `validates` | Cognitive agent (you) | Learning → Bug the learning was extracted from. |
 
 Attempting to emit a Layer 1 edge via `kg_add_edge_candidate` returns `layer_violation`. That's by design — it keeps the cognitive agent from generating noisy entity links.
+
+### Test theater prevention — required evidence gate (Wave 2 NC-9, spec 873e98cc)
+
+`okto_pulse_update_test_scenario_status` agora exige **evidence estruturada** quando você marca um scenario como `automated`, `passed`, ou `failed` (default — gate ATIVO):
+
+| Status | Evidence required |
+|---|---|
+| `draft`, `ready` | none (intent declarado) |
+| `automated` | `test_file_path` + `test_function` |
+| `passed`, `failed` | `last_run_at` + (`output_snippet` OR `test_run_id`) |
+
+Pass evidence como JSON string no param `evidence`:
+
+```python
+okto_pulse_update_test_scenario_status(
+    board_id="...",
+    spec_id="...",
+    scenario_id="ts_abc123",
+    status="passed",
+    evidence='{"last_run_at":"2026-04-27T20:00:00","output_snippet":"1 passed","test_file_path":"tests/foo.py","test_function":"test_bar"}',
+)
+```
+
+**Sem evidence** com status alvo bloqueante → resposta `{"error": "evidence_required", "required": [...], "message": "..."}`. Sua tool call falha; cenário fica no status anterior.
+
+**Pattern recomendado:** rode o teste real (subprocess pytest), capture output (truncate 500 chars), passe `output_snippet` + `test_file_path` + `test_function` + `last_run_at` (ISO).
+
+**Anti-pattern explicitado:** se você está prestes a marcar `passed` sem ter rodado o teste, **pare**. Use `status='ready'` que documenta intent sem mentir sobre evidência.
+
+**Bypass via setting:** board admins podem ativar `skip_test_evidence_global=true` no Board Settings panel — aceita scenarios sem evidence + log forensics `test_scenario.evidence_gate_skipped` para análise post-fato. Banner amber não-dismissable aparece no top do board para awareness contínua.
+
+**Defesa em profundidade:** `move_sprint(status=closed)` também valida que scenarios passed/automated do sprint têm evidence. Se algum não tem (E skip OFF), close é bloqueado com `error="sprint_has_evidenceless_passed_scenarios"`.
+
+Memória relacionada: `feedback_no_test_theater.md` agora aponta para este gate como solução estrutural.
+
+### Dead Letter Inspector — listar DLQ rows via REST + MCP (Wave 2 NC 1ede3471, spec ed17b1fe)
+
+Quando você (agente) detecta `dead_letter_count > 0` via `okto_pulse_kg_health` e precisa investigar, use a tool gemellar:
+
+```
+okto_pulse_kg_dead_letter_list(board_id="<uuid>", limit=50, offset=0)
+```
+
+Retorna JSON `{rows, total, limit, offset}`. Cada row inclui o array `errors` completo do schema TR16 — uma entrada por tentativa com `error_type`, `message`, `occurred_at`, `traceback` (opcional). Use isso para:
+- Identificar quais artifacts falharam consistentemente (mesma mensagem em N tentativas → bug determinístico, não transient)
+- Triagem por error_type (KuzuLockError vs IntegrityError vs UnknownError)
+- Decidir se o problema é transient (variação de mensagem entre tentativas) ou bug real (mesma mensagem)
+
+REST gemelar: `GET /api/v1/kg/queue/dead-letter?board_id=<uuid>&limit=50&offset=0`. Frontend operador acessa via Settings panel → Event Queue tab → "Open dead-letter inspector" (modal com tabela + expand row para errors history).
+
+**READ-only no MVP.** Reprocess deferred para v2 (precisa role gate + audit). Para reprocess manual hoje: SQL direto em `consolidation_outbox` ou wipe da DLQ row para forçar re-enqueue na próxima trigger event.
+
+### KG decay tick controllability — interval, manual trigger, run-on-save (Wave 2 NC f9732afc, spec 54399628)
+
+The KG decay tick is now operator-controllable end-to-end. The cron at
+03:00 UTC was replaced by an `IntervalTrigger` configured by a
+persisted setting + hot-reload via `APScheduler.reschedule_job`.
+
+**Three settings persisted in `app_settings`** (`okto-pulse kg`/UI Settings):
+
+| Setting | Range | Default | Effect |
+|---|---|---|---|
+| `kg_decay_tick_interval_minutes` | 5–10080 | 1440 | How often the cron fires (5 min to 7 d) |
+| `kg_decay_tick_staleness_days` | 1–365 | 7 | Only nodes with `last_recomputed_at` older than N days are recomputed |
+| `kg_decay_tick_max_age_days` | 0–365 | 0 | 0 = no cap. > 0 forces recompute even of fresh nodes older than N days |
+
+Mudar qualquer destes via `PUT /api/v1/settings/runtime` é **hot-reload** —
+não há `restart_required` nesses 3 fields. A mudança de `interval_minutes`
+chama `scheduler.reschedule_job("kg_daily_tick", trigger=IntervalTrigger(...))`
+e emite structured log `kg.tick.rescheduled`.
+
+**Manual trigger via REST + MCP gemellar:**
+
+- REST: `POST /api/v1/kg/tick/run-now` body `{board_id?: uuid, force_full_rebuild?: bool}`. Response 202 `{tick_id, status: "running", scheduled_at}`. Response 409 `{detail: {error: "tick_already_running", ...}}` quando o advisory lock `kg_daily_tick` já está capturado (cron OU outro manual trigger).
+- MCP: `okto_pulse_kg_tick_run_now(board_id, force_full_rebuild)` retorna o mesmo payload JSON. Use quando você (agente) acabou de re-escalar nodes em massa e quer scoring fresh imediato.
+
+**`force_full_rebuild=true`** zera `last_recomputed_at` de todos nodes do
+escopo (board específico se `board_id` fornecido; todos boards caso
+contrário) ANTES do tick — força recompute completo ignorando staleness
+threshold. Disponível **apenas** via endpoint manual; nunca via setting
+persistido (evita full-rebuild noturno acidental).
+
+**UI controls:**
+- `RuntimeSettingsPanel` ganhou tab "Decay Tick" com os 3 campos + botão "Save & run now" (verde, com Play icon) que persiste settings + dispara tick imediato.
+- `KGHealthView::SchemaTickCard` ganhou botão "Run tick now" abaixo de "Nodes recomputed". 4 estados: idle (Play icon), running (Loader2 spin disabled), success (toast + handleRefresh), 409 (toast amber "Tick already running").
+
+**Audit logs estruturados:**
+- `kg.tick.rescheduled` — interval mudou, scheduler.reschedule_job chamado
+- `kg.tick.reschedule_skipped` (reason=no_scheduler) — scheduler singleton ausente (test context)
+- `kg.tick.reschedule_failed` — exception ao chamar reschedule_job
+- `kg.tick.manual_triggered` — endpoint manual ou MCP tool disparou tick (campos: tick_id, triggered_by_user_id, board_id, force_full_rebuild)
+
+### Source-artifact-ref dedup — natural identity invariant (NC-8, spec 7f23535f)
+
+Since spec 7f23535f, the commit pipeline enforces a strict invariant:
+**at most one Kuzu node per `(node_type, source_artifact_ref)` combination
+per board**. The branch ADD of `_do_kuzu_commit` consults
+`_lookup_existing_node` before generating a fresh UUID. When a prior
+session already wrote a node for the same artifact, the current commit
+reuses it (UPDATE attrs unless `human_curated=true`) instead of spawning
+a duplicate.
+
+What this means in practice:
+
+- **Re-consolidation is safe.** Calling `commit_consolidation` twice for
+  the same spec (e.g., after `spec.semantic_changed` or
+  `spec.version_bumped`) produces 1 node, not 2. Title/content/embedding
+  attributes refresh on the existing node; historical fields
+  (`created_at`, `query_hits`, `relevance_score`,
+  `source_session_id`, `created_by_agent`, `human_curated`) are
+  preserved.
+- **`human_curated` is honoured in the dedup branch too.** Marking a
+  node `human_curated=true` via back-office locks its content against
+  automatic re-consolidation refresh — same guarantee as the explicit
+  UPDATE branch.
+- **Embedding stays at creation-time value.** Kùzu HNSW indexes own the
+  `embedding` column and reject direct `SET`. Re-embedding is therefore
+  out of scope for this branch; a follow-up worker can rebuild stale
+  embeddings in batch when the title/content drift becomes large.
+- **Tech-mention Entities (`source_artifact_ref="tech_entities.yml"`)
+  collapse cross-spec.** Three specs mentioning Python now produce one
+  Entity "Python" node with three `mentions` edges, not three duplicate
+  Entity nodes.
+- **Pre-fix boards may carry duplicates.** Run
+  `okto-pulse kg dedup-entities <board_id>` (add `--dry-run` for a
+  preview, `--json` for ops automation) to consolidate them. Idempotent
+  on clean boards (returns `groups: 0`).
+- **Look for `kg.consolidation.dedup_reused`** in structured logs to
+  audit reuse decisions. Fields: `cand_id`, `existing_id`, `node_type`,
+  `source_artifact_ref`, `session_id`, `was_curated_preserved`.
 
 ### Consolidation Hygiene Checklist
 

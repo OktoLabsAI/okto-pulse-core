@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import warnings
+from datetime import timezone
 from typing import Any
 
 from sqlalchemy import String, select
@@ -28,13 +31,44 @@ from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_s
 
 logger = logging.getLogger("okto_pulse.services.settings")
 
-# Keys persisted in the `app_settings` table. Adding a new key here is enough
-# to expose it via the REST endpoint; update the RuntimeSettingsPayload to
-# include a validator.
-RUNTIME_KEYS: tuple[str, ...] = (
+# Graph DB keys — changing any of these requires a full process restart
+# (Kùzu Database() is constructor-time). The frontend amber banner is
+# triggered iff one of these diverges from the boot snapshot.
+GRAPH_DB_KEYS: tuple[str, ...] = (
     "kg_kuzu_buffer_pool_mb",
     "kg_kuzu_max_db_size_gb",
     "kg_connection_pool_size",
+)
+
+# Event Queue keys (spec bdcda842) — hot-reload, no restart required.
+# The worker pool re-reads CoreSettings on every claim (5s cache TTL).
+EVENT_QUEUE_KEYS: tuple[str, ...] = (
+    "kg_queue_max_concurrent_workers",
+    "kg_queue_min_interval_ms",
+    "kg_queue_claim_timeout_s",
+    "kg_queue_max_attempts",
+    "kg_queue_alert_threshold",
+)
+
+# Decay Tick keys (spec 54399628 — Wave 2 NC f9732afc). Hot-reload via
+# scheduler.reschedule_job — see _maybe_reschedule_tick below. Mudanças
+# em qualquer destes NÃO marcam restart_required.
+DECAY_TICK_KEYS: tuple[str, ...] = (
+    "kg_decay_tick_interval_minutes",
+    "kg_decay_tick_staleness_days",
+    "kg_decay_tick_max_age_days",
+)
+
+# Keys persisted in the `app_settings` table. Adding a new key here is enough
+# to expose it via the REST endpoint; update the RuntimeSettingsPayload to
+# include a validator.
+RUNTIME_KEYS: tuple[str, ...] = GRAPH_DB_KEYS + EVENT_QUEUE_KEYS + DECAY_TICK_KEYS
+
+# Legacy env var name → canonical settings key. Read once at boot in
+# apply_persisted_settings_to_core_settings; emits DeprecationWarning if used.
+# Removal scheduled for v0.5.0.
+_LEGACY_ENV_ALIASES: tuple[tuple[str, str], ...] = (
+    ("KG_MAX_QUEUE_DEPTH", "kg_queue_alert_threshold"),
 )
 
 
@@ -90,6 +124,53 @@ async def _load_persisted_rows(db: AsyncSession) -> dict[str, int]:
         return {}
 
 
+def _resolve_legacy_env_aliases() -> dict[str, int]:
+    """Resolve deprecated env vars into canonical settings keys.
+
+    Spec bdcda842 (TR12): KG_MAX_QUEUE_DEPTH was the admission-gate threshold
+    in v0.1.5; it is now an alerting-only threshold renamed to
+    kg_queue_alert_threshold. We honour the legacy env var until v0.5.0 and
+    emit a DeprecationWarning + structured log when it fires.
+
+    Only applies when the legacy env var is set AND the new env var is NOT
+    set (so an explicit new-style override always wins).
+    """
+    resolved: dict[str, int] = {}
+    for legacy_env, canonical_key in _LEGACY_ENV_ALIASES:
+        raw = os.environ.get(legacy_env)
+        if not raw:
+            continue
+        canonical_env = canonical_key.upper()
+        if os.environ.get(canonical_env):
+            continue
+        try:
+            resolved[canonical_key] = int(raw)
+        except ValueError:
+            logger.warning(
+                "settings.legacy_env_invalid name=%s value=%r",
+                legacy_env, raw,
+            )
+            continue
+        msg = (
+            f"Env var {legacy_env} is deprecated and will be removed in "
+            f"v0.5.0; use {canonical_env} instead. Mapped value={raw} into "
+            f"{canonical_key}."
+        )
+        warnings.warn(msg, DeprecationWarning, stacklevel=2)
+        logger.warning(
+            "settings.legacy_env_used legacy=%s canonical=%s value=%d",
+            legacy_env, canonical_key, resolved[canonical_key],
+            extra={
+                "event": "settings.legacy_env_used",
+                "legacy_env": legacy_env,
+                "canonical_key": canonical_key,
+                "value": resolved[canonical_key],
+                "version_removed": "0.5.0",
+            },
+        )
+    return resolved
+
+
 async def apply_persisted_settings_to_core_settings() -> dict[str, int]:
     """Read the ``app_settings`` table and override :class:`CoreSettings`.
 
@@ -101,14 +182,20 @@ async def apply_persisted_settings_to_core_settings() -> dict[str, int]:
     async with factory() as db:
         persisted = await _load_persisted_rows(db)
 
-    # Build the merged view (persisted overrides defaults; env is handled by
-    # connection_pool at read-time, not here — CoreSettings shouldn't know
-    # about env-var overrides).
+    # Resolve legacy env aliases (e.g. KG_MAX_QUEUE_DEPTH → kg_queue_alert_threshold).
+    legacy = _resolve_legacy_env_aliases()
+
+    # Build the merged view (persisted overrides defaults; legacy env applies
+    # only when the canonical key wasn't persisted nor set via canonical env;
+    # env is handled by connection_pool at read-time, not here — CoreSettings
+    # shouldn't know about env-var overrides).
     base = get_settings()
     merged: dict[str, Any] = base.model_dump()
     for key in RUNTIME_KEYS:
         if key in persisted:
             merged[key] = persisted[key]
+        elif key in legacy:
+            merged[key] = legacy[key]
 
     new_settings = CoreSettings(**merged)
     configure_settings(new_settings)
@@ -120,10 +207,14 @@ async def apply_persisted_settings_to_core_settings() -> dict[str, int]:
     _boot_snapshot.update(snapshot)
 
     logger.info(
-        "kg.kuzu.config_applied buffer_pool_mb=%d max_db_size_gb=%d pool_size=%d",
+        "kg.kuzu.config_applied buffer_pool_mb=%d max_db_size_gb=%d pool_size=%d "
+        "queue_workers=%d queue_min_interval_ms=%d queue_alert_threshold=%d",
         snapshot["kg_kuzu_buffer_pool_mb"],
         snapshot["kg_kuzu_max_db_size_gb"],
         snapshot["kg_connection_pool_size"],
+        snapshot["kg_queue_max_concurrent_workers"],
+        snapshot["kg_queue_min_interval_ms"],
+        snapshot["kg_queue_alert_threshold"],
         extra={
             "event": "kg.kuzu.config_applied",
             **snapshot,
@@ -136,22 +227,97 @@ async def get_runtime_settings(db: AsyncSession) -> dict[str, Any]:
     """Return the current effective values + restart_required flag.
 
     Effective = what CoreSettings is currently exposing (used by _open_kuzu_db
-    and connection_pool at runtime). restart_required is True when the
-    persisted table diverges from the boot snapshot (i.e. someone saved new
-    values since startup and Kùzu has not been re-initialised).
+    and connection_pool at runtime).
+
+    ``restart_required`` is True when a **Graph DB** key in the persisted
+    table diverges from the boot snapshot — those are constructor-time for
+    Kùzu and need a process restart to take effect. Event Queue keys are
+    hot-reload (worker pool re-reads on every claim with 5s cache TTL) so
+    persisting them never marks restart_required (spec bdcda842, BR8/TR11).
     """
     s = get_settings()
     effective = {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
 
     persisted = await _load_persisted_rows(db)
     boot = _read_boot_snapshot()
-    # restart_required if persisted differs from what the process booted with,
-    # even if CoreSettings was not re-read yet.
+    # Only Graph DB keys gate the restart banner — Event Queue keys hot-reload.
     restart_required = any(
-        k in persisted and persisted[k] != boot.get(k) for k in RUNTIME_KEYS
+        k in persisted and persisted[k] != boot.get(k) for k in GRAPH_DB_KEYS
     )
 
     return {**effective, "restart_required": restart_required}
+
+
+def _maybe_reschedule_tick(values: dict[str, int]) -> None:
+    """Spec 54399628 (Wave 2 NC f9732afc) — hot-reload tick interval.
+
+    When `kg_decay_tick_interval_minutes` is in the persisted PUT body,
+    update the live CoreSettings AND call APScheduler.reschedule_job so
+    the cron job picks up the new interval without a server restart.
+
+    Other tick keys (staleness, max_age_cap) take effect on the NEXT
+    tick run via CoreSettings live-read in the handler — no scheduler
+    intervention needed for them.
+
+    Soft-fails when scheduler singleton is None (test contexts that
+    skip lifespan) — settings are still persisted; live process just
+    doesn't reschedule.
+    """
+    if "kg_decay_tick_interval_minutes" not in values:
+        return
+
+    new_interval = int(values["kg_decay_tick_interval_minutes"])
+
+    # Update live CoreSettings so subsequent get_settings() returns the
+    # new value (next tick handler invocation will read it).
+    from okto_pulse.core.infra.config import configure_settings, get_settings
+    current = get_settings()
+    updated = current.model_copy(update={
+        k: int(values[k]) for k in DECAY_TICK_KEYS if k in values
+    })
+    configure_settings(updated)
+
+    # Hot-reload the APScheduler trigger.
+    try:
+        from apscheduler.triggers.interval import IntervalTrigger
+        from okto_pulse.core.kg.scheduler_singleton import get_scheduler
+
+        scheduler = get_scheduler()
+        if scheduler is None:
+            logger.info(
+                "kg.tick.reschedule_skipped reason=no_scheduler "
+                "new_interval_minutes=%d",
+                new_interval,
+                extra={
+                    "event": "kg.tick.reschedule_skipped",
+                    "reason": "no_scheduler",
+                    "new_interval_minutes": new_interval,
+                },
+            )
+            return
+        scheduler.reschedule_job(
+            "kg_daily_tick",
+            trigger=IntervalTrigger(
+                minutes=new_interval,
+                timezone=timezone.utc,
+            ),
+        )
+        logger.info(
+            "kg.tick.rescheduled new_interval_minutes=%d",
+            new_interval,
+            extra={
+                "event": "kg.tick.rescheduled",
+                "new_interval_minutes": new_interval,
+            },
+        )
+    except Exception as exc:
+        # Reschedule is best-effort — failure shouldn't block PUT response.
+        # Operator can restart server to apply on next boot.
+        logger.warning(
+            "kg.tick.reschedule_failed err=%s",
+            exc,
+            extra={"event": "kg.tick.reschedule_failed"},
+        )
 
 
 async def put_runtime_settings(
@@ -161,6 +327,10 @@ async def put_runtime_settings(
 
     Returns the GET-style view (effective + restart_required). The lock
     serialises concurrent PUTs so the last-writer-wins semantic is deterministic.
+
+    Spec 54399628 (Wave 2 NC f9732afc) — when `kg_decay_tick_interval_minutes`
+    changes, also hot-reloads the APScheduler trigger so the new interval
+    takes effect immediately (no restart_required for tick keys).
     """
     async with _write_lock:
         for key, value in values.items():
@@ -172,6 +342,9 @@ async def put_runtime_settings(
             else:
                 row.value = str(int(value))
         await db.commit()
+
+    # Spec 54399628 — hot-reload tick interval after persistence commits.
+    _maybe_reschedule_tick(values)
 
     # Re-read to compute restart_required consistently.
     return await get_runtime_settings(db)

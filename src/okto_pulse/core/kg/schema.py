@@ -20,7 +20,7 @@ from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
 
-SCHEMA_VERSION = "0.3.0"
+SCHEMA_VERSION = "0.3.3"
 
 # Provenance metadata required on every rel (KG Pipeline v2 — spec c48a5c33).
 # `layer` is a closed enum validated by the worker/agent and the layer_isolation
@@ -126,10 +126,12 @@ _COMMON_NODE_ATTRS = """
     relevance_score DOUBLE,
     query_hits INT64,
     last_queried_at STRING,
+    last_recomputed_at STRING,
     priority_boost DOUBLE,
     superseded_by STRING,
     superseded_at TIMESTAMP,
     revocation_reason STRING,
+    human_curated BOOLEAN,
     embedding DOUBLE[384]
 """.strip()
 
@@ -151,6 +153,25 @@ PRIORITY_BOOST_COLUMNS: tuple[tuple[str, str], ...] = (
     ("priority_boost", "DOUBLE"),
 )
 
+# Columns added in v0.3.2 (spec 4007e4a3 — Ideação #3 manual edit
+# preservation): human_curated marks nodes that a human curator has edited
+# directly via back-office. The UPDATE path in primitives skips writes to
+# nodes with human_curated=TRUE unless the agent passes an explicit
+# override in commit_overrides. NULL is treated as FALSE for retrocompat.
+HUMAN_CURATED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("human_curated", "BOOLEAN"),
+)
+
+# Columns added in v0.3.3 (spec 28583299 — Ideação #4 relevance scoring
+# dinâmico, BR8 + FR19): last_recomputed_at is the ISO timestamp of the
+# last time the relevance_score was persisted. The daily decay tick reads
+# the global oldest value to size its workload, and kg_health surfaces
+# the freshness of the score for observability. Stored as STRING (same
+# convention as last_queried_at) so legacy boards backfill cleanly.
+LAST_RECOMPUTED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("last_recomputed_at", "STRING"),
+)
+
 # Columns removed in v0.3.0. Kùzu v0.6 has no ALTER TABLE DROP COLUMN, so the
 # migration strategy is dump→drop→create→bulk-insert when these are detected.
 LEGACY_NODE_COLUMNS: tuple[str, ...] = ("validation_status", "corroboration_count")
@@ -165,17 +186,95 @@ class BoardGraphHandle:
     schema_version: str
 
 
+# Bug d0f6bab2: process-wide cache of kuzu.Database per board path.
+# Kùzu locks the .kuzu directory at the OS level while ANY Database object
+# exists; spawning a new one for each BoardConnection guarantees lock
+# contention as soon as two coroutines/threads touch the same board.
+# Multiple kuzu.Connection instances over a single Database are safe and
+# the supported pattern. The cache is freed by close_board_db_cache /
+# close_all_connections (the rmtree paths).
+_board_db_cache: dict[str, Any] = {}
+_board_db_cache_lock = threading.Lock()
+
+
+def _open_kuzu_db_path_cached(path: Path) -> Any:
+    """Return a singleton kuzu.Database for ``path``, opening on miss.
+
+    Lookup keyed by ``str(path)`` so resolved-vs-symlink callers converge.
+    Open is serialized through a module lock so two concurrent misses do
+    not double-create (which would itself trigger the lock contention we
+    are trying to avoid). Used by every per-board callsite (BoardConnection
+    + bootstrap/migration probes) to guarantee a single OS-level lock per
+    board path within the process.
+    """
+    key = str(path)
+    cached = _board_db_cache.get(key)
+    if cached is not None:
+        return cached
+    with _board_db_cache_lock:
+        cached = _board_db_cache.get(key)
+        if cached is not None:
+            return cached
+        # Cache miss: call the raw factory directly to avoid recursion.
+        db = _open_kuzu_db(path)
+        _board_db_cache[key] = db
+        logger.debug(
+            "[KG] _board_db_cache.miss path=%s size=%d",
+            path, len(_board_db_cache),
+        )
+        return db
+
+
+def _open_kuzu_db_cached(board_id: str, path: Path) -> Any:
+    """Backwards-compat shim — delegates to ``_open_kuzu_db_path_cached``."""
+    return _open_kuzu_db_path_cached(path)
+
+
+def close_board_db_cache(board_id: str | None = None) -> None:
+    """Drop the cached Database(s) so the .kuzu dir can be rmtree'd or re-opened.
+
+    ``board_id=None`` closes every cached Database (rmtree everything).
+    Specific board: only that one. Idempotent — already-evicted is a no-op.
+    """
+    with _board_db_cache_lock:
+        if board_id is None:
+            keys = list(_board_db_cache.keys())
+        else:
+            target = str(board_kuzu_path(board_id))
+            keys = [target] if target in _board_db_cache else []
+        for key in keys:
+            db = _board_db_cache.pop(key, None)
+            if db is None:
+                continue
+            try:
+                db.close()
+            except Exception as exc:
+                logger.warning(
+                    "kg.db_cache.close_failed key=%s err=%s", key, exc,
+                    extra={"event": "kg.db_cache.close_failed", "key": key},
+                )
+            del db
+        if keys:
+            gc.collect()  # Windows: ensure C++ handles release before next caller
+
+
 class BoardConnection:
     """Context-managed Kùzu per-board database connection.
 
-    Opens a :class:`kuzu.Database` and :class:`kuzu.Connection` for the
-    board's ``.kuzu`` directory.  Use as a context manager::
+    Reuses a process-wide cached :class:`kuzu.Database` (Bug d0f6bab2) and
+    opens a fresh :class:`kuzu.Connection` per instance — multiple
+    connections over one Database is the supported pattern and avoids
+    OS-level file lock contention between concurrent workers.
+
+    Use as a context manager::
 
         with BoardConnection(board_id) as (db, conn):
             conn.execute("MATCH (m:BoardMeta) RETURN count(m)")
 
-    The connection is released (db.close + gc.collect) on exit.
-    Calling ``close()`` is idempotent.
+    ``close()`` releases the Connection only; the cached Database survives
+    for the next caller. Use :func:`close_board_db_cache` (or the
+    higher-level :func:`close_all_connections`) when the .kuzu dir itself
+    must be released — e.g. before ``rmtree`` or schema migration.
     """
 
     def __init__(self, board_id: str) -> None:
@@ -187,8 +286,8 @@ class BoardConnection:
         ensure_board_graph_bootstrapped(board_id)
         path = board_kuzu_path(board_id)
         logger.debug("[KG] BoardConnection.__init__ board_id=%s path=%s", board_id, path)
-        self.db = _open_kuzu_db(path)
-        logger.debug("[KG] Kùzu database opened successfully for board_id=%s", board_id)
+        self.db = _open_kuzu_db_cached(board_id, path)
+        logger.debug("[KG] Kùzu database (cached) for board_id=%s", board_id)
         self.conn = kuzu.Connection(self.db)  # type: ignore[attr-defined]
         logger.debug("[KG] Kùzu connection created successfully for board_id=%s", board_id)
 
@@ -197,7 +296,6 @@ class BoardConnection:
 
     def __exit__(self, *args: Any) -> None:
         self.close()
-        gc.collect()
 
     def __iter__(self) -> Any:
         """Yield (db, conn) so ``tuple(BoardConnection(bid))`` works."""
@@ -205,7 +303,12 @@ class BoardConnection:
         yield self.conn
 
     def close(self) -> None:
-        """Close the database and connection. Idempotent."""
+        """Close the connection only; the cached Database survives.
+
+        Idempotent. To release the OS file lock and allow a rmtree, call
+        :func:`close_board_db_cache` (or the higher-level
+        :func:`close_all_connections`) instead.
+        """
         if self._closed:
             return
         logger.debug("[KG] BoardConnection.close board_id=%s", self._board_id)
@@ -214,11 +317,10 @@ class BoardConnection:
             del self.conn
         except Exception:
             pass
-        try:
-            self.db.close()
-            logger.debug("[KG] Kùzu database closed board_id=%s", self._board_id)
-        except Exception:
-            pass
+        # NOTE: do NOT close self.db — the Database is shared via the
+        # process-wide cache (Bug d0f6bab2). Releasing it here would yank
+        # the lock from concurrent BoardConnections operating on the same
+        # board.
 
 
 def _kg_base_dir() -> Path:
@@ -259,25 +361,67 @@ def _open_kuzu_db(path: Path):
     bp = s.kg_kuzu_buffer_pool_mb * 1024 * 1024
     mds = s.kg_kuzu_max_db_size_gb * 1024 * 1024 * 1024
     logger.debug("[KG] _open_kuzu_db buffer_pool=%dMB max_db=%dGB", s.kg_kuzu_buffer_pool_mb, s.kg_kuzu_max_db_size_gb)
-    try:
-        db = kuzu.Database(
-            str(path),
-            buffer_pool_size=bp,
-            max_db_size=mds,
-        )
-        logger.debug("[KG] kuzu.Database() created successfully for path=%s", path)
-        return db
-    except Exception as e:
-        logger.error(
-            "[KG] Failed to open Kùzu database at %s: %s: %s",
-            path, type(e).__name__, e,
-        )
-        raise RuntimeError(
-            f"Failed to open Kùzu database at {path}: "
-            f"{type(e).__name__}: {e}. "
-            "This usually means the storage version is incompatible with the "
-            "installed kuzu library. Delete graph.kuzu and re-bootstrap."
-        ) from e
+
+    # Bug d0f6bab2: lock contention happens because every BoardConnection
+    # used to spawn a NEW kuzu.Database — but Kùzu locks the .kuzu dir at
+    # the OS level for as long as ANY Database handle exists. When two
+    # workers (consolidation + handler) open the same board, the second
+    # blocks. Retry+gc.collect() does not help when the contention is
+    # cross-thread.  Real fix: cache Database per path (singleton) so
+    # multiple Connections share one Database (Kùzu supports that). The
+    # caller-facing API (BoardConnection / open_board_connection) uses
+    # `_open_kuzu_db_cached` which delegates here only on cache miss.
+    #
+    # Retry below covers the residual case where ANOTHER process holds
+    # the lock (e.g. CLI run while server is up). 5× exponential backoff:
+    # 0.2 / 0.4 / 0.8 / 1.6 / 3.2 = 6.2s cumulative.
+    last_exc: BaseException | None = None
+    for attempt in range(1, 6):
+        try:
+            db = kuzu.Database(
+                str(path),
+                buffer_pool_size=bp,
+                max_db_size=mds,
+            )
+            logger.debug("[KG] kuzu.Database() created successfully for path=%s", path)
+            return db
+        except Exception as e:
+            last_exc = e
+            msg = str(e)
+            is_lock_contention = "Could not set lock" in msg or "lock contention" in msg.lower()
+            if is_lock_contention and attempt < 5:
+                sleep_s = 0.2 * (2 ** (attempt - 1))
+                logger.warning(
+                    "kg.db_open.lock_retry path=%s attempt=%d/5 sleep=%.2fs err=%s",
+                    path, attempt, sleep_s, e,
+                    extra={
+                        "event": "kg.db_open.lock_retry",
+                        "path": str(path),
+                        "attempt": attempt,
+                        "sleep_s": sleep_s,
+                    },
+                )
+                gc.collect()  # Liberar handles pendentes (essencial no Windows)
+                time.sleep(sleep_s)
+                continue
+            break
+
+    e = last_exc  # type: ignore[assignment]
+    logger.error(
+        "[KG] Failed to open Kùzu database at %s: %s: %s",
+        path, type(e).__name__, e,
+    )
+    raise RuntimeError(
+        f"Failed to open Kùzu database at {path}: "
+        f"{type(e).__name__}: {e}. "
+        "Possible causes: "
+        "(1) lock contention from concurrent writer (wait and retry); "
+        "(2) schema migration needed — run "
+        "`python -m okto_pulse.tools.kg_migrate_schema --board <board_id>` "
+        "or call MCP tool `okto_pulse_kg_migrate_schema`; "
+        "(3) corrupted db file. "
+        "Do NOT delete graph.kuzu (destroys all KG data)."
+    ) from e
 
 
 def verify_kuzu_db_health(board_id: str) -> dict[str, Any]:
@@ -519,6 +663,35 @@ def _ensure_priority_boost_columns(conn, node_type: str) -> list[str]:
     return added
 
 
+def _ensure_human_curated_columns(conn, node_type: str) -> list[str]:
+    """ALTER TABLE ADD for the v0.3.2 human_curated column on ``node_type``.
+
+    Idempotent with retry on lock contention. Default treatment for legacy
+    nodes (NULL value): the UPDATE preservation path treats NULL as FALSE,
+    so no backfill is required for retrocompat. Curators set TRUE
+    explicitly via back-office tooling after manual edits.
+    """
+    added: list[str] = []
+    for col_name, col_type in HUMAN_CURATED_COLUMNS:
+        if _alter_add_column_with_retry(conn, node_type, col_name, col_type) == "added":
+            added.append(col_name)
+    return added
+
+
+def _ensure_last_recomputed_at_columns(conn, node_type: str) -> list[str]:
+    """ALTER TABLE ADD for the v0.3.3 last_recomputed_at column on ``node_type``.
+
+    Idempotent with retry on lock contention. Legacy rows get NULL — the
+    daily decay tick treats NULL as "never recomputed" and prioritises those
+    nodes first when sizing its workload. No backfill required.
+    """
+    added: list[str] = []
+    for col_name, col_type in LAST_RECOMPUTED_COLUMNS:
+        if _alter_add_column_with_retry(conn, node_type, col_name, col_type) == "added":
+            added.append(col_name)
+    return added
+
+
 def _backfill_relevance_defaults(conn, node_type: str) -> None:
     """Populate the v0.3.0 columns for rows that existed before the migration.
 
@@ -748,7 +921,7 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     # the migration must run BEFORE the BoardConnection bootstrap path
     # ever owns the handle.
     import kuzu  # type: ignore
-    db = _open_kuzu_db(path)
+    db = _open_kuzu_db_path_cached(path)
     conn = kuzu.Connection(db)
     try:
         for node_type in NODE_TYPES:
@@ -777,10 +950,9 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
             conn.close()
         except Exception:
             pass
-        try:
-            db.close()
-        except Exception:
-            pass
+        # Bug d0f6bab2: db is now process-cached (_board_db_cache); do NOT
+        # close it here or concurrent BoardConnections lose the lock.
+        # Cache is dropped explicitly via close_board_db_cache().
         gc.collect()
 
     _MIGRATED_BOARDS.add(board_id)
@@ -832,7 +1004,7 @@ def _board_needs_migration(board_id: str) -> bool:
     try:
         import kuzu  # type: ignore
         path = board_kuzu_path(board_id)
-        db = _open_kuzu_db(path)
+        db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
         res = None
         try:
@@ -850,10 +1022,7 @@ def _board_needs_migration(board_id: str) -> bool:
                 conn.close()
             except Exception:
                 pass
-            try:
-                db.close()
-            except Exception:
-                pass
+            # Bug d0f6bab2: db is now process-cached; do NOT close here.
         expected = {r[0] for r in REL_TYPES} | {m[0] for m in MULTI_REL_TYPES}
         if expected.issubset(existing):
             _MIGRATED_BOARDS.add(board_id)
@@ -881,7 +1050,7 @@ def _board_needs_priority_boost_migration(board_id: str) -> bool:
     try:
         import kuzu  # type: ignore
         path = board_kuzu_path(board_id)
-        db = _open_kuzu_db(path)
+        db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
         res = None
         try:
@@ -906,10 +1075,7 @@ def _board_needs_priority_boost_migration(board_id: str) -> bool:
                 conn.close()
             except Exception:
                 pass
-            try:
-                db.close()
-            except Exception:
-                pass
+            # Bug d0f6bab2: db is now process-cached; do NOT close here.
         expected = {c for c, _ in PRIORITY_BOOST_COLUMNS}
         return not expected.issubset(existing_cols)
     except Exception:
@@ -935,7 +1101,7 @@ def _board_needs_v030_migration(board_id: str) -> bool:
         path = board_kuzu_path(board_id)
         if not path.exists():
             return False
-        db = _open_kuzu_db(path)
+        db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
         try:
             for node_type in NODE_TYPES:
@@ -948,12 +1114,108 @@ def _board_needs_v030_migration(board_id: str) -> bool:
                 conn.close()
             except Exception:
                 pass
-            try:
-                db.close()
-            except Exception:
-                pass
+            # Bug d0f6bab2: db is now process-cached; do NOT close here.
     except Exception:
         return False
+
+
+def _board_needs_human_curated_migration(board_id: str) -> bool:
+    """Returns True iff the board is missing the v0.3.2 ``human_curated``
+    column on any node type.
+
+    Spec 818748f2 — FR2. Same column-based pattern as
+    `_board_needs_priority_boost_migration` (L918). The migration adds
+    ``human_curated`` to every node type in a single loop, so probing the
+    first node is representative — if one is missing, all are missing.
+
+    Returns False on probe failure (BR6: silent in failure to NOT loop
+    a stuck migration).
+    """
+    try:
+        import kuzu  # type: ignore
+        path = board_kuzu_path(board_id)
+        db = _open_kuzu_db_path_cached(path)
+        conn = kuzu.Connection(db)
+        res = None
+        try:
+            probe_node = NODE_TYPES[0]
+            res = conn.execute(f"CALL TABLE_INFO('{probe_node}') RETURN *")
+            existing_cols: set[str] = set()
+            while res.has_next():
+                row = res.get_next()
+                existing_cols.add(str(row[1]))
+        finally:
+            if res is not None:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+            # Bug d0f6bab2: db is now process-cached; do NOT close here.
+        expected = {c for c, _ in HUMAN_CURATED_COLUMNS}
+        return not expected.issubset(existing_cols)
+    except Exception:
+        return False
+
+
+def _board_needs_last_recomputed_migration(board_id: str) -> bool:
+    """Returns True iff the board is missing the v0.3.3
+    ``last_recomputed_at`` column on any node type.
+
+    Spec 818748f2 — FR2. Same column-based pattern as the priority_boost
+    and human_curated probes. Returns False on probe failure (BR6).
+    """
+    try:
+        import kuzu  # type: ignore
+        path = board_kuzu_path(board_id)
+        db = _open_kuzu_db_path_cached(path)
+        conn = kuzu.Connection(db)
+        res = None
+        try:
+            probe_node = NODE_TYPES[0]
+            res = conn.execute(f"CALL TABLE_INFO('{probe_node}') RETURN *")
+            existing_cols: set[str] = set()
+            while res.has_next():
+                row = res.get_next()
+                existing_cols.add(str(row[1]))
+        finally:
+            if res is not None:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+            # Bug d0f6bab2: db is now process-cached; do NOT close here.
+        expected = {c for c, _ in LAST_RECOMPUTED_COLUMNS}
+        return not expected.issubset(existing_cols)
+    except Exception:
+        return False
+
+
+def _board_needs_post_v030_migration(board_id: str) -> bool:
+    """Compose probe — True iff any v0.3.1+ column is missing on the board.
+
+    Spec 818748f2 — FR3. Aggregates the three column probes (priority_boost,
+    human_curated, last_recomputed_at) via short-circuit OR. Cache hit via
+    `_MIGRATED_BOARDS` makes this a no-op after the first migration succeeds
+    (BR1: idempotent re-runs cost only the cache lookup).
+
+    Probes ordered chronologically (v0.3.1 → v0.3.2 → v0.3.3). Boards that
+    are most behind short-circuit at the earliest probe.
+    """
+    if board_id in _MIGRATED_BOARDS:
+        return False
+    return (
+        _board_needs_priority_boost_migration(board_id)
+        or _board_needs_human_curated_migration(board_id)
+        or _board_needs_last_recomputed_migration(board_id)
+    )
 
 
 def _migrate_board_schema(board_id: str) -> None:
@@ -963,7 +1225,7 @@ def _migrate_board_schema(board_id: str) -> None:
     try:
         import kuzu  # type: ignore
         path = board_kuzu_path(board_id)
-        db = _open_kuzu_db(path)
+        db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
         try:
             apply_schema_to_connection(conn)
@@ -972,16 +1234,153 @@ def _migrate_board_schema(board_id: str) -> None:
                 conn.close()
             except Exception:
                 pass
-            try:
-                db.close()
-            except Exception:
-                pass
+            # Bug d0f6bab2: db is now process-cached; do NOT close here.
         _MIGRATED_BOARDS.add(board_id)
     except Exception as exc:
         logger.warning(
             "board_migrate.apply_failed board=%s err=%s",
             board_id, exc,
         )
+
+
+def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
+    """Force-apply schema migrations for a single board (idempotent).
+
+    Spec 818748f2 (FR5). Public surface for the CLI/MCP/REST tripleta —
+    re-runs ALTER TABLE ADD for every v0.3.x column on every node type and
+    returns a structured summary so callers can display columns added per
+    node type.
+
+    Differs from `_migrate_board_schema`:
+    - Discards `_MIGRATED_BOARDS` cache for this board so the migration
+      re-runs even if a previous attempt cached the board (BR1: idempotent
+      means re-runnable, not skip-after-first-success).
+    - Captures columns_added per node type via the existing return values
+      from `_ensure_*_columns` (which already track ALTER ADD success).
+    - Surfaces errors as a list (non-fatal) instead of swallowing.
+    - Returns timing for observability.
+
+    Args:
+        board_id: Board ID to migrate.
+
+    Returns:
+        ``{"board_id": str, "migrated": bool, "columns_added":
+        {node_type: [col_name]}, "errors": [str], "duration_ms": int}``
+    """
+    start = time.time()
+    columns_added: dict[str, list[str]] = {}
+    errors: list[str] = []
+    migrated = False
+
+    # BR1: idempotent re-run requires invalidating the cache.
+    _MIGRATED_BOARDS.discard(board_id)
+
+    try:
+        path = board_kuzu_path(board_id)
+        if not path.exists():
+            errors.append(
+                f"board_not_found: graph.kuzu missing at {path}"
+            )
+            return {
+                "board_id": board_id,
+                "migrated": False,
+                "columns_added": columns_added,
+                "errors": errors,
+                "duration_ms": int((time.time() - start) * 1000),
+            }
+
+        db = _open_kuzu_db_path_cached(path)
+        conn = kuzu.Connection(db)
+        try:
+            load_vector_extension(conn)
+            conn.execute(_board_meta_ddl())
+            for node_type in NODE_TYPES:
+                added_for_type: list[str] = []
+                try:
+                    conn.execute(_build_node_ddl(node_type))
+                    added_for_type.extend(
+                        _ensure_priority_boost_columns(conn, node_type)
+                    )
+                    added_for_type.extend(
+                        _ensure_human_curated_columns(conn, node_type)
+                    )
+                    added_for_type.extend(
+                        _ensure_last_recomputed_at_columns(conn, node_type)
+                    )
+                except Exception as nt_exc:
+                    errors.append(
+                        f"node_type_failed: {node_type}: {nt_exc}"
+                    )
+                if added_for_type:
+                    columns_added[node_type] = added_for_type
+            for rel_name, from_type, to_type in REL_TYPES:
+                try:
+                    conn.execute(_build_rel_ddl(rel_name, from_type, to_type))
+                    _ensure_edge_metadata_columns(conn, rel_name)
+                    _backfill_legacy_edge_metadata(conn, rel_name)
+                except Exception as rel_exc:
+                    errors.append(
+                        f"rel_failed: {rel_name}: {rel_exc}"
+                    )
+            for rel_name, pairs in MULTI_REL_TYPES:
+                try:
+                    conn.execute(_build_multi_rel_ddl(rel_name, pairs))
+                    _ensure_edge_metadata_columns(conn, rel_name)
+                    _backfill_legacy_edge_metadata(conn, rel_name)
+                except Exception as mrel_exc:
+                    errors.append(
+                        f"multi_rel_failed: {rel_name}: {mrel_exc}"
+                    )
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            # Bug d0f6bab2: db is now process-cached; do NOT close here.
+        # BR3: only cache as migrated if migration actually completed.
+        # We treat "no errors" as success even if columns_added is empty
+        # (idempotent no-op on already-migrated boards).
+        if not errors:
+            _MIGRATED_BOARDS.add(board_id)
+            migrated = True
+        else:
+            # Partial migration — some node/rel types may have applied
+            # but at least one failed. Don't cache so the next open retries.
+            migrated = False
+    except Exception as exc:
+        errors.append(f"migration_failed: {exc}")
+        migrated = False
+        logger.warning(
+            "kg.migrate_schema.failed board=%s err=%s",
+            board_id, exc,
+            extra={
+                "event": "kg.migrate_schema.failed",
+                "board_id": board_id,
+                "error": str(exc),
+            },
+        )
+
+    duration_ms = int((time.time() - start) * 1000)
+    logger.info(
+        "kg.migrate_schema.done board=%s migrated=%s columns_added=%s "
+        "errors=%d duration_ms=%d",
+        board_id, migrated, columns_added, len(errors), duration_ms,
+        extra={
+            "event": "kg.migrate_schema.done",
+            "board_id": board_id,
+            "migrated": migrated,
+            "columns_added_count": sum(len(v) for v in columns_added.values()),
+            "errors_count": len(errors),
+            "duration_ms": duration_ms,
+        },
+    )
+    return {
+        "board_id": board_id,
+        "migrated": migrated,
+        "columns_added": columns_added,
+        "errors": errors,
+        "duration_ms": duration_ms,
+    }
 
 
 def apply_schema_to_connection(conn) -> None:
@@ -1002,6 +1401,13 @@ def apply_schema_to_connection(conn) -> None:
         # CREATE TABLE IF NOT EXISTS above is a no-op on pre-existing tables
         # so we still need to run the ALTER ADD path to backfill the column.
         _ensure_priority_boost_columns(conn, node_type)
+        # v0.3.2 (spec 4007e4a3): human_curated marks human-edited nodes that
+        # the agent UPDATE path must skip without explicit override.
+        _ensure_human_curated_columns(conn, node_type)
+        # v0.3.3 (spec 28583299 — Ideação #4): last_recomputed_at is the
+        # ISO timestamp of the last relevance_score persist. Read by the
+        # daily decay tick and kg_health for observability.
+        _ensure_last_recomputed_at_columns(conn, node_type)
     for rel_name, from_type, to_type in REL_TYPES:
         conn.execute(_build_rel_ddl(rel_name, from_type, to_type))
         # v0.1.0 → v0.2.0 backfill: ALTER ADD the metadata cols on legacy
@@ -1033,7 +1439,7 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
     path = board_kuzu_path(board_id)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    db = _open_kuzu_db(path)
+    db = _open_kuzu_db_path_cached(path)
     conn = kuzu.Connection(db)
     try:
         apply_schema_to_connection(conn)
@@ -1075,10 +1481,9 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
             conn.close()
         except Exception:
             pass
-        try:
-            db.close()
-        except Exception:
-            pass
+        # Bug d0f6bab2: db is now process-cached (_board_db_cache); do NOT
+        # close it here or concurrent BoardConnections lose the lock.
+        # Cache is dropped explicitly via close_board_db_cache().
 
     return BoardGraphHandle(board_id=board_id, path=path, schema_version=SCHEMA_VERSION)
 
@@ -1120,7 +1525,7 @@ def _graph_needs_bootstrap(board_id: str) -> bool:
         return True
     try:
         import kuzu  # type: ignore
-        db = _open_kuzu_db(path)
+        db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
         try:
             res = conn.execute(
@@ -1133,10 +1538,7 @@ def _graph_needs_bootstrap(board_id: str) -> bool:
                 conn.close()
             except Exception:
                 pass
-            try:
-                db.close()
-            except Exception:
-                pass
+            # Bug d0f6bab2: db is now process-cached; do NOT close here.
         if has_meta:
             _BOOTSTRAPPED_BOARDS.add(board_id)
             return False
@@ -1157,6 +1559,12 @@ def ensure_board_graph_bootstrapped(board_id: str) -> None:
     Called automatically by BoardConnection.__init__ so direct callers of
     open_board_connection and all primitives that open connections get
     the guarantee for free.
+
+    Spec 818748f2 — FR1: when BoardMeta exists but post-v0.3.0 columns are
+    missing (legacy boards bootstrapped pre-v0.3.2), `_migrate_board_schema`
+    is dispatched in the same lock window so the next consolidation does not
+    hit a binder exception. Cache add to `_BOOTSTRAPPED_BOARDS` happens AFTER
+    the migration completes (BR3 — never cache a broken state).
     """
     if board_id in _BOOTSTRAPPED_BOARDS:
         return
@@ -1164,14 +1572,23 @@ def ensure_board_graph_bootstrapped(board_id: str) -> None:
     with lock:
         if board_id in _BOOTSTRAPPED_BOARDS:
             return
-        if not _graph_needs_bootstrap(board_id):
-            return
-        logger.info(
-            "kg.schema.autobootstrap board=%s path=%s",
-            board_id, board_kuzu_path(board_id),
-            extra={"event": "kg.schema.autobootstrap", "board_id": board_id},
-        )
-        bootstrap_board_graph(board_id)
+        if _graph_needs_bootstrap(board_id):
+            logger.info(
+                "kg.schema.autobootstrap board=%s path=%s",
+                board_id, board_kuzu_path(board_id),
+                extra={"event": "kg.schema.autobootstrap", "board_id": board_id},
+            )
+            bootstrap_board_graph(board_id)
+        elif _board_needs_post_v030_migration(board_id):
+            logger.info(
+                "kg.schema.auto_migrate_post_v030 board=%s path=%s",
+                board_id, board_kuzu_path(board_id),
+                extra={
+                    "event": "kg.schema.auto_migrate_post_v030",
+                    "board_id": board_id,
+                },
+            )
+            _migrate_board_schema(board_id)
         _BOOTSTRAPPED_BOARDS.add(board_id)
 
 
@@ -1252,6 +1669,9 @@ def close_all_connections(board_id: str | None = None) -> None:
                         "board_id": board_id,
                     },
                 )
+        # Bug d0f6bab2: drop the cached Database for this board so a
+        # follow-up rmtree (or migration) can grab the OS lock.
+        close_board_db_cache(board_id=board_id)
         return
 
     if close_all_board_connections is not None:
@@ -1262,6 +1682,11 @@ def close_all_connections(board_id: str | None = None) -> None:
                 "close_all.pool_failed err=%s", exc,
                 extra={"event": "close_all.pool_failed"},
             )
+
+    # Bug d0f6bab2: also drop the per-board Database cache so the OS file
+    # lock is released. Without this, even after legacy pool eviction the
+    # BoardConnection cache keeps the .kuzu dir locked.
+    close_board_db_cache(board_id=None)
 
     # global is released only when closing everything — per-board callers
     # (e.g. single-board DELETE) must not nuke the shared discovery handle.

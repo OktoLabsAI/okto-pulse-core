@@ -230,13 +230,26 @@ async def test_settings_runtime_put_422_on_out_of_range(settings_client):
 # AC13 — Version bump across every runtime surface
 # ----------------------------------------------------------------------
 
-def test_version_is_0_1_4_everywhere():
-    """AC13: CoreSettings + pyproject.toml files carry the 0.1.4 tag."""
-    s = CoreSettings()
-    assert s.app_version == "0.1.4"
-    assert s.mcp_server_version == "0.1.4"
+def test_version_is_consistent_across_runtime_surfaces():
+    """AC13 (refactored): CoreSettings + pyproject.toml carry the SAME version
+    string. The test reads pyproject as the single source of truth and asserts
+    that every other surface mirrors it — so future version bumps only need
+    to update pyproject + CoreSettings (the test verifies they stay in sync).
+    """
+    import re
 
-    # pyproject.toml lives two levels up from this test file inside tests/.
     core_pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
     text = core_pyproject.read_text(encoding="utf-8")
-    assert 'version = "0.1.4"' in text
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    assert match, "pyproject.toml must declare a top-level version"
+    pyproject_version = match.group(1)
+
+    s = CoreSettings()
+    assert s.app_version == pyproject_version, (
+        f"CoreSettings.app_version={s.app_version!r} drifted from "
+        f"pyproject.toml version={pyproject_version!r}"
+    )
+    assert s.mcp_server_version == pyproject_version, (
+        f"CoreSettings.mcp_server_version={s.mcp_server_version!r} drifted "
+        f"from pyproject.toml version={pyproject_version!r}"
+    )

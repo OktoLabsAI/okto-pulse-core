@@ -7,6 +7,7 @@ Learning summarisation of bug action plans.
 """
 
 from .alternatives import AlternativeExtraction, extract_alternatives
+from .assumptions import AssumptionExtraction, extract_assumptions
 from .learnings import (
     LEARNING_MIN_ACTION_PLAN_CHARS,
     LearningExtraction,
@@ -16,6 +17,8 @@ from .learnings import (
 __all__ = [
     "AlternativeExtraction",
     "extract_alternatives",
+    "AssumptionExtraction",
+    "extract_assumptions",
     "LEARNING_MIN_ACTION_PLAN_CHARS",
     "LearningExtraction",
     "extract_learning_from_bug",

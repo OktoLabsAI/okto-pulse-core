@@ -1,7 +1,10 @@
 """MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
 
+import functools
 import json
+import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -417,6 +420,86 @@ from okto_pulse.core.services.analytics_service import (
 from okto_pulse.core.services.analytics_service import (  # noqa: E402
     spec_coverage_summary as _spec_coverage,  # noqa: F401
 )
+
+
+# ============================================================================
+# XML SAFETY MIDDLEWARE - spec 44415298 (centralized detection)
+# ============================================================================
+# Defensive observer for the client-side tool-use parser bug: nested
+# `<parameter>` tags in string content collapse, corrupting the payload
+# before it reaches the server. We can't reconstruct lost info, but we
+# emit a structured log when literal protocol tags survive into args, so
+# operators can pinpoint which tool calls were affected. Applied to every
+# `@mcp.tool()` registration via a monkey-patch installed below — single
+# point of instrumentation, 100% coverage of the 160 MCP tools.
+
+_XML_SAFETY_LOGGER = logging.getLogger("okto_pulse.mcp.parser_safety")
+
+_SUSPICIOUS_XML_PATTERNS = re.compile(
+    r"<\s*/?\s*(?:"
+    r"parameter\s*(?:name\s*=)?"
+    r"|function_calls"
+    r"|invoke\s*(?:name\s*=)?"
+    r"|antml:\w+"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_nested_parameter_xml(value: Any) -> bool:
+    """Return True if `value` contains a literal tool-use protocol tag."""
+    if not isinstance(value, str) or not value:
+        return False
+    return bool(_SUSPICIOUS_XML_PATTERNS.search(value))
+
+
+def _xml_safety_log_decorator(func):
+    """Wrap an MCP tool: log on any string kwarg that holds a literal tool-use tag."""
+    @functools.wraps(func)
+    async def wrapper(**kwargs):
+        for k, v in kwargs.items():
+            if isinstance(v, str) and _detect_nested_parameter_xml(v):
+                _XML_SAFETY_LOGGER.warning(
+                    "mcp.tool.suspicious_xml_field",
+                    extra={
+                        "event": "mcp.tool.suspicious_xml_field",
+                        "tool_name": func.__name__,
+                        "field_name": k,
+                        "value_preview": v[:200],
+                    },
+                )
+        return await func(**kwargs)
+
+    wrapper._xml_safety_wrapped = True  # type: ignore[attr-defined]
+    return wrapper
+
+
+_XML_SAFETY_DECORATED_COUNT = 0
+
+
+def _patch_mcp_tool_for_xml_safety() -> None:
+    """Patch `mcp.tool()` so every registered tool gets the safety wrapper."""
+    if getattr(mcp.tool, "_xml_safety_patched", False):
+        return
+
+    _original_mcp_tool = mcp.tool
+
+    def _patched_mcp_tool(*args, **kwargs):
+        registrar = _original_mcp_tool(*args, **kwargs)
+
+        def _wrap(func):
+            global _XML_SAFETY_DECORATED_COUNT
+            wrapped = _xml_safety_log_decorator(func)
+            _XML_SAFETY_DECORATED_COUNT += 1
+            return registrar(wrapped)
+
+        return _wrap
+
+    _patched_mcp_tool._xml_safety_patched = True  # type: ignore[attr-defined]
+    mcp.tool = _patched_mcp_tool  # type: ignore[assignment]
+
+
+_patch_mcp_tool_for_xml_safety()
 
 
 # ============================================================================
@@ -5549,21 +5632,114 @@ async def okto_pulse_list_test_scenarios(
         )
 
 
+# ============================================================================
+# TEST THEATER PREVENTION GATE (spec 873e98cc — Wave 2 NC-9)
+# ============================================================================
+
+# Validação por status alvo. Cada status alvo tem requirements diferentes
+# para evidence dict. draft/ready não exigem nada (intent declarado).
+#
+# Cada rule é uma tupla de keys:
+#   - len(group) == 1 → AND-required (single key, must be present)
+#   - len(group)  > 1 → OR-required (one-of: pelo menos uma key)
+_EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
+    # automated: ambas as keys são obrigatórias (duas rules AND)
+    "automated": (
+        ("test_file_path",),
+        ("test_function",),
+    ),
+    # passed: last_run_at obrigatório + (output_snippet OR test_run_id)
+    "passed": (
+        ("last_run_at",),
+        ("output_snippet", "test_run_id"),  # one-of
+    ),
+    "failed": (
+        ("last_run_at",),
+        ("output_snippet", "test_run_id"),  # one-of
+    ),
+}
+
+import logging as _nc9_logging  # noqa: E402 — local import isolated to NC-9 gate
+_evidence_logger = _nc9_logging.getLogger("okto_pulse.spec.test_scenario")
+
+
+def _validate_evidence(
+    status: str, evidence: dict | None
+) -> tuple[bool, list[str]]:
+    """Return (ok, missing_keys). Empty missing_keys means valid.
+
+    For each rule group, ALL keys in the first non-empty group must be
+    present (AND logic). When a group has multiple keys (one-of), at
+    least one must be present.
+    """
+    rules = _EVIDENCE_REQUIRED_KEYS.get(status)
+    if not rules:
+        return True, []
+    if not evidence:
+        # Flatten all required keys for the error message.
+        flat: list[str] = []
+        for group in rules:
+            if len(group) == 1:
+                flat.extend(group)
+            else:
+                flat.append(" or ".join(group))
+        return False, flat
+    missing: list[str] = []
+    for group in rules:
+        if len(group) == 1:
+            key = group[0]
+            if not evidence.get(key):
+                missing.append(key)
+        else:
+            # one-of group — at least one key must be present
+            if not any(evidence.get(k) for k in group):
+                missing.append(" or ".join(group))
+    return (len(missing) == 0, missing)
+
+
 @mcp.tool()
 async def okto_pulse_update_test_scenario_status(
-    board_id: str, spec_id: str, scenario_id: str, status: str
+    board_id: str,
+    spec_id: str,
+    scenario_id: str,
+    status: str,
+    evidence: str = "",
 ) -> str:
     """
-    Update the status of a test scenario.
+    Update the status of a test scenario, optionally attaching structured
+    evidence that the test really exists/ran.
+
+    **Test theater prevention gate (NC-9, spec 873e98cc):**
+
+    When the board's `skip_test_evidence_global` setting is False (default),
+    setting status to one of `automated`, `passed`, or `failed` REQUIRES
+    structured evidence:
+      - `automated`: evidence.test_file_path AND evidence.test_function
+      - `passed`/`failed`: evidence.last_run_at AND
+        (evidence.output_snippet OR evidence.test_run_id)
+      - `draft`/`ready`: evidence opcional (intent declarado)
+
+    When `skip_test_evidence_global=True`, the gate is bypassed — every
+    status update is accepted without evidence, but a structured audit log
+    `test_scenario.evidence_gate_skipped` is emitted for forensics.
+
+    Evidence is persisted inline within the scenario dict (no DB migration).
+    Audit log `test_scenario.status_changed` is emitted on every successful
+    update with `evidence_provided`, `evidence_gate_skipped`, and
+    `changed_by_agent_id`.
 
     Args:
         board_id: Board ID
         spec_id: Spec ID
         scenario_id: Test scenario ID (e.g. "ts_abc123")
         status: New status — one of: draft, ready, automated, passed, failed
+        evidence: Optional JSON string with keys test_file_path, test_function,
+            last_run_at, test_run_id, output_snippet. Empty string = no evidence.
 
     Returns:
-        JSON with updated scenario
+        JSON. On success: {success, scenario_id, old_status, new_status,
+        evidence_provided, evidence_gate_skipped}. On gate failure:
+        {error: "evidence_required", required: [...], message: "..."}.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -5577,6 +5753,23 @@ async def okto_pulse_update_test_scenario_status(
     if status not in valid:
         return json.dumps({"error": f"Invalid status. Must be one of: {valid}"})
 
+    # Parse evidence param if provided.
+    evidence_dict: dict | None = None
+    if evidence:
+        try:
+            parsed = json.loads(evidence)
+            if not isinstance(parsed, dict):
+                return json.dumps({
+                    "error": "invalid_evidence_json",
+                    "message": "evidence must be a JSON object",
+                })
+            evidence_dict = parsed
+        except json.JSONDecodeError as exc:
+            return json.dumps({
+                "error": "invalid_evidence_json",
+                "message": f"evidence is not valid JSON: {exc}",
+            })
+
     async with get_db_for_mcp() as db:
         from sqlalchemy import update as sql_update
         from okto_pulse.core.models.db import ActivityLog, Spec as SpecModel
@@ -5586,6 +5779,29 @@ async def okto_pulse_update_test_scenario_status(
         if not spec:
             return json.dumps({"error": "Spec not found"})
 
+        # Resolve board settings to know if gate is active.
+        from okto_pulse.core.models.db import Board
+        board_row = await db.get(Board, board_id)
+        board_settings = (board_row.settings if board_row else {}) or {}
+        skip_evidence_gate = bool(
+            board_settings.get("skip_test_evidence_global", False)
+        )
+
+        # Apply gate when skip is OFF.
+        if not skip_evidence_gate:
+            ok, missing = _validate_evidence(status, evidence_dict)
+            if not ok:
+                return json.dumps({
+                    "error": "evidence_required",
+                    "required": missing,
+                    "message": (
+                        f"Cannot mark scenario as {status} without structured "
+                        f"evidence ({', '.join(missing)}). This prevents the "
+                        "test theater anti-pattern. To bypass, enable "
+                        "skip_test_evidence_global on the board."
+                    ),
+                })
+
         scenarios = list(spec.test_scenarios or [])
         old_status = None
         found = False
@@ -5593,6 +5809,9 @@ async def okto_pulse_update_test_scenario_status(
             if s.get("id") == scenario_id:
                 old_status = s.get("status")
                 s["status"] = status
+                # Persist evidence inline (only if provided).
+                if evidence_dict is not None:
+                    s["evidence"] = evidence_dict
                 found = True
                 break
 
@@ -5618,12 +5837,58 @@ async def okto_pulse_update_test_scenario_status(
                 "scenario_title": scenario_title,
                 "from_status": old_status,
                 "to_status": status,
+                "evidence_provided": evidence_dict is not None,
+                "evidence_gate_skipped": skip_evidence_gate,
             },
         )
         db.add(log)
         await db.commit()
 
-        return json.dumps({"success": True, "scenario_id": scenario_id, "old_status": old_status, "new_status": status})
+        # Structured log SEMPRE emitido (NC-9 BR audit log).
+        _evidence_logger.info(
+            "test_scenario.status_changed scenario=%s board=%s from=%s to=%s "
+            "evidence=%s skip=%s",
+            scenario_id, spec.board_id, old_status, status,
+            evidence_dict is not None, skip_evidence_gate,
+            extra={
+                "event": "test_scenario.status_changed",
+                "scenario_id": scenario_id,
+                "board_id": spec.board_id,
+                "spec_id": spec_id,
+                "from_status": old_status,
+                "to_status": status,
+                "evidence_provided": evidence_dict is not None,
+                "evidence_gate_skipped": skip_evidence_gate,
+                "changed_by_agent_id": ctx.agent_id,
+            },
+        )
+        # Quando skip está ON, log dedicado para forensics.
+        if skip_evidence_gate and status in _EVIDENCE_REQUIRED_KEYS:
+            _evidence_logger.info(
+                "test_scenario.evidence_gate_skipped scenario=%s board=%s "
+                "status=%s evidence=%s",
+                scenario_id, spec.board_id, status,
+                evidence_dict is not None,
+                extra={
+                    "event": "test_scenario.evidence_gate_skipped",
+                    "scenario_id": scenario_id,
+                    "board_id": spec.board_id,
+                    "spec_id": spec_id,
+                    "status": status,
+                    "evidence_provided": evidence_dict is not None,
+                    "skip": True,
+                    "agent_id": ctx.agent_id,
+                },
+            )
+
+        return json.dumps({
+            "success": True,
+            "scenario_id": scenario_id,
+            "old_status": old_status,
+            "new_status": status,
+            "evidence_provided": evidence_dict is not None,
+            "evidence_gate_skipped": skip_evidence_gate,
+        })
 
 
 @mcp.tool()
@@ -8329,7 +8594,7 @@ async def okto_pulse_link_card_to_spec(board_id: str, spec_id: str, card_id: str
 
     async with get_db_for_mcp() as db:
         service = SpecService(db)
-        linked = await service.link_card(spec_id, card_id)
+        linked = await service.link_card(spec_id, card_id, user_id=ctx.agent_id)
         await db.commit()
 
         if not linked:
@@ -10890,6 +11155,261 @@ _register_kg_query_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_
 
 from okto_pulse.core.mcp.kg_power_tools import register_kg_power_tools as _register_kg_power_tools
 _register_kg_power_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
+
+
+# ============================================================================
+# KG HEALTH (spec 20f67c2a — Ideação #5, FR2)
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_kg_health(board_id: str) -> str:
+    """
+    Snapshot of the KG health for one board — gemelar do REST GET /api/v1/kg/health.
+
+    Returns 10 fields aggregating consolidation queue depth, dead-letter
+    backlog, total nodes, default-score skew, average relevance, top
+    most-disconnected nodes, schema version, and the running count of
+    contradict_penalty cap events. Computed in-process; cheap to poll.
+
+    Use it before kicking off long consolidations (high queue_depth means
+    your enqueue may sit pending), after flagging contradictions (spike
+    in contradict_warn_count = curator should reconcile), or to debug
+    flat ranking (default_score_ratio > 0.7 = scoring not differentiating).
+
+    Args:
+        board_id: Board ID (uuid)
+
+    Returns:
+        JSON with the 10-field KG health snapshot, or {"error": "..."} on auth/not-found.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.services.kg_health_service import (
+        BoardNotFoundError,
+        get_kg_health,
+    )
+
+    try:
+        async with get_db_for_mcp() as db:
+            data = await get_kg_health(board_id, db)
+    except BoardNotFoundError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(data, default=str)
+
+
+# ============================================================================
+# DEAD LETTER INSPECTOR (spec ed17b1fe — Wave 2 NC 1ede3471)
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_kg_dead_letter_list(
+    board_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """
+    List dead-lettered consolidation rows — gemelar do REST GET /api/v1/kg/queue/dead-letter.
+
+    Use quando você (agente operador) detecta `dead_letter_count > 0` via
+    okto_pulse_kg_health e precisa investigar quais rows falharam, com que
+    erro, e em quantas tentativas. Cada row inclui o array `errors`
+    completo do schema TR16 — uma entrada por tentativa com error_type,
+    message, occurred_at, traceback (opcional).
+
+    READ-only no MVP — não há ação de reprocess via MCP (deferred v2).
+
+    Args:
+        board_id: Board UUID
+        limit: Max rows to return (1-200, default 50)
+        offset: Skip first N rows (>=0, default 0)
+
+    Returns:
+        JSON `{rows, total, limit, offset}` em sucesso. `{error: "..."}`
+        em auth fail.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.services.dead_letter_inspector_service import (
+        list_dead_letter_rows,
+    )
+
+    async with get_db_for_mcp() as db:
+        data = await list_dead_letter_rows(
+            db, board_id, limit=limit, offset=offset,
+        )
+    return json.dumps(data, default=str)
+
+
+# ============================================================================
+# SCHEMA MIGRATION SELF-HEAL (spec 818748f2 — FR5)
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_kg_migrate_schema(
+    board_id: str = "",
+    all_boards: bool = False,
+) -> str:
+    """
+    Force-apply schema migrations to fix legacy boards (board pre v0.3.2)
+    — gemelar do REST POST /api/v1/kg/{board_id}/migrate-schema.
+
+    Use quando consolidation falha com `Binder exception: Cannot find
+    property X for n` — geralmente significa que ALTER ADD para schema
+    column foi missed em board bootstrapped antes daquela versão.
+
+    Idempotente: re-rodar em board já migrado retorna `migrated=true`
+    com `columns_added` vazio (no-op).
+
+    NUNCA delete `graph.kuzu` para "consertar" — destruiria todo o KG
+    do board. Use esta tool em vez disso.
+
+    Args:
+        board_id: Board UUID específico (mutuamente exclusivo com all_boards)
+        all_boards: Se True, migra todos os boards conhecidos do server.
+            Default False — exige board_id.
+
+    Returns:
+        Single board: JSON `{board_id, migrated, columns_added, errors,
+        duration_ms}`. All-boards: `{results: [<single>, ...]}`.
+        Erro de input: `{error: "missing_board_or_all_boards"}`.
+    """
+    if not board_id and not all_boards:
+        return json.dumps({"error": "missing_board_or_all_boards"})
+
+    from okto_pulse.core.kg.schema import migrate_schema_for_board
+
+    if all_boards:
+        # Iterar todos os boards conhecidos via SQLite.
+        from sqlalchemy import select as _select
+        from okto_pulse.core.models.db import Board as _Board
+
+        results: list[dict[str, Any]] = []
+        async with get_db_for_mcp() as db:
+            rows = await db.execute(_select(_Board.id, _Board.name))
+            board_pairs = list(rows.all())
+        for bid, _bname in board_pairs:
+            try:
+                summary = migrate_schema_for_board(bid)
+                results.append(summary)
+            except Exception as exc:
+                results.append({
+                    "board_id": bid,
+                    "migrated": False,
+                    "columns_added": {},
+                    "errors": [f"unhandled: {exc}"],
+                    "duration_ms": 0,
+                })
+        return json.dumps({"results": results}, default=str)
+
+    # Single board path
+    summary = migrate_schema_for_board(board_id)
+    return json.dumps(summary, default=str)
+
+
+# ============================================================================
+# KG TICK CONTROLLABILITY (spec 54399628 — Wave 2 NC f9732afc)
+# ============================================================================
+
+# E2E spec c2115d15 — TS-E descobriu NameError "name 'logger' is not defined"
+# em okto_pulse_kg_tick_run_now: a função usa logger.info mas o módulo só
+# definia loggers nomeados específicos (_XML_SAFETY_LOGGER, _evidence_logger).
+# Logger dedicado para audit do tick.
+_tick_logger = logging.getLogger("okto_pulse.mcp.tick")
+
+
+@mcp.tool()
+async def okto_pulse_kg_tick_run_now(
+    board_id: str = "",
+    force_full_rebuild: bool = False,
+) -> str:
+    """
+    Trigger the KG decay tick manually — gemelar do REST POST /api/v1/kg/tick/run-now.
+
+    Dispara um tick imediato sem esperar o cron periódico. Operador agente
+    chama esta ferramenta quando: (a) acabou de reescalar nodes em massa
+    e quer scoring fresh imediato, (b) detectou que `default_score_ratio`
+    está acima de 0.7 e suspeita de stale ranking, (c) está debugando
+    scoring de um board específico (passe `board_id`).
+
+    Use `force_full_rebuild=true` para zerar `last_recomputed_at` antes
+    do tick (ignora staleness threshold) — útil para boards 0.3.x cujos
+    nodes herdaram defaults sem benefício do tick. SOMENTE per-trigger;
+    NUNCA é setting persistido para evitar full-rebuild noturno acidental.
+
+    Concurrent calls (cron + manual OU duas chamadas manuais) recebem
+    erro `tick_already_running` — primeiro a chegar ganha o advisory lock.
+
+    Args:
+        board_id: Optional board UUID. Empty string = global tick (all boards).
+        force_full_rebuild: When true, resets last_recomputed_at to NULL
+            for all nodes in scope before the tick — ignores staleness.
+
+    Returns:
+        JSON with `{tick_id, status: "running", scheduled_at}` on 202 success.
+        On 409 (lock held), `{error: "tick_already_running", message: "..."}`.
+        On auth failure, `{error: "..."}`.
+    """
+    # Per-board scope auth: when board_id provided, validate access.
+    if board_id:
+        ctx = await _get_agent_ctx(board_id)
+        if ctx is None:
+            return _auth_error()
+        triggered_by = ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
+    else:
+        # Global scope — allow any authenticated agent (no per-board check).
+        triggered_by = "agent-mcp-global"
+
+    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
+
+    lock = get_async_lock("kg_daily_tick", "global")
+    if lock.locked():
+        return json.dumps({
+            "error": "tick_already_running",
+            "message": "Tick already running, retry shortly",
+        })
+
+    import asyncio
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    from okto_pulse.core.api.kg_tick import _dispatch_manual_tick
+
+    tick_id = str(_uuid.uuid4())
+    scheduled_at = datetime.now(timezone.utc).isoformat()
+
+    _tick_logger.info(
+        "kg.tick.manual_triggered tick_id=%s user=%s board=%s force=%s source=mcp",
+        tick_id, triggered_by, board_id or None, force_full_rebuild,
+        extra={
+            "event": "kg.tick.manual_triggered",
+            "tick_id": tick_id,
+            "triggered_by_user_id": triggered_by,
+            "board_id": board_id or None,
+            "force_full_rebuild": force_full_rebuild,
+            "source": "mcp",
+        },
+    )
+
+    asyncio.create_task(
+        _dispatch_manual_tick(
+            tick_id=tick_id,
+            board_id=board_id or None,
+            force_full_rebuild=force_full_rebuild,
+        )
+    )
+
+    return json.dumps({
+        "tick_id": tick_id,
+        "status": "running",
+        "scheduled_at": scheduled_at,
+    })
 
 
 # ============================================================================

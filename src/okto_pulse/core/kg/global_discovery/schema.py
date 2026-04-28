@@ -121,6 +121,13 @@ def bootstrap_global_discovery() -> Path:
             db.close()
         except Exception:
             pass
+        # E2E spec c2115d15 — TS-E follow-up. No Windows o Kùzu segura lock
+        # OS-level via Database C++ enquanto o objeto Python existir. Forçar
+        # gc.collect() libera o handle imediatamente para evitar lock
+        # contention quando bootstrap é seguido de open_global_connection
+        # no mesmo processo (race observado no log do servidor).
+        del db
+        gc.collect()
     return path
 
 

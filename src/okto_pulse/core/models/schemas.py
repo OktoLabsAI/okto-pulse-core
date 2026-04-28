@@ -1442,6 +1442,28 @@ class BoardSettings(BaseModel):
     min_spec_completeness: int = 80  # min spec completeness score
     min_spec_assertiveness: int = 80  # min spec assertiveness score
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
+    # Bug Card Gate — NC-6 fix.
+    # require_test_task_for_bug: when False, bug cards can advance to in_progress
+    #   without a freshly-created linked test task. Default True (gate ATIVO).
+    # bug_test_gate_min_severity: only bugs at this severity OR higher must pass
+    #   the gate. "minor" (default) = sempre exige; "major" = pula minor;
+    #   "critical" = só critical exige.
+    require_test_task_for_bug: bool = True
+    bug_test_gate_min_severity: str = "minor"  # one of: minor, major, critical
+    # Test Theater Prevention Gate — Wave 2 NC-9 (spec 873e98cc).
+    # When False (default), update_test_scenario_status with status in
+    # {automated, passed, failed} requires structured evidence (test_file_path,
+    # test_function for automated; last_run_at + (output_snippet|test_run_id)
+    # for passed/failed). When True, gate is bypass — any status accepted
+    # without evidence; audit log records every bypass for forensics.
+    skip_test_evidence_global: bool = False
+    # Cognitive Extraction LLM config — opt-in (spec 3d907a87, FR7 / D5).
+    # Schema (free-form dict so it can evolve without a migration):
+    #   {"provider": "openai" | "anthropic" | ..., "model": "...",
+    #    "api_key_env": "OPENAI_API_KEY", "max_tokens": 800, "timeout_s": 30}
+    # Absent or None → CognitiveExtractionHandler skips Learning extraction
+    # and emits log info. Alternative + Assumption (regex) run regardless.
+    cognitive_llm_config: dict | None = None
 
 
 class BoardCreate(BaseModel):
