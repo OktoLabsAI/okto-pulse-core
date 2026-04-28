@@ -8,9 +8,14 @@ Replaces the ad-hoc `db.add(ConsolidationQueue(...))` calls that used to
 live scattered across services/main.py. New handlers (activity log,
 notifications, webhooks) follow the same pattern — subscribe, map, do.
 
-Idempotency: before inserting, we query the queue for an existing
-pending/claimed row for the same (board, artifact_type, artifact_id).
-If one exists we return silently; the existing row will serve the work.
+Idempotency: enqueue is a single dialect-aware UPSERT
+(`INSERT ... ON CONFLICT DO UPDATE`) that atomically merges concurrent
+events for the same (board, artifact_type, artifact_id). The WHERE clause
+on the conflict-update branch limits the update to terminal-state rows
+(``done``/``failed``/``paused``); rows already in ``pending``/``claimed``
+are left untouched (the worker will pick them up). This eliminates the
+SELECT-then-INSERT TOCTOU race that the previous v1 path had — see bug
+card 4a430c6d.
 """
 
 from __future__ import annotations
@@ -94,46 +99,27 @@ class ConsolidationEnqueuer:
         priority: str,
         session: AsyncSession,
     ) -> None:
-        # NC-11 fix: dedup must cover ALL statuses, not just pending/claimed.
-        # The table has UNIQUE(board_id, artifact_type, artifact_id) without
-        # status — so if a previous trigger left a row in 'done' or 'failed',
-        # naively inserting a new pending row throws IntegrityError. The
-        # handler retries 5x and DLQs the event, losing the consolidation.
-        # Pattern: full lookup → if in-flight (pending/claimed) skip; if
-        # terminal (done/failed/paused) reset row for re-processing.
-        existing = (
-            await session.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == event.board_id,
-                    ConsolidationQueue.artifact_type == artifact_type,
-                    ConsolidationQueue.artifact_id == artifact_id,
-                ).limit(1)
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            if existing.status in ("pending", "claimed"):
-                # Worker will pick up the in-flight row; new event is a no-op.
-                return
-            # Terminal state — reset for re-processing under the new event.
-            existing.status = "pending"
-            existing.attempts = 0
-            existing.last_error = None
-            existing.priority = priority
-            existing.source = f"event:{event.event_type}"
-            existing.triggered_by_event = event.event_type
-            existing.claimed_by_session_id = None
-            existing.claimed_at = None
-            existing.worker_id = None
-            existing.claim_timeout_at = None
-            existing.next_retry_at = None
-            return
+        # Bug 4a430c6d (race fix): dialect-aware UPSERT atomically merges
+        # concurrent events for the same (board_id, artifact_type, artifact_id)
+        # without the SELECT-then-INSERT TOCTOU race that the previous v1 path
+        # had. Semantics preserved bit-for-bit:
+        #   - row inexistente → INSERT (status=pending, attempts=0)
+        #   - row em pending/claimed → no-op (the WHERE on the conflict_update
+        #     branch filters those out — the existing row keeps its identity)
+        #   - row em terminal (done/failed/paused) → reset to pending so the
+        #     worker re-processes the artifact under the new event
+        # Earlier dedup was implemented by the SELECT block at lines 104-129
+        # of the v1 file — see git history before bug 4a430c6d.
 
         # Spec bdcda842 (TR4 + BR1 zero-loss): NEVER reject the enqueue. The
         # queue is now a zero-loss store; backpressure flows from the
         # consumer (worker pool throttling) rather than from admission. We
         # still emit an alert when the depth crosses the configurable
         # alert_threshold so operators can tune the worker pool — but the
-        # INSERT proceeds unconditionally.
+        # UPSERT proceeds unconditionally. Alert is fired BEFORE the upsert
+        # so the depth count reflects current state without including the
+        # row this call is about to add (no-op cases would otherwise inflate
+        # the count).
         settings = get_settings()
         alert_threshold = settings.kg_queue_alert_threshold
         depth_before_insert = await session.scalar(
@@ -169,17 +155,42 @@ class ConsolidationEnqueuer:
             )
             record_alert_fired()
 
-        session.add(
-            ConsolidationQueue(
-                board_id=event.board_id,
-                artifact_type=artifact_type,
-                artifact_id=artifact_id,
-                priority=priority,
-                source=f"event:{event.event_type}",
-                triggered_by_event=event.event_type,
-                status="pending",
-            )
+        # Dialect dispatch: SQLite and PostgreSQL both expose
+        # `insert().on_conflict_do_update(...)` but via different module paths.
+        # Detect at runtime so the same handler works in both prod (Postgres,
+        # planned) and dev/local (SQLite, current default).
+        dialect_name = session.bind.dialect.name if session.bind else None
+        if dialect_name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as upsert_insert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as upsert_insert
+
+        stmt = upsert_insert(ConsolidationQueue).values(
+            board_id=event.board_id,
+            artifact_type=artifact_type,
+            artifact_id=artifact_id,
+            priority=priority,
+            source=f"event:{event.event_type}",
+            triggered_by_event=event.event_type,
+            status="pending",
+        ).on_conflict_do_update(
+            index_elements=["board_id", "artifact_type", "artifact_id"],
+            set_={
+                "status": "pending",
+                "attempts": 0,
+                "last_error": None,
+                "priority": priority,
+                "source": f"event:{event.event_type}",
+                "triggered_by_event": event.event_type,
+                "claimed_by_session_id": None,
+                "claimed_at": None,
+                "worker_id": None,
+                "claim_timeout_at": None,
+                "next_retry_at": None,
+            },
+            where=ConsolidationQueue.status.notin_(("pending", "claimed")),
         )
+        await session.execute(stmt)
 
         # Spec 4007e4a3 (Ideação #3, FR5): structured counter for dual-target
         # spec re-enqueue. Emitted only when the spec-side enqueue actually
