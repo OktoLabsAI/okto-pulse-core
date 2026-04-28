@@ -1397,7 +1397,7 @@ async def okto_pulse_create_card(
         if perm_err:
             return _perm_error(perm_err)
 
-    from okto_pulse.core.models.db import Board, CardPriority, CardStatus
+    from okto_pulse.core.models.db import Board, BugSeverity, CardPriority, CardStatus, CardType
     from okto_pulse.core.models.schemas import CardCreate
 
     try:
@@ -1417,6 +1417,42 @@ async def okto_pulse_create_card(
                 "error": f"Invalid priority. Must be one of: {[p.value for p in CardPriority]}"
             }
         )
+
+    _card_type_value = (card_type or "normal").strip().lower()
+    try:
+        CardType(_card_type_value)
+    except ValueError:
+        return json.dumps(
+            {
+                "error": f"Invalid card_type '{card_type}'. Must be one of: {[t.value for t in CardType]}"
+            }
+        )
+
+    if severity:
+        try:
+            BugSeverity(severity.strip().lower())
+        except ValueError:
+            return json.dumps(
+                {
+                    "error": f"Invalid severity '{severity}'. Must be one of: {[s.value for s in BugSeverity]}"
+                }
+            )
+
+    if _card_type_value == "bug":
+        missing = [
+            name for name, val in (
+                ("origin_task_id", origin_task_id),
+                ("severity", severity),
+                ("expected_behavior", expected_behavior),
+                ("observed_behavior", observed_behavior),
+            ) if not (val or "").strip()
+        ]
+        if missing:
+            return json.dumps(
+                {
+                    "error": f"Bug cards require non-empty: {', '.join(missing)}"
+                }
+            )
 
     async with get_db_for_mcp() as db:
         service = CardService(db)
@@ -1447,9 +1483,9 @@ async def okto_pulse_create_card(
             labels=labels.split(",") if labels else None,
             spec_id=spec_id,
             test_scenario_ids=scenario_ids_list,
-            card_type=card_type or "normal",
+            card_type=_card_type_value,
             origin_task_id=origin_task_id or None,
-            severity=severity or None,
+            severity=(severity.strip().lower() if severity else None),
             expected_behavior=expected_behavior.replace("\\n", "\n") if expected_behavior else None,
             observed_behavior=observed_behavior.replace("\\n", "\n") if observed_behavior else None,
             steps_to_reproduce=steps_to_reproduce.replace("\\n", "\n") if steps_to_reproduce else None,
@@ -1907,7 +1943,7 @@ async def okto_pulse_update_card(
     if perm_err:
         return _perm_error(perm_err)
 
-    from okto_pulse.core.models.db import CardPriority
+    from okto_pulse.core.models.db import BugSeverity, CardPriority
     from okto_pulse.core.models.schemas import CardUpdate
 
     async with get_db_for_mcp() as db:
@@ -1942,7 +1978,16 @@ async def okto_pulse_update_card(
                 s.strip() for s in test_scenario_ids.split(",") if s.strip()
             ]
         if severity:
-            update_data["severity"] = severity
+            _sev = severity.strip().lower()
+            try:
+                BugSeverity(_sev)
+            except ValueError:
+                return json.dumps(
+                    {
+                        "error": f"Invalid severity '{severity}'. Must be one of: {[s.value for s in BugSeverity]}"
+                    }
+                )
+            update_data["severity"] = _sev
         if expected_behavior:
             update_data["expected_behavior"] = expected_behavior.replace("\\n", "\n")
         if observed_behavior:
@@ -6336,8 +6381,8 @@ async def okto_pulse_copy_knowledge_to_card(
         if not card:
             return json.dumps({"error": "Card not found"})
 
-        # Get spec knowledge bases
-        kbs = await spec_service.list_knowledge(spec_id)
+        kb_service = SpecKnowledgeService(db)
+        kbs = await kb_service.list_knowledge(spec_id)
         if knowledge_ids:
             ids = {s.strip() for s in knowledge_ids.split(",") if s.strip()}
             kbs = [kb for kb in kbs if kb.id in ids]
@@ -6359,6 +6404,196 @@ async def okto_pulse_copy_knowledge_to_card(
         await db.commit()
 
     return json.dumps({"success": True, "copied": copied})
+
+
+# ============================================================================
+# Card.knowledge_bases — inline JSONB lifecycle (symmetric to spec_knowledge)
+# ============================================================================
+
+
+def _new_card_kb_id() -> str:
+    import hashlib, time
+    return "kb_" + hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:10]
+
+
+@mcp.tool()
+async def okto_pulse_add_card_knowledge(
+    board_id: str,
+    card_id: str,
+    title: str,
+    content: str,
+    description: str = "",
+    mime_type: str = "text/markdown",
+    source: str = "manual",
+) -> str:
+    """
+    Attach a knowledge base entry directly to a card. Stored inline on
+    `Card.knowledge_bases` (JSONB). Symmetric to spec_knowledge but scoped
+    to a single task.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        title: KE title
+        content: KE content (Markdown by default)
+        description: Short summary (optional)
+        mime_type: Content MIME type (default text/markdown)
+        source: Free-form provenance hint (e.g. "manual", "copied_from_spec:<spec_id>:<kb_id>")
+
+    Returns:
+        JSON with the created KE including its generated id
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    if not (title or "").strip() or not (content or "").strip():
+        return json.dumps({"error": "title and content are required"})
+
+    from okto_pulse.core.models.schemas import CardUpdate
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        kbs = list(card.knowledge_bases or [])
+        kb = {
+            "id": _new_card_kb_id(),
+            "title": title.strip(),
+            "description": (description or "").strip() or None,
+            "content": content.replace("\\n", "\n"),
+            "mime_type": mime_type or "text/markdown",
+            "source": source or "manual",
+            "author_id": ctx.agent_id,
+        }
+        kbs.append(kb)
+
+        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
+        await db.commit()
+
+    return json.dumps({"success": True, "knowledge": kb}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_card_knowledge(board_id: str, card_id: str) -> str:
+    """
+    List all knowledge base entries attached to a card.
+    Returns titles + descriptions + ids; full content is included as well
+    since the rows live inline (no separate fetch path).
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+    return json.dumps({"success": True, "card_id": card_id, "knowledge": list(card.knowledge_bases or [])}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_get_card_knowledge(board_id: str, card_id: str, knowledge_id: str) -> str:
+    """Get a single KE by id from a card's inline knowledge_bases array."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+    for kb in (card.knowledge_bases or []):
+        if kb.get("id") == knowledge_id:
+            return json.dumps({"success": True, "knowledge": kb}, default=str)
+    return json.dumps({"error": "Knowledge entry not found"})
+
+
+@mcp.tool()
+async def okto_pulse_update_card_knowledge(
+    board_id: str,
+    card_id: str,
+    knowledge_id: str,
+    title: str = "",
+    description: str = "",
+    content: str = "",
+    mime_type: str = "",
+) -> str:
+    """Update fields of an existing KE on a card. Only provided fields change."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import CardUpdate
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        kbs = list(card.knowledge_bases or [])
+        idx = next((i for i, kb in enumerate(kbs) if kb.get("id") == knowledge_id), -1)
+        if idx == -1:
+            return json.dumps({"error": "Knowledge entry not found"})
+
+        kb = dict(kbs[idx])
+        if title:
+            kb["title"] = title.strip()
+        if description:
+            kb["description"] = description.strip()
+        if content:
+            kb["content"] = content.replace("\\n", "\n")
+        if mime_type:
+            kb["mime_type"] = mime_type
+        kbs[idx] = kb
+
+        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
+        await db.commit()
+
+    return json.dumps({"success": True, "knowledge": kb}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_delete_card_knowledge(board_id: str, card_id: str, knowledge_id: str) -> str:
+    """Delete a KE from a card's inline knowledge_bases array."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import CardUpdate
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        kbs = list(card.knowledge_bases or [])
+        before = len(kbs)
+        kbs = [kb for kb in kbs if kb.get("id") != knowledge_id]
+        if len(kbs) == before:
+            return json.dumps({"error": "Knowledge entry not found"})
+
+        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
+        await db.commit()
+
+    return json.dumps({"success": True, "deleted": knowledge_id, "remaining": len(kbs)})
 
 
 @mcp.tool()
