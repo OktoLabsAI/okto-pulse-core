@@ -184,23 +184,109 @@ This table is the **single source of truth** for MCP-level errors. Sections belo
 | `"malformed multi-value: expected list, got <type>"` | JSON decoded to a non-list (e.g. an object) | Send an array, not an object. |
 | `"malformed multi-value: expected string items, got <type> at index N"` | JSON array had a non-string item | Every item must be a string. |
 
-## Multi-value Parameters — Two Accepted Formats
+## Multi-value Parameters — Three Input Shapes (post-Sprint-5 of spec 4b429bf0)
 
-Any MCP tool argument that documents itself as "multi-value" (labels, ids, linked_criteria, linked_requirements, test_scenario_ids, tags, card_ids, and the like) is parsed by a single helper that autodetects the input format. Knowing both formats saves round-trips.
+Any MCP tool argument documented as multi-value (labels, ids, linked_criteria, linked_requirements, test_scenario_ids, tags, card_ids, and the like) is now parsed by `okto_pulse.core.mcp.helpers.coerce_to_list_str`. Tools migrated under spec 4b429bf0 declare their parameters as `list[str] | str = ""` so FastMCP's Pydantic Union dispatch picks the right shape at the framework boundary. **Post-Sprint-5 default `strict_mode=True` is now active** — comma-only input is REJECTED globally.
 
-| Format | Example input | When to use |
-|---|---|---|
-| **Pipe-separated** (default) | `"a\|b\|c"` | Simple atomic values that never contain `\|`. Shortest to type. |
-| **JSON array** | `'["str \| None", "outro item"]'` | **Required** when any item contains a literal `\|`: Python union type hints (`str \| None`), regex alternations (`foo\|bar`), markdown tables, or any prose that would be silently split in half by the pipe path. |
+| Shape | Example input | Status | When to use |
+|---|---|---|---|
+| **Native list[str]** (PREFERRED) | `["bug", "frontend"]` | Canonical | New MCP clients; the FastMCP wire format is a JSON array; handler receives a Python `list`. |
+| **JSON-array string** (legacy compat) | `'["str \| None", "outro item"]'` | Accepted | Older MCP clients that can only send strings; required when any item contains a literal `\|` that would be silently split. |
+| **Pipe-separated string** (legacy compat) | `"a\|b\|c"` | Accepted | Older MCP clients with simple atomic values that never contain `\|`. |
+| **Comma-only string** | `"a,b,c"` | **REJECTED** | Use one of the three shapes above. The handler returns `{"error": "Invalid <param>: multi-value input must be a JSON array ... or pipe-separated ... — comma-separated input is rejected by REJECT policy"}`. |
 
-**Detection rule (no flag to set):** if the trimmed input starts with `[`, it's parsed as JSON; otherwise pipe. Both paths strip each item and drop empties. The literal two-character escape `\n` is expanded into a real newline on the pipe path for backward compatibility with the legacy `_split` helper.
+**Detection rules:**
+- If the parameter is delivered as a Python `list`, items are validated as strings then stripped and de-duped of empties — no parsing.
+- If delivered as a string and trimmed input starts with `[`, JSON path.
+- If delivered as a string and contains `|`, pipe path.
+- Otherwise: REJECT (under `strict_mode=True`) or single-item list (lenient mode, rollout-window only).
 
-**Error behaviour:**
-- JSON path with malformed syntax → `"malformed JSON for multi-value param: <reason> (at pos N)"`.
-- JSON path that decoded to a non-list (e.g. `{"a": 1}`) → the parser actually falls through to pipe and treats the whole string as a single-item list. Not an error, but almost never what you want — prefer explicit arrays.
-- JSON path with a non-string item (e.g. `["ok", 42]`) → `"malformed multi-value: expected string items, got int at index 1"`.
+**Error behaviour (returned as `{"error": "Invalid <param>: <message>"}`):**
+- Malformed JSON → `"malformed JSON for multi-value param: <reason> (at pos N)"`.
+- JSON decoded to a non-list (e.g. `{"a": 1}`) → `"malformed multi-value: expected list, got dict"`.
+- JSON array with a non-string item (e.g. `["ok", 42]`) → `"malformed multi-value: expected string items, got int at index 1"`.
+- Comma-only string under `strict_mode=True` → `"multi-value input must be a JSON array ... or pipe-separated ..."`.
 
-**Rule of thumb:** if you even *might* have a `|` inside an item, send a JSON array. Pipe is a convenience, not a contract.
+**Rule of thumb:**
+1. Send a **native list** whenever you can — it never needs parsing and never needs escaping.
+2. If you must send a string, send a **JSON array** when items contain `|` or `,` or any punctuation that risks being a separator.
+3. Pipe is a convenience — never a contract.
+
+### Ideation domain examples (Sprint 4 — migrated)
+
+`okto_pulse_create_ideation.labels` and `okto_pulse_update_ideation.labels` accept native list:
+
+```python
+okto_pulse_create_ideation(
+    board_id="...", title="New idea",
+    labels=["product, ux", "discovery"],   # native list — commas inside survive
+)
+```
+
+### Refinement domain examples (Sprint 3 — migrated)
+
+`okto_pulse_create_refinement.labels` and `okto_pulse_update_refinement.labels` accept native list:
+
+```python
+okto_pulse_create_refinement(
+    board_id="...", ideation_id="...", title="API design refinement",
+    labels=["api, REST", "design"],   # native list — commas inside survive
+)
+```
+
+### Spec domain examples (Sprint 2 — migrated)
+
+Six tools migrated: `okto_pulse_create_spec.labels`, `okto_pulse_update_spec.labels`, `okto_pulse_copy_mockups_to_card.screen_ids`, `okto_pulse_copy_knowledge_to_card.knowledge_ids`, `okto_pulse_spec_skill_load.section_id`, `okto_pulse_create_spec_skill.tags`.
+
+```python
+okto_pulse_create_spec(
+    board_id="...",
+    title="Auth refactor",
+    labels=["security, OAuth2", "backend"],   # native list — commas inside survive
+)
+okto_pulse_copy_mockups_to_card(
+    board_id="...", spec_id="...", card_id="...",
+    screen_ids=["scr_a", "scr_b"],            # native list — preferred
+)
+okto_pulse_create_spec_skill(
+    board_id="...", spec_id="...", skill_id="api-style", name="API Style",
+    description="...",
+    tags=["api", "REST", "guidelines"],       # native list
+)
+```
+
+### Card domain examples (Sprint 1 — migrated)
+
+Both `okto_pulse_create_card` and `okto_pulse_update_card` now accept native list for `labels`, `test_scenario_ids` and (update only) `linked_test_task_ids`:
+
+```python
+# Native list — PREFERRED
+okto_pulse_create_card(
+    board_id="...",
+    title="My card",
+    spec_id="...",
+    labels=["bug, regression", "frontend (React, Vite)"],   # commas inside survive
+    test_scenario_ids=["ts_abc", "ts_def"],
+)
+
+# Legacy string (JSON array) — works for older clients
+okto_pulse_create_card(
+    board_id="...",
+    title="My card",
+    spec_id="...",
+    labels='["bug, regression", "frontend"]',               # commas inside survive
+    test_scenario_ids='["ts_abc", "ts_def"]',
+)
+
+# Legacy string (pipe) — works when no item needs `|` or `,` inside
+okto_pulse_create_card(
+    board_id="...",
+    title="My card",
+    spec_id="...",
+    labels="bug|frontend",
+    test_scenario_ids="ts_abc|ts_def",
+)
+```
 
 ## Destructive Operations — Read Before Calling
 

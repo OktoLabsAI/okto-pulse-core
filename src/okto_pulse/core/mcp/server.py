@@ -16,7 +16,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
-from okto_pulse.core.mcp.helpers import parse_multi_value
+from okto_pulse.core.mcp.helpers import coerce_to_list_str, parse_multi_value
 from okto_pulse.core.mcp.trace_middleware import install_if_enabled as _install_trace
 from okto_pulse.core.services.main import (
     AgentService,
@@ -819,14 +819,17 @@ async def okto_pulse_list_my_mentions(board_id: str, include_seen: str = "false"
 
 
 @mcp.tool()
-async def okto_pulse_mark_as_seen(board_id: str, item_ids: str) -> str:
+async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> str:
     """
     Mark one or more items as seen so they won't appear in list_my_mentions.
     Use this after processing mentions to avoid seeing them again.
 
     Args:
         board_id: Board ID (for access verification)
-        item_ids: Comma-separated item IDs to mark as seen (from list_my_mentions item_id field)
+        item_ids: Multi-value item IDs to mark as seen (from list_my_mentions item_id
+            field). Preferred native list (e.g. ``["c_a", "qa_b"]``); legacy string
+            accepted as JSON array or pipe-separated. Comma-only string is REJECTED.
+            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with count of newly marked items
@@ -840,7 +843,10 @@ async def okto_pulse_mark_as_seen(board_id: str, item_ids: str) -> str:
 
     from okto_pulse.core.models.db import AgentSeenItem, Comment, IdeationQAItem, QAItem, RefinementQAItem, SpecQAItem
 
-    ids = [i.strip() for i in item_ids.split(",") if i.strip()]
+    try:
+        ids = coerce_to_list_str(item_ids)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid item_ids: {e}"})
     if not ids:
         return json.dumps({"error": "No item_ids provided"})
 
@@ -1342,8 +1348,8 @@ async def okto_pulse_create_card(
     status: str = "not_started",
     priority: str = "none",
     assignee_id: str = "",
-    labels: str = "",
-    test_scenario_ids: str = "",
+    labels: list[str] | str = "",
+    test_scenario_ids: list[str] | str = "",
     card_type: str = "normal",
     origin_task_id: str = "",
     severity: str = "",
@@ -1365,8 +1371,14 @@ async def okto_pulse_create_card(
         status: Card status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
         priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
         assignee_id: User ID to assign (optional)
-        labels: Comma-separated labels (optional)
-        test_scenario_ids: Comma-separated test scenario IDs to link this card to (optional). When provided, automatically creates bidirectional links between the card and the scenarios. For test cards, this is MANDATORY.
+        labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
+            legacy string accepted as JSON array ``'["bug", "frontend"]'`` or
+            pipe-separated ``"bug|frontend"``. Comma-only string is REJECTED.
+            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+        test_scenario_ids: Multi-value test scenario IDs (e.g. ``["ts_abc", "ts_def"]``)
+            — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
+            When provided, automatically creates bidirectional links between the
+            card and the scenarios.
         card_type: Card type - "normal" (default) or "bug". Bug cards require origin_task_id, severity, expected_behavior, observed_behavior.
         origin_task_id: REQUIRED for bug cards — ID of the task that originated the bug. The spec is auto-resolved from this task.
         severity: REQUIRED for bug cards — one of: critical, major, minor
@@ -1460,7 +1472,14 @@ async def okto_pulse_create_card(
         _desc = description.replace("\\n", "\n") if description else None
         _details = details.replace("\\n", "\n") if details else None
 
-        scenario_ids_list = [s.strip() for s in test_scenario_ids.split(",") if s.strip()] if test_scenario_ids else None
+        try:
+            scenario_ids_list = coerce_to_list_str(test_scenario_ids) or None
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
+        try:
+            _labels_list = coerce_to_list_str(labels) or None
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid labels: {e}"})
 
         # Enforce max scenarios per card from board settings
         if scenario_ids_list:
@@ -1480,7 +1499,7 @@ async def okto_pulse_create_card(
             status=card_status,
             priority=card_priority,
             assignee_id=assignee_id or None,
-            labels=labels.split(",") if labels else None,
+            labels=_labels_list,
             spec_id=spec_id,
             test_scenario_ids=scenario_ids_list,
             card_type=_card_type_value,
@@ -1903,14 +1922,14 @@ async def okto_pulse_update_card(
     details: str = "",
     priority: str = "",
     assignee_id: str = "",
-    labels: str = "",
-    test_scenario_ids: str = "",
+    labels: list[str] | str = "",
+    test_scenario_ids: list[str] | str = "",
     severity: str = "",
     expected_behavior: str = "",
     observed_behavior: str = "",
     steps_to_reproduce: str = "",
     action_plan: str = "",
-    linked_test_task_ids: str = "",
+    linked_test_task_ids: list[str] | str = "",
 ) -> str:
     """
     Update card details.
@@ -1923,14 +1942,19 @@ async def okto_pulse_update_card(
         details: New details (optional)
         priority: New priority - one of: none, low, medium, high, very_high, critical (optional, empty = no change)
         assignee_id: New assignee (optional)
-        labels: New comma-separated labels (optional)
-        test_scenario_ids: Comma-separated test scenario IDs to associate with this card (optional). Use okto_pulse_link_task_to_scenario for bidirectional linking.
+        labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
+            legacy string accepted as JSON array or pipe-separated. Comma-only
+            string is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+        test_scenario_ids: Multi-value test scenario IDs — same input shapes as
+            ``labels``. Use ``okto_pulse_link_task_to_scenario`` for
+            bidirectional linking.
         severity: Bug severity - one of: critical, major, minor (optional, bug cards only)
         expected_behavior: Expected behavior description (optional, bug cards only)
         observed_behavior: Observed behavior description (optional, bug cards only)
         steps_to_reproduce: Steps to reproduce the bug (optional, bug cards only)
         action_plan: Plan for fixing the bug (optional, bug cards only)
-        linked_test_task_ids: Comma-separated test task card IDs linked to this bug (optional, bug cards only)
+        linked_test_task_ids: Multi-value test task card IDs linked to this bug
+            (optional, bug cards only) — same input shapes as ``labels``.
 
     Returns:
         JSON with updated card details
@@ -1972,11 +1996,15 @@ async def okto_pulse_update_card(
         if assignee_id:
             update_data["assignee_id"] = assignee_id
         if labels:
-            update_data["labels"] = labels.split(",")
+            try:
+                update_data["labels"] = coerce_to_list_str(labels)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid labels: {e}"})
         if test_scenario_ids:
-            update_data["test_scenario_ids"] = [
-                s.strip() for s in test_scenario_ids.split(",") if s.strip()
-            ]
+            try:
+                update_data["test_scenario_ids"] = coerce_to_list_str(test_scenario_ids)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
         if severity:
             _sev = severity.strip().lower()
             try:
@@ -1997,9 +2025,10 @@ async def okto_pulse_update_card(
         if action_plan:
             update_data["action_plan"] = action_plan.replace("\\n", "\n")
         if linked_test_task_ids:
-            update_data["linked_test_task_ids"] = [
-                s.strip() for s in linked_test_task_ids.split(",") if s.strip()
-            ]
+            try:
+                update_data["linked_test_task_ids"] = coerce_to_list_str(linked_test_task_ids)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid linked_test_task_ids: {e}"})
 
         card_update = CardUpdate(**update_data)
         updated = await service.update_card(card_id, ctx.agent_id, card_update)
@@ -2582,7 +2611,14 @@ async def okto_pulse_add_choice_comment(
         board_id: Board ID
         card_id: Card ID
         question: The question or prompt text displayed above the options
-        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        options: Option labels in any of three formats:
+            - JSON array (preferred when labels contain commas):
+              ``'["Option A (with, commas)", "Option B"]'``
+            - Pipe-separated (when labels contain commas but not pipes):
+              ``"Option A|Option B|Option C"``
+            - Comma-separated (legacy, fragile if a label contains a comma):
+              ``"Option A,Option B,Option C"``
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         comment_type: "choice" for single-select (default) or "multi_choice" for multi-select
         allow_free_text: "true" to allow a free-text response in addition to selections
 
@@ -2601,7 +2637,10 @@ async def okto_pulse_add_choice_comment(
 
     from okto_pulse.core.models.schemas import ChoiceOption, CommentCreate
 
-    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        option_labels = parse_multi_value(options)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid options: {e}"})
     if not option_labels:
         return json.dumps({"error": "At least one option is required"})
 
@@ -2656,7 +2695,10 @@ async def okto_pulse_respond_to_choice(
     Args:
         board_id: Board ID
         comment_id: Comment ID of the choice board
-        selected: Comma-separated option IDs to select (e.g. "opt_0,opt_2")
+        selected: Option IDs to select, accepted in three formats:
+            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
+            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         free_text: Optional free-text response (only if allow_free_text is enabled)
 
     Returns:
@@ -2666,7 +2708,10 @@ async def okto_pulse_respond_to_choice(
     if not ctx:
         return _auth_error()
 
-    selected_ids = [s.strip() for s in selected.split(",") if s.strip()]
+    try:
+        selected_ids = parse_multi_value(selected)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid selected: {e}"})
     if not selected_ids:
         return json.dumps({"error": "At least one selection is required"})
 
@@ -3050,7 +3095,7 @@ async def okto_pulse_create_ideation(
     problem_statement: str = "",
     proposed_approach: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Create a new ideation on the board. Ideations are the starting point — raw ideas that may be
@@ -3086,7 +3131,7 @@ async def okto_pulse_create_ideation(
             problem_statement=problem_statement.replace("\\n", "\n") if problem_statement else None,
             proposed_approach=proposed_approach.replace("\\n", "\n") if proposed_approach else None,
             assignee_id=assignee_id or None,
-            labels=labels.split(",") if labels else None,
+            labels=coerce_to_list_str(labels) or None,
         )
 
         ideation = await service.create_ideation(
@@ -3364,7 +3409,7 @@ async def okto_pulse_update_ideation(
     problem_statement: str = "",
     proposed_approach: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated.
@@ -3404,7 +3449,10 @@ async def okto_pulse_update_ideation(
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
-        update_kwargs["labels"] = labels.split(",")
+        try:
+            update_kwargs["labels"] = coerce_to_list_str(labels)
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid labels: {e}"})
 
     if not update_kwargs:
         return json.dumps({"error": "No fields to update"})
@@ -3898,7 +3946,14 @@ async def okto_pulse_ask_ideation_choice_question(
         board_id: Board ID
         ideation_id: Ideation ID
         question: The question text
-        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        options: Option labels in any of three formats:
+            - JSON array (preferred when labels contain commas):
+              ``'["Mermaid (text-based, lightweight)", "ExcaliDraw (heavy)"]'``
+            - Pipe-separated (when labels contain commas but not pipes):
+              ``"Option A|Option B|Option C"``
+            - Comma-separated (legacy, fragile if a label contains a comma):
+              ``"Option A,Option B,Option C"``
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         question_type: "choice" for single-select (default) or "multi_choice" for multi-select
         allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -3915,7 +3970,10 @@ async def okto_pulse_ask_ideation_choice_question(
 
     from okto_pulse.core.models.schemas import IdeationQAChoiceOption, IdeationQACreate
 
-    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        option_labels = parse_multi_value(options)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid options: {e}"})
     if not option_labels:
         return json.dumps({"error": "At least one option is required"})
 
@@ -3970,7 +4028,10 @@ async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, q
         ideation_id: Ideation ID (for context/validation)
         qa_id: Q&A item ID to answer
         answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+        selected: Option IDs for choice questions, accepted in three formats:
+            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
+            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
 
     Returns:
         JSON with updated Q&A item
@@ -3985,7 +4046,10 @@ async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, q
 
     from okto_pulse.core.models.schemas import IdeationQAAnswer
 
-    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+    try:
+        selected_list = parse_multi_value(selected) if selected else None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid selected: {e}"})
 
     async with get_db_for_mcp() as db:
         service = IdeationQAService(db)
@@ -4086,7 +4150,7 @@ async def okto_pulse_create_refinement(
     analysis: str = "",
     decisions: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
     mockup_ids: str = "",
     kb_ids: str = "",
 ) -> str:
@@ -4136,7 +4200,7 @@ async def okto_pulse_create_refinement(
             analysis=analysis.replace("\\n", "\n") if analysis else None,
             decisions=parse_multi_value(decisions) or None,
             assignee_id=assignee_id or None,
-            labels=labels.split(",") if labels else None,
+            labels=coerce_to_list_str(labels) or None,
             mockup_ids=parse_multi_value(mockup_ids) or None,
             kb_ids=parse_multi_value(kb_ids) or None,
         )
@@ -4415,7 +4479,7 @@ async def okto_pulse_update_refinement(
     analysis: str = "",
     decisions: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Update a refinement's fields. Content changes bump the version. Only non-empty fields are updated.
@@ -4461,7 +4525,10 @@ async def okto_pulse_update_refinement(
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
-        update_kwargs["labels"] = labels.split(",")
+        try:
+            update_kwargs["labels"] = coerce_to_list_str(labels)
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid labels: {e}"})
 
     if not update_kwargs:
         return json.dumps({"error": "No fields to update"})
@@ -4765,7 +4832,14 @@ async def okto_pulse_ask_refinement_choice_question(
         board_id: Board ID
         refinement_id: Refinement ID
         question: The question text
-        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        options: Option labels in any of three formats:
+            - JSON array (preferred when labels contain commas):
+              ``'["Mermaid (text-based, lightweight)", "ExcaliDraw (heavy)"]'``
+            - Pipe-separated (when labels contain commas but not pipes):
+              ``"Option A|Option B|Option C"``
+            - Comma-separated (legacy, fragile if a label contains a comma):
+              ``"Option A,Option B,Option C"``
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         question_type: "choice" for single-select (default) or "multi_choice" for multi-select
         allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -4782,7 +4856,10 @@ async def okto_pulse_ask_refinement_choice_question(
 
     from okto_pulse.core.models.schemas import RefinementQAChoiceOption, RefinementQACreate
 
-    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        option_labels = parse_multi_value(options)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid options: {e}"})
     if not option_labels:
         return json.dumps({"error": "At least one option is required"})
 
@@ -4837,7 +4914,10 @@ async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: st
         refinement_id: Refinement ID (for context/validation)
         qa_id: Q&A item ID to answer
         answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+        selected: Option IDs for choice questions, accepted in three formats:
+            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
+            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
 
     Returns:
         JSON with updated Q&A item
@@ -4852,7 +4932,10 @@ async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: st
 
     from okto_pulse.core.models.schemas import RefinementQAAnswer
 
-    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+    try:
+        selected_list = parse_multi_value(selected) if selected else None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid selected: {e}"})
 
     async with get_db_for_mcp() as db:
         service = RefinementQAService(db)
@@ -4953,7 +5036,7 @@ async def okto_pulse_create_spec(
     acceptance_criteria: str = "",
     status: str = "draft",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Create a new spec (specification) on the board. Specs define requirements that drive card/task creation.
@@ -4969,7 +5052,9 @@ async def okto_pulse_create_spec(
         acceptance_criteria: Pipe-separated list of acceptance criteria (e.g. "All tests pass|No console errors")
         status: Spec status — one of: draft, review, approved, in_progress, done, cancelled (default: draft)
         assignee_id: User/agent ID to assign (optional)
-        labels: Comma-separated labels (optional)
+        labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
+            legacy string accepted as JSON array or pipe-separated. Comma-only string
+            is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with created spec details
@@ -5003,7 +5088,7 @@ async def okto_pulse_create_spec(
             acceptance_criteria=parse_multi_value(acceptance_criteria) or None,
             status=spec_status,
             assignee_id=assignee_id or None,
-            labels=labels.split(",") if labels else None,
+            labels=coerce_to_list_str(labels) or None,
         )
 
         spec = await service.create_spec(
@@ -5343,7 +5428,7 @@ async def okto_pulse_update_spec(
     technical_requirements: str = "",
     acceptance_criteria: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
@@ -5391,7 +5476,10 @@ async def okto_pulse_update_spec(
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
-        update_kwargs["labels"] = labels.split(",")
+        try:
+            update_kwargs["labels"] = coerce_to_list_str(labels)
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid labels: {e}"})
 
     if not update_kwargs:
         return json.dumps({"error": "No fields to update"})
@@ -6296,7 +6384,7 @@ async def okto_pulse_restore_tree(
 
 @mcp.tool()
 async def okto_pulse_copy_mockups_to_card(
-    board_id: str, spec_id: str, card_id: str, screen_ids: str = ""
+    board_id: str, spec_id: str, card_id: str, screen_ids: list[str] | str = ""
 ) -> str:
     """
     Copy screen mockups from a spec to a card. Use this when creating implementation
@@ -6306,7 +6394,10 @@ async def okto_pulse_copy_mockups_to_card(
         board_id: Board ID
         spec_id: Source spec ID
         card_id: Target card ID
-        screen_ids: Comma-separated screen IDs to copy (empty = copy ALL mockups from the spec)
+        screen_ids: Multi-value screen IDs to copy (empty = copy ALL mockups from the
+            spec). Preferred native list (e.g. ``["scr_a", "scr_b"]``); legacy string
+            accepted as JSON array or pipe-separated. Comma-only string is REJECTED.
+            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with count of mockups copied
@@ -6328,7 +6419,10 @@ async def okto_pulse_copy_mockups_to_card(
 
         source_mockups = list(spec.screen_mockups or [])
         if screen_ids:
-            ids = {s.strip() for s in screen_ids.split(",") if s.strip()}
+            try:
+                ids = set(coerce_to_list_str(screen_ids))
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid screen_ids: {e}"})
             source_mockups = [m for m in source_mockups if m.get("id") in ids]
 
         if not source_mockups:
@@ -6351,7 +6445,7 @@ async def okto_pulse_copy_mockups_to_card(
 
 @mcp.tool()
 async def okto_pulse_copy_knowledge_to_card(
-    board_id: str, spec_id: str, card_id: str, knowledge_ids: str = ""
+    board_id: str, spec_id: str, card_id: str, knowledge_ids: list[str] | str = ""
 ) -> str:
     """
     Copy knowledge base entries from a spec to a card as attachments/comments.
@@ -6361,7 +6455,10 @@ async def okto_pulse_copy_knowledge_to_card(
         board_id: Board ID
         spec_id: Source spec ID
         card_id: Target card ID
-        knowledge_ids: Comma-separated knowledge base IDs to copy (empty = copy ALL)
+        knowledge_ids: Multi-value knowledge base IDs to copy (empty = copy ALL).
+            Preferred native list (e.g. ``["kb_a", "kb_b"]``); legacy string accepted
+            as JSON array or pipe-separated. Comma-only string is REJECTED. See
+            ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with count of knowledge entries copied
@@ -6384,7 +6481,10 @@ async def okto_pulse_copy_knowledge_to_card(
         kb_service = SpecKnowledgeService(db)
         kbs = await kb_service.list_knowledge(spec_id)
         if knowledge_ids:
-            ids = {s.strip() for s in knowledge_ids.split(",") if s.strip()}
+            try:
+                ids = set(coerce_to_list_str(knowledge_ids))
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid knowledge_ids: {e}"})
             kbs = [kb for kb in kbs if kb.id in ids]
 
         if not kbs:
@@ -9235,7 +9335,14 @@ async def okto_pulse_ask_spec_choice_question(
         board_id: Board ID
         spec_id: Spec ID
         question: The question text
-        options: Comma-separated list of option labels (e.g. "OAuth2,API Keys,Both")
+        options: Option labels in any of three formats:
+            - JSON array (preferred when labels contain commas):
+              ``'["OAuth2 (RFC 6749, recommended)", "API Keys", "Both"]'``
+            - Pipe-separated (when labels contain commas but not pipes):
+              ``"OAuth2|API Keys|Both"``
+            - Comma-separated (legacy, fragile if a label contains a comma):
+              ``"OAuth2,API Keys,Both"``
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         question_type: "choice" for single-select (default) or "multi_choice" for multi-select
         allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -9254,7 +9361,10 @@ async def okto_pulse_ask_spec_choice_question(
 
     from okto_pulse.core.models.schemas import SpecQAChoiceOption, SpecQACreate
 
-    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        option_labels = parse_multi_value(options)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid options: {e}"})
     if not option_labels:
         return json.dumps({"error": "At least one option is required"})
 
@@ -9309,7 +9419,10 @@ async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: st
         spec_id: Spec ID (for context/validation)
         qa_id: Q&A item ID to answer
         answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+        selected: Option IDs for choice questions, accepted in three formats:
+            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
+            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
 
     Returns:
         JSON with updated Q&A item
@@ -9324,7 +9437,10 @@ async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: st
 
     from okto_pulse.core.models.schemas import SpecQAAnswer
 
-    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+    try:
+        selected_list = parse_multi_value(selected) if selected else None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid selected: {e}"})
 
     async with get_db_for_mcp() as db:
         service = SpecQAService(db)
@@ -9521,18 +9637,20 @@ async def okto_pulse_spec_skill_inspect(board_id: str, spec_id: str, skill_id: s
 
 @mcp.tool()
 async def okto_pulse_spec_skill_load(
-    board_id: str, spec_id: str, skill_id: str, section_id: str = ""
+    board_id: str, spec_id: str, skill_id: str, section_id: list[str] | str = ""
 ) -> str:
     """
     Level 3 — LOAD: Get the full content of one or more skill sections.
     If section_id is empty, returns ALL sections with full content.
-    Use comma-separated section_ids to load specific sections.
 
     Args:
         board_id: Board ID
         spec_id: Spec ID
         skill_id: The skill_id slug to load
-        section_id: Comma-separated section IDs to load (empty = all)
+        section_id: Multi-value section IDs to load (empty = all). Preferred native
+            list (e.g. ``["sec_a", "sec_b"]``); legacy string accepted as JSON array
+            or pipe-separated. Comma-only string is REJECTED. See
+            ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with full section content
@@ -9555,7 +9673,10 @@ async def okto_pulse_spec_skill_load(
 
         sections = skill.sections or []
         if section_id:
-            requested_ids = {sid.strip() for sid in section_id.split(",")}
+            try:
+                requested_ids = set(coerce_to_list_str(section_id))
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid section_id: {e}"})
             sections = [s for s in sections if s.get("id") in requested_ids]
 
         return json.dumps(
@@ -9583,7 +9704,7 @@ async def okto_pulse_create_spec_skill(
     name: str,
     description: str,
     content: str = "",
-    tags: str = "",
+    tags: list[str] | str = "",
     type: str = "PROMPT",
     file_path: str | None = None,
     file_url: str | None = None,
@@ -9603,7 +9724,9 @@ async def okto_pulse_create_spec_skill(
         name: Display name
         description: What this skill provides
         content: Inline skill content (optional — creates a single "main" section)
-        tags: Comma-separated tags (optional)
+        tags: Multi-value tags — preferred native list (e.g. ``["api", "design"]``);
+            legacy string accepted as JSON array or pipe-separated. Comma-only string
+            is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
         type: Skill type, default "PROMPT"
         file_path: Absolute path to a local UTF-8 text file on the MCP server host
         file_url: HTTP(S) URL of a UTF-8 text document to fetch
@@ -9647,7 +9770,7 @@ async def okto_pulse_create_spec_skill(
             name=name,
             description=description,
             type=type,
-            tags=tags.split(",") if tags else None,
+            tags=coerce_to_list_str(tags) or None,
             sections=sections,
         )
         skill = await service.create_skill(spec_id, ctx.agent_id, skill_data)
@@ -10210,11 +10333,11 @@ async def okto_pulse_create_sprint(
     description: str = "",
     objective: str = "",
     expected_outcome: str = "",
-    test_scenario_ids: str = "",
-    business_rule_ids: str = "",
+    test_scenario_ids: list[str] | str = "",
+    business_rule_ids: list[str] | str = "",
     start_date: str = "",
     end_date: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Create a new sprint for a spec. Sprints break specs into incremental deliverables.
@@ -10258,10 +10381,10 @@ async def okto_pulse_create_sprint(
                 title=title, description=description or None, spec_id=spec_id,
                 objective=objective or None,
                 expected_outcome=expected_outcome or None,
-                test_scenario_ids=[x.strip() for x in test_scenario_ids.split(",") if x.strip()] or None,
-                business_rule_ids=[x.strip() for x in business_rule_ids.split(",") if x.strip()] or None,
+                test_scenario_ids=coerce_to_list_str(test_scenario_ids) or None,
+                business_rule_ids=coerce_to_list_str(business_rule_ids) or None,
                 start_date=start_date or None, end_date=end_date or None,
-                labels=[x.strip() for x in labels.split(",") if x.strip()] or None,
+                labels=coerce_to_list_str(labels) or None,
             )
             sprint = await service.create_sprint(board_id, ctx.agent_id, data, skip_ownership_check=True)
             await db.commit()
@@ -10281,9 +10404,9 @@ async def okto_pulse_update_sprint(
     sprint_id: str,
     title: str = "",
     description: str = "",
-    test_scenario_ids: str = "",
-    business_rule_ids: str = "",
-    labels: str = "",
+    test_scenario_ids: list[str] | str = "",
+    business_rule_ids: list[str] | str = "",
+    labels: list[str] | str = "",
     skip_test_coverage: str = "",
     skip_rules_coverage: str = "",
     skip_qualitative_validation: str = "",
@@ -10321,11 +10444,20 @@ async def okto_pulse_update_sprint(
         if description:
             kwargs["description"] = description
         if test_scenario_ids:
-            kwargs["test_scenario_ids"] = [x.strip() for x in test_scenario_ids.split(",") if x.strip()]
+            try:
+                kwargs["test_scenario_ids"] = coerce_to_list_str(test_scenario_ids)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
         if business_rule_ids:
-            kwargs["business_rule_ids"] = [x.strip() for x in business_rule_ids.split(",") if x.strip()]
+            try:
+                kwargs["business_rule_ids"] = coerce_to_list_str(business_rule_ids)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid business_rule_ids: {e}"})
         if labels:
-            kwargs["labels"] = [x.strip() for x in labels.split(",") if x.strip()]
+            try:
+                kwargs["labels"] = coerce_to_list_str(labels)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid labels: {e}"})
         if skip_test_coverage:
             kwargs["skip_test_coverage"] = skip_test_coverage.lower() == "true"
         if skip_rules_coverage:
@@ -10607,7 +10739,7 @@ async def okto_pulse_list_sprints(board_id: str, spec_id: str) -> str:
 async def okto_pulse_assign_tasks_to_sprint(
     board_id: str,
     sprint_id: str,
-    card_ids: str,
+    card_ids: list[str] | str,
 ) -> str:
     """
     Assign cards to a sprint. Cards must belong to the same spec as the sprint.
@@ -10615,7 +10747,10 @@ async def okto_pulse_assign_tasks_to_sprint(
     Args:
         board_id: Board ID
         sprint_id: Sprint ID
-        card_ids: Comma-separated card IDs to assign
+        card_ids: Multi-value card IDs to assign. Preferred native list (e.g.
+            ``["uuid_a", "uuid_b"]``); legacy string accepted as JSON array or
+            pipe-separated. Comma-only string is REJECTED. See
+            ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with number of cards assigned
@@ -10624,7 +10759,10 @@ async def okto_pulse_assign_tasks_to_sprint(
     if not ctx:
         return _auth_error()
 
-    ids = [x.strip() for x in card_ids.split(",") if x.strip()]
+    try:
+        ids = coerce_to_list_str(card_ids)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid card_ids: {e}"})
     if not ids:
         return json.dumps({"error": "No card IDs provided"})
 
