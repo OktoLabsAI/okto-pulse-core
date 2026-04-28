@@ -1,6 +1,12 @@
 """Card API endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import hashlib
+import time
+from typing import Optional
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi.responses import PlainTextResponse, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -410,3 +416,180 @@ async def delete_task_validation(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Validation not found")
     await db.commit()
+
+
+# ==================== CARD KNOWLEDGE BASE ====================
+# Inline JSONB on Card.knowledge_bases. Symmetric to spec_knowledge but
+# scoped to a single task; persisted as a snapshot at the card level.
+
+
+class CardKnowledgeCreate(BaseModel):
+    title: str
+    content: str
+    description: Optional[str] = None
+    mime_type: str = "text/markdown"
+    source: str = "manual"
+
+
+class CardKnowledgeUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    description: Optional[str] = None
+    mime_type: Optional[str] = None
+
+
+def _new_kb_id() -> str:
+    return "kb_" + hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:10]
+
+
+@router.get("/{card_id}/knowledge")
+async def list_card_knowledge(
+    card_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all KE attached to a card."""
+    service = CardService(db)
+    card = await service.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    return {"card_id": card_id, "knowledge": list(card.knowledge_bases or [])}
+
+
+@router.post("/{card_id}/knowledge", status_code=status.HTTP_201_CREATED)
+async def create_card_knowledge(
+    card_id: str,
+    data: CardKnowledgeCreate,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a KE to a card."""
+    if not data.title.strip() or not data.content.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title and content are required")
+
+    service = CardService(db)
+    card = await service.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+
+    kbs = list(card.knowledge_bases or [])
+    kb = {
+        "id": _new_kb_id(),
+        "title": data.title.strip(),
+        "description": (data.description or "").strip() or None,
+        "content": data.content,
+        "mime_type": data.mime_type,
+        "source": data.source,
+        "author_id": user_id,
+    }
+    kbs.append(kb)
+
+    await service.update_card(card_id, user_id, CardUpdate(knowledge_bases=kbs))
+    await db.commit()
+    return kb
+
+
+@router.get("/{card_id}/knowledge/{kb_id}")
+async def get_card_knowledge(
+    card_id: str,
+    kb_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single KE."""
+    service = CardService(db)
+    card = await service.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    for kb in card.knowledge_bases or []:
+        if kb.get("id") == kb_id:
+            return kb
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge entry not found")
+
+
+@router.patch("/{card_id}/knowledge/{kb_id}")
+async def update_card_knowledge(
+    card_id: str,
+    kb_id: str,
+    data: CardKnowledgeUpdate,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a KE in place."""
+    service = CardService(db)
+    card = await service.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+
+    kbs = list(card.knowledge_bases or [])
+    idx = next((i for i, kb in enumerate(kbs) if kb.get("id") == kb_id), -1)
+    if idx == -1:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge entry not found")
+
+    kb = dict(kbs[idx])
+    if data.title is not None:
+        kb["title"] = data.title.strip()
+    if data.description is not None:
+        kb["description"] = data.description.strip() or None
+    if data.content is not None:
+        kb["content"] = data.content
+    if data.mime_type is not None:
+        kb["mime_type"] = data.mime_type
+    kbs[idx] = kb
+
+    await service.update_card(card_id, user_id, CardUpdate(knowledge_bases=kbs))
+    await db.commit()
+    return kb
+
+
+@router.delete("/{card_id}/knowledge/{kb_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_card_knowledge(
+    card_id: str,
+    kb_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a KE from a card."""
+    service = CardService(db)
+    card = await service.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+
+    kbs = list(card.knowledge_bases or [])
+    before = len(kbs)
+    kbs = [kb for kb in kbs if kb.get("id") != kb_id]
+    if len(kbs) == before:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge entry not found")
+
+    await service.update_card(card_id, user_id, CardUpdate(knowledge_bases=kbs))
+    await db.commit()
+
+
+@router.get("/{card_id}/knowledge/{kb_id}/download")
+async def download_card_knowledge(
+    card_id: str,
+    kb_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a KE as a plain markdown file with Content-Disposition attachment."""
+    service = CardService(db)
+    card = await service.get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    target = next((kb for kb in (card.knowledge_bases or []) if kb.get("id") == kb_id), None)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge entry not found")
+
+    safe_title = "".join(c if c.isalnum() or c in "-_." else "_" for c in (target.get("title") or "knowledge"))
+    filename = f"{safe_title or 'knowledge'}.md"
+    body = (
+        f"# {target.get('title', '')}\n\n"
+        f"> {target.get('description') or ''}\n\n"
+        f"{target.get('content', '')}\n"
+    )
+    return Response(
+        content=body,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

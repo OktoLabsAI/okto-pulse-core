@@ -49,11 +49,24 @@ Every time you start a session or pick up a new task, follow this sequence. Viol
 3. okto_pulse_get_unseen_summary(board_id)               → check mentions + pending work
 4. okto_pulse_get_board_guidelines(board_id)              → read rules set by the board owner
 5. okto_pulse_get_task_context(board_id, card_id, ...)    → FULL context before ANY work
-6. okto_pulse_move_card(status="in_progress")             → signal that work is starting
-7. BEGIN WORK                                             → only now write code / make changes
+6. okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id)     → snapshot relevant mockups onto the card
+7. okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id)   → snapshot relevant KEs onto the card
+8. okto_pulse_move_card(status="in_progress")             → signal that work is starting
+9. BEGIN WORK                                             → only now write code / make changes
 ```
 
-**Never skip steps 5 and 6.** Implementing based on the card title alone leads to spec drift, duplicated work, and contradictory decisions. The `get_task_context` call returns the card, spec requirements, TRs, BRs, test scenarios, API contracts, knowledge bases, mockups, Q&A, and comments — everything you need.
+**Never skip steps 5 and 8.** Implementing based on the card title alone leads to spec drift, duplicated work, and contradictory decisions. The `get_task_context` call returns the card, spec requirements, TRs, BRs, test scenarios, API contracts, knowledge bases, mockups, Q&A, and comments — everything you need.
+
+**Steps 6 and 7 are mandatory before `started → in_progress`** — the implementer (you or a future agent picking up the card) reads `card.knowledge_bases` and `card.screen_mockups` directly, never re-querying the spec. This snapshot prevents drift if the spec is later edited and decouples the card from the spec lifecycle. Use `knowledge_ids` / `screen_ids` to scope a subset when only part of the spec applies. If the card does not need a particular artifact (e.g. a backend-only card has no mockups), skip explicitly — but document the rationale in a comment.
+
+**Per-task KE lifecycle** (introduced in 0.1.6): cards now own their KEs via inline `Card.knowledge_bases` JSONB. The full lifecycle is exposed symmetrically:
+
+- `okto_pulse_add_card_knowledge(board_id, card_id, title, content, ...)` — attach a new KE directly to the card
+- `okto_pulse_list_card_knowledge(board_id, card_id)` — list KEs on the card
+- `okto_pulse_get_card_knowledge(board_id, card_id, knowledge_id)` — fetch one
+- `okto_pulse_update_card_knowledge(board_id, card_id, knowledge_id, ...)` — edit in place
+- `okto_pulse_delete_card_knowledge(board_id, card_id, knowledge_id)` — remove
+- REST mirror: `GET/POST/PATCH/DELETE /api/v1/cards/{card_id}/knowledge[/{kb_id}]` and `GET .../download` for markdown export
 
 **Never move a card to `done` without reading the "Card Status Transitions" section below.** The `done` transition has mandatory parameters (conclusion, completeness, drift) that are enforced by the system. Attempting without them returns an error.
 
