@@ -1,17 +1,40 @@
-"""Shared helpers for MCP tool parameter parsing (ideação 75d4b2a3).
+"""Shared helpers for MCP tool parameter parsing.
 
-The previous pattern was ``text.split("|")`` scattered across 18
-callsites in ``mcp/server.py``. Any MCP caller passing a multi-value
-string containing a literal ``|`` — the Python union type hint
-``str | None``, a markdown table, a regex alternation — had its
-content silently split in half, bloating list counts and corrupting
-specs. The coverage gate treated the fragments as distinct items.
+History
+-------
+- v1 (ideação 75d4b2a3): introduced ``parse_multi_value`` accepting
+  pipe-separated string or JSON-array string, replacing 18 ad-hoc
+  ``text.split("|")`` callsites in ``mcp/server.py``.
+- v2 (bug 65c9c631): 8 choice/answer/respond tools migrated from raw
+  ``options.split(",")`` to ``parse_multi_value``.
+- v3 (spec 4b429bf0 — Sprint 1): adds native ``list[str]`` input
+  handling (now the canonical wire format thanks to FastMCP Pydantic
+  Union support — see Decision dec_fdc3804d) and a ``strict_mode``
+  switch that REJECTS comma-only input. ``coerce_to_list_str`` is a
+  convenience entry point for tool handlers using the new
+  ``param: list[str] | str = ""`` signature.
 
-``parse_multi_value`` solves it by accepting BOTH the legacy
-pipe-separated format AND a JSON array. Autodetection is a simple
-``startswith("[")`` test on the trimmed input. Callers that can no
-longer avoid ``|`` in their text just pass a JSON array instead.
-Callers that never had the problem keep sending pipes as before.
+Design
+------
+After the FastMCP 2.14.7 spike (card S1.0) confirmed that Pydantic
+generates a clean ``anyOf [array of string, string]`` schema for
+``list[str] | str`` parameters, every migrated tool can declare its
+multi-value parameters as a Union and let the framework dispatch:
+
+* New MCP clients send a JSON array → handler receives a Python ``list``.
+* Legacy clients send a string → handler receives a ``str`` and routes
+  through ``parse_multi_value(raw, strict_mode=True)`` for explicit
+  parsing or REJECT.
+
+The original idea of an ``@accepts_legacy_string`` decorator was dropped
+because Pydantic Union already provides type discrimination at the
+framework boundary — a small inline ``isinstance`` check, or
+``coerce_to_list_str``, is enough.
+
+The ``strict_mode`` switch defaults to ``False`` during the rollout
+window (Sprints 1-4) so existing 17+ already-migrated callsites keep
+their lenient behaviour. Sprint 5 flips the default to ``True`` after
+all migrations are done and the pre-flip audit (FR7) is recorded.
 """
 
 from __future__ import annotations
@@ -19,37 +42,72 @@ from __future__ import annotations
 import json
 
 
-def parse_multi_value(raw: str | None) -> list[str]:
+def _clean_str_list(values: list[str]) -> list[str]:
+    """Strip whitespace and drop empty strings; preserve original order.
+
+    Centralises the ``[v.strip() for v in xs if v.strip()]`` idiom that
+    today is duplicated inline at every callsite.
+    """
+    return [v.strip() for v in values if isinstance(v, str) and v.strip()]
+
+
+def parse_multi_value(
+    raw: str | list[str] | None,
+    strict_mode: bool = True,
+) -> list[str]:
     """Parse a multi-value MCP tool parameter.
 
-    Supports two formats, autodetected by the input:
+    Accepted input shapes (auto-detected):
 
-    - **Pipe-separated** (legacy): ``"a|b|c"`` — split on ``|``, strip
+    * **list[str]** (preferred / native FastMCP wire format) — items
+      validated as strings; pass-through after :func:`_clean_str_list`.
+    * **JSON-array string** ``'["a","b, c"]'`` — autodetected by a
+      leading ``[`` after ``.strip()``. Decoded via ``json.loads``;
+      every item must be a string. The JSON form is the only way to
+      pass a literal ``|`` or ``,`` inside an item.
+    * **Pipe-separated string** ``"a|b|c"`` — split on ``|``, strip
       each item, drop empties, and replace the literal two-character
-      ``\\n`` escape with a real newline (feature inherited from the
-      legacy ``_split`` helper).
-    - **JSON array**: ``'["a", "b", "c"]'`` — any input whose
-      ``.strip()`` begins with ``[`` takes this path. ``json.loads``
-      is applied and the result must be a list of strings. The JSON
-      form is the only way to pass a literal ``|`` inside an item.
+      ``\\n`` escape with a real newline (legacy behaviour preserved
+      from the original ``_split`` helper).
+    * **None** / empty / whitespace-only → returns ``[]``.
 
     Args:
-        raw: The raw parameter value, typically a single string from
-            an MCP tool argument. ``None`` and empty strings both
-            return ``[]``.
+        raw: The raw parameter value (list, str, or None).
+        strict_mode: Controls how a string with neither ``[`` nor ``|``
+            is treated.
+
+            * ``False`` (default during rollout): treat as a single-token
+              list — return ``[raw.strip()]`` after newline-escape
+              substitution. Preserves the v1 helper contract.
+            * ``True`` (post-Sprint-5 default — see spec 4b429bf0 FR1,
+              FR8): REJECT with :class:`ValueError`. Comma-only input
+              is no longer treated as a separator; callers must pass a
+              JSON array or pipe-separated string.
 
     Returns:
         A list of non-empty stripped strings.
 
     Raises:
-        ValueError: if the JSON path is taken and ``json.loads`` fails
-            ("malformed JSON"), the decoded value is not a list
-            ("expected list"), or any item is not a string
-            ("expected string items"). Callers translate this into
-            the MCP-level error payload.
+        ValueError: Malformed JSON when the JSON path is engaged
+            (``"malformed JSON ..."``); decoded value is not a list
+            (``"expected list ..."``); any item is not a string
+            (``"expected string items ..."``); or the input is a
+            string with neither ``[`` nor ``|`` and ``strict_mode`` is
+            True (``"must be JSON array or pipe-separated ..."``).
     """
     if raw is None:
         return []
+
+    # Native list[str] — preferred wire format from FastMCP Pydantic Union.
+    if isinstance(raw, list):
+        for idx, item in enumerate(raw):
+            if not isinstance(item, str):
+                raise ValueError(
+                    f"malformed multi-value: expected string items, "
+                    f"got {type(item).__name__} at index {idx}"
+                )
+        return _clean_str_list(raw)
+
     if not isinstance(raw, str):
         return []
     if not raw:
@@ -59,7 +117,7 @@ def parse_multi_value(raw: str | None) -> list[str]:
     if not stripped:
         return []
 
-    # JSON path — detected by leading bracket after trim.
+    # JSON array path — leading bracket after trim.
     if stripped.startswith("["):
         try:
             decoded = json.loads(stripped)
@@ -73,24 +131,74 @@ def parse_multi_value(raw: str | None) -> list[str]:
                 f"malformed multi-value: expected list, got "
                 f"{type(decoded).__name__}"
             )
-        out: list[str] = []
         for idx, item in enumerate(decoded):
             if not isinstance(item, str):
                 raise ValueError(
                     f"malformed multi-value: expected string items, "
                     f"got {type(item).__name__} at index {idx}"
                 )
-            cleaned = item.strip()
-            if cleaned:
-                out.append(cleaned)
-        return out
+        return _clean_str_list(decoded)
 
     # Pipe path — legacy behaviour preserved bit-for-bit.
-    return [
-        item.strip().replace("\\n", "\n")
-        for item in raw.split("|")
-        if item.strip()
-    ]
+    if "|" in stripped:
+        return [
+            item.strip().replace("\\n", "\n")
+            for item in raw.split("|")
+            if item.strip()
+        ]
+
+    # No pipe, no bracket — under strict_mode this is a contract violation.
+    if strict_mode:
+        raise ValueError(
+            "multi-value input must be a JSON array (e.g. '[\"a\", \"b\"]') "
+            "or pipe-separated (e.g. 'a|b') — comma-separated input is "
+            "rejected by REJECT policy. Pass a native list[str] argument "
+            "(preferred) or one of the two string formats above."
+        )
+
+    # Lenient mode (rollout window): treat as single-token list,
+    # preserving the v1 helper contract for existing callers.
+    return [stripped.replace("\\n", "\n")]
 
 
-__all__ = ["parse_multi_value"]
+def coerce_to_list_str(
+    value: str | list[str] | None,
+    strict_mode: bool = True,
+) -> list[str]:
+    """Centralised handler-side helper for ``param: list[str] | str = ""``.
+
+    Use at the top of every migrated tool body to coerce the FastMCP
+    Pydantic Union argument into a normalised ``list[str]``::
+
+        async def my_tool(items: list[str] | str = "") -> str:
+            try:
+                items = coerce_to_list_str(items)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid items: {e}"})
+            ...
+
+    If ``value`` is already a list, items are validated as strings and
+    cleaned (strip + drop empties). Otherwise, routed through
+    :func:`parse_multi_value` with ``strict_mode`` (default ``True``
+    here because callers adopting the new Union signature should reject
+    legacy comma input by default; pass ``False`` to opt into the
+    lenient v1 behaviour).
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        for idx, item in enumerate(value):
+            if not isinstance(item, str):
+                raise ValueError(
+                    f"expected string items, got {type(item).__name__} "
+                    f"at index {idx}"
+                )
+        return _clean_str_list(value)
+    return parse_multi_value(value, strict_mode=strict_mode)
+
+
+__all__ = [
+    "parse_multi_value",
+    "coerce_to_list_str",
+    "_clean_str_list",
+]

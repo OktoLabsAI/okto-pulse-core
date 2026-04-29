@@ -1101,6 +1101,12 @@ async def board_spec_analytics(
         select(Card).where(Card.spec_id == spec_id, Card.archived.is_(False))
     )).scalars().all())
 
+    # Spec 233eaad3: coverage_summary com cancelled-card filter — mesmo
+    # cálculo do validation gate (SSOT), agora visível no 3º nível do
+    # Analytics dashboard.
+    from okto_pulse.core.services.analytics_service import spec_coverage_summary
+    coverage_summary = spec_coverage_summary(spec, cards=cards)
+
     # Validation timeline: all submissions (D4), oldest first
     validation_timeline: list[dict] = []
     for v in (spec.validations or []):
@@ -1139,6 +1145,7 @@ async def board_spec_analytics(
         "validation_timeline": validation_timeline,
         "task_validation_summary": _aggregate_task_validation_gate(cards),
         "spec_evaluation": _aggregate_spec_evaluation([spec]),
+        "coverage_summary": coverage_summary,
         "cards_summary": {
             "total": len(cards),
             "by_status": _card_status_breakdown(cards),

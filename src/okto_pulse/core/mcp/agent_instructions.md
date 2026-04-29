@@ -12,7 +12,10 @@ Use this to avoid reading the whole file when you only need one answer.
 | Move a card/spec/sprint/ideation/refinement | **Card Status Transitions** + **Consolidated Context Retrieval** |
 | Work on a card (implementation) | **2.8 Cards** + **2.11 Task Validation Workflow** |
 | Write or evaluate a spec | **2.3 Specs** → **2.3a Detail Saturation** → **2.3b Spec Evaluation** → **2.3c Coverage Progress** |
-| Pass a value that may contain `\|` | **Multi-value Parameters — Two Accepted Formats** |
+| Pass a value that may contain `\|` | **Multi-value Parameters — Three Input Shapes** |
+| Reduce ambiguity at ideation (ASK before advancing) | **2.1 Ideations → Ambiguity-killer protocol** |
+| Run a deep investigation at refinement | **2.2 Refinements → Investigação profunda obrigatória** |
+| Attach KB / mockups directly on a card | **2.8 Cards → Card-level artifact attachment (MANDATORY)** |
 | Create test scenarios / BRs / contracts | **2.4 / 2.5 / 2.6** |
 | Create or evaluate a sprint | **2.10 Sprints** |
 | Report or fix a bug | **2.9 Bug Cards** |
@@ -49,11 +52,24 @@ Every time you start a session or pick up a new task, follow this sequence. Viol
 3. okto_pulse_get_unseen_summary(board_id)               → check mentions + pending work
 4. okto_pulse_get_board_guidelines(board_id)              → read rules set by the board owner
 5. okto_pulse_get_task_context(board_id, card_id, ...)    → FULL context before ANY work
-6. okto_pulse_move_card(status="in_progress")             → signal that work is starting
-7. BEGIN WORK                                             → only now write code / make changes
+6. okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id)     → snapshot relevant mockups onto the card
+7. okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id)   → snapshot relevant KEs onto the card
+8. okto_pulse_move_card(status="in_progress")             → signal that work is starting
+9. BEGIN WORK                                             → only now write code / make changes
 ```
 
-**Never skip steps 5 and 6.** Implementing based on the card title alone leads to spec drift, duplicated work, and contradictory decisions. The `get_task_context` call returns the card, spec requirements, TRs, BRs, test scenarios, API contracts, knowledge bases, mockups, Q&A, and comments — everything you need.
+**Never skip steps 5 and 8.** Implementing based on the card title alone leads to spec drift, duplicated work, and contradictory decisions. The `get_task_context` call returns the card, spec requirements, TRs, BRs, test scenarios, API contracts, knowledge bases, mockups, Q&A, and comments — everything you need.
+
+**Steps 6 and 7 are mandatory before `started → in_progress`** — the implementer (you or a future agent picking up the card) reads `card.knowledge_bases` and `card.screen_mockups` directly, never re-querying the spec. This snapshot prevents drift if the spec is later edited and decouples the card from the spec lifecycle. Use `knowledge_ids` / `screen_ids` to scope a subset when only part of the spec applies. If the card does not need a particular artifact (e.g. a backend-only card has no mockups), skip explicitly — but document the rationale in a comment.
+
+**Per-task KE lifecycle** (introduced in 0.1.6): cards now own their KEs via inline `Card.knowledge_bases` JSONB. The full lifecycle is exposed symmetrically:
+
+- `okto_pulse_add_card_knowledge(board_id, card_id, title, content, ...)` — attach a new KE directly to the card
+- `okto_pulse_list_card_knowledge(board_id, card_id)` — list KEs on the card
+- `okto_pulse_get_card_knowledge(board_id, card_id, knowledge_id)` — fetch one
+- `okto_pulse_update_card_knowledge(board_id, card_id, knowledge_id, ...)` — edit in place
+- `okto_pulse_delete_card_knowledge(board_id, card_id, knowledge_id)` — remove
+- REST mirror: `GET/POST/PATCH/DELETE /api/v1/cards/{card_id}/knowledge[/{kb_id}]` and `GET .../download` for markdown export
 
 **Never move a card to `done` without reading the "Card Status Transitions" section below.** The `done` transition has mandatory parameters (conclusion, completeness, drift) that are enforced by the system. Attempting without them returns an error.
 
@@ -171,23 +187,104 @@ This table is the **single source of truth** for MCP-level errors. Sections belo
 | `"malformed multi-value: expected list, got <type>"` | JSON decoded to a non-list (e.g. an object) | Send an array, not an object. |
 | `"malformed multi-value: expected string items, got <type> at index N"` | JSON array had a non-string item | Every item must be a string. |
 
-## Multi-value Parameters — Two Accepted Formats
+## Multi-value Parameters — Three Input Shapes (post-Sprint-5 of spec 4b429bf0)
 
-Any MCP tool argument that documents itself as "multi-value" (labels, ids, linked_criteria, linked_requirements, test_scenario_ids, tags, card_ids, and the like) is parsed by a single helper that autodetects the input format. Knowing both formats saves round-trips.
+Any MCP tool argument documented as multi-value (labels, ids, linked_criteria, linked_requirements, test_scenario_ids, tags, card_ids, and the like) is now parsed by `okto_pulse.core.mcp.helpers.coerce_to_list_str`. Tools migrated under spec 4b429bf0 declare their parameters as `list[str] | str = ""` so FastMCP's Pydantic Union dispatch picks the right shape at the framework boundary. **Post-Sprint-5 default `strict_mode=True` is now active** — comma-only input is REJECTED globally.
 
-| Format | Example input | When to use |
-|---|---|---|
-| **Pipe-separated** (default) | `"a\|b\|c"` | Simple atomic values that never contain `\|`. Shortest to type. |
-| **JSON array** | `'["str \| None", "outro item"]'` | **Required** when any item contains a literal `\|`: Python union type hints (`str \| None`), regex alternations (`foo\|bar`), markdown tables, or any prose that would be silently split in half by the pipe path. |
+| Shape | Example input | Status | When to use |
+|---|---|---|---|
+| **Native list[str]** (PREFERRED) | `["bug", "frontend"]` | Canonical | New MCP clients; the FastMCP wire format is a JSON array; handler receives a Python `list`. |
+| **JSON-array string** (legacy compat) | `'["str \| None", "outro item"]'` | Accepted | Older MCP clients that can only send strings; required when any item contains a literal `\|` that would be silently split. |
+| **Pipe-separated string** (legacy compat) | `"a\|b\|c"` | Accepted | Older MCP clients with simple atomic values that never contain `\|`. |
+| **Comma-only string** | `"a,b,c"` | **REJECTED** | Use one of the three shapes above. The handler returns `{"error": "Invalid <param>: multi-value input must be a JSON array ... or pipe-separated ... — comma-separated input is rejected by REJECT policy"}`. |
 
-**Detection rule (no flag to set):** if the trimmed input starts with `[`, it's parsed as JSON; otherwise pipe. Both paths strip each item and drop empties. The literal two-character escape `\n` is expanded into a real newline on the pipe path for backward compatibility with the legacy `_split` helper.
+**Detection rules:**
+- If the parameter is delivered as a Python `list`, items are validated as strings then stripped and de-duped of empties — no parsing.
+- If delivered as a string and trimmed input starts with `[`, JSON path.
+- If delivered as a string and contains `|`, pipe path.
+- Otherwise: REJECT (under `strict_mode=True`) or single-item list (lenient mode, rollout-window only).
 
-**Error behaviour:**
-- JSON path with malformed syntax → `"malformed JSON for multi-value param: <reason> (at pos N)"`.
-- JSON path that decoded to a non-list (e.g. `{"a": 1}`) → the parser actually falls through to pipe and treats the whole string as a single-item list. Not an error, but almost never what you want — prefer explicit arrays.
-- JSON path with a non-string item (e.g. `["ok", 42]`) → `"malformed multi-value: expected string items, got int at index 1"`.
+**Error behaviour (returned as `{"error": "Invalid <param>: <message>"}`):**
+- Malformed JSON → `"malformed JSON for multi-value param: <reason> (at pos N)"`.
+- JSON decoded to a non-list (e.g. `{"a": 1}`) → `"malformed multi-value: expected list, got dict"`.
+- JSON array with a non-string item (e.g. `["ok", 42]`) → `"malformed multi-value: expected string items, got int at index 1"`.
+- Comma-only string under `strict_mode=True` → `"multi-value input must be a JSON array ... or pipe-separated ..."`.
 
-**Rule of thumb:** if you even *might* have a `|` inside an item, send a JSON array. Pipe is a convenience, not a contract.
+**Rule of thumb:**
+1. Send a **native list** whenever you can — it never needs parsing and never needs escaping.
+2. If you must send a string, send a **JSON array** when items contain `|` or `,` or any punctuation that risks being a separator.
+3. Pipe is a convenience — never a contract.
+
+### Ideation domain examples (Sprint 4 — migrated)
+
+`okto_pulse_create_ideation.labels` and `okto_pulse_update_ideation.labels` accept native list:
+
+```python
+okto_pulse_create_ideation(
+    board_id="...", title="New idea",
+    labels=["product, ux", "discovery"],   # native list — commas inside survive
+)
+```
+
+### Refinement domain examples (Sprint 3 — migrated)
+
+`okto_pulse_create_refinement.labels` and `okto_pulse_update_refinement.labels` accept native list:
+
+```python
+okto_pulse_create_refinement(
+    board_id="...", ideation_id="...", title="API design refinement",
+    labels=["api, REST", "design"],   # native list — commas inside survive
+)
+```
+
+### Spec domain examples (Sprint 2 — migrated)
+
+Four tools migrated: `okto_pulse_create_spec.labels`, `okto_pulse_update_spec.labels`, `okto_pulse_copy_mockups_to_card.screen_ids`, `okto_pulse_copy_knowledge_to_card.knowledge_ids`.
+
+```python
+okto_pulse_create_spec(
+    board_id="...",
+    title="Auth refactor",
+    labels=["security, OAuth2", "backend"],   # native list — commas inside survive
+)
+okto_pulse_copy_mockups_to_card(
+    board_id="...", spec_id="...", card_id="...",
+    screen_ids=["scr_a", "scr_b"],            # native list — preferred
+)
+```
+
+### Card domain examples (Sprint 1 — migrated)
+
+Both `okto_pulse_create_card` and `okto_pulse_update_card` now accept native list for `labels`, `test_scenario_ids` and (update only) `linked_test_task_ids`:
+
+```python
+# Native list — PREFERRED
+okto_pulse_create_card(
+    board_id="...",
+    title="My card",
+    spec_id="...",
+    labels=["bug, regression", "frontend (React, Vite)"],   # commas inside survive
+    test_scenario_ids=["ts_abc", "ts_def"],
+)
+
+# Legacy string (JSON array) — works for older clients
+okto_pulse_create_card(
+    board_id="...",
+    title="My card",
+    spec_id="...",
+    labels='["bug, regression", "frontend"]',               # commas inside survive
+    test_scenario_ids='["ts_abc", "ts_def"]',
+)
+
+# Legacy string (pipe) — works when no item needs `|` or `,` inside
+okto_pulse_create_card(
+    board_id="...",
+    title="My card",
+    spec_id="...",
+    labels="bug|frontend",
+    test_scenario_ids="ts_abc|ts_def",
+)
+```
 
 ## Destructive Operations — Read Before Calling
 
@@ -203,7 +300,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_delete_attachment` | The file blob. |
 | `okto_pulse_delete_comment` / `okto_pulse_delete_question` | The comment or Q&A item. |
 | `okto_pulse_delete_guideline` | The guideline (globally, if it's a global guideline). |
-| `okto_pulse_delete_spec_skill` / `okto_pulse_delete_spec_knowledge` | The attached skill/knowledge base content. |
+| `okto_pulse_delete_spec_knowledge` | The attached knowledge base content. |
 | `okto_pulse_delete_screen_mockup` | The mockup HTML. |
 | `okto_pulse_remove_business_rule` / `okto_pulse_remove_api_contract` | The BR / contract. Linked tasks remain but the coverage gate may now fail. |
 | `okto_pulse_delete_spec_evaluation` / `okto_pulse_delete_sprint_evaluation` | The evaluation entry (audit trail is lost). |
@@ -296,7 +393,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 ### Sprints
 | Tool | Args | Purpose |
 |------|------|---------|
-| `okto_pulse_create_sprint` | board_id, spec_id, title, description?, test_scenario_ids?, business_rule_ids?, start_date?, end_date?, labels? | Create a sprint for a spec. `test_scenario_ids`, `business_rule_ids`, `labels` are multi-value (pipe OR JSON array). |
+| `okto_pulse_create_sprint` | board_id, spec_id, title, description?, objective?, expected_outcome?, test_scenario_ids?, business_rule_ids?, start_date?, end_date?, labels? | Create a sprint for a spec. `objective` + `expected_outcome` are MANDATORY in practice (see 2.10). Multi-value: `test_scenario_ids`, `business_rule_ids`, `labels` (pipe OR JSON array). |
 | `okto_pulse_get_sprint` | board_id, sprint_id | Full sprint with cards, evaluations, Q&A |
 | `okto_pulse_list_sprints` | board_id, spec_id | List all sprints for a spec |
 | `okto_pulse_update_sprint` | board_id, sprint_id, title?, description?, test_scenario_ids?, business_rule_ids?, labels?, skip_test_coverage?, skip_rules_coverage?, skip_qualitative_validation? | Update sprint fields |
@@ -361,13 +458,6 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_link_task_to_decision` | board_id, spec_id, decision_id, card_id | Feeds the decisions coverage gate. |
 | `okto_pulse_migrate_spec_decisions` | board_id, spec_id | One-shot, idempotent: extracts `## Decisions` bullets from `spec.context` into `spec.decisions[]`. Safe to re-run. |
 
-### Spec Skills
-| Tool | Args | Purpose |
-|------|------|---------|
-| `okto_pulse_create_spec_skill` | board_id, spec_id, name, content, kind? | Attach a reusable skill (coding guideline, architecture pattern, domain knowledge) to a spec. |
-| `okto_pulse_spec_skill_retrieve` / `spec_skill_inspect` / `spec_skill_load` | board_id, spec_id, skill_id | Three-level loader: `retrieve` returns id/summary, `inspect` returns metadata, `load` returns the full content. Use the lightest form that answers your question. |
-| `okto_pulse_delete_spec_skill` | board_id, spec_id, skill_id | **Destructive** — see **Destructive Operations**. |
-
 ### Archive & Restore (whole sub-trees)
 | Tool | Args | Purpose |
 |------|------|---------|
@@ -380,7 +470,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_list_spec_evaluations` | board_id, spec_id | Evaluations history (reverse chronological). |
 | `okto_pulse_get_spec_evaluation` | board_id, spec_id, evaluation_id | Single evaluation detail. |
 | `okto_pulse_list_spec_validations` | board_id, spec_id | Validation gate history, with `active=true` on the current pointer. |
-| `okto_pulse_list_task_validations` / `get_task_validation` / `delete_task_validation` | board_id, card_id[, validation_id] | Task-level validation history. |
+| `okto_pulse_list_task_validations` / `get_task_validation` | board_id, card_id[, validation_id] | Task-level validation history. |
 | `okto_pulse_list_blockers` | board_id | Cards currently blocked by dependencies. |
 
 ### Attachments
@@ -419,20 +509,9 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 
 **Rule — one line:** never call `move_*` on any entity without first calling the matching `get_*_context`. Moving without the full context is a protocol violation (system rejects with a clear error). Same rule applies before `submit_spec_evaluation` and `submit_sprint_evaluation`.
 
-## Startup Protocol
-
-Execute on every session start:
-
-1. `okto_pulse_get_my_profile()` — know your name, objective, permissions
-2. `okto_pulse_list_my_boards()` — get all boards you can access
-3. For each board:
-   - `okto_pulse_get_board_guidelines(board_id)` — load board guidelines FIRST
-   - `okto_pulse_get_unseen_summary(board_id)` — check for new activity
-   - If `unseen_mentions > 0`: `okto_pulse_list_my_mentions(board_id)` — read pending mentions
-   - `okto_pulse_get_board(board_id)` — understand current card state
-4. `okto_pulse_list_board_members(board_id)` — identify peers for collaboration
-
 ## Core Operating Loop
+
+The session-start sequence is the **Pre-Flight Checklist** at the top of this file — the single source of truth. Do not reinvent it here.
 
 ### 1. Check & Process Mentions
 - `okto_pulse_list_my_mentions(board_id)` returns comments and Q&A items where someone wrote @YourName
@@ -508,6 +587,52 @@ Ideations are the starting point. When asked to evaluate or create an ideation:
 5. **Editing only in "draft"**: `okto_pulse_update_ideation` only works when status is `draft`
 6. **Derivations only from "done"**: Specs and refinements can only be created from a `done` ideation (immutable snapshot)
 
+##### 2.1a Ambiguity-killer protocol — ASK before advancing (MANDATORY)
+
+> **Reducing ambiguity is your primary job at ideation.** A user's first description of a problem is almost never enough to design a solution. Your job is to interrogate the request until the intent is unambiguous, the scope is bounded, and your understanding is provably aligned with what the user actually wants. **Do not advance the ideation forward (draft → review → approved → evaluating) while ambiguity is still present.**
+
+**The rule:** if you can answer "yes" to ANY of the questions below, you have ambiguity that MUST be resolved via Q&A before moving the ideation forward.
+
+| Symptom of ambiguity | Example | Required action |
+|---|---|---|
+| The user used a vague verb ("improve", "optimize", "support", "handle") | "improve onboarding" | Ask `ask_ideation_question`: "By 'improve onboarding' do you mean (a) reduce drop-off, (b) shorten time-to-first-value, (c) add new steps, (d) something else? Please pick one or describe a concrete success metric." |
+| The user used a noun without a definition or scope ("the dashboard", "the system", "users") | "users should see their data" | Ask which user role, which surface, which data slice. Use `ask_ideation_choice_question` when there is a finite list. |
+| Multiple plausible interpretations of the same sentence | "send notifications when something changes" | Enumerate the interpretations and let the user pick. |
+| The success criterion is implicit | "make it faster" | Ask for a measurable target (latency p95, throughput, perceived load time, etc.). |
+| The scope boundary is implicit | "fix the auth flow" | Ask which flow (login, signup, password reset, MFA), which client (web, mobile, API). |
+| You're inferring intent from context the user did not state | The user mentioned X, you assumed Y | Verify Y explicitly: "I'm reading this as <Y>. Is that correct, or did you mean <Z>?" |
+| You are about to write `proposed_approach` and you can think of >1 viable approach | "Use Redis or PostgreSQL for the queue?" | Ask via `ask_ideation_choice_question` with the alternatives spelled out and the tradeoffs in the question body. |
+
+**Operational protocol:**
+
+1. After receiving the user's request and BEFORE writing `problem_statement` / `proposed_approach`, do an honest ambiguity scan against the table above.
+2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Use `ask_ideation_choice_question` when the answer is a pick from a known set; use `ask_ideation_question` for open-ended clarifications.
+3. Wait for answers. Do NOT fill the gap with a guess and proceed silently.
+4. After answers come in, re-read the full ideation context (`get_ideation_context`) and confirm your understanding by either:
+   - Updating `problem_statement` / `proposed_approach` to reflect the resolved intent, or
+   - Posting a comment summarizing your understanding ("To confirm I understand: the goal is X, the success metric is Y, out-of-scope is Z. Correct?") and waiting for a 👍 / correction.
+5. Only after the loop converges (no remaining ambiguity in your honest assessment), call `move_ideation(status="review")`.
+
+**Anti-pattern (NEVER do this):**
+
+> User: "Add a feature to export data."
+> Agent: *writes proposed_approach with a CSV exporter, picks an endpoint, defines a permission flag, moves ideation to review*. ❌
+
+The user did not say which data, in which format, for which audience, with which permissions, on which surface. Six implicit decisions were made silently.
+
+**Correct pattern:**
+
+> User: "Add a feature to export data."
+> Agent: posts 5 Q&A items — (1) which entity (cards, specs, full board)? (2) which format (CSV, JSON, PDF, all)? (3) which audience (board owner only, agents, public)? (4) which trigger (manual button, scheduled, API)? (5) which volume (single record vs bulk)? Waits for answers, then writes a `proposed_approach` that cites every answer back. ✅
+
+**When the user pushes back ("just make a reasonable choice"):** that itself is permission, but record it explicitly in a comment ("user delegated decision: chose CSV / manual / board-owner-only based on most common usage pattern. Confirm before spec.") so the decision is auditable. Silent assumptions remain banned.
+
+**Stop conditions — when the ideation is genuinely ready to advance:**
+- Every non-trivial term in `problem_statement` has a definition or scope.
+- Every verb has a measurable target.
+- Every alternative approach you can think of was either picked, rejected with rationale, or explicitly deferred.
+- The user (or their proxy) has acknowledged the resolved version, not just the original request.
+
 #### 2.2 Refinements
 
 Refinements break down a complex ideation into focused areas. Each refinement covers one specific aspect.
@@ -527,6 +652,48 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Use Q&A** to clarify scope and decisions with the user
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
 
+##### 2.2a Investigação profunda obrigatória — refinement is research, not paraphrasing
+
+> **A refinement is NOT a copy of the ideation with prettier wording.** Its purpose is to convert a vetted idea into a concrete blueprint by gathering EVERY piece of factual evidence required to design the solution. The depth of the investigation here directly determines whether the downstream spec is implementable or speculative. Skipping this step compounds — every gap here becomes a question at spec time, every wrong assumption here becomes a bug at implementation time.
+
+**MANDATORY scope of investigation — before moving the refinement to `approved` you MUST exhaust ALL of the following sources that apply to the topic:**
+
+| Source | Tools / actions | When it applies |
+|---|---|---|
+| **Project files** | `Read`, `Glob`, `Grep` on the local working directory; surface relevant configs, manifests, package files, IaC, env templates. | Always — the refinement must reflect the real shape of the codebase, not a generic mental model. |
+| **Source code** | Open the modules, classes, functions, endpoints, schemas, migrations directly impacted. Read enough to know existing contracts, naming, patterns, error handling, and edge cases already covered. | Always — anything the refinement claims about behaviour must be verifiable against current code. |
+| **Knowledge bases (KE)** | `okto_pulse_list_refinement_knowledge`, `okto_pulse_list_spec_knowledge` on the parent ideation/related specs; `okto_pulse_add_refinement_knowledge` to attach new findings. | Whenever there is documented domain knowledge — never paraphrase a KE; cite it and attach if missing. |
+| **Knowledge Graph** | The Stage 2 query set (`get_related_context`, `find_contradictions`, `list_alternatives`) — see "Query Timing — MANDATORY at every stage". | Always — institutional memory MUST be checked for prior decisions on the same topic. |
+| **Mockups & visual artifacts** | `okto_pulse_list_screen_mockups` on the parent ideation; create new mockups via `okto_pulse_add_screen_mockup` when the refinement implies a UI surface. | Whenever a user-facing behaviour is in scope. |
+| **Web research** | External docs of every dependency the refinement touches: framework docs, library API references, RFCs, vendor changelogs, public issue trackers. Use `WebFetch` / `WebSearch` to pull authoritative sources. | Whenever the refinement depends on third-party behaviour, version constraints, protocol details, or industry conventions. |
+| **Online discussions / state of the art** | When choosing between approaches, scan recent (≤24 months) authoritative posts: official forums, GitHub discussions, RFCs in flight, security advisories. | Whenever an architectural trade-off is on the table that the codebase alone cannot decide. |
+| **Runtime evidence** | Logs, telemetry, existing analytics, prior bug cards (`get_learning_from_bugs`), DLQ rows (`kg_dead_letter_list`), KG health (`kg_health`). | Whenever the refinement touches an area with prior production behaviour. |
+| **Stakeholder context** | Open Q&A on the parent ideation/refinement, related spec evaluations, and `list_my_mentions`. | Always — never re-litigate a decision the user already made. |
+
+**Mandatory deliverables in the refinement body** — once the investigation is done, the refinement MUST cite the evidence:
+
+1. **`analysis`** — written narrative of what you found in each applicable source above. Cite file paths with `path:line`, KE titles, KG node ids, URLs, mockup titles. Quote the relevant snippet for each citation. If a source did not apply, state that explicitly ("No matching KE on the parent ideation; KG returned no prior decisions on <topic>").
+2. **`in_scope`** / **`out_of_scope`** — the boundary MUST be derived from the investigation, not from intuition. Each scope item should be traceable back to a source or decision.
+3. **`decisions`** — every architectural choice the refinement locks in. Each decision must reference (a) the alternatives considered, (b) the source that informed the pick, (c) the prior art it extends or supersedes (KG node id when applicable).
+4. **Attached KEs / mockups** — when the investigation produced new reference material (vendor docs, RFCs, design sketches), attach it via `add_refinement_knowledge` / `add_screen_mockup`. Do not leave findings in chat — make them addressable for the downstream spec.
+
+**Anti-patterns — NEVER do these:**
+
+| Anti-pattern | Why it's wrong | What to do instead |
+|---|---|---|
+| Writing the refinement from the ideation text alone, without opening any source file | The refinement claims behaviour the code may not implement | Open the modules in scope; cite `path:line` for every claim. |
+| "I think the library handles this" | Speculation that becomes a bug at impl time | Read the library's docs (`WebFetch`) or its source; cite the page or commit. |
+| Skipping `find_contradictions` because the topic "feels new" | Silent contradiction with prior decisions in the KG | Always run the Stage 2 query set — see "Query Timing". |
+| Citing a source by name without quoting / linking | Reviewers can't verify the claim | Quote the relevant snippet; include URL or `path:line`. |
+| Marking the refinement `approved` while open Q&A items exist | Pushes ambiguity downstream | Resolve every Q&A item first; ambiguity at refinement = exponentially worse at spec/impl. |
+| Generic `analysis` field ("the system works as expected") | Carries no evidence | Replace with concrete findings: file paths, function names, observed behaviour, version numbers, citations. |
+
+**Stop condition — the refinement is genuinely ready when:**
+- A reviewer reading the `analysis` field alone (without opening the codebase) can verify every claim against the cited sources.
+- Every decision in the refinement traces to either a source, a KG node, a Q&A answer, or an explicit user instruction.
+- There are zero unresolved Q&A items on the refinement.
+- New evidence discovered during investigation has been attached as a KE or mockup, not buried in prose.
+
 #### 2.3 Specs — CRITICAL: Analysis Before Populating
 
 > **MANDATORY — Query the KG before moving the spec out of `draft`.** Run the Stage 3 query set: `get_related_context(artifact_id=<spec_id>)`, board-wide `find_contradictions()`, per-major-FR/BR `find_similar_decisions`, and `explain_constraint` for every constraint cited. A spec that proceeds to `review` without this sweep will fail validation audit and is a protocol violation. Resolutions (SUPERSEDE targets, contradiction fixes, constraint origins) must be cited in the spec itself.
@@ -542,9 +709,8 @@ Refinements break down a complex ideation into focused areas. Each refinement co
    - Technical constraints (language, frameworks, dependencies)
    - File structure and naming conventions
 3. **Check knowledge bases**: Use `okto_pulse_list_spec_knowledge` and `okto_pulse_get_spec_knowledge` to read attached reference documents, API specs, or design docs
-4. **Load skills**: Use `okto_pulse_spec_skill_retrieve`, `okto_pulse_spec_skill_inspect`, and `okto_pulse_spec_skill_load` to read any attached coding guidelines, architecture patterns, or domain knowledge
-5. **Review Q&A history**: Read all Q&A on the spec AND on the parent ideation/refinement — decisions made during Q&A are binding context
-6. **Then write requirements**:
+4. **Review Q&A history**: Read all Q&A on the spec AND on the parent ideation/refinement — decisions made during Q&A are binding context
+5. **Then write requirements**:
    - **Functional requirements**: Specific, testable behaviors. Reference real components, endpoints, or modules from the codebase when applicable.
    - **Technical requirements**: Constraints derived from actual codebase analysis — not generic "best practices" but specific to this project's stack, patterns, and architecture.
    - **Acceptance criteria**: Verifiable conditions that reference real test scenarios, endpoints, or user flows.
@@ -615,7 +781,7 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
 5. If coverage passes, the gate computes `outcome` atomically:
    - `outcome=failed` if ANY threshold is violated OR `recommendation=reject`
    - `outcome=success` ONLY if all thresholds pass AND `recommendation=approve`
-6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock** — you can no longer call `update_spec`, `add_business_rule`, `add_api_contract`, `add_test_scenario`, mockups, knowledge, or skills tools. `SpecLockedError` is raised until the lock is released.
+6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock** — you can no longer call `update_spec`, `add_business_rule`, `add_api_contract`, `add_test_scenario`, mockups, or knowledge tools. `SpecLockedError` is raised until the lock is released.
 7. To edit a locked spec, move it back to `draft` or `approved` via `okto_pulse_move_spec`. Both transitions atomically clear `current_validation_id` (the lock is released) but preserve `spec.validations` history. You will need to re-submit validation before the spec can advance again.
 
 **Thresholds and dimensions.** The board defines thresholds (default 80/80/30, more rigorous than the Task Validation Gate's 70/80/50):
@@ -1008,6 +1174,43 @@ Applies equally to:
 For assets that are not HTML-renderable UI (actual screenshots, PDFs, diagrams from design tools, reference images), use `okto_pulse_upload_attachment` — not a mockup, not ASCII. Attachments are first-class on cards, specs, ideations, refinements with the same addressability properties.
 
 #### 2.8 Cards (Tasks)
+
+##### Card-level artifact attachment (MANDATORY)
+
+> **A card must be self-contained.** Any agent or human picking up a card must be able to execute it from the card alone, without re-querying the parent spec, without hunting through KEs scoped at the spec level, and without rebuilding context that already exists. **Whenever a task depends on an existing knowledge base (KE) or mockup, that artifact MUST be attached directly to the task.**
+
+This is a hard rule, enforced operationally by the implementer's pre-flight (steps 6 and 7 of the **Pre-Flight Checklist**) and validated at task-validation time. An "implementer reading the card description and finding only a vague reference to 'see the spec'" is the failure mode this rule exists to prevent.
+
+**Three attachment paths — pick the right one:**
+
+| Source of the artifact | Tool | When to use |
+|---|---|---|
+| KE / mockup already exists on the parent spec | `okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id, knowledge_ids?)` / `okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id, screen_ids?)` | Default path — the spec already curated the artifact. Pass `knowledge_ids` / `screen_ids` to scope a subset; omit them to copy all. **Snapshot is per-card** — later edits to the spec's KE do NOT propagate, which is intentional (decoupled card lifecycle). |
+| KE specific to this task that should NOT live on the spec | `okto_pulse_add_card_knowledge(board_id, card_id, title, content, ...)` | Use when the knowledge is task-scoped (e.g. a debugging note, a runtime artefact relevant to one card). Lifecycle is fully exposed: `list_card_knowledge`, `get_card_knowledge`, `update_card_knowledge`, `delete_card_knowledge`. |
+| Mockup specific to this card | `okto_pulse_add_screen_mockup(board_id, card_id, ..., entity_type="card")` | Use for card-scoped UI deliverables, bug repro screenshots, or per-card layout variants. Annotate via `annotate_mockup`. |
+
+**Mandatory before moving the card to `in_progress`:**
+
+1. Run `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true)` and inspect what is already attached.
+2. For each KE / mockup the task needs, decide:
+   - **Already on the card** → no action.
+   - **On the parent spec, relevant to this task** → call `copy_knowledge_to_card` / `copy_mockups_to_card`. Use `knowledge_ids` / `screen_ids` to attach exactly what the task needs (not the full spec dump).
+   - **Not yet captured anywhere** → create it with `add_card_knowledge` (task-scoped) or escalate to spec via `add_spec_knowledge` then copy down (when other tasks will need it too).
+3. Skip explicitly when the task genuinely needs no artifact (e.g. backend-only with no domain doc) — but post a one-line comment justifying the skip ("backend refactor; no KE or mockup applicable").
+
+**Bug cards inherit the same rule.** A bug card must carry the KE/mockup that documents the expected behaviour AND, when applicable, the screenshot/log/trace evidence of the observed behaviour. Use `add_card_knowledge` for the evidence and `upload_attachment` for raw files (logs, screenshots).
+
+**Anti-patterns — NEVER do these:**
+
+| Anti-pattern | Why it's wrong | What to do instead |
+|---|---|---|
+| Card description says "see KE 'API contract' on the spec" | Forces the implementer to re-query the spec; the snapshot guarantees of `copy_knowledge_to_card` are lost | Call `copy_knowledge_to_card` and reference the now-card-local KE id in the description. |
+| Card description embeds a giant code block of the KE content | Duplication without addressability; can't be updated; not searchable | Attach via `add_card_knowledge` or `copy_knowledge_to_card`. Reference by id in the description. |
+| Card on a UI task with zero attached mockups | Implementer must guess layout; drift guaranteed | `copy_mockups_to_card` for every screen the card touches. |
+| Implementer skips step 6/7 of Pre-Flight and starts coding | Blind execution against an incomplete card | Refuse to start — go back, attach artifacts, then move to `in_progress`. |
+| `copy_*_to_card` called without filtering when only 1-2 of 10 KEs apply | Card becomes noisy; reviewer drowns in irrelevant context | Pass `knowledge_ids` / `screen_ids` to scope the snapshot. |
+
+**Verification before claiming completion:** at task-validation time (`submit_task_validation`), the validator should check that every linked test scenario, BR, contract, KE and mockup the implementation depends on was either present on the card from the start or explicitly added during execution. A card that closed with `completeness=100` but had no KE/mockup attached for a task that clearly required one is a drift signal — flag it in `general_justification`.
 
 **Governance rules (enforced by the system):**
 
@@ -1852,6 +2055,35 @@ Card creation does NOT auto-propagate. Use `okto_pulse_copy_mockups_to_card` and
 ### Best practice:
 Always use create/derive with parent ID instead of creating orphan entities. This ensures context, decisions, and visual artifacts flow through the pipeline.
 
+## Multi-field tool calls — pattern correto vs anti-pattern
+
+The tool-use harness wrapping the agent has a parser bug: literal `<parameter>`, `</parameter>`, `<function_calls>`, `</function_calls>`, `<invoke>` and `</invoke>` tags inside string content collapse into the outer XML stream, dropping the rest of the value and producing null fields downstream. The server cannot recover the lost information — payload arrives already corrupted.
+
+The server emits a structured warning on the `okto_pulse.mcp.parser_safety` logger whenever a string argument contains a literal protocol tag, with payload:
+
+- `event = "mcp.tool.suspicious_xml_field"`
+- `tool_name`, `field_name`, `value_preview` (first 200 chars)
+
+Use that log for forensics when a tool call mysteriously stored null/truncated content.
+
+### Anti-pattern (NEVER do this)
+
+Composing nested XML by hand inside a string field:
+
+> calling `okto_pulse_update_card` with `details = "...<parameter name=\"foo\">x</parameter>..."` — the parser will collapse the inner `</parameter>` and the outer call breaks.
+
+### Pattern A — Single call, plain JSON values (preferred)
+
+Pass each parameter as a top-level JSON value. No nested XML composition. The Anthropic JSON tool-use mode handles arbitrary string content safely as long as it does not contain literal protocol tags.
+
+### Pattern B — Multiple calls (when A doesn't fit)
+
+Split the work across calls: `create_X(title=...)` followed by `update_X(field=value)` and `add_Y(content=...)` for each field separately.
+
+### Pattern C — HTML escape when you must cite tags literally
+
+When the legitimate content needs to mention `<parameter>` literally (specs about tooling, this very document), escape it as `&lt;parameter&gt;`. The detection regex matches only literal opening `<` followed by a protocol keyword, not the HTML entity.
+
 ## Knowledge Graph — Consolidation, Query, and Discovery
 
 The Okto Pulse platform includes an incremental knowledge graph (KG) layer that captures decisions, criteria, constraints, learnings, and relationships extracted from board artifacts (specs, sprints, Q&A). The KG is embedded (Kuzu + SQLite) and runs in the same process — no external infrastructure.
@@ -1862,6 +2094,15 @@ The Okto Pulse platform includes an incremental knowledge graph (KG) layer that 
 - **Global discovery meta-graph** at `~/.okto-pulse/global/discovery.kuzu` — board summaries, topic clusters, canonical entities (digest-only, no sensitive content)
 - **SQLite operational tables**: `consolidation_queue` (pending triggers), `consolidation_audit` (session history), `kuzu_node_refs` (back-references for undo), `global_update_outbox` (eventual consistency to global layer)
 - **Agent-as-LLM premise**: the platform NEVER invokes LLM. All cognitive work (extraction, reasoning, reconciliation decisions) is done by YOU, the code agent. The platform provides deterministic primitives and hints.
+
+#### Auto-extraction trigger (spec 3d907a87)
+
+`CognitiveExtractionHandler` (registered on `card.moved`) emits structured `cognitive.extraction.*.candidate` log lines whenever a card transitions to `done`:
+
+- **Bug cards** with `action_plan ≥ 50 chars` → fires the Learning extractor. **Opt-in to LLM**: requires `Board.settings.cognitive_llm_config = {provider, model, api_key_env, max_tokens, timeout_s}`. When the config is absent, Learning is skipped with `cognitive.extraction.learning.skipped reason=no_llm_config`.
+- **Cards with `spec_id`** → fires the Alternative + Assumption regex extractors over `spec.context`. These run regardless of LLM config (deterministic).
+
+The handler does NOT push candidates into Kuzu directly; the structured log is the v1 surface for downstream cognitive consumers (the cognitive agent or a follow-up worker registered in this spec's out-of-scope list). The eventual persistence path remains the standard `begin_consolidation → add_node_candidate → commit_consolidation` flow.
 
 ### Consolidation Primitives (7 tools)
 
@@ -1969,6 +2210,18 @@ Flexible query tools for the ~20% of cases that don't fit the intent-based tools
 - Max rows: 1000 default, 10000 max.
 - Rate limit: **30 queries/min per agent** across all KG tools (primario + power combined).
 - Cypher injection: blacklist keywords (CREATE/DELETE/SET/MERGE/DROP) are rejected, comments stripped, unicode normalised.
+
+**Hit-counting parity with `kg_query_natural` (spec 28583299, Ideação #4):**
+`kg_query_cypher` increments the per-node hit counter for every node it returns, the same way `kg_query_natural` does for its top-K. The counter feeds `relevance_score` over time and biases ranking toward nodes the agents actually consult. To get credit for a hit, **shape the RETURN so the result row carries the node's id**:
+
+- `RETURN n.id` — the column named `id` is detected directly.
+- `RETURN n.id AS node_id` — alias works too (`node_id`/`*_id`/`*.id`).
+- `RETURN n` — when the row carries a UUID-like scalar anywhere, it's recognised as a node id.
+- `RETURN labels(n) AS node_type, n.id AS id` — pair labels with the id so the counter tags the right node type instead of `unknown`.
+
+Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment the counter — there's no row-level node id to attribute to. That's intentional: aggregations are diagnostic, not consumption.
+
+**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at` and `nodes_recomputed_in_last_tick`, populated by the daily APScheduler tick (03:00 UTC). When `last_decay_tick_at` is `null` the daily worker hasn't run yet on this deployment — score freshness is bounded by the on-read `_apply_decay_reorder` until the first tick lands.
 
 **When a rate-limit or timeout fires, here is how to handle it:**
 
@@ -2097,6 +2350,217 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
 | Bug fix without Learning consolidation | Fix is in commit history but not the KG. | Future investigations of similar bugs re-run the same diagnosis. |
 | Backlog in `consolidation_queue` > 48h | N artifacts to consolidate, each needing its own session. | Incremental consolidation is O(1) per artifact; backfill is O(N) of expensive extraction work and destroys trust in the "queryable memory" contract. |
 
+### Automatic consolidation triggers — domain events you don't have to fire by hand
+
+Most consolidation enqueues happen automatically. The internal event bus
+(`core/events/`) emits typed `DomainEvent`s on state changes; the
+`ConsolidationEnqueuer` handler subscribes to all of them and inserts
+the matching `ConsolidationQueue` row with natural dedup. You should
+understand which mutations trigger which events so you can predict KG
+freshness — and so you don't try to "force" an enqueue that the system
+already did.
+
+**The 17 event types that auto-enqueue** (since spec 4007e4a3, Ideação #3):
+
+| Event | Fired by | Re-enqueues | Priority |
+|---|---|---|---|
+| `card.created` / `card.restored` | card lifecycle methods | card | normal |
+| `card.moved` | `move_card(status=...)` (any state transition) | **card AND parent spec** (dual target) | normal |
+| `card.conclusion_added` | `submit_task_validation` with `conclusion_text` non-empty | **card AND parent spec** (dual target) | normal |
+| `card.cancelled` | `move_card(status='cancelled')` | card | **high** |
+| `card.linked_to_spec` | `link_card(spec_id, card_id)` | **spec** (not card) | normal |
+| `card.unlinked_from_spec` | `unlink_card(card_id)` | **spec** (not card) | normal |
+| `spec.created` / `spec.moved` | spec lifecycle methods | spec | normal |
+| `spec.version_bumped` | `update_spec` when content_fields change (FRs/TRs/ACs/context/description) | spec | **high** |
+| `spec.semantic_changed` | `update_spec` when semantic_fields change (decisions/business_rules/api_contracts/test_scenarios/screen_mockups) **and** version was NOT bumped | spec | normal |
+| `refinement.semantic_changed` | `update_refinement` (any field) | refinement (no-op extractor today) | normal |
+| `sprint.created` / `sprint.moved` / `sprint.closed` | sprint lifecycle methods | sprint | normal |
+| `ideation.derived_to_spec` / `refinement.derived_to_spec` | derivation methods | spec | normal |
+
+**Read this carefully — the four 0.1.5+ semantic events are easy to miss:**
+
+- `spec.semantic_changed` fires when you mutate decisions / business_rules /
+  api_contracts / test_scenarios / screen_mockups via `update_spec` (or
+  any of the `add_decision`, `add_business_rule`, `add_test_scenario`,
+  etc. tools that converge to `update_spec` internally). It does **not**
+  bump the spec version, but it **does** re-enqueue the spec for KG
+  re-extraction. Without this event, those mutations would silently
+  drift from the KG until the next content change.
+- `refinement.semantic_changed` fires on any refinement update.
+  Refinements have a small surface, so we treat any mutation as
+  KG-relevant. The worker currently no-ops on refinement (graceful
+  fallback) — the queue entry is logged + cleared without touching the
+  KG. Refinement extraction is a follow-up.
+- `card.linked_to_spec` and `card.unlinked_from_spec` re-enqueue the
+  **spec**, not the card. The card extractor doesn't reference
+  `spec_id`, so a card re-enqueue would be wasted work; the spec
+  extractor reflects the updated cards list.
+- **`card.moved` and `card.conclusion_added` are dual-target** (since
+  spec 4007e4a3, Ideação #3): each one inserts **two** queue rows — one
+  for the card itself (its `status` / `conclusions` are extracted as
+  node properties) and one for the parent spec (whose aggregate KG view
+  reflects the cards' lifecycle state). Orphan cards (no `spec_id`)
+  skip the spec-side enqueue gracefully and log
+  `kg.consolidation.reenqueue.skipped reason=orphan_card`.
+- **Manual edit preservation in Kùzu** (since v0.3.2 schema, Ideação #3):
+  every node carries a `human_curated BOOLEAN` flag (default FALSE,
+  agent-managed). When a curator edits a node directly via back-office
+  tooling and sets the flag to TRUE, the next agent UPDATE for that
+  node converts to NOOP — the node's properties are preserved and the
+  candidate maps to the existing kuzu_node_id so downstream edges still
+  resolve. Counter `kg.consolidation.manual_edit_preserved` is emitted.
+  To force an overwrite, the agent passes a reconciliation hint with
+  `confidence >= 1.0` (extension-point proxy for an explicit override);
+  the new node defaults back to `human_curated=FALSE` and counter
+  `kg.consolidation.reset_manual_flag` is emitted. The agent should
+  always include a justification narrative in the commit when forcing
+  an override.
+
+**Dedup is natural.** ConsolidationEnqueuer skips the insert when a
+pending/claimed row already exists for `(board_id, artifact_type,
+artifact_id)`. So a burst of 5 `add_decision` calls produces 1 queue
+row, not 5. You don't need to debounce on the caller side.
+
+**Priority routing.** Only `card.cancelled` and `spec.version_bumped`
+enqueue with priority `high`. The semantic and lifecycle events
+(including `card.moved`, `card.conclusion_added`, the four
+`*.semantic_changed` / `card.linked_to_spec` / `card.unlinked_from_spec`)
+route to `normal` — they reflect routine content evolution, not
+structural breaks.
+
+**Outbox guarantees.** Events are inserted in the same DB transaction as
+the data mutation. If the caller rolls back, the events disappear too.
+A successful commit guarantees the queue row will eventually appear (the
+dispatcher worker picks up pending event handler executions and runs
+them with retry + DLQ).
+
+### KG schema migration self-heal
+
+Spec 818748f2 (board Okto Pulse Evolution). Boards bootstrapped before
+v0.3.2 may lack the `human_curated` and/or `last_recomputed_at` columns
+on Kùzu node tables. Symptom: consolidations fail with
+`Binder exception: Cannot find property X for n` and the silent log
+`kg.compensate_sync.failed` mentions migrate-schema.
+
+**Auto-heal (default, zero-touch).** `BoardConnection.__init__` runs
+`_board_needs_post_v030_migration` on every open — if any v0.3.1+ column
+is missing, `_migrate_board_schema` is dispatched in the same lock window
+before the consolidation can hit the binder exception. The cache add
+to `_BOOTSTRAPPED_BOARDS` happens AFTER the migration (BR3 — never
+cache a broken state).
+
+**Manual via MCP tool (use this when you see the binder exception
+pre-restart, or when log warning `kg.compensate_sync.failed` references
+migrate-schema):**
+
+```
+okto_pulse_kg_migrate_schema(board_id="<id>")
+```
+
+For every board on the server:
+```
+okto_pulse_kg_migrate_schema(all_boards=true)
+```
+
+Idempotent — re-running on a migrated board returns
+`{migrated: true, columns_added: {}, errors: []}` (no-op).
+
+**REST gemellar (for human operators / dashboards):**
+`POST /api/kg/{board_id}/migrate-schema` — same payload as the MCP tool.
+
+**CLI substitute (project does not ship Click; use Python directly):**
+```
+python -m okto_pulse.tools.kg_migrate_schema --board <id>
+python -m okto_pulse.tools.kg_migrate_schema --all-boards
+```
+
+**NUNCA delete `graph.kuzu`** — the directory holds the entire KG
+history of the board (decisions, learnings, contradictions). The
+deprecated error message used to suggest this; the suggestion was
+removed in spec 818748f2 (FR4) — current messages always orient to
+migrate-schema.
+
+### KG health and operational signals
+
+Spec 20f67c2a (Ideação #5) introduced an operational pulse so you don't
+fly blind on the KG. Two surfaces ship today; **agents always use the MCP
+tool** — the REST endpoint is for human operators / dashboards.
+
+- **MCP tool (use this):** `okto_pulse_kg_health(board_id)` — auth and
+  board-access checks happen automatically via your MCP session. Returns
+  JSON with 12 fields: `queue_depth`, `oldest_pending_age_s`,
+  `dead_letter_count`, `total_nodes`, `default_score_count`,
+  `default_score_ratio`, `avg_relevance`, `top_disconnected_nodes`,
+  `schema_version` (string, currently "1.0"), `contradict_warn_count`,
+  `last_decay_tick_at` (ISO datetime or `null`), `nodes_recomputed_in_last_tick`
+  (int). Computed in-process; cheap to poll a few times per minute when
+  diagnosing.
+
+  **Reading the new tick fields (spec 28583299, Ideação #4):**
+  - `last_decay_tick_at` — when the daily APScheduler tick last completed.
+    `null` means no tick has run yet on this deployment (fresh boot).
+    A value older than 24h plus the cron's 03:00 UTC slot suggests the
+    tick is silently failing — check the dispatcher dead-letter and
+    structured log `kg.relevance.tick.completed`.
+  - `nodes_recomputed_in_last_tick` — count of nodes the most recent tick
+    touched. Sustained `0` while `total_nodes > 0` means the staleness
+    cutoff (`KG_DECAY_TICK_STALENESS_DAYS`, default 7d) hasn't been
+    reached for any node — usually fine on a quiet board, suspicious on
+    a busy one.
+- **REST endpoint (operator use):** `GET /api/v1/kg/health?board_id=<X>`
+  returns the same shape under bearer-token auth. Agents do not have the
+  token nor the host port — call the MCP tool above instead. Operators
+  with a session token can use it from a browser or HTTP client.
+
+**Two scoring guarantees from the same spec, useful when reading the
+metrics:**
+
+1. **`contradict_penalty` is now capped at 0.5** before reaching
+   `_compute_relevance` (`scoring.CONTRADICT_PENALTY_CAP`). A node with
+   5+ incoming `:contradicts` edges no longer gets silently zeroed via
+   the `[0, 1.5]` clamp. The structured log `kg.scoring.contradict_penalty_capped`
+   fires whenever the cap kicks in, and `contradict_warn_count` in the
+   health response counts those events per board. A high
+   `contradict_warn_count` is a signal that some spec section is overly
+   contradictory and the curator should review it.
+2. **`relevance_score` decay is reapplied on read** in `find_by_topic`
+   (`kuzu_graph_store.py`) via `_apply_decay_reorder`. The Cypher
+   `ORDER BY relevance_score DESC` clause is preserved (BR4) — the
+   helper over-fetches a pool of `top_k * DECAY_REORDER_POOL_MULTIPLIER`
+   rows and reorders in Python so a stale-but-high-scoring node doesn't
+   outrank a fresh-and-active one.
+
+**When to consult `/api/v1/kg/health`:**
+
+- Before kicking off a long consolidation cycle: if `queue_depth > 100`
+  or `oldest_pending_age_s > 3600`, the consolidation worker is behind
+  and your enqueue may sit pending for a while.
+- After flagging contradictions: spike in `contradict_warn_count`
+  between two snapshots tells you the curator probably needs to
+  reconcile a spec section.
+- When debugging stale ranking: `default_score_ratio > 0.7` (a WARN log
+  also fires) means most nodes are clustered around the neutral 0.5 —
+  scoring isn't differentiating yet, search results will look flat.
+- Periodically as a smoke test: `total_nodes` + `avg_relevance` jumping
+  unexpectedly between snapshots can flag a bad consolidation that
+  flooded the board with low-quality nodes.
+
+#### KG Health UI (frontend, spec d754d004)
+
+The same 12 fields are also surfaced to human operators via a
+fullscreen overlay in the community frontend
+(`okto_labs_pulse_community/frontend/src/components/knowledge/KGHealthView.tsx`).
+Operators reach it via the Header → Menu → "KG Health" entry, which
+opens `/kg-health`. The view polls `GET /api/v1/kg/health` every 30s,
+pauses while the tab is hidden, surfaces a red banner when
+`schema_version` drifts from `EXPECTED_SCHEMA_VERSION` in
+`frontend/src/constants/kg.ts`, and an amber badge when
+`last_decay_tick_at` is more than 24h old. Operational actions
+(re-enqueue, reprocess dead letter, force snapshot) are intentionally
+deferred to a future ideation — the MVP is visualization-only.
+
+Agents do not consume this UI. Always call the MCP tool above.
+
 ### Why consolidation discipline matters — the one-liner
 
 An unconsolidated board is a board with amnesia. Every skipped trigger compounds: next session starts from zero, `find_similar_decisions` returns noise, `find_contradictions` misses silent conflicts, `get_learning_from_bugs` returns nothing, and right-to-erasure becomes incomplete because un-consolidated decisions still live as raw text. All specific triggers, patterns, anti-patterns and per-skipped-trigger consequences are in "When and How to Consolidate — Mandatory Triggers" above — do not duplicate them elsewhere.
@@ -2174,6 +2638,136 @@ If an existing Decision matches intent, DO NOT create a new one:
 | `validates` | Cognitive agent (you) | Learning → Bug the learning was extracted from. |
 
 Attempting to emit a Layer 1 edge via `kg_add_edge_candidate` returns `layer_violation`. That's by design — it keeps the cognitive agent from generating noisy entity links.
+
+### Test theater prevention — required evidence gate (Wave 2 NC-9, spec 873e98cc)
+
+`okto_pulse_update_test_scenario_status` agora exige **evidence estruturada** quando você marca um scenario como `automated`, `passed`, ou `failed` (default — gate ATIVO):
+
+| Status | Evidence required |
+|---|---|
+| `draft`, `ready` | none (intent declarado) |
+| `automated` | `test_file_path` + `test_function` |
+| `passed`, `failed` | `last_run_at` + (`output_snippet` OR `test_run_id`) |
+
+Pass evidence como JSON string no param `evidence`:
+
+```python
+okto_pulse_update_test_scenario_status(
+    board_id="...",
+    spec_id="...",
+    scenario_id="ts_abc123",
+    status="passed",
+    evidence='{"last_run_at":"2026-04-27T20:00:00","output_snippet":"1 passed","test_file_path":"tests/foo.py","test_function":"test_bar"}',
+)
+```
+
+**Sem evidence** com status alvo bloqueante → resposta `{"error": "evidence_required", "required": [...], "message": "..."}`. Sua tool call falha; cenário fica no status anterior.
+
+**Pattern recomendado:** rode o teste real (subprocess pytest), capture output (truncate 500 chars), passe `output_snippet` + `test_file_path` + `test_function` + `last_run_at` (ISO).
+
+**Anti-pattern explicitado:** se você está prestes a marcar `passed` sem ter rodado o teste, **pare**. Use `status='ready'` que documenta intent sem mentir sobre evidência.
+
+**Bypass via setting:** board admins podem ativar `skip_test_evidence_global=true` no Board Settings panel — aceita scenarios sem evidence + log forensics `test_scenario.evidence_gate_skipped` para análise post-fato. Banner amber não-dismissable aparece no top do board para awareness contínua.
+
+**Defesa em profundidade:** `move_sprint(status=closed)` também valida que scenarios passed/automated do sprint têm evidence. Se algum não tem (E skip OFF), close é bloqueado com `error="sprint_has_evidenceless_passed_scenarios"`.
+
+Memória relacionada: `feedback_no_test_theater.md` agora aponta para este gate como solução estrutural.
+
+### Dead Letter Inspector — listar DLQ rows via REST + MCP (Wave 2 NC 1ede3471, spec ed17b1fe)
+
+Quando você (agente) detecta `dead_letter_count > 0` via `okto_pulse_kg_health` e precisa investigar, use a tool gemellar:
+
+```
+okto_pulse_kg_dead_letter_list(board_id="<uuid>", limit=50, offset=0)
+```
+
+Retorna JSON `{rows, total, limit, offset}`. Cada row inclui o array `errors` completo do schema TR16 — uma entrada por tentativa com `error_type`, `message`, `occurred_at`, `traceback` (opcional). Use isso para:
+- Identificar quais artifacts falharam consistentemente (mesma mensagem em N tentativas → bug determinístico, não transient)
+- Triagem por error_type (KuzuLockError vs IntegrityError vs UnknownError)
+- Decidir se o problema é transient (variação de mensagem entre tentativas) ou bug real (mesma mensagem)
+
+REST gemelar: `GET /api/v1/kg/queue/dead-letter?board_id=<uuid>&limit=50&offset=0`. Frontend operador acessa via Settings panel → Event Queue tab → "Open dead-letter inspector" (modal com tabela + expand row para errors history).
+
+**READ-only no MVP.** Reprocess deferred para v2 (precisa role gate + audit). Para reprocess manual hoje: SQL direto em `consolidation_outbox` ou wipe da DLQ row para forçar re-enqueue na próxima trigger event.
+
+### KG decay tick controllability — interval, manual trigger, run-on-save (Wave 2 NC f9732afc, spec 54399628)
+
+The KG decay tick is now operator-controllable end-to-end. The cron at
+03:00 UTC was replaced by an `IntervalTrigger` configured by a
+persisted setting + hot-reload via `APScheduler.reschedule_job`.
+
+**Three settings persisted in `app_settings`** (`okto-pulse kg`/UI Settings):
+
+| Setting | Range | Default | Effect |
+|---|---|---|---|
+| `kg_decay_tick_interval_minutes` | 5–10080 | 1440 | How often the cron fires (5 min to 7 d) |
+| `kg_decay_tick_staleness_days` | 1–365 | 7 | Only nodes with `last_recomputed_at` older than N days are recomputed |
+| `kg_decay_tick_max_age_days` | 0–365 | 0 | 0 = no cap. > 0 forces recompute even of fresh nodes older than N days |
+
+Mudar qualquer destes via `PUT /api/v1/settings/runtime` é **hot-reload** —
+não há `restart_required` nesses 3 fields. A mudança de `interval_minutes`
+chama `scheduler.reschedule_job("kg_daily_tick", trigger=IntervalTrigger(...))`
+e emite structured log `kg.tick.rescheduled`.
+
+**Manual trigger via REST + MCP gemellar:**
+
+- REST: `POST /api/v1/kg/tick/run-now` body `{board_id?: uuid, force_full_rebuild?: bool}`. Response 202 `{tick_id, status: "running", scheduled_at}`. Response 409 `{detail: {error: "tick_already_running", ...}}` quando o advisory lock `kg_daily_tick` já está capturado (cron OU outro manual trigger).
+- MCP: `okto_pulse_kg_tick_run_now(board_id, force_full_rebuild)` retorna o mesmo payload JSON. Use quando você (agente) acabou de re-escalar nodes em massa e quer scoring fresh imediato.
+
+**`force_full_rebuild=true`** zera `last_recomputed_at` de todos nodes do
+escopo (board específico se `board_id` fornecido; todos boards caso
+contrário) ANTES do tick — força recompute completo ignorando staleness
+threshold. Disponível **apenas** via endpoint manual; nunca via setting
+persistido (evita full-rebuild noturno acidental).
+
+**UI controls:**
+- `RuntimeSettingsPanel` ganhou tab "Decay Tick" com os 3 campos + botão "Save & run now" (verde, com Play icon) que persiste settings + dispara tick imediato.
+- `KGHealthView::SchemaTickCard` ganhou botão "Run tick now" abaixo de "Nodes recomputed". 4 estados: idle (Play icon), running (Loader2 spin disabled), success (toast + handleRefresh), 409 (toast amber "Tick already running").
+
+**Audit logs estruturados:**
+- `kg.tick.rescheduled` — interval mudou, scheduler.reschedule_job chamado
+- `kg.tick.reschedule_skipped` (reason=no_scheduler) — scheduler singleton ausente (test context)
+- `kg.tick.reschedule_failed` — exception ao chamar reschedule_job
+- `kg.tick.manual_triggered` — endpoint manual ou MCP tool disparou tick (campos: tick_id, triggered_by_user_id, board_id, force_full_rebuild)
+
+### Source-artifact-ref dedup — natural identity invariant (NC-8, spec 7f23535f)
+
+Since spec 7f23535f, the commit pipeline enforces a strict invariant:
+**at most one Kuzu node per `(node_type, source_artifact_ref)` combination
+per board**. The branch ADD of `_do_kuzu_commit` consults
+`_lookup_existing_node` before generating a fresh UUID. When a prior
+session already wrote a node for the same artifact, the current commit
+reuses it (UPDATE attrs unless `human_curated=true`) instead of spawning
+a duplicate.
+
+What this means in practice:
+
+- **Re-consolidation is safe.** Calling `commit_consolidation` twice for
+  the same spec (e.g., after `spec.semantic_changed` or
+  `spec.version_bumped`) produces 1 node, not 2. Title/content/embedding
+  attributes refresh on the existing node; historical fields
+  (`created_at`, `query_hits`, `relevance_score`,
+  `source_session_id`, `created_by_agent`, `human_curated`) are
+  preserved.
+- **`human_curated` is honoured in the dedup branch too.** Marking a
+  node `human_curated=true` via back-office locks its content against
+  automatic re-consolidation refresh — same guarantee as the explicit
+  UPDATE branch.
+- **Embedding stays at creation-time value.** Kùzu HNSW indexes own the
+  `embedding` column and reject direct `SET`. Re-embedding is therefore
+  out of scope for this branch; a follow-up worker can rebuild stale
+  embeddings in batch when the title/content drift becomes large.
+- **Tech-mention Entities (`source_artifact_ref="tech_entities.yml"`)
+  collapse cross-spec.** Three specs mentioning Python now produce one
+  Entity "Python" node with three `mentions` edges, not three duplicate
+  Entity nodes.
+- **Pre-fix boards may carry duplicates.** Run
+  `okto-pulse kg dedup-entities <board_id>` (add `--dry-run` for a
+  preview, `--json` for ops automation) to consolidate them. Idempotent
+  on clean boards (returns `groups: 0`).
+- **Look for `kg.consolidation.dedup_reused`** in structured logs to
+  audit reuse decisions. Fields: `cand_id`, `existing_id`, `node_type`,
+  `source_artifact_ref`, `session_id`, `was_curated_preserved`.
 
 ### Consolidation Hygiene Checklist
 

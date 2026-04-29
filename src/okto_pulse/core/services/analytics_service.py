@@ -109,11 +109,16 @@ def resolve_linked_fr_indices(linked_refs: list, frs: list[str]) -> set[int]:
 # ---------------------------------------------------------------------------
 
 
-def _coverage_row_for_spec(spec: Spec) -> dict:
+def _coverage_row_for_spec(spec: Spec, cards: list | None = None) -> dict:
     """Build a single coverage row for one Spec ORM row.
 
     Output shape matches REST /analytics/coverage exactly. MCP converges to
     this shape (previously omitted BR/contract counts + FR coverage %).
+
+    Spec 233eaad3: extends shape with 4 fields (decisions_coverage_pct,
+    decisions_total, tr_task_linkage_pct, trs_total) sourced from
+    ``spec_coverage_summary``. Backward compatible — pre-existing fields
+    preserved bit-for-bit; ``cards`` defaults to None.
     """
     ac_list = spec.acceptance_criteria or []
     total_ac = len(ac_list)
@@ -155,6 +160,8 @@ def _coverage_row_for_spec(spec: Spec) -> dict:
         round(len(fr_indices_with_contracts) / total_frs * 100, 1) if total_frs > 0 else 0
     )
 
+    cov = spec_coverage_summary(spec, cards=cards)
+
     return {
         "spec_id": spec.id,
         "title": spec.title,
@@ -166,6 +173,14 @@ def _coverage_row_for_spec(spec: Spec) -> dict:
         "api_contracts_count": len(contracts),
         "fr_with_rules_pct": fr_with_rules_pct,
         "fr_with_contracts_pct": fr_with_contracts_pct,
+        # Bug 6f152627: AC/FR coverage explícitos no nível 2 (eram inferidos de
+        # covered_ac/total_ac e fr_with_rules_pct, com labels confusos no UI).
+        "ac_coverage_pct": cov["ac_coverage_pct"],
+        "fr_coverage_pct": cov["fr_coverage_pct"],
+        "decisions_coverage_pct": cov["decisions_coverage_pct"],
+        "decisions_total": cov["decisions_total"],
+        "tr_task_linkage_pct": cov["tr_task_linkage_pct"],
+        "trs_total": cov["trs_total"],
     }
 
 
@@ -182,7 +197,10 @@ async def compute_coverage(
     Returns a list of coverage rows (one per spec), each with:
       - spec_id, title, total_ac, covered_ac, total_scenarios,
         scenario_status_counts, business_rules_count, api_contracts_count,
-        fr_with_rules_pct, fr_with_contracts_pct.
+        fr_with_rules_pct, fr_with_contracts_pct,
+      - decisions_coverage_pct, decisions_total, tr_task_linkage_pct, trs_total
+        (spec 233eaad3 — sourced from ``spec_coverage_summary`` so cancelled
+        cards are excluded from linkage counts).
 
     Parameters
     ----------
@@ -191,6 +209,8 @@ async def compute_coverage(
         did not filter — set True to replicate legacy MCP behavior. Default
         matches REST (stricter).
     """
+    from collections import defaultdict
+
     spec_q = select(Spec).where(Spec.board_id == board_id)
     if not include_archived:
         spec_q = spec_q.where(Spec.archived.is_(False))
@@ -199,7 +219,19 @@ async def compute_coverage(
     if dt_to:
         spec_q = spec_q.where(Spec.created_at <= dt_to)
     specs = list((await db.execute(spec_q)).scalars().all())
-    return [_coverage_row_for_spec(s) for s in specs]
+
+    # Spec 233eaad3: 1 query batch para cards do board, group by spec_id
+    # — evita N+1 e permite que _coverage_row_for_spec aplique cancelled filter.
+    cards_q = select(Card).where(Card.board_id == board_id)
+    if not include_archived:
+        cards_q = cards_q.where(Card.archived.is_(False))
+    all_cards = list((await db.execute(cards_q)).scalars().all())
+    cards_by_spec: dict[str, list] = defaultdict(list)
+    for c in all_cards:
+        if c.spec_id:
+            cards_by_spec[c.spec_id].append(c)
+
+    return [_coverage_row_for_spec(s, cards=cards_by_spec.get(s.id, [])) for s in specs]
 
 
 # ---------------------------------------------------------------------------
@@ -484,7 +516,8 @@ async def compute_velocity(
 
 
 def spec_coverage_summary(
-    spec, *, scenarios=None, rules=None, contracts=None, trs=None, decisions=None
+    spec, *, scenarios=None, rules=None, contracts=None, trs=None, decisions=None,
+    cards=None,
 ) -> dict:
     """Compute coverage stats for a single spec — used by validation gate + UI.
 
@@ -496,6 +529,13 @@ def spec_coverage_summary(
 
     Ideação #10 Fase 1: adiciona decisions_coverage_pct + decisions_uncovered_ids
     paralelo ao TR/BR/Contract linkage, paridade first-class.
+
+    Spec 233eaad3 (Analytics cancelled-card filter): aceita ``cards`` opcional
+    (lista de Card) e exclui IDs de cards em status ``cancelled`` do cálculo
+    de linkage de TS/BR/Contract/TR/Decision via set difference. AC e FR
+    coverage permanecem inalterados (são estruturais via TS.linked_criteria
+    e BR.linked_requirements). Backward compat: cards=None mantém o
+    comportamento histórico bit-a-bit.
     """
     acs = spec.acceptance_criteria or []
     frs = spec.functional_requirements or []
@@ -504,6 +544,16 @@ def spec_coverage_summary(
     _contracts = contracts if contracts is not None else (spec.api_contracts or [])
     _trs = trs if trs is not None else (spec.technical_requirements or [])
     _decisions = decisions if decisions is not None else (getattr(spec, "decisions", None) or [])
+
+    cancelled_card_ids: set = set()
+    if cards:
+        for c in cards:
+            status_attr = getattr(c, "status", None)
+            status_val = getattr(
+                status_attr, "value", str(status_attr) if status_attr is not None else ""
+            )
+            if status_val == "cancelled":
+                cancelled_card_ids.add(c.id)
 
     covered_ac = set()
     for ts in _ts:
@@ -532,27 +582,42 @@ def spec_coverage_summary(
     fr_covered = len(covered_fr & set(range(fr_total)))
 
     ts_total = len(_ts)
-    ts_linked = sum(1 for ts in _ts if ts.get("linked_task_ids"))
+    ts_linked = sum(
+        1 for ts in _ts
+        if (set(ts.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
 
     br_total = len(_brs)
-    br_linked = sum(1 for br in _brs if br.get("linked_task_ids"))
+    br_linked = sum(
+        1 for br in _brs
+        if (set(br.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
 
     c_total = len(_contracts)
-    c_linked = sum(1 for c in _contracts if c.get("linked_task_ids"))
+    c_linked = sum(
+        1 for c in _contracts
+        if (set(c.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
 
     struct_trs = [t for t in _trs if isinstance(t, dict)]
     tr_total = len(struct_trs)
-    tr_linked = sum(1 for t in struct_trs if t.get("linked_task_ids"))
+    tr_linked = sum(
+        1 for t in struct_trs
+        if (set(t.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
 
     active_decisions = [
         d for d in _decisions
         if isinstance(d, dict) and d.get("status", "active") == "active"
     ]
     d_total = len(active_decisions)
-    d_linked = sum(1 for d in active_decisions if d.get("linked_task_ids"))
+    d_linked = sum(
+        1 for d in active_decisions
+        if (set(d.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
     d_uncovered_ids = [
         d.get("id") for d in active_decisions
-        if not d.get("linked_task_ids") and d.get("id")
+        if not (set(d.get("linked_task_ids") or []) - cancelled_card_ids) and d.get("id")
     ]
 
     def _pct(n, d):

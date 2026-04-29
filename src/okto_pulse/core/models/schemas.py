@@ -22,9 +22,16 @@ from okto_pulse.core.models.db import (
 
 
 class BaseSchema(BaseModel):
-    """Base schema with common configuration."""
+    """Base schema with common configuration.
 
-    model_config = ConfigDict(from_attributes=True)
+    `extra="ignore"` is set explicitly so that legacy serialised payloads
+    carrying removed fields (e.g. snapshots that still include the dropped
+    `skills` field) are accepted silently — the unknown key is dropped
+    without warning, without log, without error. This is the reader-side
+    half of spec e12c4c20 (Skills removal).
+    """
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
 # ============================================================================
@@ -950,71 +957,6 @@ class SpecQAResponse(BaseSchema):
 
 
 # ============================================================================
-# Spec Skill Schemas
-# ============================================================================
-
-
-class SkillSectionSchema(BaseModel):
-    """A section within a skill."""
-
-    id: str
-    title: str
-    description: str = ""
-    level: str = "detail"  # summary | detail | full
-    content: str = ""
-
-
-class SpecSkillCreate(BaseModel):
-    """Schema for creating a skill on a spec."""
-
-    skill_id: str = Field(..., min_length=1, max_length=255)
-    name: str = Field(..., min_length=1, max_length=255)
-    description: str = Field(..., min_length=1)
-    type: str = "PROMPT"
-    version: str = "2.0"
-    tags: list[str] | None = None
-    sections: list[SkillSectionSchema] | None = None
-
-
-class SpecSkillUpdate(BaseModel):
-    """Schema for updating a skill."""
-
-    name: str | None = Field(None, min_length=1, max_length=255)
-    description: str | None = None
-    type: str | None = None
-    version: str | None = None
-    tags: list[str] | None = None
-    sections: list[SkillSectionSchema] | None = None
-
-
-class SpecSkillResponse(BaseSchema):
-    """Full skill response."""
-
-    id: str
-    spec_id: str
-    skill_id: str
-    name: str
-    description: str
-    type: str
-    version: str
-    tags: list[str] | None
-    sections: list[SkillSectionSchema] | None
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class SpecSkillSummary(BaseSchema):
-    """Lightweight skill summary for RETRIEVE level."""
-
-    skill_id: str
-    name: str
-    description: str
-    type: str
-    tags: list[str] | None
-
-
-# ============================================================================
 # Spec Knowledge Base Schemas
 # ============================================================================
 
@@ -1106,7 +1048,6 @@ class SpecResponse(BaseSchema):
     ideation_id: str | None = None
     refinement_id: str | None = None
     cards: list[CardSummaryForSpec] = []
-    skills: list[SpecSkillSummary] = []
     knowledge_bases: list[SpecKnowledgeSummary] = []
     qa_items: list[SpecQAResponse] = []
 
@@ -1442,6 +1383,28 @@ class BoardSettings(BaseModel):
     min_spec_completeness: int = 80  # min spec completeness score
     min_spec_assertiveness: int = 80  # min spec assertiveness score
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
+    # Bug Card Gate — NC-6 fix.
+    # require_test_task_for_bug: when False, bug cards can advance to in_progress
+    #   without a freshly-created linked test task. Default True (gate ATIVO).
+    # bug_test_gate_min_severity: only bugs at this severity OR higher must pass
+    #   the gate. "minor" (default) = sempre exige; "major" = pula minor;
+    #   "critical" = só critical exige.
+    require_test_task_for_bug: bool = True
+    bug_test_gate_min_severity: str = "minor"  # one of: minor, major, critical
+    # Test Theater Prevention Gate — Wave 2 NC-9 (spec 873e98cc).
+    # When False (default), update_test_scenario_status with status in
+    # {automated, passed, failed} requires structured evidence (test_file_path,
+    # test_function for automated; last_run_at + (output_snippet|test_run_id)
+    # for passed/failed). When True, gate is bypass — any status accepted
+    # without evidence; audit log records every bypass for forensics.
+    skip_test_evidence_global: bool = False
+    # Cognitive Extraction LLM config — opt-in (spec 3d907a87, FR7 / D5).
+    # Schema (free-form dict so it can evolve without a migration):
+    #   {"provider": "openai" | "anthropic" | ..., "model": "...",
+    #    "api_key_env": "OPENAI_API_KEY", "max_tokens": 800, "timeout_s": 30}
+    # Absent or None → CognitiveExtractionHandler skips Learning extraction
+    # and emits log info. Alternative + Assumption (regex) run regardless.
+    cognitive_llm_config: dict | None = None
 
 
 class BoardCreate(BaseModel):

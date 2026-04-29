@@ -13,6 +13,8 @@ tmpdb = tempfile.mktemp(suffix=".db")
 os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{tmpdb}")
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gov_"))
 
+from sqlalchemy import select
+
 from okto_pulse.core.models import db as _models  # noqa: F401
 from okto_pulse.core.models.db import Board, Spec, SpecStatus
 from okto_pulse.core.infra.database import create_database, get_session_factory, init_db
@@ -162,3 +164,276 @@ class TestRightToErasure:
             result = await right_to_erasure(db, "board-erasure-test")
             assert result["board_id"] == "board-erasure-test"
             assert "global_cascade" in result or "global_cascade_error" in result
+
+
+class TestHistoricalDedupFilter:
+    """Regression tests for the governance dedup fix.
+
+    Before the fix, the DELETE in start_historical_consolidation only
+    cleared terminal rows with source='historical_backfill', but the
+    dedup SELECT scanned ALL rows regardless of status. Terminal rows
+    from event-driven enqueues (event:card.created, retry_from_ui, …)
+    silently poisoned the dedup set and caused every matching artifact
+    to be skipped.
+
+    Fix:
+      • DELETE no longer filters by source (all terminal rows cleared)
+      • SELECT restricts to live statuses: pending / claimed / paused
+    """
+
+    @pytest.mark.asyncio
+    async def test_terminal_event_rows_do_not_block_historical_requeue(self, db_factory):
+        """Primary regression: a terminal row from event:spec.moved must NOT
+        poison the dedup set so the historical pass can re-enqueue the spec."""
+        import uuid
+        from okto_pulse.core.models.db import ConsolidationQueue
+
+        board_id = "board-dedup-event-done"
+        await _seed_board_with_spec(db_factory, board_id)
+
+        # Fetch the seeded spec id so we can register a terminal event row
+        # pointing at the SAME artifact. UNIQUE(board_id, artifact_type,
+        # artifact_id) makes this the only possible row for that artifact.
+        async with db_factory() as db:
+            result = await db.execute(
+                select(Spec).where(Spec.board_id == board_id)
+            )
+            spec = result.scalars().first()
+            assert spec is not None
+
+            db.add(ConsolidationQueue(
+                id=str(uuid.uuid4()),
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=spec.id,
+                priority="high",
+                source="event:spec.moved",
+                status="done",
+            ))
+            await db.commit()
+
+        # Run the historical backfill — the terminal event row should be
+        # cleared and the spec re-queued as historical_backfill/pending.
+        async with db_factory() as db:
+            result = await start_historical_consolidation(db, board_id)
+            assert result["status"] == "queueing"
+            assert result["total_artifacts"] >= 1
+
+        async with db_factory() as db:
+            rows = (await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_id == spec.id,
+                )
+            )).scalars().all()
+            # UNIQUE constraint means only one row exists. It must be the
+            # newly-inserted historical_backfill row, not the poisoned one.
+            assert len(rows) == 1
+            row = rows[0]
+            assert row.status == "pending"
+            assert row.source == "historical_backfill"
+
+    @pytest.mark.asyncio
+    async def test_failed_rows_are_cleared_regardless_of_source(self, db_factory):
+        """retry_from_ui failed rows must be cleared on historical start
+        so the next attempt gets a clean slot."""
+        import uuid
+        from okto_pulse.core.models.db import ConsolidationQueue
+
+        board_id = "board-dedup-failed-retry"
+        await _seed_board_with_spec(db_factory, board_id)
+
+        async with db_factory() as db:
+            spec = (await db.execute(
+                select(Spec).where(Spec.board_id == board_id)
+            )).scalars().first()
+            assert spec is not None
+
+            db.add(ConsolidationQueue(
+                id=str(uuid.uuid4()),
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=spec.id,
+                priority="high",
+                source="retry_from_ui",
+                status="failed",
+                last_error="simulated prior failure",
+            ))
+            await db.commit()
+
+        async with db_factory() as db:
+            result = await start_historical_consolidation(db, board_id)
+            assert result["status"] == "queueing"
+
+        async with db_factory() as db:
+            rows = (await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_id == spec.id,
+                )
+            )).scalars().all()
+            assert len(rows) == 1
+            row = rows[0]
+            assert row.status == "pending"
+            assert row.source == "historical_backfill"
+            assert row.last_error is None
+
+    @pytest.mark.asyncio
+    async def test_pending_event_row_is_preserved(self, db_factory):
+        """If a pending row already exists (e.g. event:card.created waiting
+        to be processed), the historical pass must not try to insert a
+        duplicate — the UNIQUE constraint would reject it anyway, but the
+        dedup filter must skip it cleanly."""
+        import uuid
+        from okto_pulse.core.models.db import ConsolidationQueue
+
+        board_id = "board-dedup-pending-preserved"
+        await _seed_board_with_spec(db_factory, board_id)
+
+        async with db_factory() as db:
+            spec = (await db.execute(
+                select(Spec).where(Spec.board_id == board_id)
+            )).scalars().first()
+            assert spec is not None
+
+            db.add(ConsolidationQueue(
+                id=str(uuid.uuid4()),
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=spec.id,
+                priority="high",
+                source="event:spec.moved",
+                status="pending",
+            ))
+            await db.commit()
+
+        async with db_factory() as db:
+            result = await start_historical_consolidation(db, board_id)
+            assert result["status"] == "queueing"
+
+        async with db_factory() as db:
+            rows = (await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_id == spec.id,
+                )
+            )).scalars().all()
+            # Exactly one row survives (UNIQUE constraint). It must be the
+            # pre-existing pending event row, NOT a new historical row.
+            assert len(rows) == 1
+            row = rows[0]
+            assert row.status == "pending"
+            assert row.source == "event:spec.moved"
+
+    @pytest.mark.asyncio
+    async def test_paused_rows_are_preserved(self, db_factory):
+        """A paused historical row from a prior run must survive the dedup
+        pass — start after pause should observe 'already_in_progress' via
+        the pre-check, but even if that didn't trigger, the dedup must
+        treat paused rows as live."""
+        import uuid
+        from okto_pulse.core.models.db import ConsolidationQueue
+
+        board_id = "board-dedup-paused-preserved"
+        await _seed_board_with_spec(db_factory, board_id)
+
+        async with db_factory() as db:
+            spec = (await db.execute(
+                select(Spec).where(Spec.board_id == board_id)
+            )).scalars().first()
+            assert spec is not None
+
+            db.add(ConsolidationQueue(
+                id=str(uuid.uuid4()),
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=spec.id,
+                priority="low",
+                source="historical_backfill",
+                status="paused",
+            ))
+            await db.commit()
+
+        # Paused status is not in {pending, claimed}, so the "already in
+        # progress" pre-check won't trigger and start_historical_consolidation
+        # will proceed to the dedup / enqueue path.
+        async with db_factory() as db:
+            result = await start_historical_consolidation(db, board_id)
+            assert result["status"] == "queueing"
+
+        async with db_factory() as db:
+            rows = (await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_id == spec.id,
+                )
+            )).scalars().all()
+            # Exactly one row must survive — the pre-existing paused row.
+            # The dedup set must include paused statuses so the historical
+            # pass skips this artifact instead of trying to duplicate it.
+            assert len(rows) == 1
+            row = rows[0]
+            assert row.status == "paused"
+            assert row.source == "historical_backfill"
+
+    @pytest.mark.asyncio
+    async def test_mixed_terminal_rows_all_cleared(self, db_factory):
+        """Multiple artifacts with terminal rows from DIFFERENT sources
+        must all be cleared and re-queued in a single pass."""
+        import uuid
+        from okto_pulse.core.models.db import Board, ConsolidationQueue
+
+        board_id = "board-dedup-mixed"
+
+        # Seed board with THREE done specs
+        async with db_factory() as db:
+            db.add(Board(id=board_id, name="Mixed", owner_id="owner"))
+            spec_ids = []
+            for i in range(3):
+                sid = str(uuid.uuid4())
+                spec_ids.append(sid)
+                db.add(Spec(
+                    id=sid, board_id=board_id,
+                    title=f"Spec {i}", status=SpecStatus.DONE,
+                    archived=False, created_by="test",
+                ))
+            await db.commit()
+
+        # Pollute the queue with terminal rows from different sources
+        terminal_rows = [
+            (spec_ids[0], "event:spec.moved", "done"),
+            (spec_ids[1], "retry_from_ui", "failed"),
+            (spec_ids[2], "historical_backfill", "done"),
+        ]
+        async with db_factory() as db:
+            for artifact_id, source, status in terminal_rows:
+                db.add(ConsolidationQueue(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id=artifact_id,
+                    priority="low",
+                    source=source,
+                    status=status,
+                ))
+            await db.commit()
+
+        async with db_factory() as db:
+            result = await start_historical_consolidation(db, board_id)
+            assert result["status"] == "queueing"
+            # All three specs must be re-queued. Other fields that
+            # historical_backfill also seeds (sprints, cards) may or may
+            # not bump this count; we only assert the specs are included.
+            assert result["total_artifacts"] >= 3
+
+        async with db_factory() as db:
+            rows = (await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == "spec",
+                )
+            )).scalars().all()
+            assert len(rows) == 3
+            for row in rows:
+                assert row.status == "pending"
+                assert row.source == "historical_backfill"

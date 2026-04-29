@@ -19,6 +19,10 @@ from okto_pulse.core.api.kg_routes import router as kg_router
 from okto_pulse.core.api.me import router as me_router
 from okto_pulse.core.api.discovery import router as discovery_router
 from okto_pulse.core.api.settings import router as settings_router
+from okto_pulse.core.api.queue_health import router as queue_health_router
+from okto_pulse.core.api.kg_health import router as kg_health_router
+from okto_pulse.core.api.kg_tick import router as kg_tick_router
+from okto_pulse.core.api.dead_letter import router as dead_letter_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -39,3 +43,7 @@ api_router.include_router(kg_router, tags=["knowledge-graph"])
 api_router.include_router(me_router, tags=["me"])
 api_router.include_router(discovery_router, tags=["discovery"])
 api_router.include_router(settings_router, tags=["settings"])
+api_router.include_router(queue_health_router, tags=["queue-health"])
+api_router.include_router(kg_health_router, tags=["kg-health"])
+api_router.include_router(kg_tick_router, tags=["kg-tick"])
+api_router.include_router(dead_letter_router, tags=["dead-letter"])

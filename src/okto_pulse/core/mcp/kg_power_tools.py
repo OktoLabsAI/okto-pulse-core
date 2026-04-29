@@ -5,7 +5,10 @@ Registered via `register_kg_power_tools(mcp, get_agent, get_db)`.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import re
 from typing import Any
 
 from okto_pulse.core.kg.tier_power import (
@@ -16,6 +19,126 @@ from okto_pulse.core.kg.tier_power import (
     execute_natural_query,
     get_schema_info,
 )
+
+logger = logging.getLogger(__name__)
+
+
+# spec 28583299 (Ideação #4, IMPL-E, dec_bd607339): hit-counting parity for
+# kg_query_cypher. Strict v1 extraction (E-1.a in KE-E): only counts a hit
+# when the result row carries a recognisable id column or a UUID-like value.
+# Agents that want credit for hits MUST shape their RETURN accordingly —
+# documented in agent_instructions.md.
+_UUID_LIKE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _is_uuid_like(value: Any) -> bool:
+    """True when ``value`` matches the canonical 36-char UUID layout."""
+    return isinstance(value, str) and bool(_UUID_LIKE.match(value))
+
+
+def _extract_node_ids_from_cypher_result(
+    result: dict,
+) -> list[tuple[str, str]]:
+    """Return ``[(node_type, node_id), ...]`` pairs found in ``result``.
+
+    Heuristic v1 (strict — see KE-E E-1.a):
+    1. Look up ``id``/``node_id`` columns by name (case-insensitive).
+    2. Look up ``labels(n)``/``node_type`` columns for the node type.
+    3. When neither match, scan each row's scalars for a UUID-like value
+       and pair it with ``node_type='unknown'`` so record_query_hit can
+       still flush the counter (downstream short-circuits unknown).
+
+    Pure function — no I/O. Returns an empty list when ``result`` lacks
+    ``rows``/``columns`` keys (which is the shape execute_cypher_read_only
+    consistently returns).
+    """
+    columns = result.get("columns") or []
+    rows = result.get("rows") or []
+    if not columns or not rows:
+        return []
+
+    id_aliases = {"id", "node_id"}
+    type_aliases = {"node_type"}
+
+    id_idx: int | None = None
+    type_idx: int | None = None
+    for i, col in enumerate(columns):
+        col_lower = str(col).lower()
+        if id_idx is None and (
+            col_lower in id_aliases or col_lower.endswith(".id")
+        ):
+            id_idx = i
+        if type_idx is None and (
+            col_lower in type_aliases
+            or "label" in col_lower
+            or col_lower.endswith(".labels")
+        ):
+            type_idx = i
+
+    pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        if not isinstance(row, (list, tuple)):
+            continue
+        node_id: str | None = None
+        node_type: str = "unknown"
+
+        if id_idx is not None and id_idx < len(row):
+            value = row[id_idx]
+            if _is_uuid_like(value):
+                node_id = value
+
+        if type_idx is not None and type_idx < len(row):
+            raw = row[type_idx]
+            if isinstance(raw, (list, tuple)) and raw:
+                node_type = str(raw[0])
+            elif isinstance(raw, str):
+                node_type = raw.strip("[]'\"")
+
+        if node_id is None:
+            for cell in row:
+                if _is_uuid_like(cell):
+                    node_id = cell
+                    break
+
+        if node_id is None:
+            continue
+        key = (node_type, node_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append(key)
+    return pairs
+
+
+async def _record_cypher_hits(
+    board_id: str, pairs: list[tuple[str, str]],
+) -> None:
+    """Fire-and-forget loop that increments the hit counter for each pair.
+
+    ``record_query_hit`` is a thin wrapper around the in-process counter
+    that lazy-flushes to Kùzu when ``HIT_FLUSH_THRESHOLD`` is reached. The
+    invocation must NEVER block the query response (BR3 + dec_3a6eb8ad).
+    """
+    try:
+        from okto_pulse.core.kg.kg_service import KGService
+
+        service = KGService()
+        for node_type, node_id in pairs:
+            try:
+                await service.increment_hit(board_id, node_type, node_id)
+            except Exception as exc:
+                logger.debug(
+                    "kg.cypher.hit_skipped board=%s node=%s err=%s",
+                    board_id, node_id, exc,
+                )
+    except Exception as exc:
+        logger.debug(
+            "kg.cypher.hit_record_failed board=%s err=%s", board_id, exc,
+        )
 
 
 def _err(code: str, message: str, **extra: Any) -> str:
@@ -59,13 +182,42 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_query_cypher called: board_id=%s cypher_len=%d max_rows=%d timeout_ms=%d",
+                     board_id, len(cypher), max_rows, timeout_ms)
         try:
             check_rate_limit(agent.id)
-            result = execute_cypher_read_only(
-                board_id, cypher, params,
-                max_rows=max_rows, timeout_ms=timeout_ms,
+            logger.debug("[KG] kg_query_cypher offloading to thread")
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    execute_cypher_read_only,
+                    board_id, cypher, params,
+                    max_rows=max_rows, timeout_ms=timeout_ms,
+                ),
+                timeout=30.0,
             )
+            logger.debug("[KG] kg_query_cypher thread returned: row_count=%d",
+                         result.get("row_count", "unknown"))
+
+            # spec 28583299 (Ideação #4, IMPL-E, FR18 + dec_bd607339):
+            # increment hit counter for each node identified in the result
+            # so kg_query_cypher achieves parity with kg_query_natural's
+            # ranking signal. Fire-and-forget — never block the query
+            # response on the counter side effect.
+            try:
+                pairs = _extract_node_ids_from_cypher_result(result)
+                if pairs:
+                    asyncio.create_task(
+                        _record_cypher_hits(board_id, pairs)
+                    )
+            except Exception as exc:
+                logger.debug(
+                    "kg.cypher.hit_extract_failed board=%s err=%s",
+                    board_id, exc,
+                )
             return json.dumps(result, default=str)
+        except asyncio.TimeoutError:
+            logger.error("[KG] kg_query_cypher timed out after 30s: board_id=%s", board_id)
+            return _err("timeout", "Query exceeded 30s timeout")
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
 
@@ -105,14 +257,26 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
+        logger.debug("[KG] kg_query_natural called: board_id=%s query=%r limit=%d",
+                     board_id, nl_query[:80], limit)
         try:
             check_rate_limit(agent.id)
-            result = execute_natural_query(
-                board_id, nl_query,
-                limit=limit, min_confidence=min_confidence,
-                since=since or None, until=until or None,
+            logger.debug("[KG] kg_query_natural offloading to thread")
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    execute_natural_query,
+                    board_id, nl_query,
+                    limit=limit, min_confidence=min_confidence,
+                    since=since or None, until=until or None,
+                ),
+                timeout=30.0,
             )
+            logger.debug("[KG] kg_query_natural thread returned: total_matches=%d",
+                         result.get("total_matches", "unknown"))
             return json.dumps(result, default=str)
+        except asyncio.TimeoutError:
+            logger.error("[KG] kg_query_natural timed out after 30s: board_id=%s", board_id)
+            return _err("timeout", "Query exceeded 30s timeout")
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
 
@@ -137,11 +301,20 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         if agent is None:
             return _err("unauthorized", "authentication required")
 
+        logger.debug("[KG] kg_schema_info called: board_id=%s include_internal=%s",
+                     board_id, include_internal)
         want_internal = include_internal.lower() in ("true", "1", "yes")
-        result = get_schema_info(
-            board_id or "default",
-            include_internal=want_internal,
+        logger.debug("[KG] kg_schema_info offloading to thread")
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                get_schema_info,
+                board_id or "default",
+                include_internal=want_internal,
+            ),
+            timeout=30.0,
         )
+        logger.debug("[KG] kg_schema_info thread returned: schema_version=%s",
+                     result.get("schema_version", "unknown"))
         return json.dumps(result, default=str)
 
     @mcp.tool()
@@ -275,8 +448,12 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
             return _err("unauthorized", "authentication required")
         try:
             check_rate_limit(agent.id)
-            result = execute_natural_query(
-                board_id, nl_query, limit=limit,
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    execute_natural_query,
+                    board_id, nl_query, limit=limit,
+                ),
+                timeout=30.0,
             )
             payload = {
                 "nodes": result.get("nodes", []),
@@ -296,5 +473,7 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
                 ],
             }
             return json.dumps(payload, default=str)
+        except asyncio.TimeoutError:
+            return _err("timeout", "Query exceeded 30s timeout")
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)

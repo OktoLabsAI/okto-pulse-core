@@ -133,6 +133,7 @@ def check_kuzu(board_id: str) -> LayerHealth:
     try:
         with open_board_connection(board_id) as (_db, conn):
             for node_type in NODE_TYPES:
+                qr = None
                 try:
                     qr = conn.execute(f"MATCH (n:{node_type}) RETURN count(n) AS c")
                     # Kùzu 0.6+ exposes .get_next() / .has_next(); fall back
@@ -155,6 +156,12 @@ def check_kuzu(board_id: str) -> LayerHealth:
                         board_id, node_type, exc,
                         extra={"event": "health.kuzu.count_failed", "board_id": board_id},
                     )
+                finally:
+                    if qr is not None:
+                        try:
+                            qr.close()
+                        except Exception:
+                            pass
     except Exception as exc:
         return LayerHealth(
             layer="kuzu",
@@ -307,6 +314,7 @@ def check_global(board_id: str) -> LayerHealth:
 
     try:
         _db, conn = open_global_connection()
+        qr = None
         try:
             qr = conn.execute(
                 "MATCH (d:DecisionDigest {board_id: $bid}) RETURN count(d) AS c",
@@ -320,7 +328,15 @@ def check_global(board_id: str) -> LayerHealth:
                 row = next(iter(qr), None)
             digests = int(row[0]) if row is not None else 0
         finally:
-            del conn
+            if qr is not None:
+                try:
+                    qr.close()
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
     except Exception as exc:
         return LayerHealth(
             layer="global",

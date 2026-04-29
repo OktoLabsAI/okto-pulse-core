@@ -82,19 +82,29 @@ async def start_historical_consolidation(
     )
     cards = list(card_result.scalars().all())
 
-    # Remove completed/failed entries so they can be re-queued
+    # Remove completed/failed entries so they can be re-queued.
+    # NOTE: we purposely do NOT filter by source — terminal rows from
+    # event-driven enqueues (event:card.created, retry_from_ui, …) must
+    # also be cleared so the historical pass can reprocess every artifact.
+    # The UNIQUE constraint (board_id, artifact_type, artifact_id) means
+    # only one row per artifact can exist, so deleting all terminal rows
+    # is equivalent to clearing the slot for re-queueing.
     await db.execute(
         delete(ConsolidationQueue).where(
             ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.source == "historical_backfill",
             ConsolidationQueue.status.in_(["done", "failed"]),
         )
     )
 
-    # Collect remaining entries (pending/claimed) to avoid unique constraint violations
+    # Collect live entries only — pending, claimed, or paused. Terminal
+    # rows (done/failed) have just been deleted above, so dedup against
+    # them would be incorrect. Including `paused` covers the case where
+    # a prior historical run was paused and is still reachable via
+    # resume_historical.
     existing_result = await db.execute(
         select(ConsolidationQueue.artifact_type, ConsolidationQueue.artifact_id).where(
             ConsolidationQueue.board_id == board_id,
+            ConsolidationQueue.status.in_(["pending", "claimed", "paused"]),
         )
     )
     already_queued = {(row[0], row[1]) for row in existing_result.all()}

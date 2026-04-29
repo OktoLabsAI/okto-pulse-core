@@ -786,7 +786,10 @@ class DeterministicWorker:
         chain — the cognitive agent handles it via fallback)."""
         # Import here to avoid a scoring↔worker cycle at module load time;
         # scoring.py is a lightweight leaf so the indirect import is cheap.
-        from okto_pulse.core.kg.scoring import _resolve_priority_boost
+        from okto_pulse.core.kg.scoring import (
+            _resolve_priority_boost,
+            _resolve_severity_boost,
+        )
 
         cid = card["id"]
         prefix = f"card_{cid[:8]}"
@@ -803,7 +806,16 @@ class DeterministicWorker:
         # v0.3.1: resolve priority_boost from card.priority — only the root
         # node of the card carries the boost. Hierarchy/belongs_to nodes
         # (sprint/spec parents) stay at 0.0 per BR "Boost não herda".
-        boost = _resolve_priority_boost(card.get("priority"))
+        # v0.3.3 (Ideação #4, dec_27de54df): for Bug nodes, severity is the
+        # second additive input. MAX preserves the strongest signal without
+        # arbitrating which axis dominates.
+        if card_type == "bug":
+            boost = max(
+                _resolve_priority_boost(card.get("priority")),
+                _resolve_severity_boost(card.get("severity")),
+            )
+        else:
+            boost = _resolve_priority_boost(card.get("priority"))
         card_cid = f"{prefix}_entity"
         result.nodes.append(EmittedNode(
             candidate_id=card_cid,
@@ -890,6 +902,11 @@ class DeterministicWorker:
 
         Public API for the ConsolidationQueue worker — keeps all dispatch
         in one place so queue code stays a thin wrapper.
+
+        Spec eaf78891 (Ideação #2): artifact_type='refinement' is accepted
+        but currently no-op (graceful fallback). Refinement extraction is
+        a follow-up; the dispatch must not crash when RefinementSemanticChanged
+        events flow through ConsolidationEnqueuer.
         """
         if artifact_type == "spec":
             return self.process_spec(artifact)
@@ -897,6 +914,8 @@ class DeterministicWorker:
             return self.process_sprint(artifact)
         if artifact_type == "card":
             return self.process_card(artifact)
+        if artifact_type == "refinement":
+            return WorkerResult()
         raise ValueError(f"unknown artifact_type: {artifact_type}")
 
 

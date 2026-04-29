@@ -740,10 +740,14 @@ async def _exec_test_scenarios(
             linked_criteria = sc.get("linked_criteria") or []
             if scenarios_without_tasks and linked_tasks:
                 continue
-            if fr_id_filter and fr_id_filter not in (linked_criteria or []):
-                # coverage_for_fr expects fr_id index (e.g. "0", "1"). We
-                # match against the linked_criteria list as a string list.
-                if str(fr_id_filter) not in [str(x) for x in linked_criteria]:
+            if fr_id_filter:
+                # Spec 3d907a87 D4: linked_criteria stores resolved text
+                # (e.g. "FR1 — handler ..."), not short ids. Match the
+                # user-typed fr_id as a case-insensitive substring against
+                # any item — accepts the FR1↔FR10 false-positive tradeoff
+                # registered in TR5.
+                needle = fr_id_filter.lower()
+                if not any(needle in str(c).lower() for c in (linked_criteria or [])):
                     continue
             rows.append(
                 {
@@ -818,9 +822,26 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
         )
     ).scalars().all()
 
+    # Spec 233eaad3: 1 query batch para cards do board + groupby spec_id —
+    # evita N+1 dentro do loop e permite cancelled-card filter no
+    # spec_coverage_summary (cards cancelled descobrem suas linkagens).
+    from collections import defaultdict
+    all_cards = (
+        await db.execute(
+            select(Card).where(
+                Card.board_id == board_id,
+                Card.archived.is_(False),
+            )
+        )
+    ).scalars().all()
+    cards_by_spec: dict[str, list] = defaultdict(list)
+    for c in all_cards:
+        if c.spec_id:
+            cards_by_spec[c.spec_id].append(c)
+
     rows: list[dict] = []
     for spec in specs:
-        cov = spec_coverage_summary(spec)
+        cov = spec_coverage_summary(spec, cards=cards_by_spec.get(spec.id, []))
         status_value = getattr(spec.status, "value", str(spec.status))
         is_in_flight = spec.status in IN_FLIGHT
 

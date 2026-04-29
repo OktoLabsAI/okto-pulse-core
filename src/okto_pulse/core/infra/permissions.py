@@ -186,7 +186,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "rules": {"read": True, "create": True, "edit": True, "delete": True},
         "contracts": {"read": True, "create": True, "edit": True, "delete": True},
         "mockups": {"read": True, "create": True, "edit": True, "delete": True, "annotate": True},
-        "skills": {"read": True, "load": True, "create": True, "delete": True},
         "knowledge": {"read": True, "create": True, "delete": True},
         "evaluations": {"read": True, "submit": True, "delete": True},
         # Spec Validation Gate — dedicated flags mirroring card.validation.
@@ -479,7 +478,6 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.rules.create", "spec.rules.edit", "spec.rules.delete",
         "spec.contracts.create", "spec.contracts.edit", "spec.contracts.delete",
         "spec.mockups.create", "spec.mockups.edit", "spec.mockups.delete", "spec.mockups.annotate",
-        "spec.skills.create", "spec.skills.delete",
         "spec.knowledge.create", "spec.knowledge.delete",
         "spec.cards_derive",
     ],
@@ -612,7 +610,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     # Spec — defines WHAT to build
     # ------------------------------------------------------------------
     # Owns: ideation + refinement + spec content (BRs/TRs/contracts/mockups/
-    # skills/knowledge/test scenarios), sprint planning, initial card breakdown.
+    # knowledge/test scenarios), sprint planning, initial card breakdown.
     # Cannot: submit gates, validate anything, move cards past not_started,
     # move specs past approved (Validator promotes to validated).
     spec_writer = _build_preset_flags([
@@ -669,7 +667,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.contracts.read", "spec.contracts.create", "spec.contracts.edit", "spec.contracts.delete",
         "spec.mockups.read", "spec.mockups.create", "spec.mockups.edit",
         "spec.mockups.delete", "spec.mockups.annotate",
-        "spec.skills.read", "spec.skills.load", "spec.skills.create", "spec.skills.delete",
         "spec.knowledge.read", "spec.knowledge.create", "spec.knowledge.delete",
         # Spec read-only on gates (sees history, cannot submit)
         "spec.evaluations.read",
@@ -733,7 +730,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.tests.read",
         "spec.rules.read", "spec.contracts.read",
         "spec.mockups.read",
-        "spec.skills.read", "spec.skills.load",
         "spec.knowledge.read",
         "spec.evaluations.read",
         "spec.validation.read",
@@ -811,7 +807,6 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.qa.read", "spec.qa.ask", "spec.qa.ask_choice", "spec.qa.answer",
         "spec.tests.read", "spec.tests.create", "spec.tests.update_status",
         "spec.rules.read", "spec.contracts.read", "spec.mockups.read",
-        "spec.skills.read", "spec.skills.load",
         "spec.knowledge.read",
         "spec.evaluations.read",   # read-only — Validator submits
         "spec.validation.read",    # read-only — Validator submits
@@ -888,7 +883,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.entity.read",
         "spec.qa.read", "spec.qa.ask", "spec.qa.answer",
         "spec.tests.read", "spec.rules.read", "spec.contracts.read",
-        "spec.mockups.read", "spec.skills.read", "spec.skills.load",
+        "spec.mockups.read",
         "spec.knowledge.read",
         "spec.history_read",
         # Exclusive gate capabilities
@@ -979,7 +974,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.entity.read",
         "spec.qa.read", "spec.qa.ask",
         "spec.tests.read", "spec.rules.read", "spec.contracts.read",
-        "spec.mockups.read", "spec.skills.read", "spec.knowledge.read",
+        "spec.mockups.read", "spec.knowledge.read",
         "spec.evaluations.read", "spec.validation.read",
         "spec.history_read",
         "spec.interact_in.draft", "spec.interact_in.review",

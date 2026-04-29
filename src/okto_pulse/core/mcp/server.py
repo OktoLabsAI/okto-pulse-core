@@ -1,7 +1,12 @@
 """MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
 
+import functools
+import inspect
 import json
+import logging
 import os
+import re
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,7 +18,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
-from okto_pulse.core.mcp.helpers import parse_multi_value
+from okto_pulse.core.mcp.helpers import coerce_to_list_str, parse_multi_value
+from okto_pulse.core.mcp.trace_middleware import install_if_enabled as _install_trace
 from okto_pulse.core.services.main import (
     AgentService,
     AttachmentService,
@@ -30,7 +36,6 @@ from okto_pulse.core.services.main import (
     SpecKnowledgeService,
     SpecQAService,
     SpecService,
-    SpecSkillService,
 )
 
 
@@ -75,9 +80,11 @@ settings = get_settings()
 # SESSION-BASED AUTH (API key extracted from request)
 # ============================================================================
 
-# Global: the active api_key set during the most recent connection.
-# Simple and reliable — no contextvar propagation issues.
-_active_api_key: str | None = None
+# Per-request api_key, async-safe via ContextVar. Spec 23350275 (Fix C):
+# isolates identity between concurrent MCP requests when the server is mounted
+# as a sub-app on the FastAPI principal. The previous module-level global was
+# safe only in the single-request-at-a-time MCP standalone.
+_active_api_key: ContextVar[str | None] = ContextVar("mcp_active_api_key", default=None)
 
 
 class ApiKeySessionMiddleware:
@@ -87,19 +94,23 @@ class ApiKeySessionMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        token = None
         if scope["type"] == "http":
             request = Request(scope)
             # Extract API key from query param, X-API-Key header, or Authorization Bearer
-            global _active_api_key
             api_key = (
                 request.query_params.get("api_key")
                 or request.headers.get("x-api-key", "")
                 or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
             )
             if api_key:
-                _active_api_key = api_key
+                token = _active_api_key.set(api_key)
 
-        await self.app(scope, receive, send)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            if token is not None:
+                _active_api_key.reset(token)
 
 
 # ============================================================================
@@ -177,7 +188,7 @@ def invalidate_agent_cache(agent_id: str) -> None:
 
 async def _get_authenticated_agent():
     """Get the agent authenticated via the active API key from the request."""
-    api_key = _active_api_key
+    api_key = _active_api_key.get()
     if not api_key:
         return None
     async with get_db_for_mcp() as db:
@@ -193,7 +204,7 @@ async def _get_agent_ctx(board_id: str) -> AgentContext | None:
     Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s cache.
     Falls back to legacy flat permissions if permission_flags is not set.
     """
-    api_key = _active_api_key
+    api_key = _active_api_key.get()
     if not api_key:
         return None
     async with get_db_for_mcp() as db:
@@ -416,6 +427,114 @@ from okto_pulse.core.services.analytics_service import (
 from okto_pulse.core.services.analytics_service import (  # noqa: E402
     spec_coverage_summary as _spec_coverage,  # noqa: F401
 )
+
+
+# ============================================================================
+# XML SAFETY MIDDLEWARE - spec 44415298 (centralized detection)
+# ============================================================================
+# Defensive observer for the client-side tool-use parser bug: nested
+# `<parameter>` tags in string content collapse, corrupting the payload
+# before it reaches the server. We can't reconstruct lost info, but we
+# emit a structured log when literal protocol tags survive into args, so
+# operators can pinpoint which tool calls were affected. Applied to every
+# `@mcp.tool()` registration via a monkey-patch installed below — single
+# point of instrumentation, 100% coverage of the 160 MCP tools.
+
+_XML_SAFETY_LOGGER = logging.getLogger("okto_pulse.mcp.parser_safety")
+
+_SUSPICIOUS_XML_PATTERNS = re.compile(
+    r"<\s*/?\s*(?:"
+    r"parameter\s*(?:name\s*=)?"
+    r"|function_calls"
+    r"|invoke\s*(?:name\s*=)?"
+    r"|antml:\w+"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_nested_parameter_xml(value: Any) -> bool:
+    """Return True if `value` contains a literal tool-use protocol tag."""
+    if not isinstance(value, str) or not value:
+        return False
+    return bool(_SUSPICIOUS_XML_PATTERNS.search(value))
+
+
+def _xml_safety_log_decorator(func):
+    """Wrap an MCP tool: log on any string kwarg that holds a literal tool-use tag."""
+    @functools.wraps(func)
+    async def wrapper(**kwargs):
+        for k, v in kwargs.items():
+            if isinstance(v, str) and _detect_nested_parameter_xml(v):
+                _XML_SAFETY_LOGGER.warning(
+                    "mcp.tool.suspicious_xml_field",
+                    extra={
+                        "event": "mcp.tool.suspicious_xml_field",
+                        "tool_name": func.__name__,
+                        "field_name": k,
+                        "value_preview": v[:200],
+                    },
+                )
+        return await func(**kwargs)
+
+    wrapper._xml_safety_wrapped = True  # type: ignore[attr-defined]
+    return wrapper
+
+
+_XML_SAFETY_DECORATED_COUNT = 0
+
+
+def _patch_mcp_tool_for_xml_safety() -> None:
+    """Patch ``mcp.tool()`` so every registered tool gets the XML safety wrapper.
+
+    Note (FastMCP 2.14+): the original implementation called
+    ``_original_mcp_tool(*args, **kwargs)`` first to obtain the registrar
+    decorator, then applied ``_wrap`` to the user function. With FastMCP 2.14
+    the decorator path returns ``partial(self.tool, ...)`` and ``self.tool``
+    is resolved at call time via instance attribute lookup — which finds the
+    *patched* ``mcp.tool`` and recurses, so the value that lands in the
+    module namespace ends up being our local ``_wrap`` instead of the
+    expected ``FunctionTool``. Tests that probe ``inspect.signature(fn.fn)``
+    therefore see ``(func)`` and not the real tool signature.
+
+    Fix: bypass the partial entirely by always calling
+    ``_original_mcp_tool(wrapped, *args, **kwargs)`` — i.e. pass the wrapped
+    function as the first positional argument so FastMCP takes the
+    ``isroutine(name_or_fn)`` direct-registration path. This returns the
+    ``FunctionTool`` whose ``.fn`` exposes the wrapped function with the
+    original signature preserved by ``functools.wraps`` inside
+    ``_xml_safety_log_decorator``.
+    """
+    if getattr(mcp.tool, "_xml_safety_patched", False):
+        return
+
+    _original_mcp_tool = mcp.tool
+
+    def _patched_mcp_tool(*args, **kwargs):
+        # ``@mcp.tool`` (no parens) — first positional arg is the function.
+        if args and inspect.isroutine(args[0]):
+            global _XML_SAFETY_DECORATED_COUNT
+            func = args[0]
+            wrapped = _xml_safety_log_decorator(func)
+            _XML_SAFETY_DECORATED_COUNT += 1
+            return _original_mcp_tool(wrapped, *args[1:], **kwargs)
+
+        # ``@mcp.tool()`` / ``@mcp.tool("name")`` / ``@mcp.tool(name=...)`` —
+        # return a decorator that, when applied, routes through the same
+        # direct-registration path (no partial recursion).
+        def _wrap(func):
+            global _XML_SAFETY_DECORATED_COUNT
+            wrapped = _xml_safety_log_decorator(func)
+            _XML_SAFETY_DECORATED_COUNT += 1
+            return _original_mcp_tool(wrapped, *args, **kwargs)
+
+        return _wrap
+
+    _patched_mcp_tool._xml_safety_patched = True  # type: ignore[attr-defined]
+    mcp.tool = _patched_mcp_tool  # type: ignore[assignment]
+
+
+_patch_mcp_tool_for_xml_safety()
 
 
 # ============================================================================
@@ -735,14 +854,17 @@ async def okto_pulse_list_my_mentions(board_id: str, include_seen: str = "false"
 
 
 @mcp.tool()
-async def okto_pulse_mark_as_seen(board_id: str, item_ids: str) -> str:
+async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> str:
     """
     Mark one or more items as seen so they won't appear in list_my_mentions.
     Use this after processing mentions to avoid seeing them again.
 
     Args:
         board_id: Board ID (for access verification)
-        item_ids: Comma-separated item IDs to mark as seen (from list_my_mentions item_id field)
+        item_ids: Multi-value item IDs to mark as seen (from list_my_mentions item_id
+            field). Preferred native list (e.g. ``["c_a", "qa_b"]``); legacy string
+            accepted as JSON array or pipe-separated. Comma-only string is REJECTED.
+            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with count of newly marked items
@@ -756,7 +878,10 @@ async def okto_pulse_mark_as_seen(board_id: str, item_ids: str) -> str:
 
     from okto_pulse.core.models.db import AgentSeenItem, Comment, IdeationQAItem, QAItem, RefinementQAItem, SpecQAItem
 
-    ids = [i.strip() for i in item_ids.split(",") if i.strip()]
+    try:
+        ids = coerce_to_list_str(item_ids)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid item_ids: {e}"})
     if not ids:
         return json.dumps({"error": "No item_ids provided"})
 
@@ -1258,8 +1383,8 @@ async def okto_pulse_create_card(
     status: str = "not_started",
     priority: str = "none",
     assignee_id: str = "",
-    labels: str = "",
-    test_scenario_ids: str = "",
+    labels: list[str] | str = "",
+    test_scenario_ids: list[str] | str = "",
     card_type: str = "normal",
     origin_task_id: str = "",
     severity: str = "",
@@ -1281,8 +1406,14 @@ async def okto_pulse_create_card(
         status: Card status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
         priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
         assignee_id: User ID to assign (optional)
-        labels: Comma-separated labels (optional)
-        test_scenario_ids: Comma-separated test scenario IDs to link this card to (optional). When provided, automatically creates bidirectional links between the card and the scenarios. For test cards, this is MANDATORY.
+        labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
+            legacy string accepted as JSON array ``'["bug", "frontend"]'`` or
+            pipe-separated ``"bug|frontend"``. Comma-only string is REJECTED.
+            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+        test_scenario_ids: Multi-value test scenario IDs (e.g. ``["ts_abc", "ts_def"]``)
+            — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
+            When provided, automatically creates bidirectional links between the
+            card and the scenarios.
         card_type: Card type - "normal" (default) or "bug". Bug cards require origin_task_id, severity, expected_behavior, observed_behavior.
         origin_task_id: REQUIRED for bug cards — ID of the task that originated the bug. The spec is auto-resolved from this task.
         severity: REQUIRED for bug cards — one of: critical, major, minor
@@ -1313,7 +1444,7 @@ async def okto_pulse_create_card(
         if perm_err:
             return _perm_error(perm_err)
 
-    from okto_pulse.core.models.db import Board, CardPriority, CardStatus
+    from okto_pulse.core.models.db import Board, BugSeverity, CardPriority, CardStatus, CardType
     from okto_pulse.core.models.schemas import CardCreate
 
     try:
@@ -1334,13 +1465,56 @@ async def okto_pulse_create_card(
             }
         )
 
+    _card_type_value = (card_type or "normal").strip().lower()
+    try:
+        CardType(_card_type_value)
+    except ValueError:
+        return json.dumps(
+            {
+                "error": f"Invalid card_type '{card_type}'. Must be one of: {[t.value for t in CardType]}"
+            }
+        )
+
+    if severity:
+        try:
+            BugSeverity(severity.strip().lower())
+        except ValueError:
+            return json.dumps(
+                {
+                    "error": f"Invalid severity '{severity}'. Must be one of: {[s.value for s in BugSeverity]}"
+                }
+            )
+
+    if _card_type_value == "bug":
+        missing = [
+            name for name, val in (
+                ("origin_task_id", origin_task_id),
+                ("severity", severity),
+                ("expected_behavior", expected_behavior),
+                ("observed_behavior", observed_behavior),
+            ) if not (val or "").strip()
+        ]
+        if missing:
+            return json.dumps(
+                {
+                    "error": f"Bug cards require non-empty: {', '.join(missing)}"
+                }
+            )
+
     async with get_db_for_mcp() as db:
         service = CardService(db)
         # Normalize escaped newlines (MCP clients may send \\n instead of real newlines)
         _desc = description.replace("\\n", "\n") if description else None
         _details = details.replace("\\n", "\n") if details else None
 
-        scenario_ids_list = [s.strip() for s in test_scenario_ids.split(",") if s.strip()] if test_scenario_ids else None
+        try:
+            scenario_ids_list = coerce_to_list_str(test_scenario_ids) or None
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
+        try:
+            _labels_list = coerce_to_list_str(labels) or None
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid labels: {e}"})
 
         # Enforce max scenarios per card from board settings
         if scenario_ids_list:
@@ -1360,12 +1534,12 @@ async def okto_pulse_create_card(
             status=card_status,
             priority=card_priority,
             assignee_id=assignee_id or None,
-            labels=labels.split(",") if labels else None,
+            labels=_labels_list,
             spec_id=spec_id,
             test_scenario_ids=scenario_ids_list,
-            card_type=card_type or "normal",
+            card_type=_card_type_value,
             origin_task_id=origin_task_id or None,
-            severity=severity or None,
+            severity=(severity.strip().lower() if severity else None),
             expected_behavior=expected_behavior.replace("\\n", "\n") if expected_behavior else None,
             observed_behavior=observed_behavior.replace("\\n", "\n") if observed_behavior else None,
             steps_to_reproduce=steps_to_reproduce.replace("\\n", "\n") if steps_to_reproduce else None,
@@ -1783,14 +1957,14 @@ async def okto_pulse_update_card(
     details: str = "",
     priority: str = "",
     assignee_id: str = "",
-    labels: str = "",
-    test_scenario_ids: str = "",
+    labels: list[str] | str = "",
+    test_scenario_ids: list[str] | str = "",
     severity: str = "",
     expected_behavior: str = "",
     observed_behavior: str = "",
     steps_to_reproduce: str = "",
     action_plan: str = "",
-    linked_test_task_ids: str = "",
+    linked_test_task_ids: list[str] | str = "",
 ) -> str:
     """
     Update card details.
@@ -1803,14 +1977,19 @@ async def okto_pulse_update_card(
         details: New details (optional)
         priority: New priority - one of: none, low, medium, high, very_high, critical (optional, empty = no change)
         assignee_id: New assignee (optional)
-        labels: New comma-separated labels (optional)
-        test_scenario_ids: Comma-separated test scenario IDs to associate with this card (optional). Use okto_pulse_link_task_to_scenario for bidirectional linking.
+        labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
+            legacy string accepted as JSON array or pipe-separated. Comma-only
+            string is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+        test_scenario_ids: Multi-value test scenario IDs — same input shapes as
+            ``labels``. Use ``okto_pulse_link_task_to_scenario`` for
+            bidirectional linking.
         severity: Bug severity - one of: critical, major, minor (optional, bug cards only)
         expected_behavior: Expected behavior description (optional, bug cards only)
         observed_behavior: Observed behavior description (optional, bug cards only)
         steps_to_reproduce: Steps to reproduce the bug (optional, bug cards only)
         action_plan: Plan for fixing the bug (optional, bug cards only)
-        linked_test_task_ids: Comma-separated test task card IDs linked to this bug (optional, bug cards only)
+        linked_test_task_ids: Multi-value test task card IDs linked to this bug
+            (optional, bug cards only) — same input shapes as ``labels``.
 
     Returns:
         JSON with updated card details
@@ -1823,7 +2002,7 @@ async def okto_pulse_update_card(
     if perm_err:
         return _perm_error(perm_err)
 
-    from okto_pulse.core.models.db import CardPriority
+    from okto_pulse.core.models.db import BugSeverity, CardPriority
     from okto_pulse.core.models.schemas import CardUpdate
 
     async with get_db_for_mcp() as db:
@@ -1852,13 +2031,26 @@ async def okto_pulse_update_card(
         if assignee_id:
             update_data["assignee_id"] = assignee_id
         if labels:
-            update_data["labels"] = labels.split(",")
+            try:
+                update_data["labels"] = coerce_to_list_str(labels)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid labels: {e}"})
         if test_scenario_ids:
-            update_data["test_scenario_ids"] = [
-                s.strip() for s in test_scenario_ids.split(",") if s.strip()
-            ]
+            try:
+                update_data["test_scenario_ids"] = coerce_to_list_str(test_scenario_ids)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
         if severity:
-            update_data["severity"] = severity
+            _sev = severity.strip().lower()
+            try:
+                BugSeverity(_sev)
+            except ValueError:
+                return json.dumps(
+                    {
+                        "error": f"Invalid severity '{severity}'. Must be one of: {[s.value for s in BugSeverity]}"
+                    }
+                )
+            update_data["severity"] = _sev
         if expected_behavior:
             update_data["expected_behavior"] = expected_behavior.replace("\\n", "\n")
         if observed_behavior:
@@ -1868,9 +2060,10 @@ async def okto_pulse_update_card(
         if action_plan:
             update_data["action_plan"] = action_plan.replace("\\n", "\n")
         if linked_test_task_ids:
-            update_data["linked_test_task_ids"] = [
-                s.strip() for s in linked_test_task_ids.split(",") if s.strip()
-            ]
+            try:
+                update_data["linked_test_task_ids"] = coerce_to_list_str(linked_test_task_ids)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid linked_test_task_ids: {e}"})
 
         card_update = CardUpdate(**update_data)
         updated = await service.update_card(card_id, ctx.agent_id, card_update)
@@ -2453,7 +2646,14 @@ async def okto_pulse_add_choice_comment(
         board_id: Board ID
         card_id: Card ID
         question: The question or prompt text displayed above the options
-        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        options: Option labels in any of three formats:
+            - JSON array (preferred when labels contain commas):
+              ``'["Option A (with, commas)", "Option B"]'``
+            - Pipe-separated (when labels contain commas but not pipes):
+              ``"Option A|Option B|Option C"``
+            - Comma-separated (legacy, fragile if a label contains a comma):
+              ``"Option A,Option B,Option C"``
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         comment_type: "choice" for single-select (default) or "multi_choice" for multi-select
         allow_free_text: "true" to allow a free-text response in addition to selections
 
@@ -2472,7 +2672,10 @@ async def okto_pulse_add_choice_comment(
 
     from okto_pulse.core.models.schemas import ChoiceOption, CommentCreate
 
-    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        option_labels = parse_multi_value(options)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid options: {e}"})
     if not option_labels:
         return json.dumps({"error": "At least one option is required"})
 
@@ -2527,7 +2730,10 @@ async def okto_pulse_respond_to_choice(
     Args:
         board_id: Board ID
         comment_id: Comment ID of the choice board
-        selected: Comma-separated option IDs to select (e.g. "opt_0,opt_2")
+        selected: Option IDs to select, accepted in three formats:
+            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
+            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         free_text: Optional free-text response (only if allow_free_text is enabled)
 
     Returns:
@@ -2537,7 +2743,10 @@ async def okto_pulse_respond_to_choice(
     if not ctx:
         return _auth_error()
 
-    selected_ids = [s.strip() for s in selected.split(",") if s.strip()]
+    try:
+        selected_ids = parse_multi_value(selected)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid selected: {e}"})
     if not selected_ids:
         return json.dumps({"error": "At least one selection is required"})
 
@@ -2921,7 +3130,7 @@ async def okto_pulse_create_ideation(
     problem_statement: str = "",
     proposed_approach: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Create a new ideation on the board. Ideations are the starting point — raw ideas that may be
@@ -2957,7 +3166,7 @@ async def okto_pulse_create_ideation(
             problem_statement=problem_statement.replace("\\n", "\n") if problem_statement else None,
             proposed_approach=proposed_approach.replace("\\n", "\n") if proposed_approach else None,
             assignee_id=assignee_id or None,
-            labels=labels.split(",") if labels else None,
+            labels=coerce_to_list_str(labels) or None,
         )
 
         ideation = await service.create_ideation(
@@ -3235,7 +3444,7 @@ async def okto_pulse_update_ideation(
     problem_statement: str = "",
     proposed_approach: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated.
@@ -3275,7 +3484,10 @@ async def okto_pulse_update_ideation(
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
-        update_kwargs["labels"] = labels.split(",")
+        try:
+            update_kwargs["labels"] = coerce_to_list_str(labels)
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid labels: {e}"})
 
     if not update_kwargs:
         return json.dumps({"error": "No fields to update"})
@@ -3769,7 +3981,14 @@ async def okto_pulse_ask_ideation_choice_question(
         board_id: Board ID
         ideation_id: Ideation ID
         question: The question text
-        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        options: Option labels in any of three formats:
+            - JSON array (preferred when labels contain commas):
+              ``'["Mermaid (text-based, lightweight)", "ExcaliDraw (heavy)"]'``
+            - Pipe-separated (when labels contain commas but not pipes):
+              ``"Option A|Option B|Option C"``
+            - Comma-separated (legacy, fragile if a label contains a comma):
+              ``"Option A,Option B,Option C"``
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         question_type: "choice" for single-select (default) or "multi_choice" for multi-select
         allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -3786,7 +4005,10 @@ async def okto_pulse_ask_ideation_choice_question(
 
     from okto_pulse.core.models.schemas import IdeationQAChoiceOption, IdeationQACreate
 
-    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        option_labels = parse_multi_value(options)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid options: {e}"})
     if not option_labels:
         return json.dumps({"error": "At least one option is required"})
 
@@ -3841,7 +4063,10 @@ async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, q
         ideation_id: Ideation ID (for context/validation)
         qa_id: Q&A item ID to answer
         answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+        selected: Option IDs for choice questions, accepted in three formats:
+            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
+            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
 
     Returns:
         JSON with updated Q&A item
@@ -3856,7 +4081,10 @@ async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, q
 
     from okto_pulse.core.models.schemas import IdeationQAAnswer
 
-    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+    try:
+        selected_list = parse_multi_value(selected) if selected else None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid selected: {e}"})
 
     async with get_db_for_mcp() as db:
         service = IdeationQAService(db)
@@ -3957,7 +4185,7 @@ async def okto_pulse_create_refinement(
     analysis: str = "",
     decisions: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
     mockup_ids: str = "",
     kb_ids: str = "",
 ) -> str:
@@ -4007,7 +4235,7 @@ async def okto_pulse_create_refinement(
             analysis=analysis.replace("\\n", "\n") if analysis else None,
             decisions=parse_multi_value(decisions) or None,
             assignee_id=assignee_id or None,
-            labels=labels.split(",") if labels else None,
+            labels=coerce_to_list_str(labels) or None,
             mockup_ids=parse_multi_value(mockup_ids) or None,
             kb_ids=parse_multi_value(kb_ids) or None,
         )
@@ -4286,7 +4514,7 @@ async def okto_pulse_update_refinement(
     analysis: str = "",
     decisions: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Update a refinement's fields. Content changes bump the version. Only non-empty fields are updated.
@@ -4332,7 +4560,10 @@ async def okto_pulse_update_refinement(
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
-        update_kwargs["labels"] = labels.split(",")
+        try:
+            update_kwargs["labels"] = coerce_to_list_str(labels)
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid labels: {e}"})
 
     if not update_kwargs:
         return json.dumps({"error": "No fields to update"})
@@ -4636,7 +4867,14 @@ async def okto_pulse_ask_refinement_choice_question(
         board_id: Board ID
         refinement_id: Refinement ID
         question: The question text
-        options: Comma-separated list of option labels (e.g. "Option A,Option B,Option C")
+        options: Option labels in any of three formats:
+            - JSON array (preferred when labels contain commas):
+              ``'["Mermaid (text-based, lightweight)", "ExcaliDraw (heavy)"]'``
+            - Pipe-separated (when labels contain commas but not pipes):
+              ``"Option A|Option B|Option C"``
+            - Comma-separated (legacy, fragile if a label contains a comma):
+              ``"Option A,Option B,Option C"``
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         question_type: "choice" for single-select (default) or "multi_choice" for multi-select
         allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -4653,7 +4891,10 @@ async def okto_pulse_ask_refinement_choice_question(
 
     from okto_pulse.core.models.schemas import RefinementQAChoiceOption, RefinementQACreate
 
-    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        option_labels = parse_multi_value(options)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid options: {e}"})
     if not option_labels:
         return json.dumps({"error": "At least one option is required"})
 
@@ -4708,7 +4949,10 @@ async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: st
         refinement_id: Refinement ID (for context/validation)
         qa_id: Q&A item ID to answer
         answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+        selected: Option IDs for choice questions, accepted in three formats:
+            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
+            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
 
     Returns:
         JSON with updated Q&A item
@@ -4723,7 +4967,10 @@ async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: st
 
     from okto_pulse.core.models.schemas import RefinementQAAnswer
 
-    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+    try:
+        selected_list = parse_multi_value(selected) if selected else None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid selected: {e}"})
 
     async with get_db_for_mcp() as db:
         service = RefinementQAService(db)
@@ -4824,7 +5071,7 @@ async def okto_pulse_create_spec(
     acceptance_criteria: str = "",
     status: str = "draft",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Create a new spec (specification) on the board. Specs define requirements that drive card/task creation.
@@ -4840,7 +5087,9 @@ async def okto_pulse_create_spec(
         acceptance_criteria: Pipe-separated list of acceptance criteria (e.g. "All tests pass|No console errors")
         status: Spec status — one of: draft, review, approved, in_progress, done, cancelled (default: draft)
         assignee_id: User/agent ID to assign (optional)
-        labels: Comma-separated labels (optional)
+        labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
+            legacy string accepted as JSON array or pipe-separated. Comma-only string
+            is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with created spec details
@@ -4874,7 +5123,7 @@ async def okto_pulse_create_spec(
             acceptance_criteria=parse_multi_value(acceptance_criteria) or None,
             status=spec_status,
             assignee_id=assignee_id or None,
-            labels=labels.split(",") if labels else None,
+            labels=coerce_to_list_str(labels) or None,
         )
 
         spec = await service.create_spec(
@@ -5214,7 +5463,7 @@ async def okto_pulse_update_spec(
     technical_requirements: str = "",
     acceptance_criteria: str = "",
     assignee_id: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
@@ -5262,7 +5511,10 @@ async def okto_pulse_update_spec(
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
-        update_kwargs["labels"] = labels.split(",")
+        try:
+            update_kwargs["labels"] = coerce_to_list_str(labels)
+        except ValueError as e:
+            return json.dumps({"error": f"Invalid labels: {e}"})
 
     if not update_kwargs:
         return json.dumps({"error": "No fields to update"})
@@ -5548,21 +5800,114 @@ async def okto_pulse_list_test_scenarios(
         )
 
 
+# ============================================================================
+# TEST THEATER PREVENTION GATE (spec 873e98cc — Wave 2 NC-9)
+# ============================================================================
+
+# Validação por status alvo. Cada status alvo tem requirements diferentes
+# para evidence dict. draft/ready não exigem nada (intent declarado).
+#
+# Cada rule é uma tupla de keys:
+#   - len(group) == 1 → AND-required (single key, must be present)
+#   - len(group)  > 1 → OR-required (one-of: pelo menos uma key)
+_EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
+    # automated: ambas as keys são obrigatórias (duas rules AND)
+    "automated": (
+        ("test_file_path",),
+        ("test_function",),
+    ),
+    # passed: last_run_at obrigatório + (output_snippet OR test_run_id)
+    "passed": (
+        ("last_run_at",),
+        ("output_snippet", "test_run_id"),  # one-of
+    ),
+    "failed": (
+        ("last_run_at",),
+        ("output_snippet", "test_run_id"),  # one-of
+    ),
+}
+
+import logging as _nc9_logging  # noqa: E402 — local import isolated to NC-9 gate
+_evidence_logger = _nc9_logging.getLogger("okto_pulse.spec.test_scenario")
+
+
+def _validate_evidence(
+    status: str, evidence: dict | None
+) -> tuple[bool, list[str]]:
+    """Return (ok, missing_keys). Empty missing_keys means valid.
+
+    For each rule group, ALL keys in the first non-empty group must be
+    present (AND logic). When a group has multiple keys (one-of), at
+    least one must be present.
+    """
+    rules = _EVIDENCE_REQUIRED_KEYS.get(status)
+    if not rules:
+        return True, []
+    if not evidence:
+        # Flatten all required keys for the error message.
+        flat: list[str] = []
+        for group in rules:
+            if len(group) == 1:
+                flat.extend(group)
+            else:
+                flat.append(" or ".join(group))
+        return False, flat
+    missing: list[str] = []
+    for group in rules:
+        if len(group) == 1:
+            key = group[0]
+            if not evidence.get(key):
+                missing.append(key)
+        else:
+            # one-of group — at least one key must be present
+            if not any(evidence.get(k) for k in group):
+                missing.append(" or ".join(group))
+    return (len(missing) == 0, missing)
+
+
 @mcp.tool()
 async def okto_pulse_update_test_scenario_status(
-    board_id: str, spec_id: str, scenario_id: str, status: str
+    board_id: str,
+    spec_id: str,
+    scenario_id: str,
+    status: str,
+    evidence: str = "",
 ) -> str:
     """
-    Update the status of a test scenario.
+    Update the status of a test scenario, optionally attaching structured
+    evidence that the test really exists/ran.
+
+    **Test theater prevention gate (NC-9, spec 873e98cc):**
+
+    When the board's `skip_test_evidence_global` setting is False (default),
+    setting status to one of `automated`, `passed`, or `failed` REQUIRES
+    structured evidence:
+      - `automated`: evidence.test_file_path AND evidence.test_function
+      - `passed`/`failed`: evidence.last_run_at AND
+        (evidence.output_snippet OR evidence.test_run_id)
+      - `draft`/`ready`: evidence opcional (intent declarado)
+
+    When `skip_test_evidence_global=True`, the gate is bypassed — every
+    status update is accepted without evidence, but a structured audit log
+    `test_scenario.evidence_gate_skipped` is emitted for forensics.
+
+    Evidence is persisted inline within the scenario dict (no DB migration).
+    Audit log `test_scenario.status_changed` is emitted on every successful
+    update with `evidence_provided`, `evidence_gate_skipped`, and
+    `changed_by_agent_id`.
 
     Args:
         board_id: Board ID
         spec_id: Spec ID
         scenario_id: Test scenario ID (e.g. "ts_abc123")
         status: New status — one of: draft, ready, automated, passed, failed
+        evidence: Optional JSON string with keys test_file_path, test_function,
+            last_run_at, test_run_id, output_snippet. Empty string = no evidence.
 
     Returns:
-        JSON with updated scenario
+        JSON. On success: {success, scenario_id, old_status, new_status,
+        evidence_provided, evidence_gate_skipped}. On gate failure:
+        {error: "evidence_required", required: [...], message: "..."}.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -5576,6 +5921,23 @@ async def okto_pulse_update_test_scenario_status(
     if status not in valid:
         return json.dumps({"error": f"Invalid status. Must be one of: {valid}"})
 
+    # Parse evidence param if provided.
+    evidence_dict: dict | None = None
+    if evidence:
+        try:
+            parsed = json.loads(evidence)
+            if not isinstance(parsed, dict):
+                return json.dumps({
+                    "error": "invalid_evidence_json",
+                    "message": "evidence must be a JSON object",
+                })
+            evidence_dict = parsed
+        except json.JSONDecodeError as exc:
+            return json.dumps({
+                "error": "invalid_evidence_json",
+                "message": f"evidence is not valid JSON: {exc}",
+            })
+
     async with get_db_for_mcp() as db:
         from sqlalchemy import update as sql_update
         from okto_pulse.core.models.db import ActivityLog, Spec as SpecModel
@@ -5585,6 +5947,29 @@ async def okto_pulse_update_test_scenario_status(
         if not spec:
             return json.dumps({"error": "Spec not found"})
 
+        # Resolve board settings to know if gate is active.
+        from okto_pulse.core.models.db import Board
+        board_row = await db.get(Board, board_id)
+        board_settings = (board_row.settings if board_row else {}) or {}
+        skip_evidence_gate = bool(
+            board_settings.get("skip_test_evidence_global", False)
+        )
+
+        # Apply gate when skip is OFF.
+        if not skip_evidence_gate:
+            ok, missing = _validate_evidence(status, evidence_dict)
+            if not ok:
+                return json.dumps({
+                    "error": "evidence_required",
+                    "required": missing,
+                    "message": (
+                        f"Cannot mark scenario as {status} without structured "
+                        f"evidence ({', '.join(missing)}). This prevents the "
+                        "test theater anti-pattern. To bypass, enable "
+                        "skip_test_evidence_global on the board."
+                    ),
+                })
+
         scenarios = list(spec.test_scenarios or [])
         old_status = None
         found = False
@@ -5592,6 +5977,9 @@ async def okto_pulse_update_test_scenario_status(
             if s.get("id") == scenario_id:
                 old_status = s.get("status")
                 s["status"] = status
+                # Persist evidence inline (only if provided).
+                if evidence_dict is not None:
+                    s["evidence"] = evidence_dict
                 found = True
                 break
 
@@ -5617,12 +6005,58 @@ async def okto_pulse_update_test_scenario_status(
                 "scenario_title": scenario_title,
                 "from_status": old_status,
                 "to_status": status,
+                "evidence_provided": evidence_dict is not None,
+                "evidence_gate_skipped": skip_evidence_gate,
             },
         )
         db.add(log)
         await db.commit()
 
-        return json.dumps({"success": True, "scenario_id": scenario_id, "old_status": old_status, "new_status": status})
+        # Structured log SEMPRE emitido (NC-9 BR audit log).
+        _evidence_logger.info(
+            "test_scenario.status_changed scenario=%s board=%s from=%s to=%s "
+            "evidence=%s skip=%s",
+            scenario_id, spec.board_id, old_status, status,
+            evidence_dict is not None, skip_evidence_gate,
+            extra={
+                "event": "test_scenario.status_changed",
+                "scenario_id": scenario_id,
+                "board_id": spec.board_id,
+                "spec_id": spec_id,
+                "from_status": old_status,
+                "to_status": status,
+                "evidence_provided": evidence_dict is not None,
+                "evidence_gate_skipped": skip_evidence_gate,
+                "changed_by_agent_id": ctx.agent_id,
+            },
+        )
+        # Quando skip está ON, log dedicado para forensics.
+        if skip_evidence_gate and status in _EVIDENCE_REQUIRED_KEYS:
+            _evidence_logger.info(
+                "test_scenario.evidence_gate_skipped scenario=%s board=%s "
+                "status=%s evidence=%s",
+                scenario_id, spec.board_id, status,
+                evidence_dict is not None,
+                extra={
+                    "event": "test_scenario.evidence_gate_skipped",
+                    "scenario_id": scenario_id,
+                    "board_id": spec.board_id,
+                    "spec_id": spec_id,
+                    "status": status,
+                    "evidence_provided": evidence_dict is not None,
+                    "skip": True,
+                    "agent_id": ctx.agent_id,
+                },
+            )
+
+        return json.dumps({
+            "success": True,
+            "scenario_id": scenario_id,
+            "old_status": old_status,
+            "new_status": status,
+            "evidence_provided": evidence_dict is not None,
+            "evidence_gate_skipped": skip_evidence_gate,
+        })
 
 
 @mcp.tool()
@@ -5985,7 +6419,7 @@ async def okto_pulse_restore_tree(
 
 @mcp.tool()
 async def okto_pulse_copy_mockups_to_card(
-    board_id: str, spec_id: str, card_id: str, screen_ids: str = ""
+    board_id: str, spec_id: str, card_id: str, screen_ids: list[str] | str = ""
 ) -> str:
     """
     Copy screen mockups from a spec to a card. Use this when creating implementation
@@ -5995,7 +6429,10 @@ async def okto_pulse_copy_mockups_to_card(
         board_id: Board ID
         spec_id: Source spec ID
         card_id: Target card ID
-        screen_ids: Comma-separated screen IDs to copy (empty = copy ALL mockups from the spec)
+        screen_ids: Multi-value screen IDs to copy (empty = copy ALL mockups from the
+            spec). Preferred native list (e.g. ``["scr_a", "scr_b"]``); legacy string
+            accepted as JSON array or pipe-separated. Comma-only string is REJECTED.
+            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with count of mockups copied
@@ -6017,7 +6454,10 @@ async def okto_pulse_copy_mockups_to_card(
 
         source_mockups = list(spec.screen_mockups or [])
         if screen_ids:
-            ids = {s.strip() for s in screen_ids.split(",") if s.strip()}
+            try:
+                ids = set(coerce_to_list_str(screen_ids))
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid screen_ids: {e}"})
             source_mockups = [m for m in source_mockups if m.get("id") in ids]
 
         if not source_mockups:
@@ -6040,7 +6480,7 @@ async def okto_pulse_copy_mockups_to_card(
 
 @mcp.tool()
 async def okto_pulse_copy_knowledge_to_card(
-    board_id: str, spec_id: str, card_id: str, knowledge_ids: str = ""
+    board_id: str, spec_id: str, card_id: str, knowledge_ids: list[str] | str = ""
 ) -> str:
     """
     Copy knowledge base entries from a spec to a card as attachments/comments.
@@ -6050,7 +6490,10 @@ async def okto_pulse_copy_knowledge_to_card(
         board_id: Board ID
         spec_id: Source spec ID
         card_id: Target card ID
-        knowledge_ids: Comma-separated knowledge base IDs to copy (empty = copy ALL)
+        knowledge_ids: Multi-value knowledge base IDs to copy (empty = copy ALL).
+            Preferred native list (e.g. ``["kb_a", "kb_b"]``); legacy string accepted
+            as JSON array or pipe-separated. Comma-only string is REJECTED. See
+            ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with count of knowledge entries copied
@@ -6070,10 +6513,13 @@ async def okto_pulse_copy_knowledge_to_card(
         if not card:
             return json.dumps({"error": "Card not found"})
 
-        # Get spec knowledge bases
-        kbs = await spec_service.list_knowledge(spec_id)
+        kb_service = SpecKnowledgeService(db)
+        kbs = await kb_service.list_knowledge(spec_id)
         if knowledge_ids:
-            ids = {s.strip() for s in knowledge_ids.split(",") if s.strip()}
+            try:
+                ids = set(coerce_to_list_str(knowledge_ids))
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid knowledge_ids: {e}"})
             kbs = [kb for kb in kbs if kb.id in ids]
 
         if not kbs:
@@ -6093,6 +6539,196 @@ async def okto_pulse_copy_knowledge_to_card(
         await db.commit()
 
     return json.dumps({"success": True, "copied": copied})
+
+
+# ============================================================================
+# Card.knowledge_bases — inline JSONB lifecycle (symmetric to spec_knowledge)
+# ============================================================================
+
+
+def _new_card_kb_id() -> str:
+    import hashlib, time
+    return "kb_" + hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:10]
+
+
+@mcp.tool()
+async def okto_pulse_add_card_knowledge(
+    board_id: str,
+    card_id: str,
+    title: str,
+    content: str,
+    description: str = "",
+    mime_type: str = "text/markdown",
+    source: str = "manual",
+) -> str:
+    """
+    Attach a knowledge base entry directly to a card. Stored inline on
+    `Card.knowledge_bases` (JSONB). Symmetric to spec_knowledge but scoped
+    to a single task.
+
+    Args:
+        board_id: Board ID
+        card_id: Card ID
+        title: KE title
+        content: KE content (Markdown by default)
+        description: Short summary (optional)
+        mime_type: Content MIME type (default text/markdown)
+        source: Free-form provenance hint (e.g. "manual", "copied_from_spec:<spec_id>:<kb_id>")
+
+    Returns:
+        JSON with the created KE including its generated id
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    if not (title or "").strip() or not (content or "").strip():
+        return json.dumps({"error": "title and content are required"})
+
+    from okto_pulse.core.models.schemas import CardUpdate
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        kbs = list(card.knowledge_bases or [])
+        kb = {
+            "id": _new_card_kb_id(),
+            "title": title.strip(),
+            "description": (description or "").strip() or None,
+            "content": content.replace("\\n", "\n"),
+            "mime_type": mime_type or "text/markdown",
+            "source": source or "manual",
+            "author_id": ctx.agent_id,
+        }
+        kbs.append(kb)
+
+        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
+        await db.commit()
+
+    return json.dumps({"success": True, "knowledge": kb}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_card_knowledge(board_id: str, card_id: str) -> str:
+    """
+    List all knowledge base entries attached to a card.
+    Returns titles + descriptions + ids; full content is included as well
+    since the rows live inline (no separate fetch path).
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+    return json.dumps({"success": True, "card_id": card_id, "knowledge": list(card.knowledge_bases or [])}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_get_card_knowledge(board_id: str, card_id: str, knowledge_id: str) -> str:
+    """Get a single KE by id from a card's inline knowledge_bases array."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+    for kb in (card.knowledge_bases or []):
+        if kb.get("id") == knowledge_id:
+            return json.dumps({"success": True, "knowledge": kb}, default=str)
+    return json.dumps({"error": "Knowledge entry not found"})
+
+
+@mcp.tool()
+async def okto_pulse_update_card_knowledge(
+    board_id: str,
+    card_id: str,
+    knowledge_id: str,
+    title: str = "",
+    description: str = "",
+    content: str = "",
+    mime_type: str = "",
+) -> str:
+    """Update fields of an existing KE on a card. Only provided fields change."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import CardUpdate
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        kbs = list(card.knowledge_bases or [])
+        idx = next((i for i, kb in enumerate(kbs) if kb.get("id") == knowledge_id), -1)
+        if idx == -1:
+            return json.dumps({"error": "Knowledge entry not found"})
+
+        kb = dict(kbs[idx])
+        if title:
+            kb["title"] = title.strip()
+        if description:
+            kb["description"] = description.strip()
+        if content:
+            kb["content"] = content.replace("\\n", "\n")
+        if mime_type:
+            kb["mime_type"] = mime_type
+        kbs[idx] = kb
+
+        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
+        await db.commit()
+
+    return json.dumps({"success": True, "knowledge": kb}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_delete_card_knowledge(board_id: str, card_id: str, knowledge_id: str) -> str:
+    """Delete a KE from a card's inline knowledge_bases array."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.models.schemas import CardUpdate
+
+    async with get_db_for_mcp() as db:
+        service = CardService(db)
+        card = await service.get_card(card_id)
+        if not card or card.board_id != board_id:
+            return json.dumps({"error": "Card not found"})
+
+        kbs = list(card.knowledge_bases or [])
+        before = len(kbs)
+        kbs = [kb for kb in kbs if kb.get("id") != knowledge_id]
+        if len(kbs) == before:
+            return json.dumps({"error": "Knowledge entry not found"})
+
+        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
+        await db.commit()
+
+    return json.dumps({"success": True, "deleted": knowledge_id, "remaining": len(kbs)})
 
 
 @mcp.tool()
@@ -8328,7 +8964,7 @@ async def okto_pulse_link_card_to_spec(board_id: str, spec_id: str, card_id: str
 
     async with get_db_for_mcp() as db:
         service = SpecService(db)
-        linked = await service.link_card(spec_id, card_id)
+        linked = await service.link_card(spec_id, card_id, user_id=ctx.agent_id)
         await db.commit()
 
         if not linked:
@@ -8734,7 +9370,14 @@ async def okto_pulse_ask_spec_choice_question(
         board_id: Board ID
         spec_id: Spec ID
         question: The question text
-        options: Comma-separated list of option labels (e.g. "OAuth2,API Keys,Both")
+        options: Option labels in any of three formats:
+            - JSON array (preferred when labels contain commas):
+              ``'["OAuth2 (RFC 6749, recommended)", "API Keys", "Both"]'``
+            - Pipe-separated (when labels contain commas but not pipes):
+              ``"OAuth2|API Keys|Both"``
+            - Comma-separated (legacy, fragile if a label contains a comma):
+              ``"OAuth2,API Keys,Both"``
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
         question_type: "choice" for single-select (default) or "multi_choice" for multi-select
         allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -8753,7 +9396,10 @@ async def okto_pulse_ask_spec_choice_question(
 
     from okto_pulse.core.models.schemas import SpecQAChoiceOption, SpecQACreate
 
-    option_labels = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        option_labels = parse_multi_value(options)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid options: {e}"})
     if not option_labels:
         return json.dumps({"error": "At least one option is required"})
 
@@ -8808,7 +9454,10 @@ async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: st
         spec_id: Spec ID (for context/validation)
         qa_id: Q&A item ID to answer
         answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Comma-separated option IDs for choice questions (e.g. "opt_0,opt_2")
+        selected: Option IDs for choice questions, accepted in three formats:
+            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
+            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
+            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
 
     Returns:
         JSON with updated Q&A item
@@ -8823,7 +9472,10 @@ async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: st
 
     from okto_pulse.core.models.schemas import SpecQAAnswer
 
-    selected_list = [s.strip() for s in selected.split(",") if s.strip()] if selected else None
+    try:
+        selected_list = parse_multi_value(selected) if selected else None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid selected: {e}"})
 
     async with get_db_for_mcp() as db:
         service = SpecQAService(db)
@@ -8907,298 +9559,6 @@ async def okto_pulse_list_spec_qa(board_id: str, spec_id: str) -> str:
             },
             default=str,
         )
-
-
-# ============================================================================
-# SPEC SKILL TOOLS (3-level loading: RETRIEVE → INSPECT → LOAD)
-# ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_spec_skill_retrieve(board_id: str, spec_id: str) -> str:
-    """
-    Level 1 — RETRIEVE: List all skills attached to a spec.
-    Returns a lightweight catalog with skill_id, name, description, and tags.
-    Use this to discover what skills are available before inspecting or loading them.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with list of skill summaries
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        skills = await service.list_skills(spec_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "spec_id": spec_id,
-                "count": len(skills),
-                "skills": [
-                    {
-                        "skill_id": s.skill_id,
-                        "name": s.name,
-                        "description": s.description,
-                        "type": s.type,
-                        "tags": s.tags,
-                    }
-                    for s in skills
-                ],
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
-async def okto_pulse_spec_skill_inspect(board_id: str, spec_id: str, skill_id: str) -> str:
-    """
-    Level 2 — INSPECT: Get a skill's section index with summary content inline.
-    Returns the skill metadata plus a list of sections (id, title, description)
-    so you can decide which sections to load in full.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        skill_id: The skill_id slug to inspect
-
-    Returns:
-        JSON with skill metadata and section index
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        skill = await service.get_skill(spec_id, skill_id)
-        await db.commit()
-
-        if not skill:
-            return json.dumps({"error": f"Skill '{skill_id}' not found in spec"})
-
-        sections_index = []
-        for s in (skill.sections or []):
-            entry: dict[str, Any] = {
-                "id": s.get("id", ""),
-                "title": s.get("title", ""),
-                "description": s.get("description", ""),
-                "level": s.get("level", "detail"),
-            }
-            # Include inline content for summary-level sections
-            if s.get("level") == "summary":
-                entry["content"] = s.get("content", "")
-            sections_index.append(entry)
-
-        return json.dumps(
-            {
-                "skill_id": skill.skill_id,
-                "name": skill.name,
-                "description": skill.description,
-                "type": skill.type,
-                "version": skill.version,
-                "tags": skill.tags,
-                "sections": sections_index,
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
-async def okto_pulse_spec_skill_load(
-    board_id: str, spec_id: str, skill_id: str, section_id: str = ""
-) -> str:
-    """
-    Level 3 — LOAD: Get the full content of one or more skill sections.
-    If section_id is empty, returns ALL sections with full content.
-    Use comma-separated section_ids to load specific sections.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        skill_id: The skill_id slug to load
-        section_id: Comma-separated section IDs to load (empty = all)
-
-    Returns:
-        JSON with full section content
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        skill = await service.get_skill(spec_id, skill_id)
-        await db.commit()
-
-        if not skill:
-            return json.dumps({"error": f"Skill '{skill_id}' not found in spec"})
-
-        sections = skill.sections or []
-        if section_id:
-            requested_ids = {sid.strip() for sid in section_id.split(",")}
-            sections = [s for s in sections if s.get("id") in requested_ids]
-
-        return json.dumps(
-            {
-                "skill_id": skill.skill_id,
-                "name": skill.name,
-                "sections": [
-                    {
-                        "id": s.get("id", ""),
-                        "title": s.get("title", ""),
-                        "content": s.get("content", ""),
-                    }
-                    for s in sections
-                ],
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
-async def okto_pulse_create_spec_skill(
-    board_id: str,
-    spec_id: str,
-    skill_id: str,
-    name: str,
-    description: str,
-    content: str = "",
-    tags: str = "",
-    type: str = "PROMPT",
-    file_path: str | None = None,
-    file_url: str | None = None,
-) -> str:
-    """
-    Create a skill on a spec. If content is provided as a single block, it becomes one section.
-    For multi-section skills, use okto_pulse_update_spec_skill to set structured sections.
-
-    Provide at most ONE of: content, file_path, or file_url. Prefer file_path or
-    file_url for large skill documents — the content is loaded server-side and
-    never passes through the LLM context, saving tokens.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        skill_id: Unique slug identifier for the skill (e.g. "api-design-guidelines")
-        name: Display name
-        description: What this skill provides
-        content: Inline skill content (optional — creates a single "main" section)
-        tags: Comma-separated tags (optional)
-        type: Skill type, default "PROMPT"
-        file_path: Absolute path to a local UTF-8 text file on the MCP server host
-        file_url: HTTP(S) URL of a UTF-8 text document to fetch
-
-    Returns:
-        JSON with created skill
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.models.schemas import SkillSectionSchema, SpecSkillCreate
-
-    # Skill content is optional — only resolve if any source was provided.
-    resolved_content: str | None = None
-    if content or file_path or file_url:
-        resolved_content, err = await _resolve_text_content(
-            content=content, file_path=file_path, file_url=file_url
-        )
-        if err:
-            return json.dumps({"error": err})
-
-    sections = None
-    if resolved_content:
-        sections = [SkillSectionSchema(
-            id="main",
-            title=name,
-            description=description,
-            level="full",
-            content=resolved_content,
-        )]
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        skill_data = SpecSkillCreate(
-            skill_id=skill_id,
-            name=name,
-            description=description,
-            type=type,
-            tags=tags.split(",") if tags else None,
-            sections=sections,
-        )
-        skill = await service.create_skill(spec_id, ctx.agent_id, skill_data)
-        await db.commit()
-
-        if not skill:
-            return json.dumps({"error": "Failed to create skill — spec not found or duplicate skill_id"})
-
-        return json.dumps(
-            {
-                "success": True,
-                "skill": {
-                    "skill_id": skill.skill_id,
-                    "name": skill.name,
-                    "description": skill.description,
-                    "sections_count": len(skill.sections or []),
-                },
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
-async def okto_pulse_delete_spec_skill(board_id: str, spec_id: str, skill_id: str) -> str:
-    """
-    Delete a skill from a spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        skill_id: The skill_id slug to delete
-
-    Returns:
-        JSON with success status
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        deleted = await service.delete_skill(spec_id, skill_id)
-        await db.commit()
-
-        if not deleted:
-            return json.dumps({"error": "Skill not found"})
-
-        return json.dumps({"success": True})
 
 
 # ============================================================================
@@ -9709,11 +10069,11 @@ async def okto_pulse_create_sprint(
     description: str = "",
     objective: str = "",
     expected_outcome: str = "",
-    test_scenario_ids: str = "",
-    business_rule_ids: str = "",
+    test_scenario_ids: list[str] | str = "",
+    business_rule_ids: list[str] | str = "",
     start_date: str = "",
     end_date: str = "",
-    labels: str = "",
+    labels: list[str] | str = "",
 ) -> str:
     """
     Create a new sprint for a spec. Sprints break specs into incremental deliverables.
@@ -9757,10 +10117,10 @@ async def okto_pulse_create_sprint(
                 title=title, description=description or None, spec_id=spec_id,
                 objective=objective or None,
                 expected_outcome=expected_outcome or None,
-                test_scenario_ids=[x.strip() for x in test_scenario_ids.split(",") if x.strip()] or None,
-                business_rule_ids=[x.strip() for x in business_rule_ids.split(",") if x.strip()] or None,
+                test_scenario_ids=coerce_to_list_str(test_scenario_ids) or None,
+                business_rule_ids=coerce_to_list_str(business_rule_ids) or None,
                 start_date=start_date or None, end_date=end_date or None,
-                labels=[x.strip() for x in labels.split(",") if x.strip()] or None,
+                labels=coerce_to_list_str(labels) or None,
             )
             sprint = await service.create_sprint(board_id, ctx.agent_id, data, skip_ownership_check=True)
             await db.commit()
@@ -9780,9 +10140,9 @@ async def okto_pulse_update_sprint(
     sprint_id: str,
     title: str = "",
     description: str = "",
-    test_scenario_ids: str = "",
-    business_rule_ids: str = "",
-    labels: str = "",
+    test_scenario_ids: list[str] | str = "",
+    business_rule_ids: list[str] | str = "",
+    labels: list[str] | str = "",
     skip_test_coverage: str = "",
     skip_rules_coverage: str = "",
     skip_qualitative_validation: str = "",
@@ -9820,11 +10180,20 @@ async def okto_pulse_update_sprint(
         if description:
             kwargs["description"] = description
         if test_scenario_ids:
-            kwargs["test_scenario_ids"] = [x.strip() for x in test_scenario_ids.split(",") if x.strip()]
+            try:
+                kwargs["test_scenario_ids"] = coerce_to_list_str(test_scenario_ids)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
         if business_rule_ids:
-            kwargs["business_rule_ids"] = [x.strip() for x in business_rule_ids.split(",") if x.strip()]
+            try:
+                kwargs["business_rule_ids"] = coerce_to_list_str(business_rule_ids)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid business_rule_ids: {e}"})
         if labels:
-            kwargs["labels"] = [x.strip() for x in labels.split(",") if x.strip()]
+            try:
+                kwargs["labels"] = coerce_to_list_str(labels)
+            except ValueError as e:
+                return json.dumps({"error": f"Invalid labels: {e}"})
         if skip_test_coverage:
             kwargs["skip_test_coverage"] = skip_test_coverage.lower() == "true"
         if skip_rules_coverage:
@@ -10106,7 +10475,7 @@ async def okto_pulse_list_sprints(board_id: str, spec_id: str) -> str:
 async def okto_pulse_assign_tasks_to_sprint(
     board_id: str,
     sprint_id: str,
-    card_ids: str,
+    card_ids: list[str] | str,
 ) -> str:
     """
     Assign cards to a sprint. Cards must belong to the same spec as the sprint.
@@ -10114,7 +10483,10 @@ async def okto_pulse_assign_tasks_to_sprint(
     Args:
         board_id: Board ID
         sprint_id: Sprint ID
-        card_ids: Comma-separated card IDs to assign
+        card_ids: Multi-value card IDs to assign. Preferred native list (e.g.
+            ``["uuid_a", "uuid_b"]``); legacy string accepted as JSON array or
+            pipe-separated. Comma-only string is REJECTED. See
+            ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
         JSON with number of cards assigned
@@ -10123,7 +10495,10 @@ async def okto_pulse_assign_tasks_to_sprint(
     if not ctx:
         return _auth_error()
 
-    ids = [x.strip() for x in card_ids.split(",") if x.strip()]
+    try:
+        ids = coerce_to_list_str(card_ids)
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid card_ids: {e}"})
     if not ids:
         return json.dumps({"error": "No card IDs provided"})
 
@@ -10892,12 +11267,301 @@ _register_kg_power_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_
 
 
 # ============================================================================
+# KG HEALTH (spec 20f67c2a — Ideação #5, FR2)
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_kg_health(board_id: str) -> str:
+    """
+    Snapshot of the KG health for one board — gemelar do REST GET /api/v1/kg/health.
+
+    Returns 10 fields aggregating consolidation queue depth, dead-letter
+    backlog, total nodes, default-score skew, average relevance, top
+    most-disconnected nodes, schema version, and the running count of
+    contradict_penalty cap events. Computed in-process; cheap to poll.
+
+    Use it before kicking off long consolidations (high queue_depth means
+    your enqueue may sit pending), after flagging contradictions (spike
+    in contradict_warn_count = curator should reconcile), or to debug
+    flat ranking (default_score_ratio > 0.7 = scoring not differentiating).
+
+    Args:
+        board_id: Board ID (uuid)
+
+    Returns:
+        JSON with the 10-field KG health snapshot, or {"error": "..."} on auth/not-found.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.services.kg_health_service import (
+        BoardNotFoundError,
+        get_kg_health,
+    )
+
+    try:
+        async with get_db_for_mcp() as db:
+            data = await get_kg_health(board_id, db)
+    except BoardNotFoundError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(data, default=str)
+
+
+# ============================================================================
+# DEAD LETTER INSPECTOR (spec ed17b1fe — Wave 2 NC 1ede3471)
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_kg_dead_letter_list(
+    board_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """
+    List dead-lettered consolidation rows — gemelar do REST GET /api/v1/kg/queue/dead-letter.
+
+    Use quando você (agente operador) detecta `dead_letter_count > 0` via
+    okto_pulse_kg_health e precisa investigar quais rows falharam, com que
+    erro, e em quantas tentativas. Cada row inclui o array `errors`
+    completo do schema TR16 — uma entrada por tentativa com error_type,
+    message, occurred_at, traceback (opcional).
+
+    READ-only no MVP — não há ação de reprocess via MCP (deferred v2).
+
+    Args:
+        board_id: Board UUID
+        limit: Max rows to return (1-200, default 50)
+        offset: Skip first N rows (>=0, default 0)
+
+    Returns:
+        JSON `{rows, total, limit, offset}` em sucesso. `{error: "..."}`
+        em auth fail.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.services.dead_letter_inspector_service import (
+        list_dead_letter_rows,
+    )
+
+    async with get_db_for_mcp() as db:
+        data = await list_dead_letter_rows(
+            db, board_id, limit=limit, offset=offset,
+        )
+    return json.dumps(data, default=str)
+
+
+# ============================================================================
+# SCHEMA MIGRATION SELF-HEAL (spec 818748f2 — FR5)
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_kg_migrate_schema(
+    board_id: str = "",
+    all_boards: bool = False,
+) -> str:
+    """
+    Force-apply schema migrations to fix legacy boards (board pre v0.3.2)
+    — gemelar do REST POST /api/v1/kg/{board_id}/migrate-schema.
+
+    Use quando consolidation falha com `Binder exception: Cannot find
+    property X for n` — geralmente significa que ALTER ADD para schema
+    column foi missed em board bootstrapped antes daquela versão.
+
+    Idempotente: re-rodar em board já migrado retorna `migrated=true`
+    com `columns_added` vazio (no-op).
+
+    NUNCA delete `graph.kuzu` para "consertar" — destruiria todo o KG
+    do board. Use esta tool em vez disso.
+
+    Args:
+        board_id: Board UUID específico (mutuamente exclusivo com all_boards)
+        all_boards: Se True, migra todos os boards conhecidos do server.
+            Default False — exige board_id.
+
+    Returns:
+        Single board: JSON `{board_id, migrated, columns_added, errors,
+        duration_ms}`. All-boards: `{results: [<single>, ...]}`.
+        Erro de input: `{error: "missing_board_or_all_boards"}`.
+    """
+    if not board_id and not all_boards:
+        return json.dumps({"error": "missing_board_or_all_boards"})
+
+    from okto_pulse.core.kg.schema import migrate_schema_for_board
+
+    if all_boards:
+        # Iterar todos os boards conhecidos via SQLite.
+        from sqlalchemy import select as _select
+        from okto_pulse.core.models.db import Board as _Board
+
+        results: list[dict[str, Any]] = []
+        async with get_db_for_mcp() as db:
+            rows = await db.execute(_select(_Board.id, _Board.name))
+            board_pairs = list(rows.all())
+        for bid, _bname in board_pairs:
+            try:
+                summary = migrate_schema_for_board(bid)
+                results.append(summary)
+            except Exception as exc:
+                results.append({
+                    "board_id": bid,
+                    "migrated": False,
+                    "columns_added": {},
+                    "errors": [f"unhandled: {exc}"],
+                    "duration_ms": 0,
+                })
+        return json.dumps({"results": results}, default=str)
+
+    # Single board path
+    summary = migrate_schema_for_board(board_id)
+    return json.dumps(summary, default=str)
+
+
+# ============================================================================
+# KG TICK CONTROLLABILITY (spec 54399628 — Wave 2 NC f9732afc)
+# ============================================================================
+
+# E2E spec c2115d15 — TS-E descobriu NameError "name 'logger' is not defined"
+# em okto_pulse_kg_tick_run_now: a função usa logger.info mas o módulo só
+# definia loggers nomeados específicos (_XML_SAFETY_LOGGER, _evidence_logger).
+# Logger dedicado para audit do tick.
+_tick_logger = logging.getLogger("okto_pulse.mcp.tick")
+
+
+@mcp.tool()
+async def okto_pulse_kg_tick_run_now(
+    board_id: str = "",
+    force_full_rebuild: bool = False,
+) -> str:
+    """
+    Trigger the KG decay tick manually — gemelar do REST POST /api/v1/kg/tick/run-now.
+
+    Dispara um tick imediato sem esperar o cron periódico. Operador agente
+    chama esta ferramenta quando: (a) acabou de reescalar nodes em massa
+    e quer scoring fresh imediato, (b) detectou que `default_score_ratio`
+    está acima de 0.7 e suspeita de stale ranking, (c) está debugando
+    scoring de um board específico (passe `board_id`).
+
+    Use `force_full_rebuild=true` para zerar `last_recomputed_at` antes
+    do tick (ignora staleness threshold) — útil para boards 0.3.x cujos
+    nodes herdaram defaults sem benefício do tick. SOMENTE per-trigger;
+    NUNCA é setting persistido para evitar full-rebuild noturno acidental.
+
+    Concurrent calls (cron + manual OU duas chamadas manuais) recebem
+    erro `tick_already_running` — primeiro a chegar ganha o advisory lock.
+
+    Args:
+        board_id: Optional board UUID. Empty string = global tick (all boards).
+        force_full_rebuild: When true, resets last_recomputed_at to NULL
+            for all nodes in scope before the tick — ignores staleness.
+
+    Returns:
+        JSON with `{tick_id, status: "running", scheduled_at}` on 202 success.
+        On 409 (lock held), `{error: "tick_already_running", message: "..."}`.
+        On auth failure, `{error: "..."}`.
+    """
+    # Per-board scope auth: when board_id provided, validate access.
+    if board_id:
+        ctx = await _get_agent_ctx(board_id)
+        if ctx is None:
+            return _auth_error()
+        triggered_by = ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
+    else:
+        # Global scope — allow any authenticated agent (no per-board check).
+        triggered_by = "agent-mcp-global"
+
+    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
+
+    lock = get_async_lock("kg_daily_tick", "global")
+    if lock.locked():
+        return json.dumps({
+            "error": "tick_already_running",
+            "message": "Tick already running, retry shortly",
+        })
+
+    import asyncio
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    from okto_pulse.core.api.kg_tick import _dispatch_manual_tick
+
+    tick_id = str(_uuid.uuid4())
+    scheduled_at = datetime.now(timezone.utc).isoformat()
+
+    _tick_logger.info(
+        "kg.tick.manual_triggered tick_id=%s user=%s board=%s force=%s source=mcp",
+        tick_id, triggered_by, board_id or None, force_full_rebuild,
+        extra={
+            "event": "kg.tick.manual_triggered",
+            "tick_id": tick_id,
+            "triggered_by_user_id": triggered_by,
+            "board_id": board_id or None,
+            "force_full_rebuild": force_full_rebuild,
+            "source": "mcp",
+        },
+    )
+
+    asyncio.create_task(
+        _dispatch_manual_tick(
+            tick_id=tick_id,
+            board_id=board_id or None,
+            force_full_rebuild=force_full_rebuild,
+        )
+    )
+
+    return json.dumps({
+        "tick_id": tick_id,
+        "status": "running",
+        "scheduled_at": scheduled_at,
+    })
+
+
+# ============================================================================
 # SERVER STARTUP
 # ============================================================================
 
 
+def build_mcp_asgi_app():
+    """Build the MCP ASGI application wrapped with the API-key middleware.
+
+    Returns the ASGI app that should be served by uvicorn (or mounted
+    elsewhere). Single-process callers (``okto_pulse.community.main.serve``)
+    use this to bind the MCP transport to its own port while sharing the
+    same Python process as the API server, so the Kùzu lock is held by a
+    single process. The caller is responsible for invoking
+    ``register_session_factory`` once before the first MCP request lands.
+
+    ``_install_trace`` is idempotent (env-gated); calling this multiple
+    times is safe.
+    """
+    _install_trace(mcp)
+    http_app = mcp.http_app(transport="streamable-http")
+    return ApiKeySessionMiddleware(http_app)
+
+
+def mount_mcp(app, *, mount_path: str = "/mcp") -> None:
+    """Mount the MCP sub-app at ``mount_path`` on a FastAPI/Starlette app.
+
+    Kept for callers that prefer path-based routing on the same port as the
+    API. The default deployment path (``okto_pulse.community.main.serve``)
+    serves the MCP on its own port via :func:`build_mcp_asgi_app`.
+    """
+    app.mount(mount_path, build_mcp_asgi_app())
+
+
 def run_mcp_server():
-    """Run the MCP server with session-based API key auth middleware."""
+    """Run the MCP server standalone (compat shim for debug / legacy).
+
+    Production path is :func:`okto_pulse.community.main.serve`, which runs
+    the API server and the MCP server in the same Python process on
+    separate ports. This function is preserved for stand-alone debug runs
+    (``python -m okto_pulse.core.mcp.server``) only.
+    """
     from okto_pulse.core.infra.config import get_settings
     from okto_pulse.core.infra.database import create_database, get_session_factory
 
@@ -10905,11 +11569,9 @@ def run_mcp_server():
     create_database(settings.database_url, echo=settings.debug)
     register_session_factory(get_session_factory())
 
-    http_app = mcp.http_app(transport="streamable-http")
-    wrapped = ApiKeySessionMiddleware(http_app)
     # Read port from environment (set by CLI) or use settings
     port = int(os.environ.get("MCP_PORT", str(settings.mcp_port)))
-    uvicorn.run(wrapped, host="127.0.0.1", port=port, ws="wsproto")
+    uvicorn.run(build_mcp_asgi_app(), host="127.0.0.1", port=port, ws="wsproto")
 
 
 if __name__ == "__main__":

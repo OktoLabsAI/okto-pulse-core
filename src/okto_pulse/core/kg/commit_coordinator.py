@@ -31,7 +31,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from collections import defaultdict
+import threading
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, TypeVar
 
 logger = logging.getLogger("okto_pulse.kg.commit_coordinator")
@@ -54,6 +56,47 @@ T = TypeVar("T")
 # strings, and boards are long-lived. Even with thousands of boards the
 # memory overhead is negligible (few hundred bytes per Lock).
 _commit_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+# ---------------------------------------------------------------------------
+# Spec bdcda842 (TR7): kuzu_lock_retries_5m sliding-window counter
+# ---------------------------------------------------------------------------
+#
+# Every Kùzu file-lock retry adds an entry here; the /api/v1/kg/queue/health
+# endpoint reads ``kuzu_lock_retries_5m_count`` to expose how often
+# cross-process contention occurred in the last 5 minutes. The deque is
+# protected by a threading.Lock because retries can fire from worker pool
+# tasks across threads (commit_consolidation runs in a worker pool to
+# avoid blocking the event loop).
+
+_LOCK_RETRY_WINDOW_S = 300  # 5 minutes
+_LOCK_RETRY_TIMESTAMPS: deque[datetime] = deque()
+_LOCK_RETRY_LOCK = threading.Lock()
+
+
+def record_kuzu_lock_retry(now: datetime | None = None) -> None:
+    """Append a lock-retry occurrence and prune entries older than 5 min."""
+    ts = now or datetime.now(timezone.utc)
+    cutoff = ts - timedelta(seconds=_LOCK_RETRY_WINDOW_S)
+    with _LOCK_RETRY_LOCK:
+        while _LOCK_RETRY_TIMESTAMPS and _LOCK_RETRY_TIMESTAMPS[0] < cutoff:
+            _LOCK_RETRY_TIMESTAMPS.popleft()
+        _LOCK_RETRY_TIMESTAMPS.append(ts)
+
+
+def kuzu_lock_retries_5m(now: datetime | None = None) -> int:
+    """Return the count of lock retries in the last 5 minutes (pruned on read)."""
+    ts = now or datetime.now(timezone.utc)
+    cutoff = ts - timedelta(seconds=_LOCK_RETRY_WINDOW_S)
+    with _LOCK_RETRY_LOCK:
+        while _LOCK_RETRY_TIMESTAMPS and _LOCK_RETRY_TIMESTAMPS[0] < cutoff:
+            _LOCK_RETRY_TIMESTAMPS.popleft()
+        return len(_LOCK_RETRY_TIMESTAMPS)
+
+
+def reset_kuzu_lock_retries_for_tests() -> None:
+    """Drop the sliding window — only for tests."""
+    with _LOCK_RETRY_LOCK:
+        _LOCK_RETRY_TIMESTAMPS.clear()
 
 
 def acquire_commit_lock(board_id: str) -> asyncio.Lock:
@@ -124,6 +167,8 @@ async def run_with_commit_lock_and_retry(
                 base_ms = RETRY_BACKOFFS_MS[attempt - 1]
                 jitter_ms = random.uniform(0, JITTER_MAX_MS)
                 backoff_ms = base_ms + jitter_ms
+                # Spec bdcda842 (TR7): observability counter for /kg/queue/health
+                record_kuzu_lock_retry()
                 logger.warning(
                     "kg.commit.lock_retry board=%s attempt=%d backoff_ms=%.1f",
                     board_id, attempt, backoff_ms,

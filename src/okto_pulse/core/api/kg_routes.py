@@ -956,7 +956,6 @@ async def list_pending_tree(
 async def stream_kg_events(
     board_id: str,
     since: str | None = Query(None, description="ISO timestamp — only emit events created after this"),
-    db: AsyncSession = Depends(get_db),
 ):
     """Server-Sent Events stream of `kg.session.committed` /
     `kg.board.cleared` events for the given board.
@@ -972,6 +971,15 @@ async def stream_kg_events(
 
     Filter by `since` to resume a dropped connection without replaying the
     entire outbox backlog. Absence ⇒ start from now().
+
+    Bug fix (QueuePool exhaustion): este handler NÃO injeta mais
+    ``db: AsyncSession = Depends(get_db)`` porque a session da request
+    ficaria viva durante toda a vida do SSE stream (loop ``while True``
+    forever) — cada cliente prendia 1 conexão do pool, e um pool de 15
+    saturava com poucas tabs/clientes (somando consolidation_worker,
+    outbox_worker, dispatcher e endpoints normais). Em vez disso abrimos
+    uma sessão **por iteração** via ``async_session_factory``, devolvendo
+    a conexão ao pool entre os ``sleep(1.0)``.
     """
     import asyncio as _asyncio
     import uuid as _uuid
@@ -979,6 +987,7 @@ async def stream_kg_events(
 
     from sqlalchemy import and_, asc, func, select as _select
 
+    from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.models.db import ConsolidationQueue, GlobalUpdateOutbox
 
     try:
@@ -986,9 +995,11 @@ async def stream_kg_events(
     except ValueError:
         raise HTTPException(status_code=400, detail="since must be ISO 8601")
 
-    async def _queue_snapshot() -> dict[str, int]:
+    session_factory = get_session_factory()
+
+    async def _queue_snapshot(session) -> dict[str, int]:
         """Counters for `ConsolidationQueue` rows scoped to this board."""
-        rows = (await db.execute(
+        rows = (await session.execute(
             _select(ConsolidationQueue.status, func.count())
             .where(ConsolidationQueue.board_id == board_id)
             .group_by(ConsolidationQueue.status)
@@ -1006,7 +1017,8 @@ async def stream_kg_events(
         # Emit an initial progress snapshot so the client can render the
         # toast immediately instead of waiting for the first change.
         try:
-            initial = await _queue_snapshot()
+            async with session_factory() as session:
+                initial = await _queue_snapshot(session)
             yield (
                 "event: kg.queue.progress\n"
                 "data: "
@@ -1027,30 +1039,42 @@ async def stream_kg_events(
 
         last_seen = cursor
         while True:
-            rows = (await db.execute(
-                _select(GlobalUpdateOutbox).where(and_(
-                    GlobalUpdateOutbox.board_id == board_id,
-                    GlobalUpdateOutbox.created_at > last_seen,
-                )).order_by(asc(GlobalUpdateOutbox.created_at)).limit(50)
-            )).scalars().all()
-            for row in rows:
-                payload = {
-                    "event_id": row.event_id,
-                    "session_id": row.session_id,
-                    "event_type": row.event_type,
-                    "created_at": row.created_at.isoformat() if row.created_at else None,
-                    "payload": row.payload,
-                }
+            # Cada iteração abre/fecha a session — devolve a conn ao pool
+            # antes do sleep para que outros endpoints possam usá-la.
+            try:
+                async with session_factory() as session:
+                    rows = (await session.execute(
+                        _select(GlobalUpdateOutbox).where(and_(
+                            GlobalUpdateOutbox.board_id == board_id,
+                            GlobalUpdateOutbox.created_at > last_seen,
+                        )).order_by(asc(GlobalUpdateOutbox.created_at)).limit(50)
+                    )).scalars().all()
+                    serialized_rows = [
+                        {
+                            "event_id": row.event_id,
+                            "session_id": row.session_id,
+                            "event_type": row.event_type,
+                            "created_at": row.created_at.isoformat() if row.created_at else None,
+                            "payload": row.payload,
+                            "_created_at_raw": row.created_at,
+                        }
+                        for row in rows
+                    ]
+            except Exception:
+                serialized_rows = []
+
+            for row in serialized_rows:
                 yield (
-                    f"event: {row.event_type}\n"
-                    f"data: {json.dumps(payload, default=str)}\n\n"
+                    f"event: {row['event_type']}\n"
+                    f"data: {json.dumps({k: v for k, v in row.items() if k != '_created_at_raw'}, default=str)}\n\n"
                 )
-                last_seen = row.created_at or last_seen
+                last_seen = row["_created_at_raw"] or last_seen
 
             # Emit progress whenever queue counters change. Saves bandwidth
             # on idle boards while keeping the UI chip authoritative.
             try:
-                snap = await _queue_snapshot()
+                async with session_factory() as session:
+                    snap = await _queue_snapshot(session)
                 if snap != last_progress:
                     yield (
                         "event: kg.queue.progress\n"
@@ -1286,3 +1310,56 @@ async def boost_node(
 async def openapi_spec():
     """Auto-generated OpenAPI 3.1 spec."""
     return {"info": {"title": "Okto Pulse KG API", "version": "0.1.0"}}
+
+
+# ---------------------------------------------------------------------------
+# Schema migration self-heal (spec 818748f2 — FR5)
+# ---------------------------------------------------------------------------
+
+
+class MigrateSchemaResponse(BaseModel):
+    board_id: str
+    migrated: bool = Field(
+        ..., description="True if the migration completed without errors."
+    )
+    columns_added: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Per-node-type list of columns ALTER ADDed this run.",
+    )
+    errors: list[str] = Field(
+        default_factory=list,
+        description="Non-fatal warnings collected during migration.",
+    )
+    duration_ms: int
+
+
+@router.post(
+    "/{board_id}/migrate-schema",
+    response_model=MigrateSchemaResponse,
+)
+def post_migrate_schema(board_id: str):
+    """Force-apply schema migrations for a board (idempotent).
+
+    Use when consolidation fails with `Binder exception: Cannot find
+    property X for n` — usually means an ALTER ADD migration was missed
+    for a board bootstrapped before that schema column was introduced.
+
+    Re-runs all v0.3.x ALTER TABLE ADD on every node type. Idempotent:
+    calling on a board already migrated returns ``migrated=true`` with
+    ``columns_added`` empty (no-op).
+
+    Spec 818748f2.
+    """
+    from okto_pulse.core.kg.schema import migrate_schema_for_board
+
+    summary = migrate_schema_for_board(board_id)
+    if not summary["migrated"] and any(
+        "board_not_found" in e for e in summary["errors"]
+    ):
+        return _problem(
+            status=404,
+            title="Board not found",
+            detail=summary["errors"][0],
+            error_type="not_found",
+        )
+    return MigrateSchemaResponse(**summary)

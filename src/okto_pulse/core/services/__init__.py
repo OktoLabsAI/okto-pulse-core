@@ -18,7 +18,6 @@ from okto_pulse.core.services.main import (
     SpecKnowledgeService,
     SpecQAService,
     SpecService,
-    SpecSkillService,
 )
 
 __all__ = [
@@ -39,5 +38,4 @@ __all__ = [
     "SpecKnowledgeService",
     "SpecQAService",
     "SpecService",
-    "SpecSkillService",
 ]
