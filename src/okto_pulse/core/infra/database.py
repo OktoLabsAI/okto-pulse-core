@@ -32,6 +32,26 @@ def create_database(url: str, *, echo: bool = False) -> None:
             "max_overflow": 20,
             "pool_pre_ping": True,
         })
+    elif url.startswith("sqlite"):
+        # Bug fix (deadlock report 2026-04-29): default
+        # AsyncAdaptedQueuePool é 5 + overflow 10 = 15 connections, e o
+        # pool_timeout default é 30s. Com Okto Pulse rodando
+        # consolidation_worker + outbox_worker + dispatcher + endpoints
+        # + polling + SSE concorrentes, isso satura facilmente e o usuário
+        # vê o servidor "deadlockado" (na verdade pool exhaustion + 30s
+        # de espera por conexão livre). Combinado com WAL (multi-reader)
+        # e busy_timeout=30000 para escritas, conseguimos comportar:
+        #   - mais leituras paralelas (pool maior)
+        #   - falha rápida em vez de aparente deadlock (timeout 10s)
+        #   - reciclagem de conexões idle (recycle 1800s = 30min)
+        #   - health check antes de checkout (pre_ping)
+        engine_kwargs.update({
+            "pool_size": 20,
+            "max_overflow": 30,
+            "pool_timeout": 10,
+            "pool_recycle": 1800,
+            "pool_pre_ping": True,
+        })
 
     _engine = create_async_engine(url, **engine_kwargs)
 

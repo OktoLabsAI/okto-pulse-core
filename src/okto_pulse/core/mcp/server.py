@@ -1,6 +1,7 @@
 """MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
 
 import functools
+import inspect
 import json
 import logging
 import os
@@ -478,20 +479,48 @@ _XML_SAFETY_DECORATED_COUNT = 0
 
 
 def _patch_mcp_tool_for_xml_safety() -> None:
-    """Patch `mcp.tool()` so every registered tool gets the safety wrapper."""
+    """Patch ``mcp.tool()`` so every registered tool gets the XML safety wrapper.
+
+    Note (FastMCP 2.14+): the original implementation called
+    ``_original_mcp_tool(*args, **kwargs)`` first to obtain the registrar
+    decorator, then applied ``_wrap`` to the user function. With FastMCP 2.14
+    the decorator path returns ``partial(self.tool, ...)`` and ``self.tool``
+    is resolved at call time via instance attribute lookup — which finds the
+    *patched* ``mcp.tool`` and recurses, so the value that lands in the
+    module namespace ends up being our local ``_wrap`` instead of the
+    expected ``FunctionTool``. Tests that probe ``inspect.signature(fn.fn)``
+    therefore see ``(func)`` and not the real tool signature.
+
+    Fix: bypass the partial entirely by always calling
+    ``_original_mcp_tool(wrapped, *args, **kwargs)`` — i.e. pass the wrapped
+    function as the first positional argument so FastMCP takes the
+    ``isroutine(name_or_fn)`` direct-registration path. This returns the
+    ``FunctionTool`` whose ``.fn`` exposes the wrapped function with the
+    original signature preserved by ``functools.wraps`` inside
+    ``_xml_safety_log_decorator``.
+    """
     if getattr(mcp.tool, "_xml_safety_patched", False):
         return
 
     _original_mcp_tool = mcp.tool
 
     def _patched_mcp_tool(*args, **kwargs):
-        registrar = _original_mcp_tool(*args, **kwargs)
+        # ``@mcp.tool`` (no parens) — first positional arg is the function.
+        if args and inspect.isroutine(args[0]):
+            global _XML_SAFETY_DECORATED_COUNT
+            func = args[0]
+            wrapped = _xml_safety_log_decorator(func)
+            _XML_SAFETY_DECORATED_COUNT += 1
+            return _original_mcp_tool(wrapped, *args[1:], **kwargs)
 
+        # ``@mcp.tool()`` / ``@mcp.tool("name")`` / ``@mcp.tool(name=...)`` —
+        # return a decorator that, when applied, routes through the same
+        # direct-registration path (no partial recursion).
         def _wrap(func):
             global _XML_SAFETY_DECORATED_COUNT
             wrapped = _xml_safety_log_decorator(func)
             _XML_SAFETY_DECORATED_COUNT += 1
-            return registrar(wrapped)
+            return _original_mcp_tool(wrapped, *args, **kwargs)
 
         return _wrap
 
