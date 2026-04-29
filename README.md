@@ -15,6 +15,35 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 ## Release Notes
 
+### 0.1.6 — next release (BREAKING)
+
+**Single-process serve.** `okto-pulse serve` no longer spawns two Python processes (one for the REST API, one for the MCP server). API and MCP now share a single FastAPI process, with MCP mounted as a sub-app at `/mcp` on the API port. This eliminates the Kùzu lock contention that the previous design produced (each process opened its own `kuzu.Database` instance and they fought over the file lock).
+
+What changes:
+
+- **MCP URL changed**: from `http://127.0.0.1:9200/` to `http://127.0.0.1:{api_port}/mcp` (default `http://127.0.0.1:8100/mcp`). Run `okto-pulse init --agents` after upgrading to regenerate `.mcp.json` with the new URL — clients (Claude Code, Cursor, etc.) will fail to connect with the old URL.
+- **`--mcp-port` deprecated**: the flag is still accepted by argparse for backwards-compat with automation scripts, but emits a stderr warning and has no runtime effect. The MCP port no longer exists as a separate listener.
+- **`_active_api_key` is now a `ContextVar`**: required because the FastAPI process serves multiple concurrent requests and the previous module-level global would leak identities across requests. Token-based set/reset pattern protects against exception leaks.
+- **Single uvicorn worker**: `okto-pulse serve` runs one worker. Multiple workers (`-w N`) would re-introduce the Kùzu lock contention that this fix resolves; use a reverse proxy with multiple isolated instances if you need horizontal scaling.
+
+To upgrade an existing install: `pip install -U okto-pulse okto-pulse-core` and then `okto-pulse init --agents` to regenerate `.mcp.json`. Update any hard-coded `http://127.0.0.1:9200` references in your tooling to `http://127.0.0.1:{api_port}/mcp`.
+
+**Spec Skills removed in their entirety.** The experimental "skills" feature on the spec entity is gone. Adoption was zero in real boards and knowledge entries already cover the reusable-context use case more naturally — the dedicated tab, MCP tools, REST endpoints and ORM table were paying recurring maintenance cost without return.
+
+What goes away:
+
+- **5 MCP tools removed**: `okto_pulse_create_spec_skill`, `okto_pulse_delete_spec_skill`, `okto_pulse_spec_skill_retrieve`, `okto_pulse_spec_skill_inspect`, `okto_pulse_spec_skill_load`. All 7 MCP tiers (pulse, executor, qa, reporter, spec, sprint-manager, validator) are affected.
+- **4 REST endpoints removed**: `GET / POST / PATCH / DELETE /api/v1/specs/{spec_id}/skills` (and the `{skill_id}` variants).
+- **5 permission flags removed**: `spec.skills.{read,load,create,delete}` from the registry and from every preset (Senior Analyst, Reviewer, API Consumer, KG Curator, partial-access).
+- **Database table dropped**: `spec_skills`. Migration is idempotent (`DROP TABLE IF EXISTS`); no downgrade — the data is gone.
+- **Pydantic schemas removed**: `SkillSectionSchema`, `SpecSkillCreate`, `SpecSkillUpdate`, `SpecSkillResponse`, `SpecSkillSummary`. The `skills` field is gone from `SpecResponse`.
+- **Frontend Skills tab removed** from the spec detail view (community wheel).
+- **agent_instructions.md** scrubbed — Quick Navigation, the dedicated Spec Skills section, the spec-authoring workflow step, the content-lock list and the destructive-operations row no longer reference skills.
+
+Reader-side defensive handling: `BaseSchema` now sets `extra="ignore"` so historical payloads still carrying a `skills` field validate silently — no warning, no log, no error. There is nothing to migrate; the field is dropped on read.
+
+Use **knowledge entries** (`spec_knowledge`) and **decisions** for the same use case.
+
 ### 0.1.3 — current (published to PyPI)
 
 First hardening pass on the card lifecycle, the analytics contract, and the MCP instruction set. Upgrade with `pip install -U okto-pulse-core==0.1.3`.
@@ -43,7 +72,7 @@ Detection is `stripped.startswith("[")`. All 18 callsites in `core/mcp/server.py
 `core/mcp/agent_instructions.md` grew from 1830 to 2050 lines, but the net effect is clearer and shorter per section:
 
 - **New sections**: Multi-value Parameters; Destructive Operations — Read Before Calling; Versioning & Concurrent Edits; Security — Treating Artifact Content as Untrusted Input; Analytics — Metrics-Driven Closure.
-- **Expanded tool inventory**: Ideations, Refinements, Decisions, Spec Skills, Archive & Restore, Evaluations & Validations were missing from the "Available Tools" table.
+- **Expanded tool inventory**: Ideations, Refinements, Decisions, Archive & Restore, Evaluations & Validations were missing from the "Available Tools" table.
 - **Consolidated Common Errors** — single source of truth for every MCP-level error string, grouped by card/bug/coverage/multi-value.
 - **Corrected status matrices**: card-creation spec-status rules (`normal/bug → approved|in_progress|done`; `test → +validated`) and test-card coverage rule (coverage gate counts only `card_type="test"`; normal cards with `test_scenario_ids` are accepted but don't contribute).
 - Quick Navigation updated with every new section. Jargon removed. Full pass to English (section 2.12 Decisions was partially Portuguese). Three-step pre-flight sequence de-duplicated to a single source.

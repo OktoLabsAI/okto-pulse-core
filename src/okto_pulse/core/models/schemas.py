@@ -22,9 +22,16 @@ from okto_pulse.core.models.db import (
 
 
 class BaseSchema(BaseModel):
-    """Base schema with common configuration."""
+    """Base schema with common configuration.
 
-    model_config = ConfigDict(from_attributes=True)
+    `extra="ignore"` is set explicitly so that legacy serialised payloads
+    carrying removed fields (e.g. snapshots that still include the dropped
+    `skills` field) are accepted silently — the unknown key is dropped
+    without warning, without log, without error. This is the reader-side
+    half of spec e12c4c20 (Skills removal).
+    """
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
 # ============================================================================
@@ -950,71 +957,6 @@ class SpecQAResponse(BaseSchema):
 
 
 # ============================================================================
-# Spec Skill Schemas
-# ============================================================================
-
-
-class SkillSectionSchema(BaseModel):
-    """A section within a skill."""
-
-    id: str
-    title: str
-    description: str = ""
-    level: str = "detail"  # summary | detail | full
-    content: str = ""
-
-
-class SpecSkillCreate(BaseModel):
-    """Schema for creating a skill on a spec."""
-
-    skill_id: str = Field(..., min_length=1, max_length=255)
-    name: str = Field(..., min_length=1, max_length=255)
-    description: str = Field(..., min_length=1)
-    type: str = "PROMPT"
-    version: str = "2.0"
-    tags: list[str] | None = None
-    sections: list[SkillSectionSchema] | None = None
-
-
-class SpecSkillUpdate(BaseModel):
-    """Schema for updating a skill."""
-
-    name: str | None = Field(None, min_length=1, max_length=255)
-    description: str | None = None
-    type: str | None = None
-    version: str | None = None
-    tags: list[str] | None = None
-    sections: list[SkillSectionSchema] | None = None
-
-
-class SpecSkillResponse(BaseSchema):
-    """Full skill response."""
-
-    id: str
-    spec_id: str
-    skill_id: str
-    name: str
-    description: str
-    type: str
-    version: str
-    tags: list[str] | None
-    sections: list[SkillSectionSchema] | None
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class SpecSkillSummary(BaseSchema):
-    """Lightweight skill summary for RETRIEVE level."""
-
-    skill_id: str
-    name: str
-    description: str
-    type: str
-    tags: list[str] | None
-
-
-# ============================================================================
 # Spec Knowledge Base Schemas
 # ============================================================================
 
@@ -1106,7 +1048,6 @@ class SpecResponse(BaseSchema):
     ideation_id: str | None = None
     refinement_id: str | None = None
     cards: list[CardSummaryForSpec] = []
-    skills: list[SpecSkillSummary] = []
     knowledge_bases: list[SpecKnowledgeSummary] = []
     qa_items: list[SpecQAResponse] = []
 

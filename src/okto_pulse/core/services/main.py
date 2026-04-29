@@ -45,7 +45,6 @@ from okto_pulse.core.models.db import (
     SpecHistory,
     SpecKnowledgeBase,
     SpecQAItem,
-    SpecSkill,
     SpecStatus,
     Sprint,
     SprintHistory,
@@ -85,8 +84,6 @@ from okto_pulse.core.models.schemas import (
     SpecMove,
     SpecQAAnswer,
     SpecQACreate,
-    SpecSkillCreate,
-    SpecSkillUpdate,
     SpecUpdate,
     SpecValidationSubmit,
     SprintCreate,
@@ -2410,11 +2407,10 @@ class SpecService:
         return spec
 
     async def get_spec(self, spec_id: str) -> Spec | None:
-        """Get a spec by ID with its cards, skills, and knowledge bases."""
+        """Get a spec by ID with its cards and knowledge bases."""
         query = (
             select(Spec)
             .options(selectinload(Spec.cards))
-            .options(selectinload(Spec.skills))
             .options(selectinload(Spec.knowledge_bases))
             .options(selectinload(Spec.qa_items))
             .where(Spec.id == spec_id)
@@ -2438,7 +2434,7 @@ class SpecService:
 
         Enforces the Spec Validation Gate content lock: if the spec has an active
         validation with outcome='success', raises SpecLockedError. All content tools
-        (business rules, contracts, scenarios, mockups, knowledge, skills) flow
+        (business rules, contracts, scenarios, mockups, knowledge) flow
         through this method via SpecUpdate, so applying the lock check here covers
         the whole surface in one place.
 
@@ -3145,74 +3141,6 @@ class SpecQAService:
         if not qa:
             return False
         await self.db.delete(qa)
-        return True
-
-
-class SpecSkillService:
-    """Service for spec skill operations — follows the 3-level loading pattern."""
-
-    def __init__(self, db: AsyncSession):
-        self.db = db
-
-    async def create_skill(self, spec_id: str, user_id: str, data: SpecSkillCreate) -> SpecSkill | None:
-        """Create a skill on a spec."""
-        spec = await self.db.get(Spec, spec_id)
-        if not spec:
-            return None
-        skill = SpecSkill(
-            spec_id=spec_id,
-            skill_id=data.skill_id,
-            name=data.name,
-            description=data.description,
-            type=data.type,
-            version=data.version,
-            tags=data.tags,
-            sections=[s.model_dump() for s in data.sections] if data.sections else None,
-            created_by=user_id,
-        )
-        self.db.add(skill)
-        await self.db.flush()
-        return skill
-
-    async def get_skill(self, spec_id: str, skill_id: str) -> SpecSkill | None:
-        """Get a skill by spec_id and skill_id slug."""
-        query = select(SpecSkill).where(
-            SpecSkill.spec_id == spec_id, SpecSkill.skill_id == skill_id
-        )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
-
-    async def list_skills(self, spec_id: str) -> list[SpecSkill]:
-        """List all skills for a spec (RETRIEVE level)."""
-        query = (
-            select(SpecSkill)
-            .where(SpecSkill.spec_id == spec_id)
-            .order_by(SpecSkill.created_at)
-        )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
-    async def update_skill(self, spec_id: str, skill_id: str, data: SpecSkillUpdate) -> SpecSkill | None:
-        """Update a skill."""
-        skill = await self.get_skill(spec_id, skill_id)
-        if not skill:
-            return None
-        update_data = data.model_dump(exclude_unset=True)
-        if "sections" in update_data and update_data["sections"] is not None:
-            update_data["sections"] = [
-                s.model_dump() if hasattr(s, "model_dump") else s
-                for s in update_data["sections"]
-            ]
-        for key, value in update_data.items():
-            setattr(skill, key, value)
-        return skill
-
-    async def delete_skill(self, spec_id: str, skill_id: str) -> bool:
-        """Delete a skill."""
-        skill = await self.get_skill(spec_id, skill_id)
-        if not skill:
-            return False
-        await self.db.delete(skill)
         return True
 
 

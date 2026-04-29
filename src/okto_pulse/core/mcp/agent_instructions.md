@@ -12,7 +12,10 @@ Use this to avoid reading the whole file when you only need one answer.
 | Move a card/spec/sprint/ideation/refinement | **Card Status Transitions** + **Consolidated Context Retrieval** |
 | Work on a card (implementation) | **2.8 Cards** + **2.11 Task Validation Workflow** |
 | Write or evaluate a spec | **2.3 Specs** → **2.3a Detail Saturation** → **2.3b Spec Evaluation** → **2.3c Coverage Progress** |
-| Pass a value that may contain `\|` | **Multi-value Parameters — Two Accepted Formats** |
+| Pass a value that may contain `\|` | **Multi-value Parameters — Three Input Shapes** |
+| Reduce ambiguity at ideation (ASK before advancing) | **2.1 Ideations → Ambiguity-killer protocol** |
+| Run a deep investigation at refinement | **2.2 Refinements → Investigação profunda obrigatória** |
+| Attach KB / mockups directly on a card | **2.8 Cards → Card-level artifact attachment (MANDATORY)** |
 | Create test scenarios / BRs / contracts | **2.4 / 2.5 / 2.6** |
 | Create or evaluate a sprint | **2.10 Sprints** |
 | Report or fix a bug | **2.9 Bug Cards** |
@@ -236,7 +239,7 @@ okto_pulse_create_refinement(
 
 ### Spec domain examples (Sprint 2 — migrated)
 
-Six tools migrated: `okto_pulse_create_spec.labels`, `okto_pulse_update_spec.labels`, `okto_pulse_copy_mockups_to_card.screen_ids`, `okto_pulse_copy_knowledge_to_card.knowledge_ids`, `okto_pulse_spec_skill_load.section_id`, `okto_pulse_create_spec_skill.tags`.
+Four tools migrated: `okto_pulse_create_spec.labels`, `okto_pulse_update_spec.labels`, `okto_pulse_copy_mockups_to_card.screen_ids`, `okto_pulse_copy_knowledge_to_card.knowledge_ids`.
 
 ```python
 okto_pulse_create_spec(
@@ -247,11 +250,6 @@ okto_pulse_create_spec(
 okto_pulse_copy_mockups_to_card(
     board_id="...", spec_id="...", card_id="...",
     screen_ids=["scr_a", "scr_b"],            # native list — preferred
-)
-okto_pulse_create_spec_skill(
-    board_id="...", spec_id="...", skill_id="api-style", name="API Style",
-    description="...",
-    tags=["api", "REST", "guidelines"],       # native list
 )
 ```
 
@@ -302,7 +300,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_delete_attachment` | The file blob. |
 | `okto_pulse_delete_comment` / `okto_pulse_delete_question` | The comment or Q&A item. |
 | `okto_pulse_delete_guideline` | The guideline (globally, if it's a global guideline). |
-| `okto_pulse_delete_spec_skill` / `okto_pulse_delete_spec_knowledge` | The attached skill/knowledge base content. |
+| `okto_pulse_delete_spec_knowledge` | The attached knowledge base content. |
 | `okto_pulse_delete_screen_mockup` | The mockup HTML. |
 | `okto_pulse_remove_business_rule` / `okto_pulse_remove_api_contract` | The BR / contract. Linked tasks remain but the coverage gate may now fail. |
 | `okto_pulse_delete_spec_evaluation` / `okto_pulse_delete_sprint_evaluation` | The evaluation entry (audit trail is lost). |
@@ -395,7 +393,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 ### Sprints
 | Tool | Args | Purpose |
 |------|------|---------|
-| `okto_pulse_create_sprint` | board_id, spec_id, title, description?, test_scenario_ids?, business_rule_ids?, start_date?, end_date?, labels? | Create a sprint for a spec. `test_scenario_ids`, `business_rule_ids`, `labels` are multi-value (pipe OR JSON array). |
+| `okto_pulse_create_sprint` | board_id, spec_id, title, description?, objective?, expected_outcome?, test_scenario_ids?, business_rule_ids?, start_date?, end_date?, labels? | Create a sprint for a spec. `objective` + `expected_outcome` are MANDATORY in practice (see 2.10). Multi-value: `test_scenario_ids`, `business_rule_ids`, `labels` (pipe OR JSON array). |
 | `okto_pulse_get_sprint` | board_id, sprint_id | Full sprint with cards, evaluations, Q&A |
 | `okto_pulse_list_sprints` | board_id, spec_id | List all sprints for a spec |
 | `okto_pulse_update_sprint` | board_id, sprint_id, title?, description?, test_scenario_ids?, business_rule_ids?, labels?, skip_test_coverage?, skip_rules_coverage?, skip_qualitative_validation? | Update sprint fields |
@@ -460,13 +458,6 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_link_task_to_decision` | board_id, spec_id, decision_id, card_id | Feeds the decisions coverage gate. |
 | `okto_pulse_migrate_spec_decisions` | board_id, spec_id | One-shot, idempotent: extracts `## Decisions` bullets from `spec.context` into `spec.decisions[]`. Safe to re-run. |
 
-### Spec Skills
-| Tool | Args | Purpose |
-|------|------|---------|
-| `okto_pulse_create_spec_skill` | board_id, spec_id, name, content, kind? | Attach a reusable skill (coding guideline, architecture pattern, domain knowledge) to a spec. |
-| `okto_pulse_spec_skill_retrieve` / `spec_skill_inspect` / `spec_skill_load` | board_id, spec_id, skill_id | Three-level loader: `retrieve` returns id/summary, `inspect` returns metadata, `load` returns the full content. Use the lightest form that answers your question. |
-| `okto_pulse_delete_spec_skill` | board_id, spec_id, skill_id | **Destructive** — see **Destructive Operations**. |
-
 ### Archive & Restore (whole sub-trees)
 | Tool | Args | Purpose |
 |------|------|---------|
@@ -479,7 +470,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_list_spec_evaluations` | board_id, spec_id | Evaluations history (reverse chronological). |
 | `okto_pulse_get_spec_evaluation` | board_id, spec_id, evaluation_id | Single evaluation detail. |
 | `okto_pulse_list_spec_validations` | board_id, spec_id | Validation gate history, with `active=true` on the current pointer. |
-| `okto_pulse_list_task_validations` / `get_task_validation` / `delete_task_validation` | board_id, card_id[, validation_id] | Task-level validation history. |
+| `okto_pulse_list_task_validations` / `get_task_validation` | board_id, card_id[, validation_id] | Task-level validation history. |
 | `okto_pulse_list_blockers` | board_id | Cards currently blocked by dependencies. |
 
 ### Attachments
@@ -518,20 +509,9 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 
 **Rule — one line:** never call `move_*` on any entity without first calling the matching `get_*_context`. Moving without the full context is a protocol violation (system rejects with a clear error). Same rule applies before `submit_spec_evaluation` and `submit_sprint_evaluation`.
 
-## Startup Protocol
-
-Execute on every session start:
-
-1. `okto_pulse_get_my_profile()` — know your name, objective, permissions
-2. `okto_pulse_list_my_boards()` — get all boards you can access
-3. For each board:
-   - `okto_pulse_get_board_guidelines(board_id)` — load board guidelines FIRST
-   - `okto_pulse_get_unseen_summary(board_id)` — check for new activity
-   - If `unseen_mentions > 0`: `okto_pulse_list_my_mentions(board_id)` — read pending mentions
-   - `okto_pulse_get_board(board_id)` — understand current card state
-4. `okto_pulse_list_board_members(board_id)` — identify peers for collaboration
-
 ## Core Operating Loop
+
+The session-start sequence is the **Pre-Flight Checklist** at the top of this file — the single source of truth. Do not reinvent it here.
 
 ### 1. Check & Process Mentions
 - `okto_pulse_list_my_mentions(board_id)` returns comments and Q&A items where someone wrote @YourName
@@ -607,6 +587,52 @@ Ideations are the starting point. When asked to evaluate or create an ideation:
 5. **Editing only in "draft"**: `okto_pulse_update_ideation` only works when status is `draft`
 6. **Derivations only from "done"**: Specs and refinements can only be created from a `done` ideation (immutable snapshot)
 
+##### 2.1a Ambiguity-killer protocol — ASK before advancing (MANDATORY)
+
+> **Reducing ambiguity is your primary job at ideation.** A user's first description of a problem is almost never enough to design a solution. Your job is to interrogate the request until the intent is unambiguous, the scope is bounded, and your understanding is provably aligned with what the user actually wants. **Do not advance the ideation forward (draft → review → approved → evaluating) while ambiguity is still present.**
+
+**The rule:** if you can answer "yes" to ANY of the questions below, you have ambiguity that MUST be resolved via Q&A before moving the ideation forward.
+
+| Symptom of ambiguity | Example | Required action |
+|---|---|---|
+| The user used a vague verb ("improve", "optimize", "support", "handle") | "improve onboarding" | Ask `ask_ideation_question`: "By 'improve onboarding' do you mean (a) reduce drop-off, (b) shorten time-to-first-value, (c) add new steps, (d) something else? Please pick one or describe a concrete success metric." |
+| The user used a noun without a definition or scope ("the dashboard", "the system", "users") | "users should see their data" | Ask which user role, which surface, which data slice. Use `ask_ideation_choice_question` when there is a finite list. |
+| Multiple plausible interpretations of the same sentence | "send notifications when something changes" | Enumerate the interpretations and let the user pick. |
+| The success criterion is implicit | "make it faster" | Ask for a measurable target (latency p95, throughput, perceived load time, etc.). |
+| The scope boundary is implicit | "fix the auth flow" | Ask which flow (login, signup, password reset, MFA), which client (web, mobile, API). |
+| You're inferring intent from context the user did not state | The user mentioned X, you assumed Y | Verify Y explicitly: "I'm reading this as <Y>. Is that correct, or did you mean <Z>?" |
+| You are about to write `proposed_approach` and you can think of >1 viable approach | "Use Redis or PostgreSQL for the queue?" | Ask via `ask_ideation_choice_question` with the alternatives spelled out and the tradeoffs in the question body. |
+
+**Operational protocol:**
+
+1. After receiving the user's request and BEFORE writing `problem_statement` / `proposed_approach`, do an honest ambiguity scan against the table above.
+2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Use `ask_ideation_choice_question` when the answer is a pick from a known set; use `ask_ideation_question` for open-ended clarifications.
+3. Wait for answers. Do NOT fill the gap with a guess and proceed silently.
+4. After answers come in, re-read the full ideation context (`get_ideation_context`) and confirm your understanding by either:
+   - Updating `problem_statement` / `proposed_approach` to reflect the resolved intent, or
+   - Posting a comment summarizing your understanding ("To confirm I understand: the goal is X, the success metric is Y, out-of-scope is Z. Correct?") and waiting for a 👍 / correction.
+5. Only after the loop converges (no remaining ambiguity in your honest assessment), call `move_ideation(status="review")`.
+
+**Anti-pattern (NEVER do this):**
+
+> User: "Add a feature to export data."
+> Agent: *writes proposed_approach with a CSV exporter, picks an endpoint, defines a permission flag, moves ideation to review*. ❌
+
+The user did not say which data, in which format, for which audience, with which permissions, on which surface. Six implicit decisions were made silently.
+
+**Correct pattern:**
+
+> User: "Add a feature to export data."
+> Agent: posts 5 Q&A items — (1) which entity (cards, specs, full board)? (2) which format (CSV, JSON, PDF, all)? (3) which audience (board owner only, agents, public)? (4) which trigger (manual button, scheduled, API)? (5) which volume (single record vs bulk)? Waits for answers, then writes a `proposed_approach` that cites every answer back. ✅
+
+**When the user pushes back ("just make a reasonable choice"):** that itself is permission, but record it explicitly in a comment ("user delegated decision: chose CSV / manual / board-owner-only based on most common usage pattern. Confirm before spec.") so the decision is auditable. Silent assumptions remain banned.
+
+**Stop conditions — when the ideation is genuinely ready to advance:**
+- Every non-trivial term in `problem_statement` has a definition or scope.
+- Every verb has a measurable target.
+- Every alternative approach you can think of was either picked, rejected with rationale, or explicitly deferred.
+- The user (or their proxy) has acknowledged the resolved version, not just the original request.
+
 #### 2.2 Refinements
 
 Refinements break down a complex ideation into focused areas. Each refinement covers one specific aspect.
@@ -626,6 +652,48 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Use Q&A** to clarify scope and decisions with the user
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
 
+##### 2.2a Investigação profunda obrigatória — refinement is research, not paraphrasing
+
+> **A refinement is NOT a copy of the ideation with prettier wording.** Its purpose is to convert a vetted idea into a concrete blueprint by gathering EVERY piece of factual evidence required to design the solution. The depth of the investigation here directly determines whether the downstream spec is implementable or speculative. Skipping this step compounds — every gap here becomes a question at spec time, every wrong assumption here becomes a bug at implementation time.
+
+**MANDATORY scope of investigation — before moving the refinement to `approved` you MUST exhaust ALL of the following sources that apply to the topic:**
+
+| Source | Tools / actions | When it applies |
+|---|---|---|
+| **Project files** | `Read`, `Glob`, `Grep` on the local working directory; surface relevant configs, manifests, package files, IaC, env templates. | Always — the refinement must reflect the real shape of the codebase, not a generic mental model. |
+| **Source code** | Open the modules, classes, functions, endpoints, schemas, migrations directly impacted. Read enough to know existing contracts, naming, patterns, error handling, and edge cases already covered. | Always — anything the refinement claims about behaviour must be verifiable against current code. |
+| **Knowledge bases (KE)** | `okto_pulse_list_refinement_knowledge`, `okto_pulse_list_spec_knowledge` on the parent ideation/related specs; `okto_pulse_add_refinement_knowledge` to attach new findings. | Whenever there is documented domain knowledge — never paraphrase a KE; cite it and attach if missing. |
+| **Knowledge Graph** | The Stage 2 query set (`get_related_context`, `find_contradictions`, `list_alternatives`) — see "Query Timing — MANDATORY at every stage". | Always — institutional memory MUST be checked for prior decisions on the same topic. |
+| **Mockups & visual artifacts** | `okto_pulse_list_screen_mockups` on the parent ideation; create new mockups via `okto_pulse_add_screen_mockup` when the refinement implies a UI surface. | Whenever a user-facing behaviour is in scope. |
+| **Web research** | External docs of every dependency the refinement touches: framework docs, library API references, RFCs, vendor changelogs, public issue trackers. Use `WebFetch` / `WebSearch` to pull authoritative sources. | Whenever the refinement depends on third-party behaviour, version constraints, protocol details, or industry conventions. |
+| **Online discussions / state of the art** | When choosing between approaches, scan recent (≤24 months) authoritative posts: official forums, GitHub discussions, RFCs in flight, security advisories. | Whenever an architectural trade-off is on the table that the codebase alone cannot decide. |
+| **Runtime evidence** | Logs, telemetry, existing analytics, prior bug cards (`get_learning_from_bugs`), DLQ rows (`kg_dead_letter_list`), KG health (`kg_health`). | Whenever the refinement touches an area with prior production behaviour. |
+| **Stakeholder context** | Open Q&A on the parent ideation/refinement, related spec evaluations, and `list_my_mentions`. | Always — never re-litigate a decision the user already made. |
+
+**Mandatory deliverables in the refinement body** — once the investigation is done, the refinement MUST cite the evidence:
+
+1. **`analysis`** — written narrative of what you found in each applicable source above. Cite file paths with `path:line`, KE titles, KG node ids, URLs, mockup titles. Quote the relevant snippet for each citation. If a source did not apply, state that explicitly ("No matching KE on the parent ideation; KG returned no prior decisions on <topic>").
+2. **`in_scope`** / **`out_of_scope`** — the boundary MUST be derived from the investigation, not from intuition. Each scope item should be traceable back to a source or decision.
+3. **`decisions`** — every architectural choice the refinement locks in. Each decision must reference (a) the alternatives considered, (b) the source that informed the pick, (c) the prior art it extends or supersedes (KG node id when applicable).
+4. **Attached KEs / mockups** — when the investigation produced new reference material (vendor docs, RFCs, design sketches), attach it via `add_refinement_knowledge` / `add_screen_mockup`. Do not leave findings in chat — make them addressable for the downstream spec.
+
+**Anti-patterns — NEVER do these:**
+
+| Anti-pattern | Why it's wrong | What to do instead |
+|---|---|---|
+| Writing the refinement from the ideation text alone, without opening any source file | The refinement claims behaviour the code may not implement | Open the modules in scope; cite `path:line` for every claim. |
+| "I think the library handles this" | Speculation that becomes a bug at impl time | Read the library's docs (`WebFetch`) or its source; cite the page or commit. |
+| Skipping `find_contradictions` because the topic "feels new" | Silent contradiction with prior decisions in the KG | Always run the Stage 2 query set — see "Query Timing". |
+| Citing a source by name without quoting / linking | Reviewers can't verify the claim | Quote the relevant snippet; include URL or `path:line`. |
+| Marking the refinement `approved` while open Q&A items exist | Pushes ambiguity downstream | Resolve every Q&A item first; ambiguity at refinement = exponentially worse at spec/impl. |
+| Generic `analysis` field ("the system works as expected") | Carries no evidence | Replace with concrete findings: file paths, function names, observed behaviour, version numbers, citations. |
+
+**Stop condition — the refinement is genuinely ready when:**
+- A reviewer reading the `analysis` field alone (without opening the codebase) can verify every claim against the cited sources.
+- Every decision in the refinement traces to either a source, a KG node, a Q&A answer, or an explicit user instruction.
+- There are zero unresolved Q&A items on the refinement.
+- New evidence discovered during investigation has been attached as a KE or mockup, not buried in prose.
+
 #### 2.3 Specs — CRITICAL: Analysis Before Populating
 
 > **MANDATORY — Query the KG before moving the spec out of `draft`.** Run the Stage 3 query set: `get_related_context(artifact_id=<spec_id>)`, board-wide `find_contradictions()`, per-major-FR/BR `find_similar_decisions`, and `explain_constraint` for every constraint cited. A spec that proceeds to `review` without this sweep will fail validation audit and is a protocol violation. Resolutions (SUPERSEDE targets, contradiction fixes, constraint origins) must be cited in the spec itself.
@@ -641,9 +709,8 @@ Refinements break down a complex ideation into focused areas. Each refinement co
    - Technical constraints (language, frameworks, dependencies)
    - File structure and naming conventions
 3. **Check knowledge bases**: Use `okto_pulse_list_spec_knowledge` and `okto_pulse_get_spec_knowledge` to read attached reference documents, API specs, or design docs
-4. **Load skills**: Use `okto_pulse_spec_skill_retrieve`, `okto_pulse_spec_skill_inspect`, and `okto_pulse_spec_skill_load` to read any attached coding guidelines, architecture patterns, or domain knowledge
-5. **Review Q&A history**: Read all Q&A on the spec AND on the parent ideation/refinement — decisions made during Q&A are binding context
-6. **Then write requirements**:
+4. **Review Q&A history**: Read all Q&A on the spec AND on the parent ideation/refinement — decisions made during Q&A are binding context
+5. **Then write requirements**:
    - **Functional requirements**: Specific, testable behaviors. Reference real components, endpoints, or modules from the codebase when applicable.
    - **Technical requirements**: Constraints derived from actual codebase analysis — not generic "best practices" but specific to this project's stack, patterns, and architecture.
    - **Acceptance criteria**: Verifiable conditions that reference real test scenarios, endpoints, or user flows.
@@ -714,7 +781,7 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
 5. If coverage passes, the gate computes `outcome` atomically:
    - `outcome=failed` if ANY threshold is violated OR `recommendation=reject`
    - `outcome=success` ONLY if all thresholds pass AND `recommendation=approve`
-6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock** — you can no longer call `update_spec`, `add_business_rule`, `add_api_contract`, `add_test_scenario`, mockups, knowledge, or skills tools. `SpecLockedError` is raised until the lock is released.
+6. On `success`, the spec is atomically promoted to `validated` AND enters **content lock** — you can no longer call `update_spec`, `add_business_rule`, `add_api_contract`, `add_test_scenario`, mockups, or knowledge tools. `SpecLockedError` is raised until the lock is released.
 7. To edit a locked spec, move it back to `draft` or `approved` via `okto_pulse_move_spec`. Both transitions atomically clear `current_validation_id` (the lock is released) but preserve `spec.validations` history. You will need to re-submit validation before the spec can advance again.
 
 **Thresholds and dimensions.** The board defines thresholds (default 80/80/30, more rigorous than the Task Validation Gate's 70/80/50):
@@ -1107,6 +1174,43 @@ Applies equally to:
 For assets that are not HTML-renderable UI (actual screenshots, PDFs, diagrams from design tools, reference images), use `okto_pulse_upload_attachment` — not a mockup, not ASCII. Attachments are first-class on cards, specs, ideations, refinements with the same addressability properties.
 
 #### 2.8 Cards (Tasks)
+
+##### Card-level artifact attachment (MANDATORY)
+
+> **A card must be self-contained.** Any agent or human picking up a card must be able to execute it from the card alone, without re-querying the parent spec, without hunting through KEs scoped at the spec level, and without rebuilding context that already exists. **Whenever a task depends on an existing knowledge base (KE) or mockup, that artifact MUST be attached directly to the task.**
+
+This is a hard rule, enforced operationally by the implementer's pre-flight (steps 6 and 7 of the **Pre-Flight Checklist**) and validated at task-validation time. An "implementer reading the card description and finding only a vague reference to 'see the spec'" is the failure mode this rule exists to prevent.
+
+**Three attachment paths — pick the right one:**
+
+| Source of the artifact | Tool | When to use |
+|---|---|---|
+| KE / mockup already exists on the parent spec | `okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id, knowledge_ids?)` / `okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id, screen_ids?)` | Default path — the spec already curated the artifact. Pass `knowledge_ids` / `screen_ids` to scope a subset; omit them to copy all. **Snapshot is per-card** — later edits to the spec's KE do NOT propagate, which is intentional (decoupled card lifecycle). |
+| KE specific to this task that should NOT live on the spec | `okto_pulse_add_card_knowledge(board_id, card_id, title, content, ...)` | Use when the knowledge is task-scoped (e.g. a debugging note, a runtime artefact relevant to one card). Lifecycle is fully exposed: `list_card_knowledge`, `get_card_knowledge`, `update_card_knowledge`, `delete_card_knowledge`. |
+| Mockup specific to this card | `okto_pulse_add_screen_mockup(board_id, card_id, ..., entity_type="card")` | Use for card-scoped UI deliverables, bug repro screenshots, or per-card layout variants. Annotate via `annotate_mockup`. |
+
+**Mandatory before moving the card to `in_progress`:**
+
+1. Run `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true)` and inspect what is already attached.
+2. For each KE / mockup the task needs, decide:
+   - **Already on the card** → no action.
+   - **On the parent spec, relevant to this task** → call `copy_knowledge_to_card` / `copy_mockups_to_card`. Use `knowledge_ids` / `screen_ids` to attach exactly what the task needs (not the full spec dump).
+   - **Not yet captured anywhere** → create it with `add_card_knowledge` (task-scoped) or escalate to spec via `add_spec_knowledge` then copy down (when other tasks will need it too).
+3. Skip explicitly when the task genuinely needs no artifact (e.g. backend-only with no domain doc) — but post a one-line comment justifying the skip ("backend refactor; no KE or mockup applicable").
+
+**Bug cards inherit the same rule.** A bug card must carry the KE/mockup that documents the expected behaviour AND, when applicable, the screenshot/log/trace evidence of the observed behaviour. Use `add_card_knowledge` for the evidence and `upload_attachment` for raw files (logs, screenshots).
+
+**Anti-patterns — NEVER do these:**
+
+| Anti-pattern | Why it's wrong | What to do instead |
+|---|---|---|
+| Card description says "see KE 'API contract' on the spec" | Forces the implementer to re-query the spec; the snapshot guarantees of `copy_knowledge_to_card` are lost | Call `copy_knowledge_to_card` and reference the now-card-local KE id in the description. |
+| Card description embeds a giant code block of the KE content | Duplication without addressability; can't be updated; not searchable | Attach via `add_card_knowledge` or `copy_knowledge_to_card`. Reference by id in the description. |
+| Card on a UI task with zero attached mockups | Implementer must guess layout; drift guaranteed | `copy_mockups_to_card` for every screen the card touches. |
+| Implementer skips step 6/7 of Pre-Flight and starts coding | Blind execution against an incomplete card | Refuse to start — go back, attach artifacts, then move to `in_progress`. |
+| `copy_*_to_card` called without filtering when only 1-2 of 10 KEs apply | Card becomes noisy; reviewer drowns in irrelevant context | Pass `knowledge_ids` / `screen_ids` to scope the snapshot. |
+
+**Verification before claiming completion:** at task-validation time (`submit_task_validation`), the validator should check that every linked test scenario, BR, contract, KE and mockup the implementation depends on was either present on the card from the start or explicitly added during execution. A card that closed with `completeness=100` but had no KE/mockup attached for a task that clearly required one is a drift signal — flag it in `general_justification`.
 
 **Governance rules (enforced by the system):**
 

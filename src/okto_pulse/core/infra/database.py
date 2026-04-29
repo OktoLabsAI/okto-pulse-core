@@ -786,6 +786,25 @@ async def _migrate_add_card_knowledge_bases() -> None:
                 pass
 
 
+async def _migrate_drop_spec_skills() -> None:
+    """Drop the legacy `spec_skills` table.
+
+    Spec e12c4c20 — Skills removal: the feature is gone in its entirety.
+    No data preservation (D1) — the table is dropped if it exists, no-op
+    otherwise. Idempotent on both Postgres and SQLite via
+    `DROP TABLE IF EXISTS`.
+
+    Reader-side defensive handling lives in BaseSchema (extra="ignore"),
+    so any historical JSON payload still carrying a `skills` key is
+    silently accepted. There is nothing to roll back: the drop is
+    definitive.
+    """
+    from sqlalchemy import text as sa_text
+
+    async with get_engine().begin() as conn:
+        await conn.execute(sa_text("DROP TABLE IF EXISTS spec_skills"))
+
+
 async def _migrate_add_consolidation_resilience_columns() -> None:
     """Add resilience columns to consolidation_queue + create
     consolidation_dead_letter table.
@@ -865,6 +884,7 @@ async def init_db() -> None:
     await _migrate_agent_boards()
     await _migrate_add_task_validation_columns()
     await _migrate_add_consolidation_resilience_columns()
+    await _migrate_drop_spec_skills()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()
     await _reconcile_builtin_presets()
