@@ -42,6 +42,10 @@ class KGHealthResponse(BaseModel):
     contradict_warn_count: int
     last_decay_tick_at: str | None = None
     nodes_recomputed_in_last_tick: int = 0
+    # True se o advisory lock global ``kg_daily_tick`` está atualmente
+    # acquired (cron OU run-now). Frontend usa para desabilitar o botão
+    # "Run tick now" através de remount do componente.
+    tick_in_progress: bool = False
 
 
 @router.get("/kg/health", response_model=KGHealthResponse)

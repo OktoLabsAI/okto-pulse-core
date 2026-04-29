@@ -822,9 +822,26 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
         )
     ).scalars().all()
 
+    # Spec 233eaad3: 1 query batch para cards do board + groupby spec_id —
+    # evita N+1 dentro do loop e permite cancelled-card filter no
+    # spec_coverage_summary (cards cancelled descobrem suas linkagens).
+    from collections import defaultdict
+    all_cards = (
+        await db.execute(
+            select(Card).where(
+                Card.board_id == board_id,
+                Card.archived.is_(False),
+            )
+        )
+    ).scalars().all()
+    cards_by_spec: dict[str, list] = defaultdict(list)
+    for c in all_cards:
+        if c.spec_id:
+            cards_by_spec[c.spec_id].append(c)
+
     rows: list[dict] = []
     for spec in specs:
-        cov = spec_coverage_summary(spec)
+        cov = spec_coverage_summary(spec, cards=cards_by_spec.get(spec.id, []))
         status_value = getattr(spec.status, "value", str(spec.status))
         is_in_flight = spec.status in IN_FLIGHT
 

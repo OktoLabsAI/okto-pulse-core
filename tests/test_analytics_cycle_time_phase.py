@@ -35,7 +35,10 @@ class TestCycleTimeBuilder:
     def test_phase_cycle_time_averages_done_items_only(self):
         # Reproduce the logic inline — helper is defined inside the route so
         # we re-implement the same shape here as a contract-style check.
-        from datetime import datetime, timezone
+        # NB: usamos timedelta em vez de ``now.replace(hour=...)`` porque o
+        # replace estourava ao virar 24h (ex: 22+4 % 24 = 2 → diff negativo)
+        # tornando o teste flaky no fim do dia UTC.
+        from datetime import datetime, timezone, timedelta
 
         class Item:
             def __init__(self, status, created, updated):
@@ -45,8 +48,8 @@ class TestCycleTimeBuilder:
 
         now = datetime.now(timezone.utc)
         items = [
-            Item("done", now, now.replace(hour=(now.hour + 2) % 24)),  # 2h ish
-            Item("done", now, now.replace(hour=(now.hour + 4) % 24)),  # 4h ish
+            Item("done", now, now + timedelta(hours=2)),  # 2h
+            Item("done", now, now + timedelta(hours=4)),  # 4h
             Item("draft", now, now),  # excluded — not done
             Item("done", None, now),  # excluded — no created_at
         ]

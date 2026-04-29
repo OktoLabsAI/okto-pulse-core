@@ -140,6 +140,16 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             },
         )
 
+    # Bug fix (Playwright E2E reproduzido): se o usuário fechar o modal
+    # enquanto o tick roda e voltar, o frontend perde o state local de
+    # "running" e re-habilita o botão. Para o frontend conseguir desabilitar
+    # através de remount, expomos o estado real do advisory lock global
+    # ``("kg_daily_tick", "global")``. Reuso do lock que kg_tick.py e o
+    # cron já consultam — single source of truth.
+    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
+    tick_lock = get_async_lock("kg_daily_tick", "global")
+    tick_in_progress = tick_lock.locked()
+
     return {
         "queue_depth": int(queue_depth),
         "oldest_pending_age_s": round(oldest_pending_age_s, 3),
@@ -153,6 +163,7 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         "contradict_warn_count": get_contradict_warn_count(board_id),
         "last_decay_tick_at": last_decay_tick_at,
         "nodes_recomputed_in_last_tick": nodes_recomputed_in_last_tick,
+        "tick_in_progress": tick_in_progress,
     }
 
 

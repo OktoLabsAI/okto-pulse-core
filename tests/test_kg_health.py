@@ -102,6 +102,11 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "contradict_warn_count",
         "last_decay_tick_at",
         "nodes_recomputed_in_last_tick",
+        # Bug fix (Run tick now cross-mount race): expõe o estado do
+        # advisory lock global ``kg_daily_tick`` para que o frontend
+        # consiga desabilitar o botão mesmo se o usuário fechar o modal
+        # e voltar enquanto o tick (cron OU manual) está rodando.
+        "tick_in_progress",
     }
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == HEALTH_SCHEMA_VERSION
@@ -111,6 +116,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert isinstance(result["top_disconnected_nodes"], list)
     assert result["last_decay_tick_at"] is None or isinstance(result["last_decay_tick_at"], str)
     assert isinstance(result["nodes_recomputed_in_last_tick"], int)
+    assert isinstance(result["tick_in_progress"], bool)
 
 
 # --- TS2 / AC2: 404 (BoardNotFoundError) for unknown board ---

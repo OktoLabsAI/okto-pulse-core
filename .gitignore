@@ -34,6 +34,7 @@ cli_output.log
 
 # Test
 .pytest_cache/
+tests/.cache/
 htmlcov/
 .coverage
 
