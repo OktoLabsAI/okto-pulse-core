@@ -7,20 +7,22 @@ Responsibilities:
 - Delegates to graph_store (SemanticGraphStore) via the provider registry
 - Returns typed dicts; callers (MCP/REST) wrap into Pydantic models
 
-All public methods are sync because Kuzu's Python API is synchronous. The
-MCP/REST adapters call them from async handlers via run_in_executor when
-needed for high-concurrency workloads (MVP: direct call is fine since Kuzu
-is embedded and single-writer).
+Async methods that call Kùzu use ``_run_kuzu`` to offload the synchronous
+``Connection.execute()`` calls to a dedicated thread pool, keeping the
+event loop responsive under concurrent load.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time as _time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
+from functools import partial
 from typing import Any
 
 from okto_pulse.core.kg import cypher_templates as tpl
@@ -30,37 +32,186 @@ from okto_pulse.core.kg.schema import SCHEMA_VERSION
 logger = logging.getLogger("okto_pulse.kg.service")
 
 # ---------------------------------------------------------------------------
-# v0.3.0 R2 — hit counter with lazy flush
+# Thread pool for offloading synchronous Kùzu operations from the event loop
 # ---------------------------------------------------------------------------
 
-# Module-level cache shared across requests. A defaultdict keyed by
-# (board_id, node_id). Values are int counters. On flush the delta is
-# added to n.query_hits in Kùzu and the cache entry is reset to 0.
-_PENDING_HITS: dict[tuple[str, str], int] = defaultdict(int)
+_kuzu_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="kuzu")
 
-# Timestamp (UTC) of the last successful flush per node. Used by the age
-# trigger: if the last flush was >24h ago, force a flush even if the count
-# hasn't reached the threshold.
-_LAST_FLUSH: dict[tuple[str, str], datetime] = {}
 
-# Per-node asyncio.Lock instances to serialise concurrent hits against the
-# same node without blocking hits against other nodes.
-_HIT_LOCKS: dict[tuple[str, str], asyncio.Lock] = defaultdict(asyncio.Lock)
+async def _run_kuzu(func, *args, **kwargs):
+    """Run a synchronous Kùzu operation in a dedicated thread pool."""
+    loop = asyncio.get_running_loop()
+    if kwargs:
+        pfunc = partial(func, *args, **kwargs)
+        return await loop.run_in_executor(_kuzu_executor, pfunc)
+    return await loop.run_in_executor(_kuzu_executor, func, *args)
+
+
+# ---------------------------------------------------------------------------
+# v0.3.0 R2 — hit counter with lazy flush (bounded LRU cache)
+# ---------------------------------------------------------------------------
 
 HIT_FLUSH_THRESHOLD = 10
 HIT_FLUSH_MAX_AGE_S = 24 * 3600  # 24h in seconds
 
 
+class _HitCacheRegistry:
+    """Shared eviction registry for the three hit-counter dicts.
+
+    Keeps ``_pending_hits``, ``_last_flush``, and ``_hit_locks`` in sync
+    under a single OrderedDict-based LRU with configurable max size.
+    Uses a threading.Lock — safe because asyncio runs in a single thread.
+    """
+
+    def __init__(self, max_size: int = 5000) -> None:
+        self._max_size = max_size
+        self._order: OrderedDict[tuple[str, str], None] = OrderedDict()
+        self._pending_hits: dict[tuple[str, str], int] = {}
+        self._last_flush: dict[tuple[str, str], datetime] = {}
+        self._hit_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._has_lock: set[tuple[str, str]] = set()
+        self._lock = threading.Lock()
+
+    def get_pending(self, key: tuple[str, str]) -> int:
+        """Return pending-hit count, creating the entry if absent."""
+        with self._lock:
+            if key not in self._order:
+                self._order[key] = None
+                self._pending_hits[key] = 0
+            else:
+                self._order.move_to_end(key)
+            return self._pending_hits[key]
+
+    def set_pending(self, key: tuple[str, str], value: int) -> None:
+        """Set pending-hit count; evicts oldest if over capacity."""
+        with self._lock:
+            if key in self._order:
+                self._order.move_to_end(key)
+            else:
+                self._order[key] = None
+            self._pending_hits[key] = value
+            self._evict()
+
+    def get_flush(self, key: tuple[str, str]) -> datetime | None:
+        """Return last-flush timestamp without touching LRU order."""
+        return self._last_flush.get(key)
+
+    def set_flush(self, key: tuple[str, str], value: datetime) -> None:
+        """Set last-flush timestamp; evicts oldest if over capacity."""
+        with self._lock:
+            if key in self._order:
+                self._order.move_to_end(key)
+            else:
+                self._order[key] = None
+            self._last_flush[key] = value
+            self._evict()
+
+    def get_lock(self, key: tuple[str, str]) -> asyncio.Lock:
+        """Return per-node lock, creating it lazily if absent."""
+        with self._lock:
+            if key not in self._order:
+                self._order[key] = None
+                self._pending_hits[key] = 0
+            else:
+                self._order.move_to_end(key)
+            if key not in self._has_lock:
+                self._hit_locks[key] = asyncio.Lock()
+                self._has_lock.add(key)
+            return self._hit_locks[key]
+
+    def clear(self) -> None:
+        """Clear all caches."""
+        with self._lock:
+            self._order.clear()
+            self._pending_hits.clear()
+            self._last_flush.clear()
+            self._hit_locks.clear()
+            self._has_lock.clear()
+
+    def snapshot(self) -> dict[tuple[str, str], int]:
+        """Return a shallow copy of pending hits. For debugging/metrics."""
+        return dict(self._pending_hits)
+
+    def _evict(self) -> None:
+        """Remove the oldest entry from ALL dicts. Must be called with lock held."""
+        while len(self._order) > self._max_size:
+            oldest_key, _ = self._order.popitem(last=False)
+            self._pending_hits.pop(oldest_key, None)
+            self._last_flush.pop(oldest_key, None)
+            self._hit_locks.pop(oldest_key, None)
+            self._has_lock.discard(oldest_key)
+
+
+# Module-level registry — single instance shared by all three proxies.
+_registry = _HitCacheRegistry(max_size=5000)
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible proxy objects
+# ---------------------------------------------------------------------------
+
+class _PendingHitsProxy:
+    """Proxy for _PENDING_HITS supporting ``d[key]``, ``d[key] += 1``, ``d.get(k)``."""
+
+    def __getitem__(self, key: tuple[str, str]) -> int:
+        return _registry.get_pending(key)
+
+    def __setitem__(self, key: tuple[str, str], value: int) -> None:
+        _registry.set_pending(key, value)
+
+    def get(self, key: tuple[str, str], default: int = 0) -> int:
+        return _registry._pending_hits.get(key, default)
+
+
+class _LastFlushProxy:
+    """Proxy for _LAST_FLUSH supporting ``d[key]``, ``d.get(k)``."""
+
+    def __getitem__(self, key: tuple[str, str]) -> datetime:
+        val = _registry.get_flush(key)
+        if val is None:
+            raise KeyError(key)
+        return val
+
+    def __setitem__(self, key: tuple[str, str], value: datetime) -> None:
+        _registry.set_flush(key, value)
+
+    def get(self, key: tuple[str, str], default: Any = None) -> datetime | None:
+        return _registry.get_flush(key)
+
+
+class _HitLocksProxy:
+    """Proxy for _HIT_LOCKS supporting ``async with d[key]``."""
+
+    class _LockCtx:
+        """Async context manager wrapping an asyncio.Lock."""
+
+        def __init__(self, lock: asyncio.Lock) -> None:
+            self._lock = lock
+
+        async def __aenter__(self) -> asyncio.Lock:
+            await self._lock.acquire()
+            return self._lock
+
+        async def __aexit__(self, *args) -> None:
+            self._lock.release()
+
+    def __getitem__(self, key: tuple[str, str]) -> _HitLocksProxy._LockCtx:
+        return self._LockCtx(_registry.get_lock(key))
+
+
+_PENDING_HITS = _PendingHitsProxy()
+_LAST_FLUSH = _LastFlushProxy()
+_HIT_LOCKS = _HitLocksProxy()
+
+
 def _reset_hit_state_for_tests() -> None:
     """Clear every bit of module-level hit state. Test-only helper."""
-    _PENDING_HITS.clear()
-    _LAST_FLUSH.clear()
-    _HIT_LOCKS.clear()
+    _registry.clear()
 
 
 def _hits_snapshot() -> dict[tuple[str, str], int]:
     """Return a shallow copy of the pending cache. For debugging/metrics."""
-    return dict(_PENDING_HITS)
+    return _registry.snapshot()
 
 
 @dataclass(frozen=True)
@@ -122,6 +273,73 @@ def _filters(
         max_rows=max_rows if max_rows is not None else d.max_rows,
         min_relevance=min_relevance if min_relevance is not None else d.min_relevance,
     )
+
+
+def _flush_to_kuzu(
+    board_id: str, node_type: str, node_id: str, delta: int, now_iso: str,
+) -> None:
+    """Sync helper: write hit counter delta to Kùzu (runs in thread pool)."""
+    from okto_pulse.core.kg.schema import open_board_connection
+
+    with open_board_connection(board_id) as (_db, conn):
+        conn.execute(
+            f"MATCH (n:{node_type} {{id: $nid}}) "
+            f"SET n.query_hits = COALESCE(n.query_hits, 0) + $delta, "
+            f"n.last_queried_at = $ts",
+            {"nid": node_id, "delta": delta, "ts": now_iso},
+        )
+
+
+async def _emit_hit_flushed_event(
+    board_id: str, node_type: str, node_id: str, delta: int, now_iso: str,
+) -> None:
+    """Fire-and-forget publisher for KGHitFlushed (spec 28583299, IMPL-B).
+
+    Opens its own SQLAlchemy session via the application session factory so
+    the search hot path (record_query_hit → _flush_hits) doesn't have to
+    plumb a ``db`` argument through internal helpers. Best-effort: any
+    failure (no session factory in test mode, dispatcher down, etc.) is
+    logged and swallowed because the event is operational telemetry — the
+    underlying hit flush has already succeeded.
+    """
+    try:
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import KGHitFlushed
+        from okto_pulse.core.infra.database import get_session_factory
+    except Exception as exc:  # pragma: no cover — import-time guard
+        logger.debug(
+            "kg.hit_flushed.import_failed err=%s", exc,
+        )
+        return
+
+    try:
+        factory = get_session_factory()
+    except AssertionError:
+        # No DB initialised (sync test suites that exercise scoring only).
+        return
+
+    event = KGHitFlushed(
+        board_id=board_id,
+        node_type=node_type,
+        node_id=node_id,
+        hits_delta=int(delta),
+        flushed_at=now_iso,
+    )
+    try:
+        async with factory() as session:
+            await event_publish(event, session=session)
+            await session.commit()
+    except Exception as exc:
+        logger.warning(
+            "kg.hit_flushed.publish_failed board=%s node=%s err=%s",
+            board_id, node_id, exc,
+            extra={
+                "event": "kg.hit_flushed.publish_failed",
+                "board_id": board_id,
+                "node_id": node_id,
+                "error": str(exc),
+            },
+        )
 
 
 class KGService:
@@ -190,8 +408,6 @@ class KGService:
         node_id: str,
     ) -> None:
         """Write the pending hit counter to Kùzu. Caller holds the lock."""
-        from okto_pulse.core.kg.schema import open_board_connection
-
         key = (board_id, node_id)
         delta = _PENDING_HITS.get(key, 0)
         if delta <= 0:
@@ -200,13 +416,9 @@ class KGService:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         try:
-            with open_board_connection(board_id) as (_db, conn):
-                conn.execute(
-                    f"MATCH (n:{node_type} {{id: $nid}}) "
-                    f"SET n.query_hits = COALESCE(n.query_hits, 0) + $delta, "
-                    f"n.last_queried_at = $ts",
-                    {"nid": node_id, "delta": delta, "ts": now_iso},
-                )
+            await _run_kuzu(
+                _flush_to_kuzu, board_id, node_type, node_id, delta, now_iso,
+            )
         except Exception as exc:
             logger.error(
                 "kg.scoring.hit_flush_failed board=%s node=%s delta=%d err=%s",
@@ -236,6 +448,24 @@ class KGService:
         )
         _PENDING_HITS[key] = 0
         _LAST_FLUSH[key] = datetime.now(timezone.utc)
+
+        # spec 28583299 (Ideação #4, BR3 + dec_3a6eb8ad): emit KGHitFlushed
+        # via fire-and-forget so the recompute handler ranks the refreshed
+        # hits without blocking the search hot path. Independent session
+        # (B-1.b in KE-B) avoids polluting the search call-chain. Fire-and-
+        # forget is safe — flush failure already discards counts (line 383),
+        # and the worst case for losing the event is the score lagging by
+        # one tick (decay half-life is 30 days, so seconds don't matter).
+        try:
+            asyncio.create_task(
+                _emit_hit_flushed_event(
+                    board_id, node_type, node_id, delta, now_iso,
+                )
+            )
+        except RuntimeError:
+            # No running loop (sync test contexts) — ignore. The event is
+            # operational telemetry, not a correctness invariant.
+            pass
 
     # ------------------------------------------------------------------
     # Schema version (FR-6)
@@ -325,6 +555,7 @@ class KGService:
         """
         from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
 
+        logger.debug("[KG] KGService.get_node_detail board_id=%s node_id=%s", board_id, node_id)
         with open_board_connection(board_id) as (_db, conn):
             for ntype in NODE_TYPES:
                 cypher = (
@@ -334,26 +565,33 @@ class KGService:
                     f"n.relevance_score, n.query_hits, n.last_queried_at, "
                     f"n.created_at, n.superseded_by"
                 )
+                res = None
                 try:
                     res = conn.execute(cypher, {"nid": node_id})
+                    if res.has_next():
+                        r = res.get_next()
+                        return {
+                            "id": r[0],
+                            "title": r[1] or "",
+                            "content": r[2] or "",
+                            "justification": r[3] or "",
+                            "source_artifact_ref": r[4],
+                            "source_confidence": r[5] if r[5] is not None else 0.0,
+                            "relevance_score": r[6] if r[6] is not None else 0.5,
+                            "query_hits": r[7] if r[7] is not None else 0,
+                            "last_queried_at": r[8],
+                            "created_at": r[9].isoformat() if r[9] else None,
+                            "superseded_by": r[10],
+                            "node_type": ntype,
+                        }
                 except Exception:
                     continue
-                if res.has_next():
-                    r = res.get_next()
-                    return {
-                        "id": r[0],
-                        "title": r[1] or "",
-                        "content": r[2] or "",
-                        "justification": r[3] or "",
-                        "source_artifact_ref": r[4],
-                        "source_confidence": r[5] if r[5] is not None else 0.0,
-                        "relevance_score": r[6] if r[6] is not None else 0.5,
-                        "query_hits": r[7] if r[7] is not None else 0,
-                        "last_queried_at": r[8],
-                        "created_at": r[9].isoformat() if r[9] else None,
-                        "superseded_by": r[10],
-                        "node_type": ntype,
-                    }
+                finally:
+                    if res is not None:
+                        try:
+                            res.close()
+                        except Exception:
+                            pass
         return None
 
     # ------------------------------------------------------------------
@@ -395,10 +633,16 @@ class KGService:
         def _query():
             with open_board_connection(board_id) as (_db, conn):
                 result = conn.execute(template, params)
-                rows = []
-                while result.has_next():
-                    rows.append(result.get_next())
-                return rows
+                try:
+                    rows = []
+                    while result.has_next():
+                        rows.append(result.get_next())
+                    return rows
+                finally:
+                    try:
+                        result.close()
+                    except Exception:
+                        pass
 
         rows = self._cached_call("get_all_nodes", board_id, params, _query)
         return [
@@ -436,6 +680,8 @@ class KGService:
         When ``use_semantic=False`` only title-CONTAINS is used (preserved for
         callers that want deterministic string matching).
         """
+        logger.debug("[KG] KGService.get_decision_history board_id=%s topic=%r use_semantic=%s",
+                     board_id, topic, use_semantic)
         store = _get_graph_store()
         f = _filters(min_confidence, max_rows, defaults=self.defaults)
 
@@ -623,6 +869,7 @@ class KGService:
         *,
         max_rows: int | None = None,
     ) -> list[dict]:
+        logger.debug("[KG] KGService.find_contradictions board_id=%s node_id=%s", board_id, node_id)
         store = _get_graph_store()
         limit = max_rows or min(50, self.defaults.max_rows)
 
@@ -654,6 +901,8 @@ class KGService:
     ) -> list[dict]:
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
+        logger.debug("[KG] KGService.find_similar_decisions board_id=%s topic=%r top_k=%d",
+                     board_id, topic, top_k)
         w = weights or self.weights
         store = _get_graph_store()
         embedder = get_kg_registry().embedding_provider
@@ -805,6 +1054,7 @@ class KGService:
         results: list[dict] = []
         try:
             _, conn = open_global_connection()
+            res = None
             try:
                 # HNSW over DecisionDigest.embedding, joined to Board via
                 # CONTAINS_DECISION so we can filter to the caller's scope.
@@ -838,7 +1088,15 @@ class KGService:
                         "similarity": sim,
                     })
             finally:
-                del conn
+                if res is not None:
+                    try:
+                        res.close()
+                    except Exception:
+                        pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         except Exception as exc:
             logger.debug("kg.query_global.failed err=%s", exc)
             return []
@@ -852,6 +1110,7 @@ class KGService:
         # the meta-graph is still warming up.
         try:
             _, conn = open_global_connection()
+            res = None
             try:
                 cypher = (
                     "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
@@ -885,7 +1144,15 @@ class KGService:
                 scored.sort(key=lambda r: r["similarity"], reverse=True)
                 return scored[:top_k]
             finally:
-                del conn
+                if res is not None:
+                    try:
+                        res.close()
+                    except Exception:
+                        pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         except Exception as exc:
             logger.debug("kg.query_global.fallback_failed err=%s", exc)
             return []

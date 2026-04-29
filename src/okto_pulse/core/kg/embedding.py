@@ -15,8 +15,10 @@ runtime need a process restart (acceptable — this is embedded, single-process)
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import struct
+import time as _time
 from typing import Sequence
 
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
@@ -28,6 +30,9 @@ __all__ = [
     "get_embedding_provider",
     "reset_embedding_provider_cache",
 ]
+
+
+logger = logging.getLogger(__name__)
 
 
 class StubEmbeddingProvider:
@@ -73,7 +78,9 @@ class SentenceTransformerProvider:
         self._model = None
 
     def _get_model(self):
+        logger.debug("[KG] SentenceTransformerProvider._get_model model_name=%s", self.model_name)
         if self._model is None:
+            t0 = _time.monotonic()
             try:
                 from sentence_transformers import SentenceTransformer  # type: ignore
             except ImportError as exc:
@@ -83,12 +90,19 @@ class SentenceTransformerProvider:
                     "or set kg_embedding_mode=stub for stub mode"
                 ) from exc
             self._model = SentenceTransformer(self.model_name)
+            dur = (_time.monotonic() - t0) * 1000
+            logger.debug("[KG] SentenceTransformer model loaded: name=%s time_ms=%.1f", self.model_name, dur)
         return self._model
 
     def encode(self, text: str) -> list[float]:
+        t0 = _time.monotonic()
+        logger.debug("[KG] SentenceTransformerProvider.encode input_len=%d", len(text or ""))
         model = self._get_model()
         vec = model.encode(text or "", normalize_embeddings=True)
-        return vec.tolist() if hasattr(vec, "tolist") else list(vec)
+        result = vec.tolist() if hasattr(vec, "tolist") else list(vec)
+        dur = (_time.monotonic() - t0) * 1000
+        logger.debug("[KG] SentenceTransformerProvider.encode done dims=%d time_ms=%.1f", len(result), dur)
+        return result
 
     def encode_batch(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:

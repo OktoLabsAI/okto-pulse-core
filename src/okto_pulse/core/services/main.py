@@ -45,7 +45,6 @@ from okto_pulse.core.models.db import (
     SpecHistory,
     SpecKnowledgeBase,
     SpecQAItem,
-    SpecSkill,
     SpecStatus,
     Sprint,
     SprintHistory,
@@ -85,8 +84,6 @@ from okto_pulse.core.models.schemas import (
     SpecMove,
     SpecQAAnswer,
     SpecQACreate,
-    SpecSkillCreate,
-    SpecSkillUpdate,
     SpecUpdate,
     SpecValidationSubmit,
     SprintCreate,
@@ -305,6 +302,20 @@ class BoardService:
             actor_name=actor_name,
             details={"name": data.name},
         )
+        # Eagerly bootstrap the per-board Kùzu graph. This keeps board
+        # creation on the slow path (~1-2s) so subsequent consolidation /
+        # MCP query paths stay on the hot path.
+        # Failures are logged but don't abort board creation — the
+        # lazy bootstrap in BoardConnection.__init__ is the safety net.
+        try:
+            from okto_pulse.core.kg.schema import ensure_board_graph_bootstrapped
+            ensure_board_graph_bootstrapped(board.id)
+        except Exception as exc:
+            import logging
+            logging.getLogger("okto_pulse.core.services.main").warning(
+                "board_create.bootstrap_failed board=%s err=%s — lazy path will retry",
+                board.id, exc,
+            )
         return board
 
     async def get_board(self, board_id: str, user_id: str | None = None) -> Board | None:
@@ -622,6 +633,18 @@ class CardService:
 
         update_data = data.model_dump(exclude_unset=True)
 
+        # spec 28583299 (Ideação #4, IMPL-C): snapshot priority/severity BEFORE
+        # mutation so the DomainEvent payload carries the actual transition.
+        # In-memory mutation may leave enums as raw strings (Pydantic dump);
+        # _enum_value handles both shapes uniformly.
+        def _enum_value(value):
+            if value is None:
+                return None
+            return getattr(value, "value", value)
+
+        old_priority = _enum_value(card.priority)
+        old_severity = _enum_value(getattr(card, "severity", None))
+
         # Serialize screen_mockups if present
         if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
             update_data["screen_mockups"] = [
@@ -645,6 +668,53 @@ class CardService:
             actor_name=actor_name,
             details=update_data,
         )
+
+        # spec 28583299 (Ideação #4, FR6/FR7 + api_21467ada/api_ff834434):
+        # emit a typed event when priority or severity changed so the
+        # consolidation worker recomputes priority_boost on the KG node.
+        new_priority = _enum_value(card.priority)
+        new_severity = _enum_value(getattr(card, "severity", None))
+        card_type_value = _enum_value(card.card_type)
+
+        if "priority" in update_data and old_priority != new_priority:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import CardPriorityChanged
+
+            await event_publish(
+                CardPriorityChanged(
+                    board_id=card.board_id,
+                    actor_id=user_id,
+                    card_id=card.id,
+                    old_priority=old_priority,
+                    new_priority=new_priority,
+                    spec_id=card.spec_id,
+                    changed_by=user_id,
+                ),
+                session=self.db,
+            )
+
+        # BR1: severity transitions only matter for Bug cards.
+        if (
+            card_type_value == "bug"
+            and "severity" in update_data
+            and old_severity != new_severity
+        ):
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import CardSeverityChanged
+
+            await event_publish(
+                CardSeverityChanged(
+                    board_id=card.board_id,
+                    actor_id=user_id,
+                    card_id=card.id,
+                    old_severity=old_severity,
+                    new_severity=new_severity,
+                    spec_id=card.spec_id,
+                    changed_by=user_id,
+                ),
+                session=self.db,
+            )
+
         return card
 
     # ---- Dependency methods ----
@@ -905,11 +975,36 @@ class CardService:
             card.conclusions = conclusions_list
             flag_modified(card, "conclusions")
 
-        # Route card based on outcome (atomic with validation persist)
+            # Spec 4007e4a3 (Ideação #3): re-enqueue parent spec via
+            # CardConclusionAdded so the KG reflects the card's narrative
+            # outcome alongside its final state. Orphan cards (spec_id=None)
+            # are handled gracefully by the enqueuer.
+            if _general:
+                from okto_pulse.core.events import publish as event_publish
+                from okto_pulse.core.events.types import CardConclusionAdded
+
+                await event_publish(
+                    CardConclusionAdded(
+                        board_id=card.board_id,
+                        actor_id=reviewer_id,
+                        card_id=card_id,
+                        spec_id=card.spec_id,
+                        conclusion_excerpt=_general[:280],
+                        added_by=reviewer_id,
+                    ),
+                    session=self.db,
+                )
+
+        # Route card based on outcome (atomic with validation persist).
+        # NC-7 fix: outcome=failed keeps the card in VALIDATION instead of
+        # bouncing back to NOT_STARTED. This avoids forcing the operator to
+        # re-walk the whole state machine just to retry a threshold tweak;
+        # the failed validation entry is appended to card.validations so the
+        # history is preserved.
         if outcome == "success":
             card.status = CardStatus.DONE
         else:
-            card.status = CardStatus.NOT_STARTED
+            card.status = CardStatus.VALIDATION
 
         # Auto-position at end of target column
         pos_query = (
@@ -1276,8 +1371,29 @@ class CardService:
         # --- Bug card: block in_progress/done without properly linked test tasks ---
         # Gate triggers when moving TO in_progress or done FROM a status before in_progress
         # (i.e. not_started or started). Once in_progress is reached, the gate was already passed.
+        # NC-6 fix: gate is now conditional on board settings:
+        #   - require_test_task_for_bug=False → gate desligado (qualquer bug avança)
+        #   - bug_test_gate_min_severity controla qual severity entra no gate
+        #     ("minor"=default, sempre exige; "major"=pula minor; "critical"=só critical)
+        # Severity ordering (lower → higher): minor < major < critical
+        _SEVERITY_ORDER = {"minor": 1, "major": 2, "critical": 3}
+        _board_settings = (board.settings or {}) if board else {}
+        _bug_gate_enabled = _board_settings.get(
+            "require_test_task_for_bug", True
+        )
+        _bug_gate_min_sev = _board_settings.get(
+            "bug_test_gate_min_severity", "minor"
+        )
+        _card_severity = getattr(card, "severity", None) or "minor"
+        _gate_applies = (
+            _bug_gate_enabled
+            and _SEVERITY_ORDER.get(_card_severity, 1)
+            >= _SEVERITY_ORDER.get(_bug_gate_min_sev, 1)
+        )
+
         if (
-            data.status in (CardStatus.IN_PROGRESS, CardStatus.DONE)
+            _gate_applies
+            and data.status in (CardStatus.IN_PROGRESS, CardStatus.DONE)
             and old_level < self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
             and getattr(card, "card_type", CardType.NORMAL) == CardType.BUG
         ):
@@ -1289,7 +1405,9 @@ class CardService:
                     "(1) Create a new test scenario on the spec using okto_pulse_add_test_scenario, "
                     "(2) Create a test task card with spec_id and test_scenario_ids using okto_pulse_create_card, "
                     "(3) Link the test task to this bug using okto_pulse_update_card with linked_test_task_ids, "
-                    "(4) Then retry moving this bug card to in_progress."
+                    "(4) Then retry moving this bug card to in_progress. "
+                    "TO BYPASS: set require_test_task_for_bug=false on the board, or raise "
+                    "bug_test_gate_min_severity above this bug's severity."
                 )
 
             # Validate each linked test task
@@ -1462,6 +1580,8 @@ class CardService:
                     card_id=card.id,
                     from_status=old_status.value,
                     to_status=data.status.value,
+                    spec_id=card.spec_id,
+                    moved_by=user_id,
                 ),
                 session=self.db,
             )
@@ -2287,11 +2407,10 @@ class SpecService:
         return spec
 
     async def get_spec(self, spec_id: str) -> Spec | None:
-        """Get a spec by ID with its cards, skills, and knowledge bases."""
+        """Get a spec by ID with its cards and knowledge bases."""
         query = (
             select(Spec)
             .options(selectinload(Spec.cards))
-            .options(selectinload(Spec.skills))
             .options(selectinload(Spec.knowledge_bases))
             .options(selectinload(Spec.qa_items))
             .where(Spec.id == spec_id)
@@ -2315,7 +2434,7 @@ class SpecService:
 
         Enforces the Spec Validation Gate content lock: if the spec has an active
         validation with outcome='success', raises SpecLockedError. All content tools
-        (business rules, contracts, scenarios, mockups, knowledge, skills) flow
+        (business rules, contracts, scenarios, mockups, knowledge) flow
         through this method via SpecUpdate, so applying the lock check here covers
         the whole surface in one place.
 
@@ -2337,9 +2456,16 @@ class SpecService:
             "functional_requirements", "technical_requirements",
             "acceptance_criteria", "context", "description",
         }
-        # Note: test_scenarios changes do NOT bump version — they are tracked
-        # via activity logs. Only spec requirement/criteria changes bump version.
+        # Spec eaf78891 (Ideação #2): semantic_fields are KG-relevant fields
+        # that DO NOT bump version (they are not in content_fields), but DO
+        # need to trigger re-consolidation. We emit SpecSemanticChanged for
+        # them so ConsolidationEnqueuer re-extracts the spec into the KG.
+        semantic_fields = {
+            "decisions", "business_rules", "api_contracts",
+            "test_scenarios", "screen_mockups",
+        }
         bumps_version = bool(content_fields & update_data.keys())
+        bumps_semantic = bool(semantic_fields & update_data.keys())
 
         # Capture old values for diff
         old_data = {k: getattr(spec, k) for k in update_data.keys()}
@@ -2384,6 +2510,26 @@ class SpecService:
                     old_version=old_version,
                     new_version=spec.version,
                     changed_fields=changed_struct_fields,
+                ),
+                session=self.db,
+            )
+
+        # Spec eaf78891 (Ideação #2): emit SpecSemanticChanged whenever
+        # KG-relevant non-content fields are mutated, INDEPENDENTLY of whether
+        # SpecVersionBumped also fired. Both events are recorded in the
+        # outbox for audit completeness; ConsolidationEnqueuer's dedup
+        # collapses them into a single ConsolidationQueue row anyway.
+        if bumps_semantic:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecSemanticChanged
+
+            changed_semantic = sorted(semantic_fields & update_data.keys())
+            await event_publish(
+                SpecSemanticChanged(
+                    board_id=spec.board_id,
+                    actor_id=user_id,
+                    spec_id=spec.id,
+                    changed_fields=changed_semantic,
                 ),
                 session=self.db,
             )
@@ -2668,8 +2814,16 @@ class SpecService:
         )
         return True
 
-    async def link_card(self, spec_id: str, card_id: str) -> bool:
-        """Link an existing card to a spec. Spec must be in 'approved', 'in_progress', or 'done' status."""
+    async def link_card(
+        self, spec_id: str, card_id: str, user_id: str | None = None
+    ) -> bool:
+        """Link an existing card to a spec. Spec must be in 'approved', 'in_progress', or 'done' status.
+
+        Spec eaf78891 (Ideação #2): emits CardLinkedToSpec on success so the
+        ConsolidationEnqueuer re-enqueues the SPEC (not the card) — the spec
+        extractor reflects the updated cards list while the card extractor
+        does not reference spec_id.
+        """
         spec = await self.db.get(Spec, spec_id)
         if not spec:
             return False
@@ -2679,14 +2833,48 @@ class SpecService:
         if not card or card.board_id != spec.board_id:
             return False
         card.spec_id = spec_id
+
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import CardLinkedToSpec
+
+        await event_publish(
+            CardLinkedToSpec(
+                board_id=spec.board_id,
+                actor_id=user_id,
+                card_id=card_id,
+                spec_id=spec_id,
+            ),
+            session=self.db,
+        )
         return True
 
-    async def unlink_card(self, card_id: str) -> bool:
-        """Unlink a card from its spec."""
+    async def unlink_card(
+        self, card_id: str, user_id: str | None = None
+    ) -> bool:
+        """Unlink a card from its spec.
+
+        Spec eaf78891 (Ideação #2): emits CardUnlinkedFromSpec so the
+        ConsolidationEnqueuer re-enqueues the (now-orphaned) spec for
+        re-extraction.
+        """
         card = await self.db.get(Card, card_id)
         if not card or not card.spec_id:
             return False
+        old_spec_id = card.spec_id
         card.spec_id = None
+
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import CardUnlinkedFromSpec
+
+        await event_publish(
+            CardUnlinkedFromSpec(
+                board_id=card.board_id,
+                actor_id=user_id,
+                card_id=card_id,
+                spec_id=old_spec_id,
+            ),
+            session=self.db,
+        )
         return True
 
     # ---- Spec Validation Gate ----
@@ -2740,7 +2928,10 @@ class SpecService:
         if not config["require_spec_validation"]:
             raise ValueError(
                 "This board does not require spec validation. "
-                "Enable 'require_spec_validation' in board settings first."
+                "To advance the spec without the gate: call "
+                "move_spec(spec_id, status='validated'). "
+                "To enforce the gate first: enable 'require_spec_validation' "
+                "in board settings, then re-submit."
             )
 
         # Run coverage gates as pre-requisite — reuses existing CardService checks.
@@ -2950,74 +3141,6 @@ class SpecQAService:
         if not qa:
             return False
         await self.db.delete(qa)
-        return True
-
-
-class SpecSkillService:
-    """Service for spec skill operations — follows the 3-level loading pattern."""
-
-    def __init__(self, db: AsyncSession):
-        self.db = db
-
-    async def create_skill(self, spec_id: str, user_id: str, data: SpecSkillCreate) -> SpecSkill | None:
-        """Create a skill on a spec."""
-        spec = await self.db.get(Spec, spec_id)
-        if not spec:
-            return None
-        skill = SpecSkill(
-            spec_id=spec_id,
-            skill_id=data.skill_id,
-            name=data.name,
-            description=data.description,
-            type=data.type,
-            version=data.version,
-            tags=data.tags,
-            sections=[s.model_dump() for s in data.sections] if data.sections else None,
-            created_by=user_id,
-        )
-        self.db.add(skill)
-        await self.db.flush()
-        return skill
-
-    async def get_skill(self, spec_id: str, skill_id: str) -> SpecSkill | None:
-        """Get a skill by spec_id and skill_id slug."""
-        query = select(SpecSkill).where(
-            SpecSkill.spec_id == spec_id, SpecSkill.skill_id == skill_id
-        )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
-
-    async def list_skills(self, spec_id: str) -> list[SpecSkill]:
-        """List all skills for a spec (RETRIEVE level)."""
-        query = (
-            select(SpecSkill)
-            .where(SpecSkill.spec_id == spec_id)
-            .order_by(SpecSkill.created_at)
-        )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
-    async def update_skill(self, spec_id: str, skill_id: str, data: SpecSkillUpdate) -> SpecSkill | None:
-        """Update a skill."""
-        skill = await self.get_skill(spec_id, skill_id)
-        if not skill:
-            return None
-        update_data = data.model_dump(exclude_unset=True)
-        if "sections" in update_data and update_data["sections"] is not None:
-            update_data["sections"] = [
-                s.model_dump() if hasattr(s, "model_dump") else s
-                for s in update_data["sections"]
-            ]
-        for key, value in update_data.items():
-            setattr(skill, key, value)
-        return skill
-
-    async def delete_skill(self, spec_id: str, skill_id: str) -> bool:
-        """Delete a skill."""
-        skill = await self.get_skill(spec_id, skill_id)
-        if not skill:
-            return False
-        await self.db.delete(skill)
         return True
 
 
@@ -3983,7 +4106,11 @@ class RefinementService:
 
         update_data = data.model_dump(exclude_unset=True)
         content_fields = {"description", "scope", "analysis", "decisions"}
+        # Spec eaf78891 (Ideação #2): refinement_semantic_fields cover all
+        # update_data keys that affect KG extraction. Refinements have a much
+        # smaller surface than specs, so any update is treated as semantic.
         bumps_version = bool(content_fields & update_data.keys())
+        bumps_semantic = bool(update_data)
 
         old_data = {k: getattr(refinement, k) for k in update_data.keys()}
 
@@ -4002,6 +4129,20 @@ class RefinementService:
 
         if bumps_version:
             refinement.version += 1
+
+        if bumps_semantic:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import RefinementSemanticChanged
+
+            await event_publish(
+                RefinementSemanticChanged(
+                    board_id=refinement.board_id,
+                    actor_id=user_id,
+                    refinement_id=refinement.id,
+                    changed_fields=sorted(update_data.keys()),
+                ),
+                session=self.db,
+            )
 
         changes = self._compute_diff(old_data, update_data, list(update_data.keys()))
 
@@ -4941,6 +5082,7 @@ class SprintService:
                 changes=changes, version=sprint.version,
                 summary=f"Updated: {', '.join(c['field'] for c in changes)}",
             )
+        await self.db.commit()
         return sprint
 
     async def move_sprint(
@@ -4993,6 +5135,61 @@ class SprintService:
                         f"not passed. Pending: {names}"
                         f"{f' (and {len(not_covered) - 5} more)' if len(not_covered) > 5 else ''}."
                     )
+
+        # Gate: review → closed defesa em profundidade do test theater
+        # prevention (Wave 2 NC-9, spec 873e98cc). Itera test cards do sprint,
+        # checa se scenarios linked com status passed/automated têm evidence
+        # persisted. Honra board.settings.skip_test_evidence_global.
+        if data.status == SprintStatus.CLOSED and spec is not None:
+            skip_evidence = bool(
+                (board.settings or {}).get("skip_test_evidence_global", False)
+                if board
+                else False
+            )
+            if not skip_evidence:
+                evidenceless: list[str] = []
+                # Sprint -> Test cards -> linked scenarios -> evidence check
+                test_cards_q = select(Card).where(
+                    Card.sprint_id == sprint_id,
+                    Card.archived.is_(False),
+                    Card.card_type == "test",
+                )
+                test_cards = (await self.db.execute(test_cards_q)).scalars().all()
+                spec_scenarios_by_id: dict[str, dict] = {
+                    s.get("id"): s for s in (spec.test_scenarios or [])
+                }
+                for card in test_cards:
+                    for sid in (card.test_scenario_ids or []):
+                        sc = spec_scenarios_by_id.get(sid)
+                        if not sc:
+                            continue
+                        if sc.get("status") in ("passed", "automated") and not sc.get("evidence"):
+                            evidenceless.append(sid)
+                if evidenceless:
+                    # NC-9 BR4 — sprint close gate as defense in depth.
+                    raise ValueError(
+                        f"Cannot close sprint: {len(evidenceless)} scenario(s) "
+                        f"marked passed/automated without structured evidence: "
+                        f"{', '.join(evidenceless[:5])}"
+                        f"{f' (and {len(evidenceless) - 5} more)' if len(evidenceless) > 5 else ''}. "
+                        "Provide evidence via update_test_scenario_status OR "
+                        "enable skip_test_evidence_global on the board to bypass."
+                    )
+            elif spec is not None:
+                # Skip ON — log forensics record so reactivation analytics
+                # can flag boards that bypass the gate at sprint close.
+                import logging as _logging
+                _ev_logger = _logging.getLogger("okto_pulse.spec.test_scenario")
+                _ev_logger.info(
+                    "sprint.evidence_gate_skipped sprint=%s board=%s",
+                    sprint_id, sprint.board_id,
+                    extra={
+                        "event": "sprint.evidence_gate_skipped",
+                        "sprint_id": sprint_id,
+                        "board_id": sprint.board_id,
+                        "skip": True,
+                    },
+                )
 
         # Gate: review → closed requires evaluation
         if data.status == SprintStatus.CLOSED:
@@ -5069,6 +5266,7 @@ class SprintService:
             summary=f"Status: {old_status.value} → {data.status.value}",
             version=sprint.version,
         )
+        await self.db.commit()
         return sprint
 
     async def delete_sprint(self, sprint_id: str, user_id: str) -> bool:
@@ -5087,6 +5285,7 @@ class SprintService:
             actor_type="user", actor_id=user_id, actor_name=actor_name,
             details={"sprint_id": sprint_id},
         )
+        await self.db.commit()
         return True
 
     async def assign_tasks(
@@ -5122,6 +5321,7 @@ class SprintService:
                 summary=f"Assigned {assigned} card(s) to sprint",
                 version=sprint.version,
             )
+        await self.db.commit()
         return assigned
 
     async def submit_evaluation(
@@ -5168,6 +5368,7 @@ class SprintService:
             summary=f"Evaluation submitted: {evaluation.get('recommendation')} (score: {evaluation.get('overall_score')})",
             version=sprint.version,
         )
+        await self.db.commit()
         return sprint
 
     async def list_history(self, sprint_id: str, limit: int = 50) -> list[SprintHistory]:

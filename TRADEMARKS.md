@@ -46,4 +46,4 @@ For trademark usage requests or questions:
 
 ---
 
-Copyright 2024-2026 Okto Labs. All rights reserved.
+Copyright 2026 Okto Labs. All rights reserved.
