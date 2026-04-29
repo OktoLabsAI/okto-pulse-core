@@ -634,9 +634,6 @@ class Spec(Base):
     refinement: Mapped["Refinement | None"] = relationship("Refinement", back_populates="specs")
     cards: Mapped[list["Card"]] = relationship("Card", back_populates="spec")
     sprints: Mapped[list["Sprint"]] = relationship("Sprint", back_populates="spec", cascade="all, delete-orphan")
-    skills: Mapped[list["SpecSkill"]] = relationship(
-        "SpecSkill", back_populates="spec", cascade="all, delete-orphan"
-    )
     knowledge_bases: Mapped[list["SpecKnowledgeBase"]] = relationship(
         "SpecKnowledgeBase", back_populates="spec", cascade="all, delete-orphan"
     )
@@ -661,7 +658,7 @@ class SpecHistory(Base):
     )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     # e.g. "created", "updated", "status_changed", "cards_derived",
-    #      "skill_added", "skill_removed", "knowledge_added", "knowledge_removed",
+    #      "knowledge_added", "knowledge_removed",
     #      "qa_added", "qa_answered"
     actor_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "user" | "agent"
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -722,43 +719,6 @@ class SpecQAItem(Base):
 
     # Relationships
     spec: Mapped["Spec"] = relationship("Spec", back_populates="qa_items")
-
-
-class SpecSkill(Base):
-    """Skill attached to a spec — structured instructions for AI agents.
-
-    Follows the 3-level loading pattern: RETRIEVE (catalog), INSPECT (index), LOAD (content).
-    Sections are stored as JSON: [{"id": "...", "title": "...", "description": "...", "level": "...", "content": "..."}]
-    """
-
-    __tablename__ = "spec_skills"
-    __table_args__ = (
-        UniqueConstraint("spec_id", "skill_id", name="uq_spec_skill"),
-    )
-
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
-    spec_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("specs.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    skill_id: Mapped[str] = mapped_column(String(255), nullable=False)  # Slug identifier
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    type: Mapped[str] = mapped_column(String(50), nullable=False, default="PROMPT")
-    version: Mapped[str] = mapped_column(String(20), nullable=False, default="2.0")
-    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    sections: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships
-    spec: Mapped["Spec"] = relationship("Spec", back_populates="skills")
 
 
 class SpecKnowledgeBase(Base):

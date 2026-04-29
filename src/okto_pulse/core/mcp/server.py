@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,6 @@ from okto_pulse.core.services.main import (
     SpecKnowledgeService,
     SpecQAService,
     SpecService,
-    SpecSkillService,
 )
 
 
@@ -80,9 +80,11 @@ settings = get_settings()
 # SESSION-BASED AUTH (API key extracted from request)
 # ============================================================================
 
-# Global: the active api_key set during the most recent connection.
-# Simple and reliable — no contextvar propagation issues.
-_active_api_key: str | None = None
+# Per-request api_key, async-safe via ContextVar. Spec 23350275 (Fix C):
+# isolates identity between concurrent MCP requests when the server is mounted
+# as a sub-app on the FastAPI principal. The previous module-level global was
+# safe only in the single-request-at-a-time MCP standalone.
+_active_api_key: ContextVar[str | None] = ContextVar("mcp_active_api_key", default=None)
 
 
 class ApiKeySessionMiddleware:
@@ -92,19 +94,23 @@ class ApiKeySessionMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        token = None
         if scope["type"] == "http":
             request = Request(scope)
             # Extract API key from query param, X-API-Key header, or Authorization Bearer
-            global _active_api_key
             api_key = (
                 request.query_params.get("api_key")
                 or request.headers.get("x-api-key", "")
                 or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
             )
             if api_key:
-                _active_api_key = api_key
+                token = _active_api_key.set(api_key)
 
-        await self.app(scope, receive, send)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            if token is not None:
+                _active_api_key.reset(token)
 
 
 # ============================================================================
@@ -182,7 +188,7 @@ def invalidate_agent_cache(agent_id: str) -> None:
 
 async def _get_authenticated_agent():
     """Get the agent authenticated via the active API key from the request."""
-    api_key = _active_api_key
+    api_key = _active_api_key.get()
     if not api_key:
         return None
     async with get_db_for_mcp() as db:
@@ -198,7 +204,7 @@ async def _get_agent_ctx(board_id: str) -> AgentContext | None:
     Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s cache.
     Falls back to legacy flat permissions if permission_flags is not set.
     """
-    api_key = _active_api_key
+    api_key = _active_api_key.get()
     if not api_key:
         return None
     async with get_db_for_mcp() as db:
@@ -9556,305 +9562,6 @@ async def okto_pulse_list_spec_qa(board_id: str, spec_id: str) -> str:
 
 
 # ============================================================================
-# SPEC SKILL TOOLS (3-level loading: RETRIEVE → INSPECT → LOAD)
-# ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_spec_skill_retrieve(board_id: str, spec_id: str) -> str:
-    """
-    Level 1 — RETRIEVE: List all skills attached to a spec.
-    Returns a lightweight catalog with skill_id, name, description, and tags.
-    Use this to discover what skills are available before inspecting or loading them.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with list of skill summaries
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        skills = await service.list_skills(spec_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "spec_id": spec_id,
-                "count": len(skills),
-                "skills": [
-                    {
-                        "skill_id": s.skill_id,
-                        "name": s.name,
-                        "description": s.description,
-                        "type": s.type,
-                        "tags": s.tags,
-                    }
-                    for s in skills
-                ],
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
-async def okto_pulse_spec_skill_inspect(board_id: str, spec_id: str, skill_id: str) -> str:
-    """
-    Level 2 — INSPECT: Get a skill's section index with summary content inline.
-    Returns the skill metadata plus a list of sections (id, title, description)
-    so you can decide which sections to load in full.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        skill_id: The skill_id slug to inspect
-
-    Returns:
-        JSON with skill metadata and section index
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        skill = await service.get_skill(spec_id, skill_id)
-        await db.commit()
-
-        if not skill:
-            return json.dumps({"error": f"Skill '{skill_id}' not found in spec"})
-
-        sections_index = []
-        for s in (skill.sections or []):
-            entry: dict[str, Any] = {
-                "id": s.get("id", ""),
-                "title": s.get("title", ""),
-                "description": s.get("description", ""),
-                "level": s.get("level", "detail"),
-            }
-            # Include inline content for summary-level sections
-            if s.get("level") == "summary":
-                entry["content"] = s.get("content", "")
-            sections_index.append(entry)
-
-        return json.dumps(
-            {
-                "skill_id": skill.skill_id,
-                "name": skill.name,
-                "description": skill.description,
-                "type": skill.type,
-                "version": skill.version,
-                "tags": skill.tags,
-                "sections": sections_index,
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
-async def okto_pulse_spec_skill_load(
-    board_id: str, spec_id: str, skill_id: str, section_id: list[str] | str = ""
-) -> str:
-    """
-    Level 3 — LOAD: Get the full content of one or more skill sections.
-    If section_id is empty, returns ALL sections with full content.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        skill_id: The skill_id slug to load
-        section_id: Multi-value section IDs to load (empty = all). Preferred native
-            list (e.g. ``["sec_a", "sec_b"]``); legacy string accepted as JSON array
-            or pipe-separated. Comma-only string is REJECTED. See
-            ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-
-    Returns:
-        JSON with full section content
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        skill = await service.get_skill(spec_id, skill_id)
-        await db.commit()
-
-        if not skill:
-            return json.dumps({"error": f"Skill '{skill_id}' not found in spec"})
-
-        sections = skill.sections or []
-        if section_id:
-            try:
-                requested_ids = set(coerce_to_list_str(section_id))
-            except ValueError as e:
-                return json.dumps({"error": f"Invalid section_id: {e}"})
-            sections = [s for s in sections if s.get("id") in requested_ids]
-
-        return json.dumps(
-            {
-                "skill_id": skill.skill_id,
-                "name": skill.name,
-                "sections": [
-                    {
-                        "id": s.get("id", ""),
-                        "title": s.get("title", ""),
-                        "content": s.get("content", ""),
-                    }
-                    for s in sections
-                ],
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
-async def okto_pulse_create_spec_skill(
-    board_id: str,
-    spec_id: str,
-    skill_id: str,
-    name: str,
-    description: str,
-    content: str = "",
-    tags: list[str] | str = "",
-    type: str = "PROMPT",
-    file_path: str | None = None,
-    file_url: str | None = None,
-) -> str:
-    """
-    Create a skill on a spec. If content is provided as a single block, it becomes one section.
-    For multi-section skills, use okto_pulse_update_spec_skill to set structured sections.
-
-    Provide at most ONE of: content, file_path, or file_url. Prefer file_path or
-    file_url for large skill documents — the content is loaded server-side and
-    never passes through the LLM context, saving tokens.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        skill_id: Unique slug identifier for the skill (e.g. "api-design-guidelines")
-        name: Display name
-        description: What this skill provides
-        content: Inline skill content (optional — creates a single "main" section)
-        tags: Multi-value tags — preferred native list (e.g. ``["api", "design"]``);
-            legacy string accepted as JSON array or pipe-separated. Comma-only string
-            is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-        type: Skill type, default "PROMPT"
-        file_path: Absolute path to a local UTF-8 text file on the MCP server host
-        file_url: HTTP(S) URL of a UTF-8 text document to fetch
-
-    Returns:
-        JSON with created skill
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.models.schemas import SkillSectionSchema, SpecSkillCreate
-
-    # Skill content is optional — only resolve if any source was provided.
-    resolved_content: str | None = None
-    if content or file_path or file_url:
-        resolved_content, err = await _resolve_text_content(
-            content=content, file_path=file_path, file_url=file_url
-        )
-        if err:
-            return json.dumps({"error": err})
-
-    sections = None
-    if resolved_content:
-        sections = [SkillSectionSchema(
-            id="main",
-            title=name,
-            description=description,
-            level="full",
-            content=resolved_content,
-        )]
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        skill_data = SpecSkillCreate(
-            skill_id=skill_id,
-            name=name,
-            description=description,
-            type=type,
-            tags=coerce_to_list_str(tags) or None,
-            sections=sections,
-        )
-        skill = await service.create_skill(spec_id, ctx.agent_id, skill_data)
-        await db.commit()
-
-        if not skill:
-            return json.dumps({"error": "Failed to create skill — spec not found or duplicate skill_id"})
-
-        return json.dumps(
-            {
-                "success": True,
-                "skill": {
-                    "skill_id": skill.skill_id,
-                    "name": skill.name,
-                    "description": skill.description,
-                    "sections_count": len(skill.sections or []),
-                },
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
-async def okto_pulse_delete_spec_skill(board_id: str, spec_id: str, skill_id: str) -> str:
-    """
-    Delete a skill from a spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        skill_id: The skill_id slug to delete
-
-    Returns:
-        JSON with success status
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecSkillService(db)
-        deleted = await service.delete_skill(spec_id, skill_id)
-        await db.commit()
-
-        if not deleted:
-            return json.dumps({"error": "Skill not found"})
-
-        return json.dumps({"success": True})
-
-
-# ============================================================================
 # SPEC KNOWLEDGE BASE TOOLS
 # ============================================================================
 
@@ -11819,8 +11526,42 @@ async def okto_pulse_kg_tick_run_now(
 # ============================================================================
 
 
+def build_mcp_asgi_app():
+    """Build the MCP ASGI application wrapped with the API-key middleware.
+
+    Returns the ASGI app that should be served by uvicorn (or mounted
+    elsewhere). Single-process callers (``okto_pulse.community.main.serve``)
+    use this to bind the MCP transport to its own port while sharing the
+    same Python process as the API server, so the Kùzu lock is held by a
+    single process. The caller is responsible for invoking
+    ``register_session_factory`` once before the first MCP request lands.
+
+    ``_install_trace`` is idempotent (env-gated); calling this multiple
+    times is safe.
+    """
+    _install_trace(mcp)
+    http_app = mcp.http_app(transport="streamable-http")
+    return ApiKeySessionMiddleware(http_app)
+
+
+def mount_mcp(app, *, mount_path: str = "/mcp") -> None:
+    """Mount the MCP sub-app at ``mount_path`` on a FastAPI/Starlette app.
+
+    Kept for callers that prefer path-based routing on the same port as the
+    API. The default deployment path (``okto_pulse.community.main.serve``)
+    serves the MCP on its own port via :func:`build_mcp_asgi_app`.
+    """
+    app.mount(mount_path, build_mcp_asgi_app())
+
+
 def run_mcp_server():
-    """Run the MCP server with session-based API key auth middleware."""
+    """Run the MCP server standalone (compat shim for debug / legacy).
+
+    Production path is :func:`okto_pulse.community.main.serve`, which runs
+    the API server and the MCP server in the same Python process on
+    separate ports. This function is preserved for stand-alone debug runs
+    (``python -m okto_pulse.core.mcp.server``) only.
+    """
     from okto_pulse.core.infra.config import get_settings
     from okto_pulse.core.infra.database import create_database, get_session_factory
 
@@ -11828,14 +11569,9 @@ def run_mcp_server():
     create_database(settings.database_url, echo=settings.debug)
     register_session_factory(get_session_factory())
 
-    # Optional request/response tracing — env-gated, no-op when disabled.
-    _install_trace(mcp)
-
-    http_app = mcp.http_app(transport="streamable-http")
-    wrapped = ApiKeySessionMiddleware(http_app)
     # Read port from environment (set by CLI) or use settings
     port = int(os.environ.get("MCP_PORT", str(settings.mcp_port)))
-    uvicorn.run(wrapped, host="127.0.0.1", port=port, ws="wsproto")
+    uvicorn.run(build_mcp_asgi_app(), host="127.0.0.1", port=port, ws="wsproto")
 
 
 if __name__ == "__main__":

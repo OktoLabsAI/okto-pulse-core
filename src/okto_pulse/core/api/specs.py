@@ -13,14 +13,11 @@ from okto_pulse.core.models.schemas import (
     SpecKnowledgeUpdate,
     SpecMove,
     SpecResponse,
-    SpecSkillCreate,
-    SpecSkillResponse,
-    SpecSkillUpdate,
     SpecSummary,
     SpecUpdate,
 )
 from okto_pulse.core.models.schemas import SpecHistoryResponse, SpecQAAnswer, SpecQACreate, SpecQAResponse
-from okto_pulse.core.services import BoardService, SpecKnowledgeService, SpecQAService, SpecService, SpecSkillService
+from okto_pulse.core.services import BoardService, SpecKnowledgeService, SpecQAService, SpecService
 
 router = APIRouter()
 
@@ -297,68 +294,6 @@ async def unlink_task_from_scenario(
 
     await db.commit()
     return {"success": True, "spec_id": spec_id, "scenario_id": scenario_id, "card_id": card_id}
-
-
-# ==================== SPEC SKILLS ====================
-
-
-@router.get("/specs/{spec_id}/skills", response_model=list[SpecSkillResponse])
-async def list_spec_skills(
-    spec_id: str,
-    user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all skills for a spec."""
-    service = SpecSkillService(db)
-    return await service.list_skills(spec_id)
-
-
-@router.post("/specs/{spec_id}/skills", response_model=SpecSkillResponse, status_code=status.HTTP_201_CREATED)
-async def create_spec_skill(
-    spec_id: str,
-    data: SpecSkillCreate,
-    user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create a skill on a spec."""
-    service = SpecSkillService(db)
-    skill = await service.create_skill(spec_id, user_id, data)
-    if not skill:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found or duplicate skill_id")
-    await db.commit()
-    return skill
-
-
-@router.patch("/specs/{spec_id}/skills/{skill_id}", response_model=SpecSkillResponse)
-async def update_spec_skill(
-    spec_id: str,
-    skill_id: str,
-    data: SpecSkillUpdate,
-    user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Update a skill."""
-    service = SpecSkillService(db)
-    skill = await service.update_skill(spec_id, skill_id, data)
-    if not skill:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
-    await db.commit()
-    return skill
-
-
-@router.delete("/specs/{spec_id}/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_spec_skill(
-    spec_id: str,
-    skill_id: str,
-    user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Delete a skill."""
-    service = SpecSkillService(db)
-    deleted = await service.delete_skill(spec_id, skill_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
-    await db.commit()
 
 
 # ==================== SPEC KNOWLEDGE BASE ====================
