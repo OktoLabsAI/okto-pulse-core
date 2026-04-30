@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 # NOW import okto_pulse modules
 # ---------------------------------------------------------------------------
 
-import kuzu  # type: ignore
+import ladybug as kuzu  # type: ignore
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
