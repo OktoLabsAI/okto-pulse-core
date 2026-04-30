@@ -86,7 +86,7 @@ def _global_kuzu_path() -> Path:
 def bootstrap_global_discovery() -> Path:
     """Create or open the global discovery Kuzu meta-graph. Idempotent."""
     try:
-        import kuzu
+        import ladybug as kuzu
     except ImportError as exc:
         raise RuntimeError("kuzu required") from exc
 
@@ -142,7 +142,7 @@ def open_global_connection():
     pointing at the same path.
     """
     global _global_db
-    import kuzu
+    import ladybug as kuzu
     from okto_pulse.core.kg.schema import _open_kuzu_db, load_vector_extension
 
     path = _global_kuzu_path()
