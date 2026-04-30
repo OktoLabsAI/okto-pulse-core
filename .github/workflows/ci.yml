@@ -105,6 +105,9 @@ jobs:
           pip-licenses --fail-on="GNU General Public License v2 (GPLv2);GNU General Public License v3 (GPLv3);GNU Affero General Public License v3 (AGPLv3)"
 
       - name: Secret scan
-        uses: trufflesecurity/trufflehog@main
+        # Pinned to commit SHA for supply-chain integrity (audit C1).
+        # SHA below is v3.95.2 (released 2026-04-21). When bumping, update
+        # both the SHA and the trailing version comment together.
+        uses: trufflesecurity/trufflehog@17456f8c7d042d8c82c9a8ca9e937231f9f42e26 # v3.95.2
         with:
           extra_args: --only-verified
