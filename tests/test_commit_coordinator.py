@@ -246,7 +246,7 @@ def test_instructions_drop_manual_serialisation_line():
 def test_version_pinned_in_pyproject():
     """AC10 (refactored): core pyproject declares a stable, pinned version
     string. Original AC pinned to 0.1.4 (no bump for spec 194583e5); after
-    the v0.1.5 release, this asserts only that pyproject still carries a
+    the v0.1.6 release, this asserts only that pyproject still carries a
     well-formed semver, decoupling the test from future bumps."""
     import re
 

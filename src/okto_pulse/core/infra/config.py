@@ -16,7 +16,7 @@ def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
         return fallback
 
 
-_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.1.5+local")
+_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.1.6+local")
 
 
 class CoreSettings(BaseSettings):

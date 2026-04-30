@@ -2377,7 +2377,7 @@ already did.
 | `sprint.created` / `sprint.moved` / `sprint.closed` | sprint lifecycle methods | sprint | normal |
 | `ideation.derived_to_spec` / `refinement.derived_to_spec` | derivation methods | spec | normal |
 
-**Read this carefully — the four 0.1.5+ semantic events are easy to miss:**
+**Read this carefully — the four 0.1.6+ semantic events are easy to miss:**
 
 - `spec.semantic_changed` fires when you mutate decisions / business_rules /
   api_contracts / test_scenarios / screen_mockups via `update_spec` (or
