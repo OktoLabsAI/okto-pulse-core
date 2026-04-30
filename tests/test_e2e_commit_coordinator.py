@@ -59,7 +59,7 @@ async def test_e2e_parallel_commits_on_real_kuzu():
 
     async def scratch_commit(tag: str):
         """Open a Kuzu connection to the E2E board, write a throwaway node, close."""
-        import kuzu  # lazy
+        import ladybug as kuzu  # lazy
         t0 = time.perf_counter()
 
         def _work():
@@ -136,7 +136,7 @@ async def test_e2e_mixed_board_parallelism():
         pytest.skip(f"Okto Pulse Evolution Kuzu missing at {other_path}")
 
     async def read_once(path: Path):
-        import kuzu
+        import ladybug as kuzu
 
         def _work():
             db = _open_kuzu_db(path)

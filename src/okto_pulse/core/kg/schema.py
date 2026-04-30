@@ -15,7 +15,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-import kuzu  # type: ignore
+import ladybug as kuzu  # type: ignore
 from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
@@ -353,7 +353,7 @@ def _open_kuzu_db(path: Path):
     corrupted due to a version incompatibility (SIGBUS / BusError) instead
     of letting the signal crash the process.
     """
-    import kuzu  # type: ignore
+    import ladybug as kuzu  # type: ignore
     from okto_pulse.core.infra.config import get_settings
 
     logger.debug("[KG] _open_kuzu_db path=%s", path)
@@ -920,7 +920,7 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     # re-enter _board_needs_v030_migration and recurse infinitely, and
     # the migration must run BEFORE the BoardConnection bootstrap path
     # ever owns the handle.
-    import kuzu  # type: ignore
+    import ladybug as kuzu  # type: ignore
     db = _open_kuzu_db_path_cached(path)
     conn = kuzu.Connection(db)
     try:
@@ -1002,7 +1002,7 @@ def _board_needs_migration(board_id: str) -> bool:
     if board_id in _MIGRATED_BOARDS:
         return False
     try:
-        import kuzu  # type: ignore
+        import ladybug as kuzu  # type: ignore
         path = board_kuzu_path(board_id)
         db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
@@ -1048,7 +1048,7 @@ def _board_needs_priority_boost_migration(board_id: str) -> bool:
     probe never loops the migration.
     """
     try:
-        import kuzu  # type: ignore
+        import ladybug as kuzu  # type: ignore
         path = board_kuzu_path(board_id)
         db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
@@ -1097,7 +1097,7 @@ def _board_needs_v030_migration(board_id: str) -> bool:
     if board_id in _MIGRATED_BOARDS:
         return False
     try:
-        import kuzu  # type: ignore
+        import ladybug as kuzu  # type: ignore
         path = board_kuzu_path(board_id)
         if not path.exists():
             return False
@@ -1132,7 +1132,7 @@ def _board_needs_human_curated_migration(board_id: str) -> bool:
     a stuck migration).
     """
     try:
-        import kuzu  # type: ignore
+        import ladybug as kuzu  # type: ignore
         path = board_kuzu_path(board_id)
         db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
@@ -1169,7 +1169,7 @@ def _board_needs_last_recomputed_migration(board_id: str) -> bool:
     and human_curated probes. Returns False on probe failure (BR6).
     """
     try:
-        import kuzu  # type: ignore
+        import ladybug as kuzu  # type: ignore
         path = board_kuzu_path(board_id)
         db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
@@ -1223,7 +1223,7 @@ def _migrate_board_schema(board_id: str) -> None:
     in its own short-lived connection so the caller's connection lifecycle
     isn't tangled with the migration's, then caches the board as migrated."""
     try:
-        import kuzu  # type: ignore
+        import ladybug as kuzu  # type: ignore
         path = board_kuzu_path(board_id)
         db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
@@ -1429,7 +1429,7 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
     Idempotent: re-invoking returns the same handle without re-creating tables.
     """
     try:
-        import kuzu  # type: ignore
+        import ladybug as kuzu  # type: ignore
     except ImportError as exc:  # pragma: no cover — deps required for runtime
         raise RuntimeError(
             "kuzu is required for the knowledge graph layer — "
@@ -1524,7 +1524,7 @@ def _graph_needs_bootstrap(board_id: str) -> bool:
     if not path.exists():
         return True
     try:
-        import kuzu  # type: ignore
+        import ladybug as kuzu  # type: ignore
         db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)
         try:

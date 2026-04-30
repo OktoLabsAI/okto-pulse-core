@@ -128,7 +128,7 @@ def _resolve_legacy_env_aliases() -> dict[str, int]:
     """Resolve deprecated env vars into canonical settings keys.
 
     Spec bdcda842 (TR12): KG_MAX_QUEUE_DEPTH was the admission-gate threshold
-    in v0.1.5; it is now an alerting-only threshold renamed to
+    in v0.1.6; it is now an alerting-only threshold renamed to
     kg_queue_alert_threshold. We honour the legacy env var until v0.5.0 and
     emit a DeprecationWarning + structured log when it fires.
 
