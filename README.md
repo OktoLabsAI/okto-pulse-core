@@ -7,8 +7,8 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 ## What's inside
 
-- **26 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, etc. (Skills entity dropped in 0.1.5.)
-- **17 service classes** — Full business logic with governance rules (Skills service dropped in 0.1.5.)
+- **26 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, etc. (Skills entity dropped in 0.1.6.)
+- **17 service classes** — Full business logic with governance rules (Skills service dropped in 0.1.6.)
 - **11 API route modules** — FastAPI REST endpoints
 - **150+ MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
@@ -46,7 +46,7 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 ## Release Notes
 
-### 0.1.5 — current
+### 0.1.6 — current
 
 #### Fix C: single-process, dual-port serve (Kùzu lock contention)
 
@@ -110,7 +110,7 @@ First hardening pass on the card lifecycle, the analytics contract, and the MCP 
 
 ### 0.1.1 — initial PyPI release
 
-26+1 SQLAlchemy models, 17+1 service classes, 11 API route modules, 119 MCP tools, embedded Kùzu Knowledge Graph with deterministic workers. (Spec Skills shipped here and was removed in 0.1.5.)
+26+1 SQLAlchemy models, 17+1 service classes, 11 API route modules, 119 MCP tools, embedded Kùzu Knowledge Graph with deterministic workers. (Spec Skills shipped here and was removed in 0.1.6.)
 
 (Version 0.1.2 was published to TestPyPI only as a release candidate for 0.1.3.)
 
