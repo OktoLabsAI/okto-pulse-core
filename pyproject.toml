@@ -37,7 +37,7 @@ dependencies = [
     "ladybug>=0.16.0,<0.17.0",
     "numpy>=1.26.0,<3.0.0",
     "requests>=2.32.0,<3.0.0",
-    "chardet>=3.0.2,<6.0.0",
+    "chardet>=3.0.2,<8.0.0",
     "apscheduler>=3.10.0,<4.0.0",
 ]
 
