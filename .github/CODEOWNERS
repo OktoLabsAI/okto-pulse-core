@@ -1,0 +1,17 @@
+# Code owners — auto-assigned as reviewers on PRs touching these paths.
+# https://docs.github.com/en/repositories/managing-your-repositories-settings-and-security/customizing-your-repository/about-code-owners
+
+# Default owner for everything.
+*                                          @Maheidem
+
+# Build / CI infrastructure.
+/.github/                                  @Maheidem
+/uv.lock                                   @Maheidem
+/pyproject.toml                            @Maheidem
+
+# Engine subsystems — keep an eye on these as the package surface area.
+/src/okto_pulse/core/api/                  @Maheidem
+/src/okto_pulse/core/kg/                   @Maheidem
+/src/okto_pulse/core/mcp/                  @Maheidem
+/src/okto_pulse/core/models/               @Maheidem
+/src/okto_pulse/core/services/             @Maheidem
