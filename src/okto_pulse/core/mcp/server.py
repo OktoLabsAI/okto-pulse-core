@@ -11569,9 +11569,14 @@ def run_mcp_server():
     create_database(settings.database_url, echo=settings.debug)
     register_session_factory(get_session_factory())
 
-    # Read port from environment (set by CLI) or use settings
+    # Read port and host from environment (set by CLI / Docker / compose)
+    # or fall back to safe defaults. Default host is loopback so a stray
+    # `python -m okto_pulse.core.mcp.server` doesn't accidentally expose
+    # the MCP server beyond the local box; container deployments override
+    # via MCP_HOST=0.0.0.0 in docker-compose.yml.
     port = int(os.environ.get("MCP_PORT", str(settings.mcp_port)))
-    uvicorn.run(build_mcp_asgi_app(), host="127.0.0.1", port=port, ws="wsproto")
+    host = os.environ.get("MCP_HOST", "127.0.0.1")
+    uvicorn.run(build_mcp_asgi_app(), host=host, port=port, ws="wsproto")
 
 
 if __name__ == "__main__":
