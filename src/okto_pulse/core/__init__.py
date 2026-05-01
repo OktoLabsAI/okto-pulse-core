@@ -1,5 +1,7 @@
 """Okto Pulse Core — shared logic for all editions."""
 
+# ruff: noqa: F401
+
 __version__ = "0.1.0"
 
 from okto_pulse.core.infra.auth import (

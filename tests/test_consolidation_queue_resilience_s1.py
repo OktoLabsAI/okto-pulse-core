@@ -6,7 +6,6 @@ sprint chain).
 
 from __future__ import annotations
 
-import os
 import warnings
 
 import pytest
@@ -15,7 +14,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sa_text
 
 from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
-from okto_pulse.core.infra.database import Base, get_engine, get_session_factory
+from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.models.db import (
     ConsolidationDeadLetter,
     ConsolidationQueue,

@@ -8,7 +8,7 @@ rejected anyway).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,9 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.infra.permissions import (
-    PERMISSION_REGISTRY,
     _match_builtin_preset_name,
-    get_builtin_presets,
     map_legacy_permissions,
     resolve_permissions,
 )

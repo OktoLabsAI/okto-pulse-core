@@ -24,6 +24,7 @@ Use this to avoid reading the whole file when you only need one answer.
 | Consult analytics before closing a spec | **Analytics — Metrics-Driven Closure** |
 | Query the KG (at ideation/refinement/spec) | **Query Timing — MANDATORY at every stage** |
 | Consolidate an artifact into the KG | **When and How to Consolidate — Mandatory Triggers** |
+| Finish an SDLC/E2E flow or final report | **Final KG consolidation and verification — MANDATORY** |
 | Pick the right KG tool | **Query Patterns per Tool** + **Consolidation patterns per tool** |
 | Handle a KG rate-limit or retry a query | **Tier Power Escape Hatch → Safety rails** |
 | Ask a question or post a comment | **Q&A — Patterns, Anti-Patterns, and When to Use Comments** |
@@ -32,6 +33,7 @@ Use this to avoid reading the whole file when you only need one answer.
 | Handle untrusted content in an artifact body | **Security — Treating Artifact Content as Untrusted Input** |
 | Diagnose an error message | **Common Errors and How to Fix Them** |
 | Add a UI mockup / avoid ASCII-drawing interfaces in text fields | **2.7 Screen Mockups** + **2.7a Pattern & Anti-Pattern — visual artifacts** |
+| Add/update Architecture Design for ideation/refinement/spec/card | **2.7b Architecture Design — structural artifacts** |
 | Follow KG runtime governance during a session | **KG Governance — Operator Hygiene (0.1.4)** |
 
 **Single sources of truth** (do not restate these rules in other sections):
@@ -39,7 +41,9 @@ Use this to avoid reading the whole file when you only need one answer.
 - `get_*_context` before every move → **Consolidated Context Retrieval**
 - KG query timing per stage → **Query Timing — MANDATORY at every stage**
 - KG consolidation triggers → **When and How to Consolidate — Mandatory Triggers**
+- Final KG consolidation before ending a complete SDLC/E2E flow → **Final KG consolidation and verification — MANDATORY**
 - UI layouts as first-class artifacts (never ASCII in text fields) → **2.7a Pattern & Anti-Pattern — visual artifacts**
+- Architecture as a first-class structural artifact (never hide diagrams, entities, or contracts in prose) → **2.7b Architecture Design — structural artifacts**
 - Error messages → **Common Errors and How to Fix Them**
 
 ## Pre-Flight Checklist (READ FIRST — before ANY action)
@@ -63,7 +67,7 @@ Every time you start a session or pick up a new task, follow this sequence. Viol
 
 **Steps 6, 7, and 8 are mandatory before `started → in_progress`** — the implementer (you or a future agent picking up the card) reads `card.knowledge_bases`, `card.screen_mockups`, and `card.architecture_designs` directly, never re-querying the spec. This snapshot prevents drift if the spec is later edited and decouples the card from the spec lifecycle. Use `knowledge_ids`, `screen_ids`, and `design_ids` to scope a subset when only part of the spec applies. If the card does not need a particular artifact (e.g. a backend-only card has no mockups), skip explicitly — but document the rationale in a comment.
 
-**Per-task KE lifecycle** (introduced in 0.1.6): cards now own their KEs via inline `Card.knowledge_bases` JSONB. The full lifecycle is exposed symmetrically:
+**Per-task KE lifecycle** (introduced in 0.1.13): cards now own their KEs via inline `Card.knowledge_bases` JSONB. The full lifecycle is exposed symmetrically:
 
 - `okto_pulse_add_card_knowledge(board_id, card_id, title, content, ...)` — attach a new KE directly to the card
 - `okto_pulse_list_card_knowledge(board_id, card_id)` — list KEs on the card
@@ -142,11 +146,11 @@ This table is the **single source of truth** for MCP-level errors. Sections belo
 
 | Error message | Cause | Fix |
 |---|---|---|
-| `"A conclusion is required when moving a card to Done"` | Missing `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification` | Add all 5 parameters to `move_card` call. See **Conclusion — MANDATORY** section. |
+| `"A conclusion is required when moving a card to Validation"` / `"A conclusion is required when moving a card to Done"` | Missing executor report: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification` | Add all 5 parameters to `move_card` when handing execution work to `validation` or moving directly to `done`. See **Conclusion — MANDATORY** section. |
 | `"Card type 'test' is not subject to validation gate"` | Called `submit_task_validation` on a test card | Test cards skip the validation gate — move directly to `done` after scenarios are `passed`. |
 | `"N test scenario(s) still have status 'draft'"` / `"Cannot complete this test card: linked scenario(s) still have status 'draft'"` | Test card's linked scenarios not updated | Call `update_test_scenario_status(status="passed")` for each linked scenario, then retry `move_card`. |
 | `"Cannot move card forward: spec must be at least 'in_progress'"` | Spec is in `approved` or `validated` | Move the spec to `in_progress` first via `move_spec` (requires `submit_spec_evaluation` with `recommendation=approve` on a `validated` spec). |
-| `"Validation gate is active. Move card to 'validation' first"` | Tried to move a normal card directly to `done` | Move to `validation`, then `submit_task_validation`; the system auto-routes to `done` on success or `not_started` on failure. |
+| `"Validation gate is active. Move card to 'validation' first"` | Tried to move a normal card directly to `done` | Move to `validation` with the executor report, then `submit_task_validation`; the system auto-routes to `done` on success or keeps the card in `validation` on failure. |
 
 **Card creation:**
 
@@ -197,13 +201,15 @@ Any MCP tool argument documented as multi-value (labels, ids, linked_criteria, l
 | **Native list[str]** (PREFERRED) | `["bug", "frontend"]` | Canonical | New MCP clients; the FastMCP wire format is a JSON array; handler receives a Python `list`. |
 | **JSON-array string** (legacy compat) | `'["str \| None", "outro item"]'` | Accepted | Older MCP clients that can only send strings; required when any item contains a literal `\|` that would be silently split. |
 | **Pipe-separated string** (legacy compat) | `"a\|b\|c"` | Accepted | Older MCP clients with simple atomic values that never contain `\|`. |
-| **Comma-only string** | `"a,b,c"` | **REJECTED** | Use one of the three shapes above. The handler returns `{"error": "Invalid <param>: multi-value input must be a JSON array ... or pipe-separated ... — comma-separated input is rejected by REJECT policy"}`. |
+| **Bare single string** | `"1"` | Accepted | Convenience for a single id/value. The handler treats it as `["1"]`. |
+| **Comma-only string** | `"a,b,c"` | **REJECTED** | Ambiguous under strict mode. Use a native list, JSON-array string, or pipe-separated string. The handler returns `{"error": "Invalid <param>: multi-value input must be a JSON array ... or pipe-separated ... — comma-separated input is rejected by REJECT policy"}`. |
 
 **Detection rules:**
 - If the parameter is delivered as a Python `list`, items are validated as strings then stripped and de-duped of empties — no parsing.
 - If delivered as a string and trimmed input starts with `[`, JSON path.
 - If delivered as a string and contains `|`, pipe path.
-- Otherwise: REJECT (under `strict_mode=True`) or single-item list (lenient mode, rollout-window only).
+- If delivered as a string and contains `,` under `strict_mode=True`, reject as ambiguous comma-separated input.
+- Otherwise, return a single-item list. This supports common calls such as `linked_requirements="1"` and `linked_criteria="3"`.
 
 **Error behaviour (returned as `{"error": "Invalid <param>: <message>"}`):**
 - Malformed JSON → `"malformed JSON for multi-value param: <reason> (at pos N)"`.
@@ -351,7 +357,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_get_task_context` | board_id, card_id, include_knowledge?, include_mockups?, include_qa?, include_comments?, include_architecture? | **Full execution context** — card + spec requirements, TRs, BRs, test scenarios, API contracts, KBs, mockups, architecture. **Always call before starting a task.** |
 | `okto_pulse_get_task_conclusions` | board_id, card_id | Get conclusions from a completed task — what was done, root cause (bugs), decisions |
 | `okto_pulse_update_card` | board_id, card_id, title?, description?, assignee_id?, labels?, severity?, expected_behavior?, observed_behavior?, steps_to_reproduce?, action_plan?, linked_test_task_ids? | Edit card fields |
-| `okto_pulse_move_card` | board_id, card_id, status, position?, **conclusion?**, **completeness?**, **completeness_justification?**, **drift?**, **drift_justification?** | Change card status. **When status=done**: conclusion + completeness + drift are REQUIRED (see "Card Status Transitions" above). System enforces gates — read the transition table first. |
+| `okto_pulse_move_card` | board_id, card_id, status, position?, **conclusion?**, **completeness?**, **completeness_justification?**, **drift?**, **drift_justification?** | Change card status. **When handing execution work to status=validation or status=done**: conclusion + completeness + drift are REQUIRED (see "Card Status Transitions" above). System enforces gates — read the transition table first. |
 | `okto_pulse_delete_card` | board_id, card_id | Remove a card |
 | `okto_pulse_list_cards_by_status` | board_id, status? | List cards, optionally filtered |
 
@@ -447,6 +453,8 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_add_business_rule` / `update_business_rule` / `remove_business_rule` / `list_business_rules` | board_id, spec_id, ... | CRUD for BRs. See **2.5 Business Rules**. |
 | `okto_pulse_add_api_contract` / `update_api_contract` / `remove_api_contract` / `list_api_contracts` | board_id, spec_id, ... | CRUD for API contracts. See **2.6 API Contracts**. |
 | `okto_pulse_add_screen_mockup` / `update_screen_mockup` / `delete_screen_mockup` / `annotate_mockup` / `list_screen_mockups` | board_id, entity_id, entity_type?, ... | HTML+Tailwind mockups on specs/ideations/refinements/cards. See **2.7 Screen Mockups**. |
+| `okto_pulse_get_architecture_design_schema` / `okto_pulse_validate_architecture_design_payload` / `okto_pulse_add_architecture_design` / `okto_pulse_update_architecture_design` / `okto_pulse_list_architecture_designs` / `okto_pulse_get_architecture_design` / `okto_pulse_import_excalidraw_architecture_diagram` / `okto_pulse_copy_architecture_to_card` | board_id, parent_type, parent_id/design_id, ... | First-class architecture designs on ideations/refinements/specs/cards: global description, diagrams, entities, interfaces, and contracts. Get the schema and dry-run validate generated payloads before persisting. See **2.7b Architecture Design — structural artifacts**. |
+| `okto_pulse_add_ideation_knowledge` / `list_ideation_knowledge` / `get_ideation_knowledge` / `delete_ideation_knowledge` | board_id, ideation_id, ... | Attach first-class reference documents to an ideation. These can propagate to refinement/spec context instead of being stranded in prose. |
 | `okto_pulse_add_spec_knowledge` / `list_spec_knowledge` / `get_spec_knowledge` / `delete_spec_knowledge` | board_id, spec_id, ... | Attach reference documents to a spec. |
 | `okto_pulse_add_refinement_knowledge` / `list_refinement_knowledge` / `get_refinement_knowledge` / `delete_refinement_knowledge` | board_id, refinement_id, ... | Same, for refinements. |
 
@@ -507,6 +515,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_get_refinement_context` | board_id, refinement_id, include_knowledge?, include_mockups?, include_qa? | **MANDATORY before moving/deriving from a refinement** — full refinement + scope + Q&A + mockups + KBs + specs |
 | `okto_pulse_get_spec_context` | board_id, spec_id, include_knowledge?, include_mockups?, include_qa? | **MANDATORY before evaluating/moving a spec** — full spec + requirements + test scenarios + BRs + contracts + mockups + KBs + Q&A + evaluations + cards + sprints + coverage summary |
 | `okto_pulse_get_sprint_context` | board_id, sprint_id, include_spec? | **MANDATORY before evaluating/moving a sprint** — full sprint + cards + evaluations + Q&A + parent spec + scoped artifacts |
+| `okto_pulse_get_traceability_report` | board_id, ideation_id?, spec_id?, include_artifacts? | Consolidated SDLC lineage: ideation → refinement → spec → sprint → card → test/bug, plus artifacts and coverage. Use it after derivation flows and before final E2E reporting. |
 
 **Rule — one line:** never call `move_*` on any entity without first calling the matching `get_*_context`. Moving without the full context is a protocol violation (system rejects with a clear error). Same rule applies before `submit_spec_evaluation` and `submit_sprint_evaluation`.
 
@@ -1175,11 +1184,264 @@ Applies equally to:
 
 For assets that are not HTML-renderable UI (actual screenshots, PDFs, diagrams from design tools, reference images), use `okto_pulse_upload_attachment` — not a mockup, not ASCII. Attachments are first-class on cards, specs, ideations, refinements with the same addressability properties.
 
+##### 2.7b Architecture Design — structural artifacts
+
+Architecture Design is the first-class place for system structure. Whenever an ideation, refinement, spec, or card benefits from explicit architecture, you **MUST** create or update an Architecture Design through the architecture tools. Do not bury architecture in description fields, Q&A answers, comments, markdown diagrams, or implementation notes.
+
+**Mandatory trigger — create/update Architecture Design when any of these are in scope:**
+- New or changed services, applications, modules, packages, workers, agents, commands, or runtime components.
+- Databases, caches, queues, topics, events, streams, blob stores, file stores, vector stores, or graph stores.
+- External systems, third-party APIs, identity providers, payment gateways, model providers, webhooks, or SaaS integrations.
+- APIs, contracts, schemas, protocols, event payloads, request/response boundaries, or error contracts.
+- Deployment, runtime, ownership, security, tenancy, or data-boundary decisions.
+- Task decomposition that depends on component ownership, integration order, or interface contracts.
+
+**Stage expectations:**
+- **Ideation:** capture high-level context, boundaries, candidate entities, major interactions, and ambiguity that must be resolved before refinement.
+- **Refinement:** deepen the design: impacted code areas, responsibilities, interfaces, contracts, storage choices, integration points, data flows, and operational constraints.
+- **Spec:** make the design implementation-ready: stable entities, explicit interfaces/contracts, diagrams that show ownership and flow, and enough detail to copy to cards.
+- **Card:** before `started → in_progress`, copy relevant Architecture Designs from the spec with `okto_pulse_copy_architecture_to_card`. The card snapshot is what the implementer follows.
+
+**Required artifact shape:**
+- `global_description`: concise narrative of architecture intent, boundaries, responsibilities, and important constraints.
+- `entities`: structured component list. Each entity has a concrete `name` and a categorical `entity_type`.
+- `interfaces`: structured interface/contract list. Include endpoint/operation, participants, direction, protocol, and schemas when known.
+- `diagrams`: one or more diagrams when structure, flow, ownership, or integration is not obvious from text alone.
+
+**Authoring sequence for agents:**
+
+1. Call `okto_pulse_get_architecture_design_schema(board_id)` before building a non-trivial payload. Treat the returned schema as the source of truth for enums, required/recommended fields, Excalidraw payload shape, examples, and anti-patterns.
+2. Draft the complete payload locally: `title`, `global_description`, `entities`, `interfaces`, and `diagrams`. Use stable ids; do not depend on UI-only implicit creation.
+3. Call `okto_pulse_validate_architecture_design_payload(...)` before create/update. For update, pass `design_id` and only the fields being changed; the dry-run validator merges omitted fields from the existing design.
+4. Fix every `issues[]` item before persisting. Review `warnings[]` as design-quality feedback; if you intentionally keep a warning, make sure the missing detail is genuinely unknowable at the current stage.
+5. Call `okto_pulse_add_architecture_design` or `okto_pulse_update_architecture_design` only after validation. If persistence still rejects the payload, correct the cited JSON path and retry the structured artifact.
+
+**Propagation modes across the pipeline:**
+
+`okto_pulse_create_refinement`, `okto_pulse_derive_spec_from_ideation`, and `okto_pulse_derive_spec_from_refinement` accept `architecture_design_ids` and `architecture_propagation_mode`.
+
+| Mode | Meaning | When to use |
+|---|---|---|
+| `copy` | Create child Architecture Design snapshots from the selected parent designs. | Default. Use when the downstream artifact should own an editable, versioned copy. |
+| `derive` | Same material result as copy, but records the intent as derived design work. | Use when the child stage is expected to refine or specialize the parent architecture. |
+| `reference_only` | Keep the parent design as the source of truth and rely on lineage/reporting instead of creating a child copy. | Use only when the downstream artifact must explicitly refer to, not mutate, the parent design. Verify with `okto_pulse_get_traceability_report`. |
+| `none` | Do not propagate architecture. | Use only when architecture is genuinely irrelevant or intentionally deferred; explain the reason in the child artifact. |
+
+When a stage benefits from architecture and the parent already has Architecture Designs, do not silently omit them. Choose a propagation mode explicitly. Silent omission causes downstream specs/tasks to lose visibility into boundaries, contracts, storage decisions, and integration order.
+
+**Useful entity categories:** `web_app`, `mobile_app`, `api`, `service`, `worker`, `agent`, `cli`, `database`, `cache`, `blob_store`, `file_store`, `vector_store`, `graph_store`, `queue`, `topic`, `event_bus`, `stream`, `external_service`, `identity_provider`, `payment_gateway`, `model_provider`, `mcp_server`, `mcp_client`, `scheduler`, `gateway`, `load_balancer`.
+
+**Entity examples — name and type are different fields:**
+
+```json
+[
+  {
+    "id": "entity-customer-portal",
+    "name": "Customer Portal",
+    "entity_type": "web_app",
+    "responsibility": "Collects checkout input and displays order status.",
+    "boundaries": "Browser/UI boundary",
+    "technologies": ["React", "Vite"]
+  },
+  {
+    "id": "entity-checkout-api",
+    "name": "Checkout API",
+    "entity_type": "api",
+    "responsibility": "Validates checkout commands and orchestrates payment authorization.",
+    "boundaries": "Backend application boundary",
+    "technologies": ["FastAPI", "SQLAlchemy"]
+  },
+  {
+    "id": "entity-orders-db",
+    "name": "Orders DB",
+    "entity_type": "database",
+    "responsibility": "Persists orders, payment state, and idempotency keys.",
+    "technologies": ["PostgreSQL"]
+  },
+  {
+    "id": "entity-payment-gateway",
+    "name": "Payment Gateway",
+    "entity_type": "external_service",
+    "responsibility": "Authorizes card payments and emits settlement callbacks."
+  },
+  {
+    "id": "entity-okto-mcp-endpoint",
+    "name": "Okto Pulse MCP Endpoint",
+    "entity_type": "mcp_server",
+    "responsibility": "Exposes board, card, KG, and architecture tools to MCP clients.",
+    "boundaries": "MCP/agent integration boundary",
+    "technologies": ["FastMCP", "ASGI"]
+  },
+  {
+    "id": "entity-discovery-graph",
+    "name": "Discovery Graph",
+    "entity_type": "graph_store",
+    "responsibility": "Stores cross-board discovery metadata and canonical topic/entity references.",
+    "boundaries": "Global KG persistence boundary",
+    "technologies": ["LadybugDB"]
+  }
+]
+```
+
+Bad entity example: `{"name": "API", "entity_type": "api"}`. This is rejected because it does not identify a real component. Use a concrete name such as `"Checkout API"` and keep `"api"` as the category.
+
+**Entity detail rules:**
+- Always provide `id`, concrete `name`, and categorical `entity_type`.
+- Provide `responsibility` whenever a component owns behavior, data, a protocol endpoint, orchestration, or a runtime boundary.
+- Provide `boundaries` when the entity crosses process, data, tenant, security, external-system, or ownership limits.
+- Use `technologies`, `relationships`, and `notes` to avoid forcing implementers to infer stack, dependency, or operational context.
+
+**Interface example — exactly two participants when known:**
+
+```json
+[
+  {
+    "id": "interface-create-order",
+    "name": "Create order",
+    "endpoint": "POST /orders",
+    "description": "Customer Portal sends checkout details to Checkout API.",
+    "participants": ["entity-customer-portal", "entity-checkout-api"],
+    "direction": "source_to_target",
+    "protocol": "REST",
+    "contract_type": "OpenAPI",
+    "request_schema": {
+      "type": "object",
+      "required": ["cart_id"],
+      "properties": {"cart_id": {"type": "string"}}
+    },
+    "response_schema": {
+      "type": "object",
+      "required": ["order_id"],
+      "properties": {"order_id": {"type": "string"}}
+    }
+  },
+  {
+    "id": "interface-get-order",
+    "name": "Get order",
+    "endpoint": "GET /orders/{order_id}",
+    "description": "Customer Portal fetches order status from Checkout API.",
+    "participants": ["entity-customer-portal", "entity-checkout-api"],
+    "direction": "source_to_target",
+    "protocol": "REST",
+    "contract_type": "OpenAPI",
+    "request_schema": {
+      "type": "object",
+      "required": ["order_id"],
+      "properties": {"order_id": {"type": "string"}}
+    },
+    "response_schema": {
+      "type": "object",
+      "required": ["order_id", "status"],
+      "properties": {"order_id": {"type": "string"}, "status": {"type": "string"}}
+    }
+  },
+  {
+    "id": "interface-order-placed",
+    "name": "Order placed event",
+    "endpoint": "order.placed",
+    "participants": ["entity-checkout-api", "entity-order-events"],
+    "direction": "source_to_target",
+    "protocol": "Kafka",
+    "contract_type": "JSON Schema",
+    "event_schema": {"type": "object", "required": ["order_id", "status"]}
+  }
+]
+```
+
+`direction` must be one of `source_to_target`, `target_to_source`, `bidirectional`, or `none`. Do not use free text like `"both ways"`.
+
+**Interface detail rules:**
+- When endpoints are known, `participants` must contain exactly two entity ids or names. For a diagram-linked interface, these must match the source and target nodes of the edge.
+- `endpoint` is optional but strongly recommended for API paths, RPC methods, event names, queue names, or operations, especially when several contracts share the same connector.
+- `direction` controls arrow intent in diagrams and validation reasoning; use `none` only when direction is not meaningful.
+- Set `protocol` and/or `contract_type` whenever the integration depends on transport, schema, event type, serialization, or failure behavior.
+- Include `request_schema`, `response_schema`, `event_schema`, `error_contract`, or `schema_ref` when payload shape affects implementation, tests, compatibility, validation, or rollout.
+- Do not use interface fields to list arbitrary linked entities; the connection itself defines the two endpoints.
+- Multiple interfaces between the same two entities are valid. Model them as several interface contracts on one connector using `linkedInterfaceIds`; do not duplicate entities or create duplicate diagrams just to represent multiple API endpoints.
+
+**Diagram example — link diagram elements to entities/interfaces when possible:**
+
+```json
+[
+  {
+    "id": "diagram-runtime-context",
+    "title": "Runtime context",
+    "diagram_type": "context",
+    "format": "excalidraw_json",
+    "adapter_payload": {
+      "type": "excalidraw",
+      "version": 2,
+      "elements": [
+        {"id": "node-web", "type": "rectangle", "linkedEntityId": "entity-customer-portal"},
+        {"id": "node-api", "type": "rectangle", "linkedEntityId": "entity-checkout-api"},
+        {
+          "id": "edge-create-order",
+          "type": "arrow",
+          "sourceElementId": "node-web",
+          "targetElementId": "node-api",
+          "linkedInterfaceIds": ["interface-create-order", "interface-get-order"],
+          "connectionType": "elbow"
+        }
+      ],
+      "appState": {},
+      "files": {}
+    }
+  }
+]
+```
+
+Excalidraw `connectionType` accepts only `direct` or `elbow`. Use `elbow` for routed/orthogonal connections. Do not use `curved`.
+Use `linkedInterfaceIds` for one or more contracts on the same connector. `linkedInterfaceId` is accepted only as a legacy single-contract field. When an edge links an interface, the validator checks that the interface `participants` match the linked entities on the edge's source and target nodes.
+
+**Pattern — correct use:**
+
+```text
+1. Read context with get_ideation_context / get_refinement_context / get_spec_context.
+2. Decide whether architecture triggers apply. If yes, create/update Architecture Design before moving the artifact forward.
+3. Call okto_pulse_get_architecture_design_schema, then okto_pulse_validate_architecture_design_payload.
+4. Use okto_pulse_add_architecture_design or okto_pulse_update_architecture_design with structured entities, interfaces, and diagrams.
+5. If the tool rejects the payload, fix the cited JSON path and retry. Never bypass validation by moving the same information into prose.
+6. Before card implementation, copy relevant architecture to the card with okto_pulse_copy_architecture_to_card.
+```
+
+**Anti-patterns and consequences:**
+
+| Anti-pattern | Consequence | Correct approach |
+|---|---|---|
+| Architecture described only in `description`, `analysis`, Q&A, comments, or a markdown section | Implementers can miss critical steps; downstream agents cannot link, copy, version, render, or diff the design; visibility drops and task decomposition becomes guesswork | Create/update an Architecture Design and reference it by title/id from prose. |
+| Detailed architecture diagram drawn as ASCII, markdown tables, or a prose-only Mermaid block inside text fields | The diagram is not a first-class artifact; it cannot be edited in the Architecture tab, linked to entities/interfaces, copied to cards, or validated by payload rules | Store it as an Architecture Design diagram (`excalidraw_json`, `mermaid`, `plantuml`, `c4`, `svg`, or `raw` as appropriate). |
+| Generic entities like `"API"`, `"DB"`, `"Service"`, or `name == entity_type` | Ownership is ambiguous; tasks can implement the wrong component or skip integration boundaries | Use concrete component names: `"Checkout API"`, `"Orders DB"`, `"Billing Worker"`, `"Payment Gateway"`. |
+| Entity without `responsibility` | Implementers must infer what the component owns, guarantees, persists, orchestrates, or delegates; duplicated logic and skipped duties become likely | Add a concise responsibility statement for every behavior-owning or data-owning component. |
+| Entity without `boundaries` when boundaries matter | Security, tenancy, data, external-system, runtime, or team boundaries can be crossed accidentally; migrations and integration order become unclear | State the boundary explicitly: process, database, tenant, external SaaS, security zone, team ownership, or deployment unit. |
+| Entity has no `technologies`, `relationships`, or notes even though stack/dependencies are known | Agents may invent stack choices or miss existing platform constraints; implementation can diverge from the real codebase | Add known technologies and relationship notes, especially for adapters, persistence stores, queues, graph stores, auth providers, and model providers. |
+| Interface has schema data but no protocol or contract type | Implementers must invent transport/contract details, causing drift between code and specification | Set `protocol` and/or `contract_type`, and include request/response/event/error schema fields when known. |
+| Interface participants are omitted even though the two endpoints are known | The relationship is invisible to diagram validation and task ownership mapping | Provide exactly two participants using entity ids or names. |
+| Interface participants disagree with the source/target entities of the linked diagram edge | The visual connector and contract describe different integrations; implementation can wire the wrong components | Align participants with the edge endpoints or link the contract to the correct connector. |
+| Several same-pair API/event contracts have no `endpoint` or operation name | Implementers cannot tell which request, method, event, queue, or schema belongs to each task | Set `endpoint` for every API path, RPC method, event name, queue name, or operation. |
+| Duplicating entities or diagrams to show several API endpoints between the same two components | The architecture becomes noisy and falsely suggests separate components or ownership boundaries | Use one connector with multiple `linkedInterfaceIds`. |
+| Interface without `description` | The edge name alone may hide business intent, side effects, guarantees, or trigger conditions; reviewers cannot verify whether the interaction is complete | Add a short description explaining why the interaction exists and what behavior it carries. |
+| Interface without request/response/event/error details when payload shape matters | Validation, tests, backwards compatibility, error handling, and serialization are guessed during implementation | Add `request_schema`, `response_schema`, `event_schema`, `error_contract`, or `schema_ref` as appropriate. |
+| Diagram edge without `linkedInterfaceIds` | The visual connection cannot open or validate the contract; agents see a line but not the interface semantics | Link each diagram edge to one or more interface ids/names whenever it represents real interactions. |
+| Diagram node without `linkedEntityId` | The visual component cannot open or validate entity details; the diagram becomes disconnected decoration | Link each component node to an entity id/name. |
+| Architecture is stale when deriving a spec or creating tasks | Cards inherit obsolete structure; later implementation can bypass required migration, integration, storage, or security steps | Update Architecture Design before derivation/spec validation/card creation, then copy it to relevant cards. |
+
+**Validation contract:** architecture tools critique payloads before acceptance. `okto_pulse_validate_architecture_design_payload` exposes the same critique without writing. Typical blocking errors include:
+- `entities[0].name duplicates entity_type 'api'`
+- `interfaces[0].participants[1] references 'entity-missing', but it does not match any entity id or name`
+- `interfaces[0].direction='both ways' is invalid`
+- `diagrams[0].adapter_payload.elements[2].linkedInterfaceIds references 'interface-missing'`
+- `diagrams[0].adapter_payload.elements[2] links interface 'interface-create-order', but its participants do not match the connection endpoints`
+- `diagrams[0].adapter_payload.elements[2].connectionType='curved' is invalid`
+
+Typical warnings include missing `responsibility`, `boundaries`, interface `description`, interface participants, endpoint on same-connector contracts, schema/contract details, `linkedEntityId`, or `linkedInterfaceIds`. Warnings do not block persistence, but they identify ambiguity that often causes implementation drift.
+
+Treat these errors as design feedback. Fix the exact path, keep the architecture structured, and retry.
+
 #### 2.8 Cards (Tasks)
 
 ##### Card-level artifact attachment (MANDATORY)
 
-> **A card must be self-contained.** Any agent or human picking up a card must be able to execute it from the card alone, without re-querying the parent spec, without hunting through KEs scoped at the spec level, and without rebuilding context that already exists. **Whenever a task depends on an existing knowledge base (KE) or mockup, that artifact MUST be attached directly to the task.**
+> **A card must be self-contained.** Any agent or human picking up a card must be able to execute it from the card alone, without re-querying the parent spec, without hunting through KEs scoped at the spec level, and without rebuilding context that already exists. **Whenever a task depends on an existing knowledge base (KE), mockup, or Architecture Design, that artifact MUST be attached directly to the task.**
 
 This is a hard rule, enforced operationally by the implementer's pre-flight (steps 6 and 7 of the **Pre-Flight Checklist**) and validated at task-validation time. An "implementer reading the card description and finding only a vague reference to 'see the spec'" is the failure mode this rule exists to prevent.
 
@@ -1187,16 +1449,16 @@ This is a hard rule, enforced operationally by the implementer's pre-flight (ste
 
 | Source of the artifact | Tool | When to use |
 |---|---|---|
-| KE / mockup already exists on the parent spec | `okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id, knowledge_ids?)` / `okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id, screen_ids?)` | Default path — the spec already curated the artifact. Pass `knowledge_ids` / `screen_ids` to scope a subset; omit them to copy all. **Snapshot is per-card** — later edits to the spec's KE do NOT propagate, which is intentional (decoupled card lifecycle). |
+| KE / mockup / Architecture Design already exists on the parent spec | `okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id, knowledge_ids?)` / `okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id, screen_ids?)` / `okto_pulse_copy_architecture_to_card(board_id, spec_id, card_id, design_ids?)` | Default path — the spec already curated the artifact. Pass `knowledge_ids` / `screen_ids` / `design_ids` to scope a subset; omit them to copy all. **Snapshot is per-card** — later edits to the spec artifact do NOT propagate, which is intentional (decoupled card lifecycle). |
 | KE specific to this task that should NOT live on the spec | `okto_pulse_add_card_knowledge(board_id, card_id, title, content, ...)` | Use when the knowledge is task-scoped (e.g. a debugging note, a runtime artefact relevant to one card). Lifecycle is fully exposed: `list_card_knowledge`, `get_card_knowledge`, `update_card_knowledge`, `delete_card_knowledge`. |
 | Mockup specific to this card | `okto_pulse_add_screen_mockup(board_id, card_id, ..., entity_type="card")` | Use for card-scoped UI deliverables, bug repro screenshots, or per-card layout variants. Annotate via `annotate_mockup`. |
 
 **Mandatory before moving the card to `in_progress`:**
 
-1. Run `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true)` and inspect what is already attached.
-2. For each KE / mockup the task needs, decide:
+1. Run `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true, include_architecture=true)` and inspect what is already attached.
+2. For each KE / mockup / Architecture Design the task needs, decide:
    - **Already on the card** → no action.
-   - **On the parent spec, relevant to this task** → call `copy_knowledge_to_card` / `copy_mockups_to_card`. Use `knowledge_ids` / `screen_ids` to attach exactly what the task needs (not the full spec dump).
+   - **On the parent spec, relevant to this task** → call `copy_knowledge_to_card` / `copy_mockups_to_card` / `copy_architecture_to_card`. Use `knowledge_ids` / `screen_ids` / `design_ids` to attach exactly what the task needs (not the full spec dump).
    - **Not yet captured anywhere** → create it with `add_card_knowledge` (task-scoped) or escalate to spec via `add_spec_knowledge` then copy down (when other tasks will need it too).
 3. Skip explicitly when the task genuinely needs no artifact (e.g. backend-only with no domain doc) — but post a one-line comment justifying the skip ("backend refactor; no KE or mockup applicable").
 
@@ -1209,10 +1471,11 @@ This is a hard rule, enforced operationally by the implementer's pre-flight (ste
 | Card description says "see KE 'API contract' on the spec" | Forces the implementer to re-query the spec; the snapshot guarantees of `copy_knowledge_to_card` are lost | Call `copy_knowledge_to_card` and reference the now-card-local KE id in the description. |
 | Card description embeds a giant code block of the KE content | Duplication without addressability; can't be updated; not searchable | Attach via `add_card_knowledge` or `copy_knowledge_to_card`. Reference by id in the description. |
 | Card on a UI task with zero attached mockups | Implementer must guess layout; drift guaranteed | `copy_mockups_to_card` for every screen the card touches. |
-| Implementer skips step 6/7 of Pre-Flight and starts coding | Blind execution against an incomplete card | Refuse to start — go back, attach artifacts, then move to `in_progress`. |
+| Card touches services/contracts/data flows but has zero attached architecture | Implementer must infer ownership, integration order, and interface boundaries; critical architecture steps can be skipped | `copy_architecture_to_card` for every Architecture Design the card depends on. |
+| Implementer skips steps 6/7/8 of Pre-Flight and starts coding | Blind execution against an incomplete card | Refuse to start — go back, attach artifacts, then move to `in_progress`. |
 | `copy_*_to_card` called without filtering when only 1-2 of 10 KEs apply | Card becomes noisy; reviewer drowns in irrelevant context | Pass `knowledge_ids` / `screen_ids` to scope the snapshot. |
 
-**Verification before claiming completion:** at task-validation time (`submit_task_validation`), the validator should check that every linked test scenario, BR, contract, KE and mockup the implementation depends on was either present on the card from the start or explicitly added during execution. A card that closed with `completeness=100` but had no KE/mockup attached for a task that clearly required one is a drift signal — flag it in `general_justification`.
+**Verification before claiming completion:** at task-validation time (`submit_task_validation`), the validator should check that every linked test scenario, BR, contract, KE, mockup, and Architecture Design the implementation depends on was either present on the card from the start or explicitly added during execution. A card that closed with `completeness=100` but had no architecture attached for a task that clearly required one is a drift signal — flag it in `general_justification`.
 
 **Governance rules (enforced by the system):**
 
@@ -1484,15 +1747,16 @@ When the **Task Validation Gate** is enabled (configured at board, spec, or spri
 1. **Retrieve context** — `okto_pulse_get_task_context(board_id, card_id)`
    - Check `validation_config.required`: if `true`, the gate is active
    - Check `validations` array: if non-empty AND the last entry has `outcome: "failed"`, this is a RESTART after rejection
-2. **MANDATORY for restarts** — if the card returned to `not_started` after a failed validation, you MUST read `validations[0]` (the most recent, failed one):
+2. **MANDATORY for restarts** — if the card has a failed validation, you MUST read the most recent failed validation before changing the implementation:
    - Read `threshold_violations` — understand which dimensions failed
    - Read `confidence_justification`, `completeness_justification`, `drift_justification`, `general_justification` — understand what the reviewer flagged
    - **Implementing without reading the feedback means repeating the same mistakes.** This is the most common anti-pattern.
 3. **Move to in_progress** — `okto_pulse_move_card(status="in_progress")` before starting work
 4. **Implement the task** — complete the work as described, addressing any prior validation feedback
 5. **Link artifacts** — attach knowledge bases, mockups, or comments as the work progresses
-6. **Move to validation** — `okto_pulse_move_card(status="validation")` when done
-   - Do **NOT** include `conclusion`, `completeness`, `drift` fields in this call — the validation captures all of that
+6. **Move to validation** — `okto_pulse_move_card(status="validation", conclusion=..., completeness=..., completeness_justification=..., drift=..., drift_justification=...)` when done
+   - This is the executor's claim of what was delivered. The validator must be able to read it before approving or rejecting the task.
+   - Include all 5 report fields: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification`.
    - Do **NOT** try to move directly to `done` when the gate is active — the backend returns 422 and blocks the transition
 7. **Wait** — another agent or human with `card.validation.submit` permission will validate your work
 
@@ -1516,7 +1780,7 @@ When the **Task Validation Gate** is enabled (configured at board, spec, or spri
    - `recommendation`: `"approve"` or `"reject"`
 5. **System routes automatically** — you do NOT need to move the card:
    - `outcome=success` → card moves to `done` automatically
-   - `outcome=failed` → card moves to `not_started` automatically
+   - `outcome=failed` → card stays in `validation` with reviewer feedback attached
 
 ##### 2.11c Deterministic Thresholds
 
@@ -1551,18 +1815,19 @@ The `resolved_from` field in `validation_config` tells you which level provided 
 | **Ignore prior failed validations when restarting a rejected task** | Repeats the same mistakes that caused rejection | ALWAYS call `get_task_context` and read `validations[0]` before reimplementing. This is MANDATORY |
 | **Move card directly to `done` when gate is active** | Circumvents the quality gate; backend blocks it anyway | Move to `validation` first. Let the reviewer call `submit_task_validation` |
 | **Self-validate (implementer submits own validation)** | No independent verification — defeats the purpose | A different agent or human should validate. If only one agent exists on the board, flag it to the user rather than self-validating |
-| **Include `conclusion`/`completeness`/`drift` when moving to `validation`** | Duplicates what the validation captures and creates conflicting records | Move to `validation` with no extra fields. The validation submission is the record |
+| **Move card to `validation` without `conclusion`/`completeness`/`drift`** | The validator cannot see what the executor claims was delivered, so the validation becomes guesswork and auditability is reduced | Move to `validation` with all executor report fields. The validation submission is the independent review record |
 | **Use text body of `ask_question` for discussion that doesn't need an answer** | Clutters Q&A and dilutes the signal for real questions | Use `add_comment` for discussion; use Q&A only when you need a response from the user or another agent |
 | **Treat threshold violations as optional** | The gate is deterministic by design | Threshold violations auto-fail. If you believe a threshold is wrong, escalate via comment to change the config — don't bypass it |
 
-##### 2.11e Conclusion vs. Validation
+##### 2.11e Executor Report vs. Validation
 
-When the validation gate is **active** for a card, the validation submission **replaces** the standard conclusion:
+When the validation gate is **active** for a card, the executor report and the validation submission are separate records:
 
-- Do NOT send `conclusion`, `completeness`, `drift`, or their justifications when moving to `validation` — these belong to the pre-gate flow
-- The validation's `general_justification` is the quality assessment record
+- The executor report belongs to `okto_pulse_move_card(status="validation", ...)` and must include `conclusion`, `completeness`, `completeness_justification`, `drift`, and `drift_justification`
+- The validation submission belongs to `okto_pulse_submit_task_validation(...)` and is the independent quality assessment record
+- Do NOT use the validation `general_justification` as a substitute for the executor report; validators need the executor's claim before they can review it
 - All validations (success AND failed) are stored permanently as the audit trail — a card that failed 2 validations before passing on the 3rd attempt keeps all 3 entries
-- When the gate is **inactive**, the standard conclusion flow applies (as documented elsewhere in these instructions)
+- When the gate is **inactive**, moving directly to `done` still requires the same executor report fields
 
 ##### 2.11f Permission flags
 
@@ -2121,10 +2386,48 @@ Use these to consolidate knowledge from completed artifacts into the KG. The flo
 | `okto_pulse_kg_commit_consolidation` | session_id, summary_text?, agent_overrides? | Atomically write to Kuzu + audit row + outbox event. Compensating delete on failure. |
 | `okto_pulse_kg_abort_consolidation` | session_id, reason? | Drop the session without writing. No side effects. |
 
+**Payload contracts for agents — do not rely on source-code access:**
+
+Future MCP users and agents may not have the repository available. Build consolidation payloads from the contract below, not by inspecting local code.
+
+Node candidates accepted by `deterministic_candidates` and `add_node_candidate`:
+
+```json
+{
+  "candidate_id": "stable-id-unique-in-session",
+  "node_type": "Requirement|Entity|APIContract|TestScenario|Bug|Decision|Criterion|Constraint|Assumption|Learning|Alternative",
+  "title": "Concrete, searchable title",
+  "content": "Concise but complete body text",
+  "context": "Optional surrounding context",
+  "justification": "Optional reasoning or evidence",
+  "source_artifact_ref": "spec:<id>|card:<id>|sprint:<id>|architecture_design:<id>|e2e_report:<id>",
+  "source_confidence": 0.9,
+  "relevance_score": 0.5,
+  "priority_boost": 0.0
+}
+```
+
+Edge candidates accepted by `add_edge_candidate`:
+
+```json
+{
+  "candidate_id": "edge-stable-id",
+  "edge_type": "supersedes|contradicts|depends_on|relates_to|validates",
+  "from_candidate_id": "node-candidate-id-or-kg:<existing_node_id>",
+  "to_candidate_id": "node-candidate-id-or-kg:<existing_node_id>",
+  "confidence": 0.85,
+  "layer": "cognitive",
+  "rule_id": "final-traceability",
+  "created_by": "agent"
+}
+```
+
+Only cognitive edge types are accepted from MCP agents: `supersedes`, `contradicts`, `depends_on`, `relates_to`, and `validates`. Reserved deterministic edges (`belongs_to`, `derives_from`, `implements`, `mentions`, `tests`, `violates`) are created by the deterministic worker from structured artifacts. Attempting to emit them manually returns `layer_violation`; recover by removing that edge and letting the worker materialize it.
+
 **Consolidation workflow:**
 1. Call `begin_consolidation` with the artifact content. If `nothing_changed=true`, you can skip (artifact hasn't changed since last consolidation).
 2. Extract nodes from the artifact: Decisions, Criteria, Constraints, Assumptions, Learnings, Alternatives, etc. Use `add_node_candidate` for each.
-3. Extract relationships: supersedes, contradicts, derives_from, depends_on, etc. Use `add_edge_candidate`.
+3. Extract relationships that require judgement: supersedes, contradicts, depends_on, relates_to, validates. Use `add_edge_candidate`. Do not emit deterministic relationships manually.
 4. For important candidates, call `get_similar_nodes` to check for duplicates.
 5. Call `propose_reconciliation` — the server returns deterministic ADD/UPDATE/SUPERSEDE/NOOP hints. Override any hint you disagree with via `agent_overrides` in commit.
 6. Call `commit_consolidation` with a summary. Done.
@@ -2299,6 +2602,7 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
 | Sprint closes (moves to `done`) | Same | Consolidate retrospective Learnings + Bugs + Learning→validates→Bug edges. Include every non-trivial retro finding. |
 | Q&A on an ideation/refinement/spec gets an answer that **contains a decision** | Inspect Q&A answers after each `answer_*_question` call | Consolidate the decision (plus the justification as content) even though the parent artifact is not `done`. The answer itself is a stable point. |
 | A bug card moves to `done` with a root cause + fix narrative | Card conclusion | Consolidate a Learning node that validates the Bug node, including the fix rationale in `justification`. |
+| A complete SDLC/E2E flow is about to be reported as finished | `get_traceability_report`, final contexts, KG health/query tools | Create a final report consolidation session (`artifact_type="e2e_report"` or the closest stable artifact type). Capture what was implemented, validated, deferred, and any nonconformities/opportunities. Then verify queryability before final response. |
 | `consolidation_queue` has any row older than 24h | `get_unseen_summary` | Drain the backlog: every queued artifact becomes one consolidation session. Backlog >48h is a protocol violation. |
 
 **Optional but recommended triggers:**
@@ -2309,7 +2613,7 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
 **How to consolidate — step-by-step pattern:**
 
 ```
-1. begin_consolidation(board_id, artifact_type, artifact_id, raw_content)
+1. begin_consolidation(board_id, artifact_type, artifact_id, raw_content, deterministic_candidates=[...])
    → if nothing_changed=true → STOP, abort and move on
 2. For every candidate the artifact yields:
      a. get_similar_nodes(session_id, candidate_id, top_k=5, min_similarity=0.85)
@@ -2317,12 +2621,13 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
         → if match 0.85..0.95: plan SUPERSEDE
         → else: plan ADD
      b. add_node_candidate(session_id, candidate)
-3. add_edge_candidate for every rel (supersedes, derives_from, depends_on, contradicts, relates_to, mentions, violates, implements, tests, validates)
+3. add_edge_candidate only for cognitive rels (supersedes, contradicts, depends_on, relates_to, validates)
 4. propose_reconciliation(session_id)
    → read the server's ADD/UPDATE/SUPERSEDE/NOOP hints
 5. commit_consolidation(session_id, summary_text="<1-2 sentences>", agent_overrides={...})
    → override any hint you read differently (e.g., narrative says "we reversed" → force SUPERSEDE)
-6. On any error: abort_consolidation(session_id, reason=...)
+6. Verify with kg_health + kg_query_natural + kg_query_cypher
+7. On any unrecoverable error: abort_consolidation(session_id, reason=...)
 ```
 
 **Consolidation patterns per tool (when + why):**
@@ -2343,6 +2648,52 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
 - `begin_consolidation` returned `nothing_changed=true` — abort, don't re-commit the same state.
 - Q&A answer is a clarification, not a decision (e.g., "what do you mean by X?" → "I meant Y"). Decisions are commitments; clarifications aren't.
 
+### Final KG consolidation and verification — MANDATORY
+
+Before ending any complete SDLC flow, E2E audit, release-validation pass, or multi-stage investigation, you MUST consolidate the final facts into the KG and prove they are queryable. This is mandatory even if automatic queue entries exist: the final session captures the cross-artifact synthesis that individual artifact extractors cannot infer.
+
+**What to consolidate:**
+
+- Requirements, implementation outcomes, validated gates, bugs found/fixed, and final nonconformities.
+- Architecture conclusions: entities, responsibilities, contracts, interface endpoints, and storage/runtime boundaries that materially affected the flow.
+- Process learnings and opportunities that future agents must discover with `get_learning_from_bugs`, `find_similar_decisions`, or natural KG queries.
+- Traceability decisions: what was derived, what was only referenced, which artifacts were attached to cards, and what remains deferred.
+
+**Mandatory final sequence:**
+
+```text
+1. Build a final raw_content summary from get_traceability_report + final contexts.
+2. begin_consolidation(..., artifact_type="e2e_report" or the closest stable artifact type, deterministic_candidates=[nodes])
+3. Add any extra node candidates not passed in deterministic_candidates.
+4. Add only cognitive edge candidates: supersedes, contradicts, depends_on, relates_to, validates.
+5. propose_reconciliation and inspect every ADD/UPDATE/SUPERSEDE/NOOP hint.
+6. commit_consolidation with a summary_text that names the completed flow.
+7. Verify: kg_health, kg_query_natural, and at least one kg_query_cypher focused on the newly consolidated facts.
+8. Report the session_id, nodes_added, edges_added, query results, and any nonconformity.
+```
+
+**Edge failure fallback:** if `commit_consolidation` fails because an edge endpoint was not matched or a relationship could not materialize, do not abandon semantic memory. Abort that session, retry once with the same nodes and no edges, then report the relationship-materialization failure as a nonconformity. A nodes-only fallback is acceptable only when the final answer explicitly says the relationships did not persist and includes the failed edge symptom.
+
+**Verification rules:**
+
+- `kg_health` must show no new dead letters attributable to your session. If it does, inspect `kg_dead_letter_list` and report the blocking rows.
+- `kg_query_natural` must retrieve at least one of the newly consolidated facts by a plain-language question a future user would ask.
+- `kg_query_cypher` must validate either the new nodes by `source_artifact_ref` or the expected relationships by edge type. If new nodes have degree 0 unexpectedly, report that as a nonconformity instead of claiming full success.
+- If relation counts look inflated or missing, include that in the final report. The KG is only useful when agents are honest about materialization quality.
+
+**Final-answer requirement:** after a complete SDLC/E2E flow, your final response must include a compact KG consolidation section with the consolidation `session_id`, `nodes_added`, `edges_added`, the natural/Cypher verification summary, and any residual nonconformities or opportunities.
+
+**Anti-patterns and consequences:**
+
+| Anti-pattern | Consequence | Correct approach |
+|---|---|---|
+| Ending the flow after creating cards/tests/bugs but before final KG consolidation | Future agents cannot answer what was implemented, validated, or deferred without manually reading every artifact | Run the final consolidation sequence and verify queryability. |
+| Writing final learnings only in a prose report or card comment | Natural KG queries miss the lessons; repeated E2E validations rediscover the same issue | Consolidate Learnings/Decisions/Constraints with stable `source_artifact_ref`. |
+| Relying on local source-code inspection to discover payload fields | External MCP users and agents fail because they cannot see the repository | Use the payload contracts in this instructions document and schema/validation tools. |
+| Claiming "KG updated" without natural and Cypher verification | Materialization bugs stay hidden; users trust a graph that cannot answer follow-up questions | Query back the facts and relationships before reporting success. |
+| Emitting deterministic edge types manually (`implements`, `tests`, `belongs_to`, `mentions`, `violates`, `derives_from`) | The MCP rejects the edge with `layer_violation`, or the session wastes turns on relationships the worker owns | Emit only cognitive edges and let deterministic extraction own structured artifact relationships. |
+| Omitting interface endpoints, protocols, participants, schemas, or entity responsibilities from final architecture facts | Implementers cannot derive correct tasks/tests; architecture search returns vague components with no actionable contract | Consolidate architecture facts with explicit entities, endpoints, protocols, contracts, and responsibilities. |
+
 **Consequence matrix — what happens when each trigger is skipped:**
 
 | Skipped trigger | Immediate consequence | Compounding consequence over time |
@@ -2351,6 +2702,7 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
 | Sprint → done without consolidation | Retro learnings live only in the sprint retrospective card. | The same bug class recurs three sprints later because `get_learning_from_bugs` returns nothing. |
 | Q&A decision without consolidation | The decision sits in a Q&A thread, findable only by grep. | `find_similar_decisions` misses it; conflicting decisions accumulate in parallel Q&A threads. |
 | Bug fix without Learning consolidation | Fix is in commit history but not the KG. | Future investigations of similar bugs re-run the same diagnosis. |
+| Final SDLC/E2E report without consolidation | The user hears a summary, but the KG cannot answer follow-up questions about what was implemented, validated, or left open. | Later agents repeat the audit manually and miss cross-artifact conclusions that existed only in the prior agent's final message. |
 | Backlog in `consolidation_queue` > 48h | N artifacts to consolidate, each needing its own session. | Incremental consolidation is O(1) per artifact; backfill is O(N) of expensive extraction work and destroys trust in the "queryable memory" contract. |
 
 ### Automatic consolidation triggers — domain events you don't have to fire by hand
@@ -2380,7 +2732,7 @@ already did.
 | `sprint.created` / `sprint.moved` / `sprint.closed` | sprint lifecycle methods | sprint | normal |
 | `ideation.derived_to_spec` / `refinement.derived_to_spec` | derivation methods | spec | normal |
 
-**Read this carefully — the four 0.1.6+ semantic events are easy to miss:**
+**Read this carefully — the four 0.1.13+ semantic events are easy to miss:**
 
 - `spec.semantic_changed` fires when you mutate decisions / business_rules /
   api_contracts / test_scenarios / screen_mockups via `update_spec` (or
@@ -2781,6 +3133,14 @@ Before `kg_commit_consolidation`:
 - [ ] `raw_content` includes enough context for SHA256 dedup (title + description minimum).
 - [ ] Edge candidates reference existing nodes via `kg:<existing_node_id>` prefix.
 - [ ] Server serialises commits per board automatically (since 0.1.4 patch). Agents may parallelise all commit calls — the handler queues them internally and retries transient inter-process lock contention with exponential backoff.
+- [ ] Cognitive agents only emitted `supersedes`, `contradicts`, `depends_on`, `relates_to`, or `validates` edges. Deterministic edges are left to the worker.
+
+After `kg_commit_consolidation`:
+
+- [ ] `kg_health` was checked for new dead letters or graph-health regressions.
+- [ ] `kg_query_natural` retrieved the newly consolidated final facts.
+- [ ] `kg_query_cypher` validated the new nodes by `source_artifact_ref` or validated the expected relationships by edge type.
+- [ ] The final response includes `session_id`, `nodes_added`, `edges_added`, query verification, and any nonconformities.
 
 Lock error recovery:
 

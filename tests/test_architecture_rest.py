@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -38,6 +37,7 @@ def _architecture_body(title: str = "Runtime Architecture") -> dict:
             {
                 "id": "interface-payload",
                 "name": "Diagram payload",
+                "endpoint": "PUT /architecture/{design_id}/diagrams/{diagram_id}/payload",
                 "protocol": "REST",
                 "contract_type": "request_response",
                 "request_schema": {"payload": "object"},
@@ -173,6 +173,7 @@ def test_rest_crud_payload_import_and_diff(_client_and_entities):
                 {
                     "id": "interface-payload",
                     "name": "Diagram payload",
+                    "endpoint": "PUT /architecture/{design_id}/diagrams/{diagram_id}/payload",
                     "protocol": "REST",
                     "contract_type": "request_response",
                     "request_schema": {"payload": "object", "diagram_id": "string"},
@@ -266,3 +267,34 @@ def test_spec_lock_blocks_architecture_mutations(_client_and_entities):
         json=_architecture_body("Blocked Architecture"),
     )
     assert another.status_code == 409
+
+
+def test_rest_rejects_invalid_architecture_payload_with_context(_client_and_entities):
+    client, ids = _client_and_entities
+    body = _architecture_body("Invalid Architecture")
+    body["entities"] = [
+        {
+            "id": "entity-api",
+            "name": "API",
+            "entity_type": "api",
+        }
+    ]
+    body["interfaces"] = [
+        {
+            "id": "interface-invalid",
+            "name": "Invalid contract",
+            "participants": ["entity-api", "entity-missing"],
+            "direction": "both ways",
+        }
+    ]
+
+    created = client.post(
+        f"/api/v1/ideations/{ids['ideation_id']}/architecture",
+        json=body,
+    )
+
+    assert created.status_code == 422
+    detail = created.json()["detail"]
+    assert "entities[0].name duplicates entity_type" in detail
+    assert "interfaces[0].direction='both ways' is invalid" in detail
+    assert "interfaces[0].participants[1]" in detail

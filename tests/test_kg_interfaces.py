@@ -8,7 +8,6 @@ Scenarios:
 
 from __future__ import annotations
 
-import os
 import pytest
 
 from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
@@ -16,7 +15,6 @@ from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
 from okto_pulse.core.kg.interfaces.registry import (
-    KGProviderRegistry,
     configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,

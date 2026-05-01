@@ -100,6 +100,12 @@ def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDe
                 "entity_type": "service",
                 "responsibility": "Persist architecture envelopes and versions.",
                 "technologies": ["SQLAlchemy"],
+            },
+            {
+                "id": "entity-diagram-payload",
+                "name": "ArchitectureDiagramPayload",
+                "entity_type": "database_table",
+                "responsibility": "Store large diagram adapter payloads outside the envelope.",
             }
         ],
         interfaces=[
@@ -132,6 +138,156 @@ def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDe
         source_ref=source_ref,
         source_version=1,
     )
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_entity_name_that_duplicates_type(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        payload["entities"] = [
+            {
+                "id": "entity-api",
+                "name": "API",
+                "entity_type": "api",
+                "responsibility": "Generic name should be rejected.",
+            }
+        ]
+
+        with pytest.raises(ValueError, match=r"entities\[0\]\.name duplicates entity_type"):
+            await repo.create("ideation", ideation_id, payload, USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_interface_with_unknown_participant(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        payload["interfaces"] = [
+            {
+                "id": "interface-missing",
+                "name": "Missing participant contract",
+                "participants": ["entity-architecture-repository", "entity-missing"],
+                "direction": "source_to_target",
+            }
+        ]
+
+        with pytest.raises(ValueError, match=r"interfaces\[0\]\.participants\[1\].*entity-missing"):
+            await repo.create("ideation", ideation_id, payload, USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_create_accepts_multiple_interfaces_on_same_diagram_connection(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        payload["interfaces"] = [
+            {
+                "id": "interface-save-diagram",
+                "name": "Save diagram",
+                "endpoint": "PUT /architecture/{design_id}/diagrams/{diagram_id}/payload",
+                "description": "Repository stores the diagram payload row.",
+                "participants": ["entity-architecture-repository", "entity-diagram-payload"],
+                "direction": "source_to_target",
+                "protocol": "REST",
+                "contract_type": "OpenAPI",
+            },
+            {
+                "id": "interface-load-diagram",
+                "name": "Load diagram",
+                "endpoint": "GET /architecture/{design_id}/diagrams/{diagram_id}/payload",
+                "description": "Repository loads the diagram payload row.",
+                "participants": ["entity-architecture-repository", "entity-diagram-payload"],
+                "direction": "target_to_source",
+                "protocol": "REST",
+                "contract_type": "OpenAPI",
+            },
+        ]
+        payload["diagrams"][0]["adapter_payload"]["elements"] = [
+            {"id": "node-repository", "type": "rectangle", "linkedEntityId": "entity-architecture-repository"},
+            {"id": "node-payload", "type": "rectangle", "linkedEntityId": "entity-diagram-payload"},
+            {
+                "id": "edge-diagram-payload",
+                "type": "arrow",
+                "sourceElementId": "node-repository",
+                "targetElementId": "node-payload",
+                "linkedInterfaceIds": ["interface-save-diagram", "interface-load-diagram"],
+                "connectionType": "elbow",
+            },
+        ]
+
+        design = await repo.create("ideation", ideation_id, payload, USER_ID)
+
+        assert [item["endpoint"] for item in design.interfaces] == [
+            "PUT /architecture/{design_id}/diagrams/{diagram_id}/payload",
+            "GET /architecture/{design_id}/diagrams/{diagram_id}/payload",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_linked_interface_participants_that_do_not_match_edge(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        payload["interfaces"][0]["participants"] = ["entity-diagram-payload", "entity-architecture-repository"]
+        payload["diagrams"][0]["adapter_payload"]["elements"] = [
+            {"id": "node-repository", "type": "rectangle", "linkedEntityId": "entity-architecture-repository"},
+            {"id": "node-payload", "type": "rectangle", "linkedEntityId": "entity-diagram-payload"},
+            {
+                "id": "edge-diagram-payload",
+                "type": "arrow",
+                "sourceElementId": "node-repository",
+                "targetElementId": "node-payload",
+                "linkedInterfaceIds": ["interface-diagram-store"],
+            },
+        ]
+
+        with pytest.raises(ValueError, match=r"participants .* do not match the connection endpoints"):
+            await repo.create("ideation", ideation_id, payload, USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_invalid_interface_direction_without_version_bump(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("ideation", ideation_id, _architecture_payload(), USER_ID)
+
+        with pytest.raises(ValueError, match=r"interfaces\[0\]\.direction='both ways' is invalid"):
+            await repo.update(
+                design.id,
+                ArchitectureDesignUpdate(
+                    interfaces=[
+                        {
+                            "id": "interface-diagram-store",
+                            "name": "ArchitectureDiagramStore",
+                            "participants": ["entity-architecture-repository", "entity-diagram-payload"],
+                            "direction": "both ways",
+                        }
+                    ]
+                ),
+                USER_ID,
+            )
+
+        loaded = await repo.get(design.id)
+        assert loaded is not None
+        assert loaded.version == 1
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_diagram_with_unknown_linked_entity(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        payload["diagrams"][0]["adapter_payload"]["elements"][0]["linkedEntityId"] = "entity-missing"
+
+        with pytest.raises(ValueError, match=r"diagrams\[0\]\.adapter_payload\.elements\[0\]\.linkedEntityId.*entity-missing"):
+            await repo.create("ideation", ideation_id, payload, USER_ID)
 
 
 @pytest.mark.asyncio

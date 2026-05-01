@@ -316,6 +316,7 @@ def _architecture_entity_content(entity: dict[str, Any]) -> str:
 
 def _architecture_interface_content(interface: dict[str, Any]) -> str:
     return _arch_lines(
+        ("Endpoint", interface.get("endpoint")),
         ("Description", interface.get("description")),
         ("Participants", interface.get("participants")),
         ("Direction", interface.get("direction")),
@@ -376,6 +377,8 @@ def _append_architecture_designs(
         for entity_index, raw_entity in enumerate(raw_design.get("entities") or []):
             if not isinstance(raw_entity, dict):
                 continue
+            entity_id = str(raw_entity.get("id") or entity_index)
+            entity_ref = f"{design_ref}:entity:{entity_id}"
             name = raw_entity.get("name") or f"Architecture entity {entity_index + 1}"
             content = _architecture_entity_content(raw_entity)
             raw_parts.extend([name, content])
@@ -385,7 +388,7 @@ def _append_architecture_designs(
                 node_type="Entity",
                 title=name[:120],
                 content=content or name,
-                source_artifact_ref=design_ref,
+                source_artifact_ref=entity_ref,
                 source_confidence=1.0,
             ))
             result.edges.append(EmittedEdge(
@@ -400,6 +403,8 @@ def _append_architecture_designs(
         for interface_index, raw_interface in enumerate(raw_design.get("interfaces") or []):
             if not isinstance(raw_interface, dict):
                 continue
+            interface_id = str(raw_interface.get("id") or interface_index)
+            interface_ref = f"{design_ref}:interface:{interface_id}"
             name = raw_interface.get("name") or f"Architecture interface {interface_index + 1}"
             content = _architecture_interface_content(raw_interface)
             raw_parts.extend([name, content])
@@ -409,7 +414,7 @@ def _append_architecture_designs(
                 node_type="APIContract",
                 title=name[:120],
                 content=content or name,
-                source_artifact_ref=design_ref,
+                source_artifact_ref=interface_ref,
                 source_confidence=1.0,
             ))
             result.edges.append(EmittedEdge(

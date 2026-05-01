@@ -25,7 +25,7 @@ from okto_pulse.core.kg.workers.deterministic_worker import (
     WORKER_ID,
     DeterministicWorker,
 )
-from okto_pulse.core.models.db import Board, ConsolidationQueue, Spec
+from okto_pulse.core.models.db import ConsolidationQueue, Spec
 
 
 # ---------------------------------------------------------------------------

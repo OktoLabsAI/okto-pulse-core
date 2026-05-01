@@ -18,10 +18,10 @@ import asyncio
 import logging
 import threading
 import time as _time
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from functools import partial
 from typing import Any
 

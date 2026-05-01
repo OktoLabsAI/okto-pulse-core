@@ -14,13 +14,11 @@ Validates:
 from __future__ import annotations
 
 import pytest
-import pytest_asyncio
 
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
-from okto_pulse.core.kg.interfaces.graph_store import QueryFilters, SemanticGraphStore
+from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
 from okto_pulse.core.kg.interfaces.registry import (
-    KGProviderRegistry,
     configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
@@ -86,13 +84,17 @@ class TestRegistryWiring:
         assert reg.audit_repo is None
 
     def test_configure_with_session_factory_wires_audit_repo(self):
-        mock_sf = lambda: None
+        def mock_sf():
+            return None
+
         configure_kg_registry(session_factory=mock_sf)
         reg = get_kg_registry()
         assert reg.audit_repo is not None
 
     def test_configure_with_session_factory_wires_event_bus(self):
-        mock_sf = lambda: None
+        def mock_sf():
+            return None
+
         configure_kg_registry(session_factory=mock_sf)
         reg = get_kg_registry()
         assert reg.event_bus is not None
@@ -119,7 +121,9 @@ class TestRegistryWiring:
 
     def test_full_registry_with_session_factory(self):
         """All 10 fields populated when session_factory is provided."""
-        mock_sf = lambda: None
+        def mock_sf():
+            return None
+
         configure_kg_registry(session_factory=mock_sf)
         reg = get_kg_registry()
 
@@ -228,7 +232,7 @@ class TestKGServiceUsesRegistry:
         assert svc.get_schema_version("b1") is None
 
         store.bootstrap("b1")
-        assert svc.get_schema_version("b1") == "0.3.0"
+        assert svc.get_schema_version("b1") == "0.3.3"
 
     def test_service_decision_history_via_graph_store(self):
         from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore
@@ -270,7 +274,7 @@ class TestKGServiceUsesRegistry:
 
     def test_service_explain_constraint_via_graph_store(self):
         from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore
-        from okto_pulse.core.kg.kg_service import KGService, KGToolError
+        from okto_pulse.core.kg.kg_service import KGService
 
         store = InMemoryGraphStore()
         store.bootstrap("b1")

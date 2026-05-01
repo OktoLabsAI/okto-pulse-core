@@ -154,7 +154,6 @@ def _assert_dict_shape_equal(a: dict, b: dict, label: str) -> None:
         f"  only in A (REST): {ka - kb}\n"
         f"  only in B (MCP):  {kb - ka}"
     )
-    ta, tb = _type_map(a), _type_map(b)
     # Allow NoneType ↔ non-None divergence when value is absent on one side
     # (totals can be 0/None based on include_archived). Type parity only
     # required when both sides have a non-None value.

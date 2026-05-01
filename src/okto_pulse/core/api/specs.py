@@ -10,7 +10,6 @@ from okto_pulse.core.models.schemas import (
     SpecKnowledgeCreate,
     SpecKnowledgeResponse,
     SpecKnowledgeSummary,
-    SpecKnowledgeUpdate,
     SpecMove,
     SpecResponse,
     SpecSummary,

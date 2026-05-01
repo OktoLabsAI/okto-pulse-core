@@ -146,7 +146,7 @@ async def settings_client():
     from fastapi import FastAPI
 
     from okto_pulse.core.api.settings import router
-    from okto_pulse.core.infra.auth import configure_auth, require_user
+    from okto_pulse.core.infra.auth import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     app = FastAPI()

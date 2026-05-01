@@ -26,6 +26,32 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
 
+from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+from okto_pulse.core.kg.schemas import (
+    AbortConsolidationRequest,
+    AbortConsolidationResponse,
+    AddEdgeCandidateRequest,
+    AddEdgeCandidateResponse,
+    AddNodeCandidateRequest,
+    AddNodeCandidateResponse,
+    BeginConsolidationRequest,
+    BeginConsolidationResponse,
+    CommitConsolidationRequest,
+    CommitConsolidationResponse,
+    GetSimilarNodesRequest,
+    GetSimilarNodesResponse,
+    ProposeReconciliationRequest,
+    ProposeReconciliationResponse,
+    ReconciliationHint,
+    ReconciliationOperation,
+    SessionStatus,
+    SimilarNode,
+)
+from okto_pulse.core.kg.session_manager import (
+    ConsolidationSession,
+    compute_content_hash,
+)
+
 logger = logging.getLogger("okto_pulse.kg.primitives")
 
 # ---------------------------------------------------------------------------
@@ -53,32 +79,6 @@ async def _run_kuzu(func, *args, **kwargs):
         pfunc = partial(func, *args, **kwargs)
         return await loop.run_in_executor(executor, pfunc)
     return await loop.run_in_executor(executor, func, *args)
-
-from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-from okto_pulse.core.kg.schemas import (
-    AbortConsolidationRequest,
-    AbortConsolidationResponse,
-    AddEdgeCandidateRequest,
-    AddEdgeCandidateResponse,
-    AddNodeCandidateRequest,
-    AddNodeCandidateResponse,
-    BeginConsolidationRequest,
-    BeginConsolidationResponse,
-    CommitConsolidationRequest,
-    CommitConsolidationResponse,
-    GetSimilarNodesRequest,
-    GetSimilarNodesResponse,
-    ProposeReconciliationRequest,
-    ProposeReconciliationResponse,
-    ReconciliationHint,
-    ReconciliationOperation,
-    SessionStatus,
-    SimilarNode,
-)
-from okto_pulse.core.kg.session_manager import (
-    ConsolidationSession,
-    compute_content_hash,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -472,12 +472,22 @@ def _compensate_kuzu_writes(board_id: str, session_id: str, records: list) -> No
     Mirrors ``TransactionOrchestrator.compensate()`` but runs synchronously
     inside the thread pool. Best-effort — logs failures but does not raise.
     """
-    from okto_pulse.core.kg.schema import REL_TYPES, open_board_connection
+    from okto_pulse.core.kg.schema import (
+        MULTI_REL_TYPES,
+        REL_TYPES,
+        open_board_connection,
+    )
 
     try:
         with open_board_connection(board_id) as (_db, kconn):
             # Delete edges first (they reference nodes)
-            for rel_name, from_type, to_type in REL_TYPES:
+            rel_pairs = list(REL_TYPES)
+            for rel_name, endpoint_pairs in MULTI_REL_TYPES:
+                rel_pairs.extend(
+                    (rel_name, from_type, to_type)
+                    for from_type, to_type in endpoint_pairs
+                )
+            for rel_name, from_type, to_type in rel_pairs:
                 try:
                     kconn.execute(
                         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "

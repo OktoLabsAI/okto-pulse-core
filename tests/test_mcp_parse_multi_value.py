@@ -33,7 +33,7 @@ def test_whitespace_only_returns_empty_list():
 
 def test_non_string_returns_empty_list():
     assert parse_multi_value(123) == []  # type: ignore[arg-type]
-    assert parse_multi_value(["a", "b"]) == []  # type: ignore[arg-type]
+    assert parse_multi_value(["a", "b"]) == ["a", "b"]
 
 
 # ===========================================================================

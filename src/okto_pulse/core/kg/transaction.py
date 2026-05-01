@@ -33,9 +33,43 @@ from typing import Any, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.kg.schema import REL_TYPES
+from okto_pulse.core.kg.schema import MULTI_REL_TYPES, REL_TYPES
 
 logger = logging.getLogger("okto_pulse.kg.transaction")
+
+
+def _relationship_pairs() -> list[tuple[str, str, str]]:
+    """Return every concrete relationship table/pair used by compensation."""
+    pairs = list(REL_TYPES)
+    for rel_name, endpoint_pairs in MULTI_REL_TYPES:
+        pairs.extend((rel_name, from_type, to_type) for from_type, to_type in endpoint_pairs)
+    return pairs
+
+
+def _result_has_row(result: Any) -> bool:
+    """Best-effort detection that a Cypher CREATE ... RETURN matched endpoints."""
+    if result is None:
+        return False
+    try:
+        if hasattr(result, "has_next"):
+            return bool(result.has_next())
+        if hasattr(result, "get_next"):
+            try:
+                result.get_next()
+                return True
+            except Exception:
+                return False
+        try:
+            next(iter(result))
+            return True
+        except StopIteration:
+            return False
+        except TypeError:
+            return False
+    finally:
+        close = getattr(result, "close", None)
+        if callable(close):
+            close()
 
 
 @dataclass
@@ -233,7 +267,8 @@ class TransactionOrchestrator:
         stmt = (
             f"MATCH (a:{from_type} {{id: $from_id}}), "
             f"(b:{to_type} {{id: $to_id}}) "
-            f"CREATE (a)-[r:{edge_type} {{{attr_cols}}}]->(b)"
+            f"CREATE (a)-[r:{edge_type} {{{attr_cols}}}]->(b) "
+            "RETURN r.created_by_session_id"
         )
         params = dict(edge_attrs)
         params["from_id"] = from_id
@@ -244,7 +279,13 @@ class TransactionOrchestrator:
         stmt = stmt.replace("created_at: $created_at",
                             "created_at: timestamp($created_at)")
 
-        self.kuzu_conn.execute(stmt, params)
+        result = self.kuzu_conn.execute(stmt, params)
+        if not _result_has_row(result):
+            raise ValueError(
+                "edge was not created because the endpoint nodes were not "
+                f"matched: {edge_type} {from_type}({from_id}) -> "
+                f"{to_type}({to_id})"
+            )
 
         self.records.append(
             KuzuWriteRecord(
@@ -317,7 +358,7 @@ class TransactionOrchestrator:
         failed: list[KuzuWriteRecord] = []
 
         # 1. Delete edges created by this session (any rel type)
-        for rel_name, from_type, to_type in REL_TYPES:
+        for rel_name, from_type, to_type in _relationship_pairs():
             try:
                 self.kuzu_conn.execute(
                     f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
