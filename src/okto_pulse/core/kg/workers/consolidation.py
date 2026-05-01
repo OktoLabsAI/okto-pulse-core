@@ -64,6 +64,20 @@ AGENT_ID = "system:historical_consolidation"
 # ---------------------------------------------------------------------------
 
 
+def _architecture_design_to_dict(design) -> dict:
+    return {
+        "id": design.id,
+        "title": design.title,
+        "global_description": design.global_description,
+        "entities": design.entities or [],
+        "interfaces": design.interfaces or [],
+        "diagrams": design.diagrams or [],
+        "version": design.version,
+        "source_ref": design.source_ref,
+        "source_version": design.source_version,
+    }
+
+
 def _spec_to_dict(spec: Spec) -> dict:
     """Serialise a Spec row into the dict shape DeterministicWorker expects.
     Mirrors the JSON emitted by the Spec API routes so unit tests run under
@@ -79,6 +93,10 @@ def _spec_to_dict(spec: Spec) -> dict:
         "business_rules": spec.business_rules or [],
         "test_scenarios": spec.test_scenarios or [],
         "api_contracts": spec.api_contracts or [],
+        "architecture_designs": [
+            _architecture_design_to_dict(design)
+            for design in (getattr(spec, "architecture_designs", None) or [])
+        ],
     }
 
 
@@ -106,6 +124,10 @@ def _card_to_dict(card) -> dict:
         "origin_task_id": getattr(card, "origin_task_id", None),
         "priority": getattr(priority, "value", priority) if priority is not None else None,
         "severity": getattr(severity, "value", severity) if severity is not None else None,
+        "architecture_designs": [
+            _architecture_design_to_dict(design)
+            for design in (getattr(card, "architecture_designs", None) or [])
+        ],
     }
 
 
@@ -165,14 +187,22 @@ async def _process_queue_entry(
     Returns True on success, False on failure."""
 
     if entry.artifact_type == "spec":
-        result = await db.execute(select(Spec).where(Spec.id == entry.artifact_id))
+        result = await db.execute(
+            select(Spec)
+            .options(selectinload(Spec.architecture_designs))
+            .where(Spec.id == entry.artifact_id)
+        )
     elif entry.artifact_type == "sprint":
         result = await db.execute(
             select(Sprint).options(selectinload(Sprint.spec)).where(Sprint.id == entry.artifact_id)
         )
     elif entry.artifact_type == "card":
         from okto_pulse.core.models.db import Card
-        result = await db.execute(select(Card).where(Card.id == entry.artifact_id))
+        result = await db.execute(
+            select(Card)
+            .options(selectinload(Card.architecture_designs))
+            .where(Card.id == entry.artifact_id)
+        )
     elif entry.artifact_type == "refinement":
         # Spec eaf78891 (Ideação #2): refinement is accepted as a no-op.
         # Logged + treated as success so the queue entry is cleared without

@@ -37,6 +37,13 @@ from okto_pulse.core.services.main import (
     SpecQAService,
     SpecService,
 )
+from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
+from okto_pulse.core.services.architecture import (
+    ArchitectureDesignRepository,
+    ArchitectureDiagramAdapterRegistry,
+    ArchitectureDiagramStore,
+    ArchitecturePropagationService,
+)
 
 
 import uuid as _uuid
@@ -296,6 +303,113 @@ def _auth_error() -> str:
 
 def _perm_error(msg: str) -> str:
     return json.dumps({"error": msg})
+
+
+def _mcp_check_permission(
+    permissions: Any,
+    granular_permission: str,
+    legacy_permission: str | None = None,
+) -> str | None:
+    """Check granular flags while keeping legacy flat permissions working."""
+    if permissions is None:
+        return None
+
+    from okto_pulse.core.infra.permissions import PermissionSet
+
+    if isinstance(permissions, PermissionSet):
+        return permissions.check(granular_permission)
+    if granular_permission in permissions:
+        return None
+    if legacy_permission and legacy_permission in permissions:
+        return None
+    return f"Permission denied: requires '{granular_permission}'"
+
+
+def _mcp_architecture_legacy_permission(parent_type: str, action: str) -> str:
+    if action == "read":
+        return Permissions.BOARD_READ
+    if parent_type == "card":
+        return Permissions.CARDS_UPDATE
+    return Permissions.SPECS_UPDATE
+
+
+def _mcp_check_architecture_permission(
+    permissions: Any,
+    parent_type: str,
+    action: str,
+) -> str | None:
+    return _mcp_check_permission(
+        permissions,
+        f"{parent_type}.architecture.{action}",
+        _mcp_architecture_legacy_permission(parent_type, action),
+    )
+
+
+def _mcp_check_architecture_copy_permission(permissions: Any) -> str | None:
+    return _mcp_check_permission(
+        permissions,
+        "card.copy_from_spec.architecture",
+        Permissions.CARDS_UPDATE,
+    )
+
+
+def _flag_enabled(value: str) -> bool:
+    return str(value).lower() in ("true", "1", "yes")
+
+
+def _dump_model(value: Any) -> dict[str, Any]:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return value
+
+
+def _parse_json_arg(value: Any, default: Any) -> tuple[Any, str | None]:
+    if value is None or value == "":
+        return default, None
+    if isinstance(value, (dict, list)):
+        return value, None
+    try:
+        return json.loads(value), None
+    except Exception as exc:
+        return None, f"Invalid JSON argument: {exc}"
+
+
+async def _mcp_require_architecture_mutable(db, design_id: str) -> tuple[Any | None, str | None]:
+    from okto_pulse.core.models.db import ArchitectureDesign, Spec
+
+    design = await db.get(ArchitectureDesign, design_id)
+    if not design:
+        return None, "Architecture design not found"
+    if design.parent_type == "spec":
+        spec = await db.get(Spec, design.spec_id)
+        if not spec:
+            return None, "Spec not found"
+        current_id = getattr(spec, "current_validation_id", None)
+        validations = getattr(spec, "validations", None) or []
+        current = next((item for item in validations if item.get("id") == current_id), None)
+        if current_id and current and current.get("outcome") == "success":
+            return None, "Spec is locked because validation passed. Move it back to draft or approved to edit architecture."
+    return design, None
+
+
+async def _mcp_architecture_for_parent(
+    db,
+    parent_type: str,
+    parent_id: str,
+    *,
+    include_payloads: bool = False,
+    permissions: Any = None,
+) -> list[dict[str, Any]]:
+    if permissions is not None:
+        action = "render" if include_payloads else "read"
+        if _mcp_check_architecture_permission(permissions, parent_type, action):
+            return []
+
+    repo = ArchitectureDesignRepository(db)
+    designs = await repo.list(parent_type, parent_id, include_payloads=include_payloads)
+    if include_payloads:
+        return [_dump_model(repo.to_response(design)) for design in designs]
+    return [_dump_model(repo.to_response(design)) for design in designs]
 
 
 # Maximum bytes loadable via file_path/file_url (16 MB). Prevents runaway memory on large files.
@@ -1699,6 +1813,7 @@ async def okto_pulse_get_task_context(
     include_mockups: str = "true",
     include_qa: str = "true",
     include_comments: str = "true",
+    include_architecture: str = "true",
     include_superseded: str = "false",
 ) -> str:
     """
@@ -1717,6 +1832,7 @@ async def okto_pulse_get_task_context(
         include_mockups: Include screen mockups from card and spec (default "true")
         include_qa: Include Q&A items from card and spec (default "true")
         include_comments: Include card comments (default "true")
+        include_architecture: Include Architecture Designs from card and spec (default "true")
 
     Returns:
         JSON with complete task context: card details + spec requirements + linked artifacts
@@ -1729,11 +1845,12 @@ async def okto_pulse_get_task_context(
     if perm_err:
         return _perm_error(perm_err)
 
-    _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
-    _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
-    _inc_qa = include_qa.lower() in ("true", "1", "yes")
-    _inc_comments = include_comments.lower() in ("true", "1", "yes")
-    _inc_superseded = include_superseded.lower() in ("true", "1", "yes")
+    _inc_kb = _flag_enabled(include_knowledge)
+    _inc_mockups = _flag_enabled(include_mockups)
+    _inc_qa = _flag_enabled(include_qa)
+    _inc_comments = _flag_enabled(include_comments)
+    _inc_architecture = _flag_enabled(include_architecture)
+    _inc_superseded = _flag_enabled(include_superseded)
 
     async with get_db_for_mcp() as db:
         card_service = CardService(db)
@@ -1773,6 +1890,11 @@ async def okto_pulse_get_task_context(
 
         if _inc_mockups and card.screen_mockups:
             result["card"]["screen_mockups"] = card.screen_mockups
+
+        if _inc_architecture:
+            result["card"]["architecture_designs"] = await _mcp_architecture_for_parent(
+                db, "card", card_id, permissions=ctx.permissions
+            )
 
         if _inc_qa:
             result["card"]["qa_items"] = [
@@ -1840,6 +1962,11 @@ async def okto_pulse_get_task_context(
 
                 if _inc_mockups and spec.screen_mockups:
                     spec_data["screen_mockups"] = spec.screen_mockups
+
+                if _inc_architecture:
+                    spec_data["architecture_designs"] = await _mcp_architecture_for_parent(
+                        db, "spec", spec.id, permissions=ctx.permissions
+                    )
 
                 if _inc_qa:
                     spec_data["qa_items"] = [
@@ -3278,6 +3405,7 @@ async def okto_pulse_get_ideation_context(
     include_knowledge: str = "true",
     include_mockups: str = "true",
     include_qa: str = "true",
+    include_architecture: str = "true",
 ) -> str:
     """
     Get the FULL consolidated context of an ideation. Returns all data needed
@@ -3291,6 +3419,7 @@ async def okto_pulse_get_ideation_context(
         include_knowledge: Include knowledge base entries (default "true")
         include_mockups: Include screen mockups (default "true")
         include_qa: Include Q&A items (default "true")
+        include_architecture: Include Architecture Designs (default "true")
 
     Returns:
         JSON with complete ideation context: details + Q&A + mockups + KBs + refinements + specs + evaluation
@@ -3303,9 +3432,10 @@ async def okto_pulse_get_ideation_context(
     if perm_err:
         return _perm_error(perm_err)
 
-    _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
-    _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
-    _inc_qa = include_qa.lower() in ("true", "1", "yes")
+    _inc_kb = _flag_enabled(include_knowledge)
+    _inc_mockups = _flag_enabled(include_mockups)
+    _inc_qa = _flag_enabled(include_qa)
+    _inc_architecture = _flag_enabled(include_architecture)
 
     async with get_db_for_mcp() as db:
         service = IdeationService(db)
@@ -3358,6 +3488,11 @@ async def okto_pulse_get_ideation_context(
 
         if _inc_mockups and hasattr(ideation, "screen_mockups") and ideation.screen_mockups:
             result["screen_mockups"] = ideation.screen_mockups
+
+        if _inc_architecture:
+            result["architecture_designs"] = await _mcp_architecture_for_parent(
+                db, "ideation", ideation_id, permissions=ctx.permissions
+            )
 
         if _inc_kb and hasattr(ideation, "knowledge_bases"):
             result["knowledge_bases"] = [
@@ -4345,6 +4480,7 @@ async def okto_pulse_get_refinement_context(
     include_knowledge: str = "true",
     include_mockups: str = "true",
     include_qa: str = "true",
+    include_architecture: str = "true",
 ) -> str:
     """
     Get the FULL consolidated context of a refinement. Returns all data needed
@@ -4358,6 +4494,7 @@ async def okto_pulse_get_refinement_context(
         include_knowledge: Include knowledge base entries (default "true")
         include_mockups: Include screen mockups (default "true")
         include_qa: Include Q&A items (default "true")
+        include_architecture: Include Architecture Designs (default "true")
 
     Returns:
         JSON with complete refinement context: details + scope + Q&A + mockups + KBs + derived specs
@@ -4370,9 +4507,10 @@ async def okto_pulse_get_refinement_context(
     if perm_err:
         return _perm_error(perm_err)
 
-    _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
-    _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
-    _inc_qa = include_qa.lower() in ("true", "1", "yes")
+    _inc_kb = _flag_enabled(include_knowledge)
+    _inc_mockups = _flag_enabled(include_mockups)
+    _inc_qa = _flag_enabled(include_qa)
+    _inc_architecture = _flag_enabled(include_architecture)
 
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
@@ -4422,6 +4560,11 @@ async def okto_pulse_get_refinement_context(
 
         if _inc_mockups and hasattr(refinement, "screen_mockups") and refinement.screen_mockups:
             result["screen_mockups"] = refinement.screen_mockups
+
+        if _inc_architecture:
+            result["architecture_designs"] = await _mcp_architecture_for_parent(
+                db, "refinement", refinement_id, permissions=ctx.permissions
+            )
 
         if _inc_kb and hasattr(refinement, "knowledge_bases"):
             result["knowledge_bases"] = [
@@ -5218,6 +5361,7 @@ async def okto_pulse_get_spec_context(
     include_knowledge: str = "true",
     include_mockups: str = "true",
     include_qa: str = "true",
+    include_architecture: str = "true",
     include_superseded: str = "false",
 ) -> str:
     """
@@ -5235,6 +5379,7 @@ async def okto_pulse_get_spec_context(
         include_knowledge: Include knowledge base entries (default "true")
         include_mockups: Include screen mockups (default "true")
         include_qa: Include Q&A items (default "true")
+        include_architecture: Include Architecture Designs (default "true")
         include_superseded: When "false" (default), the `decisions` array
             returns only entries with status="active" — noise reduction for
             the common "what rules today?" path. Set to "true" to get the
@@ -5252,10 +5397,11 @@ async def okto_pulse_get_spec_context(
     if perm_err:
         return _perm_error(perm_err)
 
-    _inc_kb = include_knowledge.lower() in ("true", "1", "yes")
-    _inc_mockups = include_mockups.lower() in ("true", "1", "yes")
-    _inc_qa = include_qa.lower() in ("true", "1", "yes")
-    _inc_superseded = include_superseded.lower() in ("true", "1", "yes")
+    _inc_kb = _flag_enabled(include_knowledge)
+    _inc_mockups = _flag_enabled(include_mockups)
+    _inc_qa = _flag_enabled(include_qa)
+    _inc_architecture = _flag_enabled(include_architecture)
+    _inc_superseded = _flag_enabled(include_superseded)
 
     async with get_db_for_mcp() as db:
         spec_service = SpecService(db)
@@ -5323,6 +5469,11 @@ async def okto_pulse_get_spec_context(
 
         if _inc_mockups and spec.screen_mockups:
             result["screen_mockups"] = spec.screen_mockups
+
+        if _inc_architecture:
+            result["architecture_designs"] = await _mcp_architecture_for_parent(
+                db, "spec", spec_id, permissions=ctx.permissions
+            )
 
         if _inc_qa:
             result["qa_items"] = [
@@ -6415,6 +6566,438 @@ async def okto_pulse_restore_tree(
 
 
 # ==================== SPEC-TO-CARD COPY TOOLS ====================
+
+
+@mcp.tool()
+async def okto_pulse_list_architecture_designs(
+    board_id: str,
+    parent_type: str,
+    parent_id: str,
+    include_payloads: str = "false",
+) -> str:
+    """
+    List Architecture Designs for an ideation, refinement, spec, or card.
+
+    Args:
+        board_id: Board ID
+        parent_type: One of ideation, refinement, spec, card
+        parent_id: Parent entity ID
+        include_payloads: Include heavy diagram adapter payloads (default false)
+
+    Returns:
+        JSON with architecture designs. Payloads are omitted by default.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    action = "render" if _flag_enabled(include_payloads) else "read"
+    perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, action)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        repo = ArchitectureDesignRepository(db)
+        try:
+            parent_model, _ = repo._parent_config(parent_type)
+        except ValueError as exc:
+            return json.dumps({"error": str(exc)})
+        parent = await db.get(parent_model, parent_id)
+        if not parent or getattr(parent, "board_id") != board_id:
+            return json.dumps({"error": f"{parent_type} not found"})
+        designs = await repo.list(parent_type, parent_id, include_payloads=_flag_enabled(include_payloads))
+        payload = [
+            _dump_model(repo.to_response(design) if _flag_enabled(include_payloads) else repo.to_summary(design))
+            for design in designs
+        ]
+        await db.commit()
+        return json.dumps({"success": True, "architecture_designs": payload}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_get_architecture_design(
+    board_id: str,
+    design_id: str,
+    include_payloads: str = "false",
+) -> str:
+    """
+    Get one Architecture Design by ID.
+
+    Args:
+        board_id: Board ID
+        design_id: Architecture Design ID
+        include_payloads: Include heavy diagram adapter payloads (default false)
+
+    Returns:
+        JSON with the architecture design envelope.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.get(design_id, include_payloads=_flag_enabled(include_payloads))
+        if not design or design.board_id != board_id:
+            return json.dumps({"error": "Architecture design not found"})
+        action = "render" if _flag_enabled(include_payloads) else "read"
+        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, action)
+        if perm_err:
+            return _perm_error(perm_err)
+        payload = _dump_model(repo.to_response(design))
+        await db.commit()
+        return json.dumps({"success": True, "architecture_design": payload}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_add_architecture_design(
+    board_id: str,
+    parent_type: str,
+    parent_id: str,
+    title: str,
+    global_description: str,
+    entities: list[dict] | str = "",
+    interfaces: list[dict] | str = "",
+    diagrams: list[dict] | str = "",
+) -> str:
+    """
+    Create an Architecture Design on ideation, refinement, spec, or card.
+
+    Args:
+        board_id: Board ID
+        parent_type: One of ideation, refinement, spec, card
+        parent_id: Parent entity ID
+        title: Design title
+        global_description: Required global architecture description
+        entities: JSON array or native list of entity descriptions
+        interfaces: JSON array or native list of interface/contract descriptions
+        diagrams: JSON array or native list of diagrams; adapter_payload is stored separately
+
+    Returns:
+        JSON with the created Architecture Design.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, "create")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    ents, err = _parse_json_arg(entities, [])
+    if err:
+        return json.dumps({"error": f"Invalid entities: {err}"})
+    ifaces, err = _parse_json_arg(interfaces, [])
+    if err:
+        return json.dumps({"error": f"Invalid interfaces: {err}"})
+    diags, err = _parse_json_arg(diagrams, [])
+    if err:
+        return json.dumps({"error": f"Invalid diagrams: {err}"})
+
+    async with get_db_for_mcp() as db:
+        repo = ArchitectureDesignRepository(db)
+        try:
+            parent_model, _ = repo._parent_config(parent_type)
+        except ValueError as exc:
+            return json.dumps({"error": str(exc)})
+        parent = await db.get(parent_model, parent_id)
+        if not parent or getattr(parent, "board_id") != board_id:
+            return json.dumps({"error": f"{parent_type} not found"})
+        if parent_type == "spec":
+            current_id = getattr(parent, "current_validation_id", None)
+            current = next((item for item in (getattr(parent, "validations", None) or []) if item.get("id") == current_id), None)
+            if current_id and current and current.get("outcome") == "success":
+                return json.dumps({"error": "Spec is locked because validation passed. Move it back to draft or approved to edit architecture."})
+        try:
+            design = await repo.create(
+                parent_type,
+                parent_id,
+                ArchitectureDesignCreate(
+                    title=title,
+                    global_description=global_description,
+                    entities=ents,
+                    interfaces=ifaces,
+                    diagrams=diags,
+                ),
+                ctx.agent_id,
+            )
+            payload = _dump_model(repo.to_response(design))
+            await db.commit()
+            return json.dumps({"success": True, "architecture_design": payload}, default=str)
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
+
+
+@mcp.tool()
+async def okto_pulse_update_architecture_design(
+    board_id: str,
+    design_id: str,
+    title: str = "",
+    global_description: str = "",
+    entities: list[dict] | str = "",
+    interfaces: list[dict] | str = "",
+    diagrams: list[dict] | str = "",
+    change_summary: str = "",
+) -> str:
+    """
+    Update an Architecture Design. Omitted fields are left unchanged.
+
+    Args:
+        board_id: Board ID
+        design_id: Architecture Design ID
+        title: Optional new title
+        global_description: Optional new global description
+        entities: Optional JSON array/native list
+        interfaces: Optional JSON array/native list
+        diagrams: Optional JSON array/native list
+        change_summary: Optional version summary
+
+    Returns:
+        JSON with the updated Architecture Design.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    patch: dict[str, Any] = {}
+    if title:
+        patch["title"] = title
+    if global_description:
+        patch["global_description"] = global_description
+    for field_name, raw in (("entities", entities), ("interfaces", interfaces), ("diagrams", diagrams)):
+        parsed, err = _parse_json_arg(raw, None)
+        if err:
+            return json.dumps({"error": f"Invalid {field_name}: {err}"})
+        if parsed is not None:
+            patch[field_name] = parsed
+    if change_summary:
+        patch["change_summary"] = change_summary
+    if not patch:
+        return json.dumps({"error": "No fields provided for update"})
+
+    async with get_db_for_mcp() as db:
+        design, err = await _mcp_require_architecture_mutable(db, design_id)
+        if err:
+            return json.dumps({"error": err})
+        if design.board_id != board_id:
+            return json.dumps({"error": "Architecture design not found"})
+        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "edit")
+        if perm_err:
+            return _perm_error(perm_err)
+        repo = ArchitectureDesignRepository(db)
+        try:
+            updated = await repo.update(design_id, ArchitectureDesignUpdate(**patch), ctx.agent_id)
+            payload = _dump_model(repo.to_response(updated))
+            await db.commit()
+            return json.dumps({"success": True, "architecture_design": payload}, default=str)
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
+
+
+@mcp.tool()
+async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -> str:
+    """
+    Delete an Architecture Design.
+
+    Args:
+        board_id: Board ID
+        design_id: Architecture Design ID
+
+    Returns:
+        JSON with success true when deleted.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        design, err = await _mcp_require_architecture_mutable(db, design_id)
+        if err:
+            return json.dumps({"error": err})
+        if design.board_id != board_id:
+            return json.dumps({"error": "Architecture design not found"})
+        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "delete")
+        if perm_err:
+            return _perm_error(perm_err)
+        repo = ArchitectureDesignRepository(db)
+        deleted = await repo.delete(design_id, ctx.agent_id)
+        await db.commit()
+        return json.dumps({"success": bool(deleted)})
+
+
+@mcp.tool()
+async def okto_pulse_import_excalidraw_architecture_diagram(
+    board_id: str,
+    design_id: str,
+    title: str,
+    payload_json: dict | str,
+    diagram_type: str = "other",
+    replace_diagram_id: str = "",
+    description: str = "",
+    order_index: int = 0,
+    change_summary: str = "",
+) -> str:
+    """
+    Import an Excalidraw JSON scene into an Architecture Design.
+
+    Args:
+        board_id: Board ID
+        design_id: Architecture Design ID
+        title: Diagram title
+        payload_json: Excalidraw JSON object or JSON string
+        diagram_type: context/container/component/sequence/deployment/data_flow/other
+        replace_diagram_id: Existing diagram ID to replace; empty appends a new diagram
+        description: Optional diagram description
+        order_index: Diagram order
+        change_summary: Optional version summary
+
+    Returns:
+        JSON with the updated Architecture Design.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    payload, err = _parse_json_arg(payload_json, None)
+    if err or payload is None:
+        return json.dumps({"error": f"Invalid payload_json: {err or 'payload is required'}"})
+
+    async with get_db_for_mcp() as db:
+        design, err = await _mcp_require_architecture_mutable(db, design_id)
+        if err:
+            return json.dumps({"error": err})
+        if design.board_id != board_id:
+            return json.dumps({"error": "Architecture design not found"})
+        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "import")
+        if perm_err:
+            return _perm_error(perm_err)
+        diagrams = [dict(item) for item in design.diagrams or []]
+        imported = {
+            "title": title,
+            "diagram_type": diagram_type,
+            "format": "excalidraw_json",
+            "description": description or None,
+            "order_index": order_index,
+            "adapter_payload": payload,
+        }
+        if replace_diagram_id:
+            index = next((idx for idx, item in enumerate(diagrams) if item.get("id") == replace_diagram_id), -1)
+            if index < 0:
+                return json.dumps({"error": "Diagram not found"})
+            diagrams[index] = {**diagrams[index], **imported, "id": replace_diagram_id}
+        else:
+            diagrams.append(imported)
+        repo = ArchitectureDesignRepository(db)
+        try:
+            updated = await repo.update(
+                design_id,
+                ArchitectureDesignUpdate(
+                    diagrams=diagrams,
+                    change_summary=change_summary or "Imported Excalidraw diagram",
+                ),
+                ctx.agent_id,
+            )
+            payload_out = _dump_model(repo.to_response(updated))
+            await db.commit()
+            return json.dumps({"success": True, "architecture_design": payload_out}, default=str)
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
+
+
+@mcp.tool()
+async def okto_pulse_dump_architecture_diagram(
+    board_id: str,
+    design_id: str,
+    diagram_id: str,
+) -> str:
+    """
+    Load and dump a diagram payload through its ArchitectureDiagramAdapter.
+
+    Args:
+        board_id: Board ID
+        design_id: Architecture Design ID
+        diagram_id: Diagram ID inside the design
+
+    Returns:
+        JSON with raw payload and adapter dump string.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    async with get_db_for_mcp() as db:
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.get(design_id)
+        if not design or design.board_id != board_id:
+            return json.dumps({"error": "Architecture design not found"})
+        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "render")
+        if perm_err:
+            return _perm_error(perm_err)
+        diagram = next((item for item in design.diagrams or [] if item.get("id") == diagram_id), None)
+        if not diagram or not diagram.get("adapter_payload_ref"):
+            return json.dumps({"error": "Diagram payload not found"})
+        store = ArchitectureDiagramStore(db)
+        try:
+            payload = await store.load_payload(diagram["adapter_payload_ref"])
+            adapter = ArchitectureDiagramAdapterRegistry().get(diagram.get("format") or "raw")
+            await db.commit()
+            return json.dumps(
+                {
+                    "success": True,
+                    "design_id": design_id,
+                    "diagram_id": diagram_id,
+                    "format": diagram.get("format"),
+                    "payload": payload,
+                    "dump": adapter.dump(payload),
+                },
+                default=str,
+            )
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
+
+
+@mcp.tool()
+async def okto_pulse_copy_architecture_to_card(
+    board_id: str,
+    spec_id: str,
+    card_id: str,
+    design_ids: list[str] | str = "",
+) -> str:
+    """
+    Copy Architecture Designs from a spec to a card/task as deep-copy snapshots.
+
+    Args:
+        board_id: Board ID
+        spec_id: Source spec ID
+        card_id: Target card ID
+        design_ids: Optional multi-value design IDs to copy; empty copies all
+
+    Returns:
+        JSON with copied Architecture Designs.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = _mcp_check_architecture_copy_permission(ctx.permissions)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    try:
+        ids = coerce_to_list_str(design_ids) if design_ids else None
+    except ValueError as exc:
+        return json.dumps({"error": f"Invalid design_ids: {exc}"})
+
+    async with get_db_for_mcp() as db:
+        service = ArchitecturePropagationService(db)
+        try:
+            designs = await service.copy_spec_to_card(spec_id, card_id, ctx.agent_id, design_ids=ids)
+            repo = ArchitectureDesignRepository(db)
+            payload = [_dump_model(repo.to_response(design)) for design in designs]
+            await db.commit()
+            return json.dumps({"success": True, "copied": len(payload), "architecture_designs": payload}, default=str)
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
 
 
 @mcp.tool()

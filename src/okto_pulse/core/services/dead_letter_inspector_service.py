@@ -16,6 +16,34 @@ from okto_pulse.core.kg.workers.dead_letter import list_dead_letter
 from okto_pulse.core.models.db import ConsolidationDeadLetter
 
 
+def _normalise_errors(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        normalised: list[dict[str, Any]] = []
+        for index, item in enumerate(value, start=1):
+            if isinstance(item, dict):
+                normalised.append(item)
+            else:
+                normalised.append({
+                    "attempt": index,
+                    "occurred_at": "",
+                    "error_type": "LegacyError",
+                    "message": str(item),
+                    "traceback": None,
+                })
+        return normalised
+    if isinstance(value, dict):
+        return [value]
+    if value:
+        return [{
+            "attempt": 1,
+            "occurred_at": "",
+            "error_type": "LegacyError",
+            "message": str(value),
+            "traceback": None,
+        }]
+    return []
+
+
 def _row_to_dict(row: ConsolidationDeadLetter) -> dict[str, Any]:
     return {
         "id": row.id,
@@ -24,7 +52,7 @@ def _row_to_dict(row: ConsolidationDeadLetter) -> dict[str, Any]:
         "artifact_id": row.artifact_id,
         "original_queue_id": row.original_queue_id,
         "attempts": row.attempts,
-        "errors": row.errors or [],
+        "errors": _normalise_errors(row.errors),
         "dead_lettered_at": (
             row.dead_lettered_at.isoformat()
             if row.dead_lettered_at

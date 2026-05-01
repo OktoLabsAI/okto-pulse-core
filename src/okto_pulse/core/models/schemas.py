@@ -336,6 +336,201 @@ class Decision(BaseModel):
 
 
 # ============================================================================
+# Architecture Design Schemas
+# ============================================================================
+
+
+ArchitectureParentType = Literal["ideation", "refinement", "spec", "card"]
+ArchitectureDiagramType = Literal[
+    "context",
+    "container",
+    "component",
+    "sequence",
+    "deployment",
+    "data_flow",
+    "other",
+]
+ArchitectureDiagramFormat = Literal[
+    "excalidraw_json",
+    "mermaid",
+    "svg",
+    "plantuml",
+    "c4",
+    "raw",
+]
+
+
+class ArchitectureEntity(BaseModel):
+    """Structured architecture entity description."""
+
+    id: str | None = None
+    name: str = Field(..., min_length=1, max_length=255)
+    entity_type: str | None = None
+    responsibility: str | None = None
+    boundaries: str | None = None
+    technologies: list[str] = Field(default_factory=list)
+    relationships: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class ArchitectureInterface(BaseModel):
+    """Structured architecture interface or contract boundary."""
+
+    id: str | None = None
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = None
+    participants: list[str] = Field(default_factory=list)
+    direction: str | None = None
+    protocol: str | None = None
+    contract_type: str | None = None
+    request_schema: dict[str, Any] | None = None
+    response_schema: dict[str, Any] | None = None
+    event_schema: dict[str, Any] | None = None
+    error_contract: dict[str, Any] | list[dict[str, Any]] | str | None = None
+    schema_ref: str | None = None
+    notes: str | None = None
+
+
+class ArchitectureDiagramPayloadRef(BaseModel):
+    """Reference to a separately stored diagram payload."""
+
+    adapter_payload_ref: str | None = None
+    content_hash: str | None = None
+    size_bytes: int | None = None
+    storage_backend: str | None = None
+    storage_key: str | None = None
+
+
+class ArchitectureDiagram(BaseModel):
+    """Diagram metadata embedded in the architecture envelope."""
+
+    id: str | None = None
+    title: str = Field(..., min_length=1, max_length=255)
+    diagram_type: ArchitectureDiagramType = "other"
+    format: ArchitectureDiagramFormat = "raw"
+    adapter_payload_ref: str | None = None
+    adapter_payload: dict[str, Any] | list[Any] | str | None = None
+    description: str | None = None
+    order_index: int = 0
+    content_hash: str | None = None
+    preview_ref: str | None = None
+    render_metadata: dict[str, Any] | None = None
+    size_bytes: int | None = None
+    source_diagram_id: str | None = None
+    source_payload_ref: str | None = None
+
+
+class ArchitectureDesignBase(BaseSchema):
+    """Shared architecture design fields."""
+
+    title: str = Field(..., min_length=1, max_length=500)
+    global_description: str = Field(..., min_length=1)
+    entities: list[ArchitectureEntity] = Field(default_factory=list)
+    interfaces: list[ArchitectureInterface] = Field(default_factory=list)
+    diagrams: list[ArchitectureDiagram] = Field(default_factory=list)
+    source_ref: str | None = None
+    source_version: int | None = None
+    source_design_id: str | None = None
+    stale: bool = False
+    breaking_change_flag: bool = False
+    requires_arch_review: bool = False
+
+    @field_validator("global_description")
+    @classmethod
+    def _description_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("global_description cannot be blank")
+        return value
+
+
+class ArchitectureDesignCreate(ArchitectureDesignBase):
+    """Request body for creating an Architecture Design on a parent."""
+
+    pass
+
+
+class ArchitectureDesignUpdate(BaseModel):
+    """Patch body for Architecture Design updates."""
+
+    title: str | None = Field(None, min_length=1, max_length=500)
+    global_description: str | None = Field(None, min_length=1)
+    entities: list[ArchitectureEntity] | None = None
+    interfaces: list[ArchitectureInterface] | None = None
+    diagrams: list[ArchitectureDiagram] | None = None
+    stale: bool | None = None
+    breaking_change_flag: bool | None = None
+    requires_arch_review: bool | None = None
+    source_ref: str | None = None
+    source_version: int | None = None
+    source_design_id: str | None = None
+    change_summary: str | None = None
+
+    @field_validator("global_description")
+    @classmethod
+    def _optional_description_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("global_description cannot be blank")
+        return value
+
+
+class ArchitectureDesignSummary(BaseSchema):
+    """Lightweight architecture design summary without heavy diagram payloads."""
+
+    id: str
+    board_id: str
+    parent_type: ArchitectureParentType
+    parent_id: str
+    title: str
+    version: int
+    source_ref: str | None = None
+    source_version: int | None = None
+    stale: bool = False
+    breaking_change_flag: bool = False
+    requires_arch_review: bool = False
+    diagrams_count: int = 0
+    adapter_payload_refs: list[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class ArchitectureDesignResponse(ArchitectureDesignBase):
+    """Full Architecture Design response."""
+
+    id: str
+    board_id: str
+    parent_type: ArchitectureParentType
+    parent_id: str
+    version: int
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ArchitectureDiagramPayloadResponse(BaseSchema):
+    """Response for a loaded diagram payload."""
+
+    design_id: str
+    diagram_id: str
+    format: ArchitectureDiagramFormat
+    content_hash: str
+    size_bytes: int
+    payload: dict[str, Any] | list[Any] | str | None
+
+
+class ArchitectureDiffResponse(BaseModel):
+    """Structural diff between two architecture design versions."""
+
+    design_id: str
+    from_version: int
+    to_version: int
+    changed_fields: list[str] = Field(default_factory=list)
+    semantic_changes: list[dict[str, Any]] = Field(default_factory=list)
+    layout_changes: list[dict[str, Any]] = Field(default_factory=list)
+    breaking_change_flag: bool = False
+    requires_arch_review: bool = False
+
+
+# ============================================================================
 # Ideation Schemas
 # ============================================================================
 
@@ -390,6 +585,7 @@ class IdeationSummary(BaseSchema):
     created_at: datetime
     updated_at: datetime
     labels: list[str] | None
+    architecture_designs: list[ArchitectureDesignSummary] = []
     archived: bool = False
     pre_archive_status: str | None = None
 
@@ -818,6 +1014,7 @@ class SpecSummary(BaseSchema):
     labels: list[str] | None
     ideation_id: str | None = None
     refinement_id: str | None = None
+    architecture_designs: list[ArchitectureDesignSummary] = []
     archived: bool = False
     pre_archive_status: str | None = None
 
@@ -845,6 +1042,7 @@ class IdeationResponse(BaseSchema):
     pre_archive_status: str | None = None
     refinements: list[RefinementSummary] = []
     specs: list[SpecSummary] = []
+    architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[IdeationQAResponse] = []
 
 
@@ -872,6 +1070,7 @@ class RefinementResponse(BaseSchema):
     pre_archive_status: str | None = None
     specs: list[SpecSummary] = []
     knowledge_bases: list[RefinementKnowledgeSummary] = []
+    architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[RefinementQAResponse] = []
 
 
@@ -1049,6 +1248,7 @@ class SpecResponse(BaseSchema):
     refinement_id: str | None = None
     cards: list[CardSummaryForSpec] = []
     knowledge_bases: list[SpecKnowledgeSummary] = []
+    architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[SpecQAResponse] = []
 
 
@@ -1155,6 +1355,7 @@ class CardResponse(BaseSchema):
     screen_mockups: list[ScreenMockup] | None = None
     knowledge_bases: list[dict] | None = None
     conclusions: list[ConclusionEntry] | None = None
+    architecture_designs: list[ArchitectureDesignSummary] = []
     attachments: list[AttachmentResponse] = []
     qa_items: list[QAResponse] = []
     comments: list[CommentResponse] = []
@@ -1190,6 +1391,7 @@ class CardSummary(BaseSchema):
     due_date: datetime | None
     labels: list[str] | None
     test_scenario_ids: list[str] | None = None
+    architecture_designs: list[ArchitectureDesignSummary] = []
     # Bug card fields (for kanban display)
     card_type: str = "normal"
     origin_task_id: str | None = None

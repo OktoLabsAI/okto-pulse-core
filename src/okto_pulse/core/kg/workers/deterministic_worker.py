@@ -286,6 +286,153 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _arch_value(value: Any) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)
+
+
+def _arch_lines(*items: tuple[str, Any]) -> str:
+    lines = []
+    for label, value in items:
+        rendered = _arch_value(value)
+        if rendered:
+            lines.append(f"{label}: {rendered}")
+    return "\n".join(lines)
+
+
+def _architecture_entity_content(entity: dict[str, Any]) -> str:
+    return _arch_lines(
+        ("Type", entity.get("entity_type")),
+        ("Responsibility", entity.get("responsibility")),
+        ("Boundaries", entity.get("boundaries")),
+        ("Technologies", entity.get("technologies")),
+        ("Relationships", entity.get("relationships")),
+        ("Notes", entity.get("notes")),
+    )
+
+
+def _architecture_interface_content(interface: dict[str, Any]) -> str:
+    return _arch_lines(
+        ("Description", interface.get("description")),
+        ("Participants", interface.get("participants")),
+        ("Direction", interface.get("direction")),
+        ("Protocol", interface.get("protocol")),
+        ("Contract type", interface.get("contract_type")),
+        ("Request schema", interface.get("request_schema")),
+        ("Response schema", interface.get("response_schema")),
+        ("Event schema", interface.get("event_schema")),
+        ("Error contract", interface.get("error_contract")),
+        ("Schema ref", interface.get("schema_ref")),
+        ("Notes", interface.get("notes")),
+    )
+
+
+def _append_architecture_designs(
+    result: WorkerResult,
+    *,
+    prefix: str,
+    artifact_ref: str,
+    parent_candidate_id: str,
+    raw_parts: list[str],
+    architecture_designs: list[Any],
+) -> None:
+    """Project Architecture Design into existing KG node types.
+
+    v1 intentionally avoids a new Kuzu schema. Architecture designs and their
+    entities become Entity nodes; interfaces/contracts become APIContract
+    nodes. The parent artifact owns all nodes through belongs_to edges.
+    """
+    for arch_index, raw_design in enumerate(architecture_designs or []):
+        if not isinstance(raw_design, dict):
+            continue
+        design_id = raw_design.get("id") or f"{arch_index}"
+        design_ref = f"architecture_design:{design_id}"
+        title = raw_design.get("title") or f"Architecture {arch_index + 1}"
+        description = raw_design.get("global_description") or ""
+        arch_cid = f"{prefix}_arch_{arch_index}"
+
+        raw_parts.extend([title, description])
+        result.nodes.append(EmittedNode(
+            candidate_id=arch_cid,
+            node_type="Entity",
+            title=title[:120],
+            content=description or title,
+            context=f"Architecture design attached to {artifact_ref}",
+            source_artifact_ref=design_ref,
+            source_confidence=1.0,
+        ))
+        result.edges.append(EmittedEdge(
+            candidate_id=f"{prefix}_belongs_arch_{arch_index}",
+            edge_type="belongs_to",
+            from_candidate_id=arch_cid,
+            to_candidate_id=parent_candidate_id,
+            confidence=1.0,
+            rule_id=f"belongs_to/architecture_design@{WORKER_VERSION}",
+        ))
+
+        for entity_index, raw_entity in enumerate(raw_design.get("entities") or []):
+            if not isinstance(raw_entity, dict):
+                continue
+            name = raw_entity.get("name") or f"Architecture entity {entity_index + 1}"
+            content = _architecture_entity_content(raw_entity)
+            raw_parts.extend([name, content])
+            entity_cid = f"{prefix}_arch_{arch_index}_entity_{entity_index}"
+            result.nodes.append(EmittedNode(
+                candidate_id=entity_cid,
+                node_type="Entity",
+                title=name[:120],
+                content=content or name,
+                source_artifact_ref=design_ref,
+                source_confidence=1.0,
+            ))
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_arch_{arch_index}_entity_{entity_index}",
+                edge_type="belongs_to",
+                from_candidate_id=entity_cid,
+                to_candidate_id=arch_cid,
+                confidence=1.0,
+                rule_id=f"belongs_to/architecture_entity@{WORKER_VERSION}",
+            ))
+
+        for interface_index, raw_interface in enumerate(raw_design.get("interfaces") or []):
+            if not isinstance(raw_interface, dict):
+                continue
+            name = raw_interface.get("name") or f"Architecture interface {interface_index + 1}"
+            content = _architecture_interface_content(raw_interface)
+            raw_parts.extend([name, content])
+            interface_cid = f"{prefix}_arch_{arch_index}_interface_{interface_index}"
+            result.nodes.append(EmittedNode(
+                candidate_id=interface_cid,
+                node_type="APIContract",
+                title=name[:120],
+                content=content or name,
+                source_artifact_ref=design_ref,
+                source_confidence=1.0,
+            ))
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_arch_{arch_index}_interface_{interface_index}",
+                edge_type="belongs_to",
+                from_candidate_id=interface_cid,
+                to_candidate_id=arch_cid,
+                confidence=1.0,
+                rule_id=f"belongs_to/architecture_interface@{WORKER_VERSION}",
+            ))
+
+        for diagram in raw_design.get("diagrams") or []:
+            if not isinstance(diagram, dict):
+                continue
+            raw_parts.append(_arch_lines(
+                ("Diagram", diagram.get("title")),
+                ("Type", diagram.get("diagram_type")),
+                ("Format", diagram.get("format")),
+                ("Description", diagram.get("description")),
+                ("Content hash", diagram.get("content_hash")),
+            ))
+
+
 class DeterministicWorker:
     """Stateless Layer 1 extractor.
 
@@ -548,6 +695,18 @@ class DeterministicWorker:
                     confidence=1.0,
                     rule_id=f"implements/fr_match@{WORKER_VERSION}",
                 ))
+
+        # 7b. Architecture Design light KG projection. No new Kuzu types are
+        # needed: architecture envelope/entities map to Entity, while
+        # interfaces/contracts map to APIContract.
+        _append_architecture_designs(
+            result,
+            prefix=prefix,
+            artifact_ref=artifact_ref,
+            parent_candidate_id=spec_entity_id,
+            raw_parts=raw_parts,
+            architecture_designs=spec.get("architecture_designs") or [],
+        )
 
         # 8a. Formalized decisions from spec.decisions[] (spec b66d2562) —
         #     structured entries win over the legacy markdown regex. Only
@@ -875,6 +1034,15 @@ class DeterministicWorker:
                 confidence=1.0,
                 rule_id=f"belongs_to/card_to_spec@{WORKER_VERSION}",
             ))
+
+        _append_architecture_designs(
+            result,
+            prefix=prefix,
+            artifact_ref=artifact_ref,
+            parent_candidate_id=card_cid,
+            raw_parts=raw_parts,
+            architecture_designs=card.get("architecture_designs") or [],
+        )
 
         raw = "\n---\n".join(p for p in raw_parts if p)
         result.raw_content = raw

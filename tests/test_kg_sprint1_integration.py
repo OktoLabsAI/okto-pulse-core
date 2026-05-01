@@ -340,6 +340,6 @@ def test_spec_to_dict_mirrors_spec_api_shape(full_spec_row):
         "id", "title", "description", "context",
         "functional_requirements", "technical_requirements",
         "acceptance_criteria", "business_rules",
-        "test_scenarios", "api_contracts",
+        "test_scenarios", "api_contracts", "architecture_designs",
     ):
         assert key in d

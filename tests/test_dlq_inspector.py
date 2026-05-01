@@ -129,3 +129,42 @@ async def test_ts3_helper_signature_shared_between_rest_and_mcp():
     parsed = json.loads(serialised)
     assert parsed["total"] == 1
     assert parsed["limit"] == 50
+
+
+async def test_malformed_error_payload_is_normalised():
+    """A malformed legacy DLQ errors value should not break the inspector."""
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.models.db import ConsolidationDeadLetter
+    from okto_pulse.core.services.dead_letter_inspector_service import (
+        list_dead_letter_rows,
+    )
+
+    board_id = f"board-malformed-{uuid.uuid4().hex[:8]}"
+    factory = get_session_factory()
+    async with factory() as db:
+        db.add(
+            ConsolidationDeadLetter(
+                id=f"dlq-malformed-{uuid.uuid4().hex[:8]}",
+                board_id=board_id,
+                artifact_type="card",
+                artifact_id=f"card-{uuid.uuid4().hex[:8]}",
+                original_queue_id=None,
+                attempts=1,
+                errors="Corrupted wal file",
+            )
+        )
+        await db.commit()
+
+    async with factory() as db:
+        result = await list_dead_letter_rows(db, board_id)
+
+    assert result["total"] == 1
+    assert result["rows"][0]["errors"] == [
+        {
+            "attempt": 1,
+            "occurred_at": "",
+            "error_type": "LegacyError",
+            "message": "Corrupted wal file",
+            "traceback": None,
+        }
+    ]

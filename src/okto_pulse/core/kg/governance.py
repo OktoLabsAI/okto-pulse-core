@@ -13,10 +13,12 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.models.db import (
+    Board,
     ConsolidationAudit,
     ConsolidationQueue,
     GlobalUpdateOutbox,
@@ -28,6 +30,59 @@ from okto_pulse.core.models.db import (
 )
 
 logger = logging.getLogger("okto_pulse.kg.governance")
+
+HISTORICAL_PROGRESS_SETTINGS_KEY = "kg_historical_consolidation"
+
+
+def _historical_progress_state(board: Board | None) -> dict[str, Any]:
+    if board is None or not isinstance(board.settings, dict):
+        return {}
+    value = board.settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
+    return value if isinstance(value, dict) else {}
+
+
+def _set_historical_progress_state(
+    board: Board | None,
+    *,
+    total: int,
+    status: str,
+) -> None:
+    if board is None:
+        return
+    settings = dict(board.settings or {})
+    current = settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
+    current_state = current if isinstance(current, dict) else {}
+    settings[HISTORICAL_PROGRESS_SETTINGS_KEY] = {
+        **current_state,
+        "total": max(0, int(total)),
+        "status": status,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": current_state.get("started_at")
+        or datetime.now(timezone.utc).isoformat(),
+    }
+    board.settings = settings
+    flag_modified(board, "settings")
+
+
+async def _historical_queue_counts(
+    db: AsyncSession,
+    board_id: str,
+) -> dict[str, int]:
+    rows = (
+        await db.execute(
+            select(ConsolidationQueue.status, func.count())
+            .where(
+                ConsolidationQueue.board_id == board_id,
+                ConsolidationQueue.source == "historical_backfill",
+            )
+            .group_by(ConsolidationQueue.status)
+        )
+    ).all()
+    counts = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
+    for status, count in rows:
+        if status in counts:
+            counts[status] = int(count)
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +98,8 @@ async def start_historical_consolidation(
     specs/sprints in the board. Returns counts."""
     import uuid
 
+    board = await db.get(Board, board_id)
+
     # Check if already in progress
     existing = await db.execute(
         select(ConsolidationQueue).where(
@@ -52,6 +109,16 @@ async def start_historical_consolidation(
         ).limit(1)
     )
     if existing.scalars().first():
+        counts = await _historical_queue_counts(db, board_id)
+        live_total = sum(counts.values())
+        current_total = int(_historical_progress_state(board).get("total") or 0)
+        if live_total > 0 and current_total < live_total:
+            _set_historical_progress_state(
+                board,
+                total=live_total,
+                status="in_progress",
+            )
+            await db.commit()
         return {"status": "already_in_progress", "board_id": board_id}
 
     # Query done/approved specs for this board
@@ -102,12 +169,22 @@ async def start_historical_consolidation(
     # a prior historical run was paused and is still reachable via
     # resume_historical.
     existing_result = await db.execute(
-        select(ConsolidationQueue.artifact_type, ConsolidationQueue.artifact_id).where(
+        select(
+            ConsolidationQueue.artifact_type,
+            ConsolidationQueue.artifact_id,
+            ConsolidationQueue.source,
+        ).where(
             ConsolidationQueue.board_id == board_id,
             ConsolidationQueue.status.in_(["pending", "claimed", "paused"]),
         )
     )
-    already_queued = {(row[0], row[1]) for row in existing_result.all()}
+    existing_rows = list(existing_result.all())
+    already_queued = {(row[0], row[1]) for row in existing_rows}
+    existing_historical = {
+        (row[0], row[1])
+        for row in existing_rows
+        if row[2] == "historical_backfill"
+    }
 
     total = 0
 
@@ -159,6 +236,13 @@ async def start_historical_consolidation(
         ))
         total += 1
 
+    run_total = total + len(existing_historical)
+    _set_historical_progress_state(
+        board,
+        total=run_total,
+        status="in_progress" if run_total > 0 else "inactive",
+    )
+
     await db.commit()
 
     logger.info(
@@ -177,7 +261,7 @@ async def start_historical_consolidation(
         except Exception:  # pragma: no cover — signal is best-effort
             pass
 
-    return {"status": "queueing", "board_id": board_id, "total_artifacts": total}
+    return {"status": "queueing", "board_id": board_id, "total_artifacts": run_total}
 
 
 async def pause_historical(db: AsyncSession, board_id: str) -> dict:
@@ -212,6 +296,7 @@ async def resume_historical(db: AsyncSession, board_id: str) -> dict:
 
 async def cancel_historical(db: AsyncSession, board_id: str) -> dict:
     """Delete pending low-priority entries. Already-consolidated preserved."""
+    board = await db.get(Board, board_id)
     result = await db.execute(
         delete(ConsolidationQueue).where(
             ConsolidationQueue.board_id == board_id,
@@ -219,25 +304,38 @@ async def cancel_historical(db: AsyncSession, board_id: str) -> dict:
             ConsolidationQueue.status.in_(["pending", "paused"]),
         )
     )
+    current_total = int(_historical_progress_state(board).get("total") or 0)
+    _set_historical_progress_state(board, total=current_total, status="cancelled")
     await db.commit()
     return {"status": "cancelled", "board_id": board_id, "removed": result.rowcount}
 
 
 async def get_historical_progress(db: AsyncSession, board_id: str) -> dict:
     """Return progress of historical consolidation."""
-    total = await db.execute(
-        select(ConsolidationQueue).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.source == "historical_backfill",
-        )
-    )
-    all_entries = list(total.scalars().all())
-    done = sum(1 for e in all_entries if e.status == "done")
+    board = await db.get(Board, board_id)
+    state = _historical_progress_state(board)
+    counts = await _historical_queue_counts(db, board_id)
+    live_total = sum(counts.values())
+    total = max(int(state.get("total") or 0), live_total)
+    remaining = counts["pending"] + counts["claimed"] + counts["paused"]
+    processed = max(0, min(total, total - remaining))
+    if state.get("status") == "cancelled" and remaining == 0:
+        status = "cancelled"
+    elif counts["pending"] or counts["claimed"]:
+        status = "in_progress"
+    elif counts["paused"]:
+        status = "paused"
+    else:
+        status = "inactive"
     return {
-        "enabled": len(all_entries) > 0,
-        "status": "in_progress" if any(e.status in ("pending", "claimed") for e in all_entries) else "inactive",
-        "total": len(all_entries),
-        "progress": done,
+        "enabled": total > 0,
+        "status": status,
+        "total": total,
+        "progress": processed,
+        "pending": counts["pending"],
+        "claimed": counts["claimed"],
+        "paused": counts["paused"],
+        "failed": counts["failed"],
     }
 
 
