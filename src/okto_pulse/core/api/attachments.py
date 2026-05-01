@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models import AttachmentResponse
-from okto_pulse.core.services import AttachmentService, BoardService, CardService
+from okto_pulse.core.services import AttachmentService, BoardService
 
 router = APIRouter()
 

@@ -82,7 +82,7 @@ class CardMoved(DomainEvent):
 
 
 class CardConclusionAdded(DomainEvent):
-    """Fired when submit_task_validation registers a non-empty conclusion_text.
+    """Fired when a card receives a non-empty execution conclusion.
 
     The handler enqueues the parent spec consolidation so that the KG
     reflects the card's narrative outcome alongside its final state.

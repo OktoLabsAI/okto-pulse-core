@@ -7,7 +7,6 @@ import threading
 from typing import Callable
 
 from .fixed import FixedHopPlanner
-from .interfaces import HopDecision
 from .iterative import IterativeHopPlanner
 from .llm import LLMHopPlanner
 from .signal import SignalHopPlanner

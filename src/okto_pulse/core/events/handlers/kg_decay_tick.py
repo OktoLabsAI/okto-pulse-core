@@ -204,6 +204,7 @@ async def _run_daily_tick(
     *,
     tick_id: str,
     session: AsyncSession,
+    board_id: str | None = None,
     batch_size: int = KG_DECAY_TICK_BATCH_SIZE,
     staleness_days: int = KG_DECAY_TICK_STALENESS_DAYS,
 ) -> dict:
@@ -218,7 +219,10 @@ async def _run_daily_tick(
     total_recomputed = 0
 
     nodes_with_stale_score_pre_tick = 0
-    boards = (await session.execute(select(Board.id))).scalars().all()
+    if board_id and board_id != "*":
+        boards = [board_id]
+    else:
+        boards = (await session.execute(select(Board.id))).scalars().all()
     for board_id in boards:
         boards_processed += 1
         recomputed, stale_pre = await asyncio.to_thread(
@@ -256,7 +260,11 @@ async def _run_daily_tick(
 @register_handler("kg.tick.daily")
 class KGDailyTickHandler:
     async def handle(self, event: KGDailyTick, session: AsyncSession) -> None:
-        await _run_daily_tick(tick_id=event.tick_id, session=session)
+        await _run_daily_tick(
+            tick_id=event.tick_id,
+            session=session,
+            board_id=event.board_id,
+        )
 
 
 __all__ = [

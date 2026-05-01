@@ -1,6 +1,5 @@
 """Tests for Global Discovery Layer — schema, cascade, clustering, GC."""
 
-import gc as _gc
 import os
 import sys
 import tempfile
@@ -25,13 +24,11 @@ from okto_pulse.core.kg.global_discovery.clustering import (
     entity_combined_score,
     gc_orphans,
     normalize_name,
-    rebuild_from_scratch,
     string_fuzzy_ratio,
 )
 from okto_pulse.core.kg.global_discovery.outbox_worker import (
     DEAD_LETTER_SENTINEL,
     MAX_RETRIES,
-    OutboxWorker,
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
 

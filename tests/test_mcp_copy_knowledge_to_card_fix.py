@@ -13,7 +13,6 @@ end-to-end with a real DB so the bug cannot regress silently.
 from __future__ import annotations
 
 import inspect
-import json
 import uuid
 
 import pytest

@@ -19,10 +19,8 @@ behavior by invoking the handler with a fully wired async DB session.
 
 from __future__ import annotations
 
-import inspect
 import json
 import uuid
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest

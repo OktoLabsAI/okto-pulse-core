@@ -24,6 +24,7 @@ from okto_pulse.core.models.schemas import (
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitectureDiagramStore,
+    ArchitecturePayloadValidationError,
     ArchitecturePropagationService,
 )
 
@@ -100,7 +101,13 @@ async def _ensure_design_mutable(db: AsyncSession, design_id: str) -> Any:
 
 def _http_error_from_value(error: ValueError) -> HTTPException:
     message = str(error)
-    status_code = status.HTTP_404_NOT_FOUND if "not found" in message else status.HTTP_422_UNPROCESSABLE_ENTITY
+    status_code = (
+        status.HTTP_422_UNPROCESSABLE_CONTENT
+        if isinstance(error, ArchitecturePayloadValidationError)
+        else status.HTTP_404_NOT_FOUND
+        if "not found" in message
+        else status.HTTP_422_UNPROCESSABLE_CONTENT
+    )
     return HTTPException(status_code=status_code, detail=message)
 
 

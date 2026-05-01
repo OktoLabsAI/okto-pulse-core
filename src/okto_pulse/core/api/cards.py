@@ -4,8 +4,8 @@ import hashlib
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
-from fastapi.responses import PlainTextResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,6 @@ from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models import (
     ActivityLogResponse,
-    CardCreate,
     CardMove,
     CardResponse,
     CardUpdate,
@@ -214,8 +213,7 @@ async def link_test_task_to_bug(
     db: AsyncSession = Depends(get_db),
 ):
     """Link a test task to a bug card. Validates same spec and new scenario."""
-    from okto_pulse.core.models.db import Card as CardModel, Spec
-    from sqlalchemy.orm import selectinload
+    from okto_pulse.core.models.db import Spec
 
     test_task_id = body.get("test_task_id")
     if not test_task_id:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -13,13 +12,9 @@ async def test_sse_endpoint_rejects_invalid_since(db_factory):
     from okto_pulse.core.api.kg_routes import stream_kg_events
     from fastapi import HTTPException
 
-    factory = db_factory
-    async with factory() as db:
-        with pytest.raises(HTTPException) as exc:
-            await stream_kg_events(
-                board_id="b", since="not-an-iso", db=db,
-            )
-        assert exc.value.status_code == 400
+    with pytest.raises(HTTPException) as exc:
+        await stream_kg_events(board_id="b", since="not-an-iso")
+    assert exc.value.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -27,9 +22,7 @@ async def test_sse_endpoint_returns_streaming_response(db_factory):
     from okto_pulse.core.api.kg_routes import stream_kg_events
     from fastapi.responses import StreamingResponse
 
-    factory = db_factory
-    async with factory() as db:
-        resp = await stream_kg_events(board_id="b1", since=None, db=db)
+    resp = await stream_kg_events(board_id="b1", since=None)
     assert isinstance(resp, StreamingResponse)
     assert resp.media_type == "text/event-stream"
     assert resp.headers.get("cache-control") == "no-cache"
@@ -52,19 +45,17 @@ async def test_sse_endpoint_streams_outbox_events(db_factory):
         ))
         await db.commit()
 
-    async with factory() as db:
-        resp = await stream_kg_events(
-            board_id="b_sse",
-            since=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
-            db=db,
-        )
-        body = resp.body_iterator
-        collected: list[str] = []
-        async for chunk in body:
-            collected.append(chunk)
-            # Two events (hello + committed) + keepalive is enough to stop.
-            if len(collected) >= 3:
-                break
+    resp = await stream_kg_events(
+        board_id="b_sse",
+        since=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+    )
+    body = resp.body_iterator
+    collected: list[str] = []
+    async for chunk in body:
+        collected.append(chunk)
+        # Two events (hello + committed) + keepalive is enough to stop.
+        if len(collected) >= 3:
+            break
 
     blob = "".join(collected)
     assert "event: hello" in blob

@@ -136,7 +136,6 @@ async def evaluate_complexity(
     db: AsyncSession = Depends(get_db),
 ):
     """Evaluate ideation complexity. Accepts scores + justifications in body."""
-    from starlette.requests import Request as _Req
     body = await request.json()
     service = IdeationService(db)
 

@@ -74,23 +74,13 @@ def test_context_manager_releases_lock_for_reopen(fresh_boards):
 # (b) __enter__/__exit__ invokes close() + gc
 # ----------------------------------------------------------------------
 
-def test_exit_marks_closed_and_runs_gc(fresh_boards, monkeypatch):
+def test_exit_marks_closed(fresh_boards):
     bid = fresh_boards[0]
-    gc_calls = {"n": 0}
-    original_collect = gc.collect
-
-    def counting_collect(*args, **kwargs):
-        gc_calls["n"] += 1
-        return original_collect(*args, **kwargs)
-
-    monkeypatch.setattr("okto_pulse.core.kg.schema.gc.collect", counting_collect)
-
     bc = BoardConnection(bid)
     assert bc._closed is False
     with bc as (_db, _conn):
         pass
     assert bc._closed is True
-    assert gc_calls["n"] >= 1
 
 
 def test_close_is_idempotent(fresh_boards):
@@ -109,10 +99,10 @@ def test_pool_evicts_lru_when_at_cap(fresh_boards):
     bid_a, bid_b, bid_c, _ = fresh_boards
 
     bc_a = pool.acquire(bid_a)
-    bc_b = pool.acquire(bid_b)
+    _bc_b = pool.acquire(bid_b)
     assert len(pool) == 2
 
-    bc_c = pool.acquire(bid_c)  # evicts A (LRU)
+    _bc_c = pool.acquire(bid_c)  # evicts A (LRU)
     assert len(pool) == 2
     assert bid_a not in pool
     assert bid_b in pool

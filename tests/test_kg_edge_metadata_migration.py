@@ -36,8 +36,8 @@ def board():
     reset_connection_pool_for_tests()
 
 
-def test_schema_version_is_v030():
-    assert SCHEMA_VERSION == "0.3.0"
+def test_schema_version_is_current():
+    assert SCHEMA_VERSION == "0.3.3"
 
 
 def test_edge_metadata_columns_declared():

@@ -20,6 +20,7 @@ from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.helpers import coerce_to_list_str, parse_multi_value
 from okto_pulse.core.mcp.trace_middleware import install_if_enabled as _install_trace
+from okto_pulse.core.models.db import Board
 from okto_pulse.core.services.main import (
     AgentService,
     AttachmentService,
@@ -27,6 +28,7 @@ from okto_pulse.core.services.main import (
     CardService,
     CommentService,
     GuidelineService,
+    IdeationKnowledgeService,
     IdeationQAService,
     IdeationService,
     QAService,
@@ -43,6 +45,7 @@ from okto_pulse.core.services.architecture import (
     ArchitectureDiagramAdapterRegistry,
     ArchitectureDiagramStore,
     ArchitecturePropagationService,
+    architecture_design_payload_schema,
 )
 
 
@@ -363,6 +366,46 @@ def _dump_model(value: Any) -> dict[str, Any]:
     return value
 
 
+def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[str, Any]:
+    """Serialize refinement/spec/ideation KB rows without assuming shape drift."""
+    data: dict[str, Any] = {
+        "id": getattr(kb, "id", None),
+        "title": getattr(kb, "title", None),
+        "description": getattr(kb, "description", None),
+        "mime_type": getattr(kb, "mime_type", "text/markdown"),
+    }
+    for attr in ("ideation_id", "refinement_id", "spec_id"):
+        value = getattr(kb, attr, None)
+        if value:
+            data[attr] = value
+    if include_content:
+        data["content"] = getattr(kb, "content", None)
+    if getattr(kb, "created_by", None):
+        data["created_by"] = kb.created_by
+    if getattr(kb, "created_at", None):
+        data["created_at"] = kb.created_at.isoformat()
+    if getattr(kb, "updated_at", None):
+        data["updated_at"] = kb.updated_at.isoformat()
+    return data
+
+
+def _mcp_spec_coverage_summary(spec: Any) -> dict[str, Any]:
+    """Return canonical coverage plus the legacy get_spec_context aliases."""
+    cards = list(getattr(spec, "cards", None) or [])
+    coverage = _spec_coverage(spec, cards=cards)
+    return {
+        **coverage,
+        "acceptance_criteria_total": coverage.get("ac_total", 0),
+        "acceptance_criteria_covered": coverage.get("ac_covered", 0),
+        "uncovered_indices": coverage.get("ac_uncovered_indices", []),
+        "test_scenarios_total": coverage.get("scenarios_total", 0),
+        "business_rules_total": coverage.get("brs_total", 0),
+        "api_contracts_total": coverage.get("contracts_total", 0),
+        "cards_total": len(cards),
+        "cards_done": sum(1 for c in cards if getattr(getattr(c, "status", None), "value", None) == "done"),
+    }
+
+
 def _parse_json_arg(value: Any, default: Any) -> tuple[Any, str | None]:
     if value is None or value == "":
         return default, None
@@ -529,7 +572,7 @@ async def _resolve_binary_content(
 
 # D-8: helpers canônicos em services/analytics_service.py — re-exports para
 # preservar import paths existentes (tests + callers legados).
-from okto_pulse.core.services.analytics_service import (
+from okto_pulse.core.services.analytics_service import (  # noqa: E402
     decisions_stats as _decisions_stats,  # noqa: F401
     filter_decisions_by_status as _filter_decisions_by_status,  # noqa: F401
     render_decisions_markdown as _render_decisions_markdown,  # noqa: F401
@@ -988,7 +1031,6 @@ async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> s
         return _auth_error()
 
     from sqlalchemy import select
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from okto_pulse.core.models.db import AgentSeenItem, Comment, IdeationQAItem, QAItem, RefinementQAItem, SpecQAItem
 
@@ -1513,7 +1555,10 @@ async def okto_pulse_create_card(
     Args:
         board_id: Board ID
         title: Card title
-        spec_id: REQUIRED — Spec ID to link this card to. The spec must be in 'done' status.
+        spec_id: REQUIRED — Spec ID to link this card to. Normal/bug cards
+            are allowed when the spec is approved, in_progress, or done.
+            Test cards are allowed once the spec is approved/validated or
+            later, so they can execute validation before the spec is done.
             For bug cards, this is auto-resolved from the origin task if not provided.
         description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
         details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.
@@ -1528,7 +1573,11 @@ async def okto_pulse_create_card(
             — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
             When provided, automatically creates bidirectional links between the
             card and the scenarios.
-        card_type: Card type - "normal" (default) or "bug". Bug cards require origin_task_id, severity, expected_behavior, observed_behavior.
+        card_type: Card type - "normal" (default), "test", or "bug".
+            Test cards require test_scenario_ids and do not use
+            submit_task_validation; complete them with move_card(..., done)
+            plus conclusion/evidence. Bug cards require origin_task_id,
+            severity, expected_behavior, and observed_behavior.
         origin_task_id: REQUIRED for bug cards — ID of the task that originated the bug. The spec is auto-resolved from this task.
         severity: REQUIRED for bug cards — one of: critical, major, minor
         expected_behavior: REQUIRED for bug cards — what should happen
@@ -1982,12 +2031,7 @@ async def okto_pulse_get_task_context(
 
                 if _inc_kb:
                     spec_data["knowledge_bases"] = [
-                        {
-                            "id": kb.id,
-                            "title": kb.title,
-                            "content": kb.content,
-                            "source_type": kb.source_type,
-                        }
+                        _serialize_knowledge_base(kb)
                         for kb in (spec.knowledge_bases or [])
                     ]
 
@@ -2235,18 +2279,20 @@ async def okto_pulse_move_card(
 ) -> str:
     """
     Move a card to a different column/position on the board.
-    Moving to 'done' REQUIRES a conclusion, completeness, and drift — all with justifications.
+    Moving execution work to 'validation' REQUIRES the executor's conclusion,
+    completeness, and drift — all with justifications — so the reviewer can
+    validate the claim. Moving directly to 'done' also requires the same report.
 
     Args:
         board_id: Board ID
         card_id: Card ID
         status: New status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
         position: New position in column (-1 = end of column)
-        conclusion: REQUIRED when status='done'. Detailed summary of changes, files modified, decisions, test results, and follow-ups. Supports Markdown and Mermaid diagrams (```mermaid code blocks).
-        completeness: REQUIRED when status='done'. 0-100, how much of the planned work was actually implemented. 100 = fully complete, 0 = nothing delivered. Use -1 when not moving to done.
-        completeness_justification: REQUIRED when status='done'. Explains why the completeness score is what it is. E.g. "All planned endpoints implemented and tested" or "Deferred pagination to follow-up card".
-        drift: REQUIRED when status='done'. 0-100, how much the implementation deviated from the original plan. 0 = exactly as planned, 100 = completely different approach. Use -1 when not moving to done.
-        drift_justification: REQUIRED when status='done'. Explains what caused deviation from the original plan. E.g. "No deviation" or "Had to switch from REST to WebSocket due to real-time requirements discovered during implementation".
+        conclusion: REQUIRED when moving execution work to status='validation' or status='done'. Detailed summary of changes, files modified, decisions, test results, and follow-ups. Supports Markdown and Mermaid diagrams (```mermaid code blocks).
+        completeness: REQUIRED when moving execution work to status='validation' or status='done'. 0-100, how much of the planned work was actually implemented. 100 = fully complete, 0 = nothing delivered. Use -1 when no execution report is required.
+        completeness_justification: REQUIRED when moving execution work to status='validation' or status='done'. Explains why the completeness score is what it is. E.g. "All planned endpoints implemented and tested" or "Deferred pagination to follow-up card".
+        drift: REQUIRED when moving execution work to status='validation' or status='done'. 0-100, how much the implementation deviated from the original plan. 0 = exactly as planned, 100 = completely different approach. Use -1 when no execution report is required.
+        drift_justification: REQUIRED when moving execution work to status='validation' or status='done'. Explains what caused deviation from the original plan. E.g. "No deviation" or "Had to switch from REST to WebSocket due to real-time requirements discovered during implementation".
 
     Returns:
         JSON with updated card details
@@ -2794,8 +2840,6 @@ async def okto_pulse_add_choice_comment(
     perm_err = check_permission(ctx.permissions, Permissions.COMMENTS_CREATE)
     if perm_err:
         return _perm_error(perm_err)
-
-    import uuid as _uuid
 
     from okto_pulse.core.models.schemas import ChoiceOption, CommentCreate
 
@@ -3496,13 +3540,7 @@ async def okto_pulse_get_ideation_context(
 
         if _inc_kb and hasattr(ideation, "knowledge_bases"):
             result["knowledge_bases"] = [
-                {
-                    "id": kb.id,
-                    "title": kb.title,
-                    "description": kb.description,
-                    "content": kb.content,
-                    "mime_type": kb.mime_type,
-                }
+                _serialize_knowledge_base(kb)
                 for kb in (ideation.knowledge_bases or [])
             ]
 
@@ -3692,9 +3730,16 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
 
     async with get_db_for_mcp() as db:
         service = IdeationService(db)
-        ideation = await service.move_ideation(
-            ideation_id, ctx.agent_id, IdeationMove(status=ideation_status), actor_name=ctx.agent_name
-        )
+        existing = await service.get_ideation(ideation_id)
+        if not existing or existing.board_id != board_id:
+            return json.dumps({"error": "Ideation not found"})
+        old_status = existing.status.value
+        try:
+            ideation = await service.move_ideation(
+                ideation_id, ctx.agent_id, IdeationMove(status=ideation_status), actor_name=ctx.agent_name
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
         await db.commit()
 
         if not ideation:
@@ -3704,7 +3749,7 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
             {
                 "success": True,
                 "ideation_id": ideation.id,
-                "from_status": ideation.status.value,
+                "from_status": old_status,
                 "to_status": status,
             },
             default=str,
@@ -3783,8 +3828,6 @@ async def okto_pulse_evaluate_ideation(
     if perm_err:
         return _perm_error(perm_err)
 
-    from okto_pulse.core.models.schemas import IdeationUpdate
-
     async with get_db_for_mcp() as db:
         service = IdeationService(db)
 
@@ -3842,6 +3885,8 @@ async def okto_pulse_derive_spec_from_ideation(
     ideation_id: str,
     mockup_ids: str = "",
     kb_ids: str = "",
+    architecture_design_ids: list[str] | str = "",
+    architecture_propagation_mode: str = "copy",
 ) -> str:
     """
     Create a spec draft from a DONE ideation. The ideation must be in 'done' status
@@ -3849,14 +3894,17 @@ async def okto_pulse_derive_spec_from_ideation(
     compiled from the ideation but structured fields (requirements, criteria) left empty
     for deliberate analysis.
 
-    Artifacts (mockups, KBs) from the ideation are automatically propagated to the spec.
-    Use mockup_ids/kb_ids to select specific ones (default: all).
+    Artifacts (mockups, KBs, Architecture Designs) from the ideation are
+    automatically propagated to the spec. Use mockup_ids/kb_ids/
+    architecture_design_ids to select specific ones (default: all).
 
     Args:
         board_id: Board ID
         ideation_id: Ideation ID (must be in 'done' status)
         mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
         kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
+        architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
+        architecture_propagation_mode: copy/derive copies snapshots; reference_only/none keeps only parent linkage
 
     Returns:
         JSON with the created spec details
@@ -3871,6 +3919,10 @@ async def okto_pulse_derive_spec_from_ideation(
 
     _mockup_ids = parse_multi_value(mockup_ids) or None
     _kb_ids = parse_multi_value(kb_ids) or None
+    try:
+        _architecture_ids = coerce_to_list_str(architecture_design_ids) or None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid architecture_design_ids: {e}"})
 
     async with get_db_for_mcp() as db:
         service = IdeationService(db)
@@ -3878,6 +3930,8 @@ async def okto_pulse_derive_spec_from_ideation(
             spec = await service.derive_spec(
                 ideation_id, ctx.agent_id, skip_ownership_check=True,
                 mockup_ids=_mockup_ids, kb_ids=_kb_ids,
+                architecture_design_ids=_architecture_ids,
+                architecture_propagation_mode=architecture_propagation_mode,
             )
         except ValueError as e:
             return json.dumps({"error": str(e)})
@@ -4044,6 +4098,157 @@ async def okto_pulse_get_ideation_history(board_id: str, ideation_id: str, limit
             },
             default=str,
         )
+
+
+# ============================================================================
+# IDEATION KNOWLEDGE BASE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_list_ideation_knowledge(board_id: str, ideation_id: str) -> str:
+    """
+    List all knowledge base items attached to an ideation.
+
+    Use this before deriving refinements/specs when the ideation references
+    domain rules, source documents, decisions, constraints, or contextual
+    evidence that should travel through the SDLC chain.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        ideation = await IdeationService(db).get_ideation(ideation_id)
+        if not ideation or ideation.board_id != board_id:
+            return json.dumps({"error": "Ideation not found"})
+        items = await IdeationKnowledgeService(db).list_knowledge(ideation_id)
+        await db.commit()
+        return json.dumps(
+            {
+                "ideation_id": ideation_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    _serialize_knowledge_base(kb, include_content=False)
+                    for kb in items
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_get_ideation_knowledge(
+    board_id: str,
+    ideation_id: str,
+    knowledge_id: str,
+) -> str:
+    """Get the full content of an ideation knowledge base item."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        ideation = await IdeationService(db).get_ideation(ideation_id)
+        if not ideation or ideation.board_id != board_id:
+            return json.dumps({"error": "Ideation not found"})
+        kb = await IdeationKnowledgeService(db).get_knowledge(knowledge_id)
+        await db.commit()
+        if not kb or kb.ideation_id != ideation_id:
+            return json.dumps({"error": "Knowledge base item not found"})
+        return json.dumps(_serialize_knowledge_base(kb), default=str)
+
+
+@mcp.tool()
+async def okto_pulse_add_ideation_knowledge(
+    board_id: str,
+    ideation_id: str,
+    title: str,
+    content: str = "",
+    description: str = "",
+    mime_type: str = "text/markdown",
+    file_path: str | None = None,
+    file_url: str | None = None,
+) -> str:
+    """
+    Add a knowledge base item to an ideation.
+
+    Provide exactly ONE of content, file_path, or file_url. Ideation KBs are
+    propagated to refinements/specs by default when those artifacts are derived
+    or created from the ideation.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    resolved_content, err = await _resolve_text_content(
+        content=content, file_path=file_path, file_url=file_url
+    )
+    if err:
+        return json.dumps({"error": err})
+
+    from okto_pulse.core.models.schemas import IdeationKnowledgeCreate
+
+    async with get_db_for_mcp() as db:
+        ideation = await IdeationService(db).get_ideation(ideation_id)
+        if not ideation or ideation.board_id != board_id:
+            return json.dumps({"error": "Ideation not found"})
+        kb_data = IdeationKnowledgeCreate(
+            title=title,
+            description=description or None,
+            content=resolved_content,
+            mime_type=mime_type,
+        )
+        kb = await IdeationKnowledgeService(db).create_knowledge(
+            ideation_id, ctx.agent_id, kb_data
+        )
+        await db.commit()
+        if not kb:
+            return json.dumps({"error": "Failed to create knowledge base item"})
+        return json.dumps(
+            {"success": True, "knowledge": _serialize_knowledge_base(kb)},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_ideation_knowledge(
+    board_id: str,
+    ideation_id: str,
+    knowledge_id: str,
+) -> str:
+    """Delete a knowledge base item from an ideation."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        ideation = await IdeationService(db).get_ideation(ideation_id)
+        if not ideation or ideation.board_id != board_id:
+            return json.dumps({"error": "Ideation not found"})
+        service = IdeationKnowledgeService(db)
+        kb = await service.get_knowledge(knowledge_id)
+        if not kb or kb.ideation_id != ideation_id:
+            return json.dumps({"error": "Knowledge base item not found"})
+        await service.delete_knowledge(knowledge_id)
+        await db.commit()
+        return json.dumps({"success": True})
 
 
 # ============================================================================
@@ -4323,14 +4528,17 @@ async def okto_pulse_create_refinement(
     labels: list[str] | str = "",
     mockup_ids: str = "",
     kb_ids: str = "",
+    architecture_design_ids: list[str] | str = "",
+    architecture_propagation_mode: str = "copy",
 ) -> str:
     """
     Create a new refinement for a DONE ideation. The ideation must be in 'done' status
     (snapshotted) before refinements can be created. If description is not provided,
     context is compiled from the ideation's problem statement, approach, and Q&A.
 
-    Artifacts (mockups, KBs) from the ideation are automatically propagated.
-    Use mockup_ids/kb_ids to select specific ones (default: all).
+    Artifacts (mockups, KBs, Architecture Designs) from the ideation are
+    automatically propagated. Use mockup_ids/kb_ids/architecture_design_ids
+    to select specific ones (default: all).
 
     Args:
         board_id: Board ID
@@ -4345,6 +4553,8 @@ async def okto_pulse_create_refinement(
         labels: Comma-separated labels (optional)
         mockup_ids: Pipe-separated mockup IDs to propagate from ideation (optional, empty = all)
         kb_ids: Pipe-separated KB IDs to propagate from ideation (optional, empty = all)
+        architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
+        architecture_propagation_mode: copy/derive copies snapshots; reference_only/none keeps only parent linkage
 
     Returns:
         JSON with created refinement details
@@ -4359,6 +4569,12 @@ async def okto_pulse_create_refinement(
 
     from okto_pulse.core.models.schemas import RefinementCreate
 
+    try:
+        label_list = coerce_to_list_str(labels) or None
+        architecture_ids = coerce_to_list_str(architecture_design_ids) or None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid multi-value input: {e}"})
+
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
         refinement_data = RefinementCreate(
@@ -4370,9 +4586,11 @@ async def okto_pulse_create_refinement(
             analysis=analysis.replace("\\n", "\n") if analysis else None,
             decisions=parse_multi_value(decisions) or None,
             assignee_id=assignee_id or None,
-            labels=coerce_to_list_str(labels) or None,
+            labels=label_list,
             mockup_ids=parse_multi_value(mockup_ids) or None,
             kb_ids=parse_multi_value(kb_ids) or None,
+            architecture_design_ids=architecture_ids,
+            architecture_propagation_mode=architecture_propagation_mode,
         )
 
         try:
@@ -4774,6 +4992,10 @@ async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: 
 
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
+        existing = await service.get_refinement(refinement_id)
+        if not existing or existing.board_id != board_id:
+            return json.dumps({"error": "Refinement not found"})
+        old_status = existing.status.value
         try:
             refinement = await service.move_refinement(
                 refinement_id, ctx.agent_id, RefinementMove(status=refinement_status), actor_name=ctx.agent_name
@@ -4789,7 +5011,7 @@ async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: 
             {
                 "success": True,
                 "refinement_id": refinement.id,
-                "from_status": refinement.status.value,
+                "from_status": old_status,
                 "to_status": status,
             },
             default=str,
@@ -4833,19 +5055,24 @@ async def okto_pulse_derive_spec_from_refinement(
     refinement_id: str,
     mockup_ids: str = "",
     kb_ids: str = "",
+    architecture_design_ids: list[str] | str = "",
+    architecture_propagation_mode: str = "copy",
 ) -> str:
     """
     Create a spec draft from a DONE refinement. The refinement must be in 'done' status.
     Context is compiled from the refinement's scope, analysis, decisions, and Q&A.
 
-    Artifacts (mockups, KBs) from the refinement are automatically propagated to the spec.
-    Use mockup_ids/kb_ids to select specific ones (default: all).
+    Artifacts (mockups, KBs, Architecture Designs) from the refinement are
+    automatically propagated to the spec. Use mockup_ids/kb_ids/
+    architecture_design_ids to select specific ones (default: all).
 
     Args:
         board_id: Board ID
         refinement_id: Refinement ID (must be in 'done' status)
         mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
         kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
+        architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
+        architecture_propagation_mode: copy/derive copies snapshots; reference_only/none keeps only parent linkage
 
     Returns:
         JSON with the created spec details
@@ -4860,6 +5087,10 @@ async def okto_pulse_derive_spec_from_refinement(
 
     _mockup_ids = parse_multi_value(mockup_ids) or None
     _kb_ids = parse_multi_value(kb_ids) or None
+    try:
+        _architecture_ids = coerce_to_list_str(architecture_design_ids) or None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid architecture_design_ids: {e}"})
 
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
@@ -4867,6 +5098,8 @@ async def okto_pulse_derive_spec_from_refinement(
             spec = await service.derive_spec(
                 refinement_id, ctx.agent_id, skip_ownership_check=True,
                 mockup_ids=_mockup_ids, kb_ids=_kb_ids,
+                architecture_design_ids=_architecture_ids,
+                architecture_propagation_mode=architecture_propagation_mode,
             )
         except ValueError as e:
             return json.dumps({"error": str(e)})
@@ -5215,6 +5448,8 @@ async def okto_pulse_create_spec(
     status: str = "draft",
     assignee_id: str = "",
     labels: list[str] | str = "",
+    ideation_id: str = "",
+    refinement_id: str = "",
 ) -> str:
     """
     Create a new spec (specification) on the board. Specs define requirements that drive card/task creation.
@@ -5233,6 +5468,8 @@ async def okto_pulse_create_spec(
         labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
             legacy string accepted as JSON array or pipe-separated. Comma-only string
             is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+        ideation_id: Optional parent ideation ID for traceability when creating a spec manually
+        refinement_id: Optional parent refinement ID for traceability when creating a spec manually
 
     Returns:
         JSON with created spec details
@@ -5255,6 +5492,11 @@ async def okto_pulse_create_spec(
             {"error": f"Invalid status. Must be one of: {[s.value for s in SpecStatus]}"}
         )
 
+    try:
+        label_list = coerce_to_list_str(labels) or None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid labels: {e}"})
+
     async with get_db_for_mcp() as db:
         service = SpecService(db)
         spec_data = SpecCreate(
@@ -5266,7 +5508,9 @@ async def okto_pulse_create_spec(
             acceptance_criteria=parse_multi_value(acceptance_criteria) or None,
             status=spec_status,
             assignee_id=assignee_id or None,
-            labels=coerce_to_list_str(labels) or None,
+            labels=label_list,
+            ideation_id=ideation_id or None,
+            refinement_id=refinement_id or None,
         )
 
         spec = await service.create_spec(
@@ -5492,34 +5736,11 @@ async def okto_pulse_get_spec_context(
 
         if _inc_kb:
             result["knowledge_bases"] = [
-                {
-                    "id": kb.id,
-                    "title": kb.title,
-                    "description": kb.description,
-                    "content": kb.content,
-                    "mime_type": kb.mime_type,
-                }
+                _serialize_knowledge_base(kb)
                 for kb in (spec.knowledge_bases or [])
             ]
 
-        # Coverage summary
-        ac_count = len(spec.acceptance_criteria or [])
-        ts_list = spec.test_scenarios or []
-        covered_indices = set()
-        for ts in ts_list:
-            for idx in (ts.get("linked_criteria") or []):
-                if isinstance(idx, int):
-                    covered_indices.add(idx)
-        result["coverage_summary"] = {
-            "acceptance_criteria_total": ac_count,
-            "acceptance_criteria_covered": len(covered_indices),
-            "uncovered_indices": sorted(set(range(ac_count)) - covered_indices),
-            "test_scenarios_total": len(ts_list),
-            "business_rules_total": len(spec.business_rules or []),
-            "api_contracts_total": len(spec.api_contracts or []),
-            "cards_total": len(spec.cards),
-            "cards_done": sum(1 for c in spec.cards if c.status.value == "done"),
-        }
+        result["coverage_summary"] = _mcp_spec_coverage_summary(spec)
 
         # Load sprints separately to avoid lazy-load error
         try:
@@ -5732,6 +5953,10 @@ async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
 
     async with get_db_for_mcp() as db:
         service = SpecService(db)
+        existing = await service.get_spec(spec_id)
+        if not existing or existing.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        old_status = existing.status.value
         try:
             spec = await service.move_spec(
                 spec_id, ctx.agent_id, SpecMove(status=spec_status), actor_name=ctx.agent_name
@@ -5747,7 +5972,7 @@ async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
             {
                 "success": True,
                 "spec_id": spec.id,
-                "from_status": spec.status.value,
+                "from_status": old_status,
                 "to_status": status,
             },
             default=str,
@@ -6650,6 +6875,150 @@ async def okto_pulse_get_architecture_design(
 
 
 @mcp.tool()
+async def okto_pulse_get_architecture_design_schema(board_id: str) -> str:
+    """
+    Return the machine-readable Architecture Design payload schema.
+
+    Call this before authoring a non-trivial Architecture Design payload. The
+    schema includes allowed enums, entity/interface contracts, Excalidraw
+    adapter payload rules, bad examples, good examples, and a complete minimal
+    payload example. Use it together with
+    okto_pulse_validate_architecture_design_payload before create/update.
+
+    Args:
+        board_id: Board ID
+
+    Returns:
+        JSON with success=true and schema.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = _mcp_check_permission(ctx.permissions, Permissions.BOARD_READ, None)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    return json.dumps({"success": True, "schema": architecture_design_payload_schema()}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_validate_architecture_design_payload(
+    board_id: str,
+    parent_type: str = "",
+    parent_id: str = "",
+    design_id: str = "",
+    title: str = "",
+    global_description: str = "",
+    entities: list[dict] | str = "",
+    interfaces: list[dict] | str = "",
+    diagrams: list[dict] | str = "",
+) -> str:
+    """
+    Dry-run critique for an Architecture Design payload without persisting it.
+
+    Use this before okto_pulse_add_architecture_design or
+    okto_pulse_update_architecture_design. For creates, pass parent_type and
+    parent_id. For updates, pass design_id and only the fields you intend to
+    change; omitted fields are merged from the existing design before critique.
+
+    The response includes:
+    - valid: false when the payload would be rejected by create/update.
+    - issues: blocking contextual errors with JSON paths.
+    - warnings: non-blocking gaps that reduce implementation clarity.
+    - suggested_fixes: concrete corrections for common architecture mistakes.
+    - summary: counts of entities, interfaces, diagrams, elements, and links.
+
+    Typical catches:
+    - entities where name duplicates entity_type after normalization.
+    - interfaces with unknown participants, invalid direction, or missing
+      protocol/contract metadata for schema payloads.
+    - diagrams with invalid linkedEntityId, linkedInterfaceIds, endpoint/entity
+      participant mismatches, or unsupported connectionType. Excalidraw
+      connectionType accepts only "direct" or "elbow".
+
+    Args:
+        board_id: Board ID
+        parent_type: Create mode parent type: ideation, refinement, spec, card
+        parent_id: Create mode parent ID
+        design_id: Update mode Architecture Design ID
+        title: Candidate title
+        global_description: Candidate global description
+        entities: Candidate JSON array/native list, or omitted to keep existing in update mode
+        interfaces: Candidate JSON array/native list, or omitted to keep existing in update mode
+        diagrams: Candidate JSON array/native list, or omitted to keep existing in update mode
+
+    Returns:
+        JSON dry-run critique; this tool does not write anything.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    parsed_fields: dict[str, Any] = {}
+    for field_name, raw in (("entities", entities), ("interfaces", interfaces), ("diagrams", diagrams)):
+        parsed, err = _parse_json_arg(raw, None)
+        if err:
+            return json.dumps({"error": f"Invalid {field_name}: {err}"})
+        if parsed is not None:
+            parsed_fields[field_name] = parsed
+
+    async with get_db_for_mcp() as db:
+        repo = ArchitectureDesignRepository(db)
+        mode = "update" if design_id else "create"
+
+        if design_id:
+            design, err = await _mcp_require_architecture_mutable(db, design_id)
+            if err:
+                return json.dumps({"error": err})
+            if design.board_id != board_id:
+                return json.dumps({"error": "Architecture design not found"})
+            perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "edit")
+            if perm_err:
+                return _perm_error(perm_err)
+            loaded = await repo.get(design_id, include_payloads=True)
+            if not loaded:
+                return json.dumps({"error": "Architecture design not found"})
+            candidate = {
+                "title": title or loaded.title,
+                "global_description": global_description or loaded.global_description,
+                "entities": loaded.entities or [],
+                "interfaces": loaded.interfaces or [],
+                "diagrams": loaded.diagrams or [],
+            }
+            candidate.update(parsed_fields)
+        else:
+            if not parent_type or not parent_id:
+                return json.dumps({"error": "parent_type and parent_id are required when design_id is omitted"})
+            perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, "create")
+            if perm_err:
+                return _perm_error(perm_err)
+            try:
+                parent_model, _ = repo._parent_config(parent_type)
+            except ValueError as exc:
+                return json.dumps({"error": str(exc)})
+            parent = await db.get(parent_model, parent_id)
+            if not parent or getattr(parent, "board_id") != board_id:
+                return json.dumps({"error": f"{parent_type} not found"})
+            if parent_type == "spec":
+                current_id = getattr(parent, "current_validation_id", None)
+                current = next((item for item in (getattr(parent, "validations", None) or []) if item.get("id") == current_id), None)
+                if current_id and current and current.get("outcome") == "success":
+                    return json.dumps({"error": "Spec is locked because validation passed. Move it back to draft or approved to edit architecture."})
+            candidate = {
+                "title": title,
+                "global_description": global_description,
+                "entities": parsed_fields.get("entities", []),
+                "interfaces": parsed_fields.get("interfaces", []),
+                "diagrams": parsed_fields.get("diagrams", []),
+            }
+
+        critique = repo.critique_payload(candidate)
+        await db.commit()
+        return json.dumps({"success": True, "mode": mode, **critique}, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_add_architecture_design(
     board_id: str,
     parent_type: str,
@@ -6661,7 +7030,23 @@ async def okto_pulse_add_architecture_design(
     diagrams: list[dict] | str = "",
 ) -> str:
     """
-    Create an Architecture Design on ideation, refinement, spec, or card.
+    Create an Architecture Design on an ideation, refinement, spec, or card.
+
+    Use this whenever the artifact benefits from explicit architecture: services,
+    modules, applications, databases, queues, topics, events, external integrations,
+    runtime boundaries, API contracts, data flows, or task ownership boundaries.
+
+    For non-trivial payloads, call okto_pulse_get_architecture_design_schema
+    first, then okto_pulse_validate_architecture_design_payload. Persist only
+    after the dry-run returns valid=true and you have reviewed warnings. Warnings
+    are not blockers, but they usually mark details a downstream implementer or
+    validator would otherwise have to guess.
+
+    The server critiques the full payload before accepting it. Rejections include
+    contextual paths such as entities[0].name, interfaces[1].participants[0], or
+    diagrams[0].adapter_payload.elements[2].linkedEntityId. Fix the cited field
+    and retry; do not move invalid architecture into prose fields to bypass the
+    structured artifact.
 
     Args:
         board_id: Board ID
@@ -6669,9 +7054,73 @@ async def okto_pulse_add_architecture_design(
         parent_id: Parent entity ID
         title: Design title
         global_description: Required global architecture description
-        entities: JSON array or native list of entity descriptions
-        interfaces: JSON array or native list of interface/contract descriptions
-        diagrams: JSON array or native list of diagrams; adapter_payload is stored separately
+        entities: JSON array or native list of entity descriptions. Use concrete
+            names and categorical types, for example:
+            [
+              {
+                "id": "entity-web-app",
+                "name": "Customer Portal",
+                "entity_type": "web_app",
+                "responsibility": "Collects checkout input and displays order status.",
+                "technologies": ["React", "Vite"]
+              },
+              {
+                "id": "entity-checkout-api",
+                "name": "Checkout API",
+                "entity_type": "api",
+                "responsibility": "Validates checkout commands and orchestrates payment authorization.",
+                "technologies": ["FastAPI", "SQLAlchemy"]
+              },
+              {
+                "id": "entity-orders-db",
+                "name": "Orders DB",
+                "entity_type": "database",
+                "responsibility": "Persists orders, payment state, and idempotency keys.",
+                "technologies": ["PostgreSQL"]
+              }
+            ]
+            Do not use entity name == entity_type, such as name="API" and
+            entity_type="api"; the API rejects that because ownership and task
+            boundaries become ambiguous.
+        interfaces: JSON array or native list of interface/contract descriptions.
+            endpoint is optional but recommended for API paths, RPC methods,
+            event names, queue names, or operations. When participants are
+            known, provide exactly two entity ids or names matching the diagram
+            edge source/target linked entities. direction must be one of
+            source_to_target, target_to_source, bidirectional, none. Example:
+            [
+              {
+                "id": "interface-create-order",
+                "name": "Create order",
+                "endpoint": "POST /orders",
+                "description": "Customer Portal sends a checkout request to Checkout API.",
+                "participants": ["entity-web-app", "entity-checkout-api"],
+                "direction": "source_to_target",
+                "protocol": "REST",
+                "contract_type": "OpenAPI",
+                "request_schema": {"type": "object", "required": ["cart_id"]},
+                "response_schema": {"type": "object", "required": ["order_id"]}
+              }
+            ]
+        diagrams: JSON array or native list of diagrams; adapter_payload is stored
+            separately. Excalidraw payloads should link elements using
+            linkedEntityId and linkedInterfaceIds when possible. For Excalidraw
+            edges, use sourceElementId, targetElementId, linkedInterfaceIds,
+            and connectionType. One connector can carry several interface
+            contracts/endpoints, for example
+            linkedInterfaceIds=["interface-create-order", "interface-get-order"].
+            linkedInterfaceId remains accepted for legacy single-contract
+            edges. connectionType accepts only "direct" and "elbow"; do not
+            send "curved". Example:
+            [
+              {
+                "id": "diagram-runtime-context",
+                "title": "Runtime context",
+                "diagram_type": "context",
+                "format": "excalidraw_json",
+                "adapter_payload": {"type": "excalidraw", "version": 2, "elements": [], "appState": {}, "files": {}}
+              }
+            ]
 
     Returns:
         JSON with the created Architecture Design.
@@ -6741,6 +7190,31 @@ async def okto_pulse_update_architecture_design(
 ) -> str:
     """
     Update an Architecture Design. Omitted fields are left unchanged.
+
+    For large or generated updates, call okto_pulse_get_architecture_design_schema
+    once per session and okto_pulse_validate_architecture_design_payload before
+    this tool. The validator merges omitted update fields from the existing
+    design and reports blocking issues plus warnings without creating a new
+    Architecture Design version.
+
+    The update is critiqued against the complete resulting design before it is
+    saved. Use this to keep architecture current as an ideation, refinement, or
+    spec changes. Prefer replacing entities/interfaces/diagrams with the complete
+    intended arrays so links remain deterministic.
+
+    Contextual validation examples:
+    - entities[0].name duplicates entity_type "api" -> use a concrete name such
+      as "Checkout API" and keep entity_type as "api".
+    - interfaces[0].participants[1] references an unknown entity -> add the
+      entity first or correct the participant id/name.
+    - interfaces[0].direction must be one of source_to_target,
+      target_to_source, bidirectional, none.
+    - diagrams[0].adapter_payload.elements[2].linkedInterfaceIds must reference
+      one or more interface ids/names in interfaces.
+    - diagrams[0].adapter_payload.elements[2] links an interface whose
+      participants do not match the edge source/target linked entities.
+    - diagrams[0].adapter_payload.elements[2].connectionType must be "direct"
+      or "elbow"; use "elbow" for routed/orthogonal connections.
 
     Args:
         board_id: Board ID
@@ -7130,7 +7604,9 @@ async def okto_pulse_copy_knowledge_to_card(
 
 
 def _new_card_kb_id() -> str:
-    import hashlib, time
+    import hashlib
+    import time
+
     return "kb_" + hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:10]
 
 
@@ -7399,7 +7875,7 @@ async def okto_pulse_get_analytics(
     from okto_pulse.core.models.db import (
         Board, Card, CardStatus, Ideation, Refinement, Spec,
     )
-    from sqlalchemy import func, select
+    from sqlalchemy import select
 
     def _parse_dt(value: str) -> datetime | None:
         if not value:
@@ -7433,7 +7909,7 @@ async def okto_pulse_get_analytics(
             return json.dumps({"error": "Board not found"})
 
         if metric_type == "overview":
-            from okto_pulse.core.models.db import Sprint, SprintStatus
+            from okto_pulse.core.models.db import Sprint
 
             # Ideations
             ideation_q = select(Ideation).where(Ideation.board_id == board_id)
@@ -8948,7 +9424,9 @@ async def okto_pulse_add_screen_mockup(
     if entity_type not in ("spec", "ideation", "refinement", "card"):
         return json.dumps({"error": f"Invalid entity_type '{entity_type}'. Must be one of: spec, ideation, refinement, card"})
 
-    import hashlib, time
+    import hashlib
+    import time
+
     screen_id = "sm_" + hashlib.md5(f"{entity_id}{title}{time.time()}".encode()).hexdigest()[:8]
 
     screen = {
@@ -9063,7 +9541,9 @@ async def okto_pulse_annotate_mockup(
     if perm_err:
         return _perm_error(perm_err)
 
-    import hashlib, time
+    import hashlib
+    import time
+
     ann_id = "an_" + hashlib.md5(f"{screen_id}{text}{time.time()}".encode()).hexdigest()[:8]
 
     annotation = {
@@ -9975,8 +10455,6 @@ async def okto_pulse_ask_spec_choice_question(
     if perm_err:
         return _perm_error(perm_err)
 
-    import uuid as _uuid
-
     from okto_pulse.core.models.schemas import SpecQAChoiceOption, SpecQACreate
 
     try:
@@ -10139,6 +10617,278 @@ async def okto_pulse_list_spec_qa(board_id: str, spec_id: str) -> str:
                     }
                     for qa in items
                 ],
+            },
+            default=str,
+        )
+
+
+# ============================================================================
+# TRACEABILITY REPORT
+# ============================================================================
+
+
+def _mcp_artifact_summary(entity: Any) -> dict[str, Any]:
+    return {
+        "mockups_count": len(getattr(entity, "screen_mockups", None) or []),
+        "knowledge_bases_count": len(getattr(entity, "knowledge_bases", None) or []),
+        "architecture_designs_count": len(
+            getattr(entity, "architecture_designs", None) or []
+        ),
+    }
+
+
+def _mcp_artifact_refs(entity: Any) -> dict[str, Any]:
+    return {
+        "mockups": [
+            {
+                "id": item.get("id"),
+                "title": item.get("title") or item.get("name"),
+                "origin_id": item.get("origin_id"),
+            }
+            for item in (getattr(entity, "screen_mockups", None) or [])
+            if isinstance(item, dict)
+        ],
+        "knowledge_bases": [
+            _serialize_knowledge_base(kb, include_content=False)
+            for kb in (getattr(entity, "knowledge_bases", None) or [])
+        ],
+        "architecture_designs": [
+            {
+                "id": design.id,
+                "title": design.title,
+                "parent_type": design.parent_type,
+                "source_design_id": design.source_design_id,
+                "version": design.version,
+            }
+            for design in (getattr(entity, "architecture_designs", None) or [])
+        ],
+    }
+
+
+@mcp.tool()
+async def okto_pulse_get_traceability_report(
+    board_id: str,
+    ideation_id: str = "",
+    spec_id: str = "",
+    include_artifacts: str = "true",
+) -> str:
+    """
+    Return a consolidated SDLC traceability report:
+    ideation → refinement → spec → sprint → card/test/bug → artifacts.
+
+    Use this at the end of an E2E flow to verify whether the agent can answer
+    what was implemented in each flow and whether KBs, mockups, architecture,
+    tests, bugs, cards, and parent references stayed queryable.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    _include_artifacts = _flag_enabled(include_artifacts)
+
+    async with get_db_for_mcp() as db:
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        from okto_pulse.core.models.db import (
+            Card,
+            Ideation,
+            Refinement,
+            Spec,
+            Sprint,
+        )
+
+        board = await db.get(Board, board_id)
+        if not board:
+            return json.dumps({"error": "Board not found"})
+
+        spec_filter_ids: set[str] = set()
+        ideation_filter_ids: set[str] = set()
+        refinement_filter_ids: set[str] = set()
+
+        if spec_id:
+            spec_row = await db.get(Spec, spec_id)
+            if not spec_row or spec_row.board_id != board_id:
+                return json.dumps({"error": "Spec not found"})
+            spec_filter_ids.add(spec_id)
+            if spec_row.ideation_id:
+                ideation_filter_ids.add(spec_row.ideation_id)
+            if spec_row.refinement_id:
+                refinement_filter_ids.add(spec_row.refinement_id)
+        if ideation_id:
+            ideation_filter_ids.add(ideation_id)
+
+        ideation_query = (
+            select(Ideation)
+            .options(selectinload(Ideation.knowledge_bases))
+            .options(selectinload(Ideation.architecture_designs))
+            .options(selectinload(Ideation.refinements))
+            .options(selectinload(Ideation.specs))
+            .where(Ideation.board_id == board_id)
+        )
+        if ideation_filter_ids:
+            ideation_query = ideation_query.where(Ideation.id.in_(ideation_filter_ids))
+        ideations = list((await db.execute(ideation_query)).scalars().all())
+
+        refinement_query = (
+            select(Refinement)
+            .options(selectinload(Refinement.knowledge_bases))
+            .options(selectinload(Refinement.architecture_designs))
+            .where(Refinement.board_id == board_id)
+        )
+        if refinement_filter_ids:
+            refinement_query = refinement_query.where(
+                Refinement.id.in_(refinement_filter_ids)
+            )
+        elif ideation_filter_ids:
+            refinement_query = refinement_query.where(
+                Refinement.ideation_id.in_(ideation_filter_ids)
+            )
+        refinements = list((await db.execute(refinement_query)).scalars().all())
+        refinement_ids = {ref.id for ref in refinements}
+
+        spec_query = (
+            select(Spec)
+            .options(selectinload(Spec.knowledge_bases))
+            .options(selectinload(Spec.architecture_designs))
+            .options(selectinload(Spec.cards))
+            .options(selectinload(Spec.sprints))
+            .where(Spec.board_id == board_id)
+        )
+        if spec_filter_ids:
+            spec_query = spec_query.where(Spec.id.in_(spec_filter_ids))
+        elif ideation_filter_ids or refinement_ids:
+            filters = []
+            if ideation_filter_ids:
+                filters.append(Spec.ideation_id.in_(ideation_filter_ids))
+            if refinement_ids:
+                filters.append(Spec.refinement_id.in_(refinement_ids))
+            if filters:
+                from sqlalchemy import or_
+
+                spec_query = spec_query.where(or_(*filters))
+        specs = list((await db.execute(spec_query)).scalars().all())
+
+        specs_by_ideation: dict[str | None, list[Any]] = {}
+        specs_by_refinement: dict[str | None, list[Any]] = {}
+        for spec in specs:
+            specs_by_ideation.setdefault(spec.ideation_id, []).append(spec)
+            specs_by_refinement.setdefault(spec.refinement_id, []).append(spec)
+
+        refinements_by_ideation: dict[str | None, list[Any]] = {}
+        for refinement in refinements:
+            refinements_by_ideation.setdefault(
+                refinement.ideation_id, []
+            ).append(refinement)
+
+        def _card_summary(card: Card) -> dict[str, Any]:
+            return {
+                "id": card.id,
+                "title": card.title,
+                "status": card.status.value,
+                "card_type": card.card_type.value,
+                "sprint_id": card.sprint_id,
+                "test_scenario_ids": card.test_scenario_ids or [],
+                "origin_task_id": card.origin_task_id,
+            }
+
+        def _sprint_summary(sprint: Sprint) -> dict[str, Any]:
+            return {
+                "id": sprint.id,
+                "title": sprint.title,
+                "status": sprint.status.value,
+            }
+
+        def _spec_summary(spec: Spec) -> dict[str, Any]:
+            cards = list(spec.cards or [])
+            payload = {
+                "id": spec.id,
+                "title": spec.title,
+                "status": spec.status.value,
+                "ideation_id": spec.ideation_id,
+                "refinement_id": spec.refinement_id,
+                "coverage_summary": _mcp_spec_coverage_summary(spec),
+                "sprints": [_sprint_summary(sprint) for sprint in spec.sprints],
+                "cards": [_card_summary(card) for card in cards],
+                "card_counts": {
+                    "total": len(cards),
+                    "normal": sum(1 for c in cards if c.card_type.value == "normal"),
+                    "test": sum(1 for c in cards if c.card_type.value == "test"),
+                    "bug": sum(1 for c in cards if c.card_type.value == "bug"),
+                    "done": sum(1 for c in cards if c.status.value == "done"),
+                },
+            }
+            if _include_artifacts:
+                payload["artifacts"] = _mcp_artifact_refs(spec)
+            else:
+                payload["artifact_summary"] = _mcp_artifact_summary(spec)
+            return payload
+
+        report_ideations = []
+        attached_spec_ids: set[str] = set()
+        for ideation in ideations:
+            ideation_specs = specs_by_ideation.get(ideation.id, [])
+            attached_spec_ids.update(spec.id for spec in ideation_specs)
+            refinement_payloads = []
+            for refinement in refinements_by_ideation.get(ideation.id, []):
+                refinement_specs = specs_by_refinement.get(refinement.id, [])
+                attached_spec_ids.update(spec.id for spec in refinement_specs)
+                ref_payload = {
+                    "id": refinement.id,
+                    "title": refinement.title,
+                    "status": refinement.status.value,
+                    "specs": [_spec_summary(spec) for spec in refinement_specs],
+                }
+                if _include_artifacts:
+                    ref_payload["artifacts"] = _mcp_artifact_refs(refinement)
+                else:
+                    ref_payload["artifact_summary"] = _mcp_artifact_summary(
+                        refinement
+                    )
+                refinement_payloads.append(ref_payload)
+
+            ideation_payload = {
+                "id": ideation.id,
+                "title": ideation.title,
+                "status": ideation.status.value,
+                "refinements": refinement_payloads,
+                "direct_specs": [_spec_summary(spec) for spec in ideation_specs],
+            }
+            if _include_artifacts:
+                ideation_payload["artifacts"] = _mcp_artifact_refs(ideation)
+            else:
+                ideation_payload["artifact_summary"] = _mcp_artifact_summary(
+                    ideation
+                )
+            report_ideations.append(ideation_payload)
+
+        orphan_specs = [
+            _spec_summary(spec)
+            for spec in specs
+            if spec.id not in attached_spec_ids
+        ]
+
+        await db.commit()
+        return json.dumps(
+            {
+                "board_id": board_id,
+                "filters": {
+                    "ideation_id": ideation_id or None,
+                    "spec_id": spec_id or None,
+                },
+                "summary": {
+                    "ideations": len(report_ideations),
+                    "refinements": len(refinements),
+                    "specs": len(specs),
+                    "orphan_specs": len(orphan_specs),
+                    "cards": sum(len(spec.cards or []) for spec in specs),
+                },
+                "ideations": report_ideations,
+                "orphan_specs": orphan_specs,
             },
             default=str,
         )
@@ -11839,13 +12589,13 @@ async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
 # KG CONSOLIDATION PRIMITIVES (MVP Fase 0)
 # ============================================================================
 
-from okto_pulse.core.mcp.kg_tools import register_kg_tools as _register_kg_tools
-from okto_pulse.core.mcp.kg_query_tools import register_kg_query_tools as _register_kg_query_tools
+from okto_pulse.core.mcp.kg_tools import register_kg_tools as _register_kg_tools  # noqa: E402
+from okto_pulse.core.mcp.kg_query_tools import register_kg_query_tools as _register_kg_query_tools  # noqa: E402
 
 _register_kg_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
 _register_kg_query_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
 
-from okto_pulse.core.mcp.kg_power_tools import register_kg_power_tools as _register_kg_power_tools
+from okto_pulse.core.mcp.kg_power_tools import register_kg_power_tools as _register_kg_power_tools  # noqa: E402
 _register_kg_power_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_for_mcp)
 
 

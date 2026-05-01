@@ -21,7 +21,7 @@ invariants:
 
 We also exercise `parse_multi_value` end-to-end with the exact payload
 shapes a caller would send, including the JSON-array form with literal
-commas inside labels — the regression scenario from board 0.1.6.
+commas inside labels — the regression scenario from board 0.1.13.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def test_no_legacy_options_split_on_comma_in_choice_tools(server_source: str):
                 offenders.append((i, line.strip()))
     assert not offenders, (
         "Found legacy split(',') calls that should have been migrated to "
-        f"parse_multi_value:\n" + "\n".join(f"  L{n}: {ln}" for n, ln in offenders)
+        "parse_multi_value:\n" + "\n".join(f"  L{n}: {ln}" for n, ln in offenders)
     )
 
 
@@ -137,7 +137,7 @@ def test_docstrings_document_json_and_pipe_formats(
 # ---------------------------------------------------------------------------
 
 def test_json_array_preserves_internal_commas():
-    """The exact regression case from board 0.1.6: each option label has
+    """The exact regression case from board 0.1.13: each option label has
     several internal commas inside parentheses. With the legacy parser this
     fragmented into 15+ rows; via parse_multi_value it stays at 5."""
     raw = (
@@ -209,9 +209,8 @@ def test_json_array_path_only_engaged_when_input_starts_with_bracket():
     be very surprising for callers passing markdown / JSON object text in
     a multi-value param."""
     raw = '{"key": "value"}'
-    # Post-Sprint-5 flip: default strict_mode=True rejects single-token strings.
-    # The lenient single-string behaviour is opt-in via strict_mode=False.
-    assert parse_multi_value(raw, strict_mode=False) == ['{"key": "value"}']
+    # Single-token strings are unambiguous and are accepted as one item.
+    assert parse_multi_value(raw) == ['{"key": "value"}']
 
 
 def test_json_array_with_object_member_raises_value_error():
@@ -280,12 +279,12 @@ def test_strict_mode_rejects_comma_only_input():
         parse_multi_value("a,b,c", strict_mode=True)
 
 
-def test_strict_mode_rejects_single_token_input():
-    """A bare single-token string under strict_mode is also rejected —
-    callers should pass `["x"]` (native list) when they want a single
-    item, not the bare string `"x"`."""
-    with pytest.raises(ValueError, match="must be a JSON array"):
-        parse_multi_value("just one token", strict_mode=True)
+def test_strict_mode_accepts_single_token_input():
+    """A bare single value under strict_mode is accepted as one item.
+
+    Only comma-containing strings are rejected because they are ambiguous.
+    """
+    assert parse_multi_value("just one token", strict_mode=True) == ["just one token"]
 
 
 def test_strict_mode_accepts_json_array():

@@ -183,6 +183,231 @@ async def test_mcp_add_list_get_import_and_dump_architecture(_seed_spec_card):
 
 
 @pytest.mark.asyncio
+async def test_mcp_rejects_invalid_architecture_payload_with_context(_seed_spec_card):
+    board_id, spec_id, _ = _seed_spec_card
+
+    created = await _call(
+        "okto_pulse_add_architecture_design",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Invalid Spec Architecture",
+        global_description="This payload should be critiqued before persistence.",
+        entities=json.dumps(
+            [
+                {
+                    "id": "entity-api",
+                    "name": "API",
+                    "entity_type": "api",
+                }
+            ]
+        ),
+        interfaces=json.dumps(
+            [
+                {
+                    "id": "interface-invalid",
+                    "name": "Invalid interface",
+                    "participants": ["entity-api", "entity-missing"],
+                    "direction": "both ways",
+                }
+            ]
+        ),
+    )
+
+    assert "error" in created
+    assert "entities[0].name duplicates entity_type" in created["error"]
+    assert "interfaces[0].participants[1]" in created["error"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec_card):
+    board_id, _, _ = _seed_spec_card
+
+    schema_resp = await _call("okto_pulse_get_architecture_design_schema", board_id=board_id)
+
+    assert schema_resp.get("success") is True, schema_resp
+    schema = schema_resp["schema"]
+    assert schema["allowed_values"]["excalidraw.connectionType"] == ["direct", "elbow"]
+    assert "mcp_server" in schema["entity_type_examples"]
+    assert schema["entity_contract"]["anti_patterns"]
+    assert "endpoint" in schema["interface_contract"]["recommended"]
+    assert schema["interface_contract"]["anti_patterns"]
+    assert "linkedInterfaceIds" in schema["excalidraw_adapter_payload_contract"]["edge_element"]
+    assert schema["complete_minimal_payload_example"]["diagrams"][0]["format"] == "excalidraw_json"
+
+
+@pytest.mark.asyncio
+async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fixes(_seed_spec_card):
+    board_id, spec_id, _ = _seed_spec_card
+
+    critique = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Invalid Architecture",
+        global_description="Dry-run should return contextual feedback.",
+        entities=json.dumps(
+            [
+                {
+                    "id": "entity-api",
+                    "name": "API",
+                    "entity_type": "api",
+                }
+            ]
+        ),
+        interfaces=json.dumps(
+            [
+                {
+                    "id": "interface-invalid",
+                    "name": "Invalid interface",
+                    "description": "Missing valid endpoint and direction.",
+                    "participants": ["entity-api", "entity-missing"],
+                    "direction": "both ways",
+                }
+            ]
+        ),
+        diagrams=json.dumps(
+            [
+                {
+                    "id": "diagram-invalid",
+                    "title": "Invalid diagram",
+                    "diagram_type": "context",
+                    "format": "excalidraw_json",
+                    "adapter_payload": {
+                        "type": "excalidraw",
+                        "version": 2,
+                        "elements": [
+                            {"id": "node-api", "type": "rectangle", "linkedEntityId": "entity-api"},
+                            {
+                                "id": "edge-invalid",
+                                "type": "arrow",
+                                "sourceElementId": "node-api",
+                                "targetElementId": "node-missing",
+                                "connectionType": "curved",
+                            },
+                        ],
+                        "appState": {},
+                        "files": {},
+                    },
+                }
+            ]
+        ),
+    )
+
+    assert critique.get("success") is True, critique
+    assert critique["valid"] is False
+    joined_issues = "\n".join(critique["issues"])
+    assert "entities[0].name duplicates entity_type" in joined_issues
+    assert "interfaces[0].participants[1]" in joined_issues
+    assert "interfaces[0].direction='both ways' is invalid" in joined_issues
+    assert "connectionType='curved' is invalid" in joined_issues
+    assert "targetElementId references 'node-missing'" in joined_issues
+    assert any("responsibility" in item for item in critique["warnings"])
+    assert any("elbow" in item for item in critique["suggested_fixes"])
+
+
+@pytest.mark.asyncio
+async def test_mcp_validate_architecture_payload_accepts_complete_payload_without_persisting(_seed_spec_card):
+    board_id, spec_id, _ = _seed_spec_card
+    entities = [
+        {
+            "id": "entity-customer-portal",
+            "name": "Customer Portal",
+            "entity_type": "web_app",
+            "responsibility": "Collects checkout input.",
+            "boundaries": "Browser UI boundary.",
+            "technologies": ["React"],
+        },
+        {
+            "id": "entity-checkout-api",
+            "name": "Checkout API",
+            "entity_type": "api",
+            "responsibility": "Validates checkout and creates orders.",
+            "boundaries": "Backend API boundary.",
+            "technologies": ["FastAPI"],
+        },
+    ]
+    interfaces = [
+        {
+            "id": "interface-create-order",
+            "name": "Create order",
+            "description": "Customer Portal sends checkout data to Checkout API.",
+            "participants": ["entity-customer-portal", "entity-checkout-api"],
+            "direction": "source_to_target",
+            "endpoint": "POST /orders",
+            "protocol": "REST",
+            "contract_type": "OpenAPI",
+            "request_schema": {"type": "object", "required": ["cart_id"]},
+            "response_schema": {"type": "object", "required": ["order_id"]},
+            "error_contract": {"400": "Invalid checkout payload"},
+        }
+    ]
+    diagrams = [
+        {
+            "id": "diagram-runtime",
+            "title": "Runtime context",
+            "diagram_type": "context",
+            "format": "excalidraw_json",
+            "adapter_payload": {
+                "type": "excalidraw",
+                "version": 2,
+                "elements": [
+                    {
+                        "id": "node-customer-portal",
+                        "type": "rectangle",
+                        "linkedEntityId": "entity-customer-portal",
+                    },
+                    {
+                        "id": "node-checkout-api",
+                        "type": "rectangle",
+                        "linkedEntityId": "entity-checkout-api",
+                    },
+                    {
+                        "id": "edge-create-order",
+                        "type": "arrow",
+                        "sourceElementId": "node-customer-portal",
+                        "targetElementId": "node-checkout-api",
+                        "linkedInterfaceIds": ["interface-create-order"],
+                        "connectionType": "elbow",
+                    },
+                ],
+                "appState": {},
+                "files": {},
+            },
+        }
+    ]
+
+    critique = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Checkout Architecture",
+        global_description="Customer Portal calls Checkout API to create orders.",
+        entities=json.dumps(entities),
+        interfaces=json.dumps(interfaces),
+        diagrams=json.dumps(diagrams),
+    )
+    listed = await _call(
+        "okto_pulse_list_architecture_designs",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+    )
+
+    assert critique.get("success") is True, critique
+    assert critique["valid"] is True
+    assert critique["issues"] == []
+    assert critique["summary"]["entities_count"] == 2
+    assert critique["summary"]["interfaces_count"] == 1
+    assert critique["summary"]["linked_entity_elements_count"] == 2
+    assert critique["summary"]["linked_interface_elements_count"] == 1
+    assert listed.get("success") is True, listed
+    assert listed["architecture_designs"] == []
+
+
+@pytest.mark.asyncio
 async def test_mcp_copy_architecture_to_card_and_task_context(_seed_spec_card):
     board_id, spec_id, card_id = _seed_spec_card
     created = await _call(

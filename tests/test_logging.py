@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import atexit
 import logging
-import os
 import sys
 import threading
 import time
@@ -303,7 +302,6 @@ async def run_tests_async(
         Dict with keys: ``returncode``, ``stdout``, ``stderr``, ``log_files``,
         ``hanged``, ``duration_seconds``.
     """
-    import subprocess
 
     log_dir = log_dir or LOG_DIR
     log_dir.mkdir(parents=True, exist_ok=True)

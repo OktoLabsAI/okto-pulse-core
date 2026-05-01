@@ -9,7 +9,6 @@ Covers all 6 test cards:
 - 79eb2e55: Audit row schema completo
 """
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -38,7 +37,6 @@ from okto_pulse.core.kg.schema import (
     bootstrap_board_graph,
     board_kuzu_path,
     open_board_connection,
-    vector_index_name,
 )
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
@@ -77,7 +75,7 @@ class TestBootstrapSchema:
         }
 
     def test_schema_version(self):
-        assert SCHEMA_VERSION == "0.3.0"
+        assert SCHEMA_VERSION == "0.3.3"
 
     def test_bootstrap_creates_kuzu_dir(self, board_id):
         handle = bootstrap_board_graph(board_id)

@@ -22,7 +22,6 @@ from okto_pulse.core.kg.hybrid_search import (
     kg_search_hybrid,
 )
 from okto_pulse.core.kg.hybrid_search.hybrid import (
-    GraphNeighbor,
     VectorSeed,
 )
 
