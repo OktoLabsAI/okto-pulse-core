@@ -13,6 +13,7 @@ from okto_pulse.core.api.refinements import router as refinements_router
 from okto_pulse.core.api.guidelines import router as guidelines_router
 from okto_pulse.core.api.specs import router as specs_router
 from okto_pulse.core.api.analytics import router as analytics_router
+from okto_pulse.core.api.architecture import router as architecture_router
 from okto_pulse.core.api.presets import router as presets_router
 from okto_pulse.core.api.sprints import router as sprints_router
 from okto_pulse.core.api.kg_routes import router as kg_router
@@ -37,6 +38,7 @@ api_router.include_router(attachments_router, prefix="/attachments", tags=["atta
 api_router.include_router(qa_router, prefix="/qa", tags=["qa"])
 api_router.include_router(comments_router, prefix="/comments", tags=["comments"])
 api_router.include_router(analytics_router, tags=["analytics"])
+api_router.include_router(architecture_router, tags=["architecture"])
 api_router.include_router(presets_router, prefix="/presets", tags=["presets"])
 api_router.include_router(sprints_router, tags=["sprints"])
 api_router.include_router(kg_router, tags=["knowledge-graph"])

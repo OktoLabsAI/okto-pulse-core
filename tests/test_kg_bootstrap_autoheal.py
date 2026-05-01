@@ -50,8 +50,15 @@ def _purge_board_graph(board_id: str) -> None:
     triggers a clean bootstrap."""
     path = board_kuzu_path(board_id)
     close_all_connections(board_id)
-    if path.exists():
+    if path.is_dir():
         shutil.rmtree(path, ignore_errors=True)
+    elif path.is_file():
+        path.unlink(missing_ok=True)
+        for sibling in path.parent.glob(path.name + ".*"):
+            if sibling.is_dir():
+                shutil.rmtree(sibling, ignore_errors=True)
+            else:
+                sibling.unlink(missing_ok=True)
     parent = path.parent
     if parent.exists() and not any(parent.iterdir()):
         shutil.rmtree(parent, ignore_errors=True)
@@ -132,6 +139,35 @@ def test_open_board_connection_autobootstraps(fresh_board):
         )
         assert res.has_next()
         res.close()
+
+
+def test_corrupt_ladybug_wal_is_purged_before_rebootstrap(fresh_board, monkeypatch):
+    """A crash during LadybugDB commit can leave graph.lbug.wal corrupt.
+
+    The next bootstrap probe should remove only the local graph file and
+    sidecars so a clean graph can be recreated instead of sending every
+    consolidation attempt to DLQ.
+    """
+    from okto_pulse.core.kg import schema as schema_module
+
+    path = board_kuzu_path(fresh_board)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"partial-lbug")
+    wal_path = path.parent / f"{path.name}.wal"
+    wal_path.write_bytes(b"corrupt-wal")
+
+    def _raise_corrupt(_path):
+        raise RuntimeError(
+            "Runtime exception: Corrupted wal file. "
+            "Read out invalid WAL record type."
+        )
+
+    monkeypatch.setattr(schema_module, "_open_kuzu_db_path_cached", _raise_corrupt)
+    reset_bootstrap_cache_for_tests()
+
+    assert schema_module._graph_needs_bootstrap(fresh_board) is True
+    assert not path.exists()
+    assert not wal_path.exists()
 
 
 # ---------------------------------------------------------------------------

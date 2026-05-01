@@ -1,6 +1,6 @@
-"""Global discovery Kuzu meta-graph schema.
+"""Global discovery LadybugDB meta-graph schema.
 
-Path: ~/.okto-pulse/global/discovery.kuzu
+Path: ~/.okto-pulse/global/discovery.lbug
 4 node tables: Board, Topic, Entity, DecisionDigest
 7 rel tables: HAS_TOPIC, MENTIONS_ENTITY, CONTAINS_DECISION,
              TOPIC_RELATES_TO, ENTITY_RELATES_TO, DECISION_MENTIONS_ENTITY,
@@ -14,11 +14,13 @@ from __future__ import annotations
 import gc
 import logging
 import os
+import shutil
 from pathlib import Path
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.schema")
 
 GLOBAL_SCHEMA_VERSION = "0.1.0"
+GLOBAL_DISCOVERY_FILENAME = "discovery.lbug"
 
 NODE_DDL = [
     """CREATE NODE TABLE IF NOT EXISTS Board (
@@ -80,7 +82,68 @@ VECTOR_INDEXES = [
 def _global_kuzu_path() -> Path:
     from okto_pulse.core.infra.config import get_settings
     base = Path(os.path.expanduser(get_settings().kg_base_dir)).resolve()
-    return base / "global" / "discovery.kuzu"
+    return base / "global" / GLOBAL_DISCOVERY_FILENAME
+
+
+def _is_ladybug_corruption_error(exc: BaseException) -> bool:
+    try:
+        from okto_pulse.core.kg.schema import _is_ladybug_corruption_error as _is_corrupt
+        return _is_corrupt(exc)
+    except Exception:
+        msg = str(exc).lower()
+        return (
+            "corrupted wal file" in msg
+            or "invalid wal record" in msg
+            or "not a valid lbug database file" in msg
+        )
+
+
+def purge_global_discovery_storage(*, reason: str = "manual") -> list[str]:
+    """Delete the local global LadybugDB discovery file and sidecars.
+
+    This only touches ``discovery.lbug`` plus ``discovery.lbug.*`` under the
+    configured KG global directory. SQLite application state and per-board
+    graph files are left intact; the next bootstrap recreates this meta-graph
+    from pending/outbox activity.
+    """
+    path = _global_kuzu_path()
+    close_global_connection()
+    removed: list[str] = []
+    targets: list[Path] = []
+    if path.exists():
+        targets.append(path)
+    if path.parent.exists():
+        targets.extend(sorted(path.parent.glob(path.name + ".*")))
+
+    for target in targets:
+        try:
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                target.unlink(missing_ok=True)
+            removed.append(str(target))
+        except Exception as exc:
+            logger.warning(
+                "global_discovery.purge_failed path=%s reason=%s err=%s",
+                target, reason, exc,
+                extra={
+                    "event": "global_discovery.purge_failed",
+                    "path": str(target),
+                    "reason": reason,
+                },
+            )
+
+    if removed:
+        logger.warning(
+            "global_discovery.purged reason=%s removed=%d",
+            reason, len(removed),
+            extra={
+                "event": "global_discovery.purged",
+                "reason": reason,
+                "removed": removed,
+            },
+        )
+    return removed
 
 
 def bootstrap_global_discovery() -> Path:
@@ -95,7 +158,14 @@ def bootstrap_global_discovery() -> Path:
     path = _global_kuzu_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    db = _open_kuzu_db(path)
+    try:
+        db = _open_kuzu_db(path)
+    except Exception as exc:
+        if not _is_ladybug_corruption_error(exc):
+            raise
+        purge_global_discovery_storage(reason="corrupt_open_during_bootstrap")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        db = _open_kuzu_db(path)
     conn = kuzu.Connection(db)
     try:
         load_vector_extension(conn)
@@ -150,7 +220,14 @@ def open_global_connection():
         bootstrap_global_discovery()
 
     if _global_db is None:
-        _global_db = _open_kuzu_db(path)
+        try:
+            _global_db = _open_kuzu_db(path)
+        except Exception as exc:
+            if not _is_ladybug_corruption_error(exc):
+                raise
+            purge_global_discovery_storage(reason="corrupt_open_global_connection")
+            bootstrap_global_discovery()
+            _global_db = _open_kuzu_db(path)
     conn = kuzu.Connection(_global_db)
     load_vector_extension(conn)
     return _global_db, conn

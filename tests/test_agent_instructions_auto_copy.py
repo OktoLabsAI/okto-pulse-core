@@ -29,9 +29,13 @@ def test_pre_flight_mentions_copy_knowledge_to_card(text):
     assert "okto_pulse_copy_knowledge_to_card" in text
 
 
+def test_pre_flight_mentions_copy_architecture_to_card(text):
+    assert "okto_pulse_copy_architecture_to_card" in text
+
+
 def test_pre_flight_marks_copy_steps_as_mandatory(text):
     # The new bullet says "are mandatory before `started → in_progress`"
-    assert "mandatory before `started" in text or "Steps 6 and 7 are mandatory" in text
+    assert "mandatory before `started" in text or "Steps 6, 7, and 8 are mandatory" in text
 
 
 def test_card_kb_lifecycle_section_documents_5_tools(text):

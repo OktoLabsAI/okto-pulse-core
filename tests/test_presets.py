@@ -676,6 +676,59 @@ def test_spec_check_with_state_allows_mockup_annotate_in_in_progress(presets_by_
 
 
 # ---------------------------------------------------------------------------
+# Architecture Design permissions
+# ---------------------------------------------------------------------------
+
+
+ARCHITECTURE_PARENTS = ("ideation", "refinement", "spec", "card")
+ARCHITECTURE_ACTIONS = ("read", "create", "edit", "delete", "import", "render")
+
+
+def test_architecture_registry_contains_parent_actions():
+    from okto_pulse.core.infra.permissions import ALL_FLAGS
+
+    for parent in ARCHITECTURE_PARENTS:
+        for action in ARCHITECTURE_ACTIONS:
+            assert f"{parent}.architecture.{action}" in ALL_FLAGS
+    assert "card.copy_from_spec.architecture" in ALL_FLAGS
+
+
+def test_spec_preset_owns_architecture_authoring_and_copy(presets_by_name):
+    flags = presets_by_name["Spec"]["flags"]
+    for parent in ARCHITECTURE_PARENTS:
+        for action in ARCHITECTURE_ACTIONS:
+            assert _get_nested(flags, f"{parent}.architecture.{action}") is True
+    assert _get_nested(flags, "card.copy_from_spec.architecture") is True
+
+
+@pytest.mark.parametrize("preset_name", ["Executor", "QA", "Validator", "Reporter", "Sprint Manager"])
+def test_operational_presets_read_architecture_without_editing(presets_by_name, preset_name):
+    flags = presets_by_name[preset_name]["flags"]
+    for parent in ARCHITECTURE_PARENTS:
+        assert _get_nested(flags, f"{parent}.architecture.read") is True
+        assert _get_nested(flags, f"{parent}.architecture.edit") is False
+    assert _get_nested(flags, "card.copy_from_spec.architecture") is False
+
+
+def test_legacy_permission_map_includes_architecture_flags():
+    from okto_pulse.core.infra.permissions import map_legacy_permissions
+
+    read_flags = map_legacy_permissions(["board:read"])
+    for parent in ARCHITECTURE_PARENTS:
+        assert _get_nested(read_flags, f"{parent}.architecture.read") is True
+
+    spec_update_flags = map_legacy_permissions(["specs:update"])
+    for parent in ("ideation", "refinement", "spec"):
+        for action in ("create", "edit", "delete", "import", "render"):
+            assert _get_nested(spec_update_flags, f"{parent}.architecture.{action}") is True
+
+    card_update_flags = map_legacy_permissions(["cards:update"])
+    for action in ("create", "edit", "delete", "import", "render"):
+        assert _get_nested(card_update_flags, f"card.architecture.{action}") is True
+    assert _get_nested(card_update_flags, "card.copy_from_spec.architecture") is True
+
+
+# ---------------------------------------------------------------------------
 # Existing role_summary test — kept after the Sprint Manager block
 # ---------------------------------------------------------------------------
 

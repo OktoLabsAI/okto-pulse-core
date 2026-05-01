@@ -54,13 +54,14 @@ Every time you start a session or pick up a new task, follow this sequence. Viol
 5. okto_pulse_get_task_context(board_id, card_id, ...)    → FULL context before ANY work
 6. okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id)     → snapshot relevant mockups onto the card
 7. okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id)   → snapshot relevant KEs onto the card
-8. okto_pulse_move_card(status="in_progress")             → signal that work is starting
-9. BEGIN WORK                                             → only now write code / make changes
+8. okto_pulse_copy_architecture_to_card(board_id, spec_id, card_id) → snapshot relevant architecture onto the card
+9. okto_pulse_move_card(status="in_progress")             → signal that work is starting
+10. BEGIN WORK                                            → only now write code / make changes
 ```
 
-**Never skip steps 5 and 8.** Implementing based on the card title alone leads to spec drift, duplicated work, and contradictory decisions. The `get_task_context` call returns the card, spec requirements, TRs, BRs, test scenarios, API contracts, knowledge bases, mockups, Q&A, and comments — everything you need.
+**Never skip steps 5 and 9.** Implementing based on the card title alone leads to spec drift, duplicated work, and contradictory decisions. The `get_task_context` call returns the card, spec requirements, TRs, BRs, test scenarios, API contracts, knowledge bases, mockups, architecture, Q&A, and comments — everything you need.
 
-**Steps 6 and 7 are mandatory before `started → in_progress`** — the implementer (you or a future agent picking up the card) reads `card.knowledge_bases` and `card.screen_mockups` directly, never re-querying the spec. This snapshot prevents drift if the spec is later edited and decouples the card from the spec lifecycle. Use `knowledge_ids` / `screen_ids` to scope a subset when only part of the spec applies. If the card does not need a particular artifact (e.g. a backend-only card has no mockups), skip explicitly — but document the rationale in a comment.
+**Steps 6, 7, and 8 are mandatory before `started → in_progress`** — the implementer (you or a future agent picking up the card) reads `card.knowledge_bases`, `card.screen_mockups`, and `card.architecture_designs` directly, never re-querying the spec. This snapshot prevents drift if the spec is later edited and decouples the card from the spec lifecycle. Use `knowledge_ids`, `screen_ids`, and `design_ids` to scope a subset when only part of the spec applies. If the card does not need a particular artifact (e.g. a backend-only card has no mockups), skip explicitly — but document the rationale in a comment.
 
 **Per-task KE lifecycle** (introduced in 0.1.6): cards now own their KEs via inline `Card.knowledge_bases` JSONB. The full lifecycle is exposed symmetrically:
 
@@ -347,7 +348,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 |------|------|---------|
 | `okto_pulse_create_card` | board_id, title, spec_id, description?, status?, priority?, assignee_id?, labels?, card_type?, origin_task_id?, severity?, expected_behavior?, observed_behavior?, steps_to_reproduce?, action_plan? | Create a task or bug card |
 | `okto_pulse_get_card` | board_id, card_id | Full card with attachments, Q&A, comments |
-| `okto_pulse_get_task_context` | board_id, card_id, include_knowledge?, include_mockups?, include_qa?, include_comments? | **Full execution context** — card + spec requirements, TRs, BRs, test scenarios, API contracts, KBs, mockups. **Always call before starting a task.** |
+| `okto_pulse_get_task_context` | board_id, card_id, include_knowledge?, include_mockups?, include_qa?, include_comments?, include_architecture? | **Full execution context** — card + spec requirements, TRs, BRs, test scenarios, API contracts, KBs, mockups, architecture. **Always call before starting a task.** |
 | `okto_pulse_get_task_conclusions` | board_id, card_id | Get conclusions from a completed task — what was done, root cause (bugs), decisions |
 | `okto_pulse_update_card` | board_id, card_id, title?, description?, assignee_id?, labels?, severity?, expected_behavior?, observed_behavior?, steps_to_reproduce?, action_plan?, linked_test_task_ids? | Edit card fields |
 | `okto_pulse_move_card` | board_id, card_id, status, position?, **conclusion?**, **completeness?**, **completeness_justification?**, **drift?**, **drift_justification?** | Change card status. **When status=done**: conclusion + completeness + drift are REQUIRED (see "Card Status Transitions" above). System enforces gates — read the transition table first. |
@@ -919,6 +920,7 @@ After defining acceptance criteria in a spec, you **MUST** define test scenarios
 **Spec-to-Card context copy tools:**
 - `okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id, screen_ids?)` — Copy mockups from spec to card (specific screens or all)
 - `okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id, knowledge_ids?)` — Copy knowledge bases to card as comments
+- `okto_pulse_copy_architecture_to_card(board_id, spec_id, card_id, design_ids?)` — Copy Architecture Designs from spec to card as deep-copy snapshots
 - `okto_pulse_copy_qa_to_card(board_id, spec_id, card_id)` — Copy answered Q&A to card as a consolidated comment
 
 **Process:**
@@ -1342,6 +1344,7 @@ A card that implements part of a spec but is not linked to it breaks traceabilit
 9. **MANDATORY — Copy artifacts into every card**. A card without linked artifacts forces the implementer to hunt for context. Every card should be self-contained — an agent picking up the card should be able to understand what to build from the card alone. Use:
    - `okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id, screen_ids?)` — mockups relevant to the card's scope. For UI tasks copy all mockups; for backend tasks copy screens that show the expected behaviour. `screen_ids` selects a subset.
    - `okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id, knowledge_ids?)` — relevant knowledge-base entries (reference docs, API specs, design docs, domain knowledge).
+   - `okto_pulse_copy_architecture_to_card(board_id, spec_id, card_id, design_ids?)` — architecture relevant to the task, including global description, entities, interfaces, contracts, diagrams, source version, stale and breaking flags.
    - `okto_pulse_copy_qa_to_card(board_id, spec_id, card_id)` — answered Q&A decisions. These are binding; implementing without them risks contradicting agreed requirements.
 10. **Write detailed card descriptions** — the card description MUST include:
    - What specifically needs to be built/changed (not just "implement feature X")
