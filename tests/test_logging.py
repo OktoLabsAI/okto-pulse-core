@@ -106,11 +106,8 @@ def setup_test_logging(
         file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
-        # Flush on every write to never lose logs
-        file_handler.flush = lambda: (  # type: ignore[assignment]
-            logging.FileHandler.flush(file_handler),
-            file_handler.stream.flush(),
-        )
+        # FileHandler.emit already flushes on every write, and the stdlib
+        # implementation is safe after close() when logging.shutdown runs.
         logger.addHandler(file_handler)
 
         with _log_files_lock:

@@ -18,6 +18,7 @@ from okto_pulse.core.models.db import (
     ActivityLog,
     Agent,
     AgentBoard,
+    ArchitectureDesign,
     Attachment,
     Board,
     BoardGuideline,
@@ -325,6 +326,7 @@ class BoardService:
             .options(selectinload(Board.cards).selectinload(Card.attachments))
             .options(selectinload(Board.cards).selectinload(Card.qa_items))
             .options(selectinload(Board.cards).selectinload(Card.comments))
+            .options(selectinload(Board.cards).selectinload(Card.architecture_designs))
             .where(Board.id == board_id)
         )
         if user_id:
@@ -615,6 +617,7 @@ class CardService:
             .options(selectinload(Card.attachments))
             .options(selectinload(Card.qa_items))
             .options(selectinload(Card.comments))
+            .options(selectinload(Card.architecture_designs))
             .where(Card.id == card_id)
         )
         result = await self.db.execute(query)
@@ -2413,6 +2416,7 @@ class SpecService:
             .options(selectinload(Spec.cards))
             .options(selectinload(Spec.knowledge_bases))
             .options(selectinload(Spec.qa_items))
+            .options(selectinload(Spec.architecture_designs))
             .where(Spec.id == spec_id)
         )
         result = await self.db.execute(query)
@@ -2420,7 +2424,11 @@ class SpecService:
 
     async def list_specs(self, board_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Spec]:
         """List specs for a board, optionally filtered by status."""
-        query = select(Spec).where(Spec.board_id == board_id)
+        query = (
+            select(Spec)
+            .options(selectinload(Spec.architecture_designs))
+            .where(Spec.board_id == board_id)
+        )
         if status_filter:
             query = query.where(Spec.status == SpecStatus(status_filter))
         if not include_archived:
@@ -3420,9 +3428,10 @@ class IdeationService:
         """Get an ideation by ID with refinements, specs, and qa_items."""
         query = (
             select(Ideation)
-            .options(selectinload(Ideation.refinements))
-            .options(selectinload(Ideation.specs))
+            .options(selectinload(Ideation.refinements).selectinload(Refinement.architecture_designs))
+            .options(selectinload(Ideation.specs).selectinload(Spec.architecture_designs))
             .options(selectinload(Ideation.qa_items))
+            .options(selectinload(Ideation.architecture_designs))
             .where(Ideation.id == ideation_id)
         )
         result = await self.db.execute(query)
@@ -3430,7 +3439,11 @@ class IdeationService:
 
     async def list_ideations(self, board_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Ideation]:
         """List ideations for a board, optionally filtered by status."""
-        query = select(Ideation).where(Ideation.board_id == board_id)
+        query = (
+            select(Ideation)
+            .options(selectinload(Ideation.architecture_designs))
+            .where(Ideation.board_id == board_id)
+        )
         if status_filter:
             query = query.where(Ideation.status == IdeationStatus(status_filter))
         if not include_archived:
@@ -4067,9 +4080,10 @@ class RefinementService:
         """Get a refinement by ID with specs, knowledge_bases, and qa_items."""
         query = (
             select(Refinement)
-            .options(selectinload(Refinement.specs))
+            .options(selectinload(Refinement.specs).selectinload(Spec.architecture_designs))
             .options(selectinload(Refinement.knowledge_bases))
             .options(selectinload(Refinement.qa_items))
+            .options(selectinload(Refinement.architecture_designs))
             .where(Refinement.id == refinement_id)
         )
         result = await self.db.execute(query)
@@ -4077,7 +4091,11 @@ class RefinementService:
 
     async def list_refinements(self, ideation_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Refinement]:
         """List refinements for an ideation, optionally filtered by status."""
-        query = select(Refinement).where(Refinement.ideation_id == ideation_id)
+        query = (
+            select(Refinement)
+            .options(selectinload(Refinement.architecture_designs))
+            .where(Refinement.ideation_id == ideation_id)
+        )
         if status_filter:
             query = query.where(Refinement.status == RefinementStatus(status_filter))
         if not include_archived:

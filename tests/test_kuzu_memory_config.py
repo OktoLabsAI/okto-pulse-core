@@ -67,9 +67,9 @@ def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
     class _FakeKuzuModule:
         Database = _FakeDatabase
 
-    fake_path = tmp_path / "legacy.kuzu"
-    # Monkeypatch the lazy-imported kuzu module.
-    with patch.dict("sys.modules", {"kuzu": _FakeKuzuModule}):
+    fake_path = tmp_path / "graph.lbug"
+    # Monkeypatch the lazy-imported LadybugDB module.
+    with patch.dict("sys.modules", {"ladybug": _FakeKuzuModule}):
         schema_module._open_kuzu_db(fake_path)
 
     assert captured["path"] == str(fake_path)

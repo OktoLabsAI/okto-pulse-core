@@ -500,3 +500,17 @@ class TestDelegationContract:
     def test_mcp_re_exports_spec_coverage(self):
         from okto_pulse.core.mcp import server as mcp_mod
         assert hasattr(mcp_mod, "_spec_coverage")
+
+    def test_architecture_rest_and_mcp_share_core_services(self):
+        from okto_pulse.core.api import architecture as rest_mod
+        from okto_pulse.core.mcp import server as mcp_mod
+
+        rest_src = inspect.getsource(rest_mod)
+        mcp_src = inspect.getsource(mcp_mod)
+        for symbol in (
+            "ArchitectureDesignRepository",
+            "ArchitectureDiagramStore",
+            "ArchitecturePropagationService",
+        ):
+            assert symbol in rest_src, f"REST architecture missing service: {symbol}"
+            assert symbol in mcp_src, f"MCP architecture missing service: {symbol}"

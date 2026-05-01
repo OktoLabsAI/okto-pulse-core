@@ -4,6 +4,7 @@ import gc as _gc
 import os
 import sys
 import tempfile
+import types
 
 import pytest
 
@@ -58,6 +59,53 @@ class TestGlobalSchema:
 
     def test_schema_version(self):
         assert GLOBAL_SCHEMA_VERSION == "0.1.0"
+
+    def test_corrupt_global_discovery_wal_is_purged_before_rebootstrap(self, monkeypatch, tmp_path):
+        from okto_pulse.core.kg import schema as kg_schema
+        from okto_pulse.core.kg.global_discovery import schema as global_schema
+
+        reset_global_db_for_tests()
+        path = tmp_path / "global" / "discovery.lbug"
+        path.parent.mkdir(parents=True)
+        path.write_text("bad-db", encoding="utf-8")
+        wal = path.with_name("discovery.lbug.wal")
+        wal.write_text("bad-wal", encoding="utf-8")
+
+        class FakeDB:
+            def close(self):
+                pass
+
+        class FakeConn:
+            def execute(self, *_args, **_kwargs):
+                return None
+
+            def close(self):
+                pass
+
+        calls = {"open": 0}
+
+        def fake_open(_path):
+            calls["open"] += 1
+            if calls["open"] == 1:
+                raise RuntimeError(
+                    "Runtime exception: Corrupted wal file. "
+                    "Read out invalid WAL record type."
+                )
+            return FakeDB()
+
+        monkeypatch.setattr(global_schema, "_global_kuzu_path", lambda: path)
+        monkeypatch.setattr(kg_schema, "_open_kuzu_db", fake_open)
+        monkeypatch.setattr(kg_schema, "load_vector_extension", lambda _conn: None)
+        monkeypatch.setitem(
+            sys.modules,
+            "ladybug",
+            types.SimpleNamespace(Connection=lambda _db: FakeConn()),
+        )
+
+        bootstrap_global_discovery()
+
+        assert calls["open"] == 2
+        assert not wal.exists()
 
     def test_board_insert_and_query(self):
         db, conn = open_global_connection()

@@ -138,7 +138,8 @@ class SpecSemanticChanged(DomainEvent):
 
     Covers fields that affect KG extraction but are intentionally excluded
     from `content_fields` in update_spec (decisions, business_rules,
-    api_contracts, test_scenarios, screen_mockups). The ConsolidationEnqueuer
+    api_contracts, test_scenarios, screen_mockups, architecture_designs).
+    The ConsolidationEnqueuer
     handler maps this event to a spec consolidation enqueue so the KG stays
     in sync with structured-section mutations.
     """

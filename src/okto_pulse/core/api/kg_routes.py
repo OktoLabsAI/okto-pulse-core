@@ -988,7 +988,8 @@ async def stream_kg_events(
     from sqlalchemy import and_, asc, func, select as _select
 
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import ConsolidationQueue, GlobalUpdateOutbox
+    from okto_pulse.core.kg.governance import HISTORICAL_PROGRESS_SETTINGS_KEY
+    from okto_pulse.core.models.db import Board, ConsolidationQueue, GlobalUpdateOutbox
 
     try:
         cursor = _dt.fromisoformat(since) if since else _dt.now(_tz.utc)
@@ -1000,15 +1001,42 @@ async def stream_kg_events(
     async def _queue_snapshot(session) -> dict[str, int]:
         """Counters for `ConsolidationQueue` rows scoped to this board."""
         rows = (await session.execute(
-            _select(ConsolidationQueue.status, func.count())
+            _select(ConsolidationQueue.status, ConsolidationQueue.source, func.count())
             .where(ConsolidationQueue.board_id == board_id)
-            .group_by(ConsolidationQueue.status)
+            .group_by(ConsolidationQueue.status, ConsolidationQueue.source)
         )).all()
         snap = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-        for status, count in rows:
+        historical = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
+        for status, source, count in rows:
             if status in snap:
-                snap[status] = int(count)
-        snap["total"] = sum(snap.values())
+                snap[status] += int(count)
+                if source == "historical_backfill":
+                    historical[status] += int(count)
+
+        live_total = sum(snap.values())
+        historical_active = (
+            historical["pending"] + historical["claimed"] + historical["paused"]
+        )
+        historical_total = 0
+        if historical_active > 0:
+            board = await session.get(Board, board_id)
+            if board is not None and isinstance(board.settings, dict):
+                state = board.settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
+                if isinstance(state, dict):
+                    try:
+                        historical_total = int(state.get("total") or 0)
+                    except (TypeError, ValueError):
+                        historical_total = 0
+
+        non_historical_total = live_total - sum(historical.values())
+        if historical_active > 0 and historical_total > 0:
+            snap["total"] = max(live_total, historical_total + non_historical_total)
+            snap["processed"] = max(0, snap["total"] - (
+                snap["pending"] + snap["claimed"] + snap["paused"]
+            ))
+        else:
+            snap["total"] = live_total
+            snap["processed"] = snap["done"]
         return snap
 
     async def _iter():

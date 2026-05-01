@@ -121,6 +121,47 @@ class TestHistoricalOptIn:
             assert prog["total"] >= 1
             assert prog["progress"] == 0
 
+    @pytest.mark.asyncio
+    async def test_progress_total_stays_stable_when_processed_rows_are_deleted(self, db_factory):
+        """DELETE-on-ack removes queue rows, so progress must use the run total."""
+        import uuid
+        from okto_pulse.core.models.db import ConsolidationQueue
+
+        board_id = "board-hist-stable-progress"
+        async with db_factory() as db:
+            db.add(Board(id=board_id, name="Stable Progress", owner_id="owner"))
+            for idx in range(3):
+                db.add(Spec(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    title=f"Spec {idx}",
+                    status=SpecStatus.DONE,
+                    archived=False,
+                    created_by="test-user",
+                ))
+            await db.commit()
+
+        async with db_factory() as db:
+            await start_historical_consolidation(db, board_id)
+            initial = await get_historical_progress(db, board_id)
+            assert initial["total"] == 3
+            assert initial["progress"] == 0
+
+            row = (await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.source == "historical_backfill",
+                ).limit(1)
+            )).scalars().one()
+            await db.delete(row)
+            await db.commit()
+
+        async with db_factory() as db:
+            prog = await get_historical_progress(db, board_id)
+            assert prog["total"] == 3
+            assert prog["progress"] == 1
+            assert prog["pending"] == 2
+
 
 class TestUndo:
     @pytest.mark.asyncio

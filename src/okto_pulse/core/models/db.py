@@ -6,6 +6,7 @@ from enum import Enum as PyEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     JSON,
     DateTime,
     Float,
@@ -343,6 +344,9 @@ class Ideation(Base):
     qa_items: Mapped[list["IdeationQAItem"]] = relationship("IdeationQAItem", back_populates="ideation", cascade="all, delete-orphan")
     history: Mapped[list["IdeationHistory"]] = relationship("IdeationHistory", back_populates="ideation", cascade="all, delete-orphan")
     snapshots: Mapped[list["IdeationSnapshot"]] = relationship("IdeationSnapshot", back_populates="ideation", cascade="all, delete-orphan")
+    architecture_designs: Mapped[list["ArchitectureDesign"]] = relationship(
+        "ArchitectureDesign", back_populates="ideation", cascade="all, delete-orphan"
+    )
 
 
 class IdeationSnapshot(Base):
@@ -451,6 +455,9 @@ class Refinement(Base):
     history: Mapped[list["RefinementHistory"]] = relationship("RefinementHistory", back_populates="refinement", cascade="all, delete-orphan")
     snapshots: Mapped[list["RefinementSnapshot"]] = relationship("RefinementSnapshot", back_populates="refinement", cascade="all, delete-orphan")
     knowledge_bases: Mapped[list["RefinementKnowledgeBase"]] = relationship("RefinementKnowledgeBase", back_populates="refinement", cascade="all, delete-orphan")
+    architecture_designs: Mapped[list["ArchitectureDesign"]] = relationship(
+        "ArchitectureDesign", back_populates="refinement", cascade="all, delete-orphan"
+    )
 
 
 class RefinementSnapshot(Base):
@@ -642,6 +649,9 @@ class Spec(Base):
     )
     history: Mapped[list["SpecHistory"]] = relationship(
         "SpecHistory", back_populates="spec", cascade="all, delete-orphan"
+    )
+    architecture_designs: Mapped[list["ArchitectureDesign"]] = relationship(
+        "ArchitectureDesign", back_populates="spec", cascade="all, delete-orphan"
     )
 
 
@@ -946,6 +956,135 @@ class Card(Base):
         back_populates="depends_on",
         cascade="all, delete-orphan",
     )
+    architecture_designs: Mapped[list["ArchitectureDesign"]] = relationship(
+        "ArchitectureDesign", back_populates="card", cascade="all, delete-orphan"
+    )
+
+
+# ============================================================================
+# ARCHITECTURE DESIGN
+# ============================================================================
+
+
+class ArchitectureDesign(Base):
+    """First-class architecture design attached to ideation, refinement, spec, or card."""
+
+    __tablename__ = "architecture_designs"
+    __table_args__ = (
+        CheckConstraint(
+            "(CASE WHEN ideation_id IS NULL THEN 0 ELSE 1 END + "
+            "CASE WHEN refinement_id IS NULL THEN 0 ELSE 1 END + "
+            "CASE WHEN spec_id IS NULL THEN 0 ELSE 1 END + "
+            "CASE WHEN card_id IS NULL THEN 0 ELSE 1 END) = 1",
+            name="ck_architecture_design_exactly_one_parent",
+        ),
+        Index("ix_architecture_designs_board_parent", "board_id", "parent_type"),
+        Index("ix_architecture_designs_source", "source_ref", "source_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    ideation_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=True, index=True)
+    refinement_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("refinements.id", ondelete="CASCADE"), nullable=True, index=True)
+    spec_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("specs.id", ondelete="CASCADE"), nullable=True, index=True)
+    card_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cards.id", ondelete="CASCADE"), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    global_description: Mapped[str] = mapped_column(Text, nullable=False)
+    entities: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    interfaces: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    diagrams: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_design_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    stale: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    breaking_change_flag: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    requires_arch_review: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    ideation: Mapped["Ideation | None"] = relationship("Ideation", back_populates="architecture_designs")
+    refinement: Mapped["Refinement | None"] = relationship("Refinement", back_populates="architecture_designs")
+    spec: Mapped["Spec | None"] = relationship("Spec", back_populates="architecture_designs")
+    card: Mapped["Card | None"] = relationship("Card", back_populates="architecture_designs")
+    diagram_payloads: Mapped[list["ArchitectureDiagramPayload"]] = relationship(
+        "ArchitectureDiagramPayload", back_populates="design", cascade="all, delete-orphan"
+    )
+    versions: Mapped[list["ArchitectureDesignVersion"]] = relationship(
+        "ArchitectureDesignVersion", back_populates="design", cascade="all, delete-orphan"
+    )
+
+    @property
+    def parent_id(self) -> str | None:
+        """Return the concrete parent id for Pydantic summaries."""
+        return {
+            "ideation": self.ideation_id,
+            "refinement": self.refinement_id,
+            "spec": self.spec_id,
+            "card": self.card_id,
+        }.get(self.parent_type)
+
+    @property
+    def diagrams_count(self) -> int:
+        return len(self.diagrams or [])
+
+    @property
+    def adapter_payload_refs(self) -> list[str]:
+        return [
+            diagram["adapter_payload_ref"]
+            for diagram in (self.diagrams or [])
+            if isinstance(diagram, dict) and diagram.get("adapter_payload_ref")
+        ]
+
+
+class ArchitectureDiagramPayload(Base):
+    """Adapter-specific diagram payload stored outside the architecture envelope."""
+
+    __tablename__ = "architecture_diagram_payloads"
+    __table_args__ = (
+        UniqueConstraint("design_id", "diagram_id", name="uq_architecture_payload_design_diagram"),
+        Index("ix_architecture_payload_board", "board_id"),
+        Index("ix_architecture_payload_storage_key", "storage_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    diagram_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    storage_backend: Mapped[str] = mapped_column(String(50), nullable=False, server_default="database")
+    storage_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    format: Mapped[str] = mapped_column(String(50), nullable=False)
+    adapter_payload_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    payload_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="diagram_payloads")
+
+
+class ArchitectureDesignVersion(Base):
+    """Immutable snapshot of an architecture design envelope and diagram refs."""
+
+    __tablename__ = "architecture_design_versions"
+    __table_args__ = (
+        UniqueConstraint("design_id", "version", name="uq_architecture_design_version"),
+        Index("ix_architecture_design_versions_design", "design_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    envelope_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    diagram_refs_snapshot: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    change_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="versions")
 
 
 class CardDependency(Base):

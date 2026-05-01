@@ -1,5 +1,14 @@
 """Services module exports."""
 
+from okto_pulse.core.services.architecture import (
+    ArchitectureDesignRepository,
+    ArchitecturePropagationService,
+    ArchitectureDiagramAdapter,
+    ArchitectureDiagramAdapterRegistry,
+    ArchitectureDiagramStore,
+    ExcalidrawArchitectureDiagramAdapter,
+    RawArchitectureDiagramAdapter,
+)
 from okto_pulse.core.services.main import (
     AgentService,
     ArchiveService,
@@ -21,6 +30,13 @@ from okto_pulse.core.services.main import (
 )
 
 __all__ = [
+    "ArchitectureDesignRepository",
+    "ArchitecturePropagationService",
+    "ArchitectureDiagramAdapter",
+    "ArchitectureDiagramAdapterRegistry",
+    "ArchitectureDiagramStore",
+    "ExcalidrawArchitectureDiagramAdapter",
+    "RawArchitectureDiagramAdapter",
     "AgentService",
     "ArchiveService",
     "AttachmentService",

@@ -198,6 +198,83 @@ def test_process_spec_mentions_tech_whitelist_entities():
     assert any("redis" in t for t in targets)
 
 
+def test_process_spec_projects_architecture_designs_without_new_node_types():
+    spec = _spec_fixture()
+    spec["architecture_designs"] = [
+        {
+            "id": "arch_runtime",
+            "title": "Runtime Architecture",
+            "global_description": "Checkout runs through a local API boundary.",
+            "entities": [
+                {
+                    "id": "entity_api",
+                    "name": "Checkout API",
+                    "entity_type": "service",
+                    "responsibility": "Own checkout orchestration.",
+                    "technologies": ["FastAPI"],
+                }
+            ],
+            "interfaces": [
+                {
+                    "id": "iface_checkout",
+                    "name": "POST /checkout",
+                    "description": "Accepts checkout requests.",
+                    "protocol": "REST",
+                    "request_schema": {"cart_id": "string"},
+                }
+            ],
+            "diagrams": [
+                {
+                    "id": "diagram_context",
+                    "title": "Context",
+                    "diagram_type": "context",
+                    "format": "excalidraw_json",
+                    "content_hash": "abc",
+                }
+            ],
+        }
+    ]
+
+    result = DeterministicWorker().process_spec(spec)
+
+    by_title = {node.title: node for node in result.nodes}
+    assert by_title["Runtime Architecture"].node_type == "Entity"
+    assert by_title["Checkout API"].node_type == "Entity"
+    assert by_title["POST /checkout"].node_type == "APIContract"
+    assert "Checkout runs through" in result.raw_content
+    assert "cart_id" in result.raw_content
+    assert any(
+        edge.rule_id.startswith("belongs_to/architecture_interface")
+        for edge in result.edges
+    )
+
+
+def test_process_card_projects_architecture_designs():
+    card = {
+        "id": "card-arch-123",
+        "title": "Implement checkout boundary",
+        "description": "Task details",
+        "card_type": "normal",
+        "spec_id": "spec-arch-123",
+        "architecture_designs": [
+            {
+                "id": "arch_card",
+                "title": "Task Architecture",
+                "global_description": "Card snapshot from the spec.",
+                "entities": [{"name": "Payment Adapter"}],
+                "interfaces": [{"name": "PaymentGateway.authorize"}],
+            }
+        ],
+    }
+
+    result = DeterministicWorker().process_card(card)
+
+    assert any(node.title == "Task Architecture" for node in result.nodes)
+    assert any(node.title == "Payment Adapter" for node in result.nodes)
+    assert any(node.title == "PaymentGateway.authorize" for node in result.nodes)
+    assert "Card snapshot from the spec." in result.raw_content
+
+
 def test_content_hash_stable_across_runs():
     spec = _spec_fixture()
     r1 = DeterministicWorker().process_spec(spec)
