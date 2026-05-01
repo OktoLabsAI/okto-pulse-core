@@ -1,6 +1,6 @@
 [project]
 name = "okto-pulse-core"
-version = "0.1.6"
+version = "0.1.12"
 description = "Okto Pulse Core — spec-driven project management engine with MCP support for AI agents"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
@@ -68,6 +68,10 @@ packages = ["src/okto_pulse"]
 "src/okto_pulse/core/mcp/agent_instructions.md" = "okto_pulse/core/mcp/agent_instructions.md"
 "src/okto_pulse/core/kg/workers/tech_entities.yml" = "okto_pulse/core/kg/workers/tech_entities.yml"
 "src/okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md" = "okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md"
+
+[tool.uv]
+# Lockfile (uv.lock) is committed. Regenerate after changing dependencies:
+#   uv lock
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
