@@ -263,7 +263,7 @@ def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
 def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
     """Drop and rebuild the global discovery meta-graph.
 
-    If board_ids is None, rebuilds for all boards with existing .kuzu files.
+    If board_ids is None, rebuilds for all boards with existing graph files.
     """
     from okto_pulse.core.kg.global_discovery.schema import (
         _global_kuzu_path,
@@ -273,15 +273,25 @@ def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
 
     path = _global_kuzu_path()
     # Backup + drop
+    backup = None
     if path.exists():
-        backup = path.parent / f"discovery_backup_{uuid.uuid4().hex[:8]}.kuzu"
-        shutil.copytree(str(path), str(backup))
-        shutil.rmtree(str(path))
+        backup = path.parent / f"discovery_backup_{uuid.uuid4().hex[:8]}{path.suffix}"
+        if path.is_dir():
+            shutil.copytree(str(path), str(backup))
+            shutil.rmtree(str(path))
+        else:
+            shutil.copy2(str(path), str(backup))
+            path.unlink()
+            for sibling in path.parent.glob(path.name + ".*"):
+                if sibling.is_file():
+                    sibling.unlink()
+                elif sibling.is_dir():
+                    shutil.rmtree(str(sibling))
 
     # Recreate schema
     bootstrap_global_discovery()
 
     return {
         "status": "rebuilt",
-        "backup_path": str(backup) if path.exists() else None,
+        "backup_path": str(backup) if backup is not None else None,
     }

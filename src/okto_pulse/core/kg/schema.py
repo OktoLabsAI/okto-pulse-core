@@ -1,7 +1,7 @@
-"""Kùzu per-board graph schema — 11 node tables, 10 rel tables, 5 vector indexes.
+"""LadybugDB per-board graph schema — 11 node tables, 10 rel tables, 5 vector indexes.
 
 Idempotent bootstrap: `bootstrap_board_graph(board_id)` creates or opens the
-per-board `.kuzu` directory under `kg_base_dir/boards/{board_id}/graph.kuzu`,
+per-board LadybugDB file under `kg_base_dir/boards/{board_id}/graph.lbug`,
 applies DDL, creates HNSW vector indexes for searchable node types, and
 records the schema version on a Board meta node.
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 import gc
 import logging
 import os
+import shutil
 import threading
 import time
 from dataclasses import dataclass
@@ -21,6 +22,12 @@ from typing import Any
 logger = logging.getLogger("okto_pulse.kg.schema")
 
 SCHEMA_VERSION = "0.3.3"
+GRAPH_DB_FILENAME = "graph.lbug"
+CORRUPT_DB_ERROR_MARKERS = (
+    "corrupted wal file",
+    "invalid wal record",
+    "not a valid lbug database file",
+)
 
 # Provenance metadata required on every rel (KG Pipeline v2 — spec c48a5c33).
 # `layer` is a closed enum validated by the worker/agent and the layer_isolation
@@ -332,10 +339,74 @@ def _kg_base_dir() -> Path:
 
 
 def board_kuzu_path(board_id: str) -> Path:
-    """Return the absolute path to a board's Kùzu graph directory."""
+    """Return the absolute path to a board's LadybugDB graph file."""
     if not board_id or "/" in board_id or ".." in board_id:
         raise ValueError(f"invalid board_id: {board_id!r}")
-    return _kg_base_dir() / "boards" / board_id / "graph.kuzu"
+    return _kg_base_dir() / "boards" / board_id / GRAPH_DB_FILENAME
+
+
+def _is_ladybug_corruption_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(marker in msg for marker in CORRUPT_DB_ERROR_MARKERS)
+
+
+def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[str]:
+    """Delete a board's local LadybugDB graph file and sidecars.
+
+    The SQLite application data remains untouched. This is intentionally
+    narrow: remove ``graph.lbug`` plus ``graph.lbug.*`` siblings so the
+    next bootstrap recreates the local graph from the consolidation queue.
+    """
+    path = board_kuzu_path(board_id)
+    close_board_db_cache(board_id)
+    removed: list[str] = []
+    targets: list[Path] = []
+    if path.exists():
+        targets.append(path)
+    if path.parent.exists():
+        targets.extend(sorted(path.parent.glob(path.name + ".*")))
+
+    for target in targets:
+        try:
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                target.unlink(missing_ok=True)
+            removed.append(str(target))
+        except Exception as exc:
+            logger.warning(
+                "kg.schema.graph_purge_failed board=%s path=%s reason=%s err=%s",
+                board_id, target, reason, exc,
+                extra={
+                    "event": "kg.schema.graph_purge_failed",
+                    "board_id": board_id,
+                    "path": str(target),
+                    "reason": reason,
+                },
+            )
+
+    if path.parent.exists() and not any(path.parent.iterdir()):
+        try:
+            path.parent.rmdir()
+        except OSError:
+            pass
+
+    if "_BOOTSTRAPPED_BOARDS" in globals():
+        _BOOTSTRAPPED_BOARDS.discard(board_id)
+    if "_MIGRATED_BOARDS" in globals():
+        _MIGRATED_BOARDS.discard(board_id)
+    if removed:
+        logger.warning(
+            "kg.schema.graph_purged board=%s reason=%s removed=%d",
+            board_id, reason, len(removed),
+            extra={
+                "event": "kg.schema.graph_purged",
+                "board_id": board_id,
+                "reason": reason,
+                "removed": removed,
+            },
+        )
+    return removed
 
 
 def _open_kuzu_db(path: Path):
@@ -408,19 +479,18 @@ def _open_kuzu_db(path: Path):
 
     e = last_exc  # type: ignore[assignment]
     logger.error(
-        "[KG] Failed to open Kùzu database at %s: %s: %s",
+        "[KG] Failed to open LadybugDB database at %s: %s: %s",
         path, type(e).__name__, e,
     )
     raise RuntimeError(
-        f"Failed to open Kùzu database at {path}: "
+        f"Failed to open LadybugDB database at {path}: "
         f"{type(e).__name__}: {e}. "
         "Possible causes: "
         "(1) lock contention from concurrent writer (wait and retry); "
         "(2) schema migration needed — run "
         "`python -m okto_pulse.tools.kg_migrate_schema --board <board_id>` "
         "or call MCP tool `okto_pulse_kg_migrate_schema`; "
-        "(3) corrupted db file. "
-        "Do NOT delete graph.kuzu (destroys all KG data)."
+        "(3) corrupted db file."
     ) from e
 
 
@@ -435,7 +505,7 @@ def verify_kuzu_db_health(board_id: str) -> dict[str, Any]:
     path = board_kuzu_path(board_id)
     if not path.exists():
         return {"ok": True, "node_count": 0, "error": None,
-                "note": "graph.kuzu does not exist yet — will be created on first access"}
+                "note": f"{GRAPH_DB_FILENAME} does not exist yet — will be created on first access"}
     try:
         with open_board_connection(board_id) as (db, conn):
             res = conn.execute("MATCH (n) RETURN count(n) AS cnt")
@@ -921,7 +991,13 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     # the migration must run BEFORE the BoardConnection bootstrap path
     # ever owns the handle.
     import ladybug as kuzu  # type: ignore
-    db = _open_kuzu_db_path_cached(path)
+    try:
+        db = _open_kuzu_db_path_cached(path)
+    except Exception as exc:
+        if not _is_ladybug_corruption_error(exc):
+            raise
+        purge_board_graph_storage(board_id, reason="corrupt_open_during_bootstrap")
+        db = _open_kuzu_db_path_cached(path)
     conn = kuzu.Connection(db)
     try:
         for node_type in NODE_TYPES:
@@ -1279,7 +1355,7 @@ def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
         path = board_kuzu_path(board_id)
         if not path.exists():
             errors.append(
-                f"board_not_found: graph.kuzu missing at {path}"
+                f"board_not_found: {GRAPH_DB_FILENAME} missing at {path}"
             )
             return {
                 "board_id": board_id,
@@ -1544,6 +1620,18 @@ def _graph_needs_bootstrap(board_id: str) -> bool:
             return False
         return True
     except Exception as exc:
+        if _is_ladybug_corruption_error(exc):
+            logger.warning(
+                "kg.schema.corrupt_graph_detected board=%s path=%s err=%s",
+                board_id, path, exc,
+                extra={
+                    "event": "kg.schema.corrupt_graph_detected",
+                    "board_id": board_id,
+                    "path": str(path),
+                },
+            )
+            purge_board_graph_storage(board_id, reason="corrupt_bootstrap_probe")
+            return True
         logger.debug(
             "kg.schema.bootstrap_probe_failed board=%s err=%s — will bootstrap",
             board_id, exc,
