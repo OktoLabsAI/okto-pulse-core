@@ -195,6 +195,67 @@ async def test_create_card_accepts_valid_normal(_seed_board_and_spec):
     assert payload.get("success") is True or "id" in payload or "card" in payload
 
 
+@pytest.mark.asyncio
+async def test_create_test_card_links_existing_scenario_on_validated_spec():
+    """A test card may link an existing scenario without unlocking the spec."""
+    from okto_pulse.core.infra.database import get_session_factory
+
+    db_factory = get_session_factory()
+    board_id = f"card-type-val-lock-{uuid.uuid4().hex[:8]}"
+    spec_id = str(uuid.uuid4())
+    scenario_id = "ts-locked-regression"
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Locked Spec Board", owner_id=USER_ID))
+        db.add(Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Validated locked spec",
+            status=SpecStatus.VALIDATED,
+            created_by=USER_ID,
+            functional_requirements=["FR1"],
+            acceptance_criteria=["AC1"],
+            test_scenarios=[{
+                "id": scenario_id,
+                "title": "Existing regression scenario",
+                "given": "a validated spec",
+                "when": "a regression test task is added",
+                "then": "the existing scenario remains linked",
+                "scenario_type": "regression",
+                "linked_criteria": [0],
+                "linked_task_ids": [],
+                "status": "passed",
+                "evidence": {
+                    "last_run_at": "2026-05-01T12:00:00Z",
+                    "output_snippet": "passed",
+                },
+            }],
+            business_rules=[],
+            api_contracts=[],
+            validations=[{"id": "val-lock", "outcome": "success"}],
+            current_validation_id="val-lock",
+        ))
+        await db.commit()
+
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())), \
+         patch.object(mcp_server, "check_permission", return_value=None):
+        payload = await _call_create_card(
+            board_id=board_id,
+            title="Regression test on locked spec",
+            spec_id=spec_id,
+            card_type="test",
+            test_scenario_ids=[scenario_id],
+        )
+
+    assert payload.get("success") is True
+    card_id = payload["card"]["id"]
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        scenario = next(sc for sc in spec.test_scenarios if sc["id"] == scenario_id)
+        assert card_id in scenario["linked_task_ids"]
+        assert spec.status == SpecStatus.VALIDATED
+        assert spec.current_validation_id == "val-lock"
+
+
 # ---------------------------------------------------------------------------
 # Enum sanity — pin the accepted values so future drift is caught.
 # ---------------------------------------------------------------------------

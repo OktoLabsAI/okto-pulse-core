@@ -1575,7 +1575,7 @@ async def okto_pulse_create_card(
         spec_id: REQUIRED — Spec ID to link this card to. Normal/bug cards
             are allowed when the spec is approved, in_progress, or done.
             Test cards are allowed once the spec is approved/validated or
-            later, so they can execute validation before the spec is done.
+            later, including regression tests for a bug on a locked spec.
             For bug cards, this is auto-resolved from the origin task if not provided.
         description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
         details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.
@@ -1589,12 +1589,16 @@ async def okto_pulse_create_card(
         test_scenario_ids: Multi-value test scenario IDs (e.g. ``["ts_abc", "ts_def"]``)
             — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
             When provided, automatically creates bidirectional links between the
-            card and the scenarios.
+            card and the scenarios. Linking to an existing scenario is a
+            traceability update and does not unlock, invalidate, or rewrite a
+            validated spec.
         card_type: Card type - "normal" (default), "test", or "bug".
             Test cards require test_scenario_ids and do not use
             submit_task_validation; complete them with move_card(..., done)
-            plus conclusion/evidence. Bug cards require origin_task_id,
-            severity, expected_behavior, and observed_behavior.
+            plus conclusion/evidence. Bug regression coverage may reuse an
+            existing scenario after spec validation, but the linked test card
+            itself must be created after the bug. Bug cards require
+            origin_task_id, severity, expected_behavior, and observed_behavior.
         origin_task_id: REQUIRED for bug cards — ID of the task that originated the bug. The spec is auto-resolved from this task.
         severity: REQUIRED for bug cards — one of: critical, major, minor
         expected_behavior: REQUIRED for bug cards — what should happen
@@ -1742,6 +1746,8 @@ async def okto_pulse_create_card(
             spec_service = SpecService(db)
             spec_obj = await spec_service.get_spec(spec_id)
             if spec_obj and spec_obj.test_scenarios:
+                from sqlalchemy.orm.attributes import flag_modified
+
                 scenarios = list(spec_obj.test_scenarios)
                 changed = False
                 for sc in scenarios:
@@ -1752,10 +1758,9 @@ async def okto_pulse_create_card(
                             sc["linked_task_ids"] = task_ids
                             changed = True
                 if changed:
-                    from okto_pulse.core.models.schemas import SpecUpdate as SU
-                    _, _err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SU(test_scenarios=scenarios))
-                    if _err:
-                        return _err
+                    spec_obj.test_scenarios = scenarios
+                    flag_modified(spec_obj, "test_scenarios")
+                    await db.flush()
 
         board_service = BoardService(db)
         await board_service._log_activity(
@@ -6459,6 +6464,9 @@ async def okto_pulse_link_task_to_scenario(
     """
     Link a card (task) to a test scenario, creating bidirectional traceability.
     Updates both the scenario's linked_task_ids and the card's test_scenario_ids.
+    This is intentionally treated as a traceability update: it may be used
+    after spec validation to connect regression test cards to existing
+    scenarios without unlocking, invalidating, or rewriting the spec content.
 
     Args:
         board_id: Board ID
@@ -6504,10 +6512,12 @@ async def okto_pulse_link_task_to_scenario(
         if not card:
             return json.dumps({"error": f"Card '{card_id}' not found — cannot link a non-existent card."})
 
-        from okto_pulse.core.models.schemas import SpecUpdate, CardUpdate
-        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(test_scenarios=scenarios))
-        if err:
-            return err
+        from sqlalchemy.orm.attributes import flag_modified
+        from okto_pulse.core.models.schemas import CardUpdate
+
+        spec.test_scenarios = scenarios
+        flag_modified(spec, "test_scenarios")
+        await db.flush()
 
         # Update card's test_scenario_ids (with max limit check)
         if card:
@@ -12374,7 +12384,9 @@ async def okto_pulse_submit_task_validation(
     Evaluates the implementation quality of a completed task against three
     dimensions: confidence, completeness, and drift. The system applies
     threshold checks (resolved from sprint → spec → board hierarchy) and
-    automatically routes the card: success → done, failed → not_started.
+    automatically routes the card: success → done; failed remains in
+    validation so the validator feedback stays visible and the executor can
+    decide whether to move the card back for rework.
 
     Args:
         board_id: Board ID
@@ -12722,15 +12734,17 @@ async def okto_pulse_kg_dead_letter_list(
     offset: int = 0,
 ) -> str:
     """
-    List dead-lettered consolidation rows — gemelar do REST GET /api/v1/kg/queue/dead-letter.
+    List dead-lettered consolidation rows.
 
-    Use quando você (agente operador) detecta `dead_letter_count > 0` via
-    okto_pulse_kg_health e precisa investigar quais rows falharam, com que
-    erro, e em quantas tentativas. Cada row inclui o array `errors`
-    completo do schema TR16 — uma entrada por tentativa com error_type,
-    message, occurred_at, traceback (opcional).
+    Use this when `okto_pulse_kg_health` reports `dead_letter_count > 0`
+    and you need to inspect which artifacts failed, what error repeated, and
+    how many attempts were made. Each row includes the full `errors` array:
+    one entry per attempt with error_type, message, occurred_at, and optional
+    traceback.
 
-    READ-only no MVP — não há ação de reprocess via MCP (deferred v2).
+    After fixing the root cause (schema migration, WAL recovery, code fix, or
+    transient lock contention), call `okto_pulse_kg_dead_letter_reprocess` to
+    move selected rows back to the consolidation queue.
 
     Args:
         board_id: Board UUID
@@ -12738,8 +12752,8 @@ async def okto_pulse_kg_dead_letter_list(
         offset: Skip first N rows (>=0, default 0)
 
     Returns:
-        JSON `{rows, total, limit, offset}` em sucesso. `{error: "..."}`
-        em auth fail.
+        JSON `{rows, total, limit, offset}` on success. `{error: "..."}`
+        on auth or permission failure.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -12753,6 +12767,73 @@ async def okto_pulse_kg_dead_letter_list(
         data = await list_dead_letter_rows(
             db, board_id, limit=limit, offset=offset,
         )
+    return json.dumps(data, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_dead_letter_reprocess(
+    board_id: str,
+    dead_letter_ids: list[str] | str = "",
+    limit: int = 50,
+    process_now: str = "true",
+) -> str:
+    """
+    Requeue dead-lettered KG consolidation rows after the root cause is fixed.
+
+    Use this after `okto_pulse_kg_migrate_schema`, WAL recovery, or a code fix
+    when DLQ rows should be retried. The tool is idempotent: if a matching
+    pending queue row already exists for the same board/artifact, it resets that
+    row and removes the DLQ entry instead of creating duplicates.
+
+    Args:
+        board_id: Board UUID.
+        dead_letter_ids: Optional multi-value DLQ row IDs. Use a native list,
+            JSON array string, or pipe-separated string. Empty means "oldest
+            rows for this board up to limit".
+        limit: Max DLQ rows to requeue (1-200, default 50).
+        process_now: "true" to immediately run one consolidation worker batch
+            after requeueing; "false" to only mark rows pending.
+
+    Returns:
+        JSON with selected/requeued/already_queued counts and, when
+        process_now is true, the worker batch processed count.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "kg.admin.historical_consolidation")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    try:
+        ids = coerce_to_list_str(dead_letter_ids) if dead_letter_ids else []
+    except ValueError as exc:
+        return json.dumps({"error": f"Invalid dead_letter_ids: {exc}"})
+
+    from okto_pulse.core.services.dead_letter_inspector_service import (
+        reprocess_dead_letter_rows,
+    )
+
+    async with get_db_for_mcp() as db:
+        data = await reprocess_dead_letter_rows(
+            db,
+            board_id,
+            dead_letter_ids=ids or None,
+            limit=limit,
+        )
+        await db.commit()
+
+    if _flag_enabled(process_now):
+        from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
+
+        worker = ConsolidationWorker(
+            _mcp_session_factory,
+            heartbeat_seconds=1,
+            batch_size=max(1, min(int(limit or 50), 50)),
+        )
+        data["processed_now_count"] = await worker.process_batch()
+
     return json.dumps(data, default=str)
 
 

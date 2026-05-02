@@ -138,6 +138,22 @@ async def _require_spec_unlocked(db: AsyncSession, spec_id: str) -> None:
         raise SpecLockedError(spec_id=spec_id, current_validation_id=current_id)
 
 
+def _test_scenario_has_required_evidence(scenario: dict[str, Any]) -> bool:
+    """Return whether a scenario carries the same evidence expected by the gate."""
+    status = scenario.get("status")
+    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    if status not in {"automated", "passed", "failed"}:
+        return True
+    if not isinstance(evidence, dict):
+        return False
+    if status == "automated":
+        return bool(evidence.get("test_file_path") and evidence.get("test_function"))
+    return bool(
+        evidence.get("last_run_at")
+        and (evidence.get("output_snippet") or evidence.get("test_run_id"))
+    )
+
+
 # ---------------------------------------------------------------------------
 # Artifact propagation utility
 # ---------------------------------------------------------------------------
@@ -911,7 +927,7 @@ class CardService:
         """Submit a task validation for a card in 'validation' status.
 
         Executes threshold check, computes outcome, persists validation,
-        and routes card (success→done, failed→not_started).
+        and routes card (success→done, failed stays in validation).
         """
         import uuid as _uuid
 
@@ -1452,10 +1468,11 @@ class CardService:
                 raise ValueError(
                     "Bug card requires at least 1 new test task linked before moving to in_progress. "
                     "REQUIRED STEPS: "
-                    "(1) Create a new test scenario on the spec using okto_pulse_add_test_scenario, "
-                    "(2) Create a test task card with spec_id and test_scenario_ids using okto_pulse_create_card, "
-                    "(3) Link the test task to this bug using okto_pulse_update_card with linked_test_task_ids, "
-                    "(4) Then retry moving this bug card to in_progress. "
+                    "(1) Create a regression test card with card_type='test', spec_id, and test_scenario_ids "
+                    "using okto_pulse_create_card. The referenced scenario may be an existing scenario on a "
+                    "validated/locked spec; do not unlock the spec just to add a regression task. "
+                    "(2) Link the test task to this bug using okto_pulse_update_card with linked_test_task_ids, "
+                    "(3) Then retry moving this bug card to in_progress. "
                     "TO BYPASS: set require_test_task_for_bug=false on the board, or raise "
                     "bug_test_gate_min_severity above this bug's severity."
                 )
@@ -1499,23 +1516,27 @@ class CardService:
                         f"Test tasks must belong to the same spec as the bug card."
                     )
 
-                # Validate scenarios exist in spec and were created AFTER the bug
+                if (
+                    bug_created
+                    and test_task.created_at
+                    and test_task.created_at.isoformat() < bug_created.isoformat()
+                ):
+                    raise ValueError(
+                        f"Linked test task '{test_task.title}' was created before this bug card. "
+                        "Create or link a regression test task created after the bug so the bug has "
+                        "fresh validation coverage without editing a locked spec."
+                    )
+
+                # Validate scenarios exist in spec. Regression test cards may
+                # reference existing scenarios even when the spec is locked.
                 for sid in test_task.test_scenario_ids:
                     sc = all_scenarios.get(sid)
                     if not sc:
                         raise ValueError(
                             f"Test scenario '{sid}' referenced by test task '{test_task.title}' "
                             f"does not exist in spec '{spec_for_bug.title if spec_for_bug else card.spec_id}'. "
-                            f"The scenario may have been deleted. Create a new test scenario "
-                            f"using okto_pulse_add_test_scenario and update the test task."
-                        )
-                    sc_created = sc.get("created_at", "")
-                    if sc_created and bug_created and sc_created < bug_created.isoformat():
-                        raise ValueError(
-                            f"Test scenario '{sc.get('title', sid)}' was created before this bug card. "
-                            f"Only NEW test scenarios (created after the bug) count for unblocking. "
-                            f"Create a new test scenario using okto_pulse_add_test_scenario "
-                            f"that specifically covers the bug's observed behavior."
+                            f"The scenario may have been deleted. Link the test task to an existing scenario, "
+                            f"or move the spec back to an editable status if a new scenario is truly required."
                         )
 
         report_target = None
@@ -5368,7 +5389,7 @@ class SprintService:
                         sc = spec_scenarios_by_id.get(sid)
                         if not sc:
                             continue
-                        if sc.get("status") in ("passed", "automated") and not sc.get("evidence"):
+                        if not _test_scenario_has_required_evidence(sc):
                             evidenceless.append(sid)
                 if evidenceless:
                     # NC-9 BR4 — sprint close gate as defense in depth.
