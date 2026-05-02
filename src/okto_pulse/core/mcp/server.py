@@ -368,6 +368,23 @@ def _dump_model(value: Any) -> dict[str, Any]:
 
 def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[str, Any]:
     """Serialize refinement/spec/ideation KB rows without assuming shape drift."""
+    if isinstance(kb, dict):
+        data = {
+            "id": kb.get("id"),
+            "title": kb.get("title") or kb.get("name"),
+            "description": kb.get("description"),
+            "mime_type": kb.get("mime_type") or kb.get("content_type") or "text/markdown",
+        }
+        for attr in ("ideation_id", "refinement_id", "spec_id", "source", "source_type"):
+            if kb.get(attr):
+                data[attr] = kb[attr]
+        if include_content:
+            data["content"] = kb.get("content")
+        for attr in ("created_by", "created_at", "updated_at"):
+            if kb.get(attr):
+                data[attr] = kb[attr]
+        return data
+
     data: dict[str, Any] = {
         "id": getattr(kb, "id", None),
         "title": getattr(kb, "title", None),
@@ -6931,10 +6948,10 @@ async def okto_pulse_validate_architecture_design_payload(
 
     Typical catches:
     - entities where name duplicates entity_type after normalization.
-    - interfaces with unknown participants, invalid direction, or missing
+    - interfaces with invalid legacy participants, invalid direction, or missing
       protocol/contract metadata for schema payloads.
     - diagrams with invalid linkedEntityId, linkedInterfaceIds, endpoint/entity
-      participant mismatches, or unsupported connectionType. Excalidraw
+      connection mismatches, or unsupported connectionType. Excalidraw
       connectionType accepts only "direct" or "elbow".
 
     Args:
@@ -7043,7 +7060,7 @@ async def okto_pulse_add_architecture_design(
     validator would otherwise have to guess.
 
     The server critiques the full payload before accepting it. Rejections include
-    contextual paths such as entities[0].name, interfaces[1].participants[0], or
+    contextual paths such as entities[0].name, interfaces[1].participants[0] when legacy participants are supplied, or
     diagrams[0].adapter_payload.elements[2].linkedEntityId. Fix the cited field
     and retry; do not move invalid architecture into prose fields to bypass the
     structured artifact.
@@ -7084,9 +7101,9 @@ async def okto_pulse_add_architecture_design(
             boundaries become ambiguous.
         interfaces: JSON array or native list of interface/contract descriptions.
             endpoint is optional but recommended for API paths, RPC methods,
-            event names, queue names, or operations. When participants are
-            known, provide exactly two entity ids or names matching the diagram
-            edge source/target linked entities. direction must be one of
+            event names, queue names, or operations. Interfaces do not own
+            source/target; diagram connections define endpoint entities through
+            sourceElementId and targetElementId. direction must be one of
             source_to_target, target_to_source, bidirectional, none. Example:
             [
               {
@@ -7094,7 +7111,6 @@ async def okto_pulse_add_architecture_design(
                 "name": "Create order",
                 "endpoint": "POST /orders",
                 "description": "Customer Portal sends a checkout request to Checkout API.",
-                "participants": ["entity-web-app", "entity-checkout-api"],
                 "direction": "source_to_target",
                 "protocol": "REST",
                 "contract_type": "OpenAPI",
@@ -7205,14 +7221,14 @@ async def okto_pulse_update_architecture_design(
     Contextual validation examples:
     - entities[0].name duplicates entity_type "api" -> use a concrete name such
       as "Checkout API" and keep entity_type as "api".
-    - interfaces[0].participants[1] references an unknown entity -> add the
-      entity first or correct the participant id/name.
+    - interfaces[0].participants[1] references an unknown entity -> remove
+      legacy participants or correct the participant id/name.
     - interfaces[0].direction must be one of source_to_target,
       target_to_source, bidirectional, none.
     - diagrams[0].adapter_payload.elements[2].linkedInterfaceIds must reference
       one or more interface ids/names in interfaces.
-    - diagrams[0].adapter_payload.elements[2] links an interface whose
-      participants do not match the edge source/target linked entities.
+    - diagrams[0].adapter_payload.elements[2] links an interface but the
+      connected nodes do not expose linkedEntityId endpoint entities.
     - diagrams[0].adapter_payload.elements[2].connectionType must be "direct"
       or "elbow"; use "elbow" for routed/orthogonal connections.
 
@@ -7540,8 +7556,8 @@ async def okto_pulse_copy_knowledge_to_card(
     board_id: str, spec_id: str, card_id: str, knowledge_ids: list[str] | str = ""
 ) -> str:
     """
-    Copy knowledge base entries from a spec to a card as attachments/comments.
-    Each knowledge base entry is added as a comment on the card with the full content.
+    Copy knowledge base entries from a spec to a card as inline card KEs.
+    Each copied entry is stored in Card.knowledge_bases with stable provenance.
 
     Args:
         board_id: Board ID
@@ -7553,7 +7569,7 @@ async def okto_pulse_copy_knowledge_to_card(
             ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
 
     Returns:
-        JSON with count of knowledge entries copied
+        JSON with count of knowledge entries copied and total card KEs
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7582,20 +7598,38 @@ async def okto_pulse_copy_knowledge_to_card(
         if not kbs:
             return json.dumps({"error": "No knowledge bases to copy"})
 
-        from okto_pulse.core.models.db import Comment
+        from okto_pulse.core.models.schemas import CardUpdate
+
+        existing = list(card.knowledge_bases or [])
+        existing_sources = {str(kb.get("source") or "") for kb in existing if isinstance(kb, dict)}
+        existing_ids = {str(kb.get("id") or "") for kb in existing if isinstance(kb, dict)}
         copied = 0
+        copied_ids: list[str] = []
         for kb in kbs:
-            comment = Comment(
-                card_id=card_id,
-                author_id=ctx.agent_id,
-                content=f"## KB: {kb.title}\n\n{kb.content}",
+            source = f"copied_from_spec:{spec_id}:{kb.id}"
+            card_kb_id = f"cardkb_{kb.id}"
+            if source in existing_sources or card_kb_id in existing_ids:
+                continue
+            existing.append(
+                {
+                    "id": card_kb_id,
+                    "title": kb.title,
+                    "description": getattr(kb, "description", None),
+                    "content": kb.content,
+                    "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
+                    "source": source,
+                    "author_id": ctx.agent_id,
+                }
             )
-            db.add(comment)
+            existing_sources.add(source)
+            existing_ids.add(card_kb_id)
+            copied_ids.append(card_kb_id)
             copied += 1
 
+        await card_service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=existing))
         await db.commit()
 
-    return json.dumps({"success": True, "copied": copied})
+    return json.dumps({"success": True, "copied": copied, "knowledge_ids": copied_ids, "total_on_card": len(existing)})
 
 
 # ============================================================================
@@ -10755,7 +10789,7 @@ async def okto_pulse_get_traceability_report(
             select(Spec)
             .options(selectinload(Spec.knowledge_bases))
             .options(selectinload(Spec.architecture_designs))
-            .options(selectinload(Spec.cards))
+            .options(selectinload(Spec.cards).selectinload(Card.architecture_designs))
             .options(selectinload(Spec.sprints))
             .where(Spec.board_id == board_id)
         )
@@ -10786,7 +10820,7 @@ async def okto_pulse_get_traceability_report(
             ).append(refinement)
 
         def _card_summary(card: Card) -> dict[str, Any]:
-            return {
+            payload = {
                 "id": card.id,
                 "title": card.title,
                 "status": card.status.value,
@@ -10794,7 +10828,21 @@ async def okto_pulse_get_traceability_report(
                 "sprint_id": card.sprint_id,
                 "test_scenario_ids": card.test_scenario_ids or [],
                 "origin_task_id": card.origin_task_id,
+                "conclusions_count": len(card.conclusions or []),
+                "validations_count": len(card.validations or []),
             }
+            if card.card_type.value == "bug":
+                payload["bug"] = {
+                    "severity": card.severity.value if card.severity else None,
+                    "expected_behavior": card.expected_behavior,
+                    "observed_behavior": card.observed_behavior,
+                    "linked_test_task_ids": card.linked_test_task_ids or [],
+                }
+            if _include_artifacts:
+                payload["artifacts"] = _mcp_artifact_refs(card)
+            else:
+                payload["artifact_summary"] = _mcp_artifact_summary(card)
+            return payload
 
         def _sprint_summary(sprint: Sprint) -> dict[str, Any]:
             return {
@@ -10814,6 +10862,22 @@ async def okto_pulse_get_traceability_report(
                 "coverage_summary": _mcp_spec_coverage_summary(spec),
                 "sprints": [_sprint_summary(sprint) for sprint in spec.sprints],
                 "cards": [_card_summary(card) for card in cards],
+                "tests": [
+                    {
+                        "id": scenario.get("id"),
+                        "title": scenario.get("title"),
+                        "status": scenario.get("status"),
+                        "linked_criteria": scenario.get("linked_criteria") or [],
+                        "linked_task_ids": scenario.get("linked_task_ids") or [],
+                    }
+                    for scenario in (spec.test_scenarios or [])
+                    if isinstance(scenario, dict)
+                ],
+                "bugs": [
+                    _card_summary(card)
+                    for card in cards
+                    if card.card_type.value == "bug"
+                ],
                 "card_counts": {
                     "total": len(cards),
                     "normal": sum(1 for c in cards if c.card_type.value == "normal"),
@@ -10831,7 +10895,11 @@ async def okto_pulse_get_traceability_report(
         report_ideations = []
         attached_spec_ids: set[str] = set()
         for ideation in ideations:
-            ideation_specs = specs_by_ideation.get(ideation.id, [])
+            ideation_specs = [
+                spec
+                for spec in specs_by_ideation.get(ideation.id, [])
+                if not spec.refinement_id
+            ]
             attached_spec_ids.update(spec.id for spec in ideation_specs)
             refinement_payloads = []
             for refinement in refinements_by_ideation.get(ideation.id, []):

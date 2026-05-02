@@ -54,6 +54,50 @@ from okto_pulse.core.kg.session_manager import (
 
 logger = logging.getLogger("okto_pulse.kg.primitives")
 
+
+def _allowed_edge_pairs(edge_type: str) -> tuple[tuple[str, str], ...]:
+    from okto_pulse.core.kg.schema import MULTI_REL_TYPES, REL_TYPES
+
+    pairs = [(from_type, to_type) for rel, from_type, to_type in REL_TYPES if rel == edge_type]
+    for rel, multi_pairs in MULTI_REL_TYPES:
+        if rel == edge_type:
+            pairs.extend(multi_pairs)
+    return tuple(pairs)
+
+
+def _validate_local_edge_pair(
+    edge_type: str,
+    from_type: str | None,
+    to_type: str | None,
+    *,
+    session_id: str,
+) -> None:
+    if not from_type or not to_type:
+        return
+    allowed = _allowed_edge_pairs(edge_type)
+    if not allowed or (from_type, to_type) in allowed:
+        return
+    expected = ", ".join(f"{src}->{dst}" for src, dst in allowed)
+    raise KGPrimitiveError(
+        "invalid_edge_endpoint_types",
+        (
+            f"edge_type '{edge_type}' cannot connect {from_type}->{to_type}; "
+            f"allowed endpoint pair(s): {expected}. "
+            "Use only schema-supported cognitive edges; deterministic edges "
+            "such as implements/tests/belongs_to are owned by the worker."
+        ),
+        session_id=session_id,
+        details={
+            "edge_type": edge_type,
+            "from_type": from_type,
+            "to_type": to_type,
+            "allowed_pairs": [
+                {"from_type": src, "to_type": dst}
+                for src, dst in allowed
+            ],
+        },
+    )
+
 # ---------------------------------------------------------------------------
 # Thread pool for offloading synchronous Kùzu operations from the event loop
 # Lazy-initialized to avoid thread leaks in test suites.
@@ -291,6 +335,15 @@ async def add_edge_candidate(
                 f"edge references unknown candidate: {ep}",
                 session_id=req.session_id,
             )
+
+        from_local = session.node_candidates.get(cand.from_candidate_id)
+        to_local = session.node_candidates.get(cand.to_candidate_id)
+        _validate_local_edge_pair(
+            edge_type_str,
+            _enum_value(from_local.node_type) if from_local else None,
+            _enum_value(to_local.node_type) if to_local else None,
+            session_id=req.session_id,
+        )
 
         if cand.candidate_id in session.edge_candidates:
             raise KGPrimitiveError(
@@ -556,19 +609,21 @@ def _do_kuzu_commit(
             board_id=board_id,
         )
         candidate_to_kuzu_id: dict[str, str] = {}
+        candidate_to_node_type: dict[str, str] = {}
 
         try:
             for cand_id, cand in node_candidates.items():
                 hint = effective_hints.get(cand_id)
                 op = _resolve_op(hint, cand.source_confidence)
+                node_type = _enum_value(cand.node_type)
 
                 if op == ReconciliationOperation.NOOP:
-                    node_type = _enum_value(cand.node_type)
                     existing_id = _lookup_existing_node(
                         kconn, node_type, cand.source_artifact_ref or ""
                     )
                     if existing_id:
                         candidate_to_kuzu_id[cand_id] = existing_id
+                        candidate_to_node_type[cand_id] = node_type
                     continue
 
                 # Spec 4007e4a3 (Ideação #3, BR4 + BR5): UPDATE path must
@@ -597,6 +652,7 @@ def _do_kuzu_commit(
                             },
                         )
                         candidate_to_kuzu_id[cand_id] = target_node_id
+                        candidate_to_node_type[cand_id] = node_type_check
                         continue
                     if is_curated and has_override:
                         # BR5 reset: agent reclaims authorship via override.
@@ -615,8 +671,6 @@ def _do_kuzu_commit(
                                 "session_id": session_id,
                             },
                         )
-
-                node_type = _enum_value(cand.node_type)
 
                 # Spec 7f23535f (NC-8): natural dedup by source_artifact_ref.
                 # Before generating a fresh UUID, check whether this artifact
@@ -650,6 +704,7 @@ def _do_kuzu_commit(
                                 orch, node_type, existing_id, update_attrs
                             )
                         candidate_to_kuzu_id[cand_id] = existing_id
+                        candidate_to_node_type[cand_id] = node_type
                         logger.info(
                             "kg.consolidation.dedup_reused candidate=%s "
                             "existing=%s type=%s ref=%s session=%s curated=%s",
@@ -694,6 +749,7 @@ def _do_kuzu_commit(
                     orch, node_type, node_id, node_attrs
                 )
                 candidate_to_kuzu_id[cand_id] = node_id
+                candidate_to_node_type[cand_id] = node_type
 
             for edge in edge_candidates.values():
                 from_id, from_xref_type = _resolve_endpoint(
@@ -732,20 +788,38 @@ def _do_kuzu_commit(
                     to_type=to_hint,
                 )
 
-            # v0.3.0 R2: recompute relevance_score for endpoints whose
-            # degree just changed.
+            # v0.3.0 R2: recompute relevance_score for every node touched by
+            # this session. This includes nodes-only fallback commits, which
+            # otherwise stay pinned to the neutral 0.5 score and inflate
+            # kg_health.default_score_ratio.
             try:
                 from okto_pulse.core.kg.scoring import _recompute_relevance_batch
 
                 endpoints_to_recompute: list[tuple[str, str]] = []
                 seen: set[tuple[str, str]] = set()
+                for cand_id, node_id in candidate_to_kuzu_id.items():
+                    node_type = candidate_to_node_type.get(cand_id)
+                    if not node_type:
+                        continue
+                    key = (node_type, node_id)
+                    if key not in seen:
+                        seen.add(key)
+                        endpoints_to_recompute.append(key)
                 for edge in edge_candidates.values():
                     from_id_resolved, from_type_resolved = _resolve_endpoint(
                         edge.from_candidate_id, candidate_to_kuzu_id, kconn=kconn,
                     )
+                    if from_type_resolved is None:
+                        from_type_resolved = candidate_to_node_type.get(
+                            edge.from_candidate_id
+                        )
                     to_id_resolved, to_type_resolved = _resolve_endpoint(
                         edge.to_candidate_id, candidate_to_kuzu_id, kconn=kconn,
                     )
+                    if to_type_resolved is None:
+                        to_type_resolved = candidate_to_node_type.get(
+                            edge.to_candidate_id
+                        )
                     if from_id_resolved and from_type_resolved:
                         key = (from_type_resolved, from_id_resolved)
                         if key not in seen:

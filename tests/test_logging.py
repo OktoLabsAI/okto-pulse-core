@@ -52,12 +52,13 @@ _log_files_lock = threading.Lock()
 class TestLogFormatter(logging.Formatter):
     """Formats every log record as ``[TEST] [timestamp] [level] [module] message``."""
 
-    def format(self, record: logging.LogRecord) -> str:
-        # Ensure timestamp is in the desired format
-        record.asctime = datetime.fromtimestamp(
+    __test__ = False
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        """Use ``datetime`` formatting so microseconds work on Python 3.13/Windows."""
+        return datetime.fromtimestamp(
             record.created, tz=timezone.utc
-        ).strftime(LOG_DATETIME_FMT)
-        return super().format(record)
+        ).strftime(datefmt or LOG_DATETIME_FMT)
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +227,8 @@ class TestLifecycleLogger:
         with TestLifecycleLogger("test_name", logger) as ll:
             ll.info("test body running")
     """
+
+    __test__ = False
 
     def __init__(self, test_id: str, logger: logging.Logger) -> None:
         self.test_id = test_id

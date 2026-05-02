@@ -231,6 +231,8 @@ async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec
     assert "mcp_server" in schema["entity_type_examples"]
     assert schema["entity_contract"]["anti_patterns"]
     assert "endpoint" in schema["interface_contract"]["recommended"]
+    assert "participants" not in schema["interface_contract"]["recommended"]
+    assert "interfaces do not own source/target" in " ".join(schema["interface_contract"]["rules"])
     assert schema["interface_contract"]["anti_patterns"]
     assert "linkedInterfaceIds" in schema["excalidraw_adapter_payload_contract"]["edge_element"]
     assert schema["complete_minimal_payload_example"]["diagrams"][0]["format"] == "excalidraw_json"

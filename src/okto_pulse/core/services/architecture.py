@@ -174,7 +174,6 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                 "recommended": [
                     "endpoint",
                     "description",
-                    "participants",
                     "direction",
                     "protocol",
                     "contract_type",
@@ -185,8 +184,8 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                 ],
                 "rules": [
                     "endpoint is optional but recommended for API paths, RPC methods, event names, queue names, or operation names",
-                    "participants must contain exactly two entity ids or names when endpoints are known",
-                    "when an interface is linked from a diagram edge, participants must match the edge source/target linked entities",
+                    "interfaces do not own source/target; diagram connections define endpoint entities through sourceElementId and targetElementId",
+                    "participants is accepted only as optional legacy/derived metadata and must contain exactly two entity ids or names when provided",
                     "direction must be source_to_target, target_to_source, bidirectional, or none",
                     "protocol and contract_type should be present whenever schemas or payload contracts are present",
                     "include request_schema, response_schema, event_schema, or error_contract when implementation depends on payload shape",
@@ -197,7 +196,6 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     "name": "Create order",
                     "endpoint": "POST /orders",
                     "description": "Customer Portal sends checkout details to Checkout API.",
-                    "participants": ["entity-customer-portal", "entity-checkout-api"],
                     "direction": "source_to_target",
                     "protocol": "REST",
                     "contract_type": "OpenAPI",
@@ -207,8 +205,8 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                 },
                 "anti_patterns": [
                     {
-                        "pattern": "participants omitted when endpoints are known",
-                        "consequence": "diagram edges and tasks cannot trace the interaction to two concrete entities",
+                        "pattern": "interface owns source/target instead of using diagram connection endpoints",
+                        "consequence": "the contract and diagram can drift; tasks may wire the wrong components",
                     },
                     {
                         "pattern": "duplicating entities or diagrams to model several API endpoints between the same two components",
@@ -259,7 +257,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     "Nodes should set linkedEntityId to an entity id or name.",
                     "Edges should set sourceElementId, targetElementId, linkedInterfaceIds and connectionType.",
                     "Use linkedInterfaceIds for one or more contracts on the same connection; linkedInterfaceId remains accepted for legacy single-contract edges.",
-                    "Every linked interface with participants must match the source and target linkedEntityId values of the edge.",
+                    "The source and target linkedEntityId values of the edge define the two endpoint entities for linked interfaces.",
                     "connectionType accepts only direct or elbow. Use elbow for routed/orthogonal connections. Do not use curved.",
                 ],
             },
@@ -286,7 +284,6 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                         "name": "Create order",
                         "endpoint": "POST /orders",
                         "description": "Customer Portal sends checkout data to Checkout API.",
-                        "participants": ["entity-customer-portal", "entity-checkout-api"],
                         "direction": "source_to_target",
                         "protocol": "REST",
                         "contract_type": "OpenAPI",
@@ -1055,11 +1052,6 @@ class ArchitectureDesignRepository:
                                 f"{path}.participants[{participant_index}] references '{participant}', but it does not "
                                 f"match any entity id or name. Known entities: {_compact_known_refs(entity_refs)}."
                             )
-            elif warnings is not None:
-                warnings.append(
-                    f"{path}.participants is empty. The relationship will not be traceable to two concrete entities in diagrams or tasks."
-                )
-
             has_schema_payload = any(
                 raw_interface.get(field_name) not in (None, "", {}, [])
                 for field_name in ("request_schema", "response_schema", "event_schema", "error_contract", "schema_ref")
@@ -1219,11 +1211,6 @@ class ArchitectureDesignRepository:
                                 f"{element_path} links interface '{linked_interface_id}', but its participants "
                                 f"{normalized_participants!r} do not match the connection endpoints {edge_participants!r}. "
                                 "The connection defines the two endpoint entities; update interface participants or link a different contract."
-                            )
-                        elif warnings is not None and not normalized_participants:
-                            warnings.append(
-                                f"{element_path} links interface '{linked_interface_id}' without participants. "
-                                f"Suggested derivation: set participants to {edge_participants!r}."
                             )
                         if warnings is not None and len(linked_interface_ids) > 1 and not str(raw_interface.get("endpoint") or "").strip():
                             warnings.append(
@@ -1405,7 +1392,7 @@ class ArchitectureDesignRepository:
 
         Architecture is a child artifact, but spec/refinement consolidation is
         parent-scoped today. Reusing these event types keeps the KG pipeline
-        light and avoids a new Kuzu schema or dispatcher branch for v1.
+        light and avoids a new graph schema or dispatcher branch for v1.
         """
         if design.parent_type == "spec" and design.spec_id:
             from okto_pulse.core.events import publish as event_publish

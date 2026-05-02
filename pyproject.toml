@@ -70,6 +70,7 @@ packages = ["src/okto_pulse"]
 "src/okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md" = "okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md"
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 asyncio_mode = "auto"
 # Default async-fixture loop scope. With "session" all session-scoped fixtures
 # (e.g. `_db_init`) run on the same loop the test functions use, eliminating
@@ -77,12 +78,8 @@ asyncio_mode = "auto"
 # objects created on a session-scoped one. This pairs with the conftest no
 # longer overriding `event_loop` itself (deprecated in pytest-asyncio 1.x).
 asyncio_default_fixture_loop_scope = "session"
-# Default per-test timeout (seconds). Override per-test with @pytest.mark.timeout(N).
-timeout = 120
-# Timeout method: "thread" kills the test thread; "signal" kills the process.
-# "thread" is safer for tests that use forked children; "signal" is more reliable.
-timeout_method = "thread"
 markers = [
     "e2e: end-to-end pipeline contract tests — slow, open Kùzu handles, exercise outbox worker; excluded by the fast unit run via `pytest -m 'not e2e'`",
+    "real_kg: integration tests that exercise the real LadybugDB/KG backend",
     "timeout(seconds): override per-test timeout (default 120s)",
 ]
