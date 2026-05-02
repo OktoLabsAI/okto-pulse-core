@@ -152,6 +152,14 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         another in-session node candidate OR an existing Kùzu node via the
         'kg:' prefix (kg:decision_abc123).
 
+        Cognitive agents may only propose judgement edges: supersedes,
+        contradicts, depends_on, relates_to, validates. Deterministic edges
+        such as implements, tests, belongs_to, mentions, violates, and
+        derives_from are reserved for the Layer 1 worker and are rejected with
+        layer_violation. Endpoint pairs are strict: Decision->Decision for
+        supersedes/contradicts/depends_on, Decision->Alternative for
+        relates_to, and Learning->Bug for validates.
+
         Args:
             session_id: Session from begin_consolidation
             candidate: Dict with candidate_id, edge_type, from/to, confidence
