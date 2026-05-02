@@ -12,10 +12,8 @@ import asyncio
 from datetime import datetime, timezone
 
 import pytest
-import pytest_asyncio
 
 from okto_pulse.core.kg.interfaces.audit_dtos import (
-    AuditRow,
     ConsolidationAuditData,
     NodeRefData,
     OutboxEventData,

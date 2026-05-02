@@ -16,7 +16,6 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (
     ConsolidationEnqueuer,

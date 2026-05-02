@@ -249,7 +249,6 @@ class TestBackwardCompat:
 
     def test_kg_init_re_exports(self):
         from okto_pulse.core.kg import (
-            EmbeddingProvider,
             get_embedding_provider,
             NODE_TYPES,
             REL_TYPES,
@@ -258,5 +257,5 @@ class TestBackwardCompat:
 
         assert len(NODE_TYPES) == 11
         assert len(REL_TYPES) == 10
-        assert SCHEMA_VERSION == "0.3.0"
+        assert SCHEMA_VERSION == "0.3.3"
         assert get_embedding_provider() is not None

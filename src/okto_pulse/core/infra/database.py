@@ -1370,7 +1370,6 @@ async def _seed_builtin_presets() -> None:
                 if existing.scalar():
                     continue
                 import uuid
-                import json
                 preset = PermissionPreset(
                     id=str(uuid.uuid4()),
                     owner_id=None,
@@ -1448,7 +1447,6 @@ async def _reconcile_builtin_presets() -> None:
     import json as _json
     logger = logging.getLogger("okto_pulse.migrations")
 
-    from sqlalchemy import text as sa_text
 
     try:
         from okto_pulse.core.infra.permissions import get_builtin_presets
@@ -1465,7 +1463,7 @@ async def _reconcile_builtin_presets() -> None:
             for preset_def in presets:
                 query = select(PermissionPreset).where(
                     PermissionPreset.name == preset_def["name"],
-                    PermissionPreset.is_builtin == True,
+                    PermissionPreset.is_builtin.is_(True),
                 )
                 existing = (await session.execute(query)).scalar_one_or_none()
                 if not existing:
@@ -1500,7 +1498,6 @@ async def _reconcile_agent_permission_flags() -> None:
     import copy as _copy
     logger = logging.getLogger("okto_pulse.migrations")
 
-    from sqlalchemy import text as sa_text
 
     try:
         from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY

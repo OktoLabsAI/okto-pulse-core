@@ -8,12 +8,10 @@ Provides:
 - Fresh environment per test (complete isolation)
 """
 
-import asyncio
 import logging
 import os
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
@@ -30,13 +28,11 @@ sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
 # ---------------------------------------------------------------------------
 
 from test_logging import (  # noqa: E402
-    LOG_DIR,
     TestLifecycleLogger,
     TimeoutTracker,
     cleanup_test_logging,
     get_test_logger,
     log_kg_event,
-    log_kg_operation,
     setup_test_logging,
 )
 
@@ -62,7 +58,6 @@ os.environ["KG_EMBEDDING_MODE"] = "stub"
 
 from okto_pulse.core.infra.database import (  # noqa: E402
     create_database,
-    get_engine,
     get_session_factory,
     init_db,
 )

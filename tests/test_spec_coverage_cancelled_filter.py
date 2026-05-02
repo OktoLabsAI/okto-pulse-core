@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
 from okto_pulse.core.services.analytics_service import (
     _coverage_row_for_spec,

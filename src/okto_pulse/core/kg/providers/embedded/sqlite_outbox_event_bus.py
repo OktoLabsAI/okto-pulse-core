@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Any, Callable
+from typing import Callable
 
 from okto_pulse.core.kg.interfaces.event_bus import EventHandler, KGEvent
 

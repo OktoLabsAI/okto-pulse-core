@@ -16,7 +16,7 @@ def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
         return fallback
 
 
-_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.1.6+local")
+_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.1.13+local")
 
 
 class CoreSettings(BaseSettings):
@@ -76,7 +76,7 @@ class CoreSettings(BaseSettings):
     kg_kuzu_max_db_size_gb: int = Field(1, ge=1, le=64)
     kg_connection_pool_size: int = Field(8, ge=1, le=32)
 
-    # Consolidation queue runtime tuning (spec bdcda842, v0.1.6) — all
+    # Consolidation queue runtime tuning (spec bdcda842, v0.1.13) — all
     # hot-reload (worker pool re-reads on every claim with 5s debounce).
     # Mudanças aqui NÃO marcam restart_required.
     kg_queue_max_concurrent_workers: int = Field(4, ge=1, le=16)

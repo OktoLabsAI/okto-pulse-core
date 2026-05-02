@@ -14,10 +14,10 @@ keeps the heuristic testable with fixtures instead of a live graph.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable
 
-from .llm_protocol import HeuristicLLM, LLMVerdict
+from .llm_protocol import HeuristicLLM
 
 # Default ceilings from the spec context. Heuristics are free to be less
 # confident than their ceiling; they are never allowed to exceed it.

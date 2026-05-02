@@ -7,8 +7,6 @@ No Kuzu dependency.
 from __future__ import annotations
 
 import math
-import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters

@@ -342,6 +342,9 @@ class Ideation(Base):
     refinements: Mapped[list["Refinement"]] = relationship("Refinement", back_populates="ideation", cascade="all, delete-orphan")
     specs: Mapped[list["Spec"]] = relationship("Spec", back_populates="ideation")
     qa_items: Mapped[list["IdeationQAItem"]] = relationship("IdeationQAItem", back_populates="ideation", cascade="all, delete-orphan")
+    knowledge_bases: Mapped[list["IdeationKnowledgeBase"]] = relationship(
+        "IdeationKnowledgeBase", back_populates="ideation", cascade="all, delete-orphan"
+    )
     history: Mapped[list["IdeationHistory"]] = relationship("IdeationHistory", back_populates="ideation", cascade="all, delete-orphan")
     snapshots: Mapped[list["IdeationSnapshot"]] = relationship("IdeationSnapshot", back_populates="ideation", cascade="all, delete-orphan")
     architecture_designs: Mapped[list["ArchitectureDesign"]] = relationship(
@@ -414,6 +417,24 @@ class IdeationQAItem(Base):
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="qa_items")
+
+
+class IdeationKnowledgeBase(Base):
+    """Knowledge base item attached to an ideation."""
+
+    __tablename__ = "ideation_knowledge_bases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    ideation_id: Mapped[str] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), nullable=False, default="text/markdown")
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="knowledge_bases")
 
 
 # ============================================================================
@@ -1485,7 +1506,7 @@ class ConsolidationQueue(Base):
         Text, nullable=True
     )  # Error message from failed processing
 
-    # Spec bdcda842 (Consolidation Queue resilience) — v0.1.6 columns.
+    # Spec bdcda842 (Consolidation Queue resilience) — v0.1.13 columns.
     # Added by _migrate_add_consolidation_resilience_columns; ORM model
     # mirrors the schema so newly-created rows from the model stay in sync.
     worker_id: Mapped[str | None] = mapped_column(

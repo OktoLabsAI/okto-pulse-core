@@ -7,7 +7,7 @@ cypher_templates.py lives inside KuzuGraphStore as an implementation detail.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 

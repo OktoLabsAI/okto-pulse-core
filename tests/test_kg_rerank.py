@@ -18,8 +18,6 @@ from okto_pulse.core.kg.hybrid_search import (
     kg_search_hybrid,
 )
 from okto_pulse.core.kg.hybrid_search.hybrid import (
-    GraphNeighbor,
-    RankedNode,
     VectorSeed,
 )
 from okto_pulse.core.kg.rerank import (
@@ -28,7 +26,6 @@ from okto_pulse.core.kg.rerank import (
     get_reranker,
     reset_reranker_cache,
 )
-from okto_pulse.core.kg.rerank.factory import _cache as _factory_cache
 from okto_pulse.core.kg.rerank.llm import LLMReranker, build_default_prompt
 
 

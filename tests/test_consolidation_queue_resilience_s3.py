@@ -27,8 +27,6 @@ from okto_pulse.core.models.db import (
 )
 from okto_pulse.core.services.queue_health_service import (
     claims_per_min,
-    get_queue_health,
-    record_alert_fired,
     record_claim,
     reset_claim_counters_for_tests,
 )

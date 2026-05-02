@@ -8,8 +8,8 @@ and the global_discovery cascade from global_discovery/clustering.py.
 
 from __future__ import annotations
 
-import asyncio
 import logging
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -126,7 +126,7 @@ async def start_historical_consolidation(
         select(Spec).where(
             Spec.board_id == board_id,
             Spec.status.in_([SpecStatus.DONE, SpecStatus.APPROVED, SpecStatus.VALIDATED]),
-            Spec.archived == False,
+            Spec.archived.is_(False),
         )
     )
     specs = list(spec_result.scalars().all())
@@ -136,7 +136,7 @@ async def start_historical_consolidation(
         select(Sprint).where(
             Sprint.board_id == board_id,
             Sprint.status == SprintStatus.CLOSED,
-            Sprint.archived == False,
+            Sprint.archived.is_(False),
         )
     )
     sprints = list(sprint_result.scalars().all())
@@ -650,7 +650,7 @@ async def right_to_erasure(
     # 1. Global discovery cascade
     try:
         from okto_pulse.core.kg.global_discovery.clustering import board_delete_cascade
-        cascade = board_delete_cascade(board_id)
+        cascade = await asyncio.to_thread(board_delete_cascade, board_id)
         counts["global_cascade"] = cascade
     except Exception as exc:
         counts["global_cascade_error"] = str(exc)

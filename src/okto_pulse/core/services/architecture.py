@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import uuid
 from typing import Any
 
@@ -50,6 +51,295 @@ SEMANTIC_PATCH_FIELDS = {
     "diagrams",
 }
 
+ALLOWED_INTERFACE_DIRECTIONS = {
+    "source_to_target",
+    "target_to_source",
+    "bidirectional",
+    "none",
+}
+
+ALLOWED_CONNECTION_TYPES = {
+    "direct",
+    "elbow",
+}
+
+ARCHITECTURE_DESIGN_SCHEMA_VERSION = "2026-05-01"
+
+
+def architecture_design_payload_schema() -> dict[str, Any]:
+    """Machine-readable authoring contract for Architecture Design payloads."""
+    return copy.deepcopy(
+        {
+            "schema_version": ARCHITECTURE_DESIGN_SCHEMA_VERSION,
+            "allowed_values": {
+                "parent_type": ["ideation", "refinement", "spec", "card"],
+                "interface.direction": sorted(ALLOWED_INTERFACE_DIRECTIONS),
+                "diagram.format": ["excalidraw_json", "mermaid", "plantuml", "c4", "svg", "raw"],
+                "excalidraw.connectionType": sorted(ALLOWED_CONNECTION_TYPES),
+            },
+            "root_contract": {
+                "required": ["title", "global_description"],
+                "recommended": ["entities", "interfaces", "diagrams"],
+                "rules": [
+                    "title should name the architecture slice being described",
+                    "global_description should explain architecture intent, boundaries, responsibilities, and important constraints",
+                    "entities, interfaces, and diagrams should be present whenever they reduce ambiguity for implementers or validators",
+                ],
+            },
+            "entity_type_examples": [
+                "web_app",
+                "mobile_app",
+                "api",
+                "service",
+                "worker",
+                "agent",
+                "cli",
+                "database",
+                "cache",
+                "blob_store",
+                "file_store",
+                "vector_store",
+                "graph_store",
+                "queue",
+                "topic",
+                "event_bus",
+                "stream",
+                "external_service",
+                "identity_provider",
+                "payment_gateway",
+                "model_provider",
+                "mcp_server",
+                "mcp_client",
+                "scheduler",
+                "gateway",
+                "load_balancer",
+            ],
+            "entity_contract": {
+                "required": ["id", "name", "entity_type"],
+                "recommended": ["responsibility", "boundaries", "technologies", "relationships", "notes"],
+                "rules": [
+                    "name must be a concrete component name, not just the category",
+                    "name comparison is normalized by removing spaces, underscores and hyphens",
+                    "entity_type is the category, for example api, web_app, database, queue, worker, external_service",
+                    "responsibility should say what the component owns or guarantees",
+                    "boundaries should say what runtime, data, team, or external boundary the entity represents",
+                ],
+                "bad_examples": [
+                    {"id": "entity-api", "name": "API", "entity_type": "api"},
+                    {"id": "entity-db", "name": "Database", "entity_type": "database"},
+                    {"id": "entity-mcp", "name": "MCP Server", "entity_type": "mcp_server"},
+                ],
+                "good_examples": [
+                    {
+                        "id": "entity-checkout-api",
+                        "name": "Checkout API",
+                        "entity_type": "api",
+                        "responsibility": "Validates checkout commands and orchestrates payment authorization.",
+                        "boundaries": "Backend application boundary",
+                        "technologies": ["FastAPI", "SQLAlchemy"],
+                    },
+                    {
+                        "id": "entity-orders-db",
+                        "name": "Orders DB",
+                        "entity_type": "database",
+                        "responsibility": "Persists orders, payment state and idempotency keys.",
+                        "technologies": ["PostgreSQL"],
+                    },
+                    {
+                        "id": "entity-okto-mcp-endpoint",
+                        "name": "Okto Pulse MCP Endpoint",
+                        "entity_type": "mcp_server",
+                        "responsibility": "Exposes Okto Pulse tools to MCP clients.",
+                        "technologies": ["FastMCP", "ASGI"],
+                    },
+                ],
+                "anti_patterns": [
+                    {
+                        "pattern": "generic name or name equals entity_type",
+                        "example": {"name": "API", "entity_type": "api"},
+                        "consequence": "ownership and task boundaries become ambiguous; implementations can land in the wrong component",
+                    },
+                    {
+                        "pattern": "missing responsibility",
+                        "consequence": "implementers must infer what the component owns, guarantees, persists, or delegates",
+                    },
+                    {
+                        "pattern": "missing boundaries",
+                        "consequence": "runtime, data, tenancy, external-system, and security boundaries may be crossed accidentally",
+                    },
+                ],
+            },
+            "interface_contract": {
+                "required": ["id", "name"],
+                "recommended": [
+                    "endpoint",
+                    "description",
+                    "direction",
+                    "protocol",
+                    "contract_type",
+                    "request_schema",
+                    "response_schema",
+                    "event_schema",
+                    "error_contract",
+                ],
+                "rules": [
+                    "endpoint is optional but recommended for API paths, RPC methods, event names, queue names, or operation names",
+                    "interfaces do not own source/target; diagram connections define endpoint entities through sourceElementId and targetElementId",
+                    "participants is accepted only as optional legacy/derived metadata and must contain exactly two entity ids or names when provided",
+                    "direction must be source_to_target, target_to_source, bidirectional, or none",
+                    "protocol and contract_type should be present whenever schemas or payload contracts are present",
+                    "include request_schema, response_schema, event_schema, or error_contract when implementation depends on payload shape",
+                    "multiple interfaces between the same two entities are valid; distinguish them with id, name, and preferably endpoint",
+                ],
+                "example": {
+                    "id": "interface-create-order",
+                    "name": "Create order",
+                    "endpoint": "POST /orders",
+                    "description": "Customer Portal sends checkout details to Checkout API.",
+                    "direction": "source_to_target",
+                    "protocol": "REST",
+                    "contract_type": "OpenAPI",
+                    "request_schema": {"type": "object", "required": ["cart_id"]},
+                    "response_schema": {"type": "object", "required": ["order_id"]},
+                    "error_contract": {"400": "Invalid checkout payload", "409": "Duplicate idempotency key"},
+                },
+                "anti_patterns": [
+                    {
+                        "pattern": "interface owns source/target instead of using diagram connection endpoints",
+                        "consequence": "the contract and diagram can drift; tasks may wire the wrong components",
+                    },
+                    {
+                        "pattern": "duplicating entities or diagrams to model several API endpoints between the same two components",
+                        "consequence": "architecture becomes noisy and ownership appears split across false components",
+                    },
+                    {
+                        "pattern": "several same-pair contracts without endpoint or descriptive operation name",
+                        "consequence": "implementers cannot distinguish which request, event, or contract belongs to which task",
+                    },
+                    {
+                        "pattern": "schemas supplied without protocol or contract_type",
+                        "consequence": "agents may invent transport or contract details during implementation",
+                    },
+                    {
+                        "pattern": "missing request/response/event/error schema for an implementation-critical contract",
+                        "consequence": "payload shape, validation rules, and failure behavior are guessed later",
+                    },
+                ],
+            },
+            "excalidraw_adapter_payload_contract": {
+                "root": {
+                    "type": "excalidraw",
+                    "version": 2,
+                    "elements": [],
+                    "appState": {},
+                    "files": {},
+                },
+                "node_element": {
+                    "id": "node-checkout-api",
+                    "type": "rectangle",
+                    "x": 360,
+                    "y": 120,
+                    "width": 220,
+                    "height": 88,
+                    "label": "Checkout API\\napi",
+                    "linkedEntityId": "entity-checkout-api",
+                },
+                "edge_element": {
+                    "id": "edge-create-order",
+                    "type": "arrow",
+                    "sourceElementId": "node-customer-portal",
+                    "targetElementId": "node-checkout-api",
+                    "linkedInterfaceIds": ["interface-create-order", "interface-get-order"],
+                    "connectionType": "elbow",
+                },
+                "rules": [
+                    "Each element needs a stable id.",
+                    "Nodes should set linkedEntityId to an entity id or name.",
+                    "Edges should set sourceElementId, targetElementId, linkedInterfaceIds and connectionType.",
+                    "Use linkedInterfaceIds for one or more contracts on the same connection; linkedInterfaceId remains accepted for legacy single-contract edges.",
+                    "The source and target linkedEntityId values of the edge define the two endpoint entities for linked interfaces.",
+                    "connectionType accepts only direct or elbow. Use elbow for routed/orthogonal connections. Do not use curved.",
+                ],
+            },
+            "complete_minimal_payload_example": {
+                "title": "Checkout runtime architecture",
+                "global_description": "Customer Portal calls Checkout API, which persists orders in Orders DB.",
+                "entities": [
+                    {
+                        "id": "entity-customer-portal",
+                        "name": "Customer Portal",
+                        "entity_type": "web_app",
+                        "responsibility": "Collects checkout input.",
+                    },
+                    {
+                        "id": "entity-checkout-api",
+                        "name": "Checkout API",
+                        "entity_type": "api",
+                        "responsibility": "Validates checkout and creates orders.",
+                    },
+                ],
+                "interfaces": [
+                    {
+                        "id": "interface-create-order",
+                        "name": "Create order",
+                        "endpoint": "POST /orders",
+                        "description": "Customer Portal sends checkout data to Checkout API.",
+                        "direction": "source_to_target",
+                        "protocol": "REST",
+                        "contract_type": "OpenAPI",
+                        "request_schema": {"type": "object", "required": ["cart_id"]},
+                        "response_schema": {"type": "object", "required": ["order_id"]},
+                    }
+                ],
+                "diagrams": [
+                    {
+                        "id": "diagram-runtime",
+                        "title": "Runtime context",
+                        "diagram_type": "context",
+                        "format": "excalidraw_json",
+                        "adapter_payload": {
+                            "type": "excalidraw",
+                            "version": 2,
+                            "elements": [
+                                {
+                                    "id": "node-customer-portal",
+                                    "type": "rectangle",
+                                    "label": "Customer Portal\\nweb_app",
+                                    "linkedEntityId": "entity-customer-portal",
+                                },
+                                {
+                                    "id": "node-checkout-api",
+                                    "type": "rectangle",
+                                    "label": "Checkout API\\napi",
+                                    "linkedEntityId": "entity-checkout-api",
+                                },
+                                {
+                                    "id": "edge-create-order",
+                                    "type": "arrow",
+                                    "sourceElementId": "node-customer-portal",
+                                    "targetElementId": "node-checkout-api",
+                                    "linkedInterfaceIds": ["interface-create-order"],
+                                    "connectionType": "elbow",
+                                },
+                            ],
+                            "appState": {},
+                            "files": {},
+                        },
+                    }
+                ],
+            },
+        }
+    )
+
+
+class ArchitecturePayloadValidationError(ValueError):
+    """Semantic validation failure for an Architecture Design payload."""
+
+    def __init__(self, issues: list[str]):
+        self.issues = issues
+        issue_count = len(issues)
+        super().__init__(f"Architecture payload rejected: {issue_count} issue(s): " + "; ".join(issues))
+
 
 def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
@@ -71,6 +361,70 @@ def _dump_model_or_dict(value: Any, *, exclude_unset: bool = False) -> dict[str,
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json", exclude_unset=exclude_unset)
     return dict(value or {})
+
+
+def _canonical_ref(value: Any) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _canonical_label(value: Any) -> str:
+    return re.sub(r"[\s_\-]+", "", _canonical_ref(value))
+
+
+def _compact_known_refs(refs: dict[str, str], limit: int = 8) -> str:
+    values = sorted(set(refs.values()))
+    if not values:
+        return "none"
+    suffix = "" if len(values) <= limit else f", ... (+{len(values) - limit} more)"
+    return ", ".join(values[:limit]) + suffix
+
+
+def _custom_or_top_level(item: dict[str, Any], key: str) -> Any:
+    if key in item:
+        return item.get(key)
+    custom_data = item.get("customData")
+    if isinstance(custom_data, dict):
+        return custom_data.get(key)
+    return None
+
+
+def _linked_interface_refs(item: dict[str, Any], path: str, issues: list[str] | None = None) -> list[Any]:
+    """Return legacy and multi-interface refs from a diagram connection element."""
+    refs: list[Any] = []
+    legacy_ref = _custom_or_top_level(item, "linkedInterfaceId")
+    if legacy_ref not in (None, ""):
+        refs.append(legacy_ref)
+
+    multi_ref = _custom_or_top_level(item, "linkedInterfaceIds")
+    if multi_ref in (None, ""):
+        return refs
+    if not isinstance(multi_ref, list):
+        if issues is not None:
+            issues.append(f"{path}.linkedInterfaceIds must be a JSON array of interface ids or names.")
+        return refs
+
+    legacy_keys: set[str] = set(_canonical_ref(ref) for ref in refs if _canonical_ref(ref))
+    seen: set[str] = set(legacy_keys)
+    for index, ref in enumerate(multi_ref):
+        ref_key = _canonical_ref(ref)
+        if not ref_key:
+            if issues is not None:
+                issues.append(f"{path}.linkedInterfaceIds[{index}] must be a non-empty interface id or name.")
+            continue
+        if ref_key in seen:
+            if issues is not None:
+                if ref_key not in legacy_keys:
+                    issues.append(
+                        f"{path}.linkedInterfaceIds[{index}] duplicates another linked interface on the same connection."
+                    )
+            continue
+        seen.add(ref_key)
+        refs.append(ref)
+    return refs
+
+
+def _same_ordered_refs(left: list[Any], right: list[Any]) -> bool:
+    return [_canonical_ref(item) for item in left] == [_canonical_ref(item) for item in right]
 
 
 class ArchitectureDiagramAdapter:
@@ -320,6 +674,7 @@ class ArchitectureDesignRepository:
         if parent is None:
             raise ValueError(f"{parent_type} parent not found: {parent_id}")
         payload = _dump_model_or_dict(data)
+        self._validate_payload(payload)
         board_id = getattr(parent, "board_id")
         design = ArchitectureDesign(
             board_id=board_id,
@@ -355,6 +710,14 @@ class ArchitectureDesignRepository:
         payload = _dump_model_or_dict(patch, exclude_unset=True)
         change_summary = payload.pop("change_summary", None)
         semantic_change = bool(SEMANTIC_PATCH_FIELDS & payload.keys())
+        candidate_payload = {
+            "title": payload.get("title", design.title),
+            "global_description": payload.get("global_description", design.global_description),
+            "entities": payload.get("entities", design.entities or []),
+            "interfaces": payload.get("interfaces", design.interfaces or []),
+            "diagrams": payload.get("diagrams", design.diagrams or []),
+        }
+        self._validate_payload(candidate_payload)
         if "title" in payload:
             design.title = payload["title"]
         if "global_description" in payload:
@@ -497,6 +860,465 @@ class ArchitectureDesignRepository:
     def source_ref_for(self, design: ArchitectureDesign) -> str:
         return f"architecture_design:{design.id}"
 
+    def critique_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Return semantic validation issues and non-blocking authoring warnings."""
+        issues: list[str] = []
+        warnings: list[str] = []
+        if not isinstance(payload, dict):
+            issues.append(f"payload must be a JSON object; received {type(payload).__name__}.")
+            return {
+                "valid": False,
+                "issues": issues,
+                "warnings": warnings,
+                "suggested_fixes": self._suggest_fixes(issues),
+                "summary": self._payload_summary({}),
+            }
+
+        if not str(payload.get("title") or "").strip():
+            issues.append("title is required. Name the architecture slice being described.")
+        if not str(payload.get("global_description") or "").strip():
+            issues.append(
+                "global_description is required. Explain architecture intent, boundaries, responsibilities, and important constraints."
+            )
+
+        entities = self._validate_entities(payload.get("entities"), issues, warnings)
+        entity_refs = self._ref_index(entities)
+        interfaces = self._validate_interfaces(payload.get("interfaces"), entity_refs, issues, warnings)
+        interface_refs = self._ref_index(interfaces)
+        interface_items = self._ref_item_index(interfaces)
+        self._validate_diagrams(payload.get("diagrams"), entity_refs, interface_refs, interface_items, issues, warnings)
+        return {
+            "valid": not issues,
+            "issues": issues,
+            "warnings": warnings,
+            "suggested_fixes": self._suggest_fixes(issues + warnings),
+            "summary": self._payload_summary(payload),
+        }
+
+    def validate_payload(self, payload: dict[str, Any]) -> None:
+        """Raise ArchitecturePayloadValidationError when a payload cannot be persisted."""
+        critique = self.critique_payload(payload)
+        issues = list(critique.get("issues") or [])
+        if issues:
+            raise ArchitecturePayloadValidationError(issues)
+
+    def _validate_payload(self, payload: dict[str, Any]) -> None:
+        self.validate_payload(payload)
+
+    def _validate_entities(
+        self,
+        raw_entities: Any,
+        issues: list[str],
+        warnings: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        if raw_entities is None:
+            return []
+        if not isinstance(raw_entities, list):
+            issues.append(f"entities must be a JSON array; received {type(raw_entities).__name__}.")
+            return []
+
+        entities: list[dict[str, Any]] = []
+        seen_ids: dict[str, int] = {}
+        seen_names: dict[str, int] = {}
+        for index, raw_entity in enumerate(raw_entities):
+            path = f"entities[{index}]"
+            if not isinstance(raw_entity, dict):
+                issues.append(f"{path} must be a JSON object; received {type(raw_entity).__name__}.")
+                continue
+            entities.append(raw_entity)
+            entity_id = _canonical_ref(raw_entity.get("id"))
+            entity_name = str(raw_entity.get("name") or "").strip()
+            entity_type = str(raw_entity.get("entity_type") or "").strip()
+            if warnings is not None:
+                if not entity_id:
+                    warnings.append(
+                        f"{path}.id is empty. Diagram links and future updates become fragile without stable ids."
+                    )
+                if not entity_name:
+                    warnings.append(
+                        f"{path}.name is empty. Implementers cannot identify the component or assign ownership."
+                    )
+                if not entity_type:
+                    warnings.append(
+                        f"{path}.entity_type is empty. The UI cannot choose contextual icons/presets and agents lose category signal."
+                    )
+                if not str(raw_entity.get("responsibility") or "").strip():
+                    warnings.append(
+                        f"{path}.responsibility is empty. Tasks may implement behavior in the wrong component or skip owned duties."
+                    )
+                if not str(raw_entity.get("boundaries") or "").strip():
+                    warnings.append(
+                        f"{path}.boundaries is empty. Runtime, data, tenant, or external boundaries may be crossed accidentally."
+                    )
+            if entity_id:
+                if entity_id in seen_ids:
+                    issues.append(f"{path}.id duplicates entities[{seen_ids[entity_id]}].id '{raw_entity.get('id')}'. Use stable unique ids.")
+                else:
+                    seen_ids[entity_id] = index
+            if entity_name:
+                name_key = _canonical_ref(entity_name)
+                if name_key in seen_names:
+                    issues.append(
+                        f"{path}.name duplicates entities[{seen_names[name_key]}].name '{entity_name}'. "
+                        "Use unique component names so diagram links and task ownership stay unambiguous."
+                    )
+                else:
+                    seen_names[name_key] = index
+            if entity_name and entity_type and _canonical_label(entity_name) == _canonical_label(entity_type):
+                issues.append(
+                    f"{path}.name duplicates entity_type '{entity_type}' after normalization. Use a concrete component "
+                    "name such as 'Checkout API', 'Orders DB', 'Billing Worker', or 'Okto Pulse MCP Endpoint', "
+                    "and keep entity_type as the category."
+                )
+        return entities
+
+    def _validate_interfaces(
+        self,
+        raw_interfaces: Any,
+        entity_refs: dict[str, str],
+        issues: list[str],
+        warnings: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        if raw_interfaces is None:
+            return []
+        if not isinstance(raw_interfaces, list):
+            issues.append(f"interfaces must be a JSON array; received {type(raw_interfaces).__name__}.")
+            return []
+
+        interfaces: list[dict[str, Any]] = []
+        seen_ids: dict[str, int] = {}
+        seen_names: dict[str, int] = {}
+        for index, raw_interface in enumerate(raw_interfaces):
+            path = f"interfaces[{index}]"
+            if not isinstance(raw_interface, dict):
+                issues.append(f"{path} must be a JSON object; received {type(raw_interface).__name__}.")
+                continue
+            interfaces.append(raw_interface)
+            interface_id = _canonical_ref(raw_interface.get("id"))
+            interface_name = str(raw_interface.get("name") or "").strip()
+            if warnings is not None:
+                if not interface_id:
+                    warnings.append(
+                        f"{path}.id is empty. Diagram edges cannot link deterministically to this interface."
+                    )
+                if not interface_name:
+                    warnings.append(
+                        f"{path}.name is empty. Reviewers cannot understand what interaction the edge represents."
+                    )
+                if not str(raw_interface.get("description") or "").strip():
+                    warnings.append(
+                        f"{path}.description is empty. Implementers may miss why the integration exists or what behavior it carries."
+                    )
+            if interface_id:
+                if interface_id in seen_ids:
+                    issues.append(
+                        f"{path}.id duplicates interfaces[{seen_ids[interface_id]}].id '{raw_interface.get('id')}'. "
+                        "Use stable unique ids."
+                    )
+                else:
+                    seen_ids[interface_id] = index
+            if interface_name:
+                name_key = _canonical_ref(interface_name)
+                if name_key in seen_names:
+                    issues.append(
+                        f"{path}.name duplicates interfaces[{seen_names[name_key]}].name '{interface_name}'. "
+                        "Use unique interface names so edges and contracts resolve deterministically."
+                    )
+                else:
+                    seen_names[name_key] = index
+
+            direction = raw_interface.get("direction")
+            if direction not in (None, "") and direction not in ALLOWED_INTERFACE_DIRECTIONS:
+                allowed = ", ".join(sorted(ALLOWED_INTERFACE_DIRECTIONS))
+                issues.append(f"{path}.direction='{direction}' is invalid. Allowed values: {allowed}.")
+
+            participants = raw_interface.get("participants") or []
+            if participants:
+                if not isinstance(participants, list):
+                    issues.append(f"{path}.participants must be a JSON array with exactly two entity ids or names.")
+                else:
+                    normalized_participants = [_canonical_ref(item) for item in participants if str(item or "").strip()]
+                    if len(normalized_participants) != 2:
+                        issues.append(
+                            f"{path}.participants must contain exactly two entities when provided; "
+                            f"received {len(normalized_participants)}."
+                        )
+                    if len(set(normalized_participants)) != len(normalized_participants):
+                        issues.append(f"{path}.participants must reference two distinct entities.")
+                    for participant_index, participant in enumerate(participants):
+                        participant_key = _canonical_ref(participant)
+                        if participant_key and participant_key not in entity_refs:
+                            issues.append(
+                                f"{path}.participants[{participant_index}] references '{participant}', but it does not "
+                                f"match any entity id or name. Known entities: {_compact_known_refs(entity_refs)}."
+                            )
+            has_schema_payload = any(
+                raw_interface.get(field_name) not in (None, "", {}, [])
+                for field_name in ("request_schema", "response_schema", "event_schema", "error_contract", "schema_ref")
+            )
+            if has_schema_payload and not raw_interface.get("protocol") and not raw_interface.get("contract_type"):
+                issues.append(
+                    f"{path} defines schema/contract data but leaves both protocol and contract_type empty. "
+                    "Set protocol (for example REST, gRPC, Kafka, SQS) or contract_type (for example OpenAPI, JSON Schema, protobuf)."
+                )
+            elif warnings is not None:
+                if not raw_interface.get("protocol") and not raw_interface.get("contract_type"):
+                    warnings.append(
+                        f"{path} leaves both protocol and contract_type empty. Agents may invent transport or contract details later."
+                    )
+                if not has_schema_payload:
+                    warnings.append(
+                        f"{path} has no request_schema, response_schema, event_schema, error_contract, or schema_ref. "
+                        "Payload shape and failure modes may be guessed during implementation."
+                    )
+        return interfaces
+
+    def _validate_diagrams(
+        self,
+        raw_diagrams: Any,
+        entity_refs: dict[str, str],
+        interface_refs: dict[str, str],
+        interface_items: dict[str, dict[str, Any]],
+        issues: list[str],
+        warnings: list[str] | None = None,
+    ) -> None:
+        if raw_diagrams is None:
+            return
+        if not isinstance(raw_diagrams, list):
+            issues.append(f"diagrams must be a JSON array; received {type(raw_diagrams).__name__}.")
+            return
+
+        seen_ids: dict[str, int] = {}
+        seen_titles: dict[str, int] = {}
+        for index, raw_diagram in enumerate(raw_diagrams):
+            path = f"diagrams[{index}]"
+            if not isinstance(raw_diagram, dict):
+                issues.append(f"{path} must be a JSON object; received {type(raw_diagram).__name__}.")
+                continue
+            diagram_id = _canonical_ref(raw_diagram.get("id"))
+            diagram_title = str(raw_diagram.get("title") or "").strip()
+            if diagram_id:
+                if diagram_id in seen_ids:
+                    issues.append(f"{path}.id duplicates diagrams[{seen_ids[diagram_id]}].id '{raw_diagram.get('id')}'.")
+                else:
+                    seen_ids[diagram_id] = index
+            if diagram_title:
+                title_key = _canonical_ref(diagram_title)
+                if title_key in seen_titles:
+                    issues.append(f"{path}.title duplicates diagrams[{seen_titles[title_key]}].title '{diagram_title}'.")
+                else:
+                    seen_titles[title_key] = index
+
+            format_name = raw_diagram.get("format") or "raw"
+            payload_present = "adapter_payload" in raw_diagram and raw_diagram.get("adapter_payload") is not None
+            if not payload_present:
+                continue
+            payload = raw_diagram.get("adapter_payload")
+            try:
+                adapter = self.adapter_registry.get(format_name)
+                adapter.validate(payload)
+            except Exception as exc:
+                issues.append(f"{path}.adapter_payload invalid for format '{format_name}': {exc}")
+                continue
+            if format_name == "excalidraw_json" and isinstance(payload, dict):
+                self._validate_excalidraw_links(path, payload, entity_refs, interface_refs, interface_items, issues, warnings)
+
+    def _validate_excalidraw_links(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        entity_refs: dict[str, str],
+        interface_refs: dict[str, str],
+        interface_items: dict[str, dict[str, Any]],
+        issues: list[str],
+        warnings: list[str] | None = None,
+    ) -> None:
+        elements = payload.get("elements") or []
+        element_refs: dict[str, str] = {}
+        element_entity_refs: dict[str, str] = {}
+        seen_element_ids: dict[str, int] = {}
+        for index, raw_element in enumerate(elements):
+            element_path = f"{path}.adapter_payload.elements[{index}]"
+            if not isinstance(raw_element, dict):
+                issues.append(f"{element_path} must be a JSON object; received {type(raw_element).__name__}.")
+                continue
+            element_id = _canonical_ref(raw_element.get("id"))
+            if not element_id:
+                issues.append(f"{element_path}.id is required so diagram links can target the element.")
+                continue
+            if element_id in seen_element_ids:
+                issues.append(f"{element_path}.id duplicates elements[{seen_element_ids[element_id]}].id '{raw_element.get('id')}'.")
+            else:
+                seen_element_ids[element_id] = index
+                element_refs[element_id] = str(raw_element.get("id"))
+                linked_entity_id = _custom_or_top_level(raw_element, "linkedEntityId")
+                if linked_entity_id not in (None, ""):
+                    element_entity_refs[element_id] = str(linked_entity_id)
+
+        for index, raw_element in enumerate(elements):
+            if not isinstance(raw_element, dict):
+                continue
+            element_path = f"{path}.adapter_payload.elements[{index}]"
+            linked_entity_id = _custom_or_top_level(raw_element, "linkedEntityId")
+            if linked_entity_id not in (None, "") and _canonical_ref(linked_entity_id) not in entity_refs:
+                issues.append(
+                    f"{element_path}.linkedEntityId references '{linked_entity_id}', but it does not match any "
+                    f"entity id or name. Known entities: {_compact_known_refs(entity_refs)}."
+                )
+            linked_interface_ids = _linked_interface_refs(raw_element, element_path, issues)
+            for linked_interface_id in linked_interface_ids:
+                if _canonical_ref(linked_interface_id) not in interface_refs:
+                    issues.append(
+                        f"{element_path}.linkedInterfaceIds references '{linked_interface_id}', but it does not match any "
+                        f"interface id or name. Known interfaces: {_compact_known_refs(interface_refs)}."
+                    )
+
+            connection_type = _custom_or_top_level(raw_element, "connectionType")
+            if connection_type not in (None, "") and connection_type not in ALLOWED_CONNECTION_TYPES:
+                allowed = ", ".join(sorted(ALLOWED_CONNECTION_TYPES))
+                issues.append(
+                    f"{element_path}.connectionType='{connection_type}' is invalid. Allowed values: {allowed}. "
+                    "Suggested fix: use 'elbow' for routed/orthogonal connections or 'direct' for straight connections; do not use 'curved'."
+                )
+
+            source_id = _custom_or_top_level(raw_element, "sourceElementId")
+            target_id = _custom_or_top_level(raw_element, "targetElementId")
+            if source_id or target_id:
+                if not source_id or not target_id:
+                    issues.append(f"{element_path} must set both sourceElementId and targetElementId for a connection.")
+                if source_id and _canonical_ref(source_id) not in element_refs:
+                    issues.append(
+                        f"{element_path}.sourceElementId references '{source_id}', but no diagram element with that id exists."
+                    )
+                if target_id and _canonical_ref(target_id) not in element_refs:
+                    issues.append(
+                        f"{element_path}.targetElementId references '{target_id}', but no diagram element with that id exists."
+                    )
+                source_entity_ref = element_entity_refs.get(_canonical_ref(source_id))
+                target_entity_ref = element_entity_refs.get(_canonical_ref(target_id))
+                if source_entity_ref and target_entity_ref:
+                    edge_participants = [source_entity_ref, target_entity_ref]
+                    for linked_interface_id in linked_interface_ids:
+                        raw_interface = interface_items.get(_canonical_ref(linked_interface_id))
+                        if not raw_interface:
+                            continue
+                        participants = raw_interface.get("participants") or []
+                        normalized_participants = [
+                            participant for participant in participants if str(participant or "").strip()
+                        ] if isinstance(participants, list) else []
+                        if len(normalized_participants) == 2 and not _same_ordered_refs(normalized_participants, edge_participants):
+                            issues.append(
+                                f"{element_path} links interface '{linked_interface_id}', but its participants "
+                                f"{normalized_participants!r} do not match the connection endpoints {edge_participants!r}. "
+                                "The connection defines the two endpoint entities; update interface participants or link a different contract."
+                            )
+                        if warnings is not None and len(linked_interface_ids) > 1 and not str(raw_interface.get("endpoint") or "").strip():
+                            warnings.append(
+                                f"{element_path} links multiple interfaces; interface '{linked_interface_id}' has no endpoint. "
+                                "Set endpoint to distinguish API paths, RPC methods, events, queues, or operations on the same connector."
+                            )
+                if warnings is not None and not linked_interface_ids:
+                    warnings.append(
+                        f"{element_path}.linkedInterfaceIds is empty. The diagram connection will not open any interface contract."
+                    )
+            elif warnings is not None and raw_element.get("type") not in ("arrow", "line"):
+                if linked_entity_id in (None, ""):
+                    warnings.append(
+                        f"{element_path}.linkedEntityId is empty. The diagram node will not open the entity description."
+                    )
+
+    def _ref_index(self, items: list[dict[str, Any]]) -> dict[str, str]:
+        refs: dict[str, str] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("id")
+            item_name = item.get("name")
+            if str(item_id or "").strip():
+                refs[_canonical_ref(item_id)] = str(item_id)
+            if str(item_name or "").strip():
+                refs[_canonical_ref(item_name)] = str(item_name)
+        return refs
+
+    def _ref_item_index(self, items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        refs: dict[str, dict[str, Any]] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("id")
+            item_name = item.get("name")
+            if str(item_id or "").strip():
+                refs[_canonical_ref(item_id)] = item
+            if str(item_name or "").strip():
+                refs[_canonical_ref(item_name)] = item
+        return refs
+
+    def _payload_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
+        diagrams = payload.get("diagrams") or []
+        elements_count = 0
+        linked_entity_elements = 0
+        linked_interface_elements = 0
+        if isinstance(diagrams, list):
+            for diagram in diagrams:
+                if not isinstance(diagram, dict):
+                    continue
+                adapter_payload = diagram.get("adapter_payload") or {}
+                if not isinstance(adapter_payload, dict):
+                    continue
+                elements = adapter_payload.get("elements") or []
+                if not isinstance(elements, list):
+                    continue
+                for element in elements:
+                    if not isinstance(element, dict):
+                        continue
+                    elements_count += 1
+                    if _custom_or_top_level(element, "linkedEntityId") not in (None, ""):
+                        linked_entity_elements += 1
+                    if _linked_interface_refs(element, "payload_summary"):
+                        linked_interface_elements += 1
+        return {
+            "entities_count": len(payload.get("entities") or []) if isinstance(payload.get("entities") or [], list) else 0,
+            "interfaces_count": len(payload.get("interfaces") or []) if isinstance(payload.get("interfaces") or [], list) else 0,
+            "diagrams_count": len(diagrams) if isinstance(diagrams, list) else 0,
+            "diagram_elements_count": elements_count,
+            "linked_entity_elements_count": linked_entity_elements,
+            "linked_interface_elements_count": linked_interface_elements,
+        }
+
+    def _suggest_fixes(self, messages: list[str]) -> list[str]:
+        fixes: list[str] = []
+        for message in messages:
+            lower = message.casefold()
+            if "connectiontype" in lower:
+                fixes.append("Use connectionType='direct' for straight edges or connectionType='elbow' for routed/orthogonal edges; never use 'curved'.")
+            elif "duplicates entity_type" in lower:
+                fixes.append("Rename the entity to a concrete component name and keep entity_type as the category, e.g. 'Okto Pulse MCP Endpoint' + 'mcp_server'.")
+            elif "participants" in lower:
+                fixes.append("Set participants to exactly the two linkedEntityId values on the diagram edge source and target nodes.")
+            elif ".direction" in lower:
+                fixes.append("Use one of direction='source_to_target', 'target_to_source', 'bidirectional', or 'none'.")
+            elif "protocol" in lower or "contract_type" in lower:
+                fixes.append("Set protocol and/or contract_type, then include request_schema, response_schema, event_schema, or error_contract when payload shape matters.")
+            elif "linkedentityid" in lower:
+                fixes.append("Set linkedEntityId on diagram nodes to an existing entity id or name.")
+            elif "linkedinterfaceid" in lower:
+                fixes.append("Set linkedInterfaceIds on diagram edges to one or more existing interface ids or names.")
+            elif "endpoint" in lower:
+                fixes.append("Set endpoint on same-connector interfaces to distinguish API paths, RPC methods, events, queues, or operations.")
+            elif "title is required" in lower:
+                fixes.append("Set title to a concrete architecture slice name, e.g. 'Checkout runtime architecture'.")
+            elif "global_description is required" in lower:
+                fixes.append("Set global_description to a concise narrative of architecture intent, boundaries, responsibilities, and constraints.")
+            elif "responsibility" in lower:
+                fixes.append("Add a concise responsibility that states what the component owns, guarantees, or persists.")
+            elif "boundaries" in lower:
+                fixes.append("Add boundaries describing runtime, data, tenancy, external-system, or ownership limits.")
+        deduped: list[str] = []
+        for fix in fixes:
+            if fix not in deduped:
+                deduped.append(fix)
+        return deduped
+
     async def _normalize_diagrams(self, board_id: str, design_id: str, diagrams: list[dict[str, Any]]) -> list[dict[str, Any]]:
         normalized_diagrams: list[dict[str, Any]] = []
         for raw_diagram in diagrams:
@@ -570,7 +1392,7 @@ class ArchitectureDesignRepository:
 
         Architecture is a child artifact, but spec/refinement consolidation is
         parent-scoped today. Reusing these event types keeps the KG pipeline
-        light and avoids a new Kuzu schema or dispatcher branch for v1.
+        light and avoids a new graph schema or dispatcher branch for v1.
         """
         if design.parent_type == "spec" and design.spec_id:
             from okto_pulse.core.events import publish as event_publish

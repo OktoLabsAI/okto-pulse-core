@@ -19,15 +19,15 @@ will work with temp data — the KG-only tests below use direct Kùzu connection
 to guarantee we hit the real graph file.
 """
 
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import gc
-import json
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # ENVIRONMENT SETUP — must happen BEFORE any okto_pulse import
@@ -66,7 +66,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
 
-from okto_pulse.core.kg.schema import NODE_TYPES, SCHEMA_VERSION
+from okto_pulse.core.kg.schema import NODE_TYPES
 from okto_pulse.core.kg.tier_power import get_schema_info
 
 
