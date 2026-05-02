@@ -10717,12 +10717,26 @@ async def okto_pulse_get_traceability_report(
     include_artifacts: str = "true",
 ) -> str:
     """
-    Return a consolidated SDLC traceability report:
+    okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
     ideation → refinement → spec → sprint → card/test/bug → artifacts.
 
     Use this at the end of an E2E flow to verify whether the agent can answer
     what was implemented in each flow and whether KBs, mockups, architecture,
     tests, bugs, cards, and parent references stayed queryable.
+
+    Args:
+        board_id: Board ID.
+        ideation_id: Optional ideation filter. When provided, returns only
+            lineage below that ideation.
+        spec_id: Optional spec filter. When provided, returns the spec and its
+            parent ideation/refinement lineage when available.
+        include_artifacts: "true" to include KB/mockup/architecture references;
+            "false" for compact artifact counts.
+
+    Returns:
+        JSON with consolidated lineage, card/test/bug counts, artifacts, and
+        orphan_specs that are linked to the selected board but not attached to
+        the selected ideation/refinement chain.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -12778,7 +12792,8 @@ async def okto_pulse_kg_dead_letter_reprocess(
     process_now: str = "true",
 ) -> str:
     """
-    Requeue dead-lettered KG consolidation rows after the root cause is fixed.
+    okto_pulse_kg_dead_letter_reprocess — requeue dead-lettered KG
+    consolidation rows after the root cause is fixed.
 
     Use this after `okto_pulse_kg_migrate_schema`, WAL recovery, or a code fix
     when DLQ rows should be retried. The tool is idempotent: if a matching

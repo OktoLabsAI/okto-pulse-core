@@ -1324,8 +1324,8 @@ class CardCreate(BaseModel):
     sprint_id: str | None = None
     test_scenario_ids: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
-    # Bug card fields
-    card_type: str = "normal"  # "normal" or "bug"
+    # Card type: "normal", "test", or "bug".
+    card_type: str = "normal"
     origin_task_id: str | None = None
     severity: str | None = None  # "critical", "major", "minor"
     expected_behavior: str | None = None
