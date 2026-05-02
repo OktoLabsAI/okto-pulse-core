@@ -14,7 +14,6 @@ Covers:
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -27,10 +26,6 @@ from okto_pulse.core.models.db import (
     Card,
     CardStatus,
     CardType,
-    Ideation,
-    IdeationStatus,
-    Refinement,
-    RefinementStatus,
     Spec,
     SpecStatus,
     Sprint,

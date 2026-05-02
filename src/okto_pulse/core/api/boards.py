@@ -138,8 +138,6 @@ async def get_board_columns(
     db: AsyncSession = Depends(get_db),
 ):
     """Get board cards grouped by status/column."""
-    from sqlalchemy.orm import selectinload
-    from sqlalchemy import select
 
     board_service = BoardService(db)
     board = await board_service.get_board(board_id, user_id)

@@ -169,7 +169,7 @@ def check_rate_limit(agent_id: str) -> None:
     if not allowed:
         raise TierPowerError(
             "rate_limited",
-            f"Rate limit exceeded: 30 queries/min",
+            "Rate limit exceeded: 30 queries/min",
             details={"retry_after": retry_after},
         )
 

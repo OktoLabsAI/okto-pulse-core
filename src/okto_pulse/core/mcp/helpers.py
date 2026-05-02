@@ -13,6 +13,9 @@ History
   switch that REJECTS comma-only input. ``coerce_to_list_str`` is a
   convenience entry point for tool handlers using the new
   ``param: list[str] | str = ""`` signature.
+- v4: strict mode accepts a bare single value (e.g. ``"1"``) while still
+  rejecting comma-only multi-value strings. This keeps simple MCP calls
+  ergonomic without reintroducing ambiguous comma splitting.
 
 Design
 ------
@@ -74,15 +77,15 @@ def parse_multi_value(
     Args:
         raw: The raw parameter value (list, str, or None).
         strict_mode: Controls how a string with neither ``[`` nor ``|``
-            is treated.
+            is treated when it may contain commas.
 
-            * ``False`` (default during rollout): treat as a single-token
+            * ``False``: treat as a single-token
               list — return ``[raw.strip()]`` after newline-escape
               substitution. Preserves the v1 helper contract.
-            * ``True`` (post-Sprint-5 default — see spec 4b429bf0 FR1,
-              FR8): REJECT with :class:`ValueError`. Comma-only input
-              is no longer treated as a separator; callers must pass a
-              JSON array or pipe-separated string.
+            * ``True``: reject comma-only strings because comma splitting
+              is ambiguous. A bare single value is accepted as one item,
+              so callers may pass either ``"1"`` or ``["1"]`` for
+              single-item fields.
 
     Returns:
         A list of non-empty stripped strings.
@@ -92,8 +95,7 @@ def parse_multi_value(
             (``"malformed JSON ..."``); decoded value is not a list
             (``"expected list ..."``); any item is not a string
             (``"expected string items ..."``); or the input is a
-            string with neither ``[`` nor ``|`` and ``strict_mode`` is
-            True (``"must be JSON array or pipe-separated ..."``).
+            comma-only string and ``strict_mode`` is True.
     """
     if raw is None:
         return []
@@ -147,8 +149,9 @@ def parse_multi_value(
             if item.strip()
         ]
 
-    # No pipe, no bracket — under strict_mode this is a contract violation.
-    if strict_mode:
+    # No pipe, no bracket. Under strict_mode, only comma-containing strings
+    # are rejected; a bare single value is unambiguous and remains valid.
+    if strict_mode and "," in stripped:
         raise ValueError(
             "multi-value input must be a JSON array (e.g. '[\"a\", \"b\"]') "
             "or pipe-separated (e.g. 'a|b') — comma-separated input is "
@@ -156,8 +159,6 @@ def parse_multi_value(
             "(preferred) or one of the two string formats above."
         )
 
-    # Lenient mode (rollout window): treat as single-token list,
-    # preserving the v1 helper contract for existing callers.
     return [stripped.replace("\\n", "\n")]
 
 

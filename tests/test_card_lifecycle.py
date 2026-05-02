@@ -6,7 +6,7 @@ State machine:
     not_started → started → in_progress → validation → done
 
 Rules:
-    - Moving to 'done' requires: conclusion, completeness (0-100),
+    - Moving execution work to 'validation' or 'done' requires: conclusion, completeness (0-100),
       completeness_justification, drift (0-100), drift_justification
     - Circular dependencies are blocked
     - Bug cards require origin_task_id, severity, expected_behavior, observed_behavior
@@ -15,16 +15,13 @@ Rules:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 import pytest
-import pytest_asyncio
 
 from okto_pulse.core.models.db import (
     ActivityLog,
     Board,
     Card,
-    CardDependency,
     CardPriority,
     CardStatus,
     CardType,
@@ -139,9 +136,6 @@ class TestCardCreation:
                 assignee_id="assignee-1",
                 spec_id="spec-lifecycle-001",  # will be auto-set from seed
             )
-            # Fetch the actual spec_id from the seeded board
-            board = await db.get(Board, BOARD_ID)
-            spec = await db.get(Spec, board.id)
             # The seed creates a spec with a random UUID; get it
             specs = (await db.execute(
                 __import__("sqlalchemy").select(Spec).where(Spec.board_id == BOARD_ID)
@@ -241,7 +235,7 @@ class TestCardCreation:
 
 
 @pytest.mark.asyncio
-class TestCardStatusTransitions:
+class TestCardStatusTransitions:  # noqa: F811
     """AC-2: Card status transitions through the state machine."""
 
     async def _create_card_for_transition(self, db_factory, status=CardStatus.NOT_STARTED):
@@ -287,16 +281,82 @@ class TestCardStatusTransitions:
             assert moved.status == CardStatus.IN_PROGRESS
 
     async def test_transition_in_progress_to_validation(self, db_factory):
-        """in_progress → validation is a valid forward transition."""
+        """in_progress → validation persists the executor's completion report."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.IN_PROGRESS)
         async with db_factory() as db:
             svc = CardService(db)
             moved = await svc.move_card(
                 card.id, USER_ID,
-                CardMove(status=CardStatus.VALIDATION),
+                CardMove(
+                    status=CardStatus.VALIDATION,
+                    conclusion="Implemented the planned task and prepared it for validation",
+                    completeness=95,
+                    completeness_justification="All required behavior was implemented; polishing remains",
+                    drift=5,
+                    drift_justification="Minor naming adjustment during implementation",
+                ),
             )
             assert moved is not None
             assert moved.status == CardStatus.VALIDATION
+            assert moved.conclusions is not None
+            assert len(moved.conclusions) == 1
+            assert moved.conclusions[0]["source"] == "move_to_validation"
+            assert moved.conclusions[0]["completeness"] == 95
+            assert moved.conclusions[0]["drift"] == 5
+
+    async def test_transition_in_progress_to_validation_requires_conclusion(self, db_factory):
+        """in_progress → validation without an execution report is rejected."""
+        card, _ = await self._create_card_for_transition(db_factory, CardStatus.IN_PROGRESS)
+        async with db_factory() as db:
+            svc = CardService(db)
+            with pytest.raises(ValueError, match="conclusion"):
+                await svc.move_card(
+                    card.id, USER_ID,
+                    CardMove(status=CardStatus.VALIDATION),
+                )
+
+    async def test_successful_task_validation_does_not_duplicate_executor_report(self, db_factory):
+        """Reviewer approval keeps the executor report as the single conclusion entry."""
+        card, _ = await self._create_card_for_transition(db_factory, CardStatus.IN_PROGRESS)
+        async with db_factory() as db:
+            svc = CardService(db)
+            await svc.move_card(
+                card.id,
+                USER_ID,
+                CardMove(
+                    status=CardStatus.VALIDATION,
+                    conclusion="Executor claim for validator review",
+                    completeness=100,
+                    completeness_justification="All acceptance criteria implemented",
+                    drift=0,
+                    drift_justification="No deviation from plan",
+                ),
+            )
+            result = await svc.submit_task_validation(
+                card.id,
+                "reviewer-1",
+                "Reviewer One",
+                {
+                    "confidence": 95,
+                    "confidence_justification": "Reviewed implementation and tests",
+                    "estimated_completeness": 100,
+                    "completeness_justification": "Everything requested is present",
+                    "estimated_drift": 0,
+                    "drift_justification": "Implementation follows the plan",
+                    "general_justification": "Approved after reviewing the executor report and delivered changes.",
+                    "recommendation": "approve",
+                },
+            )
+
+            persisted = (await db.execute(
+                __import__("sqlalchemy").select(Card).where(Card.id == card.id)
+            )).scalar_one()
+            assert result["outcome"] == "success"
+            assert persisted.status == CardStatus.DONE
+            assert len(persisted.validations or []) == 1
+            assert len(persisted.conclusions or []) == 1
+            assert persisted.conclusions[0]["source"] == "move_to_validation"
+            assert persisted.conclusions[0]["text"] == "Executor claim for validator review"
 
     async def test_transition_validation_to_done_with_required_fields(self, db_factory):
         """validation → done requires conclusion, completeness, drift."""
@@ -480,6 +540,101 @@ class TestCardStatusTransitions:
 # ============================================================================
 # 3. Card updates
 # ============================================================================
+
+
+@pytest.mark.asyncio
+class TestCardValidationReportGate:
+    """Regression coverage for executor reports before task validation."""
+
+    async def _create_in_progress_card(self, db_factory):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            specs = (await db.execute(
+                __import__("sqlalchemy").select(Spec).where(Spec.board_id == BOARD_ID)
+            )).scalars().all()
+            card = await svc.create_card(
+                BOARD_ID,
+                USER_ID,
+                CardCreate(
+                    title="Validation report gate card",
+                    status=CardStatus.IN_PROGRESS,
+                    spec_id=specs[0].id,
+                ),
+            )
+            await db.commit()
+            return card
+
+    async def test_move_to_validation_requires_executor_report(self, db_factory):
+        card = await self._create_in_progress_card(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            with pytest.raises(ValueError, match="conclusion"):
+                await svc.move_card(card.id, USER_ID, CardMove(status=CardStatus.VALIDATION))
+
+    async def test_move_to_validation_persists_executor_report(self, db_factory):
+        card = await self._create_in_progress_card(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            moved = await svc.move_card(
+                card.id,
+                USER_ID,
+                CardMove(
+                    status=CardStatus.VALIDATION,
+                    conclusion="Executor claim for validation",
+                    completeness=95,
+                    completeness_justification="All required behavior was implemented",
+                    drift=5,
+                    drift_justification="Minor adjustment during implementation",
+                ),
+            )
+
+            assert moved is not None
+            assert moved.status == CardStatus.VALIDATION
+            assert len(moved.conclusions or []) == 1
+            assert moved.conclusions[0]["source"] == "move_to_validation"
+            assert moved.conclusions[0]["text"] == "Executor claim for validation"
+
+    async def test_successful_validation_does_not_duplicate_executor_report(self, db_factory):
+        card = await self._create_in_progress_card(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            await svc.move_card(
+                card.id,
+                USER_ID,
+                CardMove(
+                    status=CardStatus.VALIDATION,
+                    conclusion="Executor claim for validator review",
+                    completeness=100,
+                    completeness_justification="All acceptance criteria implemented",
+                    drift=0,
+                    drift_justification="No deviation from plan",
+                ),
+            )
+            result = await svc.submit_task_validation(
+                card.id,
+                "reviewer-1",
+                "Reviewer One",
+                {
+                    "confidence": 95,
+                    "confidence_justification": "Reviewed implementation and tests",
+                    "estimated_completeness": 100,
+                    "completeness_justification": "Everything requested is present",
+                    "estimated_drift": 0,
+                    "drift_justification": "Implementation follows the plan",
+                    "general_justification": "Approved after reviewing the executor report and delivered changes.",
+                    "recommendation": "approve",
+                },
+            )
+
+            persisted = (await db.execute(
+                __import__("sqlalchemy").select(Card).where(Card.id == card.id)
+            )).scalar_one()
+            assert result["outcome"] == "success"
+            assert persisted.status == CardStatus.DONE
+            assert len(persisted.validations or []) == 1
+            assert len(persisted.conclusions or []) == 1
+            assert persisted.conclusions[0]["source"] == "move_to_validation"
 
 
 @pytest.mark.asyncio
@@ -1348,7 +1503,18 @@ class TestActivityLog:
             # Move through the chain
             await svc.move_card(card.id, USER_ID, CardMove(status=CardStatus.STARTED))
             await svc.move_card(card.id, USER_ID, CardMove(status=CardStatus.IN_PROGRESS))
-            await svc.move_card(card.id, USER_ID, CardMove(status=CardStatus.VALIDATION))
+            await svc.move_card(
+                card.id,
+                USER_ID,
+                CardMove(
+                    status=CardStatus.VALIDATION,
+                    conclusion="Ready for validation after implementation",
+                    completeness=100,
+                    completeness_justification="All planned work completed",
+                    drift=0,
+                    drift_justification="No deviation from plan",
+                ),
+            )
             await db.commit()
 
             logs = (await db.execute(
@@ -1366,7 +1532,7 @@ class TestActivityLog:
 
 
 @pytest.mark.asyncio
-class TestCardStatusTransitions:
+class TestCardStatusTransitions:  # noqa: F811
     """Re-include helper for tests that need a card ready for moving."""
 
     async def _create_card_for_move(self, db_factory, status=CardStatus.NOT_STARTED):

@@ -296,6 +296,12 @@ class BoardConnection:
         self.db = _open_kuzu_db_cached(board_id, path)
         logger.debug("[KG] Kùzu database (cached) for board_id=%s", board_id)
         self.conn = kuzu.Connection(self.db)  # type: ignore[attr-defined]
+        # The VECTOR extension is connection-scoped in LadybugDB/Kuzu. The
+        # bootstrap path loads it before creating HNSW indexes, but hot boards
+        # skip bootstrap and still open fresh connections for worker commits.
+        # Without this, inserts into indexed tables such as Entity can fail
+        # with "Trying to insert into an index ... extension is not loaded".
+        load_vector_extension(self.conn)
         logger.debug("[KG] Kùzu connection created successfully for board_id=%s", board_id)
 
     def __enter__(self) -> tuple[Any, Any]:

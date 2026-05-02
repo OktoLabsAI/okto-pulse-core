@@ -1,6 +1,7 @@
 """Tests for Governance module — historical opt-in, ACL, undo, retention, erasure."""
 
-import asyncio
+# ruff: noqa: E402
+
 import os
 import sys
 import tempfile

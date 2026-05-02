@@ -2,13 +2,11 @@
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone
 
 # Use a temp sqlite database
 os.environ["OKTO_PULSE_DB_URL"] = "sqlite+aiosqlite:///:memory:"
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from sqlalchemy.orm.attributes import flag_modified
 from okto_pulse.core.models.db import (
     Base, Board, Spec, Sprint, Card, CardStatus, CardType, SpecStatus, SprintStatus
 )
@@ -54,7 +52,7 @@ async def run_tests():
         config = card_service._resolve_validation_config(
             card=None, spec=spec, sprint=None, board_settings=board.settings
         )
-        check("Config resolves from board (required=True)", config["required"] == True)
+        check("Config resolves from board (required=True)", config["required"] is True)
         check("Config min_confidence=70", config["min_confidence"] == 70)
         check("Config resolved_from=board", config["resolved_from"] == "board")
 
@@ -64,7 +62,7 @@ async def run_tests():
             card=None, spec=spec, sprint=None,
             board_settings={"require_task_validation": False}
         )
-        check("Spec override enables gate", config["required"] == True)
+        check("Spec override enables gate", config["required"] is True)
         check("Spec override resolved_from=spec", config["resolved_from"] == "spec")
 
         # ==== TEST: sprint override disables gate ====
@@ -78,7 +76,7 @@ async def run_tests():
             card=None, spec=spec, sprint=sprint,
             board_settings={"require_task_validation": True}
         )
-        check("Sprint override disables gate", config["required"] == False)
+        check("Sprint override disables gate", config["required"] is False)
         check("Sprint override resolved_from=sprint", config["resolved_from"] == "sprint")
 
         # ==== TEST: sprint null inherits spec ====
@@ -87,7 +85,7 @@ async def run_tests():
             card=None, spec=spec, sprint=sprint,
             board_settings={"require_task_validation": False}
         )
-        check("Sprint null inherits spec (required=True)", config["required"] == True)
+        check("Sprint null inherits spec (required=True)", config["required"] is True)
         check("Sprint null resolved_from=spec", config["resolved_from"] == "spec")
 
         # ==== TEST: Threshold null-coalescing per field ====

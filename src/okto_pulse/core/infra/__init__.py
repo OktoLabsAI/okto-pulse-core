@@ -1,5 +1,7 @@
 """Core infrastructure: auth, config, database, permissions, storage."""
 
+# ruff: noqa: F401
+
 from okto_pulse.core.infra.auth import (
     AuthProvider,
     configure_auth,

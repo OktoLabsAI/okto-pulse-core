@@ -1,7 +1,6 @@
 """Service layer for business logic."""
 
 import hashlib
-import os
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +17,6 @@ from okto_pulse.core.models.db import (
     ActivityLog,
     Agent,
     AgentBoard,
-    ArchitectureDesign,
     Attachment,
     Board,
     BoardGuideline,
@@ -32,6 +30,7 @@ from okto_pulse.core.models.db import (
     Ideation,
     IdeationComplexity,
     IdeationHistory,
+    IdeationKnowledgeBase,
     IdeationQAItem,
     IdeationStatus,
     PermissionPreset,
@@ -67,6 +66,8 @@ from okto_pulse.core.models.schemas import (
     GuidelineCreate,
     GuidelineUpdate,
     IdeationCreate,
+    IdeationKnowledgeCreate,
+    IdeationKnowledgeUpdate,
     IdeationMove,
     IdeationQAAnswer,
     IdeationQACreate,
@@ -86,7 +87,6 @@ from okto_pulse.core.models.schemas import (
     SpecQAAnswer,
     SpecQACreate,
     SpecUpdate,
-    SpecValidationSubmit,
     SprintCreate,
     SprintMove,
     SprintUpdate,
@@ -138,6 +138,22 @@ async def _require_spec_unlocked(db: AsyncSession, spec_id: str) -> None:
         raise SpecLockedError(spec_id=spec_id, current_validation_id=current_id)
 
 
+def _test_scenario_has_required_evidence(scenario: dict[str, Any]) -> bool:
+    """Return whether a scenario carries the same evidence expected by the gate."""
+    status = scenario.get("status")
+    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    if status not in {"automated", "passed", "failed"}:
+        return True
+    if not isinstance(evidence, dict):
+        return False
+    if status == "automated":
+        return bool(evidence.get("test_file_path") and evidence.get("test_function"))
+    return bool(
+        evidence.get("last_run_at")
+        and (evidence.get("output_snippet") or evidence.get("test_run_id"))
+    )
+
+
 # ---------------------------------------------------------------------------
 # Artifact propagation utility
 # ---------------------------------------------------------------------------
@@ -155,7 +171,8 @@ def _filter_mockups(
     for m in source:
         new_m = dict(m)
         new_m["origin_id"] = m.get("id")
-        new_m["id"] = f"sm_{hashlib.md5(f'{m.get("id")}{id(new_m)}'.encode()).hexdigest()[:8]}"
+        origin_token = f"{m.get('id')}{id(new_m)}"
+        new_m["id"] = f"sm_{hashlib.md5(origin_token.encode()).hexdigest()[:8]}"
         copied.append(new_m)
     return copied
 
@@ -205,7 +222,7 @@ async def propagate_artifacts(
         ]
         # Determine FK field name from target_kb_class table
         target_id_field = None
-        for col in ["spec_id", "refinement_id"]:
+        for col in ["spec_id", "refinement_id", "ideation_id"]:
             if hasattr(target_kb_class, col):
                 target_id_field = col
                 break
@@ -278,6 +295,44 @@ async def resolve_actor_name(db: AsyncSession, user_id: str, board_id: str) -> s
     return user_id[:20]
 
 
+async def propagate_architecture_designs(
+    db: AsyncSession,
+    *,
+    source_parent_type: str,
+    source_parent_id: str,
+    target_parent_type: str,
+    target_parent_id: str,
+    actor_id: str,
+    mode: str | None = "copy",
+    design_ids: list[str] | None = None,
+) -> list[Any]:
+    """Propagate architecture designs between SDLC artifacts.
+
+    Modes:
+    - copy/derive: snapshot copy, retaining source_design_id/source_ref.
+    - reference_only/none: no snapshot copy; parent linkage carries traceability.
+    """
+    normalized = (mode or "copy").strip().lower()
+    if normalized not in {"copy", "derive", "reference_only", "none"}:
+        raise ValueError(
+            "architecture_propagation_mode must be one of: copy, derive, "
+            "reference_only, none"
+        )
+    if normalized in {"reference_only", "none"}:
+        return []
+
+    from okto_pulse.core.services.architecture import ArchitecturePropagationService
+
+    return await ArchitecturePropagationService(db).copy_from_parent(
+        source_parent_type=source_parent_type,
+        source_parent_id=source_parent_id,
+        target_parent_type=target_parent_type,
+        target_parent_id=target_parent_id,
+        actor_id=actor_id,
+        design_ids=design_ids,
+    )
+
+
 class BoardService:
     """Service for board operations."""
 
@@ -291,6 +346,11 @@ class BoardService:
             description=data.description,
             owner_id=user_id,
             realm_id=realm_id,
+            settings=(
+                data.settings.model_dump(mode="json")
+                if getattr(data, "settings", None)
+                else None
+            ),
         )
         self.db.add(board)
         await self.db.flush()
@@ -867,7 +927,7 @@ class CardService:
         """Submit a task validation for a card in 'validation' status.
 
         Executes threshold check, computes outcome, persists validation,
-        and routes card (success→done, failed→not_started).
+        and routes card (success→done, failed stays in validation).
         """
         import uuid as _uuid
 
@@ -956,14 +1016,14 @@ class CardService:
         card.validations = validations
         flag_modified(card, "validations")
 
-        # Auto-populate conclusion when outcome=success. The Conclusion tab has always
-        # expected completeness, drift, justifications and a "text" describing what was
-        # done. When the card auto-routes from validation→done, we derive a conclusion
-        # entry from the validation scores and general_justification so the tab is not
-        # left empty. Users can still add additional conclusion entries manually if they
-        # want more detail.
-        if outcome == "success":
-            conclusions_list = list(card.conclusions or [])
+        # Auto-populate conclusion only for legacy cards that reached validation
+        # before execution reports were required on the validation handoff.
+        conclusions_list = list(card.conclusions or [])
+        has_executor_report = any(
+            isinstance(entry, dict) and entry.get("source") == "move_to_validation"
+            for entry in conclusions_list
+        )
+        if outcome == "success" and not has_executor_report:
             conclusions_list.append({
                 "text": _general,
                 "author_id": reviewer_id,
@@ -1266,8 +1326,9 @@ class CardService:
     ) -> Card | None:
         """Move a card to a different column/position. Blocks if dependencies not met.
 
-        Moving to 'done' requires a conclusion text. The conclusion is appended
-        to the card's conclusions list (supports multiple cycles).
+        Moving execution work to 'validation' or 'done' requires an execution
+        report. The report is appended to the card's conclusions list so
+        reviewers can validate the executor's claim before approving it.
         """
         card = await self.get_card(card_id)
         if not card:
@@ -1348,14 +1409,16 @@ class CardService:
                 raise ValueError(
                     "Validation gate is active. Move card to 'validation' status first. "
                     "A reviewer must submit a task validation before the card can move to 'done'. "
-                    "Use move_card(status='validation') then submit_task_validation."
+                    "Use move_card(status='validation', conclusion=..., completeness=..., "
+                    "completeness_justification=..., drift=..., drift_justification=...) "
+                    "then submit_task_validation."
                 )
 
         # Block Done on test cards if linked scenarios not updated
         if data.status == CardStatus.DONE and card.spec_id and card.test_scenario_ids:
-            spec = spec if 'spec' in dir() else await self.db.get(Spec, card.spec_id)
-            if spec and not skip_global:
-                all_scenarios = {s["id"]: s for s in (spec.test_scenarios or [])}
+            spec_for_test_scenarios = await self.db.get(Spec, card.spec_id)
+            if spec_for_test_scenarios and not skip_global:
+                all_scenarios = {s["id"]: s for s in (spec_for_test_scenarios.test_scenarios or [])}
                 stale = []
                 for sid in (card.test_scenario_ids or []):
                     sc = all_scenarios.get(sid)
@@ -1405,10 +1468,11 @@ class CardService:
                 raise ValueError(
                     "Bug card requires at least 1 new test task linked before moving to in_progress. "
                     "REQUIRED STEPS: "
-                    "(1) Create a new test scenario on the spec using okto_pulse_add_test_scenario, "
-                    "(2) Create a test task card with spec_id and test_scenario_ids using okto_pulse_create_card, "
-                    "(3) Link the test task to this bug using okto_pulse_update_card with linked_test_task_ids, "
-                    "(4) Then retry moving this bug card to in_progress. "
+                    "(1) Create a regression test card with card_type='test', spec_id, and test_scenario_ids "
+                    "using okto_pulse_create_card. The referenced scenario may be an existing scenario on a "
+                    "validated/locked spec; do not unlock the spec just to add a regression task. "
+                    "(2) Link the test task to this bug using okto_pulse_update_card with linked_test_task_ids, "
+                    "(3) Then retry moving this bug card to in_progress. "
                     "TO BYPASS: set require_test_task_for_bug=false on the board, or raise "
                     "bug_test_gate_min_severity above this bug's severity."
                 )
@@ -1452,31 +1516,50 @@ class CardService:
                         f"Test tasks must belong to the same spec as the bug card."
                     )
 
-                # Validate scenarios exist in spec and were created AFTER the bug
+                if (
+                    bug_created
+                    and test_task.created_at
+                    and test_task.created_at.isoformat() < bug_created.isoformat()
+                ):
+                    raise ValueError(
+                        f"Linked test task '{test_task.title}' was created before this bug card. "
+                        "Create or link a regression test task created after the bug so the bug has "
+                        "fresh validation coverage without editing a locked spec."
+                    )
+
+                # Validate scenarios exist in spec. Regression test cards may
+                # reference existing scenarios even when the spec is locked.
                 for sid in test_task.test_scenario_ids:
                     sc = all_scenarios.get(sid)
                     if not sc:
                         raise ValueError(
                             f"Test scenario '{sid}' referenced by test task '{test_task.title}' "
                             f"does not exist in spec '{spec_for_bug.title if spec_for_bug else card.spec_id}'. "
-                            f"The scenario may have been deleted. Create a new test scenario "
-                            f"using okto_pulse_add_test_scenario and update the test task."
-                        )
-                    sc_created = sc.get("created_at", "")
-                    if sc_created and bug_created and sc_created < bug_created.isoformat():
-                        raise ValueError(
-                            f"Test scenario '{sc.get('title', sid)}' was created before this bug card. "
-                            f"Only NEW test scenarios (created after the bug) count for unblocking. "
-                            f"Create a new test scenario using okto_pulse_add_test_scenario "
-                            f"that specifically covers the bug's observed behavior."
+                            f"The scenario may have been deleted. Link the test task to an existing scenario, "
+                            f"or move the spec back to an editable status if a new scenario is truly required."
                         )
 
-        # Require conclusion when moving to Done
+        report_target = None
         if data.status == CardStatus.DONE:
+            report_target = "Done"
+        elif (
+            data.status == CardStatus.VALIDATION
+            and old_status in (
+                CardStatus.NOT_STARTED,
+                CardStatus.STARTED,
+                CardStatus.IN_PROGRESS,
+                CardStatus.ON_HOLD,
+            )
+            and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
+        ):
+            report_target = "Validation"
+
+        # Require an execution report before handoff to Validation/Done.
+        if report_target:
             if not data.conclusion or not data.conclusion.strip():
                 raise ValueError(
-                    "A conclusion is required when moving a card to Done. "
-                    "The conclusion must be a detailed summary including: "
+                    f"A conclusion is required when moving a card to {report_target}. "
+                    "The conclusion must be the executor's detailed claim including: "
                     "(1) what was done — specific changes and files modified, "
                     "(2) technical decisions and reasoning, "
                     "(3) what was tested and results, "
@@ -1486,7 +1569,7 @@ class CardService:
             # Validate completeness (0-100)
             if data.completeness is None:
                 raise ValueError(
-                    "completeness (0-100) is required when moving a card to Done. "
+                    f"completeness (0-100) is required when moving a card to {report_target}. "
                     "It indicates how much of the planned work was actually implemented. "
                     "100 = fully complete, 0 = nothing delivered."
                 )
@@ -1494,13 +1577,13 @@ class CardService:
                 raise ValueError("completeness must be between 0 and 100.")
             if not data.completeness_justification or not data.completeness_justification.strip():
                 raise ValueError(
-                    "completeness_justification is required when moving a card to Done. "
+                    f"completeness_justification is required when moving a card to {report_target}. "
                     "Explain why the completeness score is what it is."
                 )
             # Validate drift (0-100)
             if data.drift is None:
                 raise ValueError(
-                    "drift (0-100) is required when moving a card to Done. "
+                    f"drift (0-100) is required when moving a card to {report_target}. "
                     "It indicates how much the implementation deviated from the original plan. "
                     "0 = no deviation, 100 = completely different from plan."
                 )
@@ -1508,10 +1591,15 @@ class CardService:
                 raise ValueError("drift must be between 0 and 100.")
             if not data.drift_justification or not data.drift_justification.strip():
                 raise ValueError(
-                    "drift_justification is required when moving a card to Done. "
+                    f"drift_justification is required when moving a card to {report_target}. "
                     "Explain what caused the deviation from the original plan."
                 )
-            # Append conclusion
+
+            report_source = (
+                "move_to_validation"
+                if data.status == CardStatus.VALIDATION
+                else "move_to_done"
+            )
             conclusions = list(card.conclusions or [])
             conclusions.append({
                 "text": data.conclusion.strip(),
@@ -1521,9 +1609,25 @@ class CardService:
                 "completeness_justification": data.completeness_justification.strip(),
                 "drift": data.drift,
                 "drift_justification": data.drift_justification.strip(),
+                "source": report_source,
             })
             card.conclusions = conclusions
             flag_modified(card, "conclusions")
+
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import CardConclusionAdded
+
+            await event_publish(
+                CardConclusionAdded(
+                    board_id=card.board_id,
+                    actor_id=user_id,
+                    card_id=card_id,
+                    spec_id=card.spec_id,
+                    conclusion_excerpt=data.conclusion.strip()[:280],
+                    added_by=user_id,
+                ),
+                session=self.db,
+            )
 
         # Block forward moves if dependencies not met
         if new_level > old_level:
@@ -1766,7 +1870,7 @@ class AgentService:
     async def get_agent_by_key(self, api_key: str) -> Agent | None:
         """Get an agent by API key."""
         key_hash = self.hash_api_key(api_key)
-        query = select(Agent).where(Agent.api_key_hash == key_hash, Agent.is_active == True)
+        query = select(Agent).where(Agent.api_key_hash == key_hash, Agent.is_active.is_(True))
         result = await self.db.execute(query)
         agent = result.scalar_one_or_none()
         if agent:
@@ -2432,7 +2536,7 @@ class SpecService:
         if status_filter:
             query = query.where(Spec.status == SpecStatus(status_filter))
         if not include_archived:
-            query = query.where(Spec.archived == False)
+            query = query.where(Spec.archived.is_(False))
         query = query.order_by(Spec.updated_at.desc())
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -3208,6 +3312,71 @@ class SpecKnowledgeService:
         return True
 
 
+class IdeationKnowledgeService:
+    """Service for ideation knowledge base operations."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def create_knowledge(
+        self,
+        ideation_id: str,
+        user_id: str,
+        data: IdeationKnowledgeCreate,
+    ) -> IdeationKnowledgeBase | None:
+        """Create a knowledge base item on an ideation."""
+        ideation = await self.db.get(Ideation, ideation_id)
+        if not ideation:
+            return None
+        kb = IdeationKnowledgeBase(
+            ideation_id=ideation_id,
+            title=data.title,
+            description=data.description,
+            content=data.content,
+            mime_type=data.mime_type,
+            created_by=user_id,
+        )
+        self.db.add(kb)
+        await self.db.flush()
+        return kb
+
+    async def get_knowledge(self, knowledge_id: str) -> IdeationKnowledgeBase | None:
+        """Get a knowledge base item by ID."""
+        return await self.db.get(IdeationKnowledgeBase, knowledge_id)
+
+    async def list_knowledge(self, ideation_id: str) -> list[IdeationKnowledgeBase]:
+        """List all knowledge base items for an ideation."""
+        query = (
+            select(IdeationKnowledgeBase)
+            .where(IdeationKnowledgeBase.ideation_id == ideation_id)
+            .order_by(IdeationKnowledgeBase.created_at)
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def update_knowledge(
+        self,
+        knowledge_id: str,
+        data: IdeationKnowledgeUpdate,
+    ) -> IdeationKnowledgeBase | None:
+        """Update a knowledge base item."""
+        kb = await self.get_knowledge(knowledge_id)
+        if not kb:
+            return None
+        update_data = data.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(kb, key, value)
+        return kb
+
+    async def delete_knowledge(self, knowledge_id: str) -> bool:
+        """Delete a knowledge base item."""
+        kb = await self.get_knowledge(knowledge_id)
+        if not kb:
+            return False
+        await self.db.delete(kb)
+        return True
+
+
 class ShareService:
     """Service for board sharing operations."""
 
@@ -3430,6 +3599,7 @@ class IdeationService:
             select(Ideation)
             .options(selectinload(Ideation.refinements).selectinload(Refinement.architecture_designs))
             .options(selectinload(Ideation.specs).selectinload(Spec.architecture_designs))
+            .options(selectinload(Ideation.knowledge_bases))
             .options(selectinload(Ideation.qa_items))
             .options(selectinload(Ideation.architecture_designs))
             .where(Ideation.id == ideation_id)
@@ -3447,7 +3617,7 @@ class IdeationService:
         if status_filter:
             query = query.where(Ideation.status == IdeationStatus(status_filter))
         if not include_archived:
-            query = query.where(Ideation.archived == False)
+            query = query.where(Ideation.archived.is_(False))
         query = query.order_by(Ideation.updated_at.desc())
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -3600,7 +3770,7 @@ class IdeationService:
         )
         return ideation
 
-    async def _create_snapshot(self, ideation: "Ideation", user_id: str) -> "IdeationSnapshot":
+    async def _create_snapshot(self, ideation: "Ideation", user_id: str) -> Any:
         """Create an immutable snapshot of the ideation's current state."""
         from okto_pulse.core.models.db import IdeationSnapshot
 
@@ -3729,6 +3899,8 @@ class IdeationService:
     async def derive_spec(
         self, ideation_id: str, user_id: str, skip_ownership_check: bool = False,
         mockup_ids: list[str] | None = None, kb_ids: list[str] | None = None,
+        architecture_design_ids: list[str] | None = None,
+        architecture_propagation_mode: str = "copy",
     ) -> Spec | None:
         """Create a Spec draft linked to an ideation.
 
@@ -3768,8 +3940,10 @@ class IdeationService:
             )
         context = "\n\n".join(context_parts) if context_parts else ideation.description
 
-        # Snapshot Q&A before flush (eager-loaded collections expire after flush)
+        # Snapshot parent collections before flush: eager-loaded collections can
+        # expire after create_spec flushes the new child entity.
         snapshot_qa = list(ideation.qa_items or [])
+        snapshot_kbs = list(ideation.knowledge_bases or [])
 
         spec_data = SpecCreate(
             title=ideation.title,
@@ -3788,12 +3962,22 @@ class IdeationService:
                 db=self.db,
                 source_mockups=ideation.screen_mockups,
                 source_qa_items=snapshot_qa,
-                source_knowledge_bases=None,
+                source_knowledge_bases=snapshot_kbs,
                 target_entity=spec,
                 target_kb_class=SpecKnowledgeBase,
                 user_id=user_id,
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
+            )
+            await propagate_architecture_designs(
+                self.db,
+                source_parent_type="ideation",
+                source_parent_id=ideation_id,
+                target_parent_type="spec",
+                target_parent_id=spec.id,
+                actor_id=user_id,
+                mode=architecture_propagation_mode,
+                design_ids=architecture_design_ids,
             )
 
             from okto_pulse.core.events import publish as event_publish
@@ -4016,12 +4200,14 @@ class RefinementService:
             qa_items = [qa for qa in (ideation.qa_items or []) if qa.answer]
             if qa_items:
                 qa_lines = [f"**Q:** {qa.question}\n**A:** {qa.answer}" for qa in qa_items]
-                context_parts.append(f"## Q&A Decisions\n" + "\n\n".join(qa_lines))
+                context_parts.append("## Q&A Decisions\n" + "\n\n".join(qa_lines))
             description = "\n\n".join(context_parts) if context_parts else None
 
         # Parse optional mockup/kb filters from data (if present)
         prop_mockup_ids = getattr(data, "mockup_ids", None)
         prop_kb_ids = getattr(data, "kb_ids", None)
+        prop_architecture_ids = getattr(data, "architecture_design_ids", None)
+        architecture_mode = getattr(data, "architecture_propagation_mode", "copy")
 
         refinement = Refinement(
             ideation_id=ideation_id,
@@ -4045,12 +4231,22 @@ class RefinementService:
             db=self.db,
             source_mockups=ideation.screen_mockups,
             source_qa_items=ideation.qa_items,
-            source_knowledge_bases=None,  # Ideations don't have KBs
+            source_knowledge_bases=ideation.knowledge_bases,
             target_entity=refinement,
             target_kb_class=RefinementKnowledgeBase,
             user_id=user_id,
             mockup_ids=prop_mockup_ids,
             kb_ids=prop_kb_ids,
+        )
+        await propagate_architecture_designs(
+            self.db,
+            source_parent_type="ideation",
+            source_parent_id=ideation_id,
+            target_parent_type="refinement",
+            target_parent_id=refinement.id,
+            actor_id=user_id,
+            mode=architecture_mode,
+            design_ids=prop_architecture_ids,
         )
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
@@ -4099,7 +4295,7 @@ class RefinementService:
         if status_filter:
             query = query.where(Refinement.status == RefinementStatus(status_filter))
         if not include_archived:
-            query = query.where(Refinement.archived == False)
+            query = query.where(Refinement.archived.is_(False))
         query = query.order_by(Refinement.updated_at.desc())
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -4349,6 +4545,8 @@ class RefinementService:
     async def derive_spec(
         self, refinement_id: str, user_id: str, skip_ownership_check: bool = False,
         mockup_ids: list[str] | None = None, kb_ids: list[str] | None = None,
+        architecture_design_ids: list[str] | None = None,
+        architecture_propagation_mode: str = "copy",
     ) -> Spec | None:
         """Create a Spec draft linked to a refinement.
 
@@ -4415,6 +4613,16 @@ class RefinementService:
                 user_id=user_id,
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
+            )
+            await propagate_architecture_designs(
+                self.db,
+                source_parent_type="refinement",
+                source_parent_id=refinement_id,
+                target_parent_type="spec",
+                target_parent_id=spec.id,
+                actor_id=user_id,
+                mode=architecture_propagation_mode,
+                design_ids=architecture_design_ids,
             )
 
             from okto_pulse.core.events import publish as event_publish
@@ -5022,7 +5230,7 @@ class SprintService:
         """List sprints for a spec."""
         query = select(Sprint).where(Sprint.spec_id == spec_id)
         if not include_archived:
-            query = query.where(Sprint.archived == False)
+            query = query.where(Sprint.archived.is_(False))
         query = query.order_by(Sprint.created_at.asc())
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -5040,7 +5248,7 @@ class SprintService:
         if spec_id:
             query = query.where(Sprint.spec_id == spec_id)
         if not include_archived:
-            query = query.where(Sprint.archived == False)
+            query = query.where(Sprint.archived.is_(False))
         query = query.options(selectinload(Sprint.spec))
         query = query.order_by(Sprint.updated_at.desc())
         result = await self.db.execute(query)
@@ -5181,7 +5389,7 @@ class SprintService:
                         sc = spec_scenarios_by_id.get(sid)
                         if not sc:
                             continue
-                        if sc.get("status") in ("passed", "automated") and not sc.get("evidence"):
+                        if not _test_scenario_has_required_evidence(sc):
                             evidenceless.append(sid)
                 if evidenceless:
                     # NC-9 BR4 — sprint close gate as defense in depth.
@@ -5429,7 +5637,6 @@ class SprintService:
 
         # Build FR→cards mapping via test_scenario_ids → linked_criteria
         scenarios = {s.get("id"): s for s in (spec.test_scenarios or [])}
-        rules = {r.get("id"): r for r in (spec.business_rules or [])}
         fr_groups: dict[str, list[Card]] = {}
         ungrouped: list[Card] = []
 

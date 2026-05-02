@@ -8,7 +8,6 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-import pytest_asyncio
 
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
 from okto_pulse.core.kg.interfaces.registry import (

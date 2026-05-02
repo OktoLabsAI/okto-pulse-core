@@ -13,7 +13,6 @@ end-to-end with a real DB so the bug cannot regress silently.
 from __future__ import annotations
 
 import inspect
-import json
 import uuid
 
 import pytest
@@ -76,6 +75,15 @@ def test_handler_source_uses_spec_knowledge_service():
     )
     # Make sure the buggy line is gone — old code did `spec_service.list_knowledge`.
     assert "spec_service.list_knowledge" not in block
+
+
+def test_handler_copies_kb_into_card_knowledge_bases_not_comments():
+    """The task snapshot must be card-local structured KE, not a loose comment."""
+    block = _handler_block("okto_pulse_copy_knowledge_to_card")
+
+    assert "CardUpdate(knowledge_bases=existing)" in block
+    assert "Comment(" not in block
+    assert "copied_from_spec:" in block
 
 
 # ---------------------------------------------------------------------------

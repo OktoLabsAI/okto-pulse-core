@@ -8,16 +8,12 @@ Scenarios:
 
 from __future__ import annotations
 
-import math
 import pytest
-import pytest_asyncio
 
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters, SemanticGraphStore
 from okto_pulse.core.kg.interfaces.registry import (
-    configure_kg_registry,
-    get_kg_registry,
     reset_registry_for_tests,
 )
 from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
@@ -53,7 +49,7 @@ class TestSemanticGraphStore:
         store = InMemoryGraphStore()
         assert store.get_schema_version("b1") is None
         store.bootstrap("b1")
-        assert store.get_schema_version("b1") == "0.3.0"
+        assert store.get_schema_version("b1") == "0.3.3"
 
     def test_create_and_find_by_topic(self):
         store = InMemoryGraphStore()
@@ -152,7 +148,7 @@ class TestSemanticGraphStore:
     def test_get_schema_info(self):
         store = InMemoryGraphStore()
         info = store.get_schema_info("b1")
-        assert info["schema_version"] == "0.3.0"
+        assert info["schema_version"] == "0.3.3"
         assert len(info["stable_node_types"]) == 11
         assert len(info["stable_rel_types"]) == 10
         assert len(info["vector_indexes"]) == 5

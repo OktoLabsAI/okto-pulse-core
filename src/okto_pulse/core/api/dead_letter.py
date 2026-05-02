@@ -1,12 +1,14 @@
 """Dead Letter Inspector REST endpoint (spec ed17b1fe — Wave 2 NC 1ede3471).
 
-GET /api/v1/kg/queue/dead-letter — read-only listing of DLQ rows for a
-board. Pagination via ``limit`` (1-200, default 50) + ``offset`` (>=0,
-default 0). Filter by board access enforced at auth layer (same pattern
-as queue_health endpoint).
+GET /api/v1/kg/queue/dead-letter — listing of DLQ rows for a board.
+Pagination via ``limit`` (1-200, default 50) + ``offset`` (>=0, default 0).
+Filter by board access enforced at auth layer (same pattern as queue_health
+endpoint).
 
-Reprocess endpoint deferred to v2 — see spec D1 (MVP read-only — reprocess
-deferred).
+DLQ reprocess is available through the MCP tool
+``okto_pulse_kg_dead_letter_reprocess`` and the shared service
+``reprocess_dead_letter_rows``. This REST module exposes only the inspector
+list endpoint.
 """
 
 from __future__ import annotations

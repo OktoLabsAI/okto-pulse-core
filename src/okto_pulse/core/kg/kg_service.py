@@ -18,10 +18,10 @@ import asyncio
 import logging
 import threading
 import time as _time
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from functools import partial
 from typing import Any
 
@@ -350,9 +350,11 @@ class KGService:
         *,
         default_filters: DefaultFilters | None = None,
         ranking_weights: RankingWeights | None = None,
+        emit_hit_events: bool = True,
     ):
         self.defaults = default_filters or DefaultFilters()
         self.weights = ranking_weights or RankingWeights()
+        self.emit_hit_events = emit_hit_events
 
     # ------------------------------------------------------------------
     # ACL (FR-9)
@@ -448,6 +450,9 @@ class KGService:
         )
         _PENDING_HITS[key] = 0
         _LAST_FLUSH[key] = datetime.now(timezone.utc)
+
+        if not self.emit_hit_events:
+            return
 
         # spec 28583299 (Ideação #4, BR3 + dec_3a6eb8ad): emit KGHitFlushed
         # via fire-and-forget so the recompute handler ranks the refreshed

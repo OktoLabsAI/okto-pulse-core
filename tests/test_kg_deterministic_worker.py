@@ -241,6 +241,16 @@ def test_process_spec_projects_architecture_designs_without_new_node_types():
     assert by_title["Runtime Architecture"].node_type == "Entity"
     assert by_title["Checkout API"].node_type == "Entity"
     assert by_title["POST /checkout"].node_type == "APIContract"
+    architecture_refs = {
+        by_title["Runtime Architecture"].source_artifact_ref,
+        by_title["Checkout API"].source_artifact_ref,
+        by_title["POST /checkout"].source_artifact_ref,
+    }
+    assert architecture_refs == {
+        "architecture_design:arch_runtime",
+        "architecture_design:arch_runtime:entity:entity_api",
+        "architecture_design:arch_runtime:interface:iface_checkout",
+    }
     assert "Checkout runs through" in result.raw_content
     assert "cart_id" in result.raw_content
     assert any(
