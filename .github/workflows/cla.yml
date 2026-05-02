@@ -22,14 +22,17 @@ jobs:
 
     steps:
       - name: CLA Assistant
-        uses: contributor-assistant/github-action@v2
+        # Pinned to commit SHA of v2.6.1 for supply-chain integrity (audit
+        # H4 — closes the OWASP "pwn request" pattern on pull_request_target).
+        # When bumping, update both the SHA and trailing version comment.
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: "signatures/cla.json"
           path-to-document: "https://github.com/OktoLabsAI/okto-pulse-core/blob/main/CLA.md"
           branch: "cla-signatures"
-          allowlist: "oktolabsai-developer,dependabot[bot],github-actions[bot]"
+          allowlist: "oktolabsai-developer,Maheidem,maheidem,dependabot[bot],github-actions[bot]"
           custom-notsigned-prcomment: |
             Thank you for your contribution! Before we can merge this PR, you need to agree to our [Contributor License Agreement](https://github.com/OktoLabsAI/okto-pulse-core/blob/main/CLA.md).
 

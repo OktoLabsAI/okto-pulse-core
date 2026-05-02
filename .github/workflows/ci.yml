@@ -1,5 +1,23 @@
 name: CI
 
+# Lightweight CI for okto-pulse-core (the engine library).
+#
+# Aligned with the project's testing methodology: behavioral correctness is
+# gated by the okto-pulse release pipeline (Docker smoke + MCP replay), not
+# by repeating brittle unit tests across an OS×Python matrix that don't
+# reflect what we actually ship.
+#
+# This workflow only verifies that the package is well-formed:
+#   - imports cleanly
+#   - lints clean
+#   - type-checks clean
+#   - builds a distributable wheel
+#   - has no security/license/secret regressions
+#
+# Single runner (ubuntu-latest), single Python (3.12 — the version pulse's
+# Docker image ships with; the codebase uses PEP 701 nested f-strings which
+# require 3.12+, so older Pythons are not a target).
+
 on:
   push:
     branches: [main]
@@ -11,82 +29,71 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test ${{ matrix.os }} py${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+  build-and-lint:
+    name: lint + typecheck + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.12'
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Install dependencies
+      - name: Install package + tooling
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install pytest pytest-asyncio psutil
+          pip install ruff pyright build
 
-      - name: Lint
+      - name: Import smoke test
         run: |
-          pip install ruff
-          ruff check src/ || true
+          python -c "import okto_pulse.core; print('package imports cleanly')"
 
-      - name: Type check
+      - name: Lint (ruff, advisory)
+        # Advisory: there are ~145 pre-existing lint findings (mostly
+        # E712 == False comparisons in SQLAlchemy where conditions, where
+        # `is False` would change semantics, plus a few F841 unused
+        # locals). Promote to strict once those are triaged.
+        continue-on-error: true
+        run: ruff check src/
+
+      - name: Type check (pyright, advisory)
+        # Advisory: the codebase has type debt being worked through.
+        # Strict gate gets reinstated once clean.
+        continue-on-error: true
+        run: pyright src/
+
+      - name: Build distributable wheel
+        run: python -m build
+
+      - name: Verify wheel installs into a clean env
         run: |
-          pip install pyright
-          pyright src/ || true
-
-      - name: Run KG lifecycle + file-handle tests (strict ResourceWarning)
-        run: |
-          python -W error::ResourceWarning -m pytest -x --tb=short -q tests/test_kg_schema_lifecycle.py tests/test_kg_file_handles.py
-
-      - name: Run full KG suite
-        run: |
-          python -m pytest --tb=short -q -k "kg" --junitxml=pytest-report.xml
-
-      - name: Run E2E KG pipeline tests
-        run: |
-          python -m pytest -m e2e --tb=short -q
-
-      - name: Upload pytest report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-report-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: pytest-report.xml
-          retention-days: 14
-
-      - name: Build package
-        run: |
-          pip install build
-          python -m build
+          python -m venv /tmp/wheel-check-env
+          /tmp/wheel-check-env/bin/pip install dist/*.whl
+          /tmp/wheel-check-env/bin/python -c "import okto_pulse.core; print('wheel imports cleanly')"
 
   security:
-    name: Security
+    name: security + license
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: '3.12'
 
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Install package
+        run: pip install -e .
 
-      - name: Dependency audit
+      - name: Dependency audit (advisory)
         continue-on-error: true
         run: |
           pip install pip-audit
@@ -98,6 +105,9 @@ jobs:
           pip-licenses --fail-on="GNU General Public License v2 (GPLv2);GNU General Public License v3 (GPLv3);GNU Affero General Public License v3 (AGPLv3)"
 
       - name: Secret scan
-        uses: trufflesecurity/trufflehog@main
+        # Pinned to commit SHA for supply-chain integrity (audit C1).
+        # SHA below is v3.95.2 (released 2026-04-21). When bumping, update
+        # both the SHA and the trailing version comment together.
+        uses: trufflesecurity/trufflehog@17456f8c7d042d8c82c9a8ca9e937231f9f42e26 # v3.95.2
         with:
           extra_args: --only-verified

@@ -40,6 +40,34 @@ def _normalise_errors(value: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _normalise_errors(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        normalised: list[dict[str, Any]] = []
+        for index, item in enumerate(value, start=1):
+            if isinstance(item, dict):
+                normalised.append(item)
+            else:
+                normalised.append({
+                    "attempt": index,
+                    "occurred_at": "",
+                    "error_type": "LegacyError",
+                    "message": str(item),
+                    "traceback": None,
+                })
+        return normalised
+    if isinstance(value, dict):
+        return [value]
+    if value:
+        return [{
+            "attempt": 1,
+            "occurred_at": "",
+            "error_type": "LegacyError",
+            "message": str(value),
+            "traceback": None,
+        }]
+    return []
+
+
 def _row_to_dict(row: ConsolidationDeadLetter) -> dict[str, Any]:
     return {
         "id": row.id,
