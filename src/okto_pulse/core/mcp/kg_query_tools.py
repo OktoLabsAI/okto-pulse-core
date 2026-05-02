@@ -12,7 +12,7 @@ import json
 import logging
 from typing import Any
 
-from okto_pulse.core.kg.kg_service import KGService, KGToolError, get_kg_service
+from okto_pulse.core.kg.kg_service import KGToolError, get_kg_service
 from okto_pulse.core.kg.tool_schemas import (
     AlternativeResult,
     AlternativesResponse,

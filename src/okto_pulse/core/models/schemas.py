@@ -378,6 +378,7 @@ class ArchitectureInterface(BaseModel):
 
     id: str | None = None
     name: str = Field(..., min_length=1, max_length=255)
+    endpoint: str | None = None
     description: str | None = None
     participants: list[str] = Field(default_factory=list)
     direction: str | None = None
@@ -698,6 +699,54 @@ class IdeationQAResponse(BaseSchema):
 
 
 # ============================================================================
+# Ideation Knowledge Base Schemas
+# ============================================================================
+
+
+class IdeationKnowledgeCreate(BaseModel):
+    """Schema for creating an ideation knowledge base item."""
+
+    title: str = Field(..., min_length=1, max_length=500)
+    description: str | None = None
+    content: str = Field(..., min_length=1)
+    mime_type: str = "text/markdown"
+
+
+class IdeationKnowledgeUpdate(BaseModel):
+    """Schema for updating an ideation knowledge base item."""
+
+    title: str | None = Field(None, min_length=1, max_length=500)
+    description: str | None = None
+    content: str | None = Field(None, min_length=1)
+    mime_type: str | None = None
+
+
+class IdeationKnowledgeResponse(BaseSchema):
+    """Full ideation knowledge base item response."""
+
+    id: str
+    ideation_id: str
+    title: str
+    description: str | None
+    content: str
+    mime_type: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class IdeationKnowledgeSummary(BaseSchema):
+    """Lightweight ideation KB summary (without content)."""
+
+    id: str
+    ideation_id: str
+    title: str
+    description: str | None
+    mime_type: str
+    created_at: datetime
+
+
+# ============================================================================
 # Refinement Schemas
 # ============================================================================
 
@@ -736,6 +785,8 @@ class RefinementCreate(BaseModel):
     # Artifact propagation filters (optional — None = propagate all from parent)
     mockup_ids: list[str] | None = None
     kb_ids: list[str] | None = None
+    architecture_design_ids: list[str] | None = None
+    architecture_propagation_mode: str = "copy"
 
     @field_validator("in_scope")
     @classmethod
@@ -1042,6 +1093,7 @@ class IdeationResponse(BaseSchema):
     pre_archive_status: str | None = None
     refinements: list[RefinementSummary] = []
     specs: list[SpecSummary] = []
+    knowledge_bases: list[IdeationKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[IdeationQAResponse] = []
 
@@ -1272,8 +1324,8 @@ class CardCreate(BaseModel):
     sprint_id: str | None = None
     test_scenario_ids: list[str] | None = None
     screen_mockups: list[ScreenMockup] | None = None
-    # Bug card fields
-    card_type: str = "normal"  # "normal" or "bug"
+    # Card type: "normal", "test", or "bug".
+    card_type: str = "normal"
     origin_task_id: str | None = None
     severity: str | None = None  # "critical", "major", "minor"
     expected_behavior: str | None = None
@@ -1325,10 +1377,10 @@ class CardMove(BaseModel):
 
     status: CardStatus
     position: int | None = None
-    conclusion: str | None = None  # Required when moving to Done
-    completeness: int | None = None  # 0-100, required when status=done
+    conclusion: str | None = None  # Required when moving execution work to validation/done
+    completeness: int | None = None  # 0-100, required for validation/done reports
     completeness_justification: str | None = None
-    drift: int | None = None  # 0-100, required when status=done
+    drift: int | None = None  # 0-100, required for validation/done reports
     drift_justification: str | None = None
 
 

@@ -13,9 +13,8 @@ Usage:
 
 from __future__ import annotations
 
-import os
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository

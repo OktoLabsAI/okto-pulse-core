@@ -13,7 +13,7 @@ os.environ["OKTO_PULSE_DB_URL"] = "sqlite+aiosqlite:///:memory:"
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from okto_pulse.core.models.db import (
-    Base, Board, Spec, Card, CardStatus, CardType, SpecStatus
+    Base, Board, Spec, SpecStatus
 )
 from okto_pulse.core.models.schemas import SpecValidationSubmit
 from okto_pulse.core.services.main import SpecService, SpecLockedError
@@ -314,8 +314,7 @@ async def run_tests():
 
     # ==== TEST: Permission registry has the new flags ====
     from okto_pulse.core.infra.permissions import (
-        PERMISSION_REGISTRY, ALL_FLAGS, LEGACY_PERMISSION_MAP,
-        map_legacy_permissions, PermissionSet, get_builtin_presets,
+        PERMISSION_REGISTRY, ALL_FLAGS, map_legacy_permissions, PermissionSet, get_builtin_presets,
     )
 
     check("spec.validation subtree exists in registry",
@@ -436,7 +435,7 @@ async def run_tests():
                 }
             )
             check("Coverage gate blocks submit when AC coverage insufficient", False, "should have raised")
-        except (ValueError, Exception) as e:
+        except (ValueError, Exception):
             # Coverage gate raises a different error — just confirm submit was rejected
             check("Coverage gate blocks submit when AC coverage insufficient", True)
 

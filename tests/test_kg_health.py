@@ -13,11 +13,9 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
 
 from okto_pulse.core.kg.scoring import (
     CONTRADICT_PENALTY_CAP,
-    CONTRADICT_WARN_COUNTERS,
     DECAY_REORDER_POOL_MULTIPLIER,
     _apply_decay_reorder,
     _fetch_node_inputs,

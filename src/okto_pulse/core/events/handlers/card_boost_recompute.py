@@ -27,7 +27,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler

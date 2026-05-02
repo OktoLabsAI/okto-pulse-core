@@ -287,8 +287,6 @@ async def compute_funnel(
     """
     counts: dict = {}
 
-    # Per-level counts
-    archived_filter = (lambda m: m.archived.is_(False)) if not include_archived else (lambda m: None)
     for model, key in [
         (Ideation, "ideations"),
         (Refinement, "refinements"),

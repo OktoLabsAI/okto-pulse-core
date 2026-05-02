@@ -9,7 +9,6 @@ Covers all 6 test cards:
 - 79eb2e55: Audit row schema completo
 """
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -38,7 +37,6 @@ from okto_pulse.core.kg.schema import (
     bootstrap_board_graph,
     board_kuzu_path,
     open_board_connection,
-    vector_index_name,
 )
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
@@ -77,7 +75,7 @@ class TestBootstrapSchema:
         }
 
     def test_schema_version(self):
-        assert SCHEMA_VERSION == "0.3.0"
+        assert SCHEMA_VERSION == "0.3.3"
 
     def test_bootstrap_creates_kuzu_dir(self, board_id):
         handle = bootstrap_board_graph(board_id)
@@ -165,6 +163,131 @@ class TestBootstrapSchema:
         )
         assert resp_abort.status == "aborted"
         assert await get_session_manager().get(resp.session_id) is None
+
+
+# ============================================================================
+# Cognitive edge validation
+# ============================================================================
+
+
+class TestCognitiveEdgeValidation:
+    @pytest.mark.asyncio
+    async def test_add_edge_candidate_rejects_invalid_local_endpoint_pair(
+        self, board_id, agent_id, db_factory
+    ):
+        async with db_factory() as db:
+            begin = await begin_consolidation(
+                BeginConsolidationRequest(
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id="spec-invalid-edge-pair",
+                    raw_content="invalid edge pair",
+                ),
+                agent_id=agent_id,
+                db=db,
+            )
+
+        await add_node_candidate(
+            AddNodeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=NodeCandidate(
+                    candidate_id="entity-api",
+                    node_type=KGNodeType.ENTITY,
+                    title="API",
+                    source_confidence=0.9,
+                ),
+            ),
+            agent_id=agent_id,
+        )
+        await add_node_candidate(
+            AddNodeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=NodeCandidate(
+                    candidate_id="req-auth",
+                    node_type=KGNodeType.REQUIREMENT,
+                    title="Authentication requirement",
+                    source_confidence=0.9,
+                ),
+            ),
+            agent_id=agent_id,
+        )
+
+        with pytest.raises(KGPrimitiveError) as excinfo:
+            await add_edge_candidate(
+                AddEdgeCandidateRequest(
+                    session_id=begin.session_id,
+                    candidate=EdgeCandidate(
+                        candidate_id="invalid-relates-to",
+                        edge_type=KGEdgeType.RELATES_TO,
+                        from_candidate_id="entity-api",
+                        to_candidate_id="req-auth",
+                        confidence=0.9,
+                    ),
+                ),
+                agent_id=agent_id,
+            )
+
+        assert excinfo.value.code == "invalid_edge_endpoint_types"
+        assert "Decision" in excinfo.value.message
+        assert "Alternative" in excinfo.value.message
+
+    @pytest.mark.asyncio
+    async def test_add_edge_candidate_accepts_valid_local_endpoint_pair(
+        self, board_id, agent_id, db_factory
+    ):
+        async with db_factory() as db:
+            begin = await begin_consolidation(
+                BeginConsolidationRequest(
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id="spec-valid-edge-pair",
+                    raw_content="valid edge pair",
+                ),
+                agent_id=agent_id,
+                db=db,
+            )
+
+        await add_node_candidate(
+            AddNodeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=NodeCandidate(
+                    candidate_id="decision",
+                    node_type=KGNodeType.DECISION,
+                    title="Use event-driven integration",
+                    source_confidence=0.9,
+                ),
+            ),
+            agent_id=agent_id,
+        )
+        await add_node_candidate(
+            AddNodeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=NodeCandidate(
+                    candidate_id="alternative",
+                    node_type=KGNodeType.ALTERNATIVE,
+                    title="Use synchronous polling",
+                    source_confidence=0.8,
+                ),
+            ),
+            agent_id=agent_id,
+        )
+
+        response = await add_edge_candidate(
+            AddEdgeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=EdgeCandidate(
+                    candidate_id="decision-to-alternative",
+                    edge_type=KGEdgeType.RELATES_TO,
+                    from_candidate_id="decision",
+                    to_candidate_id="alternative",
+                    confidence=0.9,
+                ),
+            ),
+            agent_id=agent_id,
+        )
+
+        assert response.accepted is True
+        assert response.edge_count_in_session == 1
 
 
 # ============================================================================

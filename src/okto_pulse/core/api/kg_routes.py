@@ -21,15 +21,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from okto_pulse.core.kg.kg_service import KGService, KGToolError, get_kg_service
+from okto_pulse.core.kg.kg_service import KGToolError, get_kg_service
 from okto_pulse.core.kg.tier_power import (
     TierPowerError,
     execute_cypher_read_only,
-    execute_natural_query,
     get_schema_info,
 )
-from okto_pulse.core.kg.governance import start_historical_consolidation, cancel_historical, get_historical_progress
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.kg.governance import (
+    cancel_historical,
+    get_historical_progress,
+    right_to_erasure,
+    start_historical_consolidation,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/kg", tags=["knowledge-graph"])
@@ -605,10 +609,9 @@ async def historical_progress_endpoint(board_id: str, db: AsyncSession = Depends
 
 
 @router.delete("/boards/{board_id}/kg")
-async def delete_board_kg(board_id: str):
+async def delete_board_kg(board_id: str, db: AsyncSession = Depends(get_db)):
     """Wipe KG data for a board (right-to-erasure)."""
-    from okto_pulse.core.kg.global_discovery.clustering import board_delete_cascade
-    counts = board_delete_cascade(board_id)
+    await right_to_erasure(db, board_id)
     return Response(status_code=204)
 
 
@@ -782,7 +785,7 @@ async def list_pending_tree(
           "tree": [ideation-nodes with nested children]
         }
     """
-    from sqlalchemy import select, func
+    from sqlalchemy import select
     from collections import defaultdict
     from okto_pulse.core.models.db import (
         Card, ConsolidationQueue, Ideation, Refinement, Spec, Sprint,

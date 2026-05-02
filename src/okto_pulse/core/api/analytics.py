@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from starlette.responses import StreamingResponse
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
@@ -15,7 +15,6 @@ from okto_pulse.core.models.db import (
     ActivityLog,
     Board,
     Card,
-    CardDependency,
     CardStatus,
     CardType,
     Ideation,
@@ -154,7 +153,6 @@ from okto_pulse.core.services.analytics_service import (  # noqa: E402
     aggregate_spec_validation_gate as _aggregate_spec_validation_gate,
     aggregate_task_validation_gate as _aggregate_task_validation_gate,
     classify_spec_violation as _classify_spec_violation,
-    classify_task_violation as _classify_task_violation,
 )
 
 

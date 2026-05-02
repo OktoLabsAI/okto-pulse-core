@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect as sa_inspect, select
+from sqlalchemy import select
 
 from okto_pulse.core.api.kg_health import KGHealthResponse, TopDisconnectedNode
 from okto_pulse.core.kg.schema import (
@@ -261,7 +261,7 @@ def test_ts31_recompute_batch_unwind_persists_last_recomputed_at():
     """Batch UNWIND path includes r.now in the SET clause and shares one
     timestamp across every row of the batch."""
     # Force the UNWIND code path: > BATCH_UPDATE_THRESHOLD endpoints.
-    endpoints = [(f"Decision", f"dec_{i}") for i in range(60)]
+    endpoints = [("Decision", f"dec_{i}") for i in range(60)]
     conn = _BatchStubConn(rows_to_serve=len(endpoints))
     fixed_now = datetime(2026, 4, 27, 11, 0, 0, tzinfo=timezone.utc)
 
@@ -879,7 +879,7 @@ async def test_impl_c_update_card_emits_priority_change_event(
     from sqlalchemy import select as _select
     from okto_pulse.core.services.main import CardService
     from okto_pulse.core.models.db import (
-        Board, Card, CardPriority, DomainEventHandlerExecution,
+        Card, CardPriority, DomainEventHandlerExecution,
         DomainEventRow,
     )
     from okto_pulse.core.models.schemas import CardUpdate
@@ -1189,12 +1189,14 @@ async def test_impl_d_run_daily_tick_emits_log_and_persists(
 
     async with db_factory() as session:
         summary = await _run_daily_tick(
-            tick_id="tick-impl-d-002", session=session,
+            tick_id="tick-impl-d-002",
+            session=session,
+            board_id=kg_rel_board,
         )
 
     assert summary["tick_id"] == "tick-impl-d-002"
     assert summary["nodes_recomputed"] >= 0
-    assert summary["boards_processed"] >= 1  # kg_rel_board exists
+    assert summary["boards_processed"] == 1  # kg_rel_board exists
     assert summary["duration_ms"] >= 0
 
     async with db_factory() as session:
@@ -1222,7 +1224,9 @@ async def test_impl_d_kg_health_reflects_tick_run_after_handler(
 
     async with db_factory() as session:
         summary = await _run_daily_tick(
-            tick_id="tick-impl-d-003", session=session,
+            tick_id="tick-impl-d-003",
+            session=session,
+            board_id=kg_rel_board,
         )
 
     async with db_factory() as session:
@@ -1470,7 +1474,9 @@ async def test_ts42_nodes_with_stale_score_pre_tick_in_summary(
 
     async with db_factory() as session:
         summary = await _run_daily_tick(
-            tick_id="tick-ts42-001", session=session,
+            tick_id="tick-ts42-001",
+            session=session,
+            board_id=kg_rel_board,
         )
 
     assert "nodes_with_stale_score_pre_tick" in summary

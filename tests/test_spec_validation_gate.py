@@ -26,7 +26,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.models.db import (
     Board,
     Card,
@@ -993,7 +992,7 @@ class TestAppendOnlyHistory:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result1 = await service.submit_spec_validation(
+            await service.submit_spec_validation(
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1211,7 +1210,6 @@ class TestLockRelease:
             )
             spec = await service.get_spec(lr_spec_id)
             assert spec.current_validation_id is not None
-            lock_id = spec.current_validation_id
 
             # Move back to draft
             await service.move_spec(
