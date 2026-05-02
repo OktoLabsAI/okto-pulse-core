@@ -14,7 +14,6 @@ from typing import Any
 from okto_pulse.core.kg.tier_power import (
     TierPowerError,
     check_rate_limit,
-    compute_pattern_hash,
     execute_cypher_read_only,
     execute_natural_query,
     get_schema_info,

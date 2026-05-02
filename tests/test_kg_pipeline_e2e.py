@@ -21,7 +21,6 @@ test in the suite — skipped by the fast unit path (``pytest -m "not e2e"``).
 
 from __future__ import annotations
 
-import asyncio
 import gc
 import os
 import shutil
@@ -30,7 +29,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
 
 pytestmark = pytest.mark.e2e
@@ -95,7 +93,6 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     """
     # Lazy imports so the env vars from the fixture take effect before any
     # module reads from `get_settings()`.
-    from sqlalchemy import select
 
     from okto_pulse.core.infra.database import (
         create_database,
@@ -252,20 +249,20 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
             source_confidence=0.9,
         ),
         NodeCandidate(
-            candidate_id=f"e2e_criterion_{spec_id[:8]}",
-            node_type=KGNodeType.CRITERION,
-            title="E2E Criterion",
-            content="All 5 layers report healthy.",
+            candidate_id=f"e2e_alternative_{spec_id[:8]}",
+            node_type=KGNodeType.ALTERNATIVE,
+            title="E2E Alternative",
+            content="Alternative path used to validate edge materialization.",
             source_artifact_ref=f"spec:{spec_id}",
             source_confidence=0.85,
         ),
     ]
     edges = [
         EdgeCandidate(
-            candidate_id=f"e2e_edge_validates_{spec_id[:8]}",
-            edge_type=KGEdgeType.VALIDATES,
-            from_candidate_id=nodes[2].candidate_id,
-            to_candidate_id=nodes[0].candidate_id,
+            candidate_id=f"e2e_edge_relates_to_{spec_id[:8]}",
+            edge_type=KGEdgeType.RELATES_TO,
+            from_candidate_id=nodes[1].candidate_id,
+            to_candidate_id=nodes[2].candidate_id,
             confidence=0.85,
         ),
     ]

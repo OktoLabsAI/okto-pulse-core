@@ -117,20 +117,15 @@ async def test_ts3_put_outside_range_rejected_by_pydantic():
 
 
 async def test_ts6_reset_last_recomputed_at_handles_empty_scope():
-    """TS6 — `_reset_last_recomputed_at(board_id=None)` itera todos boards
-    via Board.id select. Em test context com 0 boards, deve retornar sem
-    raise (no-op gracioso). Exercita o caminho de iteração + try/except
-    por board.
+    """TS6 — `_reset_last_recomputed_at` não quebra quando o board-alvo não
+    tem grafo local. Exercita o caminho de iteração + try/except por board
+    sem depender do estado global acumulado pela suíte monolítica.
 
     Validação completa do comportamento force_full_rebuild=true requer
     Kuzu fixture com nodes pré-existentes — deferred para integration
     test em sessão futura.
     """
     from okto_pulse.core.api.kg_tick import _reset_last_recomputed_at
-
-    # No boards in test DB → loop de board_ids fica vazio → função retorna
-    # sem touch no Kuzu. Sem raise.
-    await _reset_last_recomputed_at(board_id=None)
 
     # Per-board scope com board inexistente → tenta open_board_connection
     # que vai falhar gracefully (try/except interno).
@@ -150,7 +145,7 @@ async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior():
     # failures (only logs). Smoke test that signature works.
     await _dispatch_manual_tick(
         tick_id="ts5-test-uuid",
-        board_id=None,
+        board_id="board-does-not-exist-uuid",
         force_full_rebuild=False,
     )
     # No assertion needed beyond "did not raise" — the function logs
@@ -176,7 +171,10 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry():
     # Garante lock livre antes do teste.
     lock = get_async_lock("kg_daily_tick", "global")
 
-    payload = TickRunNowRequest(board_id=None, force_full_rebuild=False)
+    payload = TickRunNowRequest(
+        board_id="board-does-not-exist-uuid",
+        force_full_rebuild=False,
+    )
 
     # First call: 202 success.
     response = await run_tick_now(payload, user="test-user", db=None)

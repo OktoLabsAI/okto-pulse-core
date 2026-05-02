@@ -168,3 +168,63 @@ async def test_malformed_error_payload_is_normalised():
             "traceback": None,
         }
     ]
+
+
+async def test_reprocess_moves_dlq_row_back_to_queue():
+    """DLQ reprocess should create one pending queue row and clear the DLQ row."""
+    from sqlalchemy import select
+
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.models.db import (
+        ConsolidationDeadLetter,
+        ConsolidationQueue,
+    )
+    from okto_pulse.core.services.dead_letter_inspector_service import (
+        reprocess_dead_letter_rows,
+    )
+
+    board_id = f"board-reprocess-{uuid.uuid4().hex[:8]}"
+    artifact_id = f"spec-{uuid.uuid4().hex[:8]}"
+    dlq_id = f"dlq-reprocess-{uuid.uuid4().hex[:8]}"
+    factory = get_session_factory()
+    async with factory() as db:
+        db.add(
+            ConsolidationDeadLetter(
+                id=dlq_id,
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=artifact_id,
+                original_queue_id="q-dead",
+                attempts=5,
+                errors=[{"attempt": 5, "message": "schema fixed"}],
+            )
+        )
+        await db.commit()
+
+    async with factory() as db:
+        result = await reprocess_dead_letter_rows(
+            db,
+            board_id,
+            dead_letter_ids=[dlq_id],
+        )
+        await db.commit()
+
+    assert result["success"] is True
+    assert result["selected"] == 1
+    assert result["requeued_count"] == 1
+    assert result["already_queued_count"] == 0
+
+    async with factory() as db:
+        assert await db.get(ConsolidationDeadLetter, dlq_id) is None
+        queue = (
+            await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == "spec",
+                    ConsolidationQueue.artifact_id == artifact_id,
+                )
+            )
+        ).scalar_one()
+        assert queue.status == "pending"
+        assert queue.source == "dead_letter_reprocess"
+        assert queue.attempts == 0

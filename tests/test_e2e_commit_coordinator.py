@@ -159,7 +159,7 @@ async def test_e2e_mixed_board_parallelism():
     wall = time.perf_counter() - t0
 
     failures = [r for r in results if isinstance(r, BaseException)]
-    print(f"\n=== E2E mixed-board parallelism ===")
+    print("\n=== E2E mixed-board parallelism ===")
     print(f"6 tasks (3 per board) — wall time: {wall:.3f}s, failures: {len(failures)}")
 
     assert not failures, f"Unexpected errors in mixed-board run: {failures}"

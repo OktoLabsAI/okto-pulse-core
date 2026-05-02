@@ -16,8 +16,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from okto_pulse.core.kg.cache import (
-    cache_get,
-    cache_put,
     cache_stats,
     clear_cache,
     invalidate_board,
@@ -53,7 +51,7 @@ def _seed_data():
     reset_kg_service_for_tests()
     clear_cache()
 
-    handle = bootstrap_board_graph(BOARD)
+    _handle = bootstrap_board_graph(BOARD)
     db, conn = open_board_connection(BOARD)
     emb_a = [0.1] * 384
     emb_b = [0.2] * 384
@@ -262,4 +260,4 @@ class TestContextToolsErrors:
     def test_schema_drift_detection(self):
         svc = get_kg_service()
         ver = svc.get_schema_version(BOARD)
-        assert ver == "0.3.0"
+        assert ver == "0.3.3"

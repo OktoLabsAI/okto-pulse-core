@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import atexit
 import logging
-import os
 import sys
 import threading
 import time
@@ -53,12 +52,13 @@ _log_files_lock = threading.Lock()
 class TestLogFormatter(logging.Formatter):
     """Formats every log record as ``[TEST] [timestamp] [level] [module] message``."""
 
-    def format(self, record: logging.LogRecord) -> str:
-        # Ensure timestamp is in the desired format
-        record.asctime = datetime.fromtimestamp(
+    __test__ = False
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        """Use ``datetime`` formatting so microseconds work on Python 3.13/Windows."""
+        return datetime.fromtimestamp(
             record.created, tz=timezone.utc
-        ).strftime(LOG_DATETIME_FMT)
-        return super().format(record)
+        ).strftime(datefmt or LOG_DATETIME_FMT)
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +228,8 @@ class TestLifecycleLogger:
             ll.info("test body running")
     """
 
+    __test__ = False
+
     def __init__(self, test_id: str, logger: logging.Logger) -> None:
         self.test_id = test_id
         self.logger = logger
@@ -303,7 +305,6 @@ async def run_tests_async(
         Dict with keys: ``returncode``, ``stdout``, ``stderr``, ``log_files``,
         ``hanged``, ``duration_seconds``.
     """
-    import subprocess
 
     log_dir = log_dir or LOG_DIR
     log_dir.mkdir(parents=True, exist_ok=True)

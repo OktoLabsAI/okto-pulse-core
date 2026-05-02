@@ -37,7 +37,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
@@ -46,10 +45,8 @@ from okto_pulse.core.kg.agent.extractors import (
     AlternativeExtraction,
     AssumptionExtraction,
     LEARNING_MIN_ACTION_PLAN_CHARS,
-    LearningExtraction,
     extract_alternatives,
     extract_assumptions,
-    extract_learning_from_bug,
 )
 from okto_pulse.core.models.db import Board, Card, CardType, Spec
 

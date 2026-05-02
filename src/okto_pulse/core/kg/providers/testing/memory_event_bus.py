@@ -6,7 +6,6 @@ Fire-and-forget publish to in-memory list. Handlers called synchronously.
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from okto_pulse.core.kg.interfaces.event_bus import EventHandler, KGEvent
 

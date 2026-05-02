@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -26,11 +25,7 @@ from okto_pulse.core.kg.schema import (
     NODE_TYPES,
     _BOOTSTRAPPED_BOARDS,
     _MIGRATED_BOARDS,
-    _board_needs_human_curated_migration,
-    _board_needs_last_recomputed_migration,
-    _board_needs_post_v030_migration,
     bootstrap_board_graph,
-    board_kuzu_path,
     ensure_board_graph_bootstrapped,
     migrate_schema_for_board,
 )
@@ -44,13 +39,22 @@ from okto_pulse.core.kg.schema import (
 @pytest.fixture
 def temp_okto_home(tmp_path, monkeypatch):
     """Force `~/.okto-pulse/boards` under tmp_path."""
+    from okto_pulse.core.infra import config as config_mod
+    from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
+
     monkeypatch.setenv("OKTO_PULSE_HOME", str(tmp_path))
+    monkeypatch.setenv("KG_BASE_DIR", str(tmp_path))
     monkeypatch.setattr(
         "okto_pulse.core.kg.schema.kg_base_dir",
         lambda: tmp_path / "kg",
         raising=False,
     )
-    yield tmp_path
+    monkeypatch.setattr(config_mod, "_settings_instance", None)
+    reset_registry_for_tests()
+    try:
+        yield tmp_path
+    finally:
+        reset_registry_for_tests()
 
 
 @pytest.fixture
@@ -140,7 +144,12 @@ def test_ts3_cli_single_board_returns_json(fresh_board):
 
     repo_root = Path(__file__).resolve().parent.parent
     src = repo_root / "src"
-    env = {**os.environ, "PYTHONPATH": str(src), "OKTO_PULSE_HOME": os.environ.get("OKTO_PULSE_HOME", "")}
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(src),
+        "KG_BASE_DIR": os.environ["KG_BASE_DIR"],
+        "OKTO_PULSE_HOME": os.environ.get("OKTO_PULSE_HOME", ""),
+    }
     result = subprocess.run(
         [sys.executable, "-m", "okto_pulse.tools.kg_migrate_schema",
          "--board", fresh_board],

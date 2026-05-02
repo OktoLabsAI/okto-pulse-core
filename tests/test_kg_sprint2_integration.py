@@ -7,7 +7,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-import pytest
 
 from okto_pulse.core.kg.agent.heuristics import (
     LLMVerdict,
@@ -169,7 +168,6 @@ def test_ts_bd910924_impact_analysis_returns_inverse_dependencies():
 def test_ts_bd910924_impact_analysis_ordering_prefers_closer_hops():
     """At equal edge_confidence, a 1-hop neighbor must outrank a 3-hop one
     under the impact_analysis weights (graph_proximity_inv dominates)."""
-    seeds: list[VectorSeed] = []  # no vector seeds — pure graph ranking
     neighbors = [
         _impact_neighbor("close", hop=1, conf=0.8),
         _impact_neighbor("far", hop=3, conf=0.8),

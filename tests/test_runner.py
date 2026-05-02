@@ -33,7 +33,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_logging import (  # noqa: E402
     LOG_DIR,
     cleanup_all_logs,
-    get_all_log_files,
     run_tests_async,
 )
 

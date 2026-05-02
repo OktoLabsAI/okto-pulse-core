@@ -13,14 +13,11 @@ Topics/Entities, GC those with zero references.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import math
 import re
 import unicodedata
 import uuid
-from datetime import datetime, timezone
-from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.clustering")
 

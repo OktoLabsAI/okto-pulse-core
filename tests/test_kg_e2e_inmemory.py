@@ -9,13 +9,10 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-import pytest_asyncio
 
-from okto_pulse.core.kg.interfaces.graph_store import QueryFilters, SemanticGraphStore
-from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
+from okto_pulse.core.kg.interfaces.event_bus import KGEvent
 from okto_pulse.core.kg.interfaces.registry import (
     configure_kg_registry,
-    get_kg_registry,
     reset_registry_for_tests,
 )
 from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
@@ -128,7 +125,6 @@ class TestBackwardCompat:
             NODE_TYPES,
             REL_TYPES,
             SCHEMA_VERSION,
-            VECTOR_INDEX_TYPES,
         )
 
         assert len(NODE_TYPES) == 11

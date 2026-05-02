@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.kg.schema import (
-    EDGE_LAYERS,
     EDGE_METADATA_COLUMNS,
     MULTI_REL_TYPES,
     NODE_TYPES,
@@ -280,12 +279,6 @@ def migrate_dedup_entities(
                         # Dry-run: count the edges that WOULD be moved.
                         for rel_name, from_t, to_t in rel_pairs:
                             try:
-                                cypher_count = (
-                                    f"MATCH (:{from_t})"
-                                    f"-[r:{rel_name}]->"
-                                    f"(:{to_t}) "
-                                    f"WHERE a.id = $dup OR b.id = $dup"
-                                )
                                 # Simpler count via direct match:
                                 res = kconn.execute(
                                     f"MATCH (a:{from_t})-[r:{rel_name}]->"

@@ -300,7 +300,6 @@ class KuzuGraphStore:
         else:
             hop1_pat = "(center)-[r1]-(hop1)"
 
-        rel_filter = ""
         params: dict[str, Any] = {
             "artifact_id": artifact_id,
             "min_confidence": filters.min_confidence,

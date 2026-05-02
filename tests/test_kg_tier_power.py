@@ -11,7 +11,6 @@ from okto_pulse.core.kg.tier_power import (
     TierPowerError,
     _auto_bound_var_length_path,
     _auto_inject_limit,
-    _strip_comments,
     check_rate_limit,
     clamp_max_rows,
     clamp_timeout,
@@ -141,8 +140,8 @@ class TestNLQuery:
 
 
 class TestMCPRegistration:
-    def test_3_power_tools(self):
+    def test_power_tools_registered(self):
         import inspect
         from okto_pulse.core.mcp import kg_power_tools
         src = inspect.getsource(kg_power_tools.register_kg_power_tools)
-        assert src.count("@mcp.tool()") == 3
+        assert src.count("@mcp.tool()") == 5

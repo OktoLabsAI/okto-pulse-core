@@ -33,9 +33,49 @@ from typing import Any, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.kg.schema import REL_TYPES
+from okto_pulse.core.kg.schema import MULTI_REL_TYPES, NODE_TYPES, REL_TYPES
 
 logger = logging.getLogger("okto_pulse.kg.transaction")
+
+
+def _relationship_pairs() -> list[tuple[str, str, str]]:
+    """Return every concrete relationship table/pair used by compensation."""
+    pairs = list(REL_TYPES)
+    for rel_name, endpoint_pairs in MULTI_REL_TYPES:
+        pairs.extend((rel_name, from_type, to_type) for from_type, to_type in endpoint_pairs)
+    return pairs
+
+
+def _result_has_row(result: Any) -> bool:
+    """Best-effort detection that a Cypher CREATE ... RETURN matched endpoints."""
+    if result is None:
+        return False
+    try:
+        if hasattr(result, "has_next"):
+            return bool(result.has_next())
+        if hasattr(result, "get_next"):
+            try:
+                result.get_next()
+                return True
+            except Exception:
+                return False
+        try:
+            next(iter(result))
+            return True
+        except StopIteration:
+            return False
+        except TypeError:
+            return False
+    finally:
+        close = getattr(result, "close", None)
+        if callable(close):
+            close()
+
+
+def _close_result(result: Any) -> None:
+    close = getattr(result, "close", None)
+    if callable(close):
+        close()
 
 
 @dataclass
@@ -229,11 +269,28 @@ class TransactionOrchestrator:
             resolved_from, resolved_to = from_type, to_type
         from_type, to_type = resolved_from, resolved_to
 
+        if self._edge_exists(edge_type, from_type, to_type, from_id, to_id):
+            logger.info(
+                "kg.transaction.edge_exists session=%s edge=%s from=%s(%s) to=%s(%s)",
+                self.session_id, edge_type, from_type, from_id, to_type, to_id,
+                extra={
+                    "event": "kg.transaction.edge_exists",
+                    "session_id": self.session_id,
+                    "edge_type": edge_type,
+                    "from_type": from_type,
+                    "from_id": from_id,
+                    "to_type": to_type,
+                    "to_id": to_id,
+                },
+            )
+            return
+
         attr_cols = ", ".join(f"{k}: ${k}" for k in edge_attrs)
         stmt = (
             f"MATCH (a:{from_type} {{id: $from_id}}), "
             f"(b:{to_type} {{id: $to_id}}) "
-            f"CREATE (a)-[r:{edge_type} {{{attr_cols}}}]->(b)"
+            f"CREATE (a)-[r:{edge_type} {{{attr_cols}}}]->(b) "
+            "RETURN r.created_by_session_id"
         )
         params = dict(edge_attrs)
         params["from_id"] = from_id
@@ -244,7 +301,17 @@ class TransactionOrchestrator:
         stmt = stmt.replace("created_at: $created_at",
                             "created_at: timestamp($created_at)")
 
-        self.kuzu_conn.execute(stmt, params)
+        result = self.kuzu_conn.execute(stmt, params)
+        if not _result_has_row(result):
+            actual_from = self._find_node_types(from_id)
+            actual_to = self._find_node_types(to_id)
+            raise ValueError(
+                "edge was not created because the endpoint nodes were not "
+                f"matched: {edge_type} {from_type}({from_id}) -> "
+                f"{to_type}({to_id}); actual endpoint types: "
+                f"from={actual_from or ['not_found']}, "
+                f"to={actual_to or ['not_found']}"
+            )
 
         self.records.append(
             KuzuWriteRecord(
@@ -256,6 +323,62 @@ class TransactionOrchestrator:
             )
         )
         self.counters.edges_added += 1
+
+    def _edge_exists(
+        self,
+        edge_type: str,
+        from_type: str,
+        to_type: str,
+        from_id: str,
+        to_id: str,
+    ) -> bool:
+        """Return True when this semantic edge already exists.
+
+        Kùzu does not enforce a unique constraint for relationship tables, so
+        repeated artifact consolidation can otherwise materialize the same
+        edge many times. The KG treats `(edge_type, from_id, to_id)` as the
+        natural identity for all current relationships.
+        """
+        stmt = (
+            f"MATCH (a:{from_type} {{id: $from_id}})-[r:{edge_type}]->"
+            f"(b:{to_type} {{id: $to_id}}) "
+            "RETURN r.created_by_session_id LIMIT 1"
+        )
+        result = self.kuzu_conn.execute(stmt, {
+            "from_id": from_id,
+            "to_id": to_id,
+        })
+        try:
+            if hasattr(result, "has_next"):
+                return bool(result.has_next())
+            try:
+                next(iter(result))
+                return True
+            except StopIteration:
+                return False
+            except TypeError:
+                return False
+        finally:
+            _close_result(result)
+
+    def _find_node_types(self, node_id: str) -> list[str]:
+        """Best-effort lookup used only to make failed edge errors actionable."""
+        found: list[str] = []
+        for node_type in NODE_TYPES:
+            try:
+                result = self.kuzu_conn.execute(
+                    f"MATCH (n:{node_type} {{id: $node_id}}) "
+                    "RETURN n.id LIMIT 1",
+                    {"node_id": node_id},
+                )
+                try:
+                    if hasattr(result, "has_next") and result.has_next():
+                        found.append(node_type)
+                finally:
+                    _close_result(result)
+            except Exception:
+                continue
+        return found
 
     # ------------------------------------------------------------------
     # SQLite commit phase
@@ -317,7 +440,7 @@ class TransactionOrchestrator:
         failed: list[KuzuWriteRecord] = []
 
         # 1. Delete edges created by this session (any rel type)
-        for rel_name, from_type, to_type in REL_TYPES:
+        for rel_name, from_type, to_type in _relationship_pairs():
             try:
                 self.kuzu_conn.execute(
                     f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "

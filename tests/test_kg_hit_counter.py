@@ -64,7 +64,7 @@ def stub_conn():
 @pytest.mark.asyncio
 async def test_ts4_hit_cache_respects_threshold(stub_conn):
     """TS4/AC5: 9 hits stay in cache; 10th flushes."""
-    svc = KGService()
+    svc = KGService(emit_hit_events=False)
 
     for _ in range(9):
         await svc.increment_hit("b1", "Decision", "node_x")
@@ -89,7 +89,7 @@ async def test_ts4_hit_cache_respects_threshold(stub_conn):
 @pytest.mark.asyncio
 async def test_ts5_age_triggered_flush(stub_conn):
     """TS5/AC6: pending count <10 but last_flush >24h → force flush."""
-    svc = KGService()
+    svc = KGService(emit_hit_events=False)
     key = ("b1", "node_y")
 
     # Seed cache with 3 hits and last flush 25h ago.
@@ -108,7 +108,7 @@ async def test_ts5_age_triggered_flush(stub_conn):
 @pytest.mark.asyncio
 async def test_ts10_concurrent_hits_no_lost_updates(stub_conn):
     """TS10/AC11: 100 concurrent increments lose nothing."""
-    svc = KGService()
+    svc = KGService(emit_hit_events=False)
 
     await asyncio.gather(*[
         svc.increment_hit("b1", "Decision", "node_z") for _ in range(100)
