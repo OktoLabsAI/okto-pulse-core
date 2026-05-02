@@ -112,7 +112,7 @@ Every `okto_pulse_move_card` transition has pre-requisites. The system enforces 
 | `not_started` | `started` | Spec must be `in_progress` or later | Starting work signals intent |
 | `started` | `in_progress` | — | Active implementation |
 | `in_progress` | `validation` | — | Ready for review |
-| `validation` | `done` | `okto_pulse_submit_task_validation` with `recommendation=approve` must pass first | System auto-routes: approve → done, reject → not_started |
+| `validation` | `done` | `okto_pulse_submit_task_validation` with `recommendation=approve` must pass first | System auto-routes: approve → done; reject keeps the card in `validation` so validator feedback stays visible |
 | `not_started` | `in_progress` | Spec must be `in_progress` or later | Skip `started` if you're already implementing |
 | Any | `on_hold` | — | Paused work |
 | Any | `cancelled` | — | Abandoned |
@@ -189,10 +189,10 @@ This table is the **single source of truth** for MCP-level errors. Sections belo
 |---|---|---|
 | `"origin_task_id is required for bug cards"` | Missing `origin_task_id` | Pass the id of the task where the bug was found; `spec_id` is auto-resolved from it. |
 | `"Bug cards can only be created with status not_started or started"` | Tried to create in a later status | Create as `not_started`, then advance via `okto_pulse_move_card`. |
-| `"Bug card requires at least 1 new test task linked"` | Moving a bug to `in_progress` without test coverage | Create a new scenario → create a test task linked to it → link test task to the bug via `okto_pulse_update_card(linked_test_task_ids=...)` → then move. |
+| `"Bug card requires at least 1 new test task linked"` | Moving a bug to `in_progress` without test coverage | Create a new `card_type="test"` regression card on the same spec and link it to an existing or new scenario. Existing scenarios may be reused after spec validation; the test card itself must be created after the bug. Link it to the bug via `okto_pulse_update_card(linked_test_task_ids=...)`, then move. |
 | `"Linked test task has no test_scenario_ids"` | The linked card is not a proper test task | Link it to a scenario via `okto_pulse_link_task_to_scenario`, or recreate with `card_type="test"` + `test_scenario_ids`. |
 | `"Test task belongs to a different spec"` | The linked test task is on another spec | Create the test task on the same spec as the bug. |
-| `"Test scenario was created before this bug card"` | Pre-existing scenarios don't count as coverage for new bugs | Create a NEW scenario that specifically covers this bug's failure case. |
+| `"Linked test task must be created after this bug card"` | The linked regression task predates the bug and does not prove new regression coverage | Create a new `card_type="test"` card after the bug. It may link to an existing scenario on a validated/locked spec. |
 | `"Test scenario does not exist in spec"` | Scenario was deleted or the id is wrong | Create a new scenario with `okto_pulse_add_test_scenario`. |
 
 **Spec coverage / validation:**
@@ -2413,7 +2413,7 @@ The Okto Pulse platform includes an incremental knowledge graph (KG) layer that 
 
 #### Auto-extraction trigger
 
-`CognitiveExtractionHandler` (registered on `card.moved`) emits structured `cognitive.extraction.*.candidate` log lines whenever a card transitions to `done`:
+`CognitiveExtractionHandler` (registered on `card.moved`) emits structured `cognitive.extraction.*.candidate` log lines whenever a card transitions to `done`. This behavior comes from spec 4007e4a3 / Ideação #3, which made card movement and card conclusions explicit KG refresh triggers:
 
 - **Bug cards** with `action_plan ≥ 50 chars` → fires the Learning extractor. **Opt-in to LLM**: requires `Board.settings.cognitive_llm_config = {provider, model, api_key_env, max_tokens, timeout_s}`. When the config is absent, Learning is skipped with `cognitive.extraction.learning.skipped reason=no_llm_config`.
 - **Cards with `spec_id`** → fires the Alternative + Assumption regex extractors over `spec.context`. These run regardless of LLM config (deterministic).
@@ -2729,7 +2729,7 @@ Before ending any complete SDLC flow, E2E audit, release-validation pass, or mul
 
 **Verification rules:**
 
-- `okto_pulse_kg_health` must show no new dead letters attributable to your session. If it does, inspect `okto_pulse_kg_dead_letter_list` and report the blocking rows.
+- `okto_pulse_kg_health` must show no new dead letters attributable to your session. If it does, inspect `okto_pulse_kg_dead_letter_list`; after the root cause is fixed, requeue with `okto_pulse_kg_dead_letter_reprocess` and re-check health/query results before reporting success.
 - If `okto_pulse_kg_health.default_score_ratio` stays high after consolidation, run `okto_pulse_kg_tick_run_now(board_id, force_full_rebuild=true)` or report why the recompute could not be triggered. High default-score ratio means ranking is not differentiating newly consolidated knowledge.
 - `okto_pulse_kg_query_natural` must retrieve at least one of the newly consolidated facts by a plain-language question a future user would ask.
 - `okto_pulse_kg_query_cypher` must validate either the new nodes by `source_artifact_ref` or the expected relationships by edge type. If new nodes have degree 0 unexpectedly, report that as a nonconformity instead of claiming full success.
@@ -2890,7 +2890,8 @@ storage.
 
 KG health provides an operational pulse so you don't
 fly blind on the KG. Two surfaces ship today; **agents always use the MCP
-tool** — the REST endpoint is for human operators / dashboards.
+tool** — the REST endpoint is for human operators / dashboards. The extended
+tick visibility fields were introduced by spec 28583299.
 
 - **MCP tool (use this):** `okto_pulse_kg_health(board_id)` — auth and
   board-access checks happen automatically via your MCP session. Returns
@@ -2902,7 +2903,7 @@ tool** — the REST endpoint is for human operators / dashboards.
   (int). Computed in-process; cheap to poll a few times per minute when
   diagnosing.
 
-  **Reading the tick fields:**
+  **Reading the new tick fields:**
   - `last_decay_tick_at` — when the daily APScheduler tick last completed.
     `null` means no tick has run yet on this deployment (fresh boot).
     A value older than 24h plus the cron's 03:00 UTC slot suggests the
@@ -2961,9 +2962,11 @@ opens `/kg-health`. The view polls `GET /api/v1/kg/health` every 30s,
 pauses while the tab is hidden, surfaces a red banner when
 `schema_version` drifts from `EXPECTED_SCHEMA_VERSION` in
 `frontend/src/constants/kg.ts`, and an amber badge when
-`last_decay_tick_at` is more than 24h old. Operational actions
-(re-enqueue, reprocess dead letter, force snapshot) are intentionally
-deferred to a future ideation — the MVP is visualization-only.
+`last_decay_tick_at` is more than 24h old. Operational actions are split by
+scope: agents can inspect and reprocess DLQ rows through
+`okto_pulse_kg_dead_letter_list` / `okto_pulse_kg_dead_letter_reprocess`, while
+operator-only maintenance actions such as force snapshot/reset remain outside
+the normal MCP workflow.
 
 Agents do not consume this UI. Always call the MCP tool above.
 
@@ -3092,7 +3095,17 @@ Returns JSON `{rows, total, limit, offset}`. Each row includes the complete `err
 
 REST equivalent: `GET /api/v1/kg/queue/dead-letter?board_id=<uuid>&limit=50&offset=0`. Human operators access it through Settings → Event Queue → "Open dead-letter inspector".
 
-**Read-only in MCP.** If rows require reprocessing and no MCP reprocess tool is available, report the DLQ as an operator action instead of inventing a manual SQL workflow.
+After the root cause is fixed, retry through MCP instead of inventing a manual SQL workflow:
+
+```text
+okto_pulse_kg_dead_letter_reprocess(
+  board_id="<uuid>",
+  dead_letter_ids=["<dlq-row-id>"],
+  process_now="true"
+)
+```
+
+If you omit `dead_letter_ids`, the tool requeues the oldest DLQ rows for the board up to `limit`. Use this after `okto_pulse_kg_migrate_schema`, a WAL/graph recovery, or a code fix. Then re-check `okto_pulse_kg_health` and query the consolidated facts before reporting success.
 
 ### KG decay tick controllability — interval, manual trigger, run-on-save
 
