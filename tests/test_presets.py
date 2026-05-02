@@ -266,7 +266,7 @@ def test_kg_flags_full_control_regression(presets_by_name):
 
 def test_kg_matrix_covered_by_test_suite():
     """Meta — guarantee the suite has the 5 required KG matrix functions."""
-    import tests.test_presets as suite
+    suite = sys.modules[__name__]
 
     required = {
         "test_kg_flags_spec",
