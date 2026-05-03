@@ -13068,7 +13068,12 @@ def run_mcp_server():
 
     # Read port from environment (set by CLI) or use settings
     port = int(os.environ.get("MCP_PORT", str(settings.mcp_port)))
-    uvicorn.run(build_mcp_asgi_app(), host="127.0.0.1", port=port, ws="wsproto")
+    # Read host from environment (set by CLI / Docker / compose) or fall back
+    # to loopback so a stray binary doesn't accidentally expose the MCP server.
+    # Override via MCP_HOST=0.0.0.0 in docker-compose.yml when port-mapping is
+    # required from outside the container.
+    host = os.environ.get("MCP_HOST", "127.0.0.1")
+    uvicorn.run(build_mcp_asgi_app(), host=host, port=port, ws="wsproto")
 
 
 if __name__ == "__main__":
