@@ -25,6 +25,7 @@ from okto_pulse.core.models.db import (
     Sprint,
     SprintStatus,
 )
+from okto_pulse.core.services.traceability import build_lineage_graph
 
 
 USER_ID = "traceability-report-agent"
@@ -61,6 +62,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     ideation_id = _id("trace-ideation")
     refinement_id = _id("trace-refinement")
     spec_id = _id("trace-spec")
+    direct_spec_id = _id("trace-direct-spec")
     sprint_id = _id("trace-sprint")
     task_id = _id("trace-task")
     test_card_id = _id("trace-test-card")
@@ -115,6 +117,21 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                 business_rules=[],
                 api_contracts=[],
                 screen_mockups=[{"id": "spec-mockup", "title": "Spec Mockup"}],
+            )
+        )
+        db.add(
+            Spec(
+                id=direct_spec_id,
+                board_id=board_id,
+                ideation_id=ideation_id,
+                title="Direct Traceability Spec",
+                status=SpecStatus.DONE,
+                created_by=USER_ID,
+                functional_requirements=["FR-direct"],
+                acceptance_criteria=["AC-direct"],
+                test_scenarios=[],
+                business_rules=[],
+                api_contracts=[],
             )
         )
         db.add(
@@ -218,14 +235,19 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
             ideation_id=ideation_id,
             include_artifacts="true",
         )
+        global_report = await _call(
+            "okto_pulse_get_traceability_report",
+            board_id=board_id,
+            include_artifacts="false",
+        )
 
     assert report["summary"]["ideations"] == 1
-    assert report["summary"]["specs"] == 1
+    assert report["summary"]["specs"] == 2
     assert report["summary"]["cards"] == 3
     assert report["summary"]["orphan_specs"] == 0
 
     ideation = report["ideations"][0]
-    assert ideation["direct_specs"] == []
+    assert ideation["direct_specs"][0]["id"] == direct_spec_id
     refinement = ideation["refinements"][0]
     spec = refinement["specs"][0]
     assert spec["id"] == spec_id
@@ -251,3 +273,35 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     assert bug["id"] == bug_card_id
     assert bug["bug"]["severity"] == "major"
     assert bug["bug"]["linked_test_task_ids"] == [test_card_id]
+
+    global_ideation = next(
+        item for item in global_report["ideations"] if item["id"] == ideation_id
+    )
+    assert [spec["id"] for spec in global_ideation["direct_specs"]] == [
+        direct_spec_id
+    ]
+    assert global_report["summary"]["orphan_specs"] == 0
+
+    async with db_factory() as db:
+        graph = await build_lineage_graph(
+            db,
+            board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+            include_artifacts=True,
+        )
+
+    node_ids = {node["id"] for node in graph["nodes"]}
+    edge_pairs = {(edge["source"], edge["target"]) for edge in graph["edges"]}
+    node_by_id = {node["id"]: node for node in graph["nodes"]}
+    assert graph["root_ideation"]["id"] == ideation_id
+    assert f"spec:{direct_spec_id}" in node_ids
+    assert f"spec:{spec_id}" in node_ids
+    assert f"task:{task_id}" in node_ids
+    assert f"bug:{bug_card_id}" in node_ids
+    assert all(node["entity_type"] != "artifact" for node in graph["nodes"])
+    assert graph["summary"]["artifacts"] == 0
+    assert node_by_id[f"bug:{bug_card_id}"]["stage"] == 5
+    assert (f"ideation:{ideation_id}", f"spec:{direct_spec_id}") in edge_pairs
+    assert (f"refinement:{refinement_id}", f"spec:{spec_id}") in edge_pairs
+    assert (f"task:{task_id}", f"bug:{bug_card_id}") in edge_pairs

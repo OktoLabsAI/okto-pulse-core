@@ -106,20 +106,130 @@ def validate_cypher_read_only(cypher: str) -> None:
 
 def _auto_inject_limit(cypher: str, max_rows: int) -> str:
     """Inject LIMIT if not present."""
-    if "LIMIT" not in cypher.upper():
+    searchable = _strip_string_literals(_strip_comments(cypher)).upper()
+    if not re.search(r"\bLIMIT\b", searchable):
         cypher = cypher.rstrip().rstrip(";") + f"\nLIMIT {max_rows}"
     return cypher
 
 
+def _bound_relationship_segment(segment: str, max_depth: int) -> str:
+    """Bound variable-length relationship syntax inside one [...] segment."""
+    star_index = segment.find("*")
+    if star_index == -1:
+        return segment
+
+    cursor = star_index + 1
+    while cursor < len(segment) and segment[cursor].isspace():
+        cursor += 1
+
+    if cursor >= len(segment):
+        return f"{segment[:cursor]}..{max_depth}{segment[cursor:]}"
+
+    if segment[cursor] == "." and cursor + 1 < len(segment) and segment[cursor + 1] == ".":
+        upper_start = cursor + 2
+        cursor = upper_start
+        while cursor < len(segment) and segment[cursor].isspace():
+            cursor += 1
+        upper_digits_start = cursor
+        while cursor < len(segment) and segment[cursor].isdigit():
+            cursor += 1
+        if cursor > upper_digits_start:
+            return segment
+        return f"{segment[:upper_start]}{max_depth}{segment[upper_start:]}"
+
+    if segment[cursor].isdigit():
+        while cursor < len(segment) and segment[cursor].isdigit():
+            cursor += 1
+        while cursor < len(segment) and segment[cursor].isspace():
+            cursor += 1
+        if cursor + 1 < len(segment) and segment[cursor:cursor + 2] == "..":
+            upper_start = cursor + 2
+            cursor = upper_start
+            while cursor < len(segment) and segment[cursor].isspace():
+                cursor += 1
+            upper_digits_start = cursor
+            while cursor < len(segment) and segment[cursor].isdigit():
+                cursor += 1
+            if cursor == upper_digits_start:
+                return f"{segment[:upper_start]}{max_depth}{segment[upper_start:]}"
+        return segment
+
+    return f"{segment[:star_index + 1]}..{max_depth}{segment[star_index + 1:]}"
+
+
 def _auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
-    """Replace unbounded *] or *) with *..20] or *..20)."""
-    cypher = re.sub(
-        r"\*\s*\]", f"*..{max_depth}]", cypher
-    )
-    cypher = re.sub(
-        r"\*\s*\)", f"*..{max_depth})", cypher
-    )
-    return cypher
+    """Bound unbounded variable-length relationships without touching functions.
+
+    Cypher uses ``*`` for both aggregate arguments (``count(*)``) and
+    relationship traversal lengths (``-[*]->``). Only the latter appears inside
+    relationship brackets, so this walks bracket segments instead of applying a
+    broad ``*)`` regex.
+    """
+    parts: list[str] = []
+    start = 0
+    index = 0
+    quote: str | None = None
+    in_line_comment = False
+    in_block_comment = False
+
+    while index < len(cypher):
+        char = cypher[index]
+        next_char = cypher[index + 1] if index + 1 < len(cypher) else ""
+
+        if in_line_comment:
+            if char == "\n":
+                in_line_comment = False
+            index += 1
+            continue
+
+        if in_block_comment:
+            if char == "*" and next_char == "/":
+                in_block_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if quote:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            continue
+        if char == "/" and next_char == "/":
+            in_line_comment = True
+            index += 2
+            continue
+        if char == "/" and next_char == "*":
+            in_block_comment = True
+            index += 2
+            continue
+        if char != "[":
+            index += 1
+            continue
+
+        close_index = cypher.find("]", index + 1)
+        if close_index == -1:
+            index += 1
+            continue
+
+        parts.append(cypher[start:index + 1])
+        segment = cypher[index + 1:close_index]
+        parts.append(_bound_relationship_segment(segment, max_depth))
+        start = close_index
+        index = close_index + 1
+
+    if not parts:
+        return cypher
+    parts.append(cypher[start:])
+    return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
