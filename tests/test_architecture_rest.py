@@ -193,6 +193,20 @@ def test_rest_crud_payload_import_and_diff(_client_and_entities):
     assert diff.json()["breaking_change_flag"] is False
 
 
+def test_rest_validate_architecture_payload_returns_warnings_without_persisting(_client_and_entities):
+    client, _ = _client_and_entities
+    payload = _architecture_body()
+    payload["entities"][0].pop("responsibility")
+
+    critique = client.post("/api/v1/architecture/validate", json=payload)
+
+    assert critique.status_code == 200, critique.text
+    body = critique.json()
+    assert body["valid"] is True
+    assert body["issues"] == []
+    assert any("entities[0].responsibility" in item for item in body["warnings"])
+
+
 def test_copy_architecture_from_spec_to_card_does_not_mark_stale(_client_and_entities):
     client, ids = _client_and_entities
     created = client.post(
