@@ -145,6 +145,23 @@ def test_ts8_fetch_node_inputs_surfaces_priority_boost(fresh_board):
         assert inputs["priority_boost"] == pytest.approx(0.15)
 
 
+def test_fetch_node_inputs_without_contradicts_has_zero_penalty(fresh_board):
+    """OPTIONAL MATCH rows without :contradicts must not count as penalty."""
+    with open_board_connection(fresh_board) as (_db, conn):
+        _insert_entity(conn, "e-no-contradicts", source_conf=1.0, boost=0.0)
+        inputs = _fetch_node_inputs(conn, "Entity", "e-no-contradicts")
+
+    assert inputs is not None
+    assert inputs["raw_contradict_penalty"] == pytest.approx(0.0)
+    assert inputs["contradict_penalty"] == pytest.approx(0.0)
+    assert _compute_relevance(
+        inputs["source_confidence"],
+        inputs["degree"],
+        0.0,
+        inputs["contradict_penalty"],
+    ) >= 0.3
+
+
 def test_ts8_recompute_preserves_frozen_boost_in_column(fresh_board):
     """AC3 (BR2 immutability): after recompute, the persisted
     priority_boost column is untouched.

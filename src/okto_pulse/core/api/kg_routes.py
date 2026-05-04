@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -37,6 +38,7 @@ from okto_pulse.core.kg.governance import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/kg", tags=["knowledge-graph"])
+logger = logging.getLogger("okto_pulse.api.kg_routes")
 
 
 # ---------------------------------------------------------------------------
@@ -137,16 +139,40 @@ async def list_nodes(
     board_id: str,
     type: str = "",
     min_confidence: float = 0.5,
+    min_relevance: float = Query(0.0, ge=0.0),
     limit: int = Query(50, ge=1, le=200),
     cursor: str = "",
 ):
     """List KG nodes with filters and cursor pagination."""
     svc = get_kg_service()
     try:
-        rows = svc.get_decision_history(
-            board_id, type or "", min_confidence=min_confidence, max_rows=limit,
+        rows = svc.get_all_nodes(
+            board_id,
+            min_confidence=min_confidence,
+            min_relevance=min_relevance,
+            max_rows=limit,
+            cursor=cursor or None,
+            node_type=type or None,
         )
-        return {"nodes": rows, "next_cursor": None, "total_hint": len(rows)}
+        total_hint = svc.count_all_nodes(
+            board_id,
+            min_confidence=min_confidence,
+            min_relevance=min_relevance,
+            node_type=type or None,
+        )
+        return {
+            "nodes": rows,
+            "next_cursor": _next_cursor_for(rows, limit),
+            "total_hint": total_hint,
+            "page_count": len(rows),
+        }
+    except ValueError as exc:
+        return _problem(
+            410,
+            "Gone",
+            f"cursor is invalid or corrupted: {exc}",
+            "invalid_cursor",
+        )
     except KGToolError as e:
         return _handle_kg_error(e)
 
@@ -173,6 +199,7 @@ async def get_subgraph(
     depth: int = Query(2, ge=1, le=5),
     limit: int = Query(100),
     cursor: str = "",
+    min_relevance: float = Query(0.0, ge=0.0),
 ):
     """Return subgraph for visualization — Spec 8 / S1.1, S1.4, S1.5.
 
@@ -206,6 +233,7 @@ async def get_subgraph(
                 rows = svc.get_all_nodes(
                     board_id,
                     min_confidence=0.0,
+                    min_relevance=min_relevance,
                     max_rows=limit,
                     cursor=cursor or None,
                 )
@@ -218,17 +246,30 @@ async def get_subgraph(
                 )
             next_cursor = _next_cursor_for(rows, limit)
 
-        node_ids = {r.get("id") or r[0] if isinstance(r, list) else r.get("id", "") for r in rows}
-        edges = _fetch_edges_for_nodes(board_id, node_ids)
+        node_ids = {_node_id(r) for r in rows if _node_id(r)}
+        edges, edge_metadata = _fetch_edges_for_nodes(board_id, node_ids)
 
         return {
             "nodes": rows,
             "edges": edges,
             "next_cursor": next_cursor,
-            "metadata": {"depth": depth, "truncated": len(rows) >= limit},
+            "metadata": {
+                "depth": depth,
+                "truncated": len(rows) >= limit,
+                "min_relevance": min_relevance,
+                **edge_metadata,
+            },
         }
     except KGToolError as e:
         return _handle_kg_error(e)
+
+
+def _node_id(row: Any) -> str:
+    if isinstance(row, dict):
+        return str(row.get("id") or "")
+    if isinstance(row, (list, tuple)) and row:
+        return str(row[0] or "")
+    return ""
 
 
 def _next_cursor_for(rows: list[dict], limit: int) -> str | None:
@@ -249,10 +290,23 @@ def _next_cursor_for(rows: list[dict], limit: int) -> str | None:
     return encode_cursor(str(created_at), str(node_id))
 
 
-def _fetch_edges_for_nodes(board_id: str, node_ids: set[str]) -> list[dict]:
-    """Fetch all edges between the given node IDs from Kuzu."""
+def _fetch_edges_for_nodes(
+    board_id: str, node_ids: set[str],
+) -> tuple[list[dict], dict[str, Any]]:
+    """Fetch all edges between the given node IDs from the board graph.
+
+    Edge reads are diagnostic: relationship-table failures are returned in
+    metadata so the UI can distinguish "no edges" from "edges could not be
+    read".
+    """
+    diagnostics: dict[str, Any] = {
+        "edge_read_status": "ok",
+        "edge_tables_scanned": 0,
+        "edge_tables_failed": 0,
+        "edge_errors": [],
+    }
     if not node_ids:
-        return []
+        return [], diagnostics
     try:
         from okto_pulse.core.kg.schema import (
             MULTI_REL_TYPES,
@@ -260,18 +314,14 @@ def _fetch_edges_for_nodes(board_id: str, node_ids: set[str]) -> list[dict]:
             open_board_connection,
         )
 
-        # Iterate single-pair AND multi-pair rels — `belongs_to` lives in
-        # MULTI_REL_TYPES and would otherwise be silently dropped from the
-        # subgraph payload, leaving the canvas hierarchy disconnected.
-        rel_pairs: list[tuple[str, str, str]] = list(REL_TYPES)
-        for rel_name, pairs in MULTI_REL_TYPES:
-            for from_type, to_type in pairs:
-                rel_pairs.append((rel_name, from_type, to_type))
+        rel_pairs = _relation_pairs(REL_TYPES, MULTI_REL_TYPES)
 
         edges = []
         seen: set[tuple[str, str, str]] = set()  # (rel, src, tgt) dedup
         with open_board_connection(board_id) as (_db, conn):
             for rel_name, from_type, to_type in rel_pairs:
+                diagnostics["edge_tables_scanned"] += 1
+                result = None
                 try:
                     result = conn.execute(
                         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
@@ -293,11 +343,110 @@ def _fetch_edges_for_nodes(board_id: str, node_ids: set[str]) -> list[dict]:
                                 "edge_type": rel_name,
                                 "confidence": row[2] if len(row) > 2 else 0.7,
                             })
-                except Exception:
-                    pass
-        return edges
-    except Exception:
-        return []
+                except Exception as exc:
+                    diagnostics["edge_tables_failed"] += 1
+                    diagnostics["edge_errors"].append({
+                        "relationship": rel_name,
+                        "from_type": from_type,
+                        "to_type": to_type,
+                        "error": str(exc),
+                    })
+                finally:
+                    if result is not None:
+                        try:
+                            result.close()
+                        except Exception:
+                            pass
+        if diagnostics["edge_tables_failed"]:
+            diagnostics["edge_read_status"] = "partial_failure"
+        diagnostics["edges_returned"] = len(edges)
+        return edges, diagnostics
+    except Exception as exc:
+        logger.warning(
+            "kg.graph.edge_read_failed board=%s err=%s",
+            board_id, exc,
+            extra={
+                "event": "kg.graph.edge_read_failed",
+                "board_id": board_id,
+                "error": str(exc),
+            },
+        )
+        diagnostics["edge_read_status"] = "failed"
+        diagnostics["edge_tables_failed"] = diagnostics["edge_tables_scanned"]
+        diagnostics["edge_errors"].append({"error": str(exc)})
+        diagnostics["edges_returned"] = 0
+        return [], diagnostics
+
+
+def _relation_pairs(
+    rel_types: list[tuple[str, str, str]],
+    multi_rel_types: list[tuple[str, list[tuple[str, str]]]],
+) -> list[tuple[str, str, str]]:
+    rel_pairs: list[tuple[str, str, str]] = list(rel_types)
+    for rel_name, pairs in multi_rel_types:
+        for from_type, to_type in pairs:
+            rel_pairs.append((rel_name, from_type, to_type))
+    return rel_pairs
+
+
+def _count_edges_by_type(board_id: str) -> tuple[dict[str, int], dict[str, Any]]:
+    diagnostics: dict[str, Any] = {
+        "edge_count_status": "ok",
+        "edge_count_tables_scanned": 0,
+        "edge_count_tables_failed": 0,
+        "edge_count_errors": [],
+    }
+    try:
+        from okto_pulse.core.kg.schema import (
+            MULTI_REL_TYPES,
+            REL_TYPES,
+            open_board_connection,
+        )
+
+        rel_names = sorted({
+            rel_name
+            for rel_name, *_ in _relation_pairs(REL_TYPES, MULTI_REL_TYPES)
+        })
+        edge_counts: dict[str, int] = {}
+        with open_board_connection(board_id) as (_db, conn):
+            for rel_name in rel_names:
+                diagnostics["edge_count_tables_scanned"] += 1
+                result = None
+                try:
+                    result = conn.execute(
+                        f"MATCH ()-[r:{rel_name}]->() RETURN count(r) AS c"
+                    )
+                    count = int(result.get_next()[0]) if result.has_next() else 0
+                    if count:
+                        edge_counts[rel_name] = count
+                except Exception as exc:
+                    diagnostics["edge_count_tables_failed"] += 1
+                    diagnostics["edge_count_errors"].append({
+                        "relationship": rel_name,
+                        "error": str(exc),
+                    })
+                finally:
+                    if result is not None:
+                        try:
+                            result.close()
+                        except Exception:
+                            pass
+        if diagnostics["edge_count_tables_failed"]:
+            diagnostics["edge_count_status"] = "partial_failure"
+        return edge_counts, diagnostics
+    except Exception as exc:
+        logger.warning(
+            "kg.stats.edge_count_failed board=%s err=%s",
+            board_id, exc,
+            extra={
+                "event": "kg.stats.edge_count_failed",
+                "board_id": board_id,
+                "error": str(exc),
+            },
+        )
+        diagnostics["edge_count_status"] = "failed"
+        diagnostics["edge_count_errors"].append({"error": str(exc)})
+        return {}, diagnostics
 
 
 @router.get("/boards/{board_id}/similar")
@@ -348,25 +497,42 @@ async def find_contradictions(
 
 
 @router.get("/boards/{board_id}/stats")
-async def get_stats(board_id: str):
+async def get_stats(
+    board_id: str,
+    min_relevance: float = Query(0.0, ge=0.0),
+):
     """Board KG stats: counts, confidence, pending."""
     svc = get_kg_service()
     try:
         ver = svc.get_schema_version(board_id)
-        all_nodes = svc.get_all_nodes(board_id, min_confidence=0.0, max_rows=1000)
+        all_nodes = svc.get_all_nodes(
+            board_id,
+            min_confidence=0.0,
+            min_relevance=min_relevance,
+            max_rows=1000,
+        )
         node_counts: dict[str, int] = {}
         total_conf = 0.0
+        total_relevance = 0.0
         for n in all_nodes:
             t = n.get("node_type", "Unknown")
             node_counts[t] = node_counts.get(t, 0) + 1
-            total_conf += n.get("source_confidence", 0.0)
+            total_conf += float(n.get("source_confidence") or 0.0)
+            total_relevance += float(n.get("relevance_score") or 0.0)
+        edge_counts, edge_metadata = _count_edges_by_type(board_id)
         return {
             "schema_version": ver,
+            "graph_schema_version": ver,
             "node_counts_by_type": node_counts,
-            "edge_counts_by_type": {},
+            "edge_counts_by_type": edge_counts,
             "avg_confidence": round(total_conf / len(all_nodes), 2) if all_nodes else 0.0,
+            "avg_relevance": (
+                round(total_relevance / len(all_nodes), 4) if all_nodes else 0.0
+            ),
             "pending_queue_count": 0,
             "last_consolidation_at": None,
+            "min_relevance": min_relevance,
+            **edge_metadata,
         }
     except KGToolError as e:
         return _handle_kg_error(e)

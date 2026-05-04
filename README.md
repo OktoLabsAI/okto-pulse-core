@@ -7,8 +7,8 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 ## What's inside
 
-- **26 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, etc. (Skills entity dropped in 0.1.13.)
-- **17 service classes** — Full business logic with governance rules (Skills service dropped in 0.1.13.)
+- **26 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, etc. (Skills entity dropped in 0.1.14.)
+- **17 service classes** — Full business logic with governance rules (Skills service dropped in 0.1.14.)
 - **11 API route modules** — FastAPI REST endpoints
 - **150+ MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
@@ -44,9 +44,28 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 `build_mcp_asgi_app()` and `mount_mcp(app)` are the two helpers exposed from `okto_pulse.core.mcp` — pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app.
 
+## Docker
+
+This repo has **no Dockerfile**. The deployable artifact is a single image built from the sibling [`okto-pulse`](https://github.com/OktoLabsAI/okto-pulse) repo:
+
+- `okto-pulse/Dockerfile` target `local-runtime` builds wheels from this repo and `okto-pulse/` as siblings (used by `okto-pulse/docker-compose.yml` and the release pipeline's smoke build).
+- `okto-pulse/Dockerfile` target `pypi-runtime` installs `okto-pulse==<version>` from PyPI, which transitively pulls this package off PyPI per the floor in `okto-pulse/pyproject.toml` (used by `okto-pulse/docker-compose.prod.yml`).
+
+To run the published image:
+
+```bash
+docker run -d --name okto-pulse \
+  -e HOST=0.0.0.0 -e MCP_HOST=0.0.0.0 \
+  -p 8100:8100 -p 8101:8101 \
+  -v okto-pulse-data:/data \
+  ghcr.io/oktolabsai/okto-pulse:latest
+```
+
+See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-docker) for the full Docker quickstart, and [`okto-pulse/CLAUDE.md`](https://github.com/OktoLabsAI/okto-pulse/blob/main/CLAUDE.md) for the multi-stage build architecture.
+
 ## Release Notes
 
-### 0.1.13 — current
+### 0.1.14 — current
 
 #### Fix C: single-process, dual-port serve (Kùzu lock contention)
 
@@ -110,7 +129,7 @@ First hardening pass on the card lifecycle, the analytics contract, and the MCP 
 
 ### 0.1.1 — initial PyPI release
 
-26+1 SQLAlchemy models, 17+1 service classes, 11 API route modules, 119 MCP tools, embedded Kùzu Knowledge Graph with deterministic workers. (Spec Skills shipped here and was removed in 0.1.13.)
+26+1 SQLAlchemy models, 17+1 service classes, 11 API route modules, 119 MCP tools, embedded Kùzu Knowledge Graph with deterministic workers. (Spec Skills shipped here and was removed in 0.1.14.)
 
 (Version 0.1.2 was published to TestPyPI only as a release candidate for 0.1.3.)
 

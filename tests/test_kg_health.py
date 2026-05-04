@@ -97,8 +97,12 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "avg_relevance",
         "top_disconnected_nodes",
         "schema_version",
+        "health_schema_version",
+        "graph_schema_version",
         "contradict_warn_count",
         "last_decay_tick_at",
+        "last_tick_status",
+        "last_tick_error",
         "nodes_recomputed_in_last_tick",
         # Bug fix (Run tick now cross-mount race): expõe o estado do
         # advisory lock global ``kg_daily_tick`` para que o frontend
@@ -108,11 +112,14 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     }
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == HEALTH_SCHEMA_VERSION
+    assert result["health_schema_version"] == HEALTH_SCHEMA_VERSION
     assert result["schema_version"] == "1.0"
     assert isinstance(result["queue_depth"], int)
     assert isinstance(result["oldest_pending_age_s"], float)
     assert isinstance(result["top_disconnected_nodes"], list)
     assert result["last_decay_tick_at"] is None or isinstance(result["last_decay_tick_at"], str)
+    assert result["last_tick_status"] is None or isinstance(result["last_tick_status"], str)
+    assert result["last_tick_error"] is None or isinstance(result["last_tick_error"], str)
     assert isinstance(result["nodes_recomputed_in_last_tick"], int)
     assert isinstance(result["tick_in_progress"], bool)
 

@@ -71,6 +71,37 @@ class TestSafetyRails:
         q = _auto_bound_var_length_path("(a)-[*]->(b)")
         assert "*..20" in q
 
+    def test_auto_bound_path_preserves_count_star(self):
+        q = _auto_bound_var_length_path("MATCH (n) RETURN count(*) AS total")
+        assert "count(*)" in q
+        assert "count(*..20)" not in q
+
+    def test_auto_bound_path_preserves_aggregate_variants(self):
+        q = _auto_bound_var_length_path(
+            "MATCH (a)-[r]->(b) RETURN count(r), count(DISTINCT r), collect(r), collect(DISTINCT r)"
+        )
+        assert "count(r)" in q
+        assert "count(DISTINCT r)" in q
+        assert "collect(r)" in q
+        assert "collect(DISTINCT r)" in q
+
+    def test_auto_bound_path_preserves_bounded_relationship_path(self):
+        q = _auto_bound_var_length_path("MATCH p=(a)-[*1..3]->(b) RETURN p")
+        assert "[*1..3]" in q
+
+    def test_auto_bound_path_caps_open_upper_relationship_path(self):
+        q = _auto_bound_var_length_path("MATCH p=(a)-[*1..]->(b) RETURN p")
+        assert "[*1..20]" in q
+
+    def test_auto_bound_path_does_not_rewrite_star_in_string_literal(self):
+        q = _auto_bound_var_length_path("MATCH (n) WHERE n.title = '[*]' RETURN count(*)")
+        assert "'[*]'" in q
+        assert "count(*)" in q
+
+    def test_auto_inject_limit_ignores_limit_in_string_literal(self):
+        q = _auto_inject_limit("MATCH (n) WHERE n.title = 'LIMIT' RETURN n", 500)
+        assert q.endswith("LIMIT 500")
+
     def test_clamp_timeout(self):
         assert clamp_timeout(None) == 5000
         assert clamp_timeout(100) == 1000

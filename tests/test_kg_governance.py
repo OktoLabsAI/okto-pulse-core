@@ -123,10 +123,16 @@ class TestHistoricalOptIn:
             assert prog["progress"] == 0
 
     @pytest.mark.asyncio
-    async def test_progress_total_stays_stable_when_processed_rows_are_deleted(self, db_factory):
+    async def test_progress_total_stays_stable_when_processed_rows_are_deleted(self, db_factory, monkeypatch):
         """DELETE-on-ack removes queue rows, so progress must use the run total."""
         import uuid
+        import okto_pulse.core.kg.governance as governance
         from okto_pulse.core.models.db import ConsolidationQueue
+
+        async def _graph_has_nodes(_board_id: str) -> bool:
+            return True
+
+        monkeypatch.setattr(governance, "_has_materialized_kg_nodes", _graph_has_nodes)
 
         board_id = "board-hist-stable-progress"
         async with db_factory() as db:
@@ -162,6 +168,183 @@ class TestHistoricalOptIn:
             assert prog["total"] == 3
             assert prog["progress"] == 1
             assert prog["pending"] == 2
+
+            remaining = (await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.source == "historical_backfill",
+                )
+            )).scalars().all()
+            for row in remaining:
+                await db.delete(row)
+            await db.commit()
+
+        async with db_factory() as db:
+            prog = await get_historical_progress(db, board_id)
+            assert prog["total"] == 3
+            assert prog["progress"] == 3
+            assert prog["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_progress_reports_terminal_errors(self, db_factory, monkeypatch):
+        """Terminal failed rows must not look like a clean completed run."""
+        import uuid
+        import okto_pulse.core.kg.governance as governance
+        from okto_pulse.core.models.db import ConsolidationQueue
+
+        async def _graph_has_nodes(_board_id: str) -> bool:
+            return True
+
+        monkeypatch.setattr(governance, "_has_materialized_kg_nodes", _graph_has_nodes)
+
+        board_id = "board-hist-terminal-errors"
+        async with db_factory() as db:
+            db.add(Board(id=board_id, name="Terminal Errors", owner_id="owner"))
+            for idx in range(2):
+                db.add(Spec(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    title=f"Spec {idx}",
+                    status=SpecStatus.DONE,
+                    archived=False,
+                    created_by="test-user",
+                ))
+            await db.commit()
+
+        async with db_factory() as db:
+            await start_historical_consolidation(db, board_id)
+            rows = (await db.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.source == "historical_backfill",
+                )
+            )).scalars().all()
+            assert len(rows) == 2
+            rows[0].status = "failed"
+            await db.delete(rows[1])
+            await db.commit()
+
+        async with db_factory() as db:
+            prog = await get_historical_progress(db, board_id)
+            assert prog["total"] == 2
+            assert prog["progress"] == 2
+            assert prog["failed"] == 1
+            assert prog["status"] == "completed_with_errors"
+
+    @pytest.mark.asyncio
+    async def test_progress_resets_stale_completed_state_when_graph_is_empty(self, db_factory, monkeypatch):
+        """A wiped/recreated KG must not inherit an old completed backfill."""
+        import okto_pulse.core.kg.governance as governance
+
+        async def _graph_is_empty(_board_id: str) -> bool:
+            return False
+
+        monkeypatch.setattr(governance, "_has_materialized_kg_nodes", _graph_is_empty)
+
+        board_id = "board-hist-stale-completed"
+        async with db_factory() as db:
+            db.add(Board(
+                id=board_id,
+                name="Stale Completed",
+                owner_id="owner",
+                settings={
+                    "kg_historical_consolidation": {
+                        "total": 42,
+                        "status": "completed",
+                    }
+                },
+            ))
+            await db.commit()
+
+        async with db_factory() as db:
+            prog = await get_historical_progress(db, board_id)
+            assert prog["enabled"] is False
+            assert prog["status"] == "inactive"
+            assert prog["total"] == 0
+            assert prog["progress"] == 0
+            assert prog["stale"] is True
+
+    @pytest.mark.asyncio
+    async def test_start_purges_stale_metadata_when_graph_is_empty(self, db_factory, monkeypatch):
+        """Historical rerun must not be blocked by audit/refs for a wiped graph."""
+        import uuid
+        from datetime import datetime, timezone
+
+        import okto_pulse.core.kg.governance as governance
+        from okto_pulse.core.models.db import (
+            ConsolidationAudit,
+            GlobalUpdateOutbox,
+            KuzuNodeRef,
+        )
+
+        async def _graph_is_empty(_board_id: str) -> bool:
+            return False
+
+        monkeypatch.setattr(governance, "_has_materialized_kg_nodes", _graph_is_empty)
+
+        board_id = "board-hist-purge-stale-metadata"
+        spec_id = str(uuid.uuid4())
+        session_id = f"kgses_{uuid.uuid4().hex[:16]}"
+        async with db_factory() as db:
+            db.add(Board(id=board_id, name="Purge stale", owner_id="owner"))
+            db.add(Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Seed spec",
+                status=SpecStatus.DONE,
+                archived=False,
+                created_by="test-user",
+            ))
+            now = datetime.now(timezone.utc)
+            db.add(ConsolidationAudit(
+                session_id=session_id,
+                board_id=board_id,
+                artifact_id=spec_id,
+                artifact_type="spec",
+                agent_id="agent",
+                started_at=now,
+                committed_at=now,
+                nodes_added=1,
+                content_hash="stale",
+                undo_status="none",
+            ))
+            db.add(KuzuNodeRef(
+                session_id=session_id,
+                board_id=board_id,
+                kuzu_node_id="decision_stale",
+                kuzu_node_type="Decision",
+                operation="add",
+            ))
+            db.add(GlobalUpdateOutbox(
+                event_id=f"evt_{uuid.uuid4().hex[:16]}",
+                board_id=board_id,
+                session_id=session_id,
+                event_type="consolidation_committed",
+                payload={"session_id": session_id},
+            ))
+            await db.commit()
+
+        async with db_factory() as db:
+            result = await start_historical_consolidation(db, board_id)
+            assert result["status"] == "queueing"
+
+            audit_count = (await db.execute(
+                select(ConsolidationAudit).where(
+                    ConsolidationAudit.board_id == board_id,
+                )
+            )).scalars().all()
+            ref_count = (await db.execute(
+                select(KuzuNodeRef).where(KuzuNodeRef.board_id == board_id)
+            )).scalars().all()
+            outbox_count = (await db.execute(
+                select(GlobalUpdateOutbox).where(
+                    GlobalUpdateOutbox.board_id == board_id,
+                )
+            )).scalars().all()
+
+            assert audit_count == []
+            assert ref_count == []
+            assert outbox_count == []
 
 
 class TestUndo:

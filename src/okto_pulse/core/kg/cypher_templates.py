@@ -181,6 +181,18 @@ ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
 
+GET_ALL_NODES_BY_TYPE = """
+MATCH (n)
+WHERE n.source_confidence >= $min_confidence
+  AND n.relevance_score >= $min_relevance
+  AND label(n) = $node_type
+RETURN n.id, label(n) AS node_type, n.title, n.content,
+       n.created_at, n.source_confidence, n.relevance_score,
+       n.source_artifact_ref
+ORDER BY n.created_at DESC, n.id DESC
+LIMIT $max_rows
+"""
+
 # Cursor-keyset variant — Spec 8 / S1.3. The WHERE clause applies a
 # strict tuple comparison so the next page starts immediately after the
 # last row of the previous page. Mirrors the ORDER BY above so the page
@@ -196,4 +208,33 @@ RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.source_artifact_ref
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
+"""
+
+GET_ALL_NODES_BY_TYPE_AFTER_CURSOR = """
+MATCH (n)
+WHERE n.source_confidence >= $min_confidence
+  AND n.relevance_score >= $min_relevance
+  AND label(n) = $node_type
+  AND (n.created_at < $cursor_ts
+       OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
+RETURN n.id, label(n) AS node_type, n.title, n.content,
+       n.created_at, n.source_confidence, n.relevance_score,
+       n.source_artifact_ref
+ORDER BY n.created_at DESC, n.id DESC
+LIMIT $max_rows
+"""
+
+COUNT_ALL_NODES = """
+MATCH (n)
+WHERE n.source_confidence >= $min_confidence
+  AND n.relevance_score >= $min_relevance
+RETURN count(n)
+"""
+
+COUNT_ALL_NODES_BY_TYPE = """
+MATCH (n)
+WHERE n.source_confidence >= $min_confidence
+  AND n.relevance_score >= $min_relevance
+  AND label(n) = $node_type
+RETURN count(n)
 """

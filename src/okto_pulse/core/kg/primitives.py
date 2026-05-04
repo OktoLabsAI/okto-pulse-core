@@ -184,6 +184,7 @@ async def begin_consolidation(
     *,
     agent_id: str,
     db=None,
+    force_reprocess: bool = False,
 ) -> BeginConsolidationResponse:
     """Open a new transactional session. SHA256-dedup against the last commit."""
     registry = get_kg_registry()
@@ -196,7 +197,10 @@ async def begin_consolidation(
     # When both db=None and no audit_repo, skip dedup entirely — forced
     # re-processing so stale audit records with matching content_hash
     # don't cause all candidates to be marked NOOP (0 nodes written).
-    has_audit_source = db is not None or registry.audit_repo is not None
+    has_audit_source = (
+        not force_reprocess
+        and (db is not None or registry.audit_repo is not None)
+    )
     if has_audit_source:
         latest = await _get_latest_audit(registry, db, req.board_id, req.artifact_id)
         nothing_changed = bool(latest and _audit_hash(latest) == content_hash)
@@ -475,6 +479,7 @@ async def propose_reconciliation(
     *,
     agent_id: str,
     db=None,
+    force_reprocess: bool = False,
 ) -> ProposeReconciliationResponse:
     """Compute deterministic ADD/UPDATE/SUPERSEDE/NOOP hints for all candidates."""
     from okto_pulse.core.kg.reconciliation import reconcile_session
@@ -482,7 +487,7 @@ async def propose_reconciliation(
     registry = get_kg_registry()
     session = await _require_open_session(req.session_id, agent_id)
 
-    if db is not None or registry.audit_repo is not None:
+    if not force_reprocess and (db is not None or registry.audit_repo is not None):
         latest = await _get_latest_audit(
             registry, db, session.board_id, session.artifact_id
         )

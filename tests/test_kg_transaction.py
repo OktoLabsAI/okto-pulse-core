@@ -145,6 +145,8 @@ def test_agent_instructions_require_qna_for_ambiguity_and_artifacts():
     assert "standard artifact for multi-layer systems" in instructions
     assert "regardless of overall complexity" in instructions
     assert "Creating mockups or Architecture Design before resolving" in instructions
+    assert "card has no card-local copied artifact" in instructions
+    assert "Card conclusion claims architecture- or KB-driven implementation" in instructions
 
 
 def test_agent_instructions_contract_matches_current_mcp_surface():

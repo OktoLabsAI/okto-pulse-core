@@ -64,6 +64,66 @@ is not what controls the build — the sibling checkout does. Keep both
 repos at the same `pyproject.toml` version so the workflow's version-match
 gate passes.
 
+---
+
+## How this repo ships in Docker
+
+This repo has **no Dockerfile** of its own. It ships as a wheel built into the
+`okto-pulse` image. There are two paths that emit the same runtime contract:
+
+- **`local-runtime`** (`okto-pulse/Dockerfile`, target `local-runtime`,
+  context = parent of `okto-pulse/`): the `wheel-builder` stage runs
+  `python -m build --wheel /src/okto-pulse-core` AND
+  `python -m build --wheel /src/okto-pulse`. Both wheels land in `/wheels/`
+  and `local-install` does `uv pip install` against `okto-pulse/uv.lock` plus
+  the two local wheels. This is what `okto-pulse/docker-compose.yml` and the
+  release pipeline's smoke build use.
+- **`pypi-runtime`** (target `pypi-runtime`, context = `okto-pulse/` only):
+  resolves and installs `okto-pulse==<ARG OKTO_PULSE_VERSION>` from PyPI,
+  which transitively pulls `okto-pulse-core` matching the floor in
+  `okto-pulse/pyproject.toml`. This is what `okto-pulse/docker-compose.prod.yml`
+  uses. **Implication:** to ship a `pypi-runtime` image of a given core
+  version, that core version must already be published to PyPI; otherwise
+  use `local-runtime`.
+
+### Module-level state — single-process, dual-port
+
+The Docker container runs `okto-pulse serve`, which spins up two
+`uvicorn.Server` instances inside one Python process via `asyncio.gather`.
+Why one process: the embedded LadybugDB is single-writer and module-level
+state (the registered SQLAlchemy session factory, the `_global_db` cache,
+the `_active_api_key` `ContextVar`) must be shared between the API listener
+and the MCP listener. Two ports because the SPA fetches go to one
+(`http://localhost:8100`) and the AI tool's MCP HTTP transport hits the other
+(`http://localhost:8101/mcp`).
+
+`build_mcp_asgi_app()` is the helper the community runner calls to construct
+the MCP ASGI app for its second uvicorn server. `mount_mcp(app)` is an
+alternative path that mounts the MCP sub-app onto an existing FastAPI app.
+Either approach hits the same `register_session_factory` / `ContextVar`
+state.
+
+### MCP host binding
+
+The MCP listener is constructed in
+`okto-pulse/src/okto_pulse/community/main.py`, NOT in this repo's
+`core/mcp/server.py:run_mcp_server()`. The standalone entry-point in this
+repo (`python -m okto_pulse.core.mcp.server`) reads `MCP_HOST` from the
+environment, but it is not the production code path. As of okto-pulse 0.1.12,
+the production path also reads `MCP_HOST`. Pre-0.1.12 it didn't — be careful
+with backports.
+
+### Persistence
+
+The container writes to `/data`:
+- `/data/data/pulse.db` — SQLite (boards, agents, specs, sprints, cards, …)
+- `/data/boards/<board-id>/graph.lbug` — per-board LadybugDB graph
+- `/data/uploads/` — attachments
+
+Mount `/data` to a named volume. Don't mount over `/opt/hf-cache` — the
+sentence-transformers model is baked in at build time so the runtime is
+offline-capable.
+
 ### Recovery — when the pipeline fails
 
 Tags in this repo are NOT protected by a ruleset (only `okto-pulse` has

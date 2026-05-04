@@ -260,11 +260,34 @@ async def _run_daily_tick(
 @register_handler("kg.tick.daily")
 class KGDailyTickHandler:
     async def handle(self, event: KGDailyTick, session: AsyncSession) -> None:
-        await _run_daily_tick(
-            tick_id=event.tick_id,
-            session=session,
-            board_id=event.board_id,
-        )
+        started_at = datetime.now(timezone.utc)
+        try:
+            await _run_daily_tick(
+                tick_id=event.tick_id,
+                session=session,
+                board_id=event.board_id,
+            )
+        except Exception as exc:
+            completed_at = datetime.now(timezone.utc)
+            try:
+                await _persist_tick_run(
+                    session,
+                    tick_id=event.tick_id,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    nodes_recomputed=0,
+                    duration_ms=(
+                        completed_at - started_at
+                    ).total_seconds() * 1000.0,
+                    boards_processed=0,
+                    error=str(exc),
+                )
+            except Exception:
+                logger.exception(
+                    "kg.relevance.tick.failure_persist_failed tick_id=%s",
+                    event.tick_id,
+                )
+            raise
 
 
 __all__ = [
