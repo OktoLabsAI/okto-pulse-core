@@ -132,27 +132,84 @@ async def test_ts6_reset_last_recomputed_at_handles_empty_scope():
     await _reset_last_recomputed_at(board_id="board-does-not-exist-uuid")
 
 
-async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior():
+async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior(monkeypatch):
     """TS5 — MCP tool gemellar `okto_pulse_kg_tick_run_now` reusa o
     mesmo `_dispatch_manual_tick` do endpoint REST. Não temos harness
     FastMCP completa em pytest, então validamos a sub-função compartilhada
     diretamente: ela deve aceitar tick_id + board_id + force_full_rebuild
     e completar sem exception (best-effort background).
     """
-    from okto_pulse.core.api.kg_tick import _dispatch_manual_tick
+    from okto_pulse.core.api import kg_tick
 
-    # Call directly — function is best-effort, doesn't raise on inner
-    # failures (only logs). Smoke test that signature works.
-    await _dispatch_manual_tick(
+    published: list[object] = []
+
+    async def _fake_publish(event, session):
+        assert session is not None
+        published.append(event)
+
+    monkeypatch.setattr(kg_tick, "event_publish", _fake_publish)
+
+    await kg_tick._dispatch_manual_tick(
         tick_id="ts5-test-uuid",
         board_id="board-does-not-exist-uuid",
         force_full_rebuild=False,
+        session=object(),
     )
-    # No assertion needed beyond "did not raise" — the function logs
-    # warnings on inner failures rather than propagating.
+    assert len(published) == 1
+    assert getattr(published[0], "tick_id") == "ts5-test-uuid"
 
 
-async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry():
+async def test_ts5_mcp_dispatch_opens_session_when_omitted(monkeypatch):
+    """Regression for #27: MCP callers omit the request DB session.
+
+    _dispatch_manual_tick must create and commit a short-lived session instead
+    of passing None into event_publish.
+    """
+    from okto_pulse.core.api import kg_tick
+    from okto_pulse.core.infra import database as database_module
+
+    class _OwnedSession:
+        def __init__(self) -> None:
+            self.committed = False
+
+        async def commit(self) -> None:
+            self.committed = True
+
+    class _SessionContext:
+        def __init__(self, session: _OwnedSession) -> None:
+            self.session = session
+
+        async def __aenter__(self) -> _OwnedSession:
+            return self.session
+
+        async def __aexit__(self, *_args) -> None:
+            return None
+
+    owned = _OwnedSession()
+    published: list[object] = []
+
+    async def _fake_publish(event, session):
+        assert session is owned
+        published.append(event)
+
+    def _factory():
+        return _SessionContext(owned)
+
+    monkeypatch.setattr(kg_tick, "event_publish", _fake_publish)
+    monkeypatch.setattr(database_module, "get_session_factory", lambda: _factory)
+
+    await kg_tick._dispatch_manual_tick(
+        tick_id="ts5-owned-session",
+        board_id="board-does-not-exist-uuid",
+        force_full_rebuild=False,
+    )
+
+    assert len(published) == 1
+    assert getattr(published[0], "tick_id") == "ts5-owned-session"
+    assert owned.committed is True
+
+
+async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     """TS4 — POST /api/v1/kg/tick/run-now:
     - First call: 202 com tick_id, status=running, scheduled_at
     - Concurrent retry: 409 com error=tick_already_running
@@ -160,6 +217,7 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry():
     Usa o módulo diretamente (sem TestClient) para evitar setup ASGI.
     Captura o lock manualmente para simular "já em execução".
     """
+    from okto_pulse.core.api import kg_tick
     from okto_pulse.core.api.kg_tick import (
         TickRunNowRequest,
         TickRunNowResponse,
@@ -176,17 +234,40 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry():
         force_full_rebuild=False,
     )
 
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.committed = False
+            self.rolled_back = False
+
+        async def commit(self) -> None:
+            self.committed = True
+
+        async def rollback(self) -> None:
+            self.rolled_back = True
+
+    published: list[object] = []
+
+    async def _fake_publish(event, session):
+        assert isinstance(session, _FakeSession)
+        published.append(event)
+
+    monkeypatch.setattr(kg_tick, "event_publish", _fake_publish)
+    fake_db = _FakeSession()
+
     # First call: 202 success.
-    response = await run_tick_now(payload, user="test-user", db=None)
+    response = await run_tick_now(payload, user="test-user", db=fake_db)
     assert isinstance(response, TickRunNowResponse)
     assert response.status == "running"
     assert response.tick_id  # non-empty uuid
     assert response.scheduled_at  # ISO datetime
+    assert fake_db.committed is True
+    assert fake_db.rolled_back is False
+    assert len(published) == 1
 
     # Capture lock to simulate in-flight tick — second call must 409.
     async with lock:
         with pytest.raises(HTTPException) as exc_info:
-            await run_tick_now(payload, user="test-user-2", db=None)
+            await run_tick_now(payload, user="test-user-2", db=_FakeSession())
         assert exc_info.value.status_code == 409
         detail = exc_info.value.detail
         assert isinstance(detail, dict)

@@ -1450,7 +1450,7 @@ Use `linkedInterfaceIds` for one or more contracts on the same connector. `linke
 | Anti-pattern | Consequence | Correct approach |
 |---|---|---|
 | Architecture described only in `description`, `analysis`, Q&A, comments, or a markdown section | Implementers can miss critical steps; downstream agents cannot link, copy, version, render, or diff the design; visibility drops and task decomposition becomes guesswork | Create/update an Architecture Design and reference it by title/id from prose. |
-| Detailed architecture diagram drawn as ASCII, markdown tables, or a prose-only Mermaid block inside text fields | The diagram is not a first-class artifact; it cannot be edited in the Architecture tab, linked to entities/interfaces, copied to cards, or validated by payload rules | Store it as an Architecture Design diagram (`excalidraw_json`, `mermaid`, `plantuml`, `c4`, `svg`, or `raw` as appropriate). |
+| Detailed architecture diagram sent as `diagrams[].format="mermaid"`, `plantuml`, `c4`, `svg`, or `raw` | The structured visual canvas cannot render or validate it as a first-class diagram, so the payload will be rejected | Architecture Design diagrams must use `format="excalidraw_json"`. Mermaid/PlantUML/C4/SVG/raw snippets may appear only as descriptive text in entity responsibility, boundaries, notes, or `global_description`. |
 | Generic entities like `"API"`, `"DB"`, `"Service"`, or `name == entity_type` | Ownership is ambiguous; tasks can implement the wrong component or skip integration boundaries | Use concrete component names: `"Checkout API"`, `"Orders DB"`, `"Billing Worker"`, `"Payment Gateway"`. |
 | Finalizing Architecture Design while entity ownership, boundaries, or contracts are still inferred | The diagram becomes a false source of truth; downstream specs and cards may implement the wrong integration and need expensive rewrites | Ask Q&A for the missing decisions, then update the design. |
 | Entity without `responsibility` | Implementers must infer what the component owns, guarantees, persists, orchestrates, or delegates; duplicated logic and skipped duties become likely | Add a concise responsibility statement for every behavior-owning or data-owning component. |
@@ -1470,6 +1470,7 @@ Use `linkedInterfaceIds` for one or more contracts on the same connector. `linke
 **Validation contract:** architecture tools critique payloads before acceptance. `okto_pulse_validate_architecture_design_payload` exposes the same critique without writing. Typical blocking errors include:
 - `entities[0].name duplicates entity_type 'api'`
 - `interfaces[0].direction='both ways' is invalid`
+- `diagrams[0].format='mermaid' is unsupported`
 - `diagrams[0].adapter_payload.elements[2].linkedInterfaceIds references 'interface-missing'`
 - `diagrams[0].adapter_payload.elements[2].connectionType='curved' is invalid`
 
@@ -1508,10 +1509,12 @@ This is a hard rule, enforced operationally by the implementer's pre-flight (ste
 
 | Anti-pattern | Why it's wrong | What to do instead |
 |---|---|---|
+| Task/card is created from a spec that has relevant KEs or Architecture Designs, but the card has no card-local copied artifact or explicit card-local artifact reference | The task becomes detached from the evidence and structural design it depends on; implementers and validators must hunt through the parent spec, may miss contract/boundary decisions, and can claim completion without proving they followed the right architecture or knowledge source | Before moving the card to `in_progress`, copy the relevant artifacts with `okto_pulse_copy_knowledge_to_card` and/or `okto_pulse_copy_architecture_to_card`, then reference the card-local KE/design ids or titles in the card details/conclusion. |
 | Card description says "see KE 'API contract' on the spec" | Forces the implementer to re-query the spec; the snapshot guarantees of `okto_pulse_copy_knowledge_to_card` are lost | Call `okto_pulse_copy_knowledge_to_card` and reference the now-card-local KE id in the description. |
 | Card description embeds a giant code block of the KE content | Duplication without addressability; can't be updated; not searchable | Attach via `okto_pulse_add_card_knowledge` or `okto_pulse_copy_knowledge_to_card`. Reference by id in the description. |
 | Card on a UI task with zero attached mockups | Implementer must guess layout; drift guaranteed | `okto_pulse_copy_mockups_to_card` for every screen the card touches. |
 | Card touches services/contracts/data flows but has zero attached architecture | Implementer must infer ownership, integration order, and interface boundaries; critical architecture steps can be skipped | `okto_pulse_copy_architecture_to_card` for every Architecture Design the card depends on. |
+| Card conclusion claims architecture- or KB-driven implementation but the card never attached those artifacts | The validator cannot verify what source was followed, and the KG/traceability trail shows an implementation claim without the supporting evidence | Attach or copy the relevant artifacts before validation; if discovered late, attach them before moving to `validation` and explain the late attachment in the conclusion. |
 | Implementer skips steps 6/7/8 of Pre-Flight and starts coding | Blind execution against an incomplete card | Refuse to start — go back, attach artifacts, then move to `in_progress`. |
 | `copy_*_to_card` called without filtering when only 1-2 of 10 KEs apply | Card becomes noisy; reviewer drowns in irrelevant context | Pass `knowledge_ids` / `screen_ids` to scope the snapshot. |
 

@@ -20,6 +20,15 @@ logger = logging.getLogger("okto_pulse.kg.global_discovery.outbox")
 
 MAX_RETRIES = 5
 DEAD_LETTER_SENTINEL = -1
+GLOBAL_OPEN_ERROR_MARKERS = (
+    "failed to open ladybugdb database",
+    "discovery.lbug",
+    "corrupted wal file",
+    "invalid wal record",
+    "wal_record.cpp",
+    "unreachable_code",
+    "not a valid lbug database file",
+)
 
 # Node types mirrored into the global discovery layer as DecisionDigest.
 # Matches the per-board VECTOR_INDEX_TYPES — only nodes with an HNSW-backed
@@ -63,6 +72,7 @@ class OutboxWorker:
         """Process pending outbox events. Returns count processed."""
         processed = 0
         async with self._factory() as db:
+            await self._recover_dead_lettered_global_open_failures(db)
             pending = await db.execute(
                 select(GlobalUpdateOutbox)
                 .where(
@@ -100,6 +110,62 @@ class OutboxWorker:
                 extra={"event": "outbox.processed", "count": processed},
             )
         return processed
+
+    async def _recover_dead_lettered_global_open_failures(
+        self,
+        db: AsyncSession,
+    ) -> int:
+        """Requeue terminal rows caused by a recoverable global DB open error.
+
+        The global discovery graph is a rebuildable cache fed by SQLite's
+        transactional outbox. If LadybugDB reports WAL/open corruption, schema
+        bootstrap purges and recreates that cache. Rows dead-lettered during the
+        bad window would otherwise stay at ``retry_count = -1`` forever because
+        the worker only selects non-negative retry counts.
+        """
+        rows_res = await db.execute(
+            select(GlobalUpdateOutbox)
+            .where(
+                GlobalUpdateOutbox.processed_at.is_(None),
+                GlobalUpdateOutbox.retry_count == DEAD_LETTER_SENTINEL,
+            )
+            .order_by(GlobalUpdateOutbox.created_at.asc())
+            .limit(50)
+        )
+        rows = [
+            row for row in rows_res.scalars().all()
+            if _is_retryable_global_open_error(row.last_error)
+        ]
+        if not rows:
+            return 0
+
+        try:
+            _gdb, gconn = open_global_connection()
+            del gconn, _gdb
+        except Exception as exc:
+            logger.warning(
+                "outbox.recovery.global_unavailable rows=%d err=%s",
+                len(rows), exc,
+                extra={
+                    "event": "outbox.recovery.global_unavailable",
+                    "rows": len(rows),
+                },
+            )
+            return 0
+
+        for row in rows:
+            row.retry_count = 0
+            row.last_error = None
+        await db.flush()
+        logger.warning(
+            "outbox.recovery.requeued_dead_letters count=%d",
+            len(rows),
+            extra={
+                "event": "outbox.recovery.requeued_dead_letters",
+                "count": len(rows),
+            },
+        )
+        return len(rows)
 
     async def _apply_event(self, event: GlobalUpdateOutbox, db: AsyncSession) -> None:
         """Apply a single outbox event to the global discovery meta-graph.
@@ -162,6 +228,10 @@ class OutboxWorker:
             # 2) Read the just-added nodes back from the per-board Kùzu to
             # pick up the title + embedding computed at consolidation time.
             per_board = self._read_board_nodes_for_refs(board_id, refs)
+            if per_board is None:
+                raise RuntimeError(
+                    "outbox.read_board_failed: could not read source graph nodes"
+                )
             if not per_board:
                 return
 
@@ -225,7 +295,10 @@ class OutboxWorker:
             del gconn, gdb
 
     @staticmethod
-    def _read_board_nodes_for_refs(board_id: str, refs: list[KuzuNodeRef]) -> list[dict]:
+    def _read_board_nodes_for_refs(
+        board_id: str,
+        refs: list[KuzuNodeRef],
+    ) -> list[dict] | None:
         """Read (id, title, embedding) from the per-board Kùzu for the given
         node refs, bucketed by type so we issue one MATCH per type."""
         from okto_pulse.core.kg.schema import open_board_connection
@@ -256,7 +329,7 @@ class OutboxWorker:
             logger.warning(
                 "outbox.read_board_failed board=%s err=%s", board_id, exc,
             )
-            return []
+            return None
         return out
 
     async def _loop(self) -> None:
@@ -289,3 +362,10 @@ def get_outbox_worker() -> OutboxWorker:
 def reset_outbox_worker_for_tests() -> None:
     global _singleton
     _singleton = None
+
+
+def _is_retryable_global_open_error(error: str | None) -> bool:
+    if not error:
+        return False
+    msg = error.lower()
+    return any(marker in msg for marker in GLOBAL_OPEN_ERROR_MARKERS)

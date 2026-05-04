@@ -24,6 +24,7 @@ from okto_pulse.core.api.queue_health import router as queue_health_router
 from okto_pulse.core.api.kg_health import router as kg_health_router
 from okto_pulse.core.api.kg_tick import router as kg_tick_router
 from okto_pulse.core.api.dead_letter import router as dead_letter_router
+from okto_pulse.core.api.traceability import router as traceability_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -49,3 +50,4 @@ api_router.include_router(queue_health_router, tags=["queue-health"])
 api_router.include_router(kg_health_router, tags=["kg-health"])
 api_router.include_router(kg_tick_router, tags=["kg-tick"])
 api_router.include_router(dead_letter_router, tags=["dead-letter"])
+api_router.include_router(traceability_router, tags=["traceability"])
