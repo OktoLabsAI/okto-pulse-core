@@ -29,8 +29,11 @@ from okto_pulse.core.kg.global_discovery.clustering import (
 from okto_pulse.core.kg.global_discovery.outbox_worker import (
     DEAD_LETTER_SENTINEL,
     MAX_RETRIES,
+    OutboxWorker,
+    _is_retryable_global_open_error,
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
+from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -190,3 +193,185 @@ class TestOutboxWorker:
     def test_max_retries(self):
         assert MAX_RETRIES == 5
         assert DEAD_LETTER_SENTINEL == -1
+
+    def test_global_open_wal_error_is_retryable(self):
+        assert _is_retryable_global_open_error(
+            "Failed to open LadybugDB database at "
+            "C:/Users/me/.okto-pulse/global/discovery.lbug: "
+            "RuntimeError: Assertion failed in file "
+            "wal_record.cpp on line 76: UNREACHABLE_CODE"
+        )
+
+    @pytest.mark.asyncio
+    async def test_dead_lettered_global_open_failure_is_requeued_and_processed(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        import uuid
+        import okto_pulse.core.kg.global_discovery.outbox_worker as worker_mod
+
+        board_id = f"board-outbox-recover-{uuid.uuid4().hex[:8]}"
+        event_id = str(uuid.uuid4())
+        session_id = f"kgses_{uuid.uuid4().hex[:16]}"
+        async with db_factory() as db:
+            db.add(GlobalUpdateOutbox(
+                event_id=event_id,
+                board_id=board_id,
+                session_id=session_id,
+                event_type="consolidation_committed",
+                payload={"session_id": session_id, "nodes_added": 1},
+                retry_count=DEAD_LETTER_SENTINEL,
+                last_error=(
+                    "Failed to open LadybugDB database at "
+                    "C:/Users/me/.okto-pulse/global/discovery.lbug: "
+                    "RuntimeError: Assertion failed in file "
+                    "wal_record.cpp on line 76: UNREACHABLE_CODE"
+                ),
+            ))
+            await db.commit()
+
+        calls = {"open": 0, "apply": 0}
+
+        class FakeConn:
+            pass
+
+        def fake_open_global_connection():
+            calls["open"] += 1
+            return object(), FakeConn()
+
+        async def fake_apply_event(self, event, db):
+            calls["apply"] += 1
+
+        monkeypatch.setattr(
+            worker_mod,
+            "open_global_connection",
+            fake_open_global_connection,
+        )
+        monkeypatch.setattr(OutboxWorker, "_apply_event", fake_apply_event)
+
+        worker = OutboxWorker(db_factory, interval_seconds=5)
+        processed = await worker.process_once()
+
+        assert processed == 1
+        assert calls == {"open": 1, "apply": 1}
+
+        async with db_factory() as db:
+            row = (
+                await db.execute(
+                    worker_mod.select(GlobalUpdateOutbox)
+                    .where(GlobalUpdateOutbox.event_id == event_id)
+                )
+            ).scalar_one()
+            assert row.processed_at is not None
+            assert row.retry_count == 0
+            assert row.last_error is None
+
+    @pytest.mark.asyncio
+    async def test_non_global_dead_letter_is_not_requeued(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        import uuid
+        import okto_pulse.core.kg.global_discovery.outbox_worker as worker_mod
+
+        event_id = str(uuid.uuid4())
+        async with db_factory() as db:
+            db.add(GlobalUpdateOutbox(
+                event_id=event_id,
+                board_id=f"board-outbox-non-recover-{uuid.uuid4().hex[:8]}",
+                session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                event_type="consolidation_committed",
+                payload={"session_id": "ignored"},
+                retry_count=DEAD_LETTER_SENTINEL,
+                last_error="invalid payload shape",
+            ))
+            await db.commit()
+
+        def fail_if_called():
+            raise AssertionError("global recovery should not run")
+
+        monkeypatch.setattr(
+            worker_mod,
+            "open_global_connection",
+            fail_if_called,
+        )
+
+        worker = OutboxWorker(db_factory, interval_seconds=5)
+        processed = await worker.process_once()
+
+        assert processed == 0
+        async with db_factory() as db:
+            row = (
+                await db.execute(
+                    worker_mod.select(GlobalUpdateOutbox)
+                    .where(GlobalUpdateOutbox.event_id == event_id)
+                )
+            ).scalar_one()
+            assert row.processed_at is None
+            assert row.retry_count == DEAD_LETTER_SENTINEL
+            assert row.last_error == "invalid payload shape"
+
+    @pytest.mark.asyncio
+    async def test_board_read_failure_keeps_event_retryable(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        import uuid
+        import okto_pulse.core.kg.global_discovery.outbox_worker as worker_mod
+
+        board_id = f"board-outbox-read-fail-{uuid.uuid4().hex[:8]}"
+        event_id = str(uuid.uuid4())
+        session_id = f"kgses_{uuid.uuid4().hex[:16]}"
+        async with db_factory() as db:
+            db.add(KuzuNodeRef(
+                session_id=session_id,
+                board_id=board_id,
+                kuzu_node_id="entity_source",
+                kuzu_node_type="Entity",
+                operation="add",
+            ))
+            db.add(GlobalUpdateOutbox(
+                event_id=event_id,
+                board_id=board_id,
+                session_id=session_id,
+                event_type="consolidation_committed",
+                payload={"session_id": session_id, "nodes_added": 1},
+            ))
+            await db.commit()
+
+        class FakeResult:
+            def has_next(self):
+                return False
+
+        class FakeConn:
+            def execute(self, *_args, **_kwargs):
+                return FakeResult()
+
+        monkeypatch.setattr(
+            worker_mod,
+            "open_global_connection",
+            lambda: (object(), FakeConn()),
+        )
+        monkeypatch.setattr(
+            OutboxWorker,
+            "_read_board_nodes_for_refs",
+            staticmethod(lambda _board_id, _refs: None),
+        )
+
+        worker = OutboxWorker(db_factory, interval_seconds=5)
+        processed = await worker.process_once()
+
+        assert processed == 0
+        async with db_factory() as db:
+            row = (
+                await db.execute(
+                    worker_mod.select(GlobalUpdateOutbox)
+                    .where(GlobalUpdateOutbox.event_id == event_id)
+                )
+            ).scalar_one()
+            assert row.processed_at is None
+            assert row.retry_count == 1
+            assert "outbox.read_board_failed" in (row.last_error or "")

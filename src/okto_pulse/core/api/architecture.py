@@ -64,6 +64,26 @@ class CopyArchitectureRequest(BaseModel):
     design_ids: list[str] | None = None
 
 
+class ArchitecturePayloadValidationRequest(BaseModel):
+    """Dry-run payload used to critique an Architecture Design without persisting it."""
+
+    title: str | None = None
+    global_description: str | None = None
+    entities: list[dict[str, Any]] | None = None
+    interfaces: list[dict[str, Any]] | None = None
+    diagrams: list[dict[str, Any]] | None = None
+
+
+class ArchitecturePayloadValidationResponse(BaseModel):
+    """Semantic validation and authoring feedback for an Architecture Design payload."""
+
+    valid: bool
+    issues: list[str]
+    warnings: list[str]
+    suggested_fixes: list[str]
+    summary: dict[str, Any]
+
+
 async def _get_parent(db: AsyncSession, parent_type: str, parent_id: str) -> Any | None:
     model = PARENT_MODELS[parent_type]
     return await db.get(model, parent_id)
@@ -232,6 +252,17 @@ async def create_card_architecture(
     db: AsyncSession = Depends(get_db),
 ):
     return await _create_architecture("card", card_id, data, user_id, db)
+
+
+@router.post("/architecture/validate", response_model=ArchitecturePayloadValidationResponse)
+async def validate_architecture_payload(
+    data: ArchitecturePayloadValidationRequest,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the same Architecture Design critique exposed to MCP agents."""
+    repo = ArchitectureDesignRepository(db)
+    return repo.critique_payload(data.model_dump(mode="json"))
 
 
 @router.get("/architecture/{design_id}", response_model=ArchitectureDesignResponse)

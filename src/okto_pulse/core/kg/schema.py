@@ -27,6 +27,8 @@ CORRUPT_DB_ERROR_MARKERS = (
     "corrupted wal file",
     "invalid wal record",
     "not a valid lbug database file",
+    "wal_record.cpp",
+    "unreachable_code",
 )
 
 # Provenance metadata required on every rel (KG Pipeline v2 — spec c48a5c33).

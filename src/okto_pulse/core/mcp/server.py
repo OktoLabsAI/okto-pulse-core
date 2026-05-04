@@ -47,6 +47,11 @@ from okto_pulse.core.services.architecture import (
     ArchitecturePropagationService,
     architecture_design_payload_schema,
 )
+from okto_pulse.core.services.reference_resolution import (
+    resolve_entity_context_references,
+    resolve_spec_references,
+    resolve_task_context_references,
+)
 
 
 import uuid as _uuid
@@ -1962,10 +1967,12 @@ async def okto_pulse_get_task_context(
         if _inc_mockups and card.screen_mockups:
             result["card"]["screen_mockups"] = card.screen_mockups
 
+        card_architecture_designs: list[dict[str, Any]] = []
         if _inc_architecture:
-            result["card"]["architecture_designs"] = await _mcp_architecture_for_parent(
+            card_architecture_designs = await _mcp_architecture_for_parent(
                 db, "card", card_id, permissions=ctx.permissions
             )
+            result["card"]["architecture_designs"] = card_architecture_designs
 
         if _inc_qa:
             result["card"]["qa_items"] = [
@@ -2000,6 +2007,8 @@ async def okto_pulse_get_task_context(
             ]
 
         # Spec context (the core of task context)
+        spec = None
+        spec_architecture_designs: list[dict[str, Any]] = []
         if card.spec_id:
             spec_service = SpecService(db)
             spec = await spec_service.get_spec(card.spec_id)
@@ -2035,9 +2044,10 @@ async def okto_pulse_get_task_context(
                     spec_data["screen_mockups"] = spec.screen_mockups
 
                 if _inc_architecture:
-                    spec_data["architecture_designs"] = await _mcp_architecture_for_parent(
+                    spec_architecture_designs = await _mcp_architecture_for_parent(
                         db, "spec", spec.id, permissions=ctx.permissions
                     )
+                    spec_data["architecture_designs"] = spec_architecture_designs
 
                 if _inc_qa:
                     spec_data["qa_items"] = [
@@ -2069,6 +2079,22 @@ async def okto_pulse_get_task_context(
                         ts for ts in spec.test_scenarios
                         if ts.get("id") in card.test_scenario_ids
                     ]
+
+        resolved_references = resolve_task_context_references(
+            card,
+            spec,
+            include_superseded=_inc_superseded,
+            include_content=_inc_kb,
+            card_architecture_designs=card_architecture_designs if _inc_architecture else [],
+            spec_architecture_designs=spec_architecture_designs if _inc_architecture else [],
+        )
+        if not _inc_kb:
+            resolved_references["knowledge_bases"] = []
+        if not _inc_mockups:
+            resolved_references["screen_mockups"] = []
+        if not _inc_architecture:
+            resolved_references["architecture_designs"] = []
+        result["resolved_references"] = resolved_references
 
         # Task validations — critical for agents picking up cards that failed validation
         result["validations"] = list(card.validations or [])
@@ -3555,16 +3581,32 @@ async def okto_pulse_get_ideation_context(
         if _inc_mockups and hasattr(ideation, "screen_mockups") and ideation.screen_mockups:
             result["screen_mockups"] = ideation.screen_mockups
 
+        architecture_designs: list[dict[str, Any]] = []
         if _inc_architecture:
-            result["architecture_designs"] = await _mcp_architecture_for_parent(
+            architecture_designs = await _mcp_architecture_for_parent(
                 db, "ideation", ideation_id, permissions=ctx.permissions
             )
+            result["architecture_designs"] = architecture_designs
 
         if _inc_kb and hasattr(ideation, "knowledge_bases"):
             result["knowledge_bases"] = [
                 _serialize_knowledge_base(kb)
                 for kb in (ideation.knowledge_bases or [])
             ]
+
+        resolved_references = resolve_entity_context_references(
+            ideation,
+            source_type="ideation",
+            include_content=_inc_kb,
+            architecture_designs=architecture_designs if _inc_architecture else [],
+        )
+        if not _inc_kb:
+            resolved_references["knowledge_bases"] = []
+        if not _inc_mockups:
+            resolved_references["screen_mockups"] = []
+        if not _inc_architecture:
+            resolved_references["architecture_designs"] = []
+        result["resolved_references"] = resolved_references
 
         return json.dumps(result, default=str)
 
@@ -4801,10 +4843,12 @@ async def okto_pulse_get_refinement_context(
         if _inc_mockups and hasattr(refinement, "screen_mockups") and refinement.screen_mockups:
             result["screen_mockups"] = refinement.screen_mockups
 
+        architecture_designs: list[dict[str, Any]] = []
         if _inc_architecture:
-            result["architecture_designs"] = await _mcp_architecture_for_parent(
+            architecture_designs = await _mcp_architecture_for_parent(
                 db, "refinement", refinement_id, permissions=ctx.permissions
             )
+            result["architecture_designs"] = architecture_designs
 
         if _inc_kb and hasattr(refinement, "knowledge_bases"):
             result["knowledge_bases"] = [
@@ -4817,6 +4861,20 @@ async def okto_pulse_get_refinement_context(
                 }
                 for kb in (refinement.knowledge_bases or [])
             ]
+
+        resolved_references = resolve_entity_context_references(
+            refinement,
+            source_type="refinement",
+            include_content=_inc_kb,
+            architecture_designs=architecture_designs if _inc_architecture else [],
+        )
+        if not _inc_kb:
+            resolved_references["knowledge_bases"] = []
+        if not _inc_mockups:
+            resolved_references["screen_mockups"] = []
+        if not _inc_architecture:
+            resolved_references["architecture_designs"] = []
+        result["resolved_references"] = resolved_references
 
         return json.dumps(result, default=str)
 
@@ -5736,10 +5794,12 @@ async def okto_pulse_get_spec_context(
         if _inc_mockups and spec.screen_mockups:
             result["screen_mockups"] = spec.screen_mockups
 
+        architecture_designs: list[dict[str, Any]] = []
         if _inc_architecture:
-            result["architecture_designs"] = await _mcp_architecture_for_parent(
+            architecture_designs = await _mcp_architecture_for_parent(
                 db, "spec", spec_id, permissions=ctx.permissions
             )
+            result["architecture_designs"] = architecture_designs
 
         if _inc_qa:
             result["qa_items"] = [
@@ -5761,6 +5821,20 @@ async def okto_pulse_get_spec_context(
                 _serialize_knowledge_base(kb)
                 for kb in (spec.knowledge_bases or [])
             ]
+
+        resolved_references = resolve_spec_references(
+            spec,
+            include_superseded=_inc_superseded,
+            include_content=_inc_kb,
+            architecture_designs=architecture_designs if _inc_architecture else [],
+        )
+        if not _inc_kb:
+            resolved_references["knowledge_bases"] = []
+        if not _inc_mockups:
+            resolved_references["screen_mockups"] = []
+        if not _inc_architecture:
+            resolved_references["architecture_designs"] = []
+        result["resolved_references"] = resolved_references
 
         result["coverage_summary"] = _mcp_spec_coverage_summary(spec)
 
@@ -6960,6 +7034,9 @@ async def okto_pulse_validate_architecture_design_payload(
     - entities where name duplicates entity_type after normalization.
     - interfaces with invalid legacy participants, invalid direction, or missing
       protocol/contract metadata for schema payloads.
+    - diagrams with any format other than excalidraw_json. Mermaid, PlantUML,
+      C4, SVG, and raw snippets are allowed only as descriptive text in entity
+      responsibility, boundaries, notes, or global_description.
     - diagrams with invalid linkedEntityId, linkedInterfaceIds, endpoint/entity
       connection mismatches, or unsupported connectionType. Excalidraw
       connectionType accepts only "direct" or "elbow".
@@ -7129,7 +7206,10 @@ async def okto_pulse_add_architecture_design(
               }
             ]
         diagrams: JSON array or native list of diagrams; adapter_payload is stored
-            separately. Excalidraw payloads should link elements using
+            separately. Only format="excalidraw_json" is accepted. Mermaid,
+            PlantUML, C4, SVG, and raw snippets may be included only as
+            descriptive text in entity responsibility, boundaries, notes, or
+            global_description, not as diagrams[].format. Excalidraw payloads should link elements using
             linkedEntityId and linkedInterfaceIds when possible. For Excalidraw
             edges, use sourceElementId, targetElementId, linkedInterfaceIds,
             and connectionType. One connector can carry several interface
@@ -10749,241 +10829,23 @@ async def okto_pulse_get_traceability_report(
     _include_artifacts = _flag_enabled(include_artifacts)
 
     async with get_db_for_mcp() as db:
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from okto_pulse.core.models.db import (
-            Card,
-            Ideation,
-            Refinement,
-            Spec,
-            Sprint,
+        from okto_pulse.core.services.traceability import (
+            TraceabilityReadError,
+            build_traceability_report,
         )
 
-        board = await db.get(Board, board_id)
-        if not board:
-            return json.dumps({"error": "Board not found"})
-
-        spec_filter_ids: set[str] = set()
-        ideation_filter_ids: set[str] = set()
-        refinement_filter_ids: set[str] = set()
-
-        if spec_id:
-            spec_row = await db.get(Spec, spec_id)
-            if not spec_row or spec_row.board_id != board_id:
-                return json.dumps({"error": "Spec not found"})
-            spec_filter_ids.add(spec_id)
-            if spec_row.ideation_id:
-                ideation_filter_ids.add(spec_row.ideation_id)
-            if spec_row.refinement_id:
-                refinement_filter_ids.add(spec_row.refinement_id)
-        if ideation_id:
-            ideation_filter_ids.add(ideation_id)
-
-        ideation_query = (
-            select(Ideation)
-            .options(selectinload(Ideation.knowledge_bases))
-            .options(selectinload(Ideation.architecture_designs))
-            .options(selectinload(Ideation.refinements))
-            .options(selectinload(Ideation.specs))
-            .where(Ideation.board_id == board_id)
-        )
-        if ideation_filter_ids:
-            ideation_query = ideation_query.where(Ideation.id.in_(ideation_filter_ids))
-        ideations = list((await db.execute(ideation_query)).scalars().all())
-
-        refinement_query = (
-            select(Refinement)
-            .options(selectinload(Refinement.knowledge_bases))
-            .options(selectinload(Refinement.architecture_designs))
-            .where(Refinement.board_id == board_id)
-        )
-        if refinement_filter_ids:
-            refinement_query = refinement_query.where(
-                Refinement.id.in_(refinement_filter_ids)
+        try:
+            report = await build_traceability_report(
+                db,
+                board_id,
+                ideation_id=ideation_id,
+                spec_id=spec_id,
+                include_artifacts=_include_artifacts,
             )
-        elif ideation_filter_ids:
-            refinement_query = refinement_query.where(
-                Refinement.ideation_id.in_(ideation_filter_ids)
-            )
-        refinements = list((await db.execute(refinement_query)).scalars().all())
-        refinement_ids = {ref.id for ref in refinements}
-
-        spec_query = (
-            select(Spec)
-            .options(selectinload(Spec.knowledge_bases))
-            .options(selectinload(Spec.architecture_designs))
-            .options(selectinload(Spec.cards).selectinload(Card.architecture_designs))
-            .options(selectinload(Spec.sprints))
-            .where(Spec.board_id == board_id)
-        )
-        if spec_filter_ids:
-            spec_query = spec_query.where(Spec.id.in_(spec_filter_ids))
-        elif ideation_filter_ids or refinement_ids:
-            filters = []
-            if ideation_filter_ids:
-                filters.append(Spec.ideation_id.in_(ideation_filter_ids))
-            if refinement_ids:
-                filters.append(Spec.refinement_id.in_(refinement_ids))
-            if filters:
-                from sqlalchemy import or_
-
-                spec_query = spec_query.where(or_(*filters))
-        specs = list((await db.execute(spec_query)).scalars().all())
-
-        specs_by_ideation: dict[str | None, list[Any]] = {}
-        specs_by_refinement: dict[str | None, list[Any]] = {}
-        for spec in specs:
-            specs_by_ideation.setdefault(spec.ideation_id, []).append(spec)
-            specs_by_refinement.setdefault(spec.refinement_id, []).append(spec)
-
-        refinements_by_ideation: dict[str | None, list[Any]] = {}
-        for refinement in refinements:
-            refinements_by_ideation.setdefault(
-                refinement.ideation_id, []
-            ).append(refinement)
-
-        def _card_summary(card: Card) -> dict[str, Any]:
-            payload = {
-                "id": card.id,
-                "title": card.title,
-                "status": card.status.value,
-                "card_type": card.card_type.value,
-                "sprint_id": card.sprint_id,
-                "test_scenario_ids": card.test_scenario_ids or [],
-                "origin_task_id": card.origin_task_id,
-                "conclusions_count": len(card.conclusions or []),
-                "validations_count": len(card.validations or []),
-            }
-            if card.card_type.value == "bug":
-                payload["bug"] = {
-                    "severity": card.severity.value if card.severity else None,
-                    "expected_behavior": card.expected_behavior,
-                    "observed_behavior": card.observed_behavior,
-                    "linked_test_task_ids": card.linked_test_task_ids or [],
-                }
-            if _include_artifacts:
-                payload["artifacts"] = _mcp_artifact_refs(card)
-            else:
-                payload["artifact_summary"] = _mcp_artifact_summary(card)
-            return payload
-
-        def _sprint_summary(sprint: Sprint) -> dict[str, Any]:
-            return {
-                "id": sprint.id,
-                "title": sprint.title,
-                "status": sprint.status.value,
-            }
-
-        def _spec_summary(spec: Spec) -> dict[str, Any]:
-            cards = list(spec.cards or [])
-            payload = {
-                "id": spec.id,
-                "title": spec.title,
-                "status": spec.status.value,
-                "ideation_id": spec.ideation_id,
-                "refinement_id": spec.refinement_id,
-                "coverage_summary": _mcp_spec_coverage_summary(spec),
-                "sprints": [_sprint_summary(sprint) for sprint in spec.sprints],
-                "cards": [_card_summary(card) for card in cards],
-                "tests": [
-                    {
-                        "id": scenario.get("id"),
-                        "title": scenario.get("title"),
-                        "status": scenario.get("status"),
-                        "linked_criteria": scenario.get("linked_criteria") or [],
-                        "linked_task_ids": scenario.get("linked_task_ids") or [],
-                    }
-                    for scenario in (spec.test_scenarios or [])
-                    if isinstance(scenario, dict)
-                ],
-                "bugs": [
-                    _card_summary(card)
-                    for card in cards
-                    if card.card_type.value == "bug"
-                ],
-                "card_counts": {
-                    "total": len(cards),
-                    "normal": sum(1 for c in cards if c.card_type.value == "normal"),
-                    "test": sum(1 for c in cards if c.card_type.value == "test"),
-                    "bug": sum(1 for c in cards if c.card_type.value == "bug"),
-                    "done": sum(1 for c in cards if c.status.value == "done"),
-                },
-            }
-            if _include_artifacts:
-                payload["artifacts"] = _mcp_artifact_refs(spec)
-            else:
-                payload["artifact_summary"] = _mcp_artifact_summary(spec)
-            return payload
-
-        report_ideations = []
-        attached_spec_ids: set[str] = set()
-        for ideation in ideations:
-            ideation_specs = [
-                spec
-                for spec in specs_by_ideation.get(ideation.id, [])
-                if not spec.refinement_id
-            ]
-            attached_spec_ids.update(spec.id for spec in ideation_specs)
-            refinement_payloads = []
-            for refinement in refinements_by_ideation.get(ideation.id, []):
-                refinement_specs = specs_by_refinement.get(refinement.id, [])
-                attached_spec_ids.update(spec.id for spec in refinement_specs)
-                ref_payload = {
-                    "id": refinement.id,
-                    "title": refinement.title,
-                    "status": refinement.status.value,
-                    "specs": [_spec_summary(spec) for spec in refinement_specs],
-                }
-                if _include_artifacts:
-                    ref_payload["artifacts"] = _mcp_artifact_refs(refinement)
-                else:
-                    ref_payload["artifact_summary"] = _mcp_artifact_summary(
-                        refinement
-                    )
-                refinement_payloads.append(ref_payload)
-
-            ideation_payload = {
-                "id": ideation.id,
-                "title": ideation.title,
-                "status": ideation.status.value,
-                "refinements": refinement_payloads,
-                "direct_specs": [_spec_summary(spec) for spec in ideation_specs],
-            }
-            if _include_artifacts:
-                ideation_payload["artifacts"] = _mcp_artifact_refs(ideation)
-            else:
-                ideation_payload["artifact_summary"] = _mcp_artifact_summary(
-                    ideation
-                )
-            report_ideations.append(ideation_payload)
-
-        orphan_specs = [
-            _spec_summary(spec)
-            for spec in specs
-            if spec.id not in attached_spec_ids
-        ]
-
+        except TraceabilityReadError as exc:
+            return json.dumps({"error": exc.message, "code": exc.code})
         await db.commit()
-        return json.dumps(
-            {
-                "board_id": board_id,
-                "filters": {
-                    "ideation_id": ideation_id or None,
-                    "spec_id": spec_id or None,
-                },
-                "summary": {
-                    "ideations": len(report_ideations),
-                    "refinements": len(refinements),
-                    "specs": len(specs),
-                    "orphan_specs": len(orphan_specs),
-                    "cards": sum(len(spec.cards or []) for spec in specs),
-                },
-                "ideations": report_ideations,
-                "orphan_specs": orphan_specs,
-            },
-            default=str,
-        )
+        return json.dumps(report, default=str)
 
 
 # ============================================================================
@@ -12981,7 +12843,6 @@ async def okto_pulse_kg_tick_run_now(
             "message": "Tick already running, retry shortly",
         })
 
-    import asyncio
     import uuid as _uuid
     from datetime import datetime, timezone
 
@@ -13003,13 +12864,33 @@ async def okto_pulse_kg_tick_run_now(
         },
     )
 
-    asyncio.create_task(
-        _dispatch_manual_tick(
+    try:
+        await _dispatch_manual_tick(
             tick_id=tick_id,
             board_id=board_id or None,
             force_full_rebuild=force_full_rebuild,
         )
-    )
+    except Exception as exc:
+        _tick_logger.error(
+            "kg.tick.manual_schedule_failed tick_id=%s err=%s source=mcp",
+            tick_id, exc,
+            extra={
+                "event": "kg.tick.manual_schedule_failed",
+                "tick_id": tick_id,
+                "board_id": board_id or None,
+                "force_full_rebuild": force_full_rebuild,
+                "source": "mcp",
+                "error": str(exc),
+            },
+        )
+        return json.dumps({
+            "error": "tick_schedule_failed",
+            "message": (
+                "Failed to persist the KG tick event. "
+                "No background tick was scheduled."
+            ),
+            "detail": str(exc),
+        })
 
     return json.dumps({
         "tick_id": tick_id,

@@ -115,8 +115,15 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     else:
         last_decay_tick_at = None
         nodes_recomputed_in_last_tick = 0
+    if last_tick_run is not None:
+        last_tick_status = "failed" if last_tick_run.error else "completed"
+        last_tick_error = last_tick_run.error
+    else:
+        last_tick_status = None
+        last_tick_error = None
 
     kuzu_metrics = _aggregate_kuzu_metrics(board_id)
+    graph_schema_version = _get_graph_schema_version(board_id)
 
     default_score_count = kuzu_metrics["default_score_count"]
     total_nodes = kuzu_metrics["total_nodes"]
@@ -149,6 +156,8 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
     tick_lock = get_async_lock("kg_daily_tick", "global")
     tick_in_progress = tick_lock.locked()
+    if tick_in_progress:
+        last_tick_status = "running"
 
     return {
         "queue_depth": int(queue_depth),
@@ -160,11 +169,28 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         "avg_relevance": kuzu_metrics["avg_relevance"],
         "top_disconnected_nodes": kuzu_metrics["top_disconnected_nodes"],
         "schema_version": HEALTH_SCHEMA_VERSION,
+        "health_schema_version": HEALTH_SCHEMA_VERSION,
+        "graph_schema_version": graph_schema_version,
         "contradict_warn_count": get_contradict_warn_count(board_id),
         "last_decay_tick_at": last_decay_tick_at,
+        "last_tick_status": last_tick_status,
+        "last_tick_error": last_tick_error,
         "nodes_recomputed_in_last_tick": nodes_recomputed_in_last_tick,
         "tick_in_progress": tick_in_progress,
     }
+
+
+def _get_graph_schema_version(board_id: str) -> str | None:
+    try:
+        from okto_pulse.core.kg.kg_service import get_kg_service
+
+        return get_kg_service().get_schema_version(board_id)
+    except Exception as exc:
+        logger.debug(
+            "kg.health.graph_schema_lookup_failed board=%s err=%s",
+            board_id, exc,
+        )
+        return None
 
 
 def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
