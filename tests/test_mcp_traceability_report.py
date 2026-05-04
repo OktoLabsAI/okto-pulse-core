@@ -69,6 +69,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     bug_card_id = _id("trace-bug-card")
     spec_kb_id = _id("trace-spec-kb")
     architecture_id = _id("trace-card-architecture")
+    spec_architecture_id = _id("trace-spec-architecture")
 
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Traceability Board", owner_id=USER_ID))
@@ -104,18 +105,50 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                 status=SpecStatus.DONE,
                 created_by=USER_ID,
                 functional_requirements=["FR-1"],
+                technical_requirements=[
+                    {"id": "tr-1", "text": "TR-1", "linked_task_ids": [task_id]}
+                ],
                 acceptance_criteria=["AC-1"],
                 test_scenarios=[
                     {
                         "id": "ts-1",
                         "title": "Happy path",
                         "status": "passed",
-                        "linked_criteria": ["1"],
+                        "linked_criteria": ["0"],
                         "linked_task_ids": [task_id],
                     }
                 ],
-                business_rules=[],
-                api_contracts=[],
+                business_rules=[
+                    {
+                        "id": "br-1",
+                        "title": "Traceability rule",
+                        "rule": "Preserve references",
+                        "when": "Exporting context",
+                        "then": "Resolve linked resources",
+                        "linked_requirements": ["0"],
+                        "linked_task_ids": [task_id],
+                    }
+                ],
+                api_contracts=[
+                    {
+                        "id": "contract-1",
+                        "method": "GET",
+                        "path": "/traceability",
+                        "description": "Traceability endpoint",
+                        "linked_requirements": ["0"],
+                        "linked_task_ids": [task_id],
+                    }
+                ],
+                decisions=[
+                    {
+                        "id": "decision-1",
+                        "title": "Resolve references in context",
+                        "status": "active",
+                        "rationale": "Validators need inherited artifacts.",
+                        "linked_requirements": ["0"],
+                        "linked_task_ids": [task_id],
+                    }
+                ],
                 screen_mockups=[{"id": "spec-mockup", "title": "Spec Mockup"}],
             )
         )
@@ -225,6 +258,20 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
                 created_by=USER_ID,
             )
         )
+        db.add(
+            ArchitectureDesign(
+                id=spec_architecture_id,
+                board_id=board_id,
+                parent_type="spec",
+                spec_id=spec_id,
+                title="Spec architecture",
+                global_description="Architecture inherited by task context",
+                entities=[],
+                interfaces=[],
+                diagrams=[],
+                created_by=USER_ID,
+            )
+        )
         await db.commit()
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
@@ -239,6 +286,14 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
             "okto_pulse_get_traceability_report",
             board_id=board_id,
             include_artifacts="false",
+        )
+        task_context = await _call(
+            "okto_pulse_get_task_context",
+            board_id=board_id,
+            card_id=task_id,
+            include_knowledge="true",
+            include_mockups="true",
+            include_architecture="true",
         )
 
     assert report["summary"]["ideations"] == 1
@@ -268,6 +323,35 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     assert task["artifacts"]["knowledge_bases"][0]["source_type"] == "manual"
     assert task["artifacts"]["mockups"][0]["id"] == "card-mockup"
     assert task["artifacts"]["architecture_designs"][0]["id"] == architecture_id
+    assert {kb["id"] for kb in task["resolved_artifacts"]["knowledge_bases"]} == {
+        "card-kb",
+        spec_kb_id,
+    }
+    assert {mockup["id"] for mockup in task["resolved_artifacts"]["screen_mockups"]} == {
+        "card-mockup",
+        "spec-mockup",
+    }
+    assert {arch["id"] for arch in task["resolved_artifacts"]["architecture_designs"]} == {
+        architecture_id,
+        spec_architecture_id,
+    }
+
+    resolved = task_context["resolved_references"]
+    assert {kb["id"] for kb in resolved["knowledge_bases"]} == {"card-kb", spec_kb_id}
+    assert {mockup["id"] for mockup in resolved["screen_mockups"]} == {
+        "card-mockup",
+        "spec-mockup",
+    }
+    assert {arch["id"] for arch in resolved["architecture_designs"]} == {
+        architecture_id,
+        spec_architecture_id,
+    }
+    assert resolved["technical_requirements"][0]["reference_type"] == "linked_task"
+    assert resolved["business_rules"][0]["reference_type"] == "linked_task"
+    assert resolved["api_contracts"][0]["reference_type"] == "linked_task"
+    assert resolved["decisions"][0]["reference_type"] == "linked_task"
+    assert resolved["functional_requirements"][0]["referenced_by_task"] is True
+    assert resolved["acceptance_criteria"][0]["referenced_by_task"] is True
 
     bug = spec["bugs"][0]
     assert bug["id"] == bug_card_id

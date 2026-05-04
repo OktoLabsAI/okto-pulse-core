@@ -175,6 +175,20 @@ class TestSpecCoverageSummary:
         assert out["ac_covered"] == 2
         assert out["ac_uncovered_indices"] == [2]
 
+    def test_numeric_string_links_count_for_ac_and_fr_coverage(self):
+        spec = self._FakeSpec(
+            acs=["AC0", "AC1"],
+            frs=["FR0", "FR1"],
+            scenarios=[{"linked_criteria": ["0", "1"]}],
+            rules=[{"linked_requirements": ["0", "1"]}],
+        )
+        out = spec_coverage_summary(spec)
+        assert out["ac_coverage_pct"] == 100
+        assert out["ac_covered"] == 2
+        assert out["fr_coverage_pct"] == 100
+        assert out["fr_covered"] == 2
+        assert out["fr_uncovered_indices"] == []
+
     def test_task_linkage(self):
         spec = self._FakeSpec(
             trs=[

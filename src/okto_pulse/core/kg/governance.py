@@ -85,6 +85,63 @@ async def _historical_queue_counts(
     return counts
 
 
+async def _has_materialized_kg_nodes(board_id: str) -> bool:
+    """Best-effort check that the per-board KG still contains user nodes.
+
+    Historical progress is persisted in board settings, while the graph file
+    can be wiped/recreated independently. If the persisted state says a prior
+    backfill completed but the graph has no materialized nodes, callers must be
+    allowed to run historical consolidation again.
+    """
+    try:
+        from okto_pulse.core.kg.kg_service import get_kg_service
+
+        rows = await asyncio.to_thread(
+            get_kg_service().get_all_nodes,
+            board_id,
+            min_confidence=0.0,
+            min_relevance=0.0,
+            max_rows=1,
+        )
+        return bool(rows)
+    except Exception as exc:  # pragma: no cover - defensive runtime guard
+        logger.debug(
+            "governance.historical_progress_graph_probe_failed board=%s err=%s",
+            board_id,
+            exc,
+        )
+        return True
+
+
+async def _purge_stale_metadata_if_graph_empty(
+    db: AsyncSession,
+    board_id: str,
+) -> bool:
+    """Drop SQLite KG mirrors when the physical board graph has no user nodes."""
+    has_nodes = await _has_materialized_kg_nodes(board_id)
+    if has_nodes:
+        return False
+
+    await db.execute(
+        delete(KuzuNodeRef).where(KuzuNodeRef.board_id == board_id)
+    )
+    await db.execute(
+        delete(ConsolidationAudit).where(ConsolidationAudit.board_id == board_id)
+    )
+    await db.execute(
+        delete(GlobalUpdateOutbox).where(GlobalUpdateOutbox.board_id == board_id)
+    )
+    logger.info(
+        "governance.historical_start.purged_stale_metadata board=%s",
+        board_id,
+        extra={
+            "event": "governance.historical_start.purged_stale_metadata",
+            "board_id": board_id,
+        },
+    )
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Historical opt-in flow (FR-0 through FR-6)
 # ---------------------------------------------------------------------------
@@ -120,6 +177,8 @@ async def start_historical_consolidation(
             )
             await db.commit()
         return {"status": "already_in_progress", "board_id": board_id}
+
+    await _purge_stale_metadata_if_graph_empty(db, board_id)
 
     # Query done/approved specs for this board
     spec_result = await db.execute(
@@ -325,8 +384,22 @@ async def get_historical_progress(db: AsyncSession, board_id: str) -> dict:
         status = "in_progress"
     elif counts["paused"]:
         status = "paused"
+    elif total > 0 and counts["failed"] > 0:
+        status = "completed_with_errors"
+    elif total > 0 and processed >= total:
+        status = "completed"
     else:
         status = "inactive"
+
+    stale = False
+    if status in {"completed", "completed_with_errors"} and total > 0 and remaining == 0:
+        has_nodes = await _has_materialized_kg_nodes(board_id)
+        if not has_nodes:
+            stale = True
+            total = 0
+            processed = 0
+            status = "inactive"
+
     return {
         "enabled": total > 0,
         "status": status,
@@ -336,6 +409,7 @@ async def get_historical_progress(db: AsyncSession, board_id: str) -> dict:
         "claimed": counts["claimed"],
         "paused": counts["paused"],
         "failed": counts["failed"],
+        "stale": stale,
     }
 
 
@@ -681,6 +755,13 @@ async def right_to_erasure(
         await db.execute(
             delete(GlobalUpdateOutbox).where(GlobalUpdateOutbox.board_id == board_id)
         )
+        board = await db.get(Board, board_id)
+        if board is not None and isinstance(board.settings, dict):
+            settings = dict(board.settings or {})
+            if HISTORICAL_PROGRESS_SETTINGS_KEY in settings:
+                settings.pop(HISTORICAL_PROGRESS_SETTINGS_KEY, None)
+                board.settings = settings
+                flag_modified(board, "settings")
         await db.commit()
         counts["sqlite_purged"] = True
     except Exception as exc:

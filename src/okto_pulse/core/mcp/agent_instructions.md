@@ -1450,7 +1450,7 @@ Use `linkedInterfaceIds` for one or more contracts on the same connector. `linke
 | Anti-pattern | Consequence | Correct approach |
 |---|---|---|
 | Architecture described only in `description`, `analysis`, Q&A, comments, or a markdown section | Implementers can miss critical steps; downstream agents cannot link, copy, version, render, or diff the design; visibility drops and task decomposition becomes guesswork | Create/update an Architecture Design and reference it by title/id from prose. |
-| Detailed architecture diagram drawn as ASCII, markdown tables, or a prose-only Mermaid block inside text fields | The diagram is not a first-class artifact; it cannot be edited in the Architecture tab, linked to entities/interfaces, copied to cards, or validated by payload rules | Store it as an Architecture Design diagram (`excalidraw_json`, `mermaid`, `plantuml`, `c4`, `svg`, or `raw` as appropriate). |
+| Detailed architecture diagram sent as `diagrams[].format="mermaid"`, `plantuml`, `c4`, `svg`, or `raw` | The structured visual canvas cannot render or validate it as a first-class diagram, so the payload will be rejected | Architecture Design diagrams must use `format="excalidraw_json"`. Mermaid/PlantUML/C4/SVG/raw snippets may appear only as descriptive text in entity responsibility, boundaries, notes, or `global_description`. |
 | Generic entities like `"API"`, `"DB"`, `"Service"`, or `name == entity_type` | Ownership is ambiguous; tasks can implement the wrong component or skip integration boundaries | Use concrete component names: `"Checkout API"`, `"Orders DB"`, `"Billing Worker"`, `"Payment Gateway"`. |
 | Finalizing Architecture Design while entity ownership, boundaries, or contracts are still inferred | The diagram becomes a false source of truth; downstream specs and cards may implement the wrong integration and need expensive rewrites | Ask Q&A for the missing decisions, then update the design. |
 | Entity without `responsibility` | Implementers must infer what the component owns, guarantees, persists, orchestrates, or delegates; duplicated logic and skipped duties become likely | Add a concise responsibility statement for every behavior-owning or data-owning component. |
@@ -1470,6 +1470,7 @@ Use `linkedInterfaceIds` for one or more contracts on the same connector. `linke
 **Validation contract:** architecture tools critique payloads before acceptance. `okto_pulse_validate_architecture_design_payload` exposes the same critique without writing. Typical blocking errors include:
 - `entities[0].name duplicates entity_type 'api'`
 - `interfaces[0].direction='both ways' is invalid`
+- `diagrams[0].format='mermaid' is unsupported`
 - `diagrams[0].adapter_payload.elements[2].linkedInterfaceIds references 'interface-missing'`
 - `diagrams[0].adapter_payload.elements[2].connectionType='curved' is invalid`
 

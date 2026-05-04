@@ -17,6 +17,7 @@ from okto_pulse.core.models.db import (
     Sprint,
 )
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
+from okto_pulse.core.services.reference_resolution import resolve_task_context_references
 
 
 class TraceabilityReadError(Exception):
@@ -124,7 +125,7 @@ def _spec_coverage(spec: Spec) -> dict[str, Any]:
     }
 
 
-def _card_summary(card: Card, *, include_artifacts: bool) -> dict[str, Any]:
+def _card_summary(card: Card, *, include_artifacts: bool, spec: Spec | None = None) -> dict[str, Any]:
     payload = {
         "id": card.id,
         "title": card.title,
@@ -145,6 +146,15 @@ def _card_summary(card: Card, *, include_artifacts: bool) -> dict[str, Any]:
         }
     if include_artifacts:
         payload["artifacts"] = _artifact_refs(card)
+        resolved = resolve_task_context_references(
+            card,
+            spec,
+            include_content=False,
+        )
+        payload["resolved_artifacts"] = {
+            key: resolved.get(key, [])
+            for key in ("knowledge_bases", "screen_mockups", "architecture_designs")
+        }
     else:
         payload["artifact_summary"] = _artifact_summary(card)
     return payload
@@ -168,7 +178,10 @@ def _spec_summary(spec: Spec, *, include_artifacts: bool) -> dict[str, Any]:
         "refinement_id": spec.refinement_id,
         "coverage_summary": _spec_coverage(spec),
         "sprints": [_sprint_summary(sprint) for sprint in spec.sprints],
-        "cards": [_card_summary(card, include_artifacts=include_artifacts) for card in cards],
+        "cards": [
+            _card_summary(card, include_artifacts=include_artifacts, spec=spec)
+            for card in cards
+        ],
         "tests": [
             {
                 "id": scenario.get("id"),
@@ -181,7 +194,7 @@ def _spec_summary(spec: Spec, *, include_artifacts: bool) -> dict[str, Any]:
             if isinstance(scenario, dict)
         ],
         "bugs": [
-            _card_summary(card, include_artifacts=include_artifacts)
+            _card_summary(card, include_artifacts=include_artifacts, spec=spec)
             for card in cards
             if _enum_value(card.card_type) == "bug"
         ],

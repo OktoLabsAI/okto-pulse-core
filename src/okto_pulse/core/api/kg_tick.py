@@ -1,12 +1,12 @@
 """KG decay tick controllability endpoints (spec 54399628 — Wave 2 NC f9732afc).
 
-Endpoint manual `POST /api/v1/kg/tick/run-now` — operador (ou agente via
-MCP gemellar) dispara um tick imediato sem esperar o cron periódico.
+Manual endpoint `POST /api/v1/kg/tick/run-now` lets an operator or MCP
+agent schedule an immediate tick without waiting for the periodic cron.
 
 Pattern compartilha o mesmo `get_async_lock("kg_daily_tick", "global")`
 do `_emit_daily_tick` em `core/app.py` — primeiro a chegar ganha; segundo
-recebe HTTP 409. Resposta 202 + tick_id é retornada imediatamente; o tick
-roda em background via `asyncio.create_task` para não bloquear o request.
+recebe HTTP 409. Resposta 202 + tick_id só é retornada depois que o evento
+e suas execuções de handler foram gravados e commitados.
 
 `force_full_rebuild=true` zera `last_recomputed_at` de todos nodes do
 escopo (board_id se fornecido, todos boards caso contrário) ANTES do
@@ -15,7 +15,6 @@ tick, forçando recompute completo ignorando staleness threshold.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -65,7 +64,7 @@ async def run_tick_now(
           ``last_recomputed_at`` for nodes in scope BEFORE the tick, forcing
           recompute even of fresh nodes (ignores staleness threshold).
 
-    Returns 202 with tick_id immediately; the tick runs in background.
+    Returns 202 after the tick event has been durably scheduled.
     Operator monitors progress via KGHealthView snapshot polling (30s).
 
     Returns 409 when the advisory lock is already held by the cron OR
@@ -98,13 +97,39 @@ async def run_tick_now(
         },
     )
 
-    asyncio.create_task(
-        _dispatch_manual_tick(
-            tick_id=tick_id,
-            board_id=payload.board_id,
-            force_full_rebuild=payload.force_full_rebuild,
-        )
-    )
+    async with lock:
+        try:
+            await _dispatch_manual_tick(
+                tick_id=tick_id,
+                board_id=payload.board_id,
+                force_full_rebuild=payload.force_full_rebuild,
+                session=db,
+            )
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            logger.error(
+                "kg.tick.manual_schedule_failed tick_id=%s err=%s",
+                tick_id, exc,
+                extra={
+                    "event": "kg.tick.manual_schedule_failed",
+                    "tick_id": tick_id,
+                    "board_id": payload.board_id,
+                    "force_full_rebuild": payload.force_full_rebuild,
+                    "error": str(exc),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": "tick_schedule_failed",
+                    "message": (
+                        "Failed to persist the KG tick event. "
+                        "No background tick was scheduled."
+                    ),
+                    "detail": str(exc),
+                },
+            ) from exc
 
     return TickRunNowResponse(
         tick_id=tick_id,
@@ -118,39 +143,35 @@ async def _dispatch_manual_tick(
     tick_id: str,
     board_id: str | None,
     force_full_rebuild: bool,
+    session: AsyncSession | None = None,
 ) -> None:
-    """Background task — reset last_recomputed_at if force_full_rebuild,
-    then publish KGDailyTick event for the existing handler to pick up.
+    """Persist a KGDailyTick event through the same path as the cron.
 
-    Failures are logged but not raised — the request already returned 202
-    so there's nothing to bubble back to the caller.
+    When ``session`` is provided, the caller owns commit/rollback. MCP and
+    other non-request callers may omit it; this helper then opens and commits
+    a short-lived session.
     """
-    try:
-        if force_full_rebuild:
-            await _reset_last_recomputed_at(board_id)
+    if force_full_rebuild:
+        await _reset_last_recomputed_at(board_id)
 
-        # Publish the standard event — the same handler the cron uses
-        # picks it up. Keeps the manual path consistent with the periodic
-        # path (no separate code paths to maintain).
-        await event_publish(
-            KGDailyTick(
-                tick_id=tick_id,
-                scheduled_at=datetime.now(timezone.utc).isoformat(),
-                board_id=board_id or "*",
-                actor_id="manual-trigger",
-                actor_type="user",
-            ),
-            session=None,
-        )
-    except Exception as exc:
-        logger.warning(
-            "kg.tick.manual_dispatch_failed tick_id=%s err=%s",
-            tick_id, exc,
-            extra={
-                "event": "kg.tick.manual_dispatch_failed",
-                "tick_id": tick_id,
-            },
-        )
+    event = KGDailyTick(
+        tick_id=tick_id,
+        scheduled_at=datetime.now(timezone.utc).isoformat(),
+        board_id=board_id or "*",
+        actor_id="manual-trigger",
+        actor_type="user",
+    )
+
+    if session is not None:
+        await event_publish(event, session=session)
+        return
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as owned_session:
+        await event_publish(event, session=owned_session)
+        await owned_session.commit()
 
 
 async def _reset_last_recomputed_at(board_id: str | None) -> None:
