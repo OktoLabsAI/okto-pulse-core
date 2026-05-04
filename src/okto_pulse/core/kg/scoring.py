@@ -425,7 +425,8 @@ def _fetch_node_inputs(
             f"OPTIONAL MATCH (n)<-[c:contradicts]-() "
             f"RETURN n.source_confidence, out_deg, in_deg, "
             f"n.query_hits, n.last_queried_at, n.relevance_score, "
-            f"SUM(COALESCE(c.confidence, $default_conf)), "
+            f"CASE WHEN COUNT(c) = 0 THEN 0.0 "
+            f"ELSE SUM(COALESCE(c.confidence, $default_conf)) END, "
             f"n.priority_boost",
             {"nid": node_id, "default_conf": DEFAULT_CONTRADICT_CONFIDENCE},
         )

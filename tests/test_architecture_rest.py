@@ -207,6 +207,28 @@ def test_rest_validate_architecture_payload_returns_warnings_without_persisting(
     assert any("entities[0].responsibility" in item for item in body["warnings"])
 
 
+def test_rest_rejects_non_excalidraw_diagram_format(_client_and_entities):
+    client, ids = _client_and_entities
+    body = _architecture_body("Mermaid Architecture")
+    body["diagrams"][0]["format"] = "mermaid"
+    body["diagrams"][0]["adapter_payload"] = "graph TD\n  UI --> API"
+
+    critique = client.post("/api/v1/architecture/validate", json=body)
+
+    assert critique.status_code == 200, critique.text
+    validation = critique.json()
+    assert validation["valid"] is False
+    assert "diagrams[0].format='mermaid' is unsupported" in "\n".join(validation["issues"])
+
+    created = client.post(
+        f"/api/v1/ideations/{ids['ideation_id']}/architecture",
+        json=body,
+    )
+
+    assert created.status_code == 422
+    assert "diagrams[0].format='mermaid' is unsupported" in created.json()["detail"]
+
+
 def test_copy_architecture_from_spec_to_card_does_not_mark_stale(_client_and_entities):
     client, ids = _client_and_entities
     created = client.post(

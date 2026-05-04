@@ -555,27 +555,19 @@ def spec_coverage_summary(
 
     covered_ac = set()
     for ts in _ts:
-        for val in (ts.get("linked_criteria") or []):
-            if isinstance(val, int):
-                covered_ac.add(val)
-            elif isinstance(val, str):
-                for i, ac in enumerate(acs):
-                    if val == ac or ac.startswith(val) or val.startswith(ac):
-                        covered_ac.add(i)
-                        break
+        if isinstance(ts, dict):
+            covered_ac |= resolve_linked_criteria_to_indices(
+                ts.get("linked_criteria"), acs
+            )
     ac_total = len(acs)
     ac_covered = len(covered_ac & set(range(ac_total)))
 
     covered_fr = set()
     for br in _brs:
-        for val in (br.get("linked_requirements") or []):
-            if isinstance(val, int):
-                covered_fr.add(val)
-            elif isinstance(val, str):
-                for i, fr in enumerate(frs):
-                    if val == fr or fr.startswith(val) or val.startswith(fr):
-                        covered_fr.add(i)
-                        break
+        if isinstance(br, dict):
+            covered_fr |= resolve_linked_fr_indices(
+                br.get("linked_requirements") or [], frs
+            )
     fr_total = len(frs)
     fr_covered = len(covered_fr & set(range(fr_total)))
 

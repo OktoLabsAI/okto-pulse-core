@@ -47,6 +47,11 @@ from okto_pulse.core.services.architecture import (
     ArchitecturePropagationService,
     architecture_design_payload_schema,
 )
+from okto_pulse.core.services.reference_resolution import (
+    resolve_entity_context_references,
+    resolve_spec_references,
+    resolve_task_context_references,
+)
 
 
 import uuid as _uuid
@@ -1962,10 +1967,12 @@ async def okto_pulse_get_task_context(
         if _inc_mockups and card.screen_mockups:
             result["card"]["screen_mockups"] = card.screen_mockups
 
+        card_architecture_designs: list[dict[str, Any]] = []
         if _inc_architecture:
-            result["card"]["architecture_designs"] = await _mcp_architecture_for_parent(
+            card_architecture_designs = await _mcp_architecture_for_parent(
                 db, "card", card_id, permissions=ctx.permissions
             )
+            result["card"]["architecture_designs"] = card_architecture_designs
 
         if _inc_qa:
             result["card"]["qa_items"] = [
@@ -2000,6 +2007,8 @@ async def okto_pulse_get_task_context(
             ]
 
         # Spec context (the core of task context)
+        spec = None
+        spec_architecture_designs: list[dict[str, Any]] = []
         if card.spec_id:
             spec_service = SpecService(db)
             spec = await spec_service.get_spec(card.spec_id)
@@ -2035,9 +2044,10 @@ async def okto_pulse_get_task_context(
                     spec_data["screen_mockups"] = spec.screen_mockups
 
                 if _inc_architecture:
-                    spec_data["architecture_designs"] = await _mcp_architecture_for_parent(
+                    spec_architecture_designs = await _mcp_architecture_for_parent(
                         db, "spec", spec.id, permissions=ctx.permissions
                     )
+                    spec_data["architecture_designs"] = spec_architecture_designs
 
                 if _inc_qa:
                     spec_data["qa_items"] = [
@@ -2069,6 +2079,22 @@ async def okto_pulse_get_task_context(
                         ts for ts in spec.test_scenarios
                         if ts.get("id") in card.test_scenario_ids
                     ]
+
+        resolved_references = resolve_task_context_references(
+            card,
+            spec,
+            include_superseded=_inc_superseded,
+            include_content=_inc_kb,
+            card_architecture_designs=card_architecture_designs if _inc_architecture else [],
+            spec_architecture_designs=spec_architecture_designs if _inc_architecture else [],
+        )
+        if not _inc_kb:
+            resolved_references["knowledge_bases"] = []
+        if not _inc_mockups:
+            resolved_references["screen_mockups"] = []
+        if not _inc_architecture:
+            resolved_references["architecture_designs"] = []
+        result["resolved_references"] = resolved_references
 
         # Task validations — critical for agents picking up cards that failed validation
         result["validations"] = list(card.validations or [])
@@ -3555,16 +3581,32 @@ async def okto_pulse_get_ideation_context(
         if _inc_mockups and hasattr(ideation, "screen_mockups") and ideation.screen_mockups:
             result["screen_mockups"] = ideation.screen_mockups
 
+        architecture_designs: list[dict[str, Any]] = []
         if _inc_architecture:
-            result["architecture_designs"] = await _mcp_architecture_for_parent(
+            architecture_designs = await _mcp_architecture_for_parent(
                 db, "ideation", ideation_id, permissions=ctx.permissions
             )
+            result["architecture_designs"] = architecture_designs
 
         if _inc_kb and hasattr(ideation, "knowledge_bases"):
             result["knowledge_bases"] = [
                 _serialize_knowledge_base(kb)
                 for kb in (ideation.knowledge_bases or [])
             ]
+
+        resolved_references = resolve_entity_context_references(
+            ideation,
+            source_type="ideation",
+            include_content=_inc_kb,
+            architecture_designs=architecture_designs if _inc_architecture else [],
+        )
+        if not _inc_kb:
+            resolved_references["knowledge_bases"] = []
+        if not _inc_mockups:
+            resolved_references["screen_mockups"] = []
+        if not _inc_architecture:
+            resolved_references["architecture_designs"] = []
+        result["resolved_references"] = resolved_references
 
         return json.dumps(result, default=str)
 
@@ -4801,10 +4843,12 @@ async def okto_pulse_get_refinement_context(
         if _inc_mockups and hasattr(refinement, "screen_mockups") and refinement.screen_mockups:
             result["screen_mockups"] = refinement.screen_mockups
 
+        architecture_designs: list[dict[str, Any]] = []
         if _inc_architecture:
-            result["architecture_designs"] = await _mcp_architecture_for_parent(
+            architecture_designs = await _mcp_architecture_for_parent(
                 db, "refinement", refinement_id, permissions=ctx.permissions
             )
+            result["architecture_designs"] = architecture_designs
 
         if _inc_kb and hasattr(refinement, "knowledge_bases"):
             result["knowledge_bases"] = [
@@ -4817,6 +4861,20 @@ async def okto_pulse_get_refinement_context(
                 }
                 for kb in (refinement.knowledge_bases or [])
             ]
+
+        resolved_references = resolve_entity_context_references(
+            refinement,
+            source_type="refinement",
+            include_content=_inc_kb,
+            architecture_designs=architecture_designs if _inc_architecture else [],
+        )
+        if not _inc_kb:
+            resolved_references["knowledge_bases"] = []
+        if not _inc_mockups:
+            resolved_references["screen_mockups"] = []
+        if not _inc_architecture:
+            resolved_references["architecture_designs"] = []
+        result["resolved_references"] = resolved_references
 
         return json.dumps(result, default=str)
 
@@ -5736,10 +5794,12 @@ async def okto_pulse_get_spec_context(
         if _inc_mockups and spec.screen_mockups:
             result["screen_mockups"] = spec.screen_mockups
 
+        architecture_designs: list[dict[str, Any]] = []
         if _inc_architecture:
-            result["architecture_designs"] = await _mcp_architecture_for_parent(
+            architecture_designs = await _mcp_architecture_for_parent(
                 db, "spec", spec_id, permissions=ctx.permissions
             )
+            result["architecture_designs"] = architecture_designs
 
         if _inc_qa:
             result["qa_items"] = [
@@ -5761,6 +5821,20 @@ async def okto_pulse_get_spec_context(
                 _serialize_knowledge_base(kb)
                 for kb in (spec.knowledge_bases or [])
             ]
+
+        resolved_references = resolve_spec_references(
+            spec,
+            include_superseded=_inc_superseded,
+            include_content=_inc_kb,
+            architecture_designs=architecture_designs if _inc_architecture else [],
+        )
+        if not _inc_kb:
+            resolved_references["knowledge_bases"] = []
+        if not _inc_mockups:
+            resolved_references["screen_mockups"] = []
+        if not _inc_architecture:
+            resolved_references["architecture_designs"] = []
+        result["resolved_references"] = resolved_references
 
         result["coverage_summary"] = _mcp_spec_coverage_summary(spec)
 
@@ -6960,6 +7034,9 @@ async def okto_pulse_validate_architecture_design_payload(
     - entities where name duplicates entity_type after normalization.
     - interfaces with invalid legacy participants, invalid direction, or missing
       protocol/contract metadata for schema payloads.
+    - diagrams with any format other than excalidraw_json. Mermaid, PlantUML,
+      C4, SVG, and raw snippets are allowed only as descriptive text in entity
+      responsibility, boundaries, notes, or global_description.
     - diagrams with invalid linkedEntityId, linkedInterfaceIds, endpoint/entity
       connection mismatches, or unsupported connectionType. Excalidraw
       connectionType accepts only "direct" or "elbow".
@@ -7129,7 +7206,10 @@ async def okto_pulse_add_architecture_design(
               }
             ]
         diagrams: JSON array or native list of diagrams; adapter_payload is stored
-            separately. Excalidraw payloads should link elements using
+            separately. Only format="excalidraw_json" is accepted. Mermaid,
+            PlantUML, C4, SVG, and raw snippets may be included only as
+            descriptive text in entity responsibility, boundaries, notes, or
+            global_description, not as diagrams[].format. Excalidraw payloads should link elements using
             linkedEntityId and linkedInterfaceIds when possible. For Excalidraw
             edges, use sourceElementId, targetElementId, linkedInterfaceIds,
             and connectionType. One connector can carry several interface
@@ -12763,7 +12843,6 @@ async def okto_pulse_kg_tick_run_now(
             "message": "Tick already running, retry shortly",
         })
 
-    import asyncio
     import uuid as _uuid
     from datetime import datetime, timezone
 
@@ -12785,13 +12864,33 @@ async def okto_pulse_kg_tick_run_now(
         },
     )
 
-    asyncio.create_task(
-        _dispatch_manual_tick(
+    try:
+        await _dispatch_manual_tick(
             tick_id=tick_id,
             board_id=board_id or None,
             force_full_rebuild=force_full_rebuild,
         )
-    )
+    except Exception as exc:
+        _tick_logger.error(
+            "kg.tick.manual_schedule_failed tick_id=%s err=%s source=mcp",
+            tick_id, exc,
+            extra={
+                "event": "kg.tick.manual_schedule_failed",
+                "tick_id": tick_id,
+                "board_id": board_id or None,
+                "force_full_rebuild": force_full_rebuild,
+                "source": "mcp",
+                "error": str(exc),
+            },
+        )
+        return json.dumps({
+            "error": "tick_schedule_failed",
+            "message": (
+                "Failed to persist the KG tick event. "
+                "No background tick was scheduled."
+            ),
+            "detail": str(exc),
+        })
 
     return json.dumps({
         "tick_id": tick_id,

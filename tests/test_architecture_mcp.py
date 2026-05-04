@@ -64,6 +64,18 @@ def _architecture_diagrams() -> list[dict]:
     ]
 
 
+def _mermaid_diagrams() -> list[dict]:
+    return [
+        {
+            "id": "diagram-mermaid",
+            "title": "Mermaid context",
+            "diagram_type": "context",
+            "format": "mermaid",
+            "adapter_payload": "graph TD\n  UI --> API",
+        }
+    ]
+
+
 @pytest_asyncio.fixture
 async def _seed_spec_card():
     from okto_pulse.core.infra.database import get_session_factory
@@ -220,6 +232,25 @@ async def test_mcp_rejects_invalid_architecture_payload_with_context(_seed_spec_
 
 
 @pytest.mark.asyncio
+async def test_mcp_add_architecture_rejects_non_excalidraw_diagram_format(_seed_spec_card):
+    board_id, spec_id, _ = _seed_spec_card
+
+    created = await _call(
+        "okto_pulse_add_architecture_design",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Mermaid Architecture",
+        global_description="Mermaid text belongs in entity descriptions, not diagram format.",
+        diagrams=json.dumps(_mermaid_diagrams()),
+    )
+
+    assert "error" in created
+    assert "diagrams[0].format='mermaid' is unsupported" in created["error"]
+    assert "format='excalidraw_json'" in created["error"]
+
+
+@pytest.mark.asyncio
 async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec_card):
     board_id, _, _ = _seed_spec_card
 
@@ -227,7 +258,9 @@ async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec
 
     assert schema_resp.get("success") is True, schema_resp
     schema = schema_resp["schema"]
+    assert schema["allowed_values"]["diagram.format"] == ["excalidraw_json"]
     assert schema["allowed_values"]["excalidraw.connectionType"] == ["direct", "elbow"]
+    assert "Mermaid" in " ".join(schema["root_contract"]["rules"])
     assert "mcp_server" in schema["entity_type_examples"]
     assert schema["entity_contract"]["anti_patterns"]
     assert "endpoint" in schema["interface_contract"]["recommended"]
@@ -307,6 +340,28 @@ async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fix
     assert "targetElementId references 'node-missing'" in joined_issues
     assert any("responsibility" in item for item in critique["warnings"])
     assert any("elbow" in item for item in critique["suggested_fixes"])
+
+
+@pytest.mark.asyncio
+async def test_mcp_validate_architecture_payload_rejects_non_excalidraw_diagram_format(_seed_spec_card):
+    board_id, spec_id, _ = _seed_spec_card
+
+    critique = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Mermaid Architecture",
+        global_description="Mermaid text belongs in entity descriptions, not diagram format.",
+        diagrams=json.dumps(_mermaid_diagrams()),
+    )
+
+    assert critique.get("success") is True, critique
+    assert critique["valid"] is False
+    joined_issues = "\n".join(critique["issues"])
+    assert "diagrams[0].format='mermaid' is unsupported" in joined_issues
+    assert "format='excalidraw_json'" in joined_issues
+    assert any("Mermaid" in item and "diagram formats" in item for item in critique["suggested_fixes"])
 
 
 @pytest.mark.asyncio
