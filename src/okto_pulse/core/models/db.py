@@ -1506,7 +1506,7 @@ class ConsolidationQueue(Base):
         Text, nullable=True
     )  # Error message from failed processing
 
-    # Spec bdcda842 (Consolidation Queue resilience) — v0.1.13 columns.
+    # Spec bdcda842 (Consolidation Queue resilience) — v0.1.14 columns.
     # Added by _migrate_add_consolidation_resilience_columns; ORM model
     # mirrors the schema so newly-created rows from the model stay in sync.
     worker_id: Mapped[str | None] = mapped_column(

@@ -68,8 +68,10 @@ class _FakeKGService:
         board_id: str,
         *,
         min_confidence: float = 0.0,
+        min_relevance: float | None = None,
         max_rows: int | None = None,
         cursor: str | None = None,
+        node_type: str | None = None,
     ) -> list[dict]:
         # Stable order (created_at DESC, id DESC). AC-12 requires determinism.
         # The real KGService applies the ORDER BY in Cypher; we replicate it
@@ -79,6 +81,8 @@ class _FakeKGService:
             key=lambda r: (r["created_at"], r["id"]),
             reverse=True,
         )
+        if node_type:
+            ordered = [r for r in ordered if r.get("node_type") == node_type]
         if cursor:
             # Mimic the production decode_cursor contract. The helper lives
             # in kg_routes and raises ValueError on invalid input.
@@ -91,8 +95,26 @@ class _FakeKGService:
             ordered = ordered[:max_rows]
         return ordered
 
+    def count_all_nodes(
+        self,
+        board_id: str,
+        *,
+        min_confidence: float = 0.0,
+        min_relevance: float | None = None,
+        node_type: str | None = None,
+    ) -> int:
+        if node_type:
+            return sum(1 for r in self._rows if r.get("node_type") == node_type)
+        return len(self._rows)
+
     def get_related_context(self, *_, **__):
         return []
+
+    def query_global(self, *_, **__):
+        raise AssertionError("board graph routes must not use global discovery fallback")
+
+    def get_schema_version(self, *_):
+        return "0.3.3"
 
 
 @pytest.fixture
@@ -100,7 +122,31 @@ def client(monkeypatch):
     fake = _FakeKGService(_seed_rows())
     monkeypatch.setattr(kg_routes, "get_kg_service", lambda: fake)
     monkeypatch.setattr(
-        kg_routes, "_fetch_edges_for_nodes", lambda _board, _ids: [],
+        kg_routes,
+        "_fetch_edges_for_nodes",
+        lambda _board, _ids: (
+            [],
+            {
+                "edge_read_status": "ok",
+                "edge_tables_scanned": 0,
+                "edge_tables_failed": 0,
+                "edge_errors": [],
+                "edges_returned": 0,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        kg_routes,
+        "_count_edges_by_type",
+        lambda _board: (
+            {"belongs_to": 3},
+            {
+                "edge_count_status": "ok",
+                "edge_count_tables_scanned": 1,
+                "edge_count_tables_failed": 0,
+                "edge_count_errors": [],
+            },
+        ),
     )
     app = FastAPI()
     app.include_router(kg_router, prefix="/api/v1")
@@ -109,6 +155,15 @@ def client(monkeypatch):
 
 def _get_graph(client: TestClient, **params) -> tuple[int, dict]:
     resp = client.get(f"/api/v1/kg/boards/{SEED_BOARD}/graph", params=params)
+    try:
+        body = resp.json()
+    except Exception:
+        body = {}
+    return resp.status_code, body
+
+
+def _get_nodes(client: TestClient, **params) -> tuple[int, dict]:
+    resp = client.get(f"/api/v1/kg/boards/{SEED_BOARD}/nodes", params=params)
     try:
         body = resp.json()
     except Exception:
@@ -242,6 +297,82 @@ class TestResponseShape:
         code, body = _get_graph(client, limit=10)
         assert code == 200
         assert {"nodes", "edges", "next_cursor"}.issubset(body.keys())
+
+    def test_response_includes_edge_read_diagnostics(self, client):
+        code, body = _get_graph(client, limit=10)
+        assert code == 200
+        metadata = body.get("metadata") or {}
+        assert metadata.get("edge_read_status") == "ok"
+        assert metadata.get("min_relevance") == 0.0
+
+    def test_response_surfaces_edge_read_partial_failure(self, client, monkeypatch):
+        monkeypatch.setattr(
+            kg_routes,
+            "_fetch_edges_for_nodes",
+            lambda _board, _ids: (
+                [],
+                {
+                    "edge_read_status": "partial_failure",
+                    "edge_tables_scanned": 2,
+                    "edge_tables_failed": 1,
+                    "edge_errors": [{
+                        "relationship": "belongs_to",
+                        "error": "read failed",
+                    }],
+                    "edges_returned": 0,
+                },
+            ),
+        )
+
+        code, body = _get_graph(client, limit=10)
+
+        assert code == 200
+        metadata = body.get("metadata") or {}
+        assert metadata["edge_read_status"] == "partial_failure"
+        assert metadata["edge_tables_failed"] == 1
+        assert metadata["edge_errors"][0]["relationship"] == "belongs_to"
+
+
+class TestNodesAndStats:
+    def test_nodes_endpoint_lists_all_nodes_not_decision_history(self, client):
+        code, body = _get_nodes(client, limit=5)
+        assert code == 200
+        assert len(body["nodes"]) == 5
+        assert body["nodes"][0]["id"].startswith("node-")
+        assert body["page_count"] == 5
+        assert body["total_hint"] == SEED_COUNT
+
+    def test_nodes_total_hint_is_total_filtered_count_not_page_size(self, client):
+        code, body = _get_nodes(client, limit=10)
+        assert code == 200
+        assert len(body["nodes"]) == 10
+        assert body["page_count"] == 10
+        assert body["total_hint"] == SEED_COUNT
+
+        code, larger_page = _get_nodes(client, limit=50)
+        assert code == 200
+        assert len(larger_page["nodes"]) == 50
+        assert larger_page["page_count"] == 50
+        assert larger_page["total_hint"] == SEED_COUNT
+
+    def test_stats_reports_graph_schema_and_edge_counts(self, client):
+        resp = client.get(f"/api/v1/kg/boards/{SEED_BOARD}/stats")
+        body = resp.json()
+        assert resp.status_code == 200, body
+        assert body["schema_version"] == "0.3.3"
+        assert body["graph_schema_version"] == "0.3.3"
+        assert body["node_counts_by_type"]["Decision"] == SEED_COUNT
+        assert body["edge_counts_by_type"] == {"belongs_to": 3}
+        assert body["edge_count_status"] == "ok"
+
+    def test_board_routes_do_not_use_global_discovery_fallback(self, client):
+        graph_code, graph_body = _get_graph(client, limit=1)
+        nodes_code, nodes_body = _get_nodes(client, limit=1)
+        stats_resp = client.get(f"/api/v1/kg/boards/{SEED_BOARD}/stats")
+
+        assert graph_code == 200, graph_body
+        assert nodes_code == 200, nodes_body
+        assert stats_resp.status_code == 200, stats_resp.json()
 
 
 # ---------------------------------------------------------------------------

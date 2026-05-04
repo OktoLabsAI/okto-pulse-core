@@ -21,7 +21,7 @@ invariants:
 
 We also exercise `parse_multi_value` end-to-end with the exact payload
 shapes a caller would send, including the JSON-array form with literal
-commas inside labels — the regression scenario from board 0.1.13.
+commas inside labels — the regression scenario from board 0.1.14.
 """
 
 from __future__ import annotations
@@ -137,7 +137,7 @@ def test_docstrings_document_json_and_pipe_formats(
 # ---------------------------------------------------------------------------
 
 def test_json_array_preserves_internal_commas():
-    """The exact regression case from board 0.1.13: each option label has
+    """The exact regression case from board 0.1.14: each option label has
     several internal commas inside parentheses. With the legacy parser this
     fragmented into 15+ rows; via parse_multi_value it stays at 5."""
     raw = (

@@ -291,6 +291,19 @@ async def test_create_rejects_diagram_with_unknown_linked_entity(db_factory):
 
 
 @pytest.mark.asyncio
+async def test_create_rejects_non_excalidraw_diagram_format(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        payload["diagrams"][0]["format"] = "mermaid"
+        payload["diagrams"][0]["adapter_payload"] = "graph TD\n  Repository --> Payload"
+
+        with pytest.raises(ValueError, match=r"diagrams\[0\]\.format='mermaid' is unsupported"):
+            await repo.create("ideation", ideation_id, payload, USER_ID)
+
+
+@pytest.mark.asyncio
 async def test_create_design_stores_diagram_payload_separately(db_factory):
     board_id, ideation_id = await _seed_ideation(db_factory)
     async with db_factory() as db:

@@ -39,8 +39,12 @@ class KGHealthResponse(BaseModel):
     avg_relevance: float
     top_disconnected_nodes: list[TopDisconnectedNode]
     schema_version: str
+    health_schema_version: str = "1.0"
+    graph_schema_version: str | None = None
     contradict_warn_count: int
     last_decay_tick_at: str | None = None
+    last_tick_status: str | None = None
+    last_tick_error: str | None = None
     nodes_recomputed_in_last_tick: int = 0
     # True se o advisory lock global ``kg_daily_tick`` está atualmente
     # acquired (cron OU run-now). Frontend usa para desabilitar o botão

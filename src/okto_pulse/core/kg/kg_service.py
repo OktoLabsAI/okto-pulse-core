@@ -611,6 +611,7 @@ class KGService:
         max_rows: int | None = None,
         cursor: str | None = None,
         min_relevance: float | None = None,
+        node_type: str | None = None,
     ) -> list[dict]:
         """Return nodes ordered ``(created_at DESC, id DESC)`` — Spec 8 / S1.3.
 
@@ -626,14 +627,19 @@ class KGService:
             "max_rows": f.max_rows,
             "min_relevance": f.min_relevance,
         }
+        if node_type:
+            params["node_type"] = node_type
         if cursor:
             from okto_pulse.core.api.kg_routes import decode_cursor
             cursor_ts, cursor_id = decode_cursor(cursor)
             params["cursor_ts"] = cursor_ts
             params["cursor_id"] = cursor_id
-            template = tpl.GET_ALL_NODES_AFTER_CURSOR
+            template = (
+                tpl.GET_ALL_NODES_BY_TYPE_AFTER_CURSOR
+                if node_type else tpl.GET_ALL_NODES_AFTER_CURSOR
+            )
         else:
-            template = tpl.GET_ALL_NODES
+            template = tpl.GET_ALL_NODES_BY_TYPE if node_type else tpl.GET_ALL_NODES
 
         def _query():
             with open_board_connection(board_id) as (_db, conn):
@@ -659,6 +665,48 @@ class KGService:
             }
             for r in rows
         ]
+
+    def count_all_nodes(
+        self,
+        board_id: str,
+        *,
+        min_confidence: float = 0.0,
+        min_relevance: float | None = None,
+        node_type: str | None = None,
+    ) -> int:
+        """Count nodes matching the same filters as ``get_all_nodes``.
+
+        The REST ``/nodes`` endpoint exposes this as ``total_hint`` so callers
+        can distinguish page size from the total filtered result size.
+        """
+        from okto_pulse.core.kg.schema import open_board_connection
+
+        f = _filters(min_confidence, None, min_relevance, self.defaults)
+        params: dict = {
+            "min_confidence": f.min_confidence,
+            "min_relevance": f.min_relevance,
+        }
+        if node_type:
+            params["node_type"] = node_type
+            template = tpl.COUNT_ALL_NODES_BY_TYPE
+        else:
+            template = tpl.COUNT_ALL_NODES
+
+        def _query():
+            with open_board_connection(board_id) as (_db, conn):
+                result = conn.execute(template, params)
+                try:
+                    if result.has_next():
+                        row = result.get_next()
+                        return int(row[0] if isinstance(row, (list, tuple)) else row)
+                    return 0
+                finally:
+                    try:
+                        result.close()
+                    except Exception:
+                        pass
+
+        return int(self._cached_call("count_all_nodes", board_id, params, _query))
 
     # ------------------------------------------------------------------
     # 1. get_decision_history (FR-11)

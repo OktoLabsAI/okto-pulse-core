@@ -63,7 +63,8 @@ ALLOWED_CONNECTION_TYPES = {
     "elbow",
 }
 
-ARCHITECTURE_DESIGN_SCHEMA_VERSION = "2026-05-01"
+ARCHITECTURE_DESIGN_SCHEMA_VERSION = "2026-05-04"
+SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT = "excalidraw_json"
 
 
 def architecture_design_payload_schema() -> dict[str, Any]:
@@ -74,7 +75,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
             "allowed_values": {
                 "parent_type": ["ideation", "refinement", "spec", "card"],
                 "interface.direction": sorted(ALLOWED_INTERFACE_DIRECTIONS),
-                "diagram.format": ["excalidraw_json", "mermaid", "plantuml", "c4", "svg", "raw"],
+                "diagram.format": [SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT],
                 "excalidraw.connectionType": sorted(ALLOWED_CONNECTION_TYPES),
             },
             "root_contract": {
@@ -84,6 +85,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     "title should name the architecture slice being described",
                     "global_description should explain architecture intent, boundaries, responsibilities, and important constraints",
                     "entities, interfaces, and diagrams should be present whenever they reduce ambiguity for implementers or validators",
+                    "diagram.format must be excalidraw_json; Mermaid, PlantUML, C4, SVG, and raw snippets belong only in descriptive text such as entity responsibility, boundaries, notes, or global_description",
                 ],
             },
             "entity_type_examples": [
@@ -1109,7 +1111,15 @@ class ArchitectureDesignRepository:
                 else:
                     seen_titles[title_key] = index
 
-            format_name = raw_diagram.get("format") or "raw"
+            format_name = raw_diagram.get("format") or SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT
+            if format_name != SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT:
+                issues.append(
+                    f"{path}.format='{format_name}' is unsupported. Architecture Design diagrams must use "
+                    f"format='{SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT}'. Mermaid, PlantUML, C4, SVG, and raw "
+                    "snippets are accepted only as descriptive text in entity responsibility, boundaries, notes, "
+                    "or global_description; they cannot be registered as diagram formats."
+                )
+                continue
             payload_present = "adapter_payload" in raw_diagram and raw_diagram.get("adapter_payload") is not None
             if not payload_present:
                 continue
@@ -1289,7 +1299,12 @@ class ArchitectureDesignRepository:
         fixes: list[str] = []
         for message in messages:
             lower = message.casefold()
-            if "connectiontype" in lower:
+            if ".format" in lower and "excalidraw_json" in lower:
+                fixes.append(
+                    "Use diagrams[].format='excalidraw_json'. Put Mermaid, PlantUML, C4, SVG, or raw snippets "
+                    "in entity responsibility, boundaries, notes, or global_description instead of diagram formats."
+                )
+            elif "connectiontype" in lower:
                 fixes.append("Use connectionType='direct' for straight edges or connectionType='elbow' for routed/orthogonal edges; never use 'curved'.")
             elif "duplicates entity_type" in lower:
                 fixes.append("Rename the entity to a concrete component name and keep entity_type as the category, e.g. 'Okto Pulse MCP Endpoint' + 'mcp_server'.")
@@ -1325,7 +1340,7 @@ class ArchitectureDesignRepository:
             diagram = dict(raw_diagram)
             diagram_id = diagram.get("id") or _new_scoped_id("diag")
             diagram["id"] = diagram_id
-            format_name = diagram.get("format") or "raw"
+            format_name = diagram.get("format") or SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT
             diagram["format"] = format_name
             payload = diagram.pop("adapter_payload", None)
             if payload is not None:

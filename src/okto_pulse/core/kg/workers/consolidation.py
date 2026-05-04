@@ -249,6 +249,7 @@ async def _process_queue_entry(
         ),
         agent_id=AGENT_ID,
         db=None,
+        force_reprocess=True,
     )
     session_id = begin_resp.session_id
 
@@ -264,6 +265,7 @@ async def _process_queue_entry(
         ProposeReconciliationRequest(session_id=session_id),
         agent_id=AGENT_ID,
         db=None,
+        force_reprocess=True,
     )
 
     # 4. commit

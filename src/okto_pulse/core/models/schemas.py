@@ -408,7 +408,7 @@ class ArchitectureDiagram(BaseModel):
     id: str | None = None
     title: str = Field(..., min_length=1, max_length=255)
     diagram_type: ArchitectureDiagramType = "other"
-    format: ArchitectureDiagramFormat = "raw"
+    format: ArchitectureDiagramFormat = "excalidraw_json"
     adapter_payload_ref: str | None = None
     adapter_payload: dict[str, Any] | list[Any] | str | None = None
     description: str | None = None
