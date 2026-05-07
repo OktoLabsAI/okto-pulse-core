@@ -47,6 +47,15 @@ class IdeationComplexity(str, PyEnum):
     LARGE = "large"
 
 
+class StoryStatus(str, PyEnum):
+    """Story lifecycle status."""
+
+    DRAFT = "draft"
+    TRIAGE = "triage"
+    READY = "ready"
+    CONVERTED = "converted"
+
+
 class RefinementStatus(str, PyEnum):
     """Refinement lifecycle status."""
 
@@ -199,6 +208,21 @@ class IdeationComplexityType(TypeDecorator):
         return IdeationComplexity(value)
 
 
+class StoryStatusType(TypeDecorator):
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return value.value if isinstance(value, StoryStatus) else value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return StoryStatus(value)
+
+
 class RefinementStatusType(TypeDecorator):
     impl = String(50)
     cache_ok = True
@@ -291,6 +315,12 @@ class Board(Base):
     ideations: Mapped[list["Ideation"]] = relationship(
         "Ideation", back_populates="board", cascade="all, delete-orphan"
     )
+    topics: Mapped[list["Topic"]] = relationship(
+        "Topic", back_populates="board", cascade="all, delete-orphan"
+    )
+    stories: Mapped[list["Story"]] = relationship(
+        "Story", back_populates="board", cascade="all, delete-orphan"
+    )
     specs: Mapped[list["Spec"]] = relationship(
         "Spec", back_populates="board", cascade="all, delete-orphan"
     )
@@ -303,6 +333,88 @@ class Board(Base):
     shares: Mapped[list["BoardShare"]] = relationship(
         "BoardShare", back_populates="board", cascade="all, delete-orphan"
     )
+
+
+# ============================================================================
+# STORIES
+# ============================================================================
+
+
+class Topic(Base):
+    """Topic — board-scoped grouping entity for optional pre-ideation Stories."""
+
+    __tablename__ = "topics"
+    __table_args__ = (
+        UniqueConstraint("board_id", "name", name="uq_topic_board_name"),
+        Index("ix_topics_board_archived", "board_id", "archived"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    board: Mapped["Board"] = relationship("Board", back_populates="topics")
+    stories: Mapped[list["Story"]] = relationship("Story", back_populates="topic")
+
+
+class Story(Base):
+    """Story — lightweight optional intake item that can converge into ideations."""
+
+    __tablename__ = "stories"
+    __table_args__ = (
+        Index("ix_stories_board_status_archived", "board_id", "status", "archived"),
+        Index("ix_stories_board_topic", "board_id", "topic_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    topic_id: Mapped[str] = mapped_column(String(36), ForeignKey("topics.id", ondelete="RESTRICT"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    benefit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[StoryStatus] = mapped_column(StoryStatusType(), default=StoryStatus.DRAFT, nullable=False)
+    assignee_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    screen_mockups: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    board: Mapped["Board"] = relationship("Board", back_populates="stories")
+    topic: Mapped["Topic"] = relationship("Topic", back_populates="stories")
+    ideation_links: Mapped[list["StoryIdeationLink"]] = relationship(
+        "StoryIdeationLink", back_populates="story", cascade="all, delete-orphan"
+    )
+
+
+class StoryIdeationLink(Base):
+    """N:N link between Stories and Ideations. MVP keeps the relation semantically simple."""
+
+    __tablename__ = "story_ideation_links"
+    __table_args__ = (
+        UniqueConstraint("story_id", "ideation_id", name="uq_story_ideation_link"),
+        Index("ix_story_ideation_links_board", "board_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    story_id: Mapped[str] = mapped_column(String(36), ForeignKey("stories.id", ondelete="CASCADE"), nullable=False, index=True)
+    ideation_id: Mapped[str] = mapped_column(String(36), ForeignKey("ideations.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    story: Mapped["Story"] = relationship("Story", back_populates="ideation_links")
+    ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="story_links")
+    board: Mapped["Board"] = relationship("Board")
 
 
 # ============================================================================
@@ -349,6 +461,9 @@ class Ideation(Base):
     snapshots: Mapped[list["IdeationSnapshot"]] = relationship("IdeationSnapshot", back_populates="ideation", cascade="all, delete-orphan")
     architecture_designs: Mapped[list["ArchitectureDesign"]] = relationship(
         "ArchitectureDesign", back_populates="ideation", cascade="all, delete-orphan"
+    )
+    story_links: Mapped[list["StoryIdeationLink"]] = relationship(
+        "StoryIdeationLink", back_populates="ideation", cascade="all, delete-orphan"
     )
 
 
@@ -430,6 +545,11 @@ class IdeationKnowledgeBase(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False, default="text/markdown")
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -517,6 +637,11 @@ class RefinementKnowledgeBase(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False, default="text/markdown")
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -767,6 +892,11 @@ class SpecKnowledgeBase(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False, default="text/markdown")
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -1506,7 +1636,7 @@ class ConsolidationQueue(Base):
         Text, nullable=True
     )  # Error message from failed processing
 
-    # Spec bdcda842 (Consolidation Queue resilience) — v0.1.14 columns.
+    # Spec bdcda842 (Consolidation Queue resilience) — v0.2.0 columns.
     # Added by _migrate_add_consolidation_resilience_columns; ORM model
     # mirrors the schema so newly-created rows from the model stay in sync.
     worker_id: Mapped[str | None] = mapped_column(

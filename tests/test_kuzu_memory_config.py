@@ -39,9 +39,20 @@ def _restore_core_settings():
 def test_core_settings_defaults_are_safe():
     """AC3: fresh CoreSettings exposes the 0.1.4 safe defaults."""
     s = CoreSettings()
-    assert s.kg_kuzu_buffer_pool_mb == 256
-    assert s.kg_kuzu_max_db_size_gb == 1
+    assert s.kg_kuzu_buffer_pool_mb == 512
+    assert s.kg_kuzu_max_db_size_gb == 2
     assert s.kg_connection_pool_size == 8
+
+
+def test_core_settings_rejects_unsupported_max_db_size():
+    """Ladybug requires max_db_size to be a power of two in bytes."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        CoreSettings(kg_kuzu_max_db_size_gb=6)
+    msg = str(exc_info.value)
+    assert "2, 4, 8, 16, 32, 64" in msg
+    assert "power of 2" in msg
 
 
 def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
@@ -51,8 +62,8 @@ def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
     # Pin CoreSettings to explicit values so the test is deterministic even
     # if the suite-wide fixture wiggled the singleton.
     configure_settings(CoreSettings(
-        kg_kuzu_buffer_pool_mb=256,
-        kg_kuzu_max_db_size_gb=1,
+        kg_kuzu_buffer_pool_mb=512,
+        kg_kuzu_max_db_size_gb=2,
         kg_connection_pool_size=8,
     ))
 
@@ -73,8 +84,37 @@ def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
         schema_module._open_kuzu_db(fake_path)
 
     assert captured["path"] == str(fake_path)
-    assert captured["buffer_pool_size"] == 256 * 1024 * 1024  # 268_435_456
-    assert captured["max_db_size"] == 1 * 1024 * 1024 * 1024  # 1_073_741_824
+    assert captured["buffer_pool_size"] == 512 * 1024 * 1024  # 536_870_912
+    assert captured["max_db_size"] == 2 * 1024 * 1024 * 1024  # 2_147_483_648
+
+
+def test_open_kuzu_db_failure_message_includes_graph_settings(tmp_path):
+    """Ladybug open failures include the active graph settings and fix hint."""
+    from okto_pulse.core.kg import schema as schema_module
+
+    configure_settings(CoreSettings(
+        kg_kuzu_buffer_pool_mb=512,
+        kg_kuzu_max_db_size_gb=2,
+        kg_connection_pool_size=8,
+    ))
+
+    class _FakeDatabase:
+        def __init__(self, path, *, buffer_pool_size, max_db_size):
+            raise RuntimeError(
+                "Buffer manager exception: The given max db size should be a power of 2."
+            )
+
+    class _FakeKuzuModule:
+        Database = _FakeDatabase
+
+    with patch.dict("sys.modules", {"ladybug": _FakeKuzuModule}):
+        with pytest.raises(RuntimeError) as exc_info:
+            schema_module._open_kuzu_db(tmp_path / "graph.lbug")
+
+    msg = str(exc_info.value)
+    assert "kg_kuzu_buffer_pool_mb=512MB" in msg
+    assert "kg_kuzu_max_db_size_gb=2GB" in msg
+    assert "2, 4, 8, 16, 32 or 64 GB" in msg
 
 
 # ----------------------------------------------------------------------
@@ -180,8 +220,8 @@ async def test_settings_runtime_get_returns_defaults(settings_client):
     response = await settings_client.get("/api/v1/settings/runtime")
     assert response.status_code == 200
     data = response.json()
-    assert data["kg_kuzu_buffer_pool_mb"] == 256
-    assert data["kg_kuzu_max_db_size_gb"] == 1
+    assert data["kg_kuzu_buffer_pool_mb"] == 512
+    assert data["kg_kuzu_max_db_size_gb"] == 2
     assert data["kg_connection_pool_size"] == 8
     assert isinstance(data["restart_required"], bool)
 
@@ -195,11 +235,11 @@ async def test_settings_runtime_put_persists_and_flips_restart(settings_client):
 
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={"kg_kuzu_buffer_pool_mb": 64},
+        json={"kg_kuzu_buffer_pool_mb": 256},
     )
     assert put_resp.status_code == 200
     put_data = put_resp.json()
-    assert put_data["kg_kuzu_buffer_pool_mb"] == 256  # effective still the boot value
+    assert put_data["kg_kuzu_buffer_pool_mb"] == 512  # effective still the boot value
     assert put_data["restart_required"] is True
 
     # Second GET confirms persistence.
@@ -216,7 +256,7 @@ async def test_settings_runtime_put_422_on_out_of_range(settings_client):
 
     bad = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={"kg_kuzu_buffer_pool_mb": 8},  # below min=16
+        json={"kg_kuzu_buffer_pool_mb": 48},  # below min=128
     )
     assert bad.status_code == 422
     # Pydantic v2 emits "greater_than_or_equal" in the error type.
@@ -224,6 +264,40 @@ async def test_settings_runtime_put_422_on_out_of_range(settings_client):
 
     after = await settings_client.get("/api/v1/settings/runtime")
     assert after.json()["kg_kuzu_buffer_pool_mb"] == baseline
+
+
+@pytest.mark.asyncio
+async def test_settings_runtime_put_422_on_unsupported_max_db_size(settings_client):
+    """PUT rejects even but non-power-of-two max DB sizes before restart."""
+    bad = await settings_client.put(
+        "/api/v1/settings/runtime",
+        json={"kg_kuzu_max_db_size_gb": 6},
+    )
+    assert bad.status_code == 422
+    assert "2, 4, 8, 16, 32, 64" in bad.text
+
+
+def test_commit_error_context_mentions_buffer_pool_settings():
+    """Commit errors report the concrete graph knobs operators must change."""
+    from okto_pulse.core.kg.primitives import _contextualize_ladybug_commit_error
+
+    configure_settings(CoreSettings(
+        kg_kuzu_buffer_pool_mb=128,
+        kg_kuzu_max_db_size_gb=2,
+        kg_connection_pool_size=8,
+    ))
+
+    msg, details = _contextualize_ladybug_commit_error(
+        RuntimeError(
+            "Buffer manager exception: Unable to allocate memory! "
+            "The buffer pool is full and no memory could be freed!"
+        )
+    )
+
+    assert "kg_kuzu_buffer_pool_mb=512" in msg
+    assert "buffer=128MB" in msg
+    assert details["kg_kuzu_buffer_pool_mb"] == 128
+    assert details["kg_kuzu_max_db_size_gb"] == 2
 
 
 # ----------------------------------------------------------------------

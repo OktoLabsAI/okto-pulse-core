@@ -1183,7 +1183,7 @@ Why this is correct:
 ```
 ┌─ Settings ─────────────────────────────────────────────┐
 │  LadybugDB buffer pool per board (MB)                  │
-│  [  48  ]  Recommended: 32-128. Safe default: 48.      │
+│  [ 512 ]  Recommended: 512. Safe default: 512.         │
 │  ...                                                   │
 └────────────────────────────────────────────────────────┘
 ```

@@ -12,6 +12,7 @@ from okto_pulse.core.api.ideations import router as ideations_router
 from okto_pulse.core.api.refinements import router as refinements_router
 from okto_pulse.core.api.guidelines import router as guidelines_router
 from okto_pulse.core.api.specs import router as specs_router
+from okto_pulse.core.api.stories import router as stories_router
 from okto_pulse.core.api.analytics import router as analytics_router
 from okto_pulse.core.api.architecture import router as architecture_router
 from okto_pulse.core.api.presets import router as presets_router
@@ -31,6 +32,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(boards_router, prefix="/boards", tags=["boards"])
 api_router.include_router(cards_router, prefix="/cards", tags=["cards"])
 api_router.include_router(ideations_router, tags=["ideations"])
+api_router.include_router(stories_router, tags=["stories"])
 api_router.include_router(refinements_router, tags=["refinements"])
 api_router.include_router(specs_router, tags=["specs"])
 api_router.include_router(guidelines_router, tags=["guidelines"])

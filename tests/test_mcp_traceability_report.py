@@ -378,10 +378,15 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     node_ids = {node["id"] for node in graph["nodes"]}
     edge_pairs = {(edge["source"], edge["target"]) for edge in graph["edges"]}
     node_by_id = {node["id"]: node for node in graph["nodes"]}
+    edge_relationships = {
+        (edge["source"], edge["target"], edge["relationship"])
+        for edge in graph["edges"]
+    }
     assert graph["root_ideation"]["id"] == ideation_id
     assert f"spec:{direct_spec_id}" in node_ids
     assert f"spec:{spec_id}" in node_ids
     assert f"task:{task_id}" in node_ids
+    assert f"test:{test_card_id}" in node_ids
     assert f"bug:{bug_card_id}" in node_ids
     assert all(node["entity_type"] != "artifact" for node in graph["nodes"])
     assert graph["summary"]["artifacts"] == 0
@@ -389,3 +394,8 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     assert (f"ideation:{ideation_id}", f"spec:{direct_spec_id}") in edge_pairs
     assert (f"refinement:{refinement_id}", f"spec:{spec_id}") in edge_pairs
     assert (f"task:{task_id}", f"bug:{bug_card_id}") in edge_pairs
+    assert (
+        f"test:{test_card_id}",
+        f"bug:{bug_card_id}",
+        "regression_test",
+    ) in edge_relationships

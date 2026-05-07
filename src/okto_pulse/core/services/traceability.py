@@ -15,6 +15,8 @@ from okto_pulse.core.models.db import (
     Refinement,
     Spec,
     Sprint,
+    Story,
+    StoryIdeationLink,
 )
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.reference_resolution import resolve_task_context_references
@@ -42,7 +44,17 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = False) -> dict
             "description": kb.get("description"),
             "mime_type": kb.get("mime_type") or kb.get("content_type") or "text/markdown",
         }
-        for attr in ("ideation_id", "refinement_id", "spec_id", "source", "source_type"):
+        for attr in (
+            "ideation_id",
+            "refinement_id",
+            "spec_id",
+            "source",
+            "source_type",
+            "source_id",
+            "source_title",
+            "source_version",
+            "source_kb_id",
+        ):
             if kb.get(attr):
                 data[attr] = kb[attr]
         if include_content:
@@ -58,7 +70,16 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = False) -> dict
         "description": getattr(kb, "description", None),
         "mime_type": getattr(kb, "mime_type", "text/markdown"),
     }
-    for attr in ("ideation_id", "refinement_id", "spec_id"):
+    for attr in (
+        "ideation_id",
+        "refinement_id",
+        "spec_id",
+        "source_type",
+        "source_id",
+        "source_title",
+        "source_version",
+        "source_kb_id",
+    ):
         value = getattr(kb, attr, None)
         if value:
             data[attr] = value
@@ -165,6 +186,16 @@ def _sprint_summary(sprint: Sprint) -> dict[str, Any]:
         "id": sprint.id,
         "title": sprint.title,
         "status": _enum_value(sprint.status),
+    }
+
+
+def _story_summary(story: Story) -> dict[str, Any]:
+    return {
+        "id": story.id,
+        "title": story.title,
+        "status": _enum_value(story.status),
+        "topic_id": story.topic_id,
+        "mockups_count": len(story.screen_mockups or []),
     }
 
 
@@ -304,6 +335,26 @@ async def build_traceability_report(
     for refinement in refinements:
         refinements_by_ideation.setdefault(refinement.ideation_id, []).append(refinement)
 
+    story_links_by_ideation: dict[str, list[Story]] = {}
+    ideation_ids_for_stories = {ideation.id for ideation in ideations}
+    if ideation_ids_for_stories:
+        story_link_query = (
+            select(StoryIdeationLink)
+            .options(selectinload(StoryIdeationLink.story))
+            .where(StoryIdeationLink.board_id == board_id)
+            .where(StoryIdeationLink.ideation_id.in_(ideation_ids_for_stories))
+        )
+        story_links = list((await db.execute(story_link_query)).scalars().all())
+        seen_story_links: set[tuple[str, str]] = set()
+        for link in story_links:
+            if not link.story or getattr(link.story, "archived", False):
+                continue
+            key = (link.ideation_id, link.story_id)
+            if key in seen_story_links:
+                continue
+            seen_story_links.add(key)
+            story_links_by_ideation.setdefault(link.ideation_id, []).append(link.story)
+
     report_ideations = []
     attached_spec_ids: set[str] = set()
     for ideation in ideations:
@@ -336,6 +387,10 @@ async def build_traceability_report(
             "id": ideation.id,
             "title": ideation.title,
             "status": _enum_value(ideation.status),
+            "stories": [
+                _story_summary(story)
+                for story in story_links_by_ideation.get(ideation.id, [])
+            ],
             "refinements": refinement_payloads,
             "direct_specs": [
                 _spec_summary(spec, include_artifacts=include_artifacts)
@@ -361,6 +416,7 @@ async def build_traceability_report(
             "spec_id": spec_id or None,
         },
         "summary": {
+            "stories": sum(len(item.get("stories") or []) for item in report_ideations),
             "ideations": len(report_ideations),
             "refinements": len(refinements),
             "specs": len(specs),
@@ -404,6 +460,33 @@ async def resolve_root_ideation_id(
         if not ideation or ideation.board_id != board_id:
             raise TraceabilityReadError("entity_not_found", "Selected ideation was not found", status_code=404)
         return ideation.id, [{"type": "ideation", "id": ideation.id}]
+
+    if entity_type == "story":
+        story = await db.get(Story, entity_id)
+        if not story or story.board_id != board_id:
+            raise TraceabilityReadError("entity_not_found", "Selected story was not found", status_code=404)
+        links = list((await db.execute(
+            select(StoryIdeationLink).where(
+                StoryIdeationLink.board_id == board_id,
+                StoryIdeationLink.story_id == entity_id,
+            )
+        )).scalars().all())
+        if not links:
+            raise TraceabilityReadError(
+                "unresolved_root_ideation",
+                "Selected story is not linked to an ideation yet.",
+                status_code=409,
+            )
+        if len(links) > 1:
+            raise TraceabilityReadError(
+                "ambiguous_root_ideation",
+                "Selected story is linked to multiple ideations. Open lineage from one of the linked ideations.",
+                status_code=409,
+            )
+        return links[0].ideation_id, [
+            {"type": "story", "id": story.id},
+            {"type": "ideation", "id": links[0].ideation_id},
+        ]
 
     if entity_type == "refinement":
         refinement = await db.get(Refinement, entity_id)
@@ -502,6 +585,18 @@ async def build_lineage_graph(
 
     ideation = report["ideations"][0]
     ideation_node_id = f"ideation:{ideation['id']}"
+    for story in ideation.get("stories") or []:
+        story_node_id = f"story:{story['id']}"
+        add_node({
+            "id": story_node_id,
+            "entity_type": "story",
+            "entity_id": story["id"],
+            "title": story["title"],
+            "label": story["title"],
+            "status": story.get("status"),
+            "stage": -1,
+            "summary": {"topic_id": story.get("topic_id"), "mockups_count": story.get("mockups_count", 0)},
+        })
     add_node({
         "id": ideation_node_id,
         "entity_type": "ideation",
@@ -511,6 +606,8 @@ async def build_lineage_graph(
         "status": ideation.get("status"),
         "stage": 0,
     })
+    for story in ideation.get("stories") or []:
+        add_edge(f"story:{story['id']}", ideation_node_id, "feeds_ideation")
 
     def add_spec(spec: dict[str, Any], parent_node_id: str, relationship: str) -> None:
         spec_node_id = f"spec:{spec['id']}"
@@ -585,6 +682,13 @@ async def build_lineage_graph(
                 add_edge(f"sprint:{bug['sprint_id']}", bug_node_id, "contains_card")
             else:
                 add_edge(spec_node_id, bug_node_id, "has_card")
+
+            for test_task_id in (bug.get("bug") or {}).get("linked_test_task_ids") or []:
+                add_edge(
+                    card_node_ids_by_card_id.get(test_task_id, f"test:{test_task_id}"),
+                    bug_node_id,
+                    "regression_test",
+                )
 
     for direct_spec in ideation.get("direct_specs") or []:
         add_spec(direct_spec, ideation_node_id, "direct_spec")

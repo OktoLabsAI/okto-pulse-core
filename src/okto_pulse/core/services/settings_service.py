@@ -27,7 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from okto_pulse.core.infra.database import Base, get_session_factory
-from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
+from okto_pulse.core.infra.config import (
+    CoreSettings,
+    configure_settings,
+    get_settings,
+    validate_graph_db_max_size_gb,
+)
 
 logger = logging.getLogger("okto_pulse.services.settings")
 
@@ -86,6 +91,19 @@ _write_lock = asyncio.Lock()
 _boot_snapshot: dict[str, int] = {}
 
 
+def _validate_runtime_setting_value(key: str, value: int) -> int:
+    """Validate persisted/runtime values that bypass the FastAPI schema."""
+    if key == "kg_kuzu_buffer_pool_mb":
+        if not 128 <= value <= 512:
+            raise ValueError(
+                "kg_kuzu_buffer_pool_mb must be between 128 and 512 MB. "
+                "Values below 128 MB can exhaust Ladybug during HNSW commits."
+            )
+    elif key == "kg_kuzu_max_db_size_gb":
+        validate_graph_db_max_size_gb(value)
+    return value
+
+
 def _read_boot_snapshot() -> dict[str, int]:
     """Return a copy of the settings that were active at boot.
 
@@ -112,11 +130,18 @@ async def _load_persisted_rows(db: AsyncSession) -> dict[str, int]:
         out: dict[str, int] = {}
         for row in rows:
             try:
-                out[row.key] = int(row.value)
-            except (TypeError, ValueError):
+                parsed = int(row.value)
+                out[row.key] = _validate_runtime_setting_value(row.key, parsed)
+            except (TypeError, ValueError) as exc:
                 logger.warning(
-                    "settings.invalid_persisted_value key=%s value=%r",
-                    row.key, row.value,
+                    "settings.invalid_persisted_value key=%s value=%r err=%s",
+                    row.key, row.value, exc,
+                    extra={
+                        "event": "settings.invalid_persisted_value",
+                        "key": row.key,
+                        "value": row.value,
+                        "error": str(exc),
+                    },
                 )
         return out
     except Exception as exc:
@@ -128,7 +153,7 @@ def _resolve_legacy_env_aliases() -> dict[str, int]:
     """Resolve deprecated env vars into canonical settings keys.
 
     Spec bdcda842 (TR12): KG_MAX_QUEUE_DEPTH was the admission-gate threshold
-    in v0.1.14; it is now an alerting-only threshold renamed to
+    in v0.2.0; it is now an alerting-only threshold renamed to
     kg_queue_alert_threshold. We honour the legacy env var until v0.5.0 and
     emit a DeprecationWarning + structured log when it fires.
 
@@ -336,11 +361,12 @@ async def put_runtime_settings(
         for key, value in values.items():
             if key not in RUNTIME_KEYS:
                 continue
+            parsed = _validate_runtime_setting_value(key, int(value))
             row = await db.get(AppSetting, key)
             if row is None:
-                db.add(AppSetting(key=key, value=str(int(value))))
+                db.add(AppSetting(key=key, value=str(parsed)))
             else:
-                row.value = str(int(value))
+                row.value = str(parsed)
         await db.commit()
 
     # Spec 54399628 — hot-reload tick interval after persistence commits.

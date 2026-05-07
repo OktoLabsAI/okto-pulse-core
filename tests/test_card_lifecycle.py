@@ -1060,6 +1060,101 @@ class TestBugCardCreation:
             assert card.expected_behavior == data.expected_behavior
             assert card.observed_behavior == data.observed_behavior
 
+    async def test_create_bug_card_inherits_origin_traceability_links(self, db_factory):
+        """Bug card inherits spec item links from the origin task."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            specs = (await db.execute(
+                __import__("sqlalchemy").select(Spec).where(Spec.board_id == BOARD_ID)
+            )).scalars().all()
+            spec_id = specs[0].id
+
+            origin_card = Card(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                spec_id=spec_id,
+                title="Origin Task With Traceability",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                priority=CardPriority.NONE,
+                position=0,
+                created_by=USER_ID,
+            )
+            db.add(origin_card)
+            await db.commit()
+
+            spec = await db.get(Spec, spec_id)
+            assert spec is not None
+            spec.test_scenarios = [
+                {
+                    "id": "ts-origin-link",
+                    "title": "Origin scenario",
+                    "given": "g",
+                    "when": "w",
+                    "then": "t",
+                    "scenario_type": "integration",
+                    "linked_task_ids": [origin_card.id],
+                    "status": "draft",
+                },
+                {
+                    "id": "ts-other-link",
+                    "title": "Other scenario",
+                    "given": "g",
+                    "when": "w",
+                    "then": "t",
+                    "scenario_type": "unit",
+                    "linked_task_ids": [],
+                    "status": "draft",
+                },
+            ]
+            spec.business_rules = [
+                {"id": "br-origin-link", "title": "Origin BR", "linked_task_ids": [origin_card.id]},
+                {"id": "br-other-link", "title": "Other BR", "linked_task_ids": []},
+            ]
+            spec.api_contracts = [
+                {"id": "api-origin-link", "method": "GET", "path": "/origin", "linked_task_ids": [origin_card.id]},
+            ]
+            spec.technical_requirements = [
+                {"id": "tr-origin-link", "title": "Origin TR", "linked_task_ids": [origin_card.id]},
+                "Legacy TR without link metadata",
+            ]
+            spec.decisions = [
+                {"id": "dec-origin-link", "title": "Origin decision", "status": "active", "linked_task_ids": [origin_card.id]},
+            ]
+            await db.flush()
+
+            bug = await svc.create_card(
+                BOARD_ID,
+                USER_ID,
+                CardCreate(
+                    title="Bug: inherited traceability",
+                    card_type="bug",
+                    origin_task_id=origin_card.id,
+                    severity="major",
+                    expected_behavior="Traceability should follow the origin task",
+                    observed_behavior="Traceability is missing on the bug",
+                ),
+            )
+
+            assert bug is not None
+            assert bug.spec_id == spec_id
+            assert bug.test_scenario_ids == ["ts-origin-link"]
+
+            def linked_ids(field: str, item_id: str) -> list[str]:
+                for item in getattr(spec, field) or []:
+                    if isinstance(item, dict) and item.get("id") == item_id:
+                        return item.get("linked_task_ids") or []
+                raise AssertionError(f"{item_id} not found in {field}")
+
+            assert bug.id in linked_ids("test_scenarios", "ts-origin-link")
+            assert bug.id not in linked_ids("test_scenarios", "ts-other-link")
+            assert bug.id in linked_ids("business_rules", "br-origin-link")
+            assert bug.id not in linked_ids("business_rules", "br-other-link")
+            assert bug.id in linked_ids("api_contracts", "api-origin-link")
+            assert bug.id in linked_ids("technical_requirements", "tr-origin-link")
+            assert bug.id in linked_ids("decisions", "dec-origin-link")
+
     async def test_create_bug_card_without_origin_task_raises(self, db_factory):
         """Bug card without origin_task_id must raise ValueError."""
         await _seed_board(db_factory)

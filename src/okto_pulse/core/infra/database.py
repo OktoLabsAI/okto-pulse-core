@@ -786,6 +786,45 @@ async def _migrate_add_card_knowledge_bases() -> None:
                 pass
 
 
+async def _migrate_add_knowledge_source_columns() -> None:
+    """Add provenance columns to entity knowledge base tables."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    tables = [
+        "ideation_knowledge_bases",
+        "refinement_knowledge_bases",
+        "spec_knowledge_bases",
+    ]
+    columns = [
+        ("source_type", "VARCHAR(50)"),
+        ("source_id", "VARCHAR(36)"),
+        ("source_title", "VARCHAR(500)"),
+        ("source_version", "INTEGER"),
+        ("source_kb_id", "VARCHAR(36)"),
+    ]
+    async with get_engine().begin() as conn:
+        for table in tables:
+            if dialect == "postgresql":
+                table_check = await conn.execute(sa_text(
+                    f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}')"
+                ))
+                if not table_check.scalar():
+                    continue
+                for col_name, col_type in columns:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                    ))
+            else:
+                for col_name, col_type in columns:
+                    try:
+                        await conn.execute(sa_text(
+                            f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                        ))
+                    except Exception:
+                        pass
+
+
 async def _migrate_drop_spec_skills() -> None:
     """Drop the legacy `spec_skills` table.
 
@@ -880,6 +919,7 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
     await _migrate_add_card_sprint_id()
     await _migrate_add_card_knowledge_bases()
+    await _migrate_add_knowledge_source_columns()
     await _migrate_add_sprint_scope_fields()
     await _migrate_agent_boards()
     await _migrate_add_task_validation_columns()
