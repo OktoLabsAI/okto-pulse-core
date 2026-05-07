@@ -54,6 +54,7 @@ from okto_pulse.core.services.reference_resolution import (
     resolve_task_context_references,
     serialize_parent_ideation_context,
 )
+from okto_pulse.core.services.story_permissions import story_move_permission, story_state
 
 
 import uuid as _uuid
@@ -315,6 +316,14 @@ def _perm_error(msg: str) -> str:
     return json.dumps({"error": msg})
 
 
+def _mcp_permission_error_response(msg: str) -> str:
+    try:
+        payload = json.loads(msg)
+    except json.JSONDecodeError:
+        payload = {"error": msg}
+    return json.dumps(payload)
+
+
 def _mcp_check_permission(
     permissions: Any,
     granular_permission: str,
@@ -333,6 +342,26 @@ def _mcp_check_permission(
     if legacy_permission and legacy_permission in permissions:
         return None
     return f"Permission denied: requires '{granular_permission}'"
+
+
+def _mcp_check_story_state_permission(
+    permissions: Any,
+    granular_permission: str | None,
+    story: Any,
+    legacy_permission: str | None = None,
+) -> str | None:
+    if not granular_permission:
+        return None
+
+    from okto_pulse.core.infra.permissions import PermissionSet
+
+    if isinstance(permissions, PermissionSet):
+        return permissions.check_with_state(
+            granular_permission,
+            "story",
+            story_state(story.status, archived=bool(getattr(story, "archived", False))),
+        )
+    return _mcp_check_permission(permissions, granular_permission, legacy_permission)
 
 
 def _mcp_architecture_legacy_permission(parent_type: str, action: str) -> str:
@@ -3393,9 +3422,9 @@ async def okto_pulse_create_topic(board_id: str, name: str, description: str = "
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.create", Permissions.SPECS_CREATE)
     if perm_err:
-        return _perm_error(perm_err)
+        return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.models.schemas import TopicCreate
 
     async with get_db_for_mcp() as db:
@@ -3420,9 +3449,9 @@ async def okto_pulse_list_topics(board_id: str, include_archived: str = "false")
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.read", Permissions.BOARD_READ)
     if perm_err:
-        return _perm_error(perm_err)
+        return _mcp_permission_error_response(perm_err)
     async with get_db_for_mcp() as db:
         topics = await StoryService(db).list_topics(board_id, include_archived=_flag_enabled(include_archived))
         await db.commit()
@@ -3461,9 +3490,9 @@ async def okto_pulse_create_story(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    perm_err = _mcp_check_permission(ctx.permissions, "story.entity.create", Permissions.SPECS_CREATE)
     if perm_err:
-        return _perm_error(perm_err)
+        return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.models.db import StoryStatus
     from okto_pulse.core.models.schemas import StoryCreate
 
@@ -3512,9 +3541,9 @@ async def okto_pulse_list_stories(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = _mcp_check_permission(ctx.permissions, "story.entity.read", Permissions.BOARD_READ)
     if perm_err:
-        return _perm_error(perm_err)
+        return _mcp_permission_error_response(perm_err)
 
     def _optional_bool(value: str) -> bool | None:
         if not value:
@@ -3543,13 +3572,10 @@ async def okto_pulse_list_stories(
 
 @mcp.tool()
 async def okto_pulse_move_story(board_id: str, story_id: str, status: str) -> str:
-    """Move a Story through draft, triage, ready, and converted."""
+    """Move a Story through draft, triage, and ready. Converted is set by link/conversion."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
-    if perm_err:
-        return _perm_error(perm_err)
     from okto_pulse.core.models.db import StoryStatus
     from okto_pulse.core.models.schemas import StoryMove
 
@@ -3559,8 +3585,20 @@ async def okto_pulse_move_story(board_id: str, story_id: str, status: str) -> st
         return json.dumps({"error": f"Invalid status. Must be one of: {[s.value for s in StoryStatus]}"})
 
     async with get_db_for_mcp() as db:
+        service = StoryService(db)
+        existing = await service.get_story(story_id)
+        if not existing or existing.board_id != board_id:
+            return json.dumps({"error": "Story not found"})
+        perm_err = _mcp_check_story_state_permission(
+            ctx.permissions,
+            story_move_permission(existing.status, story_status),
+            existing,
+            Permissions.SPECS_CREATE,
+        )
+        if perm_err:
+            return _mcp_permission_error_response(perm_err)
         try:
-            story = await StoryService(db).move_story(story_id, ctx.agent_id, StoryMove(status=story_status))
+            story = await service.move_story(story_id, ctx.agent_id, StoryMove(status=story_status))
         except ValueError as e:
             return json.dumps({"error": str(e)})
         await db.commit()
@@ -3580,11 +3618,20 @@ async def okto_pulse_link_story_to_ideation(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
-    if perm_err:
-        return _perm_error(perm_err)
     async with get_db_for_mcp() as db:
-        link = await StoryService(db).link_story_to_ideation(
+        service = StoryService(db)
+        story = await service.get_story(story_id)
+        if not story or story.board_id != board_id:
+            return json.dumps({"error": "Story or Ideation not found"})
+        perm_err = _mcp_check_story_state_permission(
+            ctx.permissions,
+            "story.links.ideation",
+            story,
+            Permissions.SPECS_CREATE,
+        )
+        if perm_err:
+            return _mcp_permission_error_response(perm_err)
+        link = await service.link_story_to_ideation(
             story_id,
             ideation_id,
             ctx.agent_id,
@@ -3614,9 +3661,9 @@ async def okto_pulse_convert_stories_to_ideation(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    perm_err = _mcp_check_permission(ctx.permissions, "story.conversion.to_ideation", Permissions.SPECS_CREATE)
     if perm_err:
-        return _perm_error(perm_err)
+        return _mcp_permission_error_response(perm_err)
     from okto_pulse.core.models.schemas import StoryConversionRequest
 
     try:
@@ -3628,8 +3675,21 @@ async def okto_pulse_convert_stories_to_ideation(
         return json.dumps({"error": "At least one story_id is required"})
 
     async with get_db_for_mcp() as db:
+        service = StoryService(db)
+        for story_id in story_id_list:
+            story = await service.get_story(story_id)
+            if not story or story.board_id != board_id:
+                return json.dumps({"error": "One or more Stories were not found in this board"})
+            perm_err = _mcp_check_story_state_permission(
+                ctx.permissions,
+                "story.conversion.to_ideation",
+                story,
+                Permissions.SPECS_CREATE,
+            )
+            if perm_err:
+                return _mcp_permission_error_response(perm_err)
         try:
-            result = await StoryService(db).convert_stories(
+            result = await service.convert_stories(
                 board_id,
                 ctx.agent_id,
                 StoryConversionRequest(

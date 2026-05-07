@@ -220,6 +220,9 @@ async def test_story_lifecycle_filters_and_archive(db_factory):
         assert moved.status == StoryStatus.READY
 
         with pytest.raises(ValueError):
+            await service.move_story(story.id, actor_id, StoryMove(status=StoryStatus.CONVERTED))
+
+        with pytest.raises(ValueError):
             await service.move_story(story.id, actor_id, StoryMove(status=StoryStatus.DRAFT))
 
         ready = await service.list_stories(board_id, status_filter="ready")

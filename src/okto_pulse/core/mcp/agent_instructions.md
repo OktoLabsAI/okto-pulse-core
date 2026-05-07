@@ -13,6 +13,7 @@ Use this to avoid reading the whole file when you only need one answer.
 | Work on a card (implementation) | **2.8 Cards** + **2.11 Task Validation Workflow** |
 | Write or evaluate a spec | **2.3 Specs** → **2.3a Detail Saturation** → **2.3b Spec Evaluation** → **2.3c Coverage Progress** |
 | Pass a value that may contain `\|` | **Multi-value Parameters — Three Input Shapes** |
+| Capture user stories / manage topics before ideation | **2.0 Stories & Topics — optional pre-ideation intake** |
 | Reduce ambiguity at ideation (ASK before advancing) | **2.1 Ideations → Ambiguity-killer protocol** |
 | Run a deep investigation at refinement | **2.2 Refinements → Investigação profunda obrigatória** |
 | Attach KB / mockups directly on a card | **2.8 Cards → Card-level artifact attachment (MANDATORY)** |
@@ -561,16 +562,61 @@ The board follows a structured development pipeline. **Every step requires analy
 #### Pipeline Overview
 
 ```
-Ideation (raw idea) → Refinement(s) (focused analysis) → Spec (structured requirements) → Cards (tasks)
+Story (optional intake) → Ideation (raw idea) → Refinement(s) (focused analysis) → Spec (structured requirements) → Cards (tasks)
 ```
 
+- **Story** is optional lightweight intake before ideation. Use it when the user gives user-story-shaped needs, backlog signals, or several related requests that should be grouped before deciding which ideation they feed.
 - **Small ideation** (all scope scores < 2): Ideation (done) → Spec directly
 - **Medium/Large ideation**: Ideation (done) → Refinements → Specs
 - **Governance**: Both specs and refinements can only be created from a "done" ideation (immutably snapshotted)
 
+#### 2.0 Stories & Topics — optional pre-ideation intake
+
+Stories are lightweight, optional intake items inspired by user stories. They precede ideation and are grouped by a board-scoped Topic. Use them when the user gives raw needs, multiple user perspectives, or backlog snippets that are not yet ready to become a single ideation.
+
+**Tools and permissions:**
+
+| Action | Tool | Required permission |
+|---|---|---|
+| List Topics | `okto_pulse_list_topics` | `topic.entity.read` |
+| Create Topic | `okto_pulse_create_topic` | `topic.entity.create` |
+| List Stories | `okto_pulse_list_stories` | `story.entity.read` |
+| Create Story | `okto_pulse_create_story` | `story.entity.create` |
+| Move Story | `okto_pulse_move_story` | matching `story.move.*` flag + `story.interact_in.<current_status>` |
+| Link Story to Ideation | `okto_pulse_link_story_to_ideation` | `story.links.ideation` |
+| Convert Stories to Ideation | `okto_pulse_convert_stories_to_ideation` | `story.conversion.to_ideation` |
+
+**Topic rules:**
+- Reuse an existing Topic when it names the same product area or backlog theme.
+- Create a new Topic only when no existing Topic matches the user's grouping language.
+- Topic merge/delete are sensitive operations and require `topic.entity.merge` / `topic.entity.delete` when exposed by the available API/MCP surface. Do not simulate merge by silently rewriting many Stories unless the user explicitly asks and the board policy allows it.
+
+**Story content rules:**
+- Write Story text as a user need, not as a solution spec.
+- Fill `actor`, `goal`, and `benefit` when the user provides them or they are directly inferable from the story sentence. Leave unknown fields empty instead of inventing a persona.
+- Use `labels` for cross-cutting tags such as `resource-gate`, `security`, `ux`, or `analytics`; use Topic for the primary grouping.
+- Mockups attached to Stories are optional context. When a Story becomes an Ideation/Spec, propagate or recreate only the mockups that remain relevant.
+
+**Status flow:**
+
+| Status | Meaning | Normal next actions |
+|---|---|---|
+| `draft` | Raw intake, still rough | edit, move to `triage` or `ready` |
+| `triage` | Being reviewed/organized | move to `draft` for rework or `ready` |
+| `ready` | Good enough to feed ideation | link to an existing Ideation or convert to a new Ideation |
+| `converted` | Terminal result of successful link/conversion | read only for normal flow; do not move out |
+
+`converted` is not a normal manual lifecycle move. It is set by a successful Story-Ideation link or conversion path. If `okto_pulse_move_story(status="converted")` fails, do not retry with broader permissions; use `okto_pulse_link_story_to_ideation` or `okto_pulse_convert_stories_to_ideation` after the Story is `ready`.
+
+**Derivation guidance:**
+- Several Stories can feed one Ideation when they describe the same problem space.
+- One Story can link to more than one Ideation only when the user intentionally wants that Story to inform multiple solution tracks.
+- Before converting, list existing Ideations and prefer linking to an editable/resolvable match over creating a duplicate.
+- Once a Story is converted, treat it as historical lineage context. Do not edit it to match the downstream Ideation; refinements/specs are where solution detail is sharpened.
+
 #### 2.1 Ideations
 
-Ideations are the starting point. When asked to evaluate or create an ideation:
+Ideations are the starting point for solution definition. Stories may exist before them as optional intake context. When asked to evaluate or create an ideation:
 
 > **MANDATORY — Query the KG before evaluating.** Before calling `okto_pulse_evaluate_ideation`, you MUST run the Stage 1 query set from the "Query Timing" section of the Knowledge Graph chapter: `okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_query_global`, `okto_pulse_kg_get_learning_from_bugs`. Cite any hit explicitly in the ideation (decision_id + one-line summary). Failing to do this is a protocol violation — duplicate ideations and cross-board conflicts are traced back to this skip.
 

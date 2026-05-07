@@ -89,8 +89,8 @@ class TestGlobalSchema:
             calls["open"] += 1
             if calls["open"] == 1:
                 raise RuntimeError(
-                    "Runtime exception: Corrupted wal file. "
-                    "Read out invalid WAL record type."
+                    "Storage exception: Checksum verification failed, "
+                    "the WAL file is corrupted."
                 )
             return FakeDB()
 
@@ -201,6 +201,12 @@ class TestOutboxWorker:
             "C:/Users/me/.okto-pulse/global/discovery.lbug: "
             "RuntimeError: Assertion failed in file "
             "wal_record.cpp on line 76: UNREACHABLE_CODE"
+        )
+        assert _is_retryable_global_open_error(
+            "Failed to open LadybugDB database at "
+            "C:/Users/me/.okto-pulse/global/discovery.lbug: "
+            "RuntimeError: Storage exception: Checksum verification failed, "
+            "the WAL file is corrupted."
         )
 
     @pytest.mark.asyncio

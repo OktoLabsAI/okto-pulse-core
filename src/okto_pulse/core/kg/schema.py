@@ -24,7 +24,9 @@ logger = logging.getLogger("okto_pulse.kg.schema")
 SCHEMA_VERSION = "0.3.3"
 GRAPH_DB_FILENAME = "graph.lbug"
 CORRUPT_DB_ERROR_MARKERS = (
+    "checksum verification failed",
     "corrupted wal file",
+    "wal file is corrupted",
     "invalid wal record",
     "not a valid lbug database file",
     "wal_record.cpp",
