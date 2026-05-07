@@ -1530,7 +1530,7 @@ async def _reconcile_agent_permission_flags() -> None:
 
     Non-destructive deep-merge: for each agent with a non-null permission_flags
     dict, walks the current PERMISSION_REGISTRY and adds any keys missing in
-    the stored tree (default False). Existing leaf values are never overwritten
+    the stored tree (default True). Existing leaf values are never overwritten
     — the user's customisations are preserved.
     """
     import logging
@@ -1571,7 +1571,7 @@ async def _reconcile_agent_permission_flags() -> None:
                 await session.commit()
                 logger.info(
                     f"Reconciled {updated} agent(s) permission_flags "
-                    f"(+{total_added} missing leaf keys backfilled as False)"
+                    f"(+{total_added} missing leaf keys backfilled as True)"
                 )
         except Exception as e:
             logger.error(f"Agent permissions reconcile failed: {e}")

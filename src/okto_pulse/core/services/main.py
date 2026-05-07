@@ -3585,7 +3585,7 @@ class StoryService:
     _STORY_TRANSITIONS: dict[StoryStatus, list[StoryStatus]] = {
         StoryStatus.DRAFT: [StoryStatus.TRIAGE, StoryStatus.READY],
         StoryStatus.TRIAGE: [StoryStatus.DRAFT, StoryStatus.READY],
-        StoryStatus.READY: [StoryStatus.TRIAGE, StoryStatus.CONVERTED],
+        StoryStatus.READY: [StoryStatus.TRIAGE],
         StoryStatus.CONVERTED: [],
     }
 
