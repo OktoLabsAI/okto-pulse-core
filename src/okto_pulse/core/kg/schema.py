@@ -358,6 +358,45 @@ def _is_ladybug_corruption_error(exc: BaseException) -> bool:
     return any(marker in msg for marker in CORRUPT_DB_ERROR_MARKERS)
 
 
+def _ladybug_open_error_context(path: Path, exc: BaseException, settings: Any) -> str:
+    """Build an operator-facing error with the active Graph DB settings."""
+    msg = str(exc)
+    lower = msg.lower()
+    settings_context = (
+        "Graph DB settings in effect: "
+        f"kg_kuzu_buffer_pool_mb={settings.kg_kuzu_buffer_pool_mb}MB, "
+        f"kg_kuzu_max_db_size_gb={settings.kg_kuzu_max_db_size_gb}GB "
+        f"(path={path})."
+    )
+    guidance: list[str] = []
+    if "power of 2" in lower or "power-of-2" in lower:
+        guidance.append(
+            "Set Graph DB max database size per board to one of "
+            "2, 4, 8, 16, 32 or 64 GB; Ladybug requires max_db_size to be "
+            "a power of 2 in bytes."
+        )
+    if (
+        "buffer manager" in lower
+        or "buffer pool" in lower
+        or "unable to allocate memory" in lower
+    ):
+        guidance.append(
+            "Set Graph DB buffer pool per board to 512 MB and restart before "
+            "retrying the consolidation."
+        )
+    if "could not set lock" in lower or "lock contention" in lower:
+        guidance.append(
+            "Another Okto Pulse process may still hold this board graph; stop "
+            "the other process or wait for the lock to release."
+        )
+    if not guidance:
+        guidance.append(
+            "Check for lock contention, pending schema migration, or a corrupt "
+            "Ladybug graph file."
+        )
+    return f"{settings_context} {' '.join(guidance)}"
+
+
 def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[str]:
     """Delete a board's local LadybugDB graph file and sidecars.
 
@@ -490,9 +529,11 @@ def _open_kuzu_db(path: Path):
         "[KG] Failed to open LadybugDB database at %s: %s: %s",
         path, type(e).__name__, e,
     )
+    context = _ladybug_open_error_context(path, e, s)
     raise RuntimeError(
         f"Failed to open LadybugDB database at {path}: "
         f"{type(e).__name__}: {e}. "
+        f"{context} "
         "Possible causes: "
         "(1) lock contention from concurrent writer (wait and retry); "
         "(2) schema migration needed — run "

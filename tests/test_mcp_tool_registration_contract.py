@@ -15,6 +15,13 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
         "okto_pulse_kg_dead_letter_reprocess",
         "okto_pulse_create_card",
         "okto_pulse_submit_task_validation",
+        "okto_pulse_create_topic",
+        "okto_pulse_list_topics",
+        "okto_pulse_create_story",
+        "okto_pulse_list_stories",
+        "okto_pulse_move_story",
+        "okto_pulse_link_story_to_ideation",
+        "okto_pulse_convert_stories_to_ideation",
     }
     assert required.issubset(tools.keys())
 

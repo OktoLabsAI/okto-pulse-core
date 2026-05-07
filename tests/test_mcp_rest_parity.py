@@ -229,10 +229,12 @@ class TestFunnelParity:
             "sprint_status_breakdown",
             "bugs_total", "bugs_open", "bugs_by_severity",
             "avg_cycle_hours", "cycle_time_by_phase",
+            "stories", "stories_converted", "story_conversion_pct",
+            "story_ideation_links", "story_status_breakdown", "stories_by_topic",
         ):
             assert k in funnel, f"funnel missing key: {k}"
         cycle = funnel["cycle_time_by_phase"]
-        assert set(cycle.keys()) == {"ideation", "refinement", "spec", "sprint", "card"}
+        assert set(cycle.keys()) == {"story", "ideation", "refinement", "spec", "sprint", "card"}
 
 
 @pytest.mark.asyncio

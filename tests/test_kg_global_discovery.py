@@ -6,6 +6,7 @@ import tempfile
 import types
 
 import pytest
+from sqlalchemy import delete
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gdt_"))
@@ -215,6 +216,7 @@ class TestOutboxWorker:
         event_id = str(uuid.uuid4())
         session_id = f"kgses_{uuid.uuid4().hex[:16]}"
         async with db_factory() as db:
+            await db.execute(delete(GlobalUpdateOutbox))
             db.add(GlobalUpdateOutbox(
                 event_id=event_id,
                 board_id=board_id,
@@ -266,6 +268,8 @@ class TestOutboxWorker:
             assert row.processed_at is not None
             assert row.retry_count == 0
             assert row.last_error is None
+            await db.execute(delete(GlobalUpdateOutbox))
+            await db.commit()
 
     @pytest.mark.asyncio
     async def test_non_global_dead_letter_is_not_requeued(

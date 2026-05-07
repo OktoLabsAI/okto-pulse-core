@@ -46,10 +46,14 @@ from okto_pulse.core.models.db import (
     SpecKnowledgeBase,
     SpecQAItem,
     SpecStatus,
+    Story,
+    StoryIdeationLink,
+    StoryStatus,
     Sprint,
     SprintHistory,
     SprintQAItem,
     SprintStatus,
+    Topic,
 )
 from okto_pulse.core.models.schemas import (
     AgentCreate,
@@ -87,10 +91,18 @@ from okto_pulse.core.models.schemas import (
     SpecQAAnswer,
     SpecQACreate,
     SpecUpdate,
+    StoryConversionRequest,
+    StoryCreate,
+    StoryMove,
+    StoryUpdate,
     SprintCreate,
     SprintMove,
     SprintUpdate,
+    TopicCreate,
+    TopicUpdate,
 )
+from okto_pulse.core.services.analytics_service import resolve_linked_criteria_to_indices
+from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
 
 settings = get_settings()
 
@@ -200,11 +212,15 @@ async def propagate_artifacts(
     user_id: str,
     mockup_ids: list[str] | None = None,
     kb_ids: list[str] | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    source_title: str | None = None,
+    source_version: int | None = None,
 ) -> None:
     """Propagate mockups, KBs and Q&A from a parent entity to a target entity.
 
     - Mockups: copied as JSON with origin_id. Default=all, filter by mockup_ids.
-    - KBs: copied as new DB rows with origin_id field. Default=all, filter by kb_ids.
+    - KBs: copied as new DB rows with source metadata when the target model supports it.
     - Q&A: compiled into context (appended, not replaced).
     - Existing artifacts on target are preserved (additive, not replacement).
     """
@@ -229,13 +245,26 @@ async def propagate_artifacts(
         if target_id_field:
             for kb in kbs:
                 _get = (lambda k: kb.get(k)) if isinstance(kb, dict) else (lambda k: getattr(kb, k, None))
+                kb_payload = {
+                    target_id_field: target_entity.id,
+                    "title": _get("title"),
+                    "description": f"[propagated from parent] {_get('description') or ''}".strip(),
+                    "content": _get("content"),
+                    "mime_type": _get("mime_type") or "text/markdown",
+                    "created_by": user_id,
+                }
+                source_values = {
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "source_title": source_title,
+                    "source_version": source_version,
+                    "source_kb_id": _get("id"),
+                }
+                for attr, value in source_values.items():
+                    if value is not None and hasattr(target_kb_class, attr):
+                        kb_payload[attr] = value
                 new_kb = target_kb_class(
-                    **{target_id_field: target_entity.id},
-                    title=_get("title"),
-                    description=f"[propagated from parent] {_get('description') or ''}".strip(),
-                    content=_get("content"),
-                    mime_type=_get("mime_type") or "text/markdown",
-                    created_by=user_id,
+                    **kb_payload,
                 )
                 db.add(new_kb)
             await db.flush()
@@ -642,6 +671,13 @@ class CardService:
         self.db.add(card)
         await self.db.flush()
 
+        if card_type_val == "bug":
+            await self._inherit_bug_origin_traceability(
+                bug_card=card,
+                origin_task_id=getattr(data, "origin_task_id", None),
+                spec=spec,
+            )
+
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import CardCreated
 
@@ -669,6 +705,60 @@ class CardService:
             details={"title": data.title, "status": data.status.value},
         )
         return card
+
+    async def _inherit_bug_origin_traceability(
+        self,
+        *,
+        bug_card: Card,
+        origin_task_id: str | None,
+        spec: Spec | None = None,
+    ) -> None:
+        """Attach a new bug to the same spec traceability items as its origin task."""
+        if not origin_task_id or not bug_card.spec_id:
+            return
+
+        if spec is None:
+            spec = await self.db.get(Spec, bug_card.spec_id)
+        if spec is None:
+            return
+
+        inherited_scenario_ids: list[str] = []
+
+        def inherit_linked_task_ids(field_name: str, *, collect_scenarios: bool = False) -> None:
+            items = getattr(spec, field_name, None) or []
+            changed = False
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                linked_task_ids = list(item.get("linked_task_ids") or [])
+                origin_is_linked = origin_task_id in linked_task_ids
+                if origin_is_linked and bug_card.id not in linked_task_ids:
+                    linked_task_ids.append(bug_card.id)
+                    item["linked_task_ids"] = linked_task_ids
+                    changed = True
+                if collect_scenarios and origin_is_linked:
+                    scenario_id = item.get("id")
+                    if scenario_id and scenario_id not in inherited_scenario_ids:
+                        inherited_scenario_ids.append(scenario_id)
+            if changed:
+                flag_modified(spec, field_name)
+
+        inherit_linked_task_ids("test_scenarios", collect_scenarios=True)
+        inherit_linked_task_ids("business_rules")
+        inherit_linked_task_ids("api_contracts")
+        inherit_linked_task_ids("technical_requirements")
+        inherit_linked_task_ids("decisions")
+
+        if inherited_scenario_ids:
+            current_scenarios = list(bug_card.test_scenario_ids or [])
+            merged = current_scenarios + [
+                scenario_id
+                for scenario_id in inherited_scenario_ids
+                if scenario_id not in current_scenarios
+            ]
+            if merged != current_scenarios:
+                bug_card.test_scenario_ids = merged
+                flag_modified(bug_card, "test_scenario_ids")
 
     async def get_card(self, card_id: str) -> Card | None:
         """Get a card by ID with all relationships."""
@@ -2791,11 +2881,17 @@ class SpecService:
             criteria = spec.acceptance_criteria or []
             scenarios = spec.test_scenarios or []
             if criteria:
-                uncovered = []
-                for i, c in enumerate(criteria):
-                    covering = [s for s in scenarios if c in (s.get("linked_criteria") or [])]
-                    if not covering:
-                        uncovered.append(f"[{i}] {c[:80]}...")
+                covered_indices: set[int] = set()
+                for scenario in scenarios:
+                    covered_indices |= resolve_linked_criteria_to_indices(
+                        scenario.get("linked_criteria"),
+                        criteria,
+                    )
+                uncovered = [
+                    f"[{i}] {criterion[:80]}..."
+                    for i, criterion in enumerate(criteria)
+                    if i not in covered_indices
+                ]
                 if uncovered:
                     raise ValueError(
                         f"Cannot move spec to 'done': {len(uncovered)} acceptance criteria lack test scenarios. "
@@ -3480,6 +3576,398 @@ class ShareService:
         return result.scalar_one_or_none() is not None
 
 
+class StoryService:
+    """Service for Topic and Story operations."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    _STORY_TRANSITIONS: dict[StoryStatus, list[StoryStatus]] = {
+        StoryStatus.DRAFT: [StoryStatus.TRIAGE, StoryStatus.READY],
+        StoryStatus.TRIAGE: [StoryStatus.DRAFT, StoryStatus.READY],
+        StoryStatus.READY: [StoryStatus.TRIAGE, StoryStatus.CONVERTED],
+        StoryStatus.CONVERTED: [],
+    }
+
+    async def _ensure_board(self, board_id: str, user_id: str, skip_ownership_check: bool = False) -> Board | None:
+        query = select(Board).where(Board.id == board_id)
+        if not skip_ownership_check:
+            query = query.where(Board.owner_id == user_id)
+        return (await self.db.execute(query)).scalar_one_or_none()
+
+    async def _topic_for_board(self, topic_id: str, board_id: str) -> Topic | None:
+        return (await self.db.execute(
+            select(Topic).where(Topic.id == topic_id, Topic.board_id == board_id)
+        )).scalar_one_or_none()
+
+    async def _log_activity(self, **kwargs: Any) -> None:
+        self.db.add(ActivityLog(**kwargs))
+
+    async def create_topic(
+        self, board_id: str, user_id: str, data: TopicCreate, skip_ownership_check: bool = False
+    ) -> Topic | None:
+        if not await self._ensure_board(board_id, user_id, skip_ownership_check):
+            return None
+        name = data.name.strip()
+        existing = await self.db.execute(
+            select(Topic).where(Topic.board_id == board_id, func.lower(Topic.name) == name.lower())
+        )
+        if existing.scalar_one_or_none():
+            raise ValueError("Topic name already exists in this board")
+        topic = Topic(board_id=board_id, name=name, description=data.description, created_by=user_id)
+        self.db.add(topic)
+        await self.db.flush()
+        actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        await self._log_activity(
+            board_id=board_id,
+            action="topic_created",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={"topic_id": topic.id, "name": topic.name},
+        )
+        return topic
+
+    async def list_topics(self, board_id: str, include_archived: bool = False) -> list[Topic]:
+        query = select(Topic).where(Topic.board_id == board_id)
+        if not include_archived:
+            query = query.where(Topic.archived.is_(False))
+        topics = list((await self.db.execute(query.order_by(Topic.name.asc()))).scalars().all())
+        counts = dict((await self.db.execute(
+            select(Story.topic_id, func.count(Story.id))
+            .where(Story.board_id == board_id, Story.archived.is_(False))
+            .group_by(Story.topic_id)
+        )).all())
+        for topic in topics:
+            setattr(topic, "story_count", int(counts.get(topic.id, 0)))
+        return topics
+
+    async def update_topic(self, topic_id: str, user_id: str, data: TopicUpdate) -> Topic | None:
+        topic = await self.db.get(Topic, topic_id)
+        if not topic:
+            return None
+        update_data = data.model_dump(exclude_unset=True)
+        if "name" in update_data and update_data["name"] is not None:
+            name = update_data.pop("name").strip()
+            existing = await self.db.execute(
+                select(Topic).where(
+                    Topic.board_id == topic.board_id,
+                    Topic.id != topic.id,
+                    func.lower(Topic.name) == name.lower(),
+                )
+            )
+            if existing.scalar_one_or_none():
+                raise ValueError("Topic name already exists in this board")
+            topic.name = name
+        for key, value in update_data.items():
+            setattr(topic, key, value)
+        actor_name = await resolve_actor_name(self.db, user_id, topic.board_id)
+        await self._log_activity(
+            board_id=topic.board_id,
+            action="topic_updated",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={"topic_id": topic.id, "fields": list(data.model_dump(exclude_unset=True).keys())},
+        )
+        return topic
+
+    async def create_story(
+        self, board_id: str, user_id: str, data: StoryCreate, skip_ownership_check: bool = False
+    ) -> Story | None:
+        if not await self._ensure_board(board_id, user_id, skip_ownership_check):
+            return None
+        topic = await self._topic_for_board(data.topic_id, board_id)
+        if not topic or topic.archived:
+            raise ValueError("Topic not found in this board")
+        story = Story(
+            board_id=board_id,
+            topic_id=data.topic_id,
+            title=data.title.strip(),
+            description=data.description,
+            actor=data.actor,
+            goal=data.goal,
+            benefit=data.benefit,
+            labels=data.labels,
+            status=data.status,
+            assignee_id=data.assignee_id,
+            created_by=user_id,
+            screen_mockups=[
+                item.model_dump() if hasattr(item, "model_dump") else item
+                for item in (data.screen_mockups or [])
+            ] or None,
+        )
+        self.db.add(story)
+        await self.db.flush()
+        actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        await self._log_activity(
+            board_id=board_id,
+            action="story_created",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={"story_id": story.id, "topic_id": story.topic_id, "title": story.title},
+        )
+        return await self.get_story(story.id)
+
+    async def get_story(self, story_id: str) -> Story | None:
+        query = (
+            select(Story)
+            .options(selectinload(Story.topic))
+            .options(selectinload(Story.ideation_links))
+            .where(Story.id == story_id)
+        )
+        return (await self.db.execute(query)).scalar_one_or_none()
+
+    async def list_stories(
+        self,
+        board_id: str,
+        *,
+        status_filter: str | None = None,
+        topic_id: str | None = None,
+        search: str | None = None,
+        linked: bool | None = None,
+        converted: bool | None = None,
+        include_archived: bool = False,
+    ) -> list[Story]:
+        query = (
+            select(Story)
+            .options(selectinload(Story.topic))
+            .options(selectinload(Story.ideation_links))
+            .where(Story.board_id == board_id)
+        )
+        if status_filter:
+            query = query.where(Story.status == StoryStatus(status_filter))
+        if topic_id:
+            query = query.where(Story.topic_id == topic_id)
+        if search:
+            pattern = f"%{search}%"
+            query = query.where(
+                Story.title.ilike(pattern)
+                | Story.description.ilike(pattern)
+                | Story.actor.ilike(pattern)
+                | Story.goal.ilike(pattern)
+                | Story.benefit.ilike(pattern)
+            )
+        if converted is not None:
+            query = query.where(Story.status == StoryStatus.CONVERTED if converted else Story.status != StoryStatus.CONVERTED)
+        if not include_archived:
+            query = query.where(Story.archived.is_(False))
+        stories = list((await self.db.execute(query.order_by(Story.updated_at.desc()))).scalars().all())
+        if linked is None:
+            return stories
+        return [story for story in stories if (len(story.ideation_links or []) > 0) is linked]
+
+    async def update_story(self, story_id: str, user_id: str, data: StoryUpdate) -> Story | None:
+        story = await self.get_story(story_id)
+        if not story:
+            return None
+        if story.archived:
+            raise ValueError("This story is archived. Restore it before editing.")
+        update_data = data.model_dump(exclude_unset=True)
+        if "topic_id" in update_data and update_data["topic_id"] is not None:
+            topic = await self._topic_for_board(update_data["topic_id"], story.board_id)
+            if not topic or topic.archived:
+                raise ValueError("Topic not found in this board")
+        if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
+            update_data["screen_mockups"] = [
+                item.model_dump() if hasattr(item, "model_dump") else item
+                for item in update_data["screen_mockups"]
+            ]
+        for key, value in update_data.items():
+            setattr(story, key, value)
+            if key in {"labels", "screen_mockups"}:
+                flag_modified(story, key)
+        actor_name = await resolve_actor_name(self.db, user_id, story.board_id)
+        await self._log_activity(
+            board_id=story.board_id,
+            action="story_updated",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={"story_id": story.id, "fields": list(update_data.keys())},
+        )
+        await self.db.flush()
+        return await self.get_story(story_id)
+
+    async def move_story(self, story_id: str, user_id: str, data: StoryMove) -> Story | None:
+        story = await self.get_story(story_id)
+        if not story:
+            return None
+        if story.archived:
+            raise ValueError("This story is archived. Restore it before changing status.")
+        old_status = story.status
+        allowed = self._STORY_TRANSITIONS.get(old_status, [])
+        if data.status not in allowed and data.status != old_status:
+            allowed_str = ", ".join(status.value for status in allowed) if allowed else "none"
+            raise ValueError(
+                f"Cannot move story from '{old_status.value}' to '{data.status.value}'. "
+                f"Allowed transitions: {allowed_str}."
+            )
+        story.status = data.status
+        actor_name = await resolve_actor_name(self.db, user_id, story.board_id)
+        await self._log_activity(
+            board_id=story.board_id,
+            action="story_moved",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={"story_id": story.id, "from_status": old_status.value, "to_status": data.status.value},
+        )
+        await self.db.flush()
+        return await self.get_story(story_id)
+
+    async def archive_story(self, story_id: str, user_id: str, archived: bool = True) -> Story | None:
+        story = await self.get_story(story_id)
+        if not story:
+            return None
+        story.archived = archived
+        story.pre_archive_status = story.status.value if archived else None
+        actor_name = await resolve_actor_name(self.db, user_id, story.board_id)
+        await self._log_activity(
+            board_id=story.board_id,
+            action="story_archived" if archived else "story_restored",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={"story_id": story.id},
+        )
+        await self.db.flush()
+        return await self.get_story(story_id)
+
+    async def link_story_to_ideation(
+        self, story_id: str, ideation_id: str, user_id: str, *, mark_converted: bool = False
+    ) -> StoryIdeationLink | None:
+        story = await self.get_story(story_id)
+        ideation = await self.db.get(Ideation, ideation_id)
+        if not story or not ideation or story.board_id != ideation.board_id:
+            return None
+        link = (await self.db.execute(
+            select(StoryIdeationLink).where(
+                StoryIdeationLink.story_id == story_id,
+                StoryIdeationLink.ideation_id == ideation_id,
+            )
+        )).scalar_one_or_none()
+        if not link:
+            link = StoryIdeationLink(
+                board_id=story.board_id,
+                story_id=story_id,
+                ideation_id=ideation_id,
+                created_by=user_id,
+            )
+            self.db.add(link)
+            await self.db.flush()
+        if mark_converted and story.status != StoryStatus.CONVERTED:
+            story.status = StoryStatus.CONVERTED
+        actor_name = await resolve_actor_name(self.db, user_id, story.board_id)
+        await self._log_activity(
+            board_id=story.board_id,
+            action="story_linked_to_ideation",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={"story_id": story_id, "ideation_id": ideation_id},
+        )
+        return link
+
+    async def convert_stories(
+        self,
+        board_id: str,
+        user_id: str,
+        data: StoryConversionRequest,
+        *,
+        skip_ownership_check: bool = False,
+    ) -> tuple[Ideation, list[StoryIdeationLink], int] | None:
+        if not await self._ensure_board(board_id, user_id, skip_ownership_check):
+            return None
+        stories = list((await self.db.execute(
+            select(Story)
+            .options(selectinload(Story.topic))
+            .options(selectinload(Story.ideation_links))
+            .where(Story.board_id == board_id, Story.id.in_(data.story_ids), Story.archived.is_(False))
+        )).scalars().all())
+        if len(stories) != len(set(data.story_ids)):
+            raise ValueError("One or more Stories were not found in this board")
+        not_ready = [
+            story.title
+            for story in stories
+            if story.status not in (StoryStatus.READY, StoryStatus.CONVERTED)
+        ]
+        if not_ready:
+            raise ValueError("Only ready Stories can be converted to Ideation")
+
+        if data.ideation_id:
+            ideation = await self.db.get(Ideation, data.ideation_id)
+            if not ideation or ideation.board_id != board_id:
+                raise ValueError("Ideation not found in this board")
+        else:
+            story_lines = []
+            for story in stories:
+                topic_name = story.topic.name if story.topic else story.topic_id
+                story_lines.append(
+                    f"- {story.title} (topic: {topic_name})"
+                    f"{f'; actor: {story.actor}' if story.actor else ''}"
+                    f"{f'; goal: {story.goal}' if story.goal else ''}"
+                    f"{f'; benefit: {story.benefit}' if story.benefit else ''}"
+                )
+            ideation = await IdeationService(self.db).create_ideation(
+                board_id,
+                user_id,
+                IdeationCreate(
+                    title=data.title or stories[0].title,
+                    description=data.description or "Ideation created from selected Stories.",
+                    problem_statement=data.problem_statement or "Selected Stories:\n" + "\n".join(story_lines),
+                    proposed_approach=data.proposed_approach,
+                    labels=sorted({label for story in stories for label in (story.labels or [])}) or None,
+                ),
+                skip_ownership_check=skip_ownership_check,
+            )
+            if not ideation:
+                return None
+
+        links: list[StoryIdeationLink] = []
+        for story in stories:
+            link = await self.link_story_to_ideation(
+                story.id, ideation.id, user_id, mark_converted=data.mark_converted
+            )
+            if link:
+                links.append(link)
+
+        propagated = self._propagate_story_mockups(stories, ideation, data.mockup_ids)
+        if propagated:
+            flag_modified(ideation, "screen_mockups")
+        await self.db.flush()
+        return ideation, links, propagated
+
+    def _propagate_story_mockups(
+        self,
+        stories: list[Story],
+        ideation: Ideation,
+        mockup_ids: list[str] | None,
+    ) -> int:
+        selected = set(mockup_ids) if mockup_ids is not None else None
+        target = list(ideation.screen_mockups or [])
+        propagated = 0
+        for story in stories:
+            for mockup in story.screen_mockups or []:
+                if not isinstance(mockup, dict):
+                    continue
+                mockup_id = mockup.get("id")
+                if selected is not None and mockup_id not in selected:
+                    continue
+                copied = dict(mockup)
+                copied["id"] = f"story_mockup_{secrets.token_hex(8)}"
+                copied["origin_id"] = mockup_id
+                copied["origin_story_id"] = story.id
+                copied["origin_entity_type"] = "story"
+                copied["order"] = len(target)
+                target.append(copied)
+                propagated += 1
+        if propagated:
+            ideation.screen_mockups = target
+        return propagated
+
+
 class IdeationService:
     """Service for ideation operations."""
 
@@ -3968,6 +4456,10 @@ class IdeationService:
                 user_id=user_id,
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
+                source_type="ideation",
+                source_id=ideation.id,
+                source_title=ideation.title,
+                source_version=ideation.version,
             )
             await propagate_architecture_designs(
                 self.db,
@@ -4162,8 +4654,9 @@ class RefinementService:
         The ideation must be in 'done' status (snapshotted) before refinements
         can be created from it — same governance as spec derivation.
 
-        If description is not provided, compiles context from the ideation
-        (problem statement, approach, scope, Q&A) as starting point.
+        Always preserves the parent ideation's structured context as a
+        derivation snapshot. If a custom description is provided, the inherited
+        context is appended instead of being skipped.
         """
         ideation_service = IdeationService(self.db)
         ideation = await ideation_service.get_ideation(ideation_id)
@@ -4180,28 +4673,14 @@ class RefinementService:
             if not result.scalar_one_or_none():
                 return None
 
-        # Compile context from ideation if description not provided
-        description = data.description
-        if not description:
-            context_parts: list[str] = []
-            if ideation.problem_statement:
-                context_parts.append(f"## Problem Statement\n{ideation.problem_statement}")
-            if ideation.proposed_approach:
-                context_parts.append(f"## Proposed Approach\n{ideation.proposed_approach}")
-            if ideation.scope_assessment:
-                sa = ideation.scope_assessment
-                context_parts.append(
-                    f"## Scope Assessment\n"
-                    f"- Domains: {sa.get('domains', '?')}/5\n"
-                    f"- Ambiguity: {sa.get('ambiguity', '?')}/5\n"
-                    f"- Dependencies: {sa.get('dependencies', '?')}/5\n"
-                    f"- Complexity: {ideation.complexity.value if ideation.complexity else 'not evaluated'}"
-                )
-            qa_items = [qa for qa in (ideation.qa_items or []) if qa.answer]
-            if qa_items:
-                qa_lines = [f"**Q:** {qa.question}\n**A:** {qa.answer}" for qa in qa_items]
-                context_parts.append("## Q&A Decisions\n" + "\n\n".join(qa_lines))
-            description = "\n\n".join(context_parts) if context_parts else None
+        description = data.description.strip() if data.description else None
+        parent_context = compile_ideation_parent_context(ideation)
+        if parent_context:
+            if description:
+                if "## Parent Ideation Context" not in description:
+                    description = f"{description}\n\n{parent_context}"
+            else:
+                description = parent_context
 
         # Parse optional mockup/kb filters from data (if present)
         prop_mockup_ids = getattr(data, "mockup_ids", None)
@@ -4237,6 +4716,10 @@ class RefinementService:
             user_id=user_id,
             mockup_ids=prop_mockup_ids,
             kb_ids=prop_kb_ids,
+            source_type="ideation",
+            source_id=ideation.id,
+            source_title=ideation.title,
+            source_version=ideation.version,
         )
         await propagate_architecture_designs(
             self.db,
@@ -4276,6 +4759,9 @@ class RefinementService:
         """Get a refinement by ID with specs, knowledge_bases, and qa_items."""
         query = (
             select(Refinement)
+            .options(selectinload(Refinement.ideation).selectinload(Ideation.qa_items))
+            .options(selectinload(Refinement.ideation).selectinload(Ideation.knowledge_bases))
+            .options(selectinload(Refinement.ideation).selectinload(Ideation.architecture_designs))
             .options(selectinload(Refinement.specs).selectinload(Spec.architecture_designs))
             .options(selectinload(Refinement.knowledge_bases))
             .options(selectinload(Refinement.qa_items))
@@ -4564,8 +5050,12 @@ class RefinementService:
         if refinement.status != RefinementStatus.DONE:
             raise ValueError("Spec can only be created from a 'done' refinement")
 
-        # Compile rich context from refinement data
+        # Compile rich context from refinement data plus the parent ideation
+        # intent. Existing refinements created before parent context was
+        # appended to description still carry the original idea into specs.
         context_parts: list[str] = []
+        if refinement.description:
+            context_parts.append(f"## Refinement Description\n{refinement.description}")
         if refinement.in_scope:
             scope_text = "\n".join(f"- {s}" for s in refinement.in_scope)
             context_parts.append(f"## In Scope\n{scope_text}")
@@ -4577,6 +5067,11 @@ class RefinementService:
         if refinement.decisions:
             decisions_text = "\n".join(f"- {d}" for d in refinement.decisions)
             context_parts.append(f"## Decisions\n{decisions_text}")
+        parent_context = compile_ideation_parent_context(getattr(refinement, "ideation", None))
+        if parent_context and not (
+            refinement.description and "## Parent Ideation Context" in refinement.description
+        ):
+            context_parts.append(parent_context)
         context = "\n\n".join(context_parts) if context_parts else refinement.description
 
         # Snapshot artifact data BEFORE create_spec — flush() in create_spec
@@ -4585,7 +5080,12 @@ class RefinementService:
         snapshot_mockups = list(refinement.screen_mockups or [])
         snapshot_kbs = [
             {"title": kb.title, "description": kb.description, "content": kb.content,
-             "mime_type": getattr(kb, "mime_type", "text/markdown"), "id": kb.id}
+             "mime_type": getattr(kb, "mime_type", "text/markdown"), "id": kb.id,
+             "source_type": getattr(kb, "source_type", None),
+             "source_id": getattr(kb, "source_id", None),
+             "source_title": getattr(kb, "source_title", None),
+             "source_version": getattr(kb, "source_version", None),
+             "source_kb_id": getattr(kb, "source_kb_id", None)}
             for kb in (refinement.knowledge_bases or [])
         ]
 
@@ -4613,6 +5113,10 @@ class RefinementService:
                 user_id=user_id,
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
+                source_type="refinement",
+                source_id=refinement.id,
+                source_title=refinement.title,
+                source_version=refinement.version,
             )
             await propagate_architecture_designs(
                 self.db,

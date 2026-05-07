@@ -38,6 +38,7 @@ from okto_pulse.core.services.main import (
     SpecKnowledgeService,
     SpecQAService,
     SpecService,
+    StoryService,
 )
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
 from okto_pulse.core.services.architecture import (
@@ -51,6 +52,7 @@ from okto_pulse.core.services.reference_resolution import (
     resolve_entity_context_references,
     resolve_spec_references,
     resolve_task_context_references,
+    serialize_parent_ideation_context,
 )
 
 
@@ -380,7 +382,17 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[
             "description": kb.get("description"),
             "mime_type": kb.get("mime_type") or kb.get("content_type") or "text/markdown",
         }
-        for attr in ("ideation_id", "refinement_id", "spec_id", "source", "source_type"):
+        for attr in (
+            "ideation_id",
+            "refinement_id",
+            "spec_id",
+            "source",
+            "source_type",
+            "source_id",
+            "source_title",
+            "source_version",
+            "source_kb_id",
+        ):
             if kb.get(attr):
                 data[attr] = kb[attr]
         if include_content:
@@ -396,7 +408,16 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[
         "description": getattr(kb, "description", None),
         "mime_type": getattr(kb, "mime_type", "text/markdown"),
     }
-    for attr in ("ideation_id", "refinement_id", "spec_id"):
+    for attr in (
+        "ideation_id",
+        "refinement_id",
+        "spec_id",
+        "source_type",
+        "source_id",
+        "source_title",
+        "source_version",
+        "source_kb_id",
+    ):
         value = getattr(kb, attr, None)
         if value:
             data[attr] = value
@@ -604,6 +625,7 @@ from okto_pulse.core.services.analytics_service import (  # noqa: E402
 # D-7: spec_coverage agora canônico em services/analytics_service.py — re-export
 # preserva callers existentes em mcp/server.py + tests.
 from okto_pulse.core.services.analytics_service import (  # noqa: E402
+    resolve_linked_criteria_to_indices as _resolve_linked_criteria_to_indices,  # noqa: F401
     spec_coverage_summary as _spec_coverage,  # noqa: F401
 )
 
@@ -3337,6 +3359,308 @@ async def okto_pulse_delete_attachment(board_id: str, attachment_id: str) -> str
 
 
 # ============================================================================
+# STORY TOOLS
+# ============================================================================
+
+
+def _story_payload(story) -> dict:
+    return {
+        "id": story.id,
+        "board_id": story.board_id,
+        "topic_id": story.topic_id,
+        "title": story.title,
+        "description": story.description,
+        "actor": story.actor,
+        "goal": story.goal,
+        "benefit": story.benefit,
+        "labels": story.labels,
+        "status": story.status.value,
+        "assignee_id": story.assignee_id,
+        "screen_mockups": story.screen_mockups,
+        "archived": story.archived,
+        "ideation_links": [
+            {"id": link.id, "ideation_id": link.ideation_id, "created_at": link.created_at.isoformat()}
+            for link in (story.ideation_links or [])
+        ],
+        "created_at": story.created_at.isoformat(),
+        "updated_at": story.updated_at.isoformat(),
+    }
+
+
+@mcp.tool()
+async def okto_pulse_create_topic(board_id: str, name: str, description: str = "") -> str:
+    """Create a board-scoped Topic for grouping Stories."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    from okto_pulse.core.models.schemas import TopicCreate
+
+    async with get_db_for_mcp() as db:
+        try:
+            topic = await StoryService(db).create_topic(
+                board_id,
+                ctx.agent_id,
+                TopicCreate(name=name, description=description or None),
+                skip_ownership_check=True,
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+        if not topic:
+            return json.dumps({"error": "Board not found"})
+        return json.dumps({"success": True, "topic": {"id": topic.id, "name": topic.name}}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_topics(board_id: str, include_archived: str = "false") -> str:
+    """List Topics for a board."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+    async with get_db_for_mcp() as db:
+        topics = await StoryService(db).list_topics(board_id, include_archived=_flag_enabled(include_archived))
+        await db.commit()
+        return json.dumps(
+            {
+                "count": len(topics),
+                "topics": [
+                    {
+                        "id": topic.id,
+                        "board_id": topic.board_id,
+                        "name": topic.name,
+                        "description": topic.description,
+                        "archived": topic.archived,
+                        "story_count": getattr(topic, "story_count", 0),
+                    }
+                    for topic in topics
+                ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_create_story(
+    board_id: str,
+    topic_id: str,
+    title: str,
+    description: str,
+    actor: str = "",
+    goal: str = "",
+    benefit: str = "",
+    labels: list[str] | str = "",
+    status: str = "draft",
+) -> str:
+    """Create a lightweight Story before Ideation."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    from okto_pulse.core.models.db import StoryStatus
+    from okto_pulse.core.models.schemas import StoryCreate
+
+    try:
+        story_status = StoryStatus(status)
+        label_list = coerce_to_list_str(labels) or None
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+    async with get_db_for_mcp() as db:
+        try:
+            story = await StoryService(db).create_story(
+                board_id,
+                ctx.agent_id,
+                StoryCreate(
+                    topic_id=topic_id,
+                    title=title,
+                    description=description.replace("\\n", "\n"),
+                    actor=actor or None,
+                    goal=goal or None,
+                    benefit=benefit or None,
+                    labels=label_list,
+                    status=story_status,
+                ),
+                skip_ownership_check=True,
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+        if not story:
+            return json.dumps({"error": "Board not found"})
+        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_stories(
+    board_id: str,
+    status: str = "",
+    topic_id: str = "",
+    search: str = "",
+    linked: str = "",
+    converted: str = "",
+    include_archived: str = "false",
+) -> str:
+    """List Stories for a board with optional filters."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    def _optional_bool(value: str) -> bool | None:
+        if not value:
+            return None
+        return _flag_enabled(value)
+
+    async with get_db_for_mcp() as db:
+        try:
+            stories = await StoryService(db).list_stories(
+                board_id,
+                status_filter=status or None,
+                topic_id=topic_id or None,
+                search=search or None,
+                linked=_optional_bool(linked),
+                converted=_optional_bool(converted),
+                include_archived=_flag_enabled(include_archived),
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+        return json.dumps(
+            {"count": len(stories), "stories": [_story_payload(story) for story in stories]},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_move_story(board_id: str, story_id: str, status: str) -> str:
+    """Move a Story through draft, triage, ready, and converted."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    from okto_pulse.core.models.db import StoryStatus
+    from okto_pulse.core.models.schemas import StoryMove
+
+    try:
+        story_status = StoryStatus(status)
+    except ValueError:
+        return json.dumps({"error": f"Invalid status. Must be one of: {[s.value for s in StoryStatus]}"})
+
+    async with get_db_for_mcp() as db:
+        try:
+            story = await StoryService(db).move_story(story_id, ctx.agent_id, StoryMove(status=story_status))
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+        if not story or story.board_id != board_id:
+            return json.dumps({"error": "Story not found"})
+        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_link_story_to_ideation(
+    board_id: str,
+    story_id: str,
+    ideation_id: str,
+    mark_converted: str = "false",
+) -> str:
+    """Create the simple N:N link between a Story and an Ideation."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    async with get_db_for_mcp() as db:
+        link = await StoryService(db).link_story_to_ideation(
+            story_id,
+            ideation_id,
+            ctx.agent_id,
+            mark_converted=_flag_enabled(mark_converted),
+        )
+        await db.commit()
+        if not link or link.board_id != board_id:
+            return json.dumps({"error": "Story or Ideation not found"})
+        return json.dumps(
+            {"success": True, "link": {"id": link.id, "story_id": link.story_id, "ideation_id": link.ideation_id}},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_convert_stories_to_ideation(
+    board_id: str,
+    story_ids: list[str] | str,
+    ideation_id: str = "",
+    title: str = "",
+    description: str = "",
+    problem_statement: str = "",
+    proposed_approach: str = "",
+    mockup_ids: list[str] | str = "",
+) -> str:
+    """Create a new Ideation or link an existing Ideation from selected Stories."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    from okto_pulse.core.models.schemas import StoryConversionRequest
+
+    try:
+        story_id_list = coerce_to_list_str(story_ids)
+        mockup_id_list = coerce_to_list_str(mockup_ids) if mockup_ids else None
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    if not story_id_list:
+        return json.dumps({"error": "At least one story_id is required"})
+
+    async with get_db_for_mcp() as db:
+        try:
+            result = await StoryService(db).convert_stories(
+                board_id,
+                ctx.agent_id,
+                StoryConversionRequest(
+                    story_ids=story_id_list,
+                    ideation_id=ideation_id or None,
+                    title=title or None,
+                    description=description.replace("\\n", "\n") if description else None,
+                    problem_statement=problem_statement.replace("\\n", "\n") if problem_statement else None,
+                    proposed_approach=proposed_approach.replace("\\n", "\n") if proposed_approach else None,
+                    mockup_ids=mockup_id_list,
+                ),
+                skip_ownership_check=True,
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+        if not result:
+            return json.dumps({"error": "Board not found"})
+        ideation, links, propagated = result
+        return json.dumps(
+            {
+                "success": True,
+                "ideation": {"id": ideation.id, "title": ideation.title, "status": ideation.status.value},
+                "links": [{"id": link.id, "story_id": link.story_id, "ideation_id": link.ideation_id} for link in links],
+                "propagated_mockups": propagated,
+            },
+            default=str,
+        )
+
+
+# ============================================================================
 # IDEATION TOOLS
 # ============================================================================
 
@@ -4597,8 +4921,8 @@ async def okto_pulse_create_refinement(
 ) -> str:
     """
     Create a new refinement for a DONE ideation. The ideation must be in 'done' status
-    (snapshotted) before refinements can be created. If description is not provided,
-    context is compiled from the ideation's problem statement, approach, and Q&A.
+    (snapshotted) before refinements can be created. The parent ideation context
+    is always preserved; when description is provided, inherited context is appended.
 
     Artifacts (mockups, KBs, Architecture Designs) from the ideation are
     automatically propagated. Use mockup_ids/kb_ids/architecture_design_ids
@@ -4608,7 +4932,7 @@ async def okto_pulse_create_refinement(
         board_id: Board ID
         ideation_id: Ideation ID (must be in 'done' status)
         title: Refinement title
-        description: Description of this refinement aspect (optional — auto-compiled from ideation if empty)
+        description: Description of this refinement aspect (optional; parent ideation context is appended)
         in_scope: Pipe-separated list of what IS in scope (e.g. "Auth flow|Token refresh|Session management")
         out_of_scope: Pipe-separated list of what is NOT in scope (e.g. "UI changes|Email notifications")
         analysis: Detailed analysis text (optional)
@@ -4779,7 +5103,7 @@ async def okto_pulse_get_refinement_context(
         include_architecture: Include Architecture Designs (default "true")
 
     Returns:
-        JSON with complete refinement context: details + scope + Q&A + mockups + KBs + derived specs
+        JSON with complete refinement context: details + parent ideation + scope + Q&A + mockups + KBs + derived specs
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -4824,6 +5148,12 @@ async def okto_pulse_get_refinement_context(
                 for s in (refinement.specs if hasattr(refinement, "specs") else [])
             ],
         }
+        parent_ideation = serialize_parent_ideation_context(
+            getattr(refinement, "ideation", None),
+            include_qa=_inc_qa,
+        )
+        if parent_ideation:
+            result["parent_ideation"] = parent_ideation
 
         if _inc_qa:
             result["qa_items"] = [
@@ -4852,13 +5182,7 @@ async def okto_pulse_get_refinement_context(
 
         if _inc_kb and hasattr(refinement, "knowledge_bases"):
             result["knowledge_bases"] = [
-                {
-                    "id": kb.id,
-                    "title": kb.title,
-                    "description": kb.description,
-                    "content": kb.content,
-                    "mime_type": kb.mime_type,
-                }
+                _serialize_knowledge_base(kb)
                 for kb in (refinement.knowledge_bases or [])
             ]
 
@@ -4867,6 +5191,7 @@ async def okto_pulse_get_refinement_context(
             source_type="refinement",
             include_content=_inc_kb,
             architecture_designs=architecture_designs if _inc_architecture else [],
+            include_parent_qa=_inc_qa,
         )
         if not _inc_kb:
             resolved_references["knowledge_bases"] = []
@@ -6236,10 +6561,13 @@ async def okto_pulse_list_test_scenarios(
         paginated = filtered[offset:offset + limit]
 
         # Build coverage map (always from full set)
-        coverage: dict[str, list[str]] = {}
-        for c in criteria:
-            covering = [s["id"] for s in all_scenarios if c in (s.get("linked_criteria") or [])]
-            coverage[c] = covering
+        coverage: dict[int, list[str]] = {i: [] for i, _ in enumerate(criteria)}
+        for scenario in all_scenarios:
+            for index in _resolve_linked_criteria_to_indices(
+                scenario.get("linked_criteria"),
+                criteria,
+            ):
+                coverage.setdefault(index, []).append(scenario["id"])
 
         indexed_criteria = [
             {"index": i, "text": c} for i, c in enumerate(criteria)
@@ -6257,9 +6585,9 @@ async def okto_pulse_list_test_scenarios(
                 "coverage": {
                     "total_criteria": len(criteria),
                     "covered": sum(1 for v in coverage.values() if v),
-                    "uncovered_indices": [i for i, c in enumerate(criteria) if not coverage.get(c)],
-                    "uncovered": [c for c, v in coverage.items() if not v],
-                    "details": {str(i): coverage.get(c, []) for i, c in enumerate(criteria)},
+                    "uncovered_indices": [i for i, _ in enumerate(criteria) if not coverage.get(i)],
+                    "uncovered": [c for i, c in enumerate(criteria) if not coverage.get(i)],
+                    "details": {str(i): coverage.get(i, []) for i, _ in enumerate(criteria)},
                 },
                 "summary": {
                     "by_status": {st: sum(1 for s in all_scenarios if s.get("status") == st) for st in ("draft", "ready", "automated", "passed", "failed") if any(s.get("status") == st for s in all_scenarios)},

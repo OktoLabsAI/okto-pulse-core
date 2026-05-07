@@ -12,6 +12,7 @@ from okto_pulse.core.models.db import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
+    StoryStatus,
     SprintStatus,
 )
 
@@ -275,6 +276,148 @@ class ScreenMockup(BaseModel):
     html_content: str = ""
     annotations: list[MockupAnnotation] | None = None
     order: int = 0
+
+
+# ============================================================================
+# Stories Schemas
+# ============================================================================
+
+
+class TopicCreate(BaseModel):
+    """Schema for creating a board-scoped Story Topic."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = None
+
+
+class TopicUpdate(BaseModel):
+    """Schema for updating a Story Topic."""
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = None
+    archived: bool | None = None
+
+
+class TopicResponse(BaseSchema):
+    """Schema for Topic responses."""
+
+    id: str
+    board_id: str
+    name: str
+    description: str | None
+    archived: bool = False
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class TopicSummary(TopicResponse):
+    """Lightweight Topic summary. Kept separate for forward compatibility."""
+
+    story_count: int = 0
+
+
+class StoryIdeationLinkResponse(BaseSchema):
+    """Schema for the simple Story-Ideation link."""
+
+    id: str
+    board_id: str
+    story_id: str
+    ideation_id: str
+    created_by: str
+    created_at: datetime
+
+
+class StoryCreate(BaseModel):
+    """Schema for creating a lightweight Story."""
+
+    title: str = Field(..., min_length=1, max_length=500)
+    description: str = Field(..., min_length=1)
+    topic_id: str
+    actor: str | None = None
+    goal: str | None = None
+    benefit: str | None = None
+    labels: list[str] | None = None
+    status: StoryStatus = StoryStatus.DRAFT
+    assignee_id: str | None = None
+    screen_mockups: list[ScreenMockup] | None = None
+
+
+class StoryUpdate(BaseModel):
+    """Schema for updating a Story."""
+
+    title: str | None = Field(None, min_length=1, max_length=500)
+    description: str | None = Field(None, min_length=1)
+    topic_id: str | None = None
+    actor: str | None = None
+    goal: str | None = None
+    benefit: str | None = None
+    labels: list[str] | None = None
+    assignee_id: str | None = None
+    screen_mockups: list[ScreenMockup] | None = None
+
+
+class StoryMove(BaseModel):
+    """Schema for changing Story status."""
+
+    status: StoryStatus
+
+
+class StoryLinkCreate(BaseModel):
+    """Schema for linking a Story to an Ideation."""
+
+    ideation_id: str
+
+
+class StoryConversionRequest(BaseModel):
+    """Schema for creating/linking Ideations from selected Stories."""
+
+    story_ids: list[str] = Field(..., min_length=1)
+    ideation_id: str | None = None
+    title: str | None = Field(None, max_length=500)
+    description: str | None = None
+    problem_statement: str | None = None
+    proposed_approach: str | None = None
+    mockup_ids: list[str] | None = None
+    mark_converted: bool = True
+
+
+class StorySummary(BaseSchema):
+    """Schema for Story list responses."""
+
+    id: str
+    board_id: str
+    topic_id: str
+    title: str
+    description: str
+    actor: str | None
+    goal: str | None
+    benefit: str | None
+    labels: list[str] | None
+    status: StoryStatus
+    assignee_id: str | None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    archived: bool = False
+    pre_archive_status: str | None = None
+    screen_mockups: list[ScreenMockup] | None = None
+    ideation_links: list[StoryIdeationLinkResponse] = []
+
+
+class StoryResponse(StorySummary):
+    """Full Story response."""
+
+    topic: TopicResponse | None = None
+
+
+class StoryConversionResponse(BaseModel):
+    """Response for Story conversion/linking."""
+
+    success: bool
+    ideation: dict[str, Any]
+    links: list[StoryIdeationLinkResponse]
+    propagated_mockups: int = 0
 
 
 # ============================================================================
@@ -730,6 +873,11 @@ class IdeationKnowledgeResponse(BaseSchema):
     description: str | None
     content: str
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -743,6 +891,11 @@ class IdeationKnowledgeSummary(BaseSchema):
     title: str
     description: str | None
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_at: datetime
 
 
@@ -977,6 +1130,11 @@ class RefinementKnowledgeResponse(BaseSchema):
     description: str | None
     content: str
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -990,6 +1148,11 @@ class RefinementKnowledgeSummary(BaseSchema):
     title: str
     description: str | None
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_at: datetime
 
 
@@ -1239,6 +1402,11 @@ class SpecKnowledgeResponse(BaseSchema):
     description: str | None
     content: str
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -1252,6 +1420,11 @@ class SpecKnowledgeSummary(BaseSchema):
     title: str
     description: str | None
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_at: datetime
 
 
