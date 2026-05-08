@@ -476,7 +476,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 |------|------|---------|
 | `okto_pulse_add_business_rule` / `okto_pulse_update_business_rule` / `okto_pulse_remove_business_rule` / `okto_pulse_list_business_rules` | board_id, spec_id, ... | CRUD for BRs. See **2.5 Business Rules**. |
 | `okto_pulse_add_api_contract` / `okto_pulse_update_api_contract` / `okto_pulse_remove_api_contract` / `okto_pulse_list_api_contracts` | board_id, spec_id, ... | CRUD for API contracts. See **2.6 API Contracts**. |
-| `okto_pulse_add_screen_mockup` / `okto_pulse_update_screen_mockup` / `okto_pulse_delete_screen_mockup` / `okto_pulse_annotate_mockup` / `okto_pulse_list_screen_mockups` | board_id, entity_id, entity_type?, ... | HTML+Tailwind mockups on specs/ideations/refinements/cards. See **2.7 Screen Mockups**. |
+| `okto_pulse_add_screen_mockup` / `okto_pulse_update_screen_mockup` / `okto_pulse_delete_screen_mockup` / `okto_pulse_annotate_mockup` / `okto_pulse_list_screen_mockups` | board_id, entity_id, entity_type?, ... | HTML+Tailwind mockups on specs/ideations/refinements/cards/stories. See **2.7 Screen Mockups**. |
 | `okto_pulse_get_architecture_design_schema` / `okto_pulse_validate_architecture_design_payload` / `okto_pulse_add_architecture_design` / `okto_pulse_update_architecture_design` / `okto_pulse_delete_architecture_design` / `okto_pulse_list_architecture_designs` / `okto_pulse_get_architecture_design` / `okto_pulse_import_excalidraw_architecture_diagram` / `okto_pulse_dump_architecture_diagram` / `okto_pulse_copy_architecture_to_card` | board_id, parent_type, parent_id/design_id, ... | First-class architecture designs on ideations/refinements/specs/cards: global description, diagrams, entities, interfaces, and contracts. Get the schema and dry-run validate generated payloads before persisting. See **2.7b Architecture Design — structural artifacts**. |
 | Knowledge base creation | spec/card tools only | KB insertion starts at the spec level in the current operating model. During ideation/refinement, capture uncertainty through Q&A, mockups, architecture, and prose; formalize reusable reference knowledge once it reaches the spec. |
 | `okto_pulse_add_spec_knowledge` / `okto_pulse_list_spec_knowledge` / `okto_pulse_get_spec_knowledge` / `okto_pulse_delete_spec_knowledge` | board_id, spec_id, ... | Attach reference documents to a spec. |
@@ -580,6 +580,11 @@ Stories are lightweight, optional intake items inspired by user stories. They pr
 |---|---|---|
 | List Topics | `okto_pulse_list_topics` | `topic.entity.read` |
 | Create Topic | `okto_pulse_create_topic` | `topic.entity.create` |
+| Update Topic fields | `okto_pulse_update_topic` | `topic.entity.edit_fields` |
+| Archive Topic | `okto_pulse_archive_topic` | `topic.entity.archive` |
+| Restore Topic | `okto_pulse_restore_topic` | `topic.entity.restore` |
+| Delete empty Topic | `okto_pulse_delete_topic` | `topic.entity.delete` |
+| Merge Topics | `okto_pulse_merge_topics` | `topic.entity.merge` |
 | List Stories | `okto_pulse_list_stories` | `story.entity.read` |
 | Create Story | `okto_pulse_create_story` | `story.entity.create` |
 | Move Story | `okto_pulse_move_story` | matching `story.move.*` flag + `story.interact_in.<current_status>` |
@@ -589,13 +594,16 @@ Stories are lightweight, optional intake items inspired by user stories. They pr
 **Topic rules:**
 - Reuse an existing Topic when it names the same product area or backlog theme.
 - Create a new Topic only when no existing Topic matches the user's grouping language.
-- Topic merge/delete are sensitive operations and require `topic.entity.merge` / `topic.entity.delete` when exposed by the available API/MCP surface. Do not simulate merge by silently rewriting many Stories unless the user explicitly asks and the board policy allows it.
+- Update, archive, restore, delete and merge must use the dedicated Topic tools. Do not simulate merge by silently rewriting Stories one by one.
+- `okto_pulse_delete_topic` is safe-delete only: it succeeds only when the Topic has no active or archived Stories. If it returns `topic_not_empty`, explain the active/archived counts and suggest merge, moving Stories or archiving instead of retrying blindly.
+- `okto_pulse_merge_topics` moves every Story from source to target, preserves Story-Ideation links, archives the source Topic, and returns an `impact` object. Cite that impact when confirming the operation to the user.
+- Topic archive/restore affects only the grouping entity. It must not be described as archiving or restoring the Stories inside it.
 
 **Story content rules:**
 - Write Story text as a user need, not as a solution spec.
 - Fill `actor`, `goal`, and `benefit` when the user provides them or they are directly inferable from the story sentence. Leave unknown fields empty instead of inventing a persona.
 - Use `labels` for cross-cutting tags such as `resource-gate`, `security`, `ux`, or `analytics`; use Topic for the primary grouping.
-- Mockups attached to Stories are optional context. When a Story becomes an Ideation/Spec, propagate or recreate only the mockups that remain relevant.
+- Mockups attached to Stories are optional first-class context. Manage them with `okto_pulse_add_screen_mockup`, `okto_pulse_update_screen_mockup`, `okto_pulse_annotate_mockup`, `okto_pulse_list_screen_mockups`, and `okto_pulse_delete_screen_mockup` using `entity_type="story"`. When a Story becomes an Ideation/Spec, propagate or recreate only the mockups that remain relevant.
 
 **Status flow:**
 
@@ -611,7 +619,7 @@ Stories are lightweight, optional intake items inspired by user stories. They pr
 **Derivation guidance:**
 - Several Stories can feed one Ideation when they describe the same problem space.
 - One Story can link to more than one Ideation only when the user intentionally wants that Story to inform multiple solution tracks.
-- Before converting, list existing Ideations and prefer linking to an editable/resolvable match over creating a duplicate.
+- Before converting, list existing Ideations and prefer linking to an editable/resolvable match over creating a duplicate. Story-Ideation links are allowed only when the target Ideation is editable (`draft`, `review`, `approved`, or `evaluating`); do not link Stories to `done`, `cancelled`, archived, or already linked Ideations.
 - Once a Story is converted, treat it as historical lineage context. Do not edit it to match the downstream Ideation; refinements/specs are where solution detail is sharpened.
 
 #### 2.1 Ideations
@@ -1139,14 +1147,14 @@ After defining requirements and test scenarios, add **screen mockups** whenever 
 
 **Q&A before visual assumptions:** if the intended screen, user role, workflow, empty/error/loading state, interaction, or visual hierarchy is unclear, ask Q&A before creating or finalizing the mockup. A mockup created from inferred requirements is worse than no mockup: it gives reviewers a false visual target, drives implementation in the wrong direction, and causes avoidable rework, extra time, and extra token spend when the user corrects the assumption.
 
-**Tools (work on any entity: spec, ideation, refinement, card):**
+**Tools (work on any entity: spec, ideation, refinement, card, story):**
 - `okto_pulse_add_screen_mockup(board_id, entity_id, title, entity_type?, description?, screen_type?, html_content?)` — Add a screen with HTML content
 - `okto_pulse_update_screen_mockup(board_id, entity_id, screen_id, entity_type?, title?, description?, html_content?, screen_type?)` — Update an existing screen
 - `okto_pulse_annotate_mockup(board_id, entity_id, screen_id, text, entity_type?)` — Add a screen-level design note
 - `okto_pulse_list_screen_mockups(board_id, entity_id, entity_type?)` — List all screens
 - `okto_pulse_delete_screen_mockup(board_id, entity_id, screen_id, entity_type?)` — Delete a screen
 
-`entity_type` defaults to `"spec"`. Set to `"ideation"`, `"refinement"`, or `"card"` to manage mockups on other entities.
+`entity_type` defaults to `"spec"`. Set to `"ideation"`, `"refinement"`, `"card"`, or `"story"` to manage mockups on other entities.
 
 **Screen types:** `page` | `modal` | `drawer` | `popover` | `panel`
 
@@ -1186,6 +1194,7 @@ Write standard HTML using Tailwind CSS utility classes. The HTML is sanitized (s
 2. Iterate on the design: `okto_pulse_update_screen_mockup(board_id, entity_id, screen_id, entity_type="spec", html_content="<div>...updated...</div>")`
 3. Annotate design decisions: `okto_pulse_annotate_mockup(board_id, entity_id, screen_id, "Use OAuth2 provider buttons below the form", entity_type="spec")`
 
+**On stories:** `okto_pulse_add_screen_mockup(board_id, story_id, "Story intake concept", entity_type="story", html_content="...")`
 **On ideations:** `okto_pulse_add_screen_mockup(board_id, ideation_id, "Dashboard Concept", entity_type="ideation", html_content="...")`
 
 **When to use mockups — MANDATORY for any UI work:**
@@ -1196,18 +1205,18 @@ Write standard HTML using Tailwind CSS utility classes. The HTML is sanitized (s
 
 **IMPORTANT:** If the spec involves frontend/UI work, you MUST create screen mockups or explicitly document why no visual artifact applies. The Okto Pulse dashboard renders them as live visual previews that users and other agents can review. Mockups are the primary way to align on UI design before implementation begins. Skipping mockups for UI specs leads to misaligned implementations and rework.
 
-Mockups can also be added to **ideations, refinements, and cards** — not just specs. Use them at any stage to visualize the intended UI.
+Mockups can also be added to **stories, ideations, refinements, and cards** — not just specs. Use them at any stage to visualize the intended UI.
 
 ##### 2.7a Pattern & Anti-Pattern — visual artifacts
 
-The Okto Pulse platform has **first-class support for visual artifacts** (screen mockups via `okto_pulse_add_screen_mockup` on spec, ideation, refinement, and card). Whenever you want to describe a UI layout, state, or interaction, you **MUST** go through the mockup tools — never embed the layout in plain-text fields (description, context, problem_statement, proposed_approach, analysis, notes, conclusion).
+The Okto Pulse platform has **first-class support for visual artifacts** (screen mockups via `okto_pulse_add_screen_mockup` on spec, ideation, refinement, card, and story). Whenever you want to describe a UI layout, state, or interaction, you **MUST** go through the mockup tools — never embed the layout in plain-text fields (description, context, problem_statement, proposed_approach, analysis, notes, conclusion).
 
 **✅ PATTERN — register the mockup as a first-class artifact:**
 
 ```
 okto_pulse_add_screen_mockup(
     board_id=bid,
-    entity_id=ideation_id,        # or spec_id, refinement_id, card_id
+    entity_id=ideation_id,        # or story_id, spec_id, refinement_id, card_id
     entity_type="ideation",
     title="Settings menu — runtime tuning",
     screen_type="panel",           # page | modal | drawer | popover | panel
@@ -1257,6 +1266,7 @@ If while drafting any text field you catch yourself typing `┌`, `─`, `│`, 
 4. Use `okto_pulse_annotate_mockup` for design notes that belong to the screen itself.
 
 Applies equally to:
+- **Stories** (`entity_type="story"`) — use for lightweight intake/context screens before ideation.
 - **Ideations** (`entity_type="ideation"`) — use for concept/vision screens during discovery.
 - **Refinements** (`entity_type="refinement"`) — use for scope-boundary screens (what is in/out).
 - **Specs** (`entity_type="spec"`) — use for the final design surface the implementer will follow.

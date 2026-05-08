@@ -39,6 +39,7 @@ from okto_pulse.core.services.main import (
     SpecQAService,
     SpecService,
     StoryService,
+    TopicOperationError,
 )
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
 from okto_pulse.core.services.architecture import (
@@ -3416,6 +3417,37 @@ def _story_payload(story) -> dict:
     }
 
 
+def _topic_payload(topic) -> dict:
+    return {
+        "id": topic.id,
+        "board_id": topic.board_id,
+        "name": topic.name,
+        "description": topic.description,
+        "archived": bool(topic.archived),
+        "story_count": getattr(topic, "story_count", 0),
+        "active_count": getattr(topic, "active_count", getattr(topic, "story_count", 0)),
+        "archived_count": getattr(topic, "archived_count", 0),
+        "total_associated_count": getattr(topic, "total_associated_count", getattr(topic, "story_count", 0)),
+        "created_by": topic.created_by,
+        "created_at": topic.created_at.isoformat(),
+        "updated_at": topic.updated_at.isoformat(),
+    }
+
+
+def _topic_impact(topic) -> dict:
+    return {
+        "topic_id": topic.id,
+        "story_count": getattr(topic, "story_count", 0),
+        "active_count": getattr(topic, "active_count", getattr(topic, "story_count", 0)),
+        "archived_count": getattr(topic, "archived_count", 0),
+        "total_associated_count": getattr(topic, "total_associated_count", getattr(topic, "story_count", 0)),
+    }
+
+
+def _topic_operation_error_response(exc: TopicOperationError) -> str:
+    return json.dumps({"success": False, "error": str(exc), "code": exc.code, **exc.details}, default=str)
+
+
 @mcp.tool()
 async def okto_pulse_create_topic(board_id: str, name: str, description: str = "") -> str:
     """Create a board-scoped Topic for grouping Stories."""
@@ -3435,12 +3467,20 @@ async def okto_pulse_create_topic(board_id: str, name: str, description: str = "
                 TopicCreate(name=name, description=description or None),
                 skip_ownership_check=True,
             )
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
+        except TopicOperationError as e:
+            return _topic_operation_error_response(e)
         await db.commit()
         if not topic:
             return json.dumps({"error": "Board not found"})
-        return json.dumps({"success": True, "topic": {"id": topic.id, "name": topic.name}}, default=str)
+        return json.dumps(
+            {
+                "success": True,
+                "message": f"Topic '{topic.name}' created.",
+                "topic": _topic_payload(topic),
+                "impact": _topic_impact(topic),
+            },
+            default=str,
+        )
 
 
 @mcp.tool()
@@ -3466,9 +3506,205 @@ async def okto_pulse_list_topics(board_id: str, include_archived: str = "false")
                         "description": topic.description,
                         "archived": topic.archived,
                         "story_count": getattr(topic, "story_count", 0),
+                        "active_count": getattr(topic, "active_count", getattr(topic, "story_count", 0)),
+                        "archived_count": getattr(topic, "archived_count", 0),
+                        "total_associated_count": getattr(topic, "total_associated_count", getattr(topic, "story_count", 0)),
                     }
                     for topic in topics
                 ],
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_update_topic(
+    board_id: str,
+    topic_id: str,
+    name: str = "",
+    description: str = "",
+) -> str:
+    """Update a Topic's editable fields. Use archive/restore tools for lifecycle."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.edit_fields", Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _mcp_permission_error_response(perm_err)
+    from okto_pulse.core.models.db import Topic
+    from okto_pulse.core.models.schemas import TopicUpdate
+
+    update_data = {}
+    if name:
+        update_data["name"] = name
+    if description:
+        update_data["description"] = description
+    if not update_data:
+        return json.dumps({"success": False, "error": "Provide at least one field to update"})
+
+    async with get_db_for_mcp() as db:
+        topic = await db.get(Topic, topic_id)
+        if not topic or topic.board_id != board_id:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        try:
+            updated = await StoryService(db).update_topic(topic_id, ctx.agent_id, TopicUpdate(**update_data))
+        except TopicOperationError as e:
+            return _topic_operation_error_response(e)
+        await db.commit()
+        if not updated:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        return json.dumps(
+            {
+                "success": True,
+                "message": f"Topic '{updated.name}' updated.",
+                "topic": _topic_payload(updated),
+                "impact": _topic_impact(updated),
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_archive_topic(board_id: str, topic_id: str) -> str:
+    """Archive a Topic without archiving its Stories."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.archive", Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _mcp_permission_error_response(perm_err)
+    from okto_pulse.core.models.db import Topic
+    from okto_pulse.core.models.schemas import TopicUpdate
+
+    async with get_db_for_mcp() as db:
+        topic = await db.get(Topic, topic_id)
+        if not topic or topic.board_id != board_id:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        try:
+            archived = await StoryService(db).update_topic(topic_id, ctx.agent_id, TopicUpdate(archived=True))
+        except TopicOperationError as e:
+            return _topic_operation_error_response(e)
+        await db.commit()
+        if not archived:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        return json.dumps(
+            {
+                "success": True,
+                "message": "Topic archived. Stories remain unchanged and visible through All topics/search unless the Story itself is archived.",
+                "topic": _topic_payload(archived),
+                "impact": _topic_impact(archived),
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_restore_topic(board_id: str, topic_id: str) -> str:
+    """Restore an archived Topic."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.restore", Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _mcp_permission_error_response(perm_err)
+    from okto_pulse.core.models.db import Topic
+    from okto_pulse.core.models.schemas import TopicUpdate
+
+    async with get_db_for_mcp() as db:
+        topic = await db.get(Topic, topic_id)
+        if not topic or topic.board_id != board_id:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        try:
+            restored = await StoryService(db).update_topic(topic_id, ctx.agent_id, TopicUpdate(archived=False))
+        except TopicOperationError as e:
+            return _topic_operation_error_response(e)
+        await db.commit()
+        if not restored:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        return json.dumps(
+            {
+                "success": True,
+                "message": f"Topic '{restored.name}' restored.",
+                "topic": _topic_payload(restored),
+                "impact": _topic_impact(restored),
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_delete_topic(board_id: str, topic_id: str) -> str:
+    """Delete a Topic only when it has no associated Stories, including archived Stories."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.delete", Permissions.SPECS_DELETE)
+    if perm_err:
+        return _mcp_permission_error_response(perm_err)
+    from okto_pulse.core.models.db import Topic
+
+    async with get_db_for_mcp() as db:
+        topic = await db.get(Topic, topic_id)
+        if not topic or topic.board_id != board_id:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        try:
+            deleted = await StoryService(db).delete_topic(topic_id, ctx.agent_id)
+        except TopicOperationError as e:
+            return _topic_operation_error_response(e)
+        await db.commit()
+        if not deleted:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        return json.dumps(
+            {
+                "success": True,
+                "message": f"Topic '{deleted.name}' deleted.",
+                "deleted_topic_id": topic_id,
+                "impact": {"topic_id": topic_id, "active_count": 0, "archived_count": 0, "total_associated_count": 0},
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_merge_topics(board_id: str, source_topic_id: str, target_topic_id: str) -> str:
+    """Merge a source Topic into an active target Topic while preserving Story-Ideation links."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.merge", Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _mcp_permission_error_response(perm_err)
+    from okto_pulse.core.models.db import Topic
+
+    async with get_db_for_mcp() as db:
+        source = await db.get(Topic, source_topic_id)
+        if not source or source.board_id != board_id:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        try:
+            result = await StoryService(db).merge_topics(source_topic_id, target_topic_id, ctx.agent_id)
+        except TopicOperationError as e:
+            return _topic_operation_error_response(e)
+        await db.commit()
+        if not result:
+            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
+        return json.dumps(
+            {
+                "success": True,
+                "message": (
+                    f"Merged Topic '{result['source'].name}' into '{result['target'].name}'. "
+                    "Story-Ideation links were preserved and the source Topic was archived."
+                ),
+                "source": _topic_payload(result["source"]),
+                "target": _topic_payload(result["target"]),
+                "impact": {
+                    "source_topic_id": source_topic_id,
+                    "target_topic_id": target_topic_id,
+                    "moved_count": result["moved_count"],
+                    "active_count": result["active_count"],
+                    "archived_count": result["archived_count"],
+                    "target_total_before": result["target_total_before"],
+                    "target_total_after": result["target_total_after"],
+                },
             },
             default=str,
         )
@@ -3631,12 +3867,15 @@ async def okto_pulse_link_story_to_ideation(
         )
         if perm_err:
             return _mcp_permission_error_response(perm_err)
-        link = await service.link_story_to_ideation(
-            story_id,
-            ideation_id,
-            ctx.agent_id,
-            mark_converted=_flag_enabled(mark_converted),
-        )
+        try:
+            link = await service.link_story_to_ideation(
+                story_id,
+                ideation_id,
+                ctx.agent_id,
+                mark_converted=_flag_enabled(mark_converted),
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
         await db.commit()
         if not link or link.board_id != board_id:
             return json.dumps({"error": "Story or Ideation not found"})
@@ -9853,6 +10092,16 @@ async def okto_pulse_list_api_contracts(
 # ==================== SCREEN MOCKUP TOOLS ====================
 
 
+SCREEN_MOCKUP_ENTITY_TYPES = ("spec", "ideation", "refinement", "card", "story")
+
+
+def _validate_screen_mockup_entity_type(entity_type: str) -> str | None:
+    if entity_type in SCREEN_MOCKUP_ENTITY_TYPES:
+        return None
+    allowed = ", ".join(SCREEN_MOCKUP_ENTITY_TYPES)
+    return f"Invalid entity_type '{entity_type}'. Must be one of: {allowed}"
+
+
 async def _load_entity_mockups(db, entity_type: str, entity_id: str):
     """Load an entity and return (entity, screen_mockups, service, update_schema_class) or error string."""
     if entity_type == "spec":
@@ -9875,6 +10124,11 @@ async def _load_entity_mockups(db, entity_type: str, entity_id: str):
         entity = await service.get_card(entity_id)
         from okto_pulse.core.models.schemas import CardUpdate
         return entity, service, CardUpdate
+    elif entity_type == "story":
+        service = StoryService(db)
+        entity = await service.get_story(entity_id)
+        from okto_pulse.core.models.schemas import StoryUpdate
+        return entity, service, StoryUpdate
     return None, None, None
 
 
@@ -9890,6 +10144,8 @@ async def _save_entity_mockups(service, entity_type, entity_id, agent_id, screen
         await service.update_refinement(entity_id, agent_id, UpdateClass(screen_mockups=screens))
     elif entity_type == "card":
         await service.update_card(entity_id, agent_id, UpdateClass(screen_mockups=screens))
+    elif entity_type == "story":
+        await service.update_story(entity_id, agent_id, UpdateClass(screen_mockups=screens))
 
 
 def _sanitize_html(html: str) -> str:
@@ -9911,14 +10167,14 @@ async def okto_pulse_add_screen_mockup(
     html_content: str = "",
 ) -> str:
     """
-    Add a screen mockup to any entity (spec, ideation, refinement, or card).
+    Add a screen mockup to any entity (spec, ideation, refinement, card, or story).
     Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard.
 
     Args:
         board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, or card)
+        entity_id: Entity ID (spec, ideation, refinement, card, or story)
         title: Screen title (e.g. "Login Page", "Dashboard", "Settings Modal")
-        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
         description: What this screen does and when it appears (optional). Supports Markdown.
         screen_type: Type of screen — one of: page, modal, drawer, popover, panel (default: page)
         html_content: HTML+Tailwind markup for the screen mockup. Script tags and on* event attributes are stripped for safety.
@@ -9933,8 +10189,9 @@ async def okto_pulse_add_screen_mockup(
     if perm_err:
         return _perm_error(perm_err)
 
-    if entity_type not in ("spec", "ideation", "refinement", "card"):
-        return json.dumps({"error": f"Invalid entity_type '{entity_type}'. Must be one of: spec, ideation, refinement, card"})
+    entity_type_error = _validate_screen_mockup_entity_type(entity_type)
+    if entity_type_error:
+        return json.dumps({"error": entity_type_error})
 
     import hashlib
     import time
@@ -9982,9 +10239,9 @@ async def okto_pulse_update_screen_mockup(
 
     Args:
         board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, or card)
+        entity_id: Entity ID (spec, ideation, refinement, card, or story)
         screen_id: Screen mockup ID to update
-        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
         title: New title (empty = no change)
         description: New description (empty = no change)
         html_content: New HTML+Tailwind content (empty = no change). Script tags and on* event attributes are stripped.
@@ -9999,6 +10256,10 @@ async def okto_pulse_update_screen_mockup(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
+
+    entity_type_error = _validate_screen_mockup_entity_type(entity_type)
+    if entity_type_error:
+        return json.dumps({"error": entity_type_error})
 
     async with get_db_for_mcp() as db:
         entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
@@ -10038,10 +10299,10 @@ async def okto_pulse_annotate_mockup(
 
     Args:
         board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, or card)
+        entity_id: Entity ID (spec, ideation, refinement, card, or story)
         screen_id: Screen mockup ID
         text: Annotation text (design note, requirement, constraint)
-        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
 
     Returns:
         JSON with created annotation
@@ -10052,6 +10313,10 @@ async def okto_pulse_annotate_mockup(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
+
+    entity_type_error = _validate_screen_mockup_entity_type(entity_type)
+    if entity_type_error:
+        return json.dumps({"error": entity_type_error})
 
     import hashlib
     import time
@@ -10094,8 +10359,8 @@ async def okto_pulse_list_screen_mockups(
 
     Args:
         board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, or card)
-        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+        entity_id: Entity ID (spec, ideation, refinement, card, or story)
+        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
         screen_type: Filter by screen type (optional) — one of: page, modal, drawer, popover, panel
         offset: Skip first N screens (default 0)
         limit: Max screens to return (default 50, max 200)
@@ -10106,6 +10371,10 @@ async def okto_pulse_list_screen_mockups(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+
+    entity_type_error = _validate_screen_mockup_entity_type(entity_type)
+    if entity_type_error:
+        return json.dumps({"error": entity_type_error})
 
     limit = min(limit, 200)
 
@@ -10140,9 +10409,9 @@ async def okto_pulse_delete_screen_mockup(
 
     Args:
         board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, or card)
+        entity_id: Entity ID (spec, ideation, refinement, card, or story)
         screen_id: Screen mockup ID to delete
-        entity_type: Type of entity — one of: spec, ideation, refinement, card (default: spec)
+        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
 
     Returns:
         JSON with success status
@@ -10153,6 +10422,10 @@ async def okto_pulse_delete_screen_mockup(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
+
+    entity_type_error = _validate_screen_mockup_entity_type(entity_type)
+    if entity_type_error:
+        return json.dumps({"error": entity_type_error})
 
     async with get_db_for_mcp() as db:
         entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
