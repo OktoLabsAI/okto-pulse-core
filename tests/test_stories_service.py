@@ -5,19 +5,33 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import func, select
 
+from okto_pulse.core.api import stories as stories_api
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, ConsolidationQueue, Ideation, Story, StoryStatus
+from okto_pulse.core.models.db import (
+    ActivityLog,
+    Board,
+    ConsolidationQueue,
+    Ideation,
+    IdeationStatus,
+    Story,
+    StoryIdeationLink,
+    StoryStatus,
+)
 from okto_pulse.core.models.schemas import (
     ScreenMockup,
+    StoryLinkCreate,
     StoryConversionRequest,
     StoryCreate,
     StoryMove,
     TopicCreate,
+    TopicMergeRequest,
+    TopicUpdate,
 )
 from okto_pulse.core.services.analytics_service import compute_funnel
-from okto_pulse.core.services.main import StoryService
+from okto_pulse.core.services.main import InvalidTopicMergeError, StoryService, TopicNotEmptyError
 from okto_pulse.core.services.traceability import build_lineage_graph
 
 
@@ -33,7 +47,25 @@ def _stub_ctx(board_id: str, actor_id: str):
             "agent_id": actor_id,
             "agent_name": "stories-mcp-agent",
             "board_id": board_id,
-            "permissions": ["board:read", "specs:create", "specs:update"],
+            "permissions": [
+                "board:read",
+                "specs:create",
+                "specs:update",
+                "specs:delete",
+                "topic.entity.read",
+                "topic.entity.create",
+                "topic.entity.edit_fields",
+                "topic.entity.archive",
+                "topic.entity.restore",
+                "topic.entity.delete",
+                "topic.entity.merge",
+                "story.entity.read",
+                "story.entity.create",
+                "story.move.draft_to_triage",
+                "story.move.triage_to_ready",
+                "story.links.ideation",
+                "story.conversion.to_ideation",
+            ],
         },
     )()
 
@@ -262,6 +294,359 @@ async def test_topic_name_is_unique_per_board_only(db_factory):
 
 
 @pytest.mark.asyncio
+async def test_topic_delete_blocks_active_and_archived_stories(db_factory):
+    owner_id = _id("agent")
+    board_id = _id("story-board")
+    await _seed_board(db_factory, board_id, owner_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        topic = await service.create_topic(board_id, owner_id, TopicCreate(name="Resource Gate"))
+        empty_topic = await service.create_topic(board_id, owner_id, TopicCreate(name="Empty Topic"))
+        assert topic is not None and empty_topic is not None
+
+        active_story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=topic.id,
+                title="Active story",
+                description="As a user, I want active tracking so impact is visible.",
+            ),
+        )
+        archived_story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=topic.id,
+                title="Archived story",
+                description="As a user, I want archived tracking so delete remains safe.",
+            ),
+        )
+        assert active_story is not None and archived_story is not None
+        await service.archive_story(archived_story.id, owner_id, archived=True)
+
+        with pytest.raises(TopicNotEmptyError) as exc:
+            await service.delete_topic(topic.id, owner_id)
+        assert exc.value.code == "topic_not_empty"
+        assert exc.value.details["active_count"] == 1
+        assert exc.value.details["archived_count"] == 1
+        assert exc.value.details["suggested_actions"] == ["merge", "move_stories", "archive"]
+
+        deleted = await service.delete_topic(empty_topic.id, owner_id)
+        assert deleted is not None
+        assert await db.get(type(empty_topic), empty_topic.id) is None
+        activity = (await db.execute(
+            select(ActivityLog).where(ActivityLog.board_id == board_id, ActivityLog.action == "topic_deleted")
+        )).scalar_one()
+        assert activity.details["topic_id"] == empty_topic.id
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_topic_merge_moves_stories_preserves_links_and_archives_source(db_factory):
+    owner_id = _id("agent")
+    board_id = _id("story-board")
+    await _seed_board(db_factory, board_id, owner_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        source = await service.create_topic(board_id, owner_id, TopicCreate(name="Incoming"))
+        target = await service.create_topic(board_id, owner_id, TopicCreate(name="Resource Gate"))
+        assert source is not None and target is not None
+
+        story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=source.id,
+                title="Link preserving story",
+                description="As a reviewer, I want lineage links to survive a topic merge.",
+            ),
+        )
+        archived_story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=source.id,
+                title="Archived source story",
+                description="As a maintainer, I want archived stories moved too.",
+            ),
+        )
+        assert story is not None and archived_story is not None
+        ideation = Ideation(board_id=board_id, title="Topic merge ideation", created_by=owner_id)
+        db.add(ideation)
+        await db.flush()
+        await service.link_story_to_ideation(story.id, ideation.id, owner_id)
+        await service.archive_story(archived_story.id, owner_id, archived=True)
+
+        result = await service.merge_topics(source.id, target.id, owner_id)
+        assert result is not None
+        assert result["moved_count"] == 2
+        assert result["active_count"] == 1
+        assert result["archived_count"] == 1
+        assert result["source"].archived is True
+        assert result["target"].archived is False
+        assert getattr(result["target"], "total_associated_count") == 2
+
+        moved_stories = list((await db.execute(
+            select(Story).where(Story.id.in_([story.id, archived_story.id]))
+        )).scalars().all())
+        assert {item.topic_id for item in moved_stories} == {target.id}
+        links = list((await db.execute(
+            select(StoryIdeationLink).where(StoryIdeationLink.story_id == story.id)
+        )).scalars().all())
+        assert [link.ideation_id for link in links] == [ideation.id]
+        activity = (await db.execute(
+            select(ActivityLog).where(ActivityLog.board_id == board_id, ActivityLog.action == "topic_merged")
+        )).scalar_one()
+        assert activity.details["source_topic_id"] == source.id
+        assert activity.details["target_topic_id"] == target.id
+        assert activity.details["moved_count"] == 2
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_topic_lifecycle_uses_semantic_activity_and_active_name_uniqueness(db_factory):
+    owner_id = _id("agent")
+    board_id = _id("story-board")
+    await _seed_board(db_factory, board_id, owner_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        topic = await service.create_topic(board_id, owner_id, TopicCreate(name="Resource Gate"))
+        assert topic is not None
+        archived = await service.update_topic(topic.id, owner_id, TopicUpdate(archived=True))
+        assert archived is not None and archived.archived is True
+
+        replacement = await service.create_topic(board_id, owner_id, TopicCreate(name="Resource Gate"))
+        assert replacement is not None
+        assert replacement.id != topic.id
+        assert topic.name.startswith("Resource Gate [archived ")
+
+        with pytest.raises(ValueError):
+            await service.update_topic(topic.id, owner_id, TopicUpdate(name="Resource Gate", archived=False))
+
+        restored = await service.update_topic(topic.id, owner_id, TopicUpdate(archived=False))
+        assert restored is not None and restored.archived is False
+
+        actions = list((await db.execute(
+            select(ActivityLog.action).where(ActivityLog.board_id == board_id)
+        )).scalars().all())
+        assert "topic_archived" in actions
+        assert "topic_restored" in actions
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_topic_merge_rejects_self_merge_and_archived_target(db_factory):
+    owner_id = _id("agent")
+    board_id = _id("story-board")
+    await _seed_board(db_factory, board_id, owner_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        source = await service.create_topic(board_id, owner_id, TopicCreate(name="Source"))
+        target = await service.create_topic(board_id, owner_id, TopicCreate(name="Target"))
+        assert source is not None and target is not None
+
+        with pytest.raises(InvalidTopicMergeError):
+            await service.merge_topics(source.id, source.id, owner_id)
+
+        await service.update_topic(target.id, owner_id, TopicUpdate(archived=True))
+        with pytest.raises(InvalidTopicMergeError):
+            await service.merge_topics(source.id, target.id, owner_id)
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_topic_rest_endpoints_return_contextual_delete_and_merge_payloads(db_factory):
+    owner_id = _id("agent")
+    board_id = _id("story-board")
+    await _seed_board(db_factory, board_id, owner_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        source = await service.create_topic(board_id, owner_id, TopicCreate(name="Source API"))
+        target = await service.create_topic(board_id, owner_id, TopicCreate(name="Target API"))
+        assert source is not None and target is not None
+        story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=source.id,
+                title="REST topic story",
+                description="As a maintainer, I need REST contracts for Topic operations.",
+            ),
+        )
+        assert story is not None
+        source_id = source.id
+        target_id = target.id
+        await db.commit()
+
+        with pytest.raises(HTTPException) as blocked:
+            await stories_api.delete_topic(source_id, user_id=owner_id, db=db)
+        assert blocked.value.status_code == 409
+        assert blocked.value.detail["code"] == "topic_not_empty"
+        assert blocked.value.detail["active_count"] == 1
+        assert blocked.value.detail["suggested_actions"] == ["merge", "move_stories", "archive"]
+        await db.rollback()
+
+        merged = await stories_api.merge_topics(
+            source_id,
+            TopicMergeRequest(target_topic_id=target_id),
+            user_id=owner_id,
+            db=db,
+        )
+        assert merged["success"] is True
+        assert merged["moved_count"] == 1
+        assert merged["source"].archived is True
+        assert getattr(merged["target"], "total_associated_count") == 1
+
+        deleted = await stories_api.delete_topic(source_id, user_id=owner_id, db=db)
+        assert deleted.success is True
+        assert deleted.deleted_topic_id == source_id
+
+
+@pytest.mark.asyncio
+async def test_topic_rest_and_mcp_tools_enforce_granular_permissions(db_factory):
+    owner_id = _id("agent")
+    board_id = _id("topic-board")
+    await _seed_board(db_factory, board_id, owner_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        topic = await service.create_topic(board_id, owner_id, TopicCreate(name="Permission source"))
+        empty = await service.create_topic(board_id, owner_id, TopicCreate(name="Permission empty"))
+        target = await service.create_topic(board_id, owner_id, TopicCreate(name="Permission target"))
+        assert topic is not None and empty is not None and target is not None
+
+        seen_permissions: list[str | list[str | None] | None] = []
+
+        async def capture_permission(*args, **kwargs):
+            seen_permissions.append(args[3])
+
+        with patch.object(stories_api, "_require_permissions", side_effect=capture_permission):
+            await stories_api.create_topic(board_id, TopicCreate(name="Permission created"), user_id=owner_id, db=db)
+            await stories_api.list_topics(board_id, user_id=owner_id, db=db)
+            await stories_api.update_topic(topic.id, TopicUpdate(name="Permission renamed"), user_id=owner_id, db=db)
+            await stories_api.update_topic(topic.id, TopicUpdate(archived=True), user_id=owner_id, db=db)
+            await stories_api.update_topic(topic.id, TopicUpdate(archived=False), user_id=owner_id, db=db)
+            await stories_api.delete_topic(empty.id, user_id=owner_id, db=db)
+            await stories_api.merge_topics(
+                topic.id,
+                TopicMergeRequest(target_topic_id=target.id),
+                user_id=owner_id,
+                db=db,
+            )
+
+        flattened = [
+            permission
+            for entry in seen_permissions
+            for permission in (entry if isinstance(entry, list) else [entry])
+            if permission
+        ]
+        assert "topic.entity.create" in flattened
+        assert "topic.entity.read" in flattened
+        assert "topic.entity.edit_fields" in flattened
+        assert "topic.entity.archive" in flattened
+        assert "topic.entity.restore" in flattened
+        assert "topic.entity.delete" in flattened
+        assert "topic.entity.merge" in flattened
+
+    denied_ctx = _stub_ctx(board_id, owner_id)
+    denied_ctx.permissions = ["board:read"]
+    mcp_cases = [
+        ("okto_pulse_update_topic", {"topic_id": "topic", "name": "x"}, "topic.entity.edit_fields"),
+        ("okto_pulse_archive_topic", {"topic_id": "topic"}, "topic.entity.archive"),
+        ("okto_pulse_restore_topic", {"topic_id": "topic"}, "topic.entity.restore"),
+        ("okto_pulse_delete_topic", {"topic_id": "topic"}, "topic.entity.delete"),
+        ("okto_pulse_merge_topics", {"source_topic_id": "source", "target_topic_id": "target"}, "topic.entity.merge"),
+    ]
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=denied_ctx)):
+        for tool_name, kwargs, required_permission in mcp_cases:
+            payload = await _call_mcp(db_factory, tool_name, board_id=board_id, **kwargs)
+            assert required_permission in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_story_links_require_editable_ideations_and_reject_duplicates(db_factory):
+    owner_id = _id("agent")
+    board_id = _id("story-board")
+    other_board_id = _id("other-board")
+    await _seed_board(db_factory, board_id, owner_id)
+    await _seed_board(db_factory, other_board_id, owner_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        topic = await service.create_topic(board_id, owner_id, TopicCreate(name="Operational parity"))
+        assert topic is not None
+        story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=topic.id,
+                title="Link Story through editable Ideation selector",
+                description="As a product lead, I want Story links to target editable ideations.",
+            ),
+        )
+        assert story is not None
+
+        editable = Ideation(
+            board_id=board_id,
+            title="Editable target",
+            status=IdeationStatus.REVIEW,
+            created_by=owner_id,
+        )
+        done = Ideation(
+            board_id=board_id,
+            title="Closed target",
+            status=IdeationStatus.DONE,
+            created_by=owner_id,
+        )
+        cancelled = Ideation(
+            board_id=board_id,
+            title="Cancelled target",
+            status=IdeationStatus.CANCELLED,
+            created_by=owner_id,
+        )
+        other_board = Ideation(
+            board_id=other_board_id,
+            title="Other board target",
+            created_by=owner_id,
+        )
+        db.add_all([editable, done, cancelled, other_board])
+        await db.flush()
+
+        link = await service.link_story_to_ideation(story.id, editable.id, owner_id)
+        assert link is not None
+        assert link.ideation_id == editable.id
+
+        with pytest.raises(ValueError, match="already linked"):
+            await service.link_story_to_ideation(story.id, editable.id, owner_id)
+
+        with pytest.raises(ValueError, match="editable Ideations"):
+            await service.link_story_to_ideation(story.id, done.id, owner_id)
+
+        with pytest.raises(ValueError, match="editable Ideations"):
+            await service.link_story_to_ideation(story.id, cancelled.id, owner_id)
+
+        assert await service.link_story_to_ideation(story.id, other_board.id, owner_id) is None
+
+        with pytest.raises(HTTPException) as duplicate_http:
+            await stories_api.link_story_to_ideation(
+                story.id,
+                StoryLinkCreate(ideation_id=editable.id),
+                user_id=owner_id,
+                db=db,
+            )
+        assert duplicate_http.value.status_code == 400
+        assert "already linked" in duplicate_http.value.detail
+
+        await db.commit()
+
+
+@pytest.mark.asyncio
 async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled(db_factory):
     board_id = _id("story-board")
     actor_id = _id("agent")
@@ -315,6 +700,65 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
         story_id = story_payload["story"]["id"]
         assert story_payload["story"]["labels"] == ["mcp", "rest"]
 
+        added_mockup = await _call_mcp(
+            db_factory,
+            "okto_pulse_add_screen_mockup",
+            board_id=board_id,
+            entity_id=story_id,
+            entity_type="story",
+            title="Story modal parity",
+            screen_type="modal",
+            html_content="<div onclick='bad()'><script>bad()</script>Story modal</div>",
+        )
+        assert added_mockup["success"] is True
+        assert added_mockup["entity_type"] == "story"
+        assert "<script>" not in added_mockup["screen"]["html_content"]
+        screen_id = added_mockup["screen"]["id"]
+
+        updated_mockup = await _call_mcp(
+            db_factory,
+            "okto_pulse_update_screen_mockup",
+            board_id=board_id,
+            entity_id=story_id,
+            entity_type="story",
+            screen_id=screen_id,
+            title="Story modal parity updated",
+        )
+        assert updated_mockup["success"] is True
+        assert updated_mockup["screen"]["title"] == "Story modal parity updated"
+
+        annotation = await _call_mcp(
+            db_factory,
+            "okto_pulse_annotate_mockup",
+            board_id=board_id,
+            entity_id=story_id,
+            entity_type="story",
+            screen_id=screen_id,
+            text="Header actions match other SDLC modals.",
+        )
+        assert annotation["success"] is True
+
+        listed_mockups = await _call_mcp(
+            db_factory,
+            "okto_pulse_list_screen_mockups",
+            board_id=board_id,
+            entity_id=story_id,
+            entity_type="story",
+        )
+        assert listed_mockups["entity_type"] == "story"
+        assert listed_mockups["total"] == 1
+        assert listed_mockups["screens"][0]["annotations"][0]["text"] == "Header actions match other SDLC modals."
+
+        deleted_mockup = await _call_mcp(
+            db_factory,
+            "okto_pulse_delete_screen_mockup",
+            board_id=board_id,
+            entity_id=story_id,
+            entity_type="story",
+            screen_id=screen_id,
+        )
+        assert deleted_mockup["success"] is True
+
         premature = await _call_mcp(
             db_factory,
             "okto_pulse_convert_stories_to_ideation",
@@ -360,3 +804,70 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
         )
         assert listed["count"] == 1
         assert listed["stories"][0]["status"] == "converted"
+
+        target_topic = await _call_mcp(
+            db_factory,
+            "okto_pulse_create_topic",
+            board_id=board_id,
+            name="MCP merge target",
+            description="Target before merge",
+        )
+        assert target_topic["success"] is True
+        target_topic_id = target_topic["topic"]["id"]
+
+        updated_topic = await _call_mcp(
+            db_factory,
+            "okto_pulse_update_topic",
+            board_id=board_id,
+            topic_id=target_topic_id,
+            description="Updated through MCP",
+        )
+        assert updated_topic["success"] is True
+        assert updated_topic["topic"]["description"] == "Updated through MCP"
+
+        archived_topic = await _call_mcp(
+            db_factory,
+            "okto_pulse_archive_topic",
+            board_id=board_id,
+            topic_id=target_topic_id,
+        )
+        assert archived_topic["success"] is True
+        assert archived_topic["topic"]["archived"] is True
+
+        restored_topic = await _call_mcp(
+            db_factory,
+            "okto_pulse_restore_topic",
+            board_id=board_id,
+            topic_id=target_topic_id,
+        )
+        assert restored_topic["success"] is True
+        assert restored_topic["topic"]["archived"] is False
+
+        blocked_delete = await _call_mcp(
+            db_factory,
+            "okto_pulse_delete_topic",
+            board_id=board_id,
+            topic_id=topic_id,
+        )
+        assert blocked_delete["success"] is False
+        assert blocked_delete["code"] == "topic_not_empty"
+        assert blocked_delete["active_count"] == 1
+
+        merged = await _call_mcp(
+            db_factory,
+            "okto_pulse_merge_topics",
+            board_id=board_id,
+            source_topic_id=topic_id,
+            target_topic_id=target_topic_id,
+        )
+        assert merged["success"] is True
+        assert merged["impact"]["moved_count"] == 1
+        assert merged["source"]["archived"] is True
+
+        deleted_source = await _call_mcp(
+            db_factory,
+            "okto_pulse_delete_topic",
+            board_id=board_id,
+            topic_id=topic_id,
+        )
+        assert deleted_source["success"] is True

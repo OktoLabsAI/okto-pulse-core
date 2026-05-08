@@ -3576,6 +3576,40 @@ class ShareService:
         return result.scalar_one_or_none() is not None
 
 
+class TopicOperationError(ValueError):
+    """Domain error with a stable code for Topic operations."""
+
+    def __init__(self, message: str, *, code: str, details: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.details = details or {}
+
+
+class TopicNameConflictError(TopicOperationError):
+    def __init__(self, message: str = "Topic name already exists in this board"):
+        super().__init__(message, code="topic_name_conflict")
+
+
+class TopicNotEmptyError(TopicOperationError):
+    def __init__(self, *, active_count: int, archived_count: int):
+        total_count = active_count + archived_count
+        super().__init__(
+            "Topic has associated Stories and cannot be deleted",
+            code="topic_not_empty",
+            details={
+                "active_count": active_count,
+                "archived_count": archived_count,
+                "total_associated_count": total_count,
+                "suggested_actions": ["merge", "move_stories", "archive"],
+            },
+        )
+
+
+class InvalidTopicMergeError(TopicOperationError):
+    def __init__(self, message: str):
+        super().__init__(message, code="invalid_merge")
+
+
 class StoryService:
     """Service for Topic and Story operations."""
 
@@ -3588,6 +3622,12 @@ class StoryService:
         StoryStatus.READY: [StoryStatus.TRIAGE],
         StoryStatus.CONVERTED: [],
     }
+    _EDITABLE_IDEATION_STATUSES = (
+        IdeationStatus.DRAFT,
+        IdeationStatus.REVIEW,
+        IdeationStatus.APPROVED,
+        IdeationStatus.EVALUATING,
+    )
 
     async def _ensure_board(self, board_id: str, user_id: str, skip_ownership_check: bool = False) -> Board | None:
         query = select(Board).where(Board.id == board_id)
@@ -3603,20 +3643,83 @@ class StoryService:
     async def _log_activity(self, **kwargs: Any) -> None:
         self.db.add(ActivityLog(**kwargs))
 
+    @staticmethod
+    def _archived_topic_name(name: str, topic_id: str) -> str:
+        suffix = f" [archived {topic_id[:8]}]"
+        return f"{name[: max(1, 255 - len(suffix))]}{suffix}"
+
+    async def _topic_story_counts(self, topic_id: str) -> dict[str, int]:
+        rows = (await self.db.execute(
+            select(Story.archived, func.count(Story.id))
+            .where(Story.topic_id == topic_id)
+            .group_by(Story.archived)
+        )).all()
+        counts = {"active_count": 0, "archived_count": 0}
+        for archived, count in rows:
+            key = "archived_count" if archived else "active_count"
+            counts[key] = int(count or 0)
+        counts["total_associated_count"] = counts["active_count"] + counts["archived_count"]
+        return counts
+
+    async def _attach_topic_counts(self, topic: Topic) -> Topic:
+        counts = await self._topic_story_counts(topic.id)
+        setattr(topic, "story_count", counts["active_count"])
+        setattr(topic, "active_count", counts["active_count"])
+        setattr(topic, "archived_count", counts["archived_count"])
+        setattr(topic, "total_associated_count", counts["total_associated_count"])
+        return topic
+
+    async def _ensure_active_topic_name_available(
+        self,
+        board_id: str,
+        name: str,
+        *,
+        exclude_topic_id: str | None = None,
+    ) -> None:
+        conditions = [
+            Topic.board_id == board_id,
+            Topic.archived.is_(False),
+            func.lower(Topic.name) == name.lower(),
+        ]
+        if exclude_topic_id:
+            conditions.append(Topic.id != exclude_topic_id)
+        existing = await self.db.execute(select(Topic.id).where(*conditions).limit(1))
+        if existing.scalar_one_or_none():
+            raise TopicNameConflictError()
+
+    async def _free_archived_exact_name(
+        self,
+        board_id: str,
+        name: str,
+        *,
+        exclude_topic_id: str | None = None,
+    ) -> list[str]:
+        conditions = [
+            Topic.board_id == board_id,
+            Topic.archived.is_(True),
+            Topic.name == name,
+        ]
+        if exclude_topic_id:
+            conditions.append(Topic.id != exclude_topic_id)
+        archived_topics = list((await self.db.execute(select(Topic).where(*conditions))).scalars().all())
+        renamed: list[str] = []
+        for archived_topic in archived_topics:
+            archived_topic.name = self._archived_topic_name(archived_topic.name, archived_topic.id)
+            renamed.append(archived_topic.id)
+        return renamed
+
     async def create_topic(
         self, board_id: str, user_id: str, data: TopicCreate, skip_ownership_check: bool = False
     ) -> Topic | None:
         if not await self._ensure_board(board_id, user_id, skip_ownership_check):
             return None
         name = data.name.strip()
-        existing = await self.db.execute(
-            select(Topic).where(Topic.board_id == board_id, func.lower(Topic.name) == name.lower())
-        )
-        if existing.scalar_one_or_none():
-            raise ValueError("Topic name already exists in this board")
+        await self._ensure_active_topic_name_available(board_id, name)
+        renamed_archived_topics = await self._free_archived_exact_name(board_id, name)
         topic = Topic(board_id=board_id, name=name, description=data.description, created_by=user_id)
         self.db.add(topic)
         await self.db.flush()
+        await self.db.refresh(topic)
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
             board_id=board_id,
@@ -3624,53 +3727,164 @@ class StoryService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"topic_id": topic.id, "name": topic.name},
+            details={
+                "topic_id": topic.id,
+                "name": topic.name,
+                "renamed_archived_topics": renamed_archived_topics,
+            },
         )
-        return topic
+        return await self._attach_topic_counts(topic)
 
     async def list_topics(self, board_id: str, include_archived: bool = False) -> list[Topic]:
         query = select(Topic).where(Topic.board_id == board_id)
         if not include_archived:
             query = query.where(Topic.archived.is_(False))
         topics = list((await self.db.execute(query.order_by(Topic.name.asc()))).scalars().all())
-        counts = dict((await self.db.execute(
-            select(Story.topic_id, func.count(Story.id))
-            .where(Story.board_id == board_id, Story.archived.is_(False))
-            .group_by(Story.topic_id)
-        )).all())
+        count_rows = (await self.db.execute(
+            select(Story.topic_id, Story.archived, func.count(Story.id))
+            .where(Story.board_id == board_id)
+            .group_by(Story.topic_id, Story.archived)
+        )).all()
+        counts: dict[str, dict[str, int]] = {}
+        for topic_id, archived, count in count_rows:
+            if not topic_id:
+                continue
+            bucket = counts.setdefault(topic_id, {"active_count": 0, "archived_count": 0})
+            key = "archived_count" if archived else "active_count"
+            bucket[key] = int(count or 0)
         for topic in topics:
-            setattr(topic, "story_count", int(counts.get(topic.id, 0)))
+            topic_counts = counts.get(topic.id, {"active_count": 0, "archived_count": 0})
+            total_count = topic_counts["active_count"] + topic_counts["archived_count"]
+            setattr(topic, "story_count", topic_counts["active_count"])
+            setattr(topic, "active_count", topic_counts["active_count"])
+            setattr(topic, "archived_count", topic_counts["archived_count"])
+            setattr(topic, "total_associated_count", total_count)
         return topics
 
     async def update_topic(self, topic_id: str, user_id: str, data: TopicUpdate) -> Topic | None:
         topic = await self.db.get(Topic, topic_id)
         if not topic:
             return None
+        original_archived = bool(topic.archived)
+        original_name = topic.name
         update_data = data.model_dump(exclude_unset=True)
+        target_archived = bool(update_data.get("archived", topic.archived))
         if "name" in update_data and update_data["name"] is not None:
             name = update_data.pop("name").strip()
-            existing = await self.db.execute(
-                select(Topic).where(
-                    Topic.board_id == topic.board_id,
-                    Topic.id != topic.id,
-                    func.lower(Topic.name) == name.lower(),
-                )
-            )
-            if existing.scalar_one_or_none():
-                raise ValueError("Topic name already exists in this board")
+            if not target_archived:
+                await self._ensure_active_topic_name_available(topic.board_id, name, exclude_topic_id=topic.id)
+                await self._free_archived_exact_name(topic.board_id, name, exclude_topic_id=topic.id)
             topic.name = name
+        elif original_archived and not target_archived:
+            await self._ensure_active_topic_name_available(topic.board_id, topic.name, exclude_topic_id=topic.id)
+            await self._free_archived_exact_name(topic.board_id, topic.name, exclude_topic_id=topic.id)
         for key, value in update_data.items():
             setattr(topic, key, value)
+        counts = await self._topic_story_counts(topic.id)
+        if original_archived != bool(topic.archived):
+            action = "topic_restored" if original_archived else "topic_archived"
+        else:
+            action = "topic_updated"
         actor_name = await resolve_actor_name(self.db, user_id, topic.board_id)
         await self._log_activity(
             board_id=topic.board_id,
-            action="topic_updated",
+            action=action,
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"topic_id": topic.id, "fields": list(data.model_dump(exclude_unset=True).keys())},
+            details={
+                "topic_id": topic.id,
+                "fields": list(data.model_dump(exclude_unset=True).keys()),
+                "previous_name": original_name,
+                "name": topic.name,
+                "previous_archived": original_archived,
+                "archived": bool(topic.archived),
+                **counts,
+            },
         )
+        await self.db.flush()
+        await self.db.refresh(topic)
+        return await self._attach_topic_counts(topic)
+
+    async def delete_topic(self, topic_id: str, user_id: str) -> Topic | None:
+        topic = await self.db.get(Topic, topic_id)
+        if not topic:
+            return None
+        counts = await self._topic_story_counts(topic.id)
+        if counts["total_associated_count"] > 0:
+            raise TopicNotEmptyError(
+                active_count=counts["active_count"],
+                archived_count=counts["archived_count"],
+            )
+        actor_name = await resolve_actor_name(self.db, user_id, topic.board_id)
+        await self._log_activity(
+            board_id=topic.board_id,
+            action="topic_deleted",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={"topic_id": topic.id, "name": topic.name, **counts},
+        )
+        await self.db.delete(topic)
+        await self.db.flush()
         return topic
+
+    async def merge_topics(self, source_topic_id: str, target_topic_id: str, user_id: str) -> dict[str, Any] | None:
+        if source_topic_id == target_topic_id:
+            raise InvalidTopicMergeError("Source and target Topics must be different")
+        source_topic = await self.db.get(Topic, source_topic_id)
+        target_topic = await self.db.get(Topic, target_topic_id)
+        if not source_topic or not target_topic:
+            return None
+        if source_topic.board_id != target_topic.board_id:
+            raise InvalidTopicMergeError("Source and target Topics must belong to the same board")
+        if target_topic.archived:
+            raise InvalidTopicMergeError("Target Topic must be active")
+
+        source_counts = await self._topic_story_counts(source_topic.id)
+        target_counts_before = await self._topic_story_counts(target_topic.id)
+        await self.db.execute(
+            update(Story)
+            .where(Story.topic_id == source_topic.id)
+            .values(topic_id=target_topic.id)
+        )
+        source_topic.archived = True
+        await self.db.flush()
+        target_counts_after = await self._topic_story_counts(target_topic.id)
+        actor_name = await resolve_actor_name(self.db, user_id, source_topic.board_id)
+        await self._log_activity(
+            board_id=source_topic.board_id,
+            action="topic_merged",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={
+                "source_topic_id": source_topic.id,
+                "source_topic_name": source_topic.name,
+                "target_topic_id": target_topic.id,
+                "target_topic_name": target_topic.name,
+                "moved_count": source_counts["total_associated_count"],
+                "active_count": source_counts["active_count"],
+                "archived_count": source_counts["archived_count"],
+                "target_total_before": target_counts_before["total_associated_count"],
+                "target_total_after": target_counts_after["total_associated_count"],
+            },
+        )
+        await self.db.flush()
+        await self.db.refresh(source_topic)
+        await self.db.refresh(target_topic)
+        await self._attach_topic_counts(source_topic)
+        await self._attach_topic_counts(target_topic)
+        return {
+            "success": True,
+            "source": source_topic,
+            "target": target_topic,
+            "moved_count": source_counts["total_associated_count"],
+            "active_count": source_counts["active_count"],
+            "archived_count": source_counts["archived_count"],
+            "target_total_before": target_counts_before["total_associated_count"],
+            "target_total_after": target_counts_after["total_associated_count"],
+        }
 
     async def create_story(
         self, board_id: str, user_id: str, data: StoryCreate, skip_ownership_check: bool = False
@@ -3842,21 +4056,28 @@ class StoryService:
         ideation = await self.db.get(Ideation, ideation_id)
         if not story or not ideation or story.board_id != ideation.board_id:
             return None
+        if ideation.status not in self._EDITABLE_IDEATION_STATUSES:
+            allowed = ", ".join(status.value for status in self._EDITABLE_IDEATION_STATUSES)
+            raise ValueError(
+                f"Story can only be linked to editable Ideations. "
+                f"Current ideation status is '{ideation.status.value}'. Allowed statuses: {allowed}."
+            )
         link = (await self.db.execute(
             select(StoryIdeationLink).where(
                 StoryIdeationLink.story_id == story_id,
                 StoryIdeationLink.ideation_id == ideation_id,
             )
         )).scalar_one_or_none()
-        if not link:
-            link = StoryIdeationLink(
-                board_id=story.board_id,
-                story_id=story_id,
-                ideation_id=ideation_id,
-                created_by=user_id,
-            )
-            self.db.add(link)
-            await self.db.flush()
+        if link:
+            raise ValueError("Story is already linked to this Ideation.")
+        link = StoryIdeationLink(
+            board_id=story.board_id,
+            story_id=story_id,
+            ideation_id=ideation_id,
+            created_by=user_id,
+        )
+        self.db.add(link)
+        await self.db.flush()
         if mark_converted and story.status != StoryStatus.CONVERTED:
             story.status = StoryStatus.CONVERTED
         actor_name = await resolve_actor_name(self.db, user_id, story.board_id)

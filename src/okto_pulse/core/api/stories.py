@@ -27,11 +27,20 @@ from okto_pulse.core.models.schemas import (
     StorySummary,
     StoryUpdate,
     TopicCreate,
+    TopicDeleteResponse,
+    TopicMergeRequest,
+    TopicMergeResponse,
     TopicResponse,
     TopicSummary,
     TopicUpdate,
 )
 from okto_pulse.core.services import BoardService, StoryService
+from okto_pulse.core.services.main import (
+    InvalidTopicMergeError,
+    TopicNameConflictError,
+    TopicNotEmptyError,
+    TopicOperationError,
+)
 from okto_pulse.core.services.story_permissions import (
     story_move_permission,
     story_state,
@@ -102,6 +111,19 @@ def _raise_permission_denied(message: str) -> None:
     )
 
 
+def _topic_operation_detail(exc: TopicOperationError) -> dict:
+    return {"code": exc.code, "detail": str(exc), **exc.details}
+
+
+def _raise_topic_operation_error(exc: TopicOperationError) -> None:
+    status_code = status.HTTP_400_BAD_REQUEST
+    if isinstance(exc, (TopicNameConflictError, TopicNotEmptyError)):
+        status_code = status.HTTP_409_CONFLICT
+    elif isinstance(exc, InvalidTopicMergeError):
+        status_code = status.HTTP_400_BAD_REQUEST
+    raise HTTPException(status_code=status_code, detail=_topic_operation_detail(exc)) from exc
+
+
 async def _require_permissions(
     db: AsyncSession,
     user_id: str,
@@ -146,7 +168,11 @@ def _ideation_payload(ideation) -> dict:
     }
 
 
-@router.post("/boards/{board_id}/topics", response_model=TopicResponse, status_code=status.HTTP_201_CREATED)
+def _topic_summary_payload(topic: Topic) -> TopicSummary:
+    return TopicSummary.model_validate(topic)
+
+
+@router.post("/boards/{board_id}/topics", response_model=TopicSummary, status_code=status.HTTP_201_CREATED)
 async def create_topic(
     board_id: str,
     data: TopicCreate,
@@ -159,12 +185,13 @@ async def create_topic(
     service = StoryService(db)
     try:
         topic = await service.create_topic(board_id, user_id, data)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except TopicOperationError as exc:
+        _raise_topic_operation_error(exc)
     if not topic:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
+    payload = _topic_summary_payload(topic)
     await db.commit()
-    return topic
+    return payload
 
 
 @router.get("/boards/{board_id}/topics", response_model=list[TopicSummary])
@@ -177,10 +204,11 @@ async def list_topics(
     """List Story Topics for a board."""
     await _ensure_board(db, board_id, user_id)
     await _require_permissions(db, user_id, board_id, "topic.entity.read")
-    return await StoryService(db).list_topics(board_id, include_archived=include_archived)
+    topics = await StoryService(db).list_topics(board_id, include_archived=include_archived)
+    return [_topic_summary_payload(topic) for topic in topics]
 
 
-@router.patch("/topics/{topic_id}", response_model=TopicResponse)
+@router.patch("/topics/{topic_id}", response_model=TopicSummary)
 async def update_topic(
     topic_id: str,
     data: TopicUpdate,
@@ -202,12 +230,63 @@ async def update_topic(
     )
     try:
         topic = await service.update_topic(topic_id, user_id, data)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except TopicOperationError as exc:
+        _raise_topic_operation_error(exc)
     if not topic:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+    payload = _topic_summary_payload(topic)
     await db.commit()
-    return topic
+    return payload
+
+
+@router.delete("/topics/{topic_id}", response_model=TopicDeleteResponse)
+async def delete_topic(
+    topic_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a Story Topic only when it has no associated Stories."""
+    topic = await db.get(Topic, topic_id)
+    if not topic:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+    await _ensure_board(db, topic.board_id, user_id)
+    await _require_permissions(db, user_id, topic.board_id, "topic.entity.delete")
+    try:
+        deleted = await StoryService(db).delete_topic(topic_id, user_id)
+    except TopicOperationError as exc:
+        _raise_topic_operation_error(exc)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+    await db.commit()
+    return TopicDeleteResponse(success=True, deleted_topic_id=topic_id)
+
+
+@router.post("/topics/{source_topic_id}/merge", response_model=TopicMergeResponse)
+async def merge_topics(
+    source_topic_id: str,
+    data: TopicMergeRequest,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Merge a source Topic into an active target Topic."""
+    source_topic = await db.get(Topic, source_topic_id)
+    if not source_topic:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+    await _ensure_board(db, source_topic.board_id, user_id)
+    await _require_permissions(db, user_id, source_topic.board_id, "topic.entity.merge")
+    try:
+        result = await StoryService(db).merge_topics(source_topic_id, data.target_topic_id, user_id)
+    except TopicOperationError as exc:
+        _raise_topic_operation_error(exc)
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+    payload = {
+        **result,
+        "source": _topic_summary_payload(result["source"]),
+        "target": _topic_summary_payload(result["target"]),
+    }
+    await db.commit()
+    return payload
 
 
 @router.post("/boards/{board_id}/stories", response_model=StoryResponse, status_code=status.HTTP_201_CREATED)
@@ -413,7 +492,10 @@ async def link_story_to_ideation(
         entity="story",
         entity_status=story_state(story.status, archived=bool(story.archived)),
     )
-    link = await service.link_story_to_ideation(story_id, data.ideation_id, user_id)
+    try:
+        link = await service.link_story_to_ideation(story_id, data.ideation_id, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not link:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story or Ideation not found")
     await db.commit()
@@ -443,7 +525,10 @@ async def link_stories_to_ideation(
             entity="story",
             entity_status=story_state(story.status, archived=bool(story.archived)),
         )
-        link = await service.link_story_to_ideation(story_id, ideation_id, user_id)
+        try:
+            link = await service.link_story_to_ideation(story_id, ideation_id, user_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         if not link:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story or Ideation not found")
         linked_story_ids.append(story_id)

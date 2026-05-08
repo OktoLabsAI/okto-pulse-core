@@ -315,6 +315,35 @@ class TopicSummary(TopicResponse):
     """Lightweight Topic summary. Kept separate for forward compatibility."""
 
     story_count: int = 0
+    active_count: int = 0
+    archived_count: int = 0
+    total_associated_count: int = 0
+
+
+class TopicDeleteResponse(BaseModel):
+    """Response for safe Topic deletion."""
+
+    success: bool = True
+    deleted_topic_id: str
+
+
+class TopicMergeRequest(BaseModel):
+    """Request body for merging one Topic into another."""
+
+    target_topic_id: str = Field(..., min_length=1)
+
+
+class TopicMergeResponse(BaseModel):
+    """Response for a Topic merge operation."""
+
+    success: bool = True
+    source: TopicSummary
+    target: TopicSummary
+    moved_count: int
+    active_count: int
+    archived_count: int
+    target_total_before: int = 0
+    target_total_after: int = 0
 
 
 class StoryIdeationLinkResponse(BaseSchema):
