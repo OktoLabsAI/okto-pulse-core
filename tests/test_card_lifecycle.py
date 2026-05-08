@@ -30,11 +30,26 @@ from okto_pulse.core.models.db import (
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
 from okto_pulse.core.services.main import CardService
+from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
 BOARD_ID = "card-lifecycle-board-001"
 AGENT_ID = "card-lifecycle-agent-001"
 USER_ID = AGENT_ID
+
+
+async def _mark_all_resources_na(db, entity_type: str, entity_id: str) -> None:
+    service = ResourceGateService(db)
+    for resource_type in ("architecture", "mockup", "knowledge_base"):
+        await service.mark_not_applicable(
+            BOARD_ID,
+            entity_type,
+            entity_id,
+            resource_type,
+            USER_ID,
+            justification=f"{resource_type} is intentionally not applicable in this lifecycle test.",
+            source_channel="ui",
+        )
 
 
 # ============================================================================
@@ -332,6 +347,7 @@ class TestCardStatusTransitions:  # noqa: F811
                     drift_justification="No deviation from plan",
                 ),
             )
+            await _mark_all_resources_na(db, "card", card.id)
             result = await svc.submit_task_validation(
                 card.id,
                 "reviewer-1",
@@ -611,6 +627,7 @@ class TestCardValidationReportGate:
                     drift_justification="No deviation from plan",
                 ),
             )
+            await _mark_all_resources_na(db, "card", card.id)
             result = await svc.submit_task_validation(
                 card.id,
                 "reviewer-1",
@@ -868,6 +885,7 @@ class TestCardDependencies:
             svc = CardService(db)
             # Make card_b depend on card_a
             await svc.add_dependency(card_b.id, card_a.id)
+            await _mark_all_resources_na(db, "card", card_a.id)
 
             # Move card_a to done first
             await svc.move_card(
