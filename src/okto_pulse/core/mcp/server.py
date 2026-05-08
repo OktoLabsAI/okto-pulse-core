@@ -55,6 +55,11 @@ from okto_pulse.core.services.reference_resolution import (
     resolve_task_context_references,
     serialize_parent_ideation_context,
 )
+from okto_pulse.core.services.resource_gate import (
+    ENTITY_TYPES,
+    ResourceGateError,
+    ResourceGateService,
+)
 from okto_pulse.core.services.story_permissions import story_move_permission, story_state
 
 
@@ -390,6 +395,39 @@ def _mcp_check_architecture_copy_permission(permissions: Any) -> str | None:
         permissions,
         "card.copy_from_spec.architecture",
         Permissions.CARDS_UPDATE,
+    )
+
+
+def _mcp_resource_gate_legacy_permission(entity_type: str, action: str) -> str:
+    if action == "read":
+        return Permissions.BOARD_READ
+    if entity_type == "card":
+        return Permissions.CARDS_UPDATE
+    return Permissions.SPECS_UPDATE
+
+
+def _mcp_check_resource_gate_permission(
+    permissions: Any,
+    entity_type: str,
+    action: str,
+) -> str | None:
+    capability = "read" if action == "read" else "edit_fields"
+    return _mcp_check_permission(
+        permissions,
+        f"{entity_type}.entity.{capability}",
+        _mcp_resource_gate_legacy_permission(entity_type, action),
+    )
+
+
+def _resource_gate_error_response(exc: ResourceGateError) -> str:
+    return json.dumps(
+        {
+            "success": False,
+            "error": str(exc),
+            "code": exc.code,
+            "details": exc.details,
+        },
+        default=str,
     )
 
 
@@ -3708,6 +3746,166 @@ async def okto_pulse_merge_topics(board_id: str, source_topic_id: str, target_to
             },
             default=str,
         )
+
+
+# ============================================================================
+# RESOURCE GATE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_get_resource_gate_summary(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+) -> str:
+    """
+    Get the Resource Gate state for an SDLC entity.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of ideation, refinement, spec, card
+        entity_id: Target entity ID
+
+    Returns:
+        JSON with Architecture, Mockup, and Knowledge Base states:
+        provided, not_applicable, or missing.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    if entity_type not in ENTITY_TYPES:
+        return json.dumps(
+            {
+                "success": False,
+                "error": f"Invalid entity_type. Expected one of: {', '.join(ENTITY_TYPES)}",
+                "code": "invalid_entity_type",
+            }
+        )
+    perm_err = _mcp_check_resource_gate_permission(ctx.permissions, entity_type, "read")
+    if perm_err:
+        return _mcp_permission_error_response(perm_err)
+
+    async with get_db_for_mcp() as db:
+        try:
+            summary = await ResourceGateService(db).get_summary(
+                board_id,
+                entity_type,
+                entity_id,
+            )
+        except ResourceGateError as e:
+            return _resource_gate_error_response(e)
+        await db.commit()
+        return json.dumps({"success": True, **summary}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_mark_resource_not_applicable(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    resource_type: str,
+    justification: str = "",
+) -> str:
+    """
+    Mark a mandatory resource as not applicable through the MCP channel.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of ideation, refinement, spec, card
+        entity_id: Target entity ID
+        resource_type: One of architecture, mockup, knowledge_base
+        justification: REQUIRED. Explain why the resource is not applicable.
+
+    Returns:
+        JSON with the updated Resource Gate summary and a warning that skipping
+        the resource can lead to partial or incorrect solutions if it is needed.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    if entity_type not in ENTITY_TYPES:
+        return json.dumps(
+            {
+                "success": False,
+                "error": f"Invalid entity_type. Expected one of: {', '.join(ENTITY_TYPES)}",
+                "code": "invalid_entity_type",
+            }
+        )
+    perm_err = _mcp_check_resource_gate_permission(ctx.permissions, entity_type, "write")
+    if perm_err:
+        return _mcp_permission_error_response(perm_err)
+
+    async with get_db_for_mcp() as db:
+        try:
+            result = await ResourceGateService(db).mark_not_applicable(
+                board_id,
+                entity_type,
+                entity_id,
+                resource_type,
+                ctx.agent_id,
+                justification=justification,
+                source_channel="mcp",
+            )
+        except ResourceGateError as e:
+            return _resource_gate_error_response(e)
+        await db.commit()
+        return json.dumps(result, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_clear_resource_not_applicable(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    resource_type: str,
+    reason: str = "",
+) -> str:
+    """
+    Clear an active Resource Gate N/A mark.
+
+    Use this when the resource becomes applicable after all, or when the real
+    Architecture, Mockup, or Knowledge Base has been attached.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of ideation, refinement, spec, card
+        entity_id: Target entity ID
+        resource_type: One of architecture, mockup, knowledge_base
+        reason: Optional audit reason for clearing the N/A mark
+
+    Returns:
+        JSON with the updated Resource Gate summary.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    if entity_type not in ENTITY_TYPES:
+        return json.dumps(
+            {
+                "success": False,
+                "error": f"Invalid entity_type. Expected one of: {', '.join(ENTITY_TYPES)}",
+                "code": "invalid_entity_type",
+            }
+        )
+    perm_err = _mcp_check_resource_gate_permission(ctx.permissions, entity_type, "write")
+    if perm_err:
+        return _mcp_permission_error_response(perm_err)
+
+    async with get_db_for_mcp() as db:
+        try:
+            result = await ResourceGateService(db).clear_not_applicable(
+                board_id,
+                entity_type,
+                entity_id,
+                resource_type,
+                ctx.agent_id,
+                reason=reason or None,
+            )
+        except ResourceGateError as e:
+            return _resource_gate_error_response(e)
+        await db.commit()
+        return json.dumps(result, default=str)
 
 
 @mcp.tool()

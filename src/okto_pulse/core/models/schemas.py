@@ -1839,6 +1839,8 @@ class BoardSettings(BaseModel):
     min_spec_completeness: int = 80  # min spec completeness score
     min_spec_assertiveness: int = 80  # min spec assertiveness score
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
+    # Resource Gate - Level 2 spec resource-to-task coverage.
+    require_spec_resource_task_coverage: bool = True
     # Bug Card Gate — NC-6 fix.
     # require_test_task_for_bug: when False, bug cards can advance to in_progress
     #   without a freshly-created linked test task. Default True (gate ATIVO).

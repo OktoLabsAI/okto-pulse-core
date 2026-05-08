@@ -16,9 +16,23 @@ from okto_pulse.core.models.schemas import (
     SpecUpdate,
 )
 from okto_pulse.core.models.schemas import SpecHistoryResponse, SpecQAAnswer, SpecQACreate, SpecQAResponse
-from okto_pulse.core.services import BoardService, SpecKnowledgeService, SpecQAService, SpecService
+from okto_pulse.core.services import (
+    BoardService,
+    ResourceGateError,
+    SpecKnowledgeService,
+    SpecQAService,
+    SpecService,
+)
 
 router = APIRouter()
+
+
+def _resource_gate_detail(exc: ResourceGateError) -> dict:
+    return {
+        "error": exc.code,
+        "message": str(exc),
+        "details": exc.details,
+    }
 
 
 @router.post(
@@ -113,6 +127,11 @@ async def move_spec(
     service = SpecService(db)
     try:
         spec = await service.move_spec(spec_id, user_id, data)
+    except ResourceGateError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_resource_gate_detail(e),
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not spec:
@@ -485,6 +504,11 @@ async def submit_spec_validation(
             reviewer_id=user_id,
             reviewer_name=reviewer_name,
             data=data,
+        )
+    except ResourceGateError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_resource_gate_detail(e),
         )
     except ValueError as e:
         # Could be: state guard, opt-in guard, coverage gate failure, or input validation

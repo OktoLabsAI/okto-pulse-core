@@ -29,6 +29,13 @@ from okto_pulse.core.services.main import (
     SpecService,
     StoryService,
 )
+from okto_pulse.core.services.resource_gate import (
+    ResourceGateError,
+    ResourceGateJustificationRequired,
+    ResourceGateNotFound,
+    ResourceGateService,
+    ResourceGateViolation,
+)
 
 __all__ = [
     "ArchitectureDesignRepository",
@@ -56,4 +63,9 @@ __all__ = [
     "SpecQAService",
     "SpecService",
     "StoryService",
+    "ResourceGateError",
+    "ResourceGateJustificationRequired",
+    "ResourceGateNotFound",
+    "ResourceGateService",
+    "ResourceGateViolation",
 ]

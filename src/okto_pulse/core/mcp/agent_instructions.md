@@ -91,6 +91,19 @@ This is an operational protocol rule. The MCP server does not prove that you rea
 
 **Card execution steps 2, 3, and 4 are mandatory before `started → in_progress` when the corresponding artifact applies** — the implementer (you or a future agent picking up the card) reads `card.knowledge_bases`, `card.screen_mockups`, and `card.architecture_designs` directly, never re-querying the spec. This snapshot prevents drift if the spec is later edited and decouples the card from the spec lifecycle. Use `knowledge_ids`, `screen_ids`, and `design_ids` to scope a subset when only part of the spec applies. If the card does not need a particular artifact (e.g. a backend-only card has no mockups), skip explicitly — but document the rationale in a comment.
 
+### Resource Gate pre-flight — mandatory before completion
+
+Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types for ideations, refinements, specs, cards/tasks, tests, and bugs. Before moving any of these entities to a final status, call `okto_pulse_get_resource_gate_summary(board_id, entity_type, entity_id)` and resolve every `missing` resource.
+
+Resolution means one of two things:
+
+- Attach the applicable first-class artifact: Architecture Design, Screen Mockup, or Knowledge Base.
+- Mark the specific resource as N/A with `okto_pulse_mark_resource_not_applicable(board_id, entity_type, entity_id, resource_type, justification)` only when it truly does not apply.
+
+When using MCP, `justification` is mandatory for N/A. The tool returns a warning because skipping a resource can lead to partial or incorrect solutions if that resource was actually needed. If the resource later becomes applicable, clear the mark with `okto_pulse_clear_resource_not_applicable(board_id, entity_type, entity_id, resource_type, reason)` and attach the real artifact.
+
+For specs with provided Architecture, Mockup, or Knowledge Base, those resources must be permeated to implementation tasks through `okto_pulse_copy_architecture_to_card`, `okto_pulse_copy_mockups_to_card`, and `okto_pulse_copy_knowledge_to_card`. If a task that held the only coverage is cancelled, the spec cannot be finalized until another non-cancelled task carries that resource.
+
 **Per-task KE lifecycle**: cards own their KEs via inline `Card.knowledge_bases` JSONB. The full lifecycle is exposed symmetrically:
 
 - `okto_pulse_add_card_knowledge(board_id, card_id, title, content, ...)` — attach a new KE directly to the card
@@ -478,6 +491,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 | `okto_pulse_add_api_contract` / `okto_pulse_update_api_contract` / `okto_pulse_remove_api_contract` / `okto_pulse_list_api_contracts` | board_id, spec_id, ... | CRUD for API contracts. See **2.6 API Contracts**. |
 | `okto_pulse_add_screen_mockup` / `okto_pulse_update_screen_mockup` / `okto_pulse_delete_screen_mockup` / `okto_pulse_annotate_mockup` / `okto_pulse_list_screen_mockups` | board_id, entity_id, entity_type?, ... | HTML+Tailwind mockups on specs/ideations/refinements/cards/stories. See **2.7 Screen Mockups**. |
 | `okto_pulse_get_architecture_design_schema` / `okto_pulse_validate_architecture_design_payload` / `okto_pulse_add_architecture_design` / `okto_pulse_update_architecture_design` / `okto_pulse_delete_architecture_design` / `okto_pulse_list_architecture_designs` / `okto_pulse_get_architecture_design` / `okto_pulse_import_excalidraw_architecture_diagram` / `okto_pulse_dump_architecture_diagram` / `okto_pulse_copy_architecture_to_card` | board_id, parent_type, parent_id/design_id, ... | First-class architecture designs on ideations/refinements/specs/cards: global description, diagrams, entities, interfaces, and contracts. Get the schema and dry-run validate generated payloads before persisting. See **2.7b Architecture Design — structural artifacts**. |
+| `okto_pulse_get_resource_gate_summary` / `okto_pulse_mark_resource_not_applicable` / `okto_pulse_clear_resource_not_applicable` | board_id, entity_type, entity_id, resource_type?, justification?/reason? | Resolve mandatory Architecture, Mockup, and Knowledge Base requirements before final transitions. MCP N/A requires justification and returns a risk warning. |
 | Knowledge base creation | spec/card tools only | KB insertion starts at the spec level in the current operating model. During ideation/refinement, capture uncertainty through Q&A, mockups, architecture, and prose; formalize reusable reference knowledge once it reaches the spec. |
 | `okto_pulse_add_spec_knowledge` / `okto_pulse_list_spec_knowledge` / `okto_pulse_get_spec_knowledge` / `okto_pulse_delete_spec_knowledge` | board_id, spec_id, ... | Attach reference documents to a spec. |
 | `okto_pulse_add_refinement_knowledge` / `okto_pulse_list_refinement_knowledge` / `okto_pulse_get_refinement_knowledge` / `okto_pulse_delete_refinement_knowledge` | board_id, refinement_id, ... | Same, for refinements. |

@@ -335,6 +335,49 @@ class Board(Base):
     )
 
 
+class ResourceNotApplicable(Base):
+    """Explicit N/A marker for mandatory SDLC resources.
+
+    Provided resources are inferred from existing artifacts; only the
+    consciously-declared absence is persisted here.
+    """
+
+    __tablename__ = "resource_not_applicable"
+    __table_args__ = (
+        Index(
+            "ix_resource_na_entity_active",
+            "board_id",
+            "entity_type",
+            "entity_id",
+            "resource_type",
+            "active",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    resource_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_channel: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ui")
+    active: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    cleared_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    clear_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    board: Mapped["Board"] = relationship("Board")
+
+
 # ============================================================================
 # STORIES
 # ============================================================================

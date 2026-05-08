@@ -49,6 +49,18 @@ def test_card_kb_lifecycle_section_documents_5_tools(text):
         assert name in text, f"agent_instructions must reference {name}"
 
 
+def test_resource_gate_section_documents_mcp_tools_and_warning(text):
+    for name in (
+        "okto_pulse_get_resource_gate_summary",
+        "okto_pulse_mark_resource_not_applicable",
+        "okto_pulse_clear_resource_not_applicable",
+    ):
+        assert name in text, f"agent_instructions must reference {name}"
+    assert "Architecture, Mockup, and Knowledge Base" in text
+    assert "justification` is mandatory" in text
+    assert "partial or incorrect solutions" in text
+
+
 def test_rest_mirror_documented(text):
     assert "/api/v1/cards/{card_id}/knowledge" in text
     assert ".../download" in text or "/download" in text

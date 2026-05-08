@@ -103,6 +103,7 @@ from okto_pulse.core.models.schemas import (
 )
 from okto_pulse.core.services.analytics_service import resolve_linked_criteria_to_indices
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
+from okto_pulse.core.services.resource_gate import ResourceGateService
 
 settings = get_settings()
 
@@ -1155,6 +1156,12 @@ class CardService:
         # the failed validation entry is appended to card.validations so the
         # history is preserved.
         if outcome == "success":
+            await ResourceGateService(self.db).validate_or_raise_entity_completion(
+                card.board_id,
+                "card",
+                card.id,
+                phase="task_validation_success",
+            )
             card.status = CardStatus.DONE
         else:
             card.status = CardStatus.VALIDATION
@@ -1726,6 +1733,14 @@ class CardService:
                 raise ValueError(
                     f"Dependências não concluídas: {', '.join(blocking)}"
                 )
+
+        if data.status == CardStatus.DONE:
+            await ResourceGateService(self.db).validate_or_raise_entity_completion(
+                card.board_id,
+                "card",
+                card.id,
+                phase="card_done",
+            )
 
         card.status = data.status
         if data.position is not None:
@@ -2948,6 +2963,14 @@ class SpecService:
                     f"Complete or cancel all linked tasks before finalizing the spec."
                 )
 
+            resource_gate = ResourceGateService(self.db)
+            await resource_gate.validate_or_raise_spec_resource_task_coverage(
+                spec.board_id,
+                spec.id,
+                phase="spec_done",
+                enabled=resource_gate.is_spec_resource_task_coverage_required(board),
+            )
+
         old_status = spec.status
         spec.status = data.status
 
@@ -3151,6 +3174,13 @@ class SpecService:
         # Decisions coverage is OPT-IN — no-op when skip_decisions_coverage=True
         # (spec or board). See check_decisions_coverage for details.
         await card_service.check_decisions_coverage(spec, board)
+        resource_gate = ResourceGateService(self.db)
+        await resource_gate.validate_or_raise_spec_resource_task_coverage(
+            spec.board_id,
+            spec.id,
+            phase="spec_validation",
+            enabled=resource_gate.is_spec_resource_task_coverage_required(board),
+        )
 
         # Extract and validate inputs
         completeness = int(data["completeness"])
@@ -4444,6 +4474,12 @@ class IdeationService:
 
         # Snapshot on done
         if data.status == IdeationStatus.DONE:
+            await ResourceGateService(self.db).validate_or_raise_entity_completion(
+                ideation.board_id,
+                "ideation",
+                ideation.id,
+                phase="ideation_done",
+            )
             await self._create_snapshot(ideation, user_id)
 
         # Version bump on back-to-draft from done
@@ -5144,6 +5180,12 @@ class RefinementService:
 
         # Snapshot on done
         if data.status == RefinementStatus.DONE:
+            await ResourceGateService(self.db).validate_or_raise_entity_completion(
+                refinement.board_id,
+                "refinement",
+                refinement.id,
+                phase="refinement_done",
+            )
             await self._create_snapshot(refinement, user_id)
 
         # Version bump on back-to-draft from done
