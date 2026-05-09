@@ -203,6 +203,13 @@ class TestLimitContract:
         for n in body["nodes"]:
             assert {"id", "node_type", "title", "created_at"}.issubset(n.keys())
 
+    def test_type_filter_is_applied_to_graph_page(self, client):
+        code, body = _get_graph(client, limit=50, type="Bug")
+        assert code == 200, body
+        assert body["nodes"] == []
+        assert body["edges"] == []
+        assert body.get("next_cursor") in (None, "")
+
 
 # ---------------------------------------------------------------------------
 # S1.6 — AC-11: invalid limit values return 400

@@ -67,6 +67,20 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ### 0.2.0 — current
 
+#### Branch changelog (`feature/0.2.0`)
+
+This branch turns 0.2.0 into the governed SDLC + Knowledge Graph release.
+
+- Added Stories and Topics as pre-ideation intake primitives, including REST/MCP services, permissions, lifecycle rules, story-to-ideation traceability and the rule that a Story can reference only one Ideation while an Ideation can reference many Stories.
+- Added Resource Gate readiness across Architecture, Mockups and Knowledge Base, with reversible N/A justification, entity-level readiness summaries and MCP guardrails that keep deterministic resource checks out of ad-hoc agent judgement.
+- Hardened agent instructions for ambiguity handling: agents are directed to ask more clarification questions, prefer multiple-choice questions with recommendations when possible, and preserve an additional comment path for user nuance.
+- Added Ideation Knowledge Base support and propagation, plus lineage/reporting improvements so specs, sprints, tasks, tests and bugs remain traceable even when a flow intentionally starts at Spec without a root Ideation.
+- Expanded deterministic KG ingestion for specs, cards, bugs, tests, outcomes, requirements, criteria, constraints, API contracts and decisions, including resolved Bug `originates_from` and `covered_by` edges and schema migration coverage for those relationship tables.
+- Strengthened KG schema lifecycle and graph runtime resilience: per-board schema bootstrap/migration, edge metadata migration, entity dedup support, Kuzu memory/runtime settings, vector-extension loading on hot-path graph connections and richer health/dead-letter diagnostics.
+- Improved KG query/display contracts: `/kg/boards/{board_id}/graph` now accepts a node `type` filter, `/nodes` total hints remain filter-aware, graph stats expose node/edge histograms and tests cover pagination, type filtering and schema edge counts.
+- Fixed guideline creation/parsing paths that could reject inline guideline additions with 422 responses.
+- Added and expanded focused tests for Stories, Topic permissions, Resource Gate, Ideation KB, guidelines, deterministic KG workers, graph pagination, schema migration, traceability reports, presets and MCP registration contracts.
+
 #### Fix C: single-process, dual-port serve (Kùzu lock contention)
 
 `okto-pulse serve` now runs API/UI **and** MCP from a **single Python process** but on **two different ports** (`--api-port` defaults to 8100, `--mcp-port` defaults to 8101). Two `uvicorn.Server` instances run concurrently inside one `asyncio.gather` — the embedded Kùzu DB is owned by exactly one OS process (no inter-process lock contention), and the two listeners share the module-level state (the registered session factory, the `_global_db` Kùzu cache, the `_active_api_key` `ContextVar`).
