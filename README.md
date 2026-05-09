@@ -79,6 +79,7 @@ This branch turns 0.2.0 into the governed SDLC + Knowledge Graph release.
 - Strengthened KG schema lifecycle and graph runtime resilience: per-board schema bootstrap/migration, edge metadata migration, entity dedup support, Kuzu memory/runtime settings, vector-extension loading on hot-path graph connections and richer health/dead-letter diagnostics.
 - Improved KG query/display contracts: `/kg/boards/{board_id}/graph` now accepts a node `type` filter, `/nodes` total hints remain filter-aware, graph stats expose node/edge histograms and tests cover pagination, type filtering and schema edge counts.
 - Fixed guideline creation/parsing paths that could reject inline guideline additions with 422 responses.
+- Preserved test scenario evidence in REST response schemas, including `latest_evidence` fallback data, so UI audit surfaces can expose recorded execution proof for Test cards.
 - Added and expanded focused tests for Stories, Topic permissions, Resource Gate, Ideation KB, guidelines, deterministic KG workers, graph pagination, schema migration, traceability reports, presets and MCP registration contracts.
 
 #### Fix C: single-process, dual-port serve (Kùzu lock contention)
