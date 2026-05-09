@@ -1,7 +1,9 @@
 """Database configuration and session management."""
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Awaitable
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -1624,27 +1626,53 @@ async def _reconcile_agent_permission_flags() -> None:
 
 async def close_db() -> None:
     """Close database connections."""
-    await get_engine().dispose()
+    await _await_cleanup(get_engine().dispose())
+
+
+def _consume_cleanup_exception(task: asyncio.Future[None]) -> None:
+    if task.cancelled():
+        return
+    with contextlib.suppress(BaseException):
+        task.exception()
+
+
+async def _await_cleanup(awaitable: Awaitable[None]) -> None:
+    """Let connection cleanup continue even when request shutdown cancels the caller."""
+    task = asyncio.ensure_future(awaitable)
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        task.add_done_callback(_consume_cleanup_exception)
+        raise
+
+
+async def _quiet_cleanup(awaitable: Awaitable[None]) -> None:
+    with contextlib.suppress(BaseException):
+        await _await_cleanup(awaitable)
 
 
 @asynccontextmanager
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session as async context manager."""
-    async with get_session_factory()() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+    session = get_session_factory()()
+    try:
+        yield session
+        await session.commit()
+    except BaseException:
+        await _quiet_cleanup(session.rollback())
+        raise
+    finally:
+        await _quiet_cleanup(session.close())
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency for database session."""
-    async with get_session_factory()() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+    session = get_session_factory()()
+    try:
+        yield session
+        await session.commit()
+    except BaseException:
+        await _quiet_cleanup(session.rollback())
+        raise
+    finally:
+        await _quiet_cleanup(session.close())
