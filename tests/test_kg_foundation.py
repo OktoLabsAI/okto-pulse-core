@@ -71,11 +71,12 @@ class TestBootstrapSchema:
 
     def test_vector_index_types(self):
         assert set(VECTOR_INDEX_TYPES) == {
-            "Decision", "Criterion", "Constraint", "Entity", "Learning",
+            "Decision", "Criterion", "Constraint", "Requirement", "Entity",
+            "APIContract", "TestScenario", "Bug", "Learning",
         }
 
     def test_schema_version(self):
-        assert SCHEMA_VERSION == "0.3.3"
+        assert SCHEMA_VERSION == "0.3.4"
 
     def test_bootstrap_creates_kuzu_dir(self, board_id):
         handle = bootstrap_board_graph(board_id)

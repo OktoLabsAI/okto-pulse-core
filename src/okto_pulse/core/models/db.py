@@ -440,11 +440,12 @@ class Story(Base):
 
 
 class StoryIdeationLink(Base):
-    """N:N link between Stories and Ideations. MVP keeps the relation semantically simple."""
+    """Link from one Story to one Ideation; an Ideation may collect many Stories."""
 
     __tablename__ = "story_ideation_links"
     __table_args__ = (
         UniqueConstraint("story_id", "ideation_id", name="uq_story_ideation_link"),
+        Index("uq_story_ideation_link_story", "story_id", unique=True),
         Index("ix_story_ideation_links_board", "board_id"),
     )
 
@@ -508,6 +509,10 @@ class Ideation(Base):
     story_links: Mapped[list["StoryIdeationLink"]] = relationship(
         "StoryIdeationLink", back_populates="ideation", cascade="all, delete-orphan"
     )
+
+    @property
+    def stories(self) -> list["Story"]:
+        return [link.story for link in self.story_links if link.story is not None]
 
 
 class IdeationSnapshot(Base):

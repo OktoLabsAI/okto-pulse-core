@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from okto_pulse.core.api import stories as stories_api
 from okto_pulse.core.mcp import server as mcp_server
@@ -61,6 +62,10 @@ def _stub_ctx(board_id: str, actor_id: str):
                 "topic.entity.merge",
                 "story.entity.read",
                 "story.entity.create",
+                "story.entity.edit_fields",
+                "story.entity.label",
+                "story.entity.archive",
+                "story.entity.restore",
                 "story.move.draft_to_triage",
                 "story.move.triage_to_ready",
                 "story.links.ideation",
@@ -520,6 +525,18 @@ async def test_topic_rest_and_mcp_tools_enforce_granular_permissions(db_factory)
         empty = await service.create_topic(board_id, owner_id, TopicCreate(name="Permission empty"))
         target = await service.create_topic(board_id, owner_id, TopicCreate(name="Permission target"))
         assert topic is not None and empty is not None and target is not None
+        permission_story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=topic.id,
+                title="Permission story",
+                description="As an agent, I need Story MCP tools to enforce granular permissions.",
+            ),
+        )
+        assert permission_story is not None
+        permission_story_id = permission_story.id
+        await db.commit()
 
         seen_permissions: list[str | list[str | None] | None] = []
 
@@ -562,6 +579,9 @@ async def test_topic_rest_and_mcp_tools_enforce_granular_permissions(db_factory)
         ("okto_pulse_restore_topic", {"topic_id": "topic"}, "topic.entity.restore"),
         ("okto_pulse_delete_topic", {"topic_id": "topic"}, "topic.entity.delete"),
         ("okto_pulse_merge_topics", {"source_topic_id": "source", "target_topic_id": "target"}, "topic.entity.merge"),
+        ("okto_pulse_update_story", {"story_id": permission_story_id, "title": "x"}, "story.entity.edit_fields"),
+        ("okto_pulse_archive_story", {"story_id": permission_story_id}, "story.entity.archive"),
+        ("okto_pulse_restore_story", {"story_id": permission_story_id}, "story.entity.restore"),
     ]
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=denied_ctx)):
         for tool_name, kwargs, required_permission in mcp_cases:
@@ -621,6 +641,39 @@ async def test_story_links_require_editable_ideations_and_reject_duplicates(db_f
         link = await service.link_story_to_ideation(story.id, editable.id, owner_id)
         assert link is not None
         assert link.ideation_id == editable.id
+        converted_story = await service.get_story(story.id)
+        assert converted_story is not None
+        assert converted_story.status == StoryStatus.CONVERTED
+
+        second_story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=topic.id,
+                title="Second Story converging to the same Ideation",
+                description="As a product lead, I want multiple Stories to feed one Ideation.",
+                status=StoryStatus.READY,
+            ),
+        )
+        assert second_story is not None
+        second_link = await service.link_story_to_ideation(second_story.id, editable.id, owner_id)
+        assert second_link is not None
+        assert second_link.ideation_id == editable.id
+        converted_second_story = await service.get_story(second_story.id)
+        assert converted_second_story is not None
+        assert converted_second_story.status == StoryStatus.CONVERTED
+
+        another_editable = Ideation(
+            board_id=board_id,
+            title="Another editable target",
+            status=IdeationStatus.REVIEW,
+            created_by=owner_id,
+        )
+        db.add(another_editable)
+        await db.flush()
+
+        with pytest.raises(ValueError, match="already linked to another Ideation"):
+            await service.link_story_to_ideation(story.id, another_editable.id, owner_id)
 
         with pytest.raises(ValueError, match="already linked"):
             await service.link_story_to_ideation(story.id, editable.id, owner_id)
@@ -644,6 +697,55 @@ async def test_story_links_require_editable_ideations_and_reject_duplicates(db_f
         assert "already linked" in duplicate_http.value.detail
 
         await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_story_ideation_link_table_enforces_one_ideation_per_story(db_factory):
+    board_id = _id("story-board")
+    owner_id = _id("owner")
+    await _seed_board(db_factory, board_id, owner_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        topic = await service.create_topic(board_id, owner_id, TopicCreate(name="Single link constraint"))
+        assert topic is not None
+        story = await service.create_story(
+            board_id,
+            owner_id,
+            StoryCreate(
+                topic_id=topic.id,
+                title="One Story one Ideation",
+                description="As a maintainer, I need the database to enforce Story link uniqueness.",
+                status=StoryStatus.READY,
+            ),
+        )
+        first = Ideation(board_id=board_id, title="First target", status=IdeationStatus.REVIEW, created_by=owner_id)
+        second = Ideation(board_id=board_id, title="Second target", status=IdeationStatus.REVIEW, created_by=owner_id)
+        db.add_all([first, second])
+        await db.flush()
+        assert story is not None
+
+        db.add(
+            StoryIdeationLink(
+                board_id=board_id,
+                story_id=story.id,
+                ideation_id=first.id,
+                created_by=owner_id,
+            )
+        )
+        await db.flush()
+        db.add(
+            StoryIdeationLink(
+                board_id=board_id,
+                story_id=story.id,
+                ideation_id=second.id,
+                created_by=owner_id,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            await db.flush()
+        await db.rollback()
 
 
 @pytest.mark.asyncio
@@ -699,6 +801,44 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
         assert story_payload["success"] is True
         story_id = story_payload["story"]["id"]
         assert story_payload["story"]["labels"] == ["mcp", "rest"]
+
+        updated_story = await _call_mcp(
+            db_factory,
+            "okto_pulse_update_story",
+            board_id=board_id,
+            story_id=story_id,
+            title="MCP parity Story updated",
+            labels='["mcp", "updated"]',
+        )
+        assert updated_story["success"] is True
+        assert updated_story["story"]["title"] == "MCP parity Story updated"
+        assert updated_story["story"]["labels"] == ["mcp", "updated"]
+
+        archived_story = await _call_mcp(
+            db_factory,
+            "okto_pulse_archive_story",
+            board_id=board_id,
+            story_id=story_id,
+        )
+        assert archived_story["success"] is True
+        assert archived_story["story"]["archived"] is True
+
+        listed_archived_story = await _call_mcp(
+            db_factory,
+            "okto_pulse_list_stories",
+            board_id=board_id,
+            include_archived="true",
+        )
+        assert any(item["id"] == story_id and item["archived"] is True for item in listed_archived_story["stories"])
+
+        restored_story = await _call_mcp(
+            db_factory,
+            "okto_pulse_restore_story",
+            board_id=board_id,
+            story_id=story_id,
+        )
+        assert restored_story["success"] is True
+        assert restored_story["story"]["archived"] is False
 
         added_mockup = await _call_mcp(
             db_factory,
@@ -804,6 +944,55 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
         )
         assert listed["count"] == 1
         assert listed["stories"][0]["status"] == "converted"
+
+        link_topic = await _call_mcp(
+            db_factory,
+            "okto_pulse_create_topic",
+            board_id=board_id,
+            name="MCP link topic",
+            description="Topic used for link parity",
+        )
+        assert link_topic["success"] is True
+        link_story = await _call_mcp(
+            db_factory,
+            "okto_pulse_create_story",
+            board_id=board_id,
+            topic_id=link_topic["topic"]["id"],
+            title="MCP link Story",
+            description="As an agent, I need link semantics to mark converted.",
+            status="ready",
+        )
+        assert link_story["success"] is True
+        async with db_factory() as db:
+            target = Ideation(
+                board_id=board_id,
+                title="MCP link target",
+                status=IdeationStatus.REVIEW,
+                created_by=actor_id,
+            )
+            db.add(target)
+            await db.flush()
+            target_id = target.id
+            await db.commit()
+
+        linked_story = await _call_mcp(
+            db_factory,
+            "okto_pulse_link_story_to_ideation",
+            board_id=board_id,
+            story_id=link_story["story"]["id"],
+            ideation_id=target_id,
+            mark_converted="false",
+        )
+        assert linked_story["success"] is True
+        assert linked_story["story"]["status"] == "converted"
+        duplicate_link = await _call_mcp(
+            db_factory,
+            "okto_pulse_link_story_to_ideation",
+            board_id=board_id,
+            story_id=link_story["story"]["id"],
+            ideation_id=target_id,
+        )
+        assert "already linked" in duplicate_link["error"]
 
         target_topic = await _call_mcp(
             db_factory,

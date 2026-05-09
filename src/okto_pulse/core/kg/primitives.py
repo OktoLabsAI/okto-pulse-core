@@ -1060,7 +1060,14 @@ def _node_is_human_curated(kconn, node_type: str, node_id: str) -> bool:
     return False
 
 
-_CROSS_SESSION_PREFIXES: tuple[str, ...] = ("spec_", "sprint_", "card_")
+_CROSS_SESSION_PREFIXES: tuple[str, ...] = (
+    "story_",
+    "ideation_",
+    "refinement_",
+    "spec_",
+    "sprint_",
+    "card_",
+)
 
 
 def _is_cross_session_entity_ref(endpoint: str) -> bool:
@@ -1105,11 +1112,18 @@ def _resolve_endpoint(
     if kconn is None:
         return None, None
     # Cross-session deterministic-id fallback. We only handle the worker's
-    # own naming convention here (`spec_<id8>_entity`, `sprint_<id8>_entity`)
-    # to avoid surprises; new patterns must be opt-in.
+    # own naming convention here (`<artifact>_<id8>_entity`) to avoid
+    # surprises; new patterns must be opt-in.
     if endpoint.endswith("_entity"):
         body = endpoint[:-len("_entity")]
-        for prefix, ref_prefix in (("spec_", "spec:"), ("sprint_", "sprint:"), ("card_", "card:")):
+        for prefix, ref_prefix in (
+            ("story_", "story:"),
+            ("ideation_", "ideation:"),
+            ("refinement_", "refinement:"),
+            ("spec_", "spec:"),
+            ("sprint_", "sprint:"),
+            ("card_", "card:"),
+        ):
             if body.startswith(prefix):
                 short = body[len(prefix):]
                 # Source_artifact_ref uses the full UUID. We probe with a

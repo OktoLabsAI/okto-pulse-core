@@ -1,4 +1,4 @@
-"""LadybugDB per-board graph schema — 11 node tables, 10 rel tables, 5 vector indexes.
+"""LadybugDB per-board graph schema — 11 node tables, 13 rel tables, 9 vector indexes.
 
 Idempotent bootstrap: `bootstrap_board_graph(board_id)` creates or opens the
 per-board LadybugDB file under `kg_base_dir/boards/{board_id}/graph.lbug`,
@@ -21,7 +21,7 @@ from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
 
-SCHEMA_VERSION = "0.3.3"
+SCHEMA_VERSION = "0.3.4"
 GRAPH_DB_FILENAME = "graph.lbug"
 CORRUPT_DB_ERROR_MARKERS = (
     "checksum verification failed",
@@ -72,7 +72,11 @@ VECTOR_INDEX_TYPES: tuple[str, ...] = (
     "Decision",
     "Criterion",
     "Constraint",
+    "Requirement",
     "Entity",
+    "APIContract",
+    "TestScenario",
+    "Bug",
     "Learning",
 )
 
@@ -112,6 +116,13 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("Bug", "Entity"),
         ("Alternative", "Entity"),
         ("Learning", "Entity"),
+    )),
+    ("originates_from", (
+        ("Bug", "Entity"),
+    )),
+    ("covered_by", (
+        ("Bug", "Entity"),
+        ("Bug", "TestScenario"),
     )),
 )
 
@@ -603,6 +614,20 @@ def _build_multi_rel_ddl(rel_name: str, pairs: tuple[tuple[str, str], ...]) -> s
     )
 
 
+def _ensure_vector_indexes(conn) -> None:
+    """Create every configured vector index, tolerating already-existing ones."""
+    for node_type in VECTOR_INDEX_TYPES:
+        idx = vector_index_name(node_type)
+        try:
+            conn.execute(
+                f"CALL CREATE_VECTOR_INDEX("
+                f"'{node_type}', '{idx}', 'embedding', "
+                f"metric := 'cosine')"
+            )
+        except Exception:
+            pass
+
+
 def _ensure_edge_metadata_columns(conn, rel_name: str) -> list[str]:
     """ALTER TABLE ADD for every v0.2.0 metadata column missing on `rel_name`.
 
@@ -668,7 +693,9 @@ def migrate_edge_metadata(board_id: str) -> dict[str, Any]:
     close_all_connections(board_id)
 
     with open_board_connection(board_id) as (_db, conn):
-        for rel_name, _from_type, _to_type in REL_TYPES:
+        rel_names = [rel_name for rel_name, _from_type, _to_type in REL_TYPES]
+        rel_names.extend(rel_name for rel_name, _pairs in MULTI_REL_TYPES)
+        for rel_name in rel_names:
             added = _ensure_edge_metadata_columns(conn, rel_name)
             _backfill_legacy_edge_metadata(conn, rel_name)
             summary[rel_name] = added
@@ -1458,6 +1485,10 @@ def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
                     errors.append(
                         f"multi_rel_failed: {rel_name}: {mrel_exc}"
                     )
+            try:
+                _ensure_vector_indexes(conn)
+            except Exception as vector_exc:
+                errors.append(f"vector_indexes_failed: {vector_exc}")
         finally:
             try:
                 conn.close()
@@ -1548,6 +1579,7 @@ def apply_schema_to_connection(conn) -> None:
         conn.execute(_build_multi_rel_ddl(rel_name, pairs))
         _ensure_edge_metadata_columns(conn, rel_name)
         _backfill_legacy_edge_metadata(conn, rel_name)
+    _ensure_vector_indexes(conn)
 
 
 def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
@@ -1576,17 +1608,7 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
         # named metric. We declare `cosine` explicitly so the `1 - distance`
         # conversion in search.py stays correct even if Kùzu's default metric
         # changes across versions.
-        for node_type in VECTOR_INDEX_TYPES:
-            idx = vector_index_name(node_type)
-            try:
-                conn.execute(
-                    f"CALL CREATE_VECTOR_INDEX("
-                    f"'{node_type}', '{idx}', 'embedding', "
-                    f"metric := 'cosine')"
-                )
-            except Exception:
-                # Index exists already — fine.
-                pass
+        _ensure_vector_indexes(conn)
 
         # Record schema version on the BoardMeta singleton. Use DELETE+CREATE
         # so a re-bootstrap updates the version if the schema has evolved.
@@ -1718,7 +1740,10 @@ def ensure_board_graph_bootstrapped(board_id: str) -> None:
                 extra={"event": "kg.schema.autobootstrap", "board_id": board_id},
             )
             bootstrap_board_graph(board_id)
-        elif _board_needs_post_v030_migration(board_id):
+        elif (
+            _board_needs_migration(board_id)
+            or _board_needs_post_v030_migration(board_id)
+        ):
             logger.info(
                 "kg.schema.auto_migrate_post_v030 board=%s path=%s",
                 board_id, board_kuzu_path(board_id),

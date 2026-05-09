@@ -480,7 +480,7 @@ async def resolve_root_ideation_id(
         if len(links) > 1:
             raise TraceabilityReadError(
                 "ambiguous_root_ideation",
-                "Selected story is linked to multiple ideations. Open lineage from one of the linked ideations.",
+                "Selected story has legacy duplicate ideation links. Restart the app to run database healing, then open lineage again.",
                 status_code=409,
             )
         return links[0].ideation_id, [

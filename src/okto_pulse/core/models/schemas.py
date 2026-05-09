@@ -1284,6 +1284,7 @@ class IdeationResponse(BaseSchema):
     archived: bool = False
     pre_archive_status: str | None = None
     refinements: list[RefinementSummary] = []
+    stories: list[StorySummary] = []
     specs: list[SpecSummary] = []
     knowledge_bases: list[IdeationKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
@@ -1779,9 +1780,12 @@ class GuidelineResponse(BaseSchema):
 
 
 class BoardGuidelineLinkRequest(BaseModel):
-    """Schema for linking a guideline to a board."""
+    """Schema for linking a global guideline or creating an inline board guideline."""
 
-    guideline_id: str
+    guideline_id: str | None = None
+    title: str | None = Field(None, min_length=1, max_length=500)
+    content: str | None = Field(None, min_length=1)
+    tags: list[str] | None = None
     priority: int = 0
 
 

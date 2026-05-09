@@ -109,6 +109,27 @@ def test_invalid_local_edge_pair_gets_contextual_error():
     ]
 
 
+def test_structured_bug_edges_are_valid_deterministic_pairs():
+    _validate_local_edge_pair(
+        "originates_from",
+        "Bug",
+        "Entity",
+        session_id="sess-edge",
+    )
+    _validate_local_edge_pair(
+        "covered_by",
+        "Bug",
+        "Entity",
+        session_id="sess-edge",
+    )
+    _validate_local_edge_pair(
+        "covered_by",
+        "Bug",
+        "TestScenario",
+        session_id="sess-edge",
+    )
+
+
 def test_agent_instructions_define_kg_consolidation_boundaries():
     instructions = (
         Path(__file__).parents[1]
@@ -120,10 +141,11 @@ def test_agent_instructions_define_kg_consolidation_boundaries():
     ).read_text(encoding="utf-8")
 
     assert "ideations are discovery artifacts" in instructions
-    assert "not consolidated directly into the KG" in instructions
+    assert "enter the KG only as deterministic lineage Entity nodes" in instructions
     assert "`relates_to`" in instructions
     assert "Decision -> Alternative" in instructions
     assert "`implements`, `tests`, `belongs_to`, `mentions`, `violates`" in instructions
+    assert "`originates_from`, `covered_by`" in instructions
     assert "force_full_rebuild=true" in instructions
 
 
@@ -138,8 +160,15 @@ def test_agent_instructions_require_qna_for_ambiguity_and_artifacts():
     ).read_text(encoding="utf-8")
 
     assert "Ambiguity left unresolved at ideation is not free" in instructions
+    assert "Be aggressive about clarification" in instructions
     assert "Every inferred requirement becomes latent rework" in instructions
     assert "more time and more tokens" in instructions
+    assert "Prefer `okto_pulse_ask_ideation_choice_question` whenever" in instructions
+    assert "mark the safest or most likely option as **Recommended**" in instructions
+    assert "set `allow_free_text=true`" in instructions
+    assert "Question shape requirements" in instructions
+    assert "Bias toward multiple choice" in instructions
+    assert "Always enable the additional free-text/comment field" in instructions
     assert "Use Q&A before creating or finalizing mockups" in instructions
     assert "Use Q&A before creating or finalizing architecture designs" in instructions
     assert "standard artifact for multi-layer systems" in instructions

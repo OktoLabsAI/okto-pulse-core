@@ -424,6 +424,112 @@ def _parse_iso_ts(value: str | None) -> Any:
         return None
 
 
+def _find_literal_node_matches(
+    board_id: str,
+    query_text: str,
+    *,
+    limit: int,
+) -> list[dict]:
+    """Exact/text fallback across every node type.
+
+    Vector search is intentionally index-scoped, so operational nodes such as
+    Bug/TestScenario must still be discoverable by exact title, id, or source
+    reference even if an HNSW index is absent/stale.
+    """
+    query_text = (query_text or "").strip()
+    if not query_text:
+        return []
+
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def _append(row: list[Any], node_type: str, similarity: float) -> None:
+        node_id = row[0]
+        if not node_id or node_id in seen:
+            return
+        seen.add(node_id)
+        out.append({
+            "node_id": node_id,
+            "node_type": node_type,
+            "title": row[1],
+            "source_artifact_ref": row[2] if len(row) > 2 else None,
+            "similarity": similarity,
+        })
+
+    try:
+        with open_board_connection(board_id) as (_db, conn):
+            for node_type in NODE_TYPES:
+                if len(out) >= limit:
+                    break
+                try:
+                    result = conn.execute(
+                        f"MATCH (n:{node_type}) "
+                        "WHERE n.id = $q "
+                        "OR n.title = $q "
+                        "OR n.source_artifact_ref = $q "
+                        "RETURN n.id, n.title, n.source_artifact_ref "
+                        "LIMIT $k",
+                        {"q": query_text, "k": max(1, limit - len(out))},
+                    )
+                    try:
+                        while result.has_next():
+                            _append(result.get_next(), node_type, 1.0)
+                    finally:
+                        try:
+                            result.close()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            for node_type in NODE_TYPES:
+                if len(out) >= limit:
+                    break
+                try:
+                    result = conn.execute(
+                        f"MATCH (n:{node_type}) "
+                        "WHERE n.title CONTAINS $q "
+                        "OR n.content CONTAINS $q "
+                        "OR n.source_artifact_ref CONTAINS $q "
+                        "RETURN n.id, n.title, n.source_artifact_ref "
+                        "LIMIT $k",
+                        {"q": query_text[:200], "k": max(1, limit - len(out))},
+                    )
+                    try:
+                        while result.has_next():
+                            _append(result.get_next(), node_type, 0.65)
+                    finally:
+                        try:
+                            result.close()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+    except Exception as exc:
+        logger.debug(
+            "kg.natural.literal_fallback_failed board=%s err=%s",
+            board_id, exc,
+        )
+    return out[:limit]
+
+
+def _dedupe_natural_results(rows: list[dict]) -> list[dict]:
+    best: dict[str, dict] = {}
+    order: list[str] = []
+    for row in rows:
+        node_id = row.get("node_id")
+        if not node_id:
+            continue
+        current = best.get(node_id)
+        if current is None:
+            best[node_id] = row
+            order.append(node_id)
+            continue
+        if row.get("similarity", 0.0) > current.get("similarity", 0.0):
+            best[node_id] = {**current, **row}
+    return [best[node_id] for node_id in order]
+
+
 def execute_natural_query(
     board_id: str,
     nl_query: str,
@@ -526,7 +632,11 @@ def execute_natural_query(
 
     def _run_single(variant_query: str, override_vec=None) -> list[dict]:
         """Run the existing single-variant retrieval pipeline."""
-        out: list[dict] = []
+        out: list[dict] = _find_literal_node_matches(
+            board_id,
+            variant_query,
+            limit=fetch_limit,
+        )
         try:
             query_vec = override_vec if override_vec is not None else embedder.encode(variant_query)
         except Exception:
@@ -546,6 +656,7 @@ def execute_natural_query(
                         "node_id": r["node_id"],
                         "node_type": r["node_type"],
                         "title": r["title"],
+                        "source_artifact_ref": r.get("source_artifact_ref"),
                         "similarity": r["similarity"],
                     })
         elif store is not None:
@@ -558,6 +669,7 @@ def execute_natural_query(
                             "node_id": r[0],
                             "node_type": node_type,
                             "title": r[1],
+                            "source_artifact_ref": None,
                             "similarity": 0.5,
                         })
                 except Exception:
@@ -577,11 +689,12 @@ def execute_natural_query(
                                 "node_id": row[0],
                                 "node_type": node_type,
                                 "title": row[1],
+                                "source_artifact_ref": None,
                                 "similarity": 0.5,
                             })
                     except Exception:
                         pass
-        return out
+        return _dedupe_natural_results(out)
 
     if applied_strategy in ("none", "hyde"):
         # Single-variant path — hyde reuses _run_single with an override
@@ -623,6 +736,7 @@ def execute_natural_query(
         all_results = _run_single(nl_query)
 
     total_before_filter = len(all_results)
+    all_results = _dedupe_natural_results(all_results)
     filtered_out = 0
     if temporal_filter_requested and all_results:
         node_ids = [r["node_id"] for r in all_results]

@@ -12,6 +12,7 @@ from typing import Any
 
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 from okto_pulse.core.kg.schema import (
+    MULTI_REL_TYPES,
     NODE_TYPES,
     REL_TYPES,
     SCHEMA_VERSION,
@@ -53,9 +54,13 @@ class KuzuGraphStore:
         attrs: dict[str, Any] | None = None,
     ) -> None:
         rel_row = next((r for r in REL_TYPES if r[0] == edge_type), None)
-        if rel_row is None:
-            raise ValueError(f"unknown edge_type: {edge_type}")
-        _, from_type, to_type = rel_row
+        if rel_row is not None:
+            _, from_type, to_type = rel_row
+        else:
+            multi = next((m for m in MULTI_REL_TYPES if m[0] == edge_type), None)
+            if multi is None or len(multi[1]) != 1:
+                raise ValueError(f"unknown or ambiguous edge_type: {edge_type}")
+            from_type, to_type = multi[1][0]
 
         edge_attrs = dict(attrs or {})
         edge_attrs.setdefault("confidence", 0.7)
@@ -109,7 +114,13 @@ class KuzuGraphStore:
     def delete_edges_by_session(self, board_id: str, session_id: str) -> int:
         count = 0
         with open_board_connection(board_id) as (_db, conn):
-            for rel_name, from_type, to_type in REL_TYPES:
+            rel_pairs = list(REL_TYPES)
+            for rel_name, endpoint_pairs in MULTI_REL_TYPES:
+                rel_pairs.extend(
+                    (rel_name, from_type, to_type)
+                    for from_type, to_type in endpoint_pairs
+                )
+            for rel_name, from_type, to_type in rel_pairs:
                 try:
                     result = conn.execute(
                         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "

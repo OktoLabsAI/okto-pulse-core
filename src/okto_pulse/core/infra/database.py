@@ -891,6 +891,49 @@ async def _migrate_add_consolidation_resilience_columns() -> None:
                     pass
 
 
+async def _migrate_story_ideation_single_link() -> None:
+    """Enforce one Ideation link per Story while preserving many Stories per Ideation."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'story_ideation_links')"
+            ))
+            if not table_check.scalar():
+                return
+        else:
+            try:
+                await conn.execute(sa_text("SELECT 1 FROM story_ideation_links LIMIT 0"))
+            except Exception:
+                return
+
+        await conn.execute(sa_text(
+            """
+            DELETE FROM story_ideation_links
+            WHERE id IN (
+                SELECT id
+                FROM (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY story_id
+                            ORDER BY created_at, id
+                        ) AS rn
+                    FROM story_ideation_links
+                ) ranked
+                WHERE ranked.rn > 1
+            )
+            """
+        ))
+        await conn.execute(sa_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_story_ideation_link_story "
+            "ON story_ideation_links (story_id)"
+        ))
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -917,6 +960,7 @@ async def init_db() -> None:
     await _migrate_add_event_tables()
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _migrate_story_ideation_single_link()
     await _migrate_add_card_sprint_id()
     await _migrate_add_card_knowledge_bases()
     await _migrate_add_knowledge_source_columns()
