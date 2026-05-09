@@ -232,7 +232,7 @@ class TestKGServiceUsesRegistry:
         assert svc.get_schema_version("b1") is None
 
         store.bootstrap("b1")
-        assert svc.get_schema_version("b1") == "0.3.4"
+        assert svc.get_schema_version("b1") == "0.3.5"
 
     def test_service_decision_history_via_graph_store(self):
         from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore

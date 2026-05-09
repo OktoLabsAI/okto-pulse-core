@@ -21,7 +21,7 @@ from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
 
-SCHEMA_VERSION = "0.3.4"
+SCHEMA_VERSION = "0.3.5"
 GRAPH_DB_FILENAME = "graph.lbug"
 CORRUPT_DB_ERROR_MARKERS = (
     "checksum verification failed",
@@ -101,12 +101,14 @@ REL_TYPES: tuple[tuple[str, str, str], ...] = (
 # Multi-pair rel types — Kuzu supports `CREATE REL TABLE x (FROM A TO B, FROM
 # C TO D, ...)` and we leverage that for the hierarchy backbone so a single
 # `belongs_to` rel name can connect any artifact-typed node to its parent
-# Entity (Spec/Sprint/Card). Keeps the schema readable and queries terse:
+# Entity (Spec/Sprint/Card) or a typed Card node such as Bug. Keeps the schema
+# readable and queries terse:
 #     MATCH (n)-[:belongs_to]->(p:Entity) RETURN n, p
 # Without this we'd need 8 `belongs_to_<type>` variants polluting the schema.
 MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("belongs_to", (
         ("Entity", "Entity"),
+        ("Entity", "Bug"),
         ("Requirement", "Entity"),
         ("Constraint", "Entity"),
         ("Criterion", "Entity"),
@@ -612,6 +614,43 @@ def _build_multi_rel_ddl(rel_name: str, pairs: tuple[tuple[str, str], ...]) -> s
         f"created_at TIMESTAMP, "
         f"{extra_cols})"
     )
+
+
+def _show_rel_connection_pairs(conn, rel_name: str) -> set[tuple[str, str]]:
+    """Return the declared (from, to) pairs for a multi-typed REL table."""
+    res = None
+    try:
+        res = conn.execute(f"CALL SHOW_CONNECTION('{rel_name}') RETURN *")
+        pairs: set[tuple[str, str]] = set()
+        while res.has_next():
+            row = res.get_next()
+            if len(row) >= 2:
+                pairs.add((str(row[0]), str(row[1])))
+        return pairs
+    finally:
+        if res is not None:
+            try:
+                res.close()
+            except Exception:
+                pass
+
+
+def _ensure_multi_rel_pairs(
+    conn,
+    rel_name: str,
+    pairs: tuple[tuple[str, str], ...],
+) -> list[tuple[str, str]]:
+    """ALTER ADD any missing endpoint pair on an existing multi-typed REL table."""
+    added: list[tuple[str, str]] = []
+    for from_type, to_type in pairs:
+        try:
+            conn.execute(f"ALTER TABLE {rel_name} ADD FROM {from_type} TO {to_type}")
+            added.append((from_type, to_type))
+        except Exception:
+            # Pair already exists, rel table was just created with all pairs,
+            # or the current Kuzu build rejected a duplicate ADD. All are safe.
+            pass
+    return added
 
 
 def _ensure_vector_indexes(conn) -> None:
@@ -1149,10 +1188,12 @@ _MIGRATED_BOARDS: set[str] = set()
 
 
 def _board_needs_migration(board_id: str) -> bool:
-    """Returns True iff the per-board Kùzu DB lacks a rel table the current
-    schema expects. Cheap probe: open a short-lived connection and read the
-    rel-table catalog; cache positive results so subsequent opens skip the
-    check entirely."""
+    """Return True iff the board lacks any rel table or endpoint pair.
+
+    The original probe only compared table names. That missed additive
+    changes inside a multi-typed REL table, such as adding ``Entity -> Bug`` to
+    ``belongs_to`` for Architecture Design nodes attached to Bug cards.
+    """
     if board_id in _MIGRATED_BOARDS:
         return False
     try:
@@ -1166,6 +1207,15 @@ def _board_needs_migration(board_id: str) -> bool:
             existing = set()
             while res.has_next():
                 existing.add(res.get_next()[0])
+            res.close()
+            res = None
+            expected = {r[0] for r in REL_TYPES} | {m[0] for m in MULTI_REL_TYPES}
+            if not expected.issubset(existing):
+                return True
+            for rel_name, pairs in MULTI_REL_TYPES:
+                existing_pairs = _show_rel_connection_pairs(conn, rel_name)
+                if not set(pairs).issubset(existing_pairs):
+                    return True
         finally:
             if res is not None:
                 try:
@@ -1177,11 +1227,8 @@ def _board_needs_migration(board_id: str) -> bool:
             except Exception:
                 pass
             # Bug d0f6bab2: db is now process-cached; do NOT close here.
-        expected = {r[0] for r in REL_TYPES} | {m[0] for m in MULTI_REL_TYPES}
-        if expected.issubset(existing):
-            _MIGRATED_BOARDS.add(board_id)
-            return False
-        return True
+        _MIGRATED_BOARDS.add(board_id)
+        return False
     except Exception:
         # Probe failed — assume migration is needed; the apply itself is
         # idempotent so a false positive only costs one extra DDL pass.
@@ -1479,6 +1526,7 @@ def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
             for rel_name, pairs in MULTI_REL_TYPES:
                 try:
                     conn.execute(_build_multi_rel_ddl(rel_name, pairs))
+                    _ensure_multi_rel_pairs(conn, rel_name, pairs)
                     _ensure_edge_metadata_columns(conn, rel_name)
                     _backfill_legacy_edge_metadata(conn, rel_name)
                 except Exception as mrel_exc:
@@ -1577,6 +1625,7 @@ def apply_schema_to_connection(conn) -> None:
     # Multi-pair rel types (hierarchy backbone — `belongs_to`).
     for rel_name, pairs in MULTI_REL_TYPES:
         conn.execute(_build_multi_rel_ddl(rel_name, pairs))
+        _ensure_multi_rel_pairs(conn, rel_name, pairs)
         _ensure_edge_metadata_columns(conn, rel_name)
         _backfill_legacy_edge_metadata(conn, rel_name)
     _ensure_vector_indexes(conn)

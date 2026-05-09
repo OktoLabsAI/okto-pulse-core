@@ -49,7 +49,7 @@ class TestSemanticGraphStore:
         store = InMemoryGraphStore()
         assert store.get_schema_version("b1") is None
         store.bootstrap("b1")
-        assert store.get_schema_version("b1") == "0.3.4"
+        assert store.get_schema_version("b1") == "0.3.5"
 
     def test_create_and_find_by_topic(self):
         store = InMemoryGraphStore()
@@ -148,7 +148,7 @@ class TestSemanticGraphStore:
     def test_get_schema_info(self):
         store = InMemoryGraphStore()
         info = store.get_schema_info("b1")
-        assert info["schema_version"] == "0.3.4"
+        assert info["schema_version"] == "0.3.5"
         assert len(info["stable_node_types"]) == 11
         assert len(info["stable_rel_types"]) == 10
         assert len(info["vector_indexes"]) == 9
