@@ -181,9 +181,13 @@ def test_ts9_process_spec_emits_formalized_decisions():
     assert "Cache em Redis" in titles
     # Revoked decisions are NOT emitted (superseded/revoked are excluded).
     assert "Use DuckDB" not in titles
-    # All emitted decisions carry the spec artifact ref.
+    refs = {n.title: n.source_artifact_ref for n in decision_nodes}
+    spec_ref = "spec:11111111-aaaa-4444-bbbb-222222222222"
+    assert refs == {
+        "Use Kùzu": f"{spec_ref}:decision:dec_ts9_one",
+        "Cache em Redis": f"{spec_ref}:decision:dec_ts9_two",
+    }
     for n in decision_nodes:
-        assert n.source_artifact_ref == "spec:11111111-aaaa-4444-bbbb-222222222222"
         assert n.source_confidence == 1.0
         assert n.priority_boost == 0.0
 

@@ -27,7 +27,10 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
         "okto_pulse_clear_resource_not_applicable",
         "okto_pulse_create_story",
         "okto_pulse_list_stories",
+        "okto_pulse_update_story",
         "okto_pulse_move_story",
+        "okto_pulse_archive_story",
+        "okto_pulse_restore_story",
         "okto_pulse_link_story_to_ideation",
         "okto_pulse_convert_stories_to_ideation",
     }

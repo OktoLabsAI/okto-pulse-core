@@ -60,7 +60,11 @@ from okto_pulse.core.services.resource_gate import (
     ResourceGateError,
     ResourceGateService,
 )
-from okto_pulse.core.services.story_permissions import story_move_permission, story_state
+from okto_pulse.core.services.story_permissions import (
+    story_move_permission,
+    story_state,
+    story_update_permissions,
+)
 
 
 import uuid as _uuid
@@ -4005,6 +4009,69 @@ async def okto_pulse_list_stories(
 
 
 @mcp.tool()
+async def okto_pulse_update_story(
+    board_id: str,
+    story_id: str,
+    topic_id: str = "",
+    title: str = "",
+    description: str = "",
+    actor: str = "",
+    goal: str = "",
+    benefit: str = "",
+    labels: list[str] | str = "",
+) -> str:
+    """Update editable Story fields through MCP."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    from okto_pulse.core.models.schemas import StoryUpdate
+
+    update_data: dict[str, Any] = {}
+    if topic_id:
+        update_data["topic_id"] = topic_id
+    if title:
+        update_data["title"] = title
+    if description:
+        update_data["description"] = description.replace("\\n", "\n")
+    if actor:
+        update_data["actor"] = actor
+    if goal:
+        update_data["goal"] = goal
+    if benefit:
+        update_data["benefit"] = benefit
+    if labels != "":
+        try:
+            update_data["labels"] = coerce_to_list_str(labels) or []
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+    if not update_data:
+        return json.dumps({"success": False, "error": "Provide at least one field to update"})
+
+    async with get_db_for_mcp() as db:
+        service = StoryService(db)
+        existing = await service.get_story(story_id)
+        if not existing or existing.board_id != board_id:
+            return json.dumps({"error": "Story not found"})
+        for required_permission in story_update_permissions(update_data):
+            perm_err = _mcp_check_story_state_permission(
+                ctx.permissions,
+                required_permission,
+                existing,
+                Permissions.SPECS_UPDATE,
+            )
+            if perm_err:
+                return _mcp_permission_error_response(perm_err)
+        try:
+            story = await service.update_story(story_id, ctx.agent_id, StoryUpdate(**update_data))
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        await db.commit()
+        if not story or story.board_id != board_id:
+            return json.dumps({"error": "Story not found"})
+        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_move_story(board_id: str, story_id: str, status: str) -> str:
     """Move a Story through draft, triage, and ready. Converted is set by link/conversion."""
     ctx = await _get_agent_ctx(board_id)
@@ -4042,13 +4109,65 @@ async def okto_pulse_move_story(board_id: str, story_id: str, status: str) -> st
 
 
 @mcp.tool()
+async def okto_pulse_archive_story(board_id: str, story_id: str) -> str:
+    """Archive a Story without deleting lineage or linked Ideations."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    async with get_db_for_mcp() as db:
+        service = StoryService(db)
+        existing = await service.get_story(story_id)
+        if not existing or existing.board_id != board_id:
+            return json.dumps({"error": "Story not found"})
+        perm_err = _mcp_check_story_state_permission(
+            ctx.permissions,
+            "story.entity.archive",
+            existing,
+            Permissions.SPECS_UPDATE,
+        )
+        if perm_err:
+            return _mcp_permission_error_response(perm_err)
+        story = await service.archive_story(story_id, ctx.agent_id, archived=True)
+        await db.commit()
+        if not story or story.board_id != board_id:
+            return json.dumps({"error": "Story not found"})
+        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_restore_story(board_id: str, story_id: str) -> str:
+    """Restore an archived Story."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    async with get_db_for_mcp() as db:
+        service = StoryService(db)
+        existing = await service.get_story(story_id)
+        if not existing or existing.board_id != board_id:
+            return json.dumps({"error": "Story not found"})
+        perm_err = _mcp_check_story_state_permission(
+            ctx.permissions,
+            "story.entity.restore",
+            existing,
+            Permissions.SPECS_UPDATE,
+        )
+        if perm_err:
+            return _mcp_permission_error_response(perm_err)
+        story = await service.archive_story(story_id, ctx.agent_id, archived=False)
+        await db.commit()
+        if not story or story.board_id != board_id:
+            return json.dumps({"error": "Story not found"})
+        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_link_story_to_ideation(
     board_id: str,
     story_id: str,
     ideation_id: str,
-    mark_converted: str = "false",
+    mark_converted: str = "true",
 ) -> str:
-    """Create the simple N:N link between a Story and an Ideation."""
+    """Link a Story to one Ideation; multiple Stories may feed the same Ideation."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4070,15 +4189,21 @@ async def okto_pulse_link_story_to_ideation(
                 story_id,
                 ideation_id,
                 ctx.agent_id,
-                mark_converted=_flag_enabled(mark_converted),
+                mark_converted=True,
             )
         except ValueError as e:
             return json.dumps({"error": str(e)})
+        story = await service.get_story(story_id)
         await db.commit()
         if not link or link.board_id != board_id:
             return json.dumps({"error": "Story or Ideation not found"})
         return json.dumps(
-            {"success": True, "link": {"id": link.id, "story_id": link.story_id, "ideation_id": link.ideation_id}},
+            {
+                "success": True,
+                "link": {"id": link.id, "story_id": link.story_id, "ideation_id": link.ideation_id},
+                "story": _story_payload(story) if story else None,
+                "mark_converted_input_ignored": not _flag_enabled(mark_converted),
+            },
             default=str,
         )
 

@@ -27,9 +27,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from okto_pulse.core.models.db import (
+    Card,
     ConsolidationQueue,
+    Ideation,
+    Refinement,
     Spec,
     Sprint,
+    Story,
 )
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
@@ -51,7 +55,9 @@ from okto_pulse.core.kg.workers.deterministic_worker import (
     DeterministicWorker,
     EmittedEdge,
     EmittedNode,
+    WORKER_VERSION,
     WorkerResult,
+    _spec_child_ref,
 )
 
 logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
@@ -84,6 +90,8 @@ def _spec_to_dict(spec: Spec) -> dict:
     the same contract as production callers."""
     return {
         "id": spec.id,
+        "ideation_id": getattr(spec, "ideation_id", None),
+        "refinement_id": getattr(spec, "refinement_id", None),
         "title": spec.title,
         "description": spec.description,
         "context": spec.context,
@@ -93,10 +101,63 @@ def _spec_to_dict(spec: Spec) -> dict:
         "business_rules": spec.business_rules or [],
         "test_scenarios": spec.test_scenarios or [],
         "api_contracts": spec.api_contracts or [],
+        "decisions": spec.decisions or [],
         "architecture_designs": [
             _architecture_design_to_dict(design)
             for design in (getattr(spec, "architecture_designs", None) or [])
         ],
+    }
+
+
+def _story_to_dict(story: Story) -> dict:
+    status = getattr(story, "status", None)
+    return {
+        "id": story.id,
+        "topic_id": story.topic_id,
+        "title": story.title,
+        "description": story.description,
+        "actor": story.actor,
+        "goal": story.goal,
+        "benefit": story.benefit,
+        "labels": story.labels or [],
+        "status": getattr(status, "value", status) if status is not None else None,
+    }
+
+
+def _ideation_to_dict(ideation: Ideation) -> dict:
+    status = getattr(ideation, "status", None)
+    complexity = getattr(ideation, "complexity", None)
+    return {
+        "id": ideation.id,
+        "title": ideation.title,
+        "description": ideation.description,
+        "problem_statement": ideation.problem_statement,
+        "proposed_approach": ideation.proposed_approach,
+        "scope_assessment": ideation.scope_assessment or {},
+        "complexity": getattr(complexity, "value", complexity) if complexity is not None else None,
+        "status": getattr(status, "value", status) if status is not None else None,
+        "labels": ideation.labels or [],
+        "story_ids": [
+            link.story_id
+            for link in (getattr(ideation, "story_links", None) or [])
+            if getattr(link, "story_id", None)
+        ],
+    }
+
+
+def _refinement_to_dict(refinement: Refinement) -> dict:
+    status = getattr(refinement, "status", None)
+    return {
+        "id": refinement.id,
+        "ideation_id": refinement.ideation_id,
+        "title": refinement.title,
+        "description": refinement.description,
+        "in_scope": refinement.in_scope or [],
+        "out_of_scope": refinement.out_of_scope or [],
+        "analysis": refinement.analysis,
+        "decisions": refinement.decisions or [],
+        "status": getattr(status, "value", status) if status is not None else None,
+        "labels": refinement.labels or [],
     }
 
 
@@ -122,6 +183,7 @@ def _card_to_dict(card) -> dict:
         "spec_id": card.spec_id,
         "sprint_id": card.sprint_id,
         "origin_task_id": getattr(card, "origin_task_id", None),
+        "linked_test_task_ids": getattr(card, "linked_test_task_ids", None) or [],
         "priority": getattr(priority, "value", priority) if priority is not None else None,
         "severity": getattr(severity, "value", severity) if severity is not None else None,
         "architecture_designs": [
@@ -160,18 +222,313 @@ def _worker_edge_to_candidate(edge: EmittedEdge) -> EdgeCandidate:
 
 def _run_deterministic_worker(entry: ConsolidationQueue, artifact) -> WorkerResult:
     worker = DeterministicWorker()
+    if entry.artifact_type == "story":
+        return worker.process_story(_story_to_dict(artifact))
+    if entry.artifact_type == "ideation":
+        return worker.process_ideation(_ideation_to_dict(artifact))
+    if entry.artifact_type == "refinement":
+        return worker.process_refinement(_refinement_to_dict(artifact))
     if entry.artifact_type == "spec":
         return worker.process_spec(_spec_to_dict(artifact))
     if entry.artifact_type == "sprint":
         return worker.process_sprint(_sprint_to_dict(artifact))
     if entry.artifact_type == "card":
         return worker.process_card(_card_to_dict(artifact))
-    if entry.artifact_type == "refinement":
-        # Spec eaf78891 (Ideação #2): graceful no-op for refinement.
-        # Refinement extraction is a follow-up; for now we accept the entry
-        # without crashing so RefinementSemanticChanged events flow cleanly.
-        return WorkerResult()
     raise ValueError(f"unknown artifact_type: {entry.artifact_type}")
+
+
+def _edge_exists(result: WorkerResult, candidate_id: str) -> bool:
+    return any(edge.candidate_id == candidate_id for edge in result.edges)
+
+
+def _node_exists(result: WorkerResult, candidate_id: str) -> bool:
+    return any(node.candidate_id == candidate_id for node in result.nodes)
+
+
+def _append_card_entity_node(result: WorkerResult, card: Card) -> str:
+    cid = f"card_{card.id[:8]}_entity"
+    if _node_exists(result, cid):
+        return cid
+    card_type = getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    result.nodes.append(EmittedNode(
+        candidate_id=cid,
+        node_type="Bug" if card_type == "bug" else "Entity",
+        title=card.title or f"Card {card.id}",
+        content=card.description or "",
+        source_artifact_ref=f"card:{card.id}",
+        source_confidence=1.0,
+    ))
+    return cid
+
+
+def _append_story_entity_node(result: WorkerResult, story: Story) -> str:
+    cid = f"story_{story.id[:8]}_entity"
+    if _node_exists(result, cid):
+        return cid
+    result.nodes.append(EmittedNode(
+        candidate_id=cid,
+        node_type="Entity",
+        title=story.title or f"Story {story.id}",
+        content=story.description or "",
+        source_artifact_ref=f"story:{story.id}",
+        source_confidence=1.0,
+    ))
+    return cid
+
+
+def _append_ideation_entity_node(result: WorkerResult, ideation: Ideation) -> str:
+    cid = f"ideation_{ideation.id[:8]}_entity"
+    if _node_exists(result, cid):
+        return cid
+    content = "\n\n".join(
+        p for p in (
+            ideation.description,
+            ideation.problem_statement,
+            ideation.proposed_approach,
+        )
+        if p
+    )
+    result.nodes.append(EmittedNode(
+        candidate_id=cid,
+        node_type="Entity",
+        title=ideation.title or f"Ideation {ideation.id}",
+        content=content or ideation.title or "",
+        source_artifact_ref=f"ideation:{ideation.id}",
+        source_confidence=1.0,
+    ))
+    return cid
+
+
+def _append_refinement_entity_node(result: WorkerResult, refinement: Refinement) -> str:
+    cid = f"refinement_{refinement.id[:8]}_entity"
+    if _node_exists(result, cid):
+        return cid
+    content = "\n\n".join(
+        p for p in (refinement.description, refinement.analysis) if p
+    )
+    result.nodes.append(EmittedNode(
+        candidate_id=cid,
+        node_type="Entity",
+        title=refinement.title or f"Refinement {refinement.id}",
+        content=content or refinement.title or "",
+        source_artifact_ref=f"refinement:{refinement.id}",
+        source_confidence=1.0,
+    ))
+    return cid
+
+
+async def _materialize_lineage_endpoint_nodes(
+    db: AsyncSession,
+    entry: ConsolidationQueue,
+    artifact,
+    result: WorkerResult,
+) -> WorkerResult:
+    """Add local parent/root nodes needed by deterministic lineage edges.
+
+    Queue ordering is best-effort, but event-driven consolidation can process
+    a child before its parent. Materialising the parent node in the same
+    session keeps belongs_to edges from being silently skipped.
+    """
+    if entry.artifact_type == "ideation":
+        story_ids = [
+            link.story_id
+            for link in (getattr(artifact, "story_links", None) or [])
+            if getattr(link, "story_id", None)
+        ]
+        if story_ids:
+            stories = (await db.execute(
+                select(Story).where(Story.id.in_(story_ids))
+            )).scalars().all()
+            for story in stories:
+                _append_story_entity_node(result, story)
+        return result
+
+    if entry.artifact_type == "refinement" and getattr(artifact, "ideation_id", None):
+        ideation = await db.get(Ideation, artifact.ideation_id)
+        if ideation is not None:
+            _append_ideation_entity_node(result, ideation)
+        return result
+
+    if entry.artifact_type == "spec":
+        if getattr(artifact, "refinement_id", None):
+            refinement = await db.get(Refinement, artifact.refinement_id)
+            if refinement is not None:
+                _append_refinement_entity_node(result, refinement)
+        elif getattr(artifact, "ideation_id", None):
+            ideation = await db.get(Ideation, artifact.ideation_id)
+            if ideation is not None:
+                _append_ideation_entity_node(result, ideation)
+        return result
+
+    return result
+
+
+def _test_scenario_content(ts: object) -> str:
+    if not isinstance(ts, dict):
+        return str(ts)
+    parts = [
+        f"Given: {ts.get('given', '')}",
+        f"When: {ts.get('when', '')}",
+        f"Then: {ts.get('then', '')}",
+    ]
+    return "\n".join(p for p in parts if p.split(": ", 1)[1])
+
+
+def _scenario_candidate_for_id(spec: Spec, scenario_id: str) -> tuple[str, EmittedNode] | None:
+    for index, ts in enumerate(spec.test_scenarios or []):
+        if not isinstance(ts, dict):
+            continue
+        raw_id = ts.get("id") or ts.get("scenario_id")
+        if str(raw_id) != str(scenario_id):
+            continue
+        cid = f"spec_{spec.id[:8]}_ts_{index}"
+        title = ts.get("title") or f"TS-{index + 1}"
+        return cid, EmittedNode(
+            candidate_id=cid,
+            node_type="TestScenario",
+            title=title,
+            content=_test_scenario_content(ts),
+            source_artifact_ref=_spec_child_ref(spec.id, "test_scenario", ts, index),
+            source_confidence=1.0,
+        )
+    return None
+
+
+def _suggested_ref(candidate, prefix: str) -> str | None:
+    for suggested in candidate.suggested_candidates or []:
+        value = str(suggested)
+        if value.startswith(prefix):
+            return value.split(":", 1)[1]
+    return None
+
+
+async def _resolve_missing_link_candidates(
+    db: AsyncSession,
+    board_id: str,
+    result: WorkerResult,
+) -> WorkerResult:
+    """Resolve structured cross-artifact Bug links before commit.
+
+    The deterministic worker remains pure and emits MissingLinkCandidate rows
+    when it sees a foreign key that requires repository lookup. This adapter
+    turns the resolvable cases into final deterministic edges and keeps truly
+    unresolved candidates available for audit/fallback.
+    """
+    origin_ids: set[str] = set()
+    test_task_ids: set[str] = set()
+    for candidate in result.missing_link_candidates:
+        if candidate.reason == "origin_task_requires_cross_artifact_resolution":
+            ref = _suggested_ref(candidate, "task:")
+            if ref:
+                origin_ids.add(ref)
+        elif candidate.reason == "linked_test_task_requires_cross_artifact_resolution":
+            ref = _suggested_ref(candidate, "test_task:")
+            if ref:
+                test_task_ids.add(ref)
+
+    target_ids = origin_ids | test_task_ids
+    if not target_ids:
+        return result
+
+    rows = (await db.execute(
+        select(Card).where(Card.board_id == board_id, Card.id.in_(target_ids))
+    )).scalars().all()
+    cards_by_id = {card.id: card for card in rows}
+
+    specs_by_id: dict[str, Spec] = {}
+    spec_ids = {
+        card.spec_id
+        for card in cards_by_id.values()
+        if card.id in test_task_ids and card.spec_id
+    }
+    if spec_ids:
+        specs = (await db.execute(
+            select(Spec).where(Spec.board_id == board_id, Spec.id.in_(spec_ids))
+        )).scalars().all()
+        specs_by_id = {spec.id: spec for spec in specs}
+
+    unresolved = []
+    resolved_count = 0
+    for candidate in result.missing_link_candidates:
+        if candidate.reason == "origin_task_requires_cross_artifact_resolution":
+            origin_id = _suggested_ref(candidate, "task:")
+            origin_card = cards_by_id.get(origin_id or "")
+            if origin_card is None:
+                unresolved.append(candidate)
+                continue
+            target_cid = _append_card_entity_node(result, origin_card)
+            edge_id = f"{candidate.from_candidate_id}_originates_from_{origin_card.id[:8]}"
+            if not _edge_exists(result, edge_id):
+                result.edges.append(EmittedEdge(
+                    candidate_id=edge_id,
+                    edge_type="originates_from",
+                    from_candidate_id=candidate.from_candidate_id,
+                    to_candidate_id=target_cid,
+                    confidence=1.0,
+                    rule_id=f"originates_from/origin_task_id@{WORKER_VERSION}",
+                ))
+            resolved_count += 1
+            continue
+
+        if candidate.reason == "linked_test_task_requires_cross_artifact_resolution":
+            test_task_id = _suggested_ref(candidate, "test_task:")
+            test_card = cards_by_id.get(test_task_id or "")
+            if test_card is None:
+                unresolved.append(candidate)
+                continue
+            target_cid = _append_card_entity_node(result, test_card)
+            edge_id = f"{candidate.from_candidate_id}_covered_by_card_{test_card.id[:8]}"
+            if not _edge_exists(result, edge_id):
+                result.edges.append(EmittedEdge(
+                    candidate_id=edge_id,
+                    edge_type="covered_by",
+                    from_candidate_id=candidate.from_candidate_id,
+                    to_candidate_id=target_cid,
+                    confidence=1.0,
+                    rule_id=f"covered_by/linked_test_task_id@{WORKER_VERSION}",
+                ))
+
+            spec = specs_by_id.get(test_card.spec_id or "")
+            for scenario_id in test_card.test_scenario_ids or []:
+                if spec is None:
+                    continue
+                scenario = _scenario_candidate_for_id(spec, str(scenario_id))
+                if scenario is None:
+                    continue
+                scenario_cid, scenario_node = scenario
+                if not _node_exists(result, scenario_cid):
+                    result.nodes.append(scenario_node)
+                scenario_edge_id = (
+                    f"{candidate.from_candidate_id}_covered_by_ts_"
+                    f"{spec.id[:8]}_{str(scenario_id)[:8]}"
+                )
+                if not _edge_exists(result, scenario_edge_id):
+                    result.edges.append(EmittedEdge(
+                        candidate_id=scenario_edge_id,
+                        edge_type="covered_by",
+                        from_candidate_id=candidate.from_candidate_id,
+                        to_candidate_id=scenario_cid,
+                        confidence=1.0,
+                        rule_id=f"covered_by/linked_test_scenario@{WORKER_VERSION}",
+                    ))
+            resolved_count += 1
+            continue
+
+        unresolved.append(candidate)
+
+    result.missing_link_candidates = unresolved
+    if resolved_count:
+        logger.info(
+            "consolidation.missing_links_resolved board=%s resolved=%d unresolved=%d",
+            board_id, resolved_count, len(unresolved),
+            extra={
+                "event": "kg.consolidation.missing_links_resolved",
+                "board_id": board_id,
+                "resolved_count": resolved_count,
+                "unresolved_count": len(unresolved),
+            },
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +543,21 @@ async def _process_queue_entry(
     """Process one queue entry through the primitives pipeline.
     Returns True on success, False on failure."""
 
-    if entry.artifact_type == "spec":
+    if entry.artifact_type == "story":
+        result = await db.execute(
+            select(Story).where(Story.id == entry.artifact_id)
+        )
+    elif entry.artifact_type == "ideation":
+        result = await db.execute(
+            select(Ideation)
+            .options(selectinload(Ideation.story_links))
+            .where(Ideation.id == entry.artifact_id)
+        )
+    elif entry.artifact_type == "refinement":
+        result = await db.execute(
+            select(Refinement).where(Refinement.id == entry.artifact_id)
+        )
+    elif entry.artifact_type == "spec":
         result = await db.execute(
             select(Spec)
             .options(selectinload(Spec.architecture_designs))
@@ -197,21 +568,11 @@ async def _process_queue_entry(
             select(Sprint).options(selectinload(Sprint.spec)).where(Sprint.id == entry.artifact_id)
         )
     elif entry.artifact_type == "card":
-        from okto_pulse.core.models.db import Card
         result = await db.execute(
             select(Card)
             .options(selectinload(Card.architecture_designs))
             .where(Card.id == entry.artifact_id)
         )
-    elif entry.artifact_type == "refinement":
-        # Spec eaf78891 (Ideação #2): refinement is accepted as a no-op.
-        # Logged + treated as success so the queue entry is cleared without
-        # touching extractors or the KG.
-        logger.info(
-            "consolidation.refinement.noop board=%s artifact_id=%s source=%s",
-            entry.board_id, entry.artifact_id, entry.source,
-        )
-        return True
     else:
         logger.warning("unknown artifact_type: %s", entry.artifact_type)
         return False
@@ -224,6 +585,17 @@ async def _process_queue_entry(
         return False
 
     worker_result = _run_deterministic_worker(entry, artifact)
+    worker_result = await _materialize_lineage_endpoint_nodes(
+        db,
+        entry,
+        artifact,
+        worker_result,
+    )
+    worker_result = await _resolve_missing_link_candidates(
+        db,
+        entry.board_id,
+        worker_result,
+    )
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]
     edge_candidates = [_worker_edge_to_candidate(e) for e in worker_result.edges]
     raw_content = worker_result.raw_content

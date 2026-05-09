@@ -37,7 +37,7 @@ def board():
 
 
 def test_schema_version_is_current():
-    assert SCHEMA_VERSION == "0.3.3"
+    assert SCHEMA_VERSION == "0.3.4"
 
 
 def test_edge_metadata_columns_declared():

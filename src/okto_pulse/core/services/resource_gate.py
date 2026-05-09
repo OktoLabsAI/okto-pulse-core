@@ -300,7 +300,7 @@ class ResourceGateService:
         for resource in summary["resources"]:
             if resource["state"] != "provided":
                 continue
-            for ref in resource["direct_refs"] + resource["inherited_refs"]:
+            for ref in self._coverage_obligation_refs(resource):
                 provided_refs.append(
                     {
                         **ref,
@@ -651,6 +651,20 @@ class ResourceGateService:
         }
 
     @staticmethod
+    def _coverage_obligation_refs(resource: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return the resource refs that must be permeated to task cards.
+
+        Direct spec resources are snapshots of the formalized parent context. When
+        they exist, requiring the parent inherited copies as separate task
+        obligations double-counts the same artifact and makes the gate impossible
+        to satisfy with the public copy tools.
+        """
+        direct = list(resource.get("direct_refs") or [])
+        if direct:
+            return direct
+        return list(resource.get("inherited_refs") or [])
+
+    @staticmethod
     def _resource_identity_values(item: Any) -> set[str]:
         values: set[str] = set()
         if isinstance(item, dict):
@@ -664,9 +678,13 @@ class ResourceGateService:
             ):
                 value = item.get(key)
                 if value:
-                    values.add(str(value))
+                    text = str(value)
+                    values.add(text)
+                    if text.startswith("cardkb_") and len(text) > len("cardkb_"):
+                        values.add(text[len("cardkb_") :])
             values.update(ResourceGateService._source_ref_values(item.get("source_ref")))
             values.update(ResourceGateService._source_ref_values(item.get("origin_ref")))
+            values.update(ResourceGateService._source_ref_values(item.get("source")))
         elif item:
             values.add(str(item))
         return values

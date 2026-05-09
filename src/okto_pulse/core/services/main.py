@@ -4080,7 +4080,7 @@ class StoryService:
         return await self.get_story(story_id)
 
     async def link_story_to_ideation(
-        self, story_id: str, ideation_id: str, user_id: str, *, mark_converted: bool = False
+        self, story_id: str, ideation_id: str, user_id: str, *, mark_converted: bool = True
     ) -> StoryIdeationLink | None:
         story = await self.get_story(story_id)
         ideation = await self.db.get(Ideation, ideation_id)
@@ -4095,11 +4095,12 @@ class StoryService:
         link = (await self.db.execute(
             select(StoryIdeationLink).where(
                 StoryIdeationLink.story_id == story_id,
-                StoryIdeationLink.ideation_id == ideation_id,
             )
         )).scalar_one_or_none()
         if link:
-            raise ValueError("Story is already linked to this Ideation.")
+            if link.ideation_id == ideation_id:
+                raise ValueError("Story is already linked to this Ideation.")
+            raise ValueError("Story is already linked to another Ideation. A Story can only link to one Ideation.")
         link = StoryIdeationLink(
             board_id=story.board_id,
             story_id=story_id,
@@ -4108,8 +4109,10 @@ class StoryService:
         )
         self.db.add(link)
         await self.db.flush()
-        if mark_converted and story.status != StoryStatus.CONVERTED:
+        # mark_converted remains accepted for API compatibility; successful links now always convert.
+        if story.status != StoryStatus.CONVERTED:
             story.status = StoryStatus.CONVERTED
+            await self.db.flush()
         actor_name = await resolve_actor_name(self.db, user_id, story.board_id)
         await self._log_activity(
             board_id=story.board_id,
@@ -4338,6 +4341,11 @@ class IdeationService:
             select(Ideation)
             .options(selectinload(Ideation.refinements).selectinload(Refinement.architecture_designs))
             .options(selectinload(Ideation.specs).selectinload(Spec.architecture_designs))
+            .options(
+                selectinload(Ideation.story_links)
+                .selectinload(StoryIdeationLink.story)
+                .selectinload(Story.ideation_links)
+            )
             .options(selectinload(Ideation.knowledge_bases))
             .options(selectinload(Ideation.qa_items))
             .options(selectinload(Ideation.architecture_designs))

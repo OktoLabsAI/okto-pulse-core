@@ -9,6 +9,7 @@ from okto_pulse.core.api.resource_gate import router as resource_gate_router
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Ideation, Spec
+from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
 USER_ID = "resource-gate-api-user"
@@ -169,3 +170,37 @@ def test_resource_gate_spec_coverage_respects_board_setting(_client_and_entities
     assert coverage_disabled.status_code == 200
     assert coverage_disabled.json()["enabled"] is False
     assert coverage_disabled.json()["allowed"] is True
+
+
+def test_resource_gate_identity_values_include_copied_card_kb_source():
+    values = ResourceGateService._resource_identity_values(
+        {
+            "id": "cardkb_kb-original-123",
+            "source": "copied_from_spec:spec-456:kb-original-123",
+        }
+    )
+
+    assert "cardkb_kb-original-123" in values
+    assert "kb-original-123" in values
+
+
+def test_resource_gate_coverage_obligations_prefer_direct_snapshots():
+    refs = ResourceGateService._coverage_obligation_refs(
+        {
+            "direct_refs": [{"id": "spec-snapshot"}],
+            "inherited_refs": [{"id": "parent-original"}],
+        }
+    )
+
+    assert refs == [{"id": "spec-snapshot"}]
+
+
+def test_resource_gate_coverage_obligations_use_inherited_when_no_direct_snapshot():
+    refs = ResourceGateService._coverage_obligation_refs(
+        {
+            "direct_refs": [],
+            "inherited_refs": [{"id": "parent-original"}],
+        }
+    )
+
+    assert refs == [{"id": "parent-original"}]

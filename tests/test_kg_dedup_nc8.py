@@ -119,6 +119,151 @@ async def _drive_one_session(
     return commit
 
 
+def _kgdet_spec_payload(spec_id: str) -> dict:
+    return {
+        "id": spec_id,
+        "title": "KGDET deterministic import fixture",
+        "description": "Multi-item fixture for deterministic KG ingestion.",
+        "context": "No cognitive closeout is executed for this fixture.",
+        "functional_requirements": [
+            {"id": "fr_decisions", "text": "Import active formal decisions."},
+            {"id": "fr_siblings", "text": "Preserve repeatable spec siblings."},
+        ],
+        "technical_requirements": [
+            {"id": "tr_adapter", "text": "Adapter passes structured fields."},
+            {"id": "tr_worker", "text": "Worker emits granular provenance."},
+        ],
+        "acceptance_criteria": [
+            {"id": "ac_decisions", "text": "Decision count equals source count."},
+            {"id": "ac_idempotent", "text": "Reprocessing keeps stable counts."},
+        ],
+        "business_rules": [
+            {
+                "id": "br_no_cognitive_repair",
+                "title": "No cognitive repair",
+                "rule": "Deterministic structured data must be imported first.",
+            },
+            {
+                "id": "br_granular_refs",
+                "title": "Granular refs",
+                "rule": "Repeatable children cannot share the root spec source ref.",
+            },
+        ],
+        "test_scenarios": [
+            {
+                "id": "ts_decisions",
+                "title": "Decision import",
+                "given": "A spec has active decisions",
+                "when": "The deterministic worker runs",
+                "then": "Decision nodes are produced",
+                "linked_criteria": ["Decision count equals source count."],
+            },
+            {
+                "id": "ts_reprocess",
+                "title": "Reprocess import",
+                "given": "The same spec was already committed",
+                "when": "It is processed again",
+                "then": "Counts remain stable",
+                "linked_criteria": ["Reprocessing keeps stable counts."],
+            },
+        ],
+        "api_contracts": [
+            {
+                "id": "api_adapter",
+                "method": "COMPONENT",
+                "path": "_spec_to_dict",
+                "description": "Serialize structured decisions.",
+                "linked_requirements": ["Import active formal decisions."],
+            },
+            {
+                "id": "api_worker",
+                "method": "COMPONENT",
+                "path": "DeterministicWorker.process_spec",
+                "description": "Emit granular source refs.",
+                "linked_requirements": ["Preserve repeatable spec siblings."],
+            },
+        ],
+        "decisions": [
+            {
+                "id": "dec_granular_ref",
+                "title": "Use granular source refs",
+                "rationale": "Commit dedup uses source_artifact_ref as natural identity.",
+                "status": "active",
+                "linked_requirements": ["1"],
+            },
+            {
+                "id": "dec_no_cognitive_closeout",
+                "title": "Validate without cognitive closeout",
+                "rationale": "Layer 1 must import structured data independently.",
+                "status": "active",
+                "linked_requirements": ["0"],
+            },
+        ],
+    }
+
+
+async def _drive_spec_worker_session(
+    session_factory,
+    board_id: str,
+    spec_payload: dict,
+    agent_id: str = "system:historical_consolidation",
+):
+    from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
+        begin_consolidation,
+        commit_consolidation,
+        propose_reconciliation,
+    )
+    from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
+        BeginConsolidationRequest,
+        CommitConsolidationRequest,
+        ProposeReconciliationRequest,
+    )
+    from okto_pulse.core.kg.workers.consolidation import (
+        _worker_edge_to_candidate,
+        _worker_node_to_candidate,
+    )
+    from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+
+    worker_result = DeterministicWorker().process_spec(spec_payload)
+    begin = await begin_consolidation(
+        BeginConsolidationRequest(
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=spec_payload["id"],
+            raw_content=worker_result.raw_content,
+            deterministic_candidates=[
+                _worker_node_to_candidate(node) for node in worker_result.nodes
+            ],
+        ),
+        agent_id=agent_id,
+        db=None,
+    )
+    for edge in worker_result.edges:
+        await add_edge_candidate(
+            AddEdgeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=_worker_edge_to_candidate(edge),
+            ),
+            agent_id=agent_id,
+        )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id=agent_id,
+        db=None,
+    )
+    async with session_factory() as db:
+        return await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=begin.session_id,
+                summary_text="KGDET deterministic reprocess fixture",
+            ),
+            agent_id=agent_id,
+            db=db,
+        )
+
+
 async def _bootstrap_test_board(monkeypatch):
     """Common setup: create DB schema, stub similarity search, return ids."""
     from okto_pulse.core.infra.database import (
@@ -168,6 +313,42 @@ def _count_entities(board_id: str, source_artifact_ref: str) -> int:
             "RETURN count(n)",
             {"r": source_artifact_ref},
         )
+        try:
+            return int(res.get_next()[0])
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+
+
+def _count_nodes_by_source_prefix(
+    board_id: str,
+    node_type: str,
+    source_prefix: str,
+) -> int:
+    from okto_pulse.core.kg.schema import open_board_connection
+    conn = open_board_connection(board_id)
+    with conn as (_kdb, kconn):
+        res = kconn.execute(
+            f"MATCH (n:{node_type}) WHERE n.source_artifact_ref STARTS WITH $r "
+            "RETURN count(n)",
+            {"r": source_prefix},
+        )
+        try:
+            return int(res.get_next()[0])
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+
+
+def _count_nodes(board_id: str, node_type: str) -> int:
+    from okto_pulse.core.kg.schema import open_board_connection
+    conn = open_board_connection(board_id)
+    with conn as (_kdb, kconn):
+        res = kconn.execute(f"MATCH (n:{node_type}) RETURN count(n)")
         try:
             return int(res.get_next()[0])
         finally:
@@ -227,6 +408,45 @@ async def test_ts1_reconsolidation_does_not_duplicate_entity(
 
     count = _count_entities(board_id, artifact_ref)
     assert count == 1, f"expected exactly 1 Entity for {artifact_ref}, got {count}"
+
+
+async def test_kgdet_multi_item_refs_preserve_siblings_on_reprocess(
+    dedup_tempdir, monkeypatch
+):
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    spec_payload = _kgdet_spec_payload(spec_id)
+
+    commit1 = await _drive_spec_worker_session(session_factory, board_id, spec_payload)
+    assert commit1.nodes_added >= 15
+
+    expected_counts = {
+        "Requirement": 2,
+        "Constraint": 4,
+        "Criterion": 2,
+        "TestScenario": 2,
+        "APIContract": 2,
+        "Decision": 2,
+    }
+    source_prefix = f"spec:{spec_id}:"
+    for node_type, expected in expected_counts.items():
+        assert (
+            _count_nodes_by_source_prefix(board_id, node_type, source_prefix)
+            == expected
+        )
+    assert _count_entities(board_id, f"spec:{spec_id}") == 1
+    assert _count_nodes(board_id, "Learning") == 0
+    assert _count_nodes(board_id, "Alternative") == 0
+
+    commit2 = await _drive_spec_worker_session(session_factory, board_id, spec_payload)
+    assert commit2.nodes_added == 0
+    for node_type, expected in expected_counts.items():
+        assert (
+            _count_nodes_by_source_prefix(board_id, node_type, source_prefix)
+            == expected
+        )
+    assert _count_entities(board_id, f"spec:{spec_id}") == 1
+    assert _count_nodes(board_id, "Learning") == 0
+    assert _count_nodes(board_id, "Alternative") == 0
 
 
 # ---------------------------------------------------------------------------
