@@ -111,6 +111,12 @@ def test_invalid_local_edge_pair_gets_contextual_error():
 
 def test_structured_bug_edges_are_valid_deterministic_pairs():
     _validate_local_edge_pair(
+        "belongs_to",
+        "Entity",
+        "Bug",
+        session_id="sess-edge",
+    )
+    _validate_local_edge_pair(
         "originates_from",
         "Bug",
         "Entity",

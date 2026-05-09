@@ -14,6 +14,7 @@ Covers:
 
 from __future__ import annotations
 
+from okto_pulse.core.kg.primitives import _validate_local_edge_pair
 from okto_pulse.core.kg.workers.deterministic_worker import (
     DeterministicWorker,
     WORKER_ID,
@@ -361,6 +362,45 @@ def test_process_card_projects_architecture_designs():
     assert any(node.title == "Payment Adapter" for node in result.nodes)
     assert any(node.title == "PaymentGateway.authorize" for node in result.nodes)
     assert "Card snapshot from the spec." in result.raw_content
+
+
+def test_process_bug_card_architecture_belongs_to_bug_is_valid():
+    bug = {
+        "id": "bug-arch-123",
+        "title": "Regression in checkout boundary",
+        "description": "Bug details",
+        "card_type": "bug",
+        "architecture_designs": [
+            {
+                "id": "arch_bug",
+                "title": "Bug Architecture Evidence",
+                "global_description": "Diagnostic architecture attached to the bug.",
+                "entities": [{"name": "Checkout Adapter"}],
+            }
+        ],
+    }
+
+    result = DeterministicWorker().process_card(bug)
+
+    node_types = {node.candidate_id: node.node_type for node in result.nodes}
+    architecture_edge = next(
+        edge
+        for edge in result.edges
+        if edge.rule_id.startswith("belongs_to/architecture_design")
+    )
+    assert node_types[architecture_edge.from_candidate_id] == "Entity"
+    assert node_types[architecture_edge.to_candidate_id] == "Bug"
+    for edge in result.edges:
+        if (
+            edge.from_candidate_id in node_types
+            and edge.to_candidate_id in node_types
+        ):
+            _validate_local_edge_pair(
+                edge.edge_type,
+                node_types[edge.from_candidate_id],
+                node_types[edge.to_candidate_id],
+                session_id="test-bug-architecture",
+            )
 
 
 def test_content_hash_stable_across_runs():
