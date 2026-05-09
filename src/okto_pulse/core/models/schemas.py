@@ -238,6 +238,18 @@ class CommentResponse(BaseSchema):
 # ============================================================================
 
 
+class TestScenarioEvidence(BaseModel):
+    """Structured proof that a test scenario exists or was executed."""
+
+    model_config = ConfigDict(extra="allow")
+
+    test_file_path: str | None = None
+    test_function: str | None = None
+    last_run_at: str | None = None
+    test_run_id: str | None = None
+    output_snippet: str | None = None
+
+
 class TestScenario(BaseModel):
     """A test scenario linked to acceptance criteria and optionally to tasks."""
 
@@ -251,6 +263,8 @@ class TestScenario(BaseModel):
     notes: str | None = None
     status: str = "draft"  # draft | ready | automated | passed | failed
     linked_task_ids: list[str] | None = None  # card IDs that implement/automate this test
+    evidence: TestScenarioEvidence | None = None
+    latest_evidence: TestScenarioEvidence | None = None
 
 
 # ============================================================================
