@@ -1227,7 +1227,6 @@ def _board_needs_migration(board_id: str) -> bool:
             except Exception:
                 pass
             # Bug d0f6bab2: db is now process-cached; do NOT close here.
-        _MIGRATED_BOARDS.add(board_id)
         return False
     except Exception:
         # Probe failed — assume migration is needed; the apply itself is
@@ -1419,10 +1418,11 @@ def _board_needs_post_v030_migration(board_id: str) -> bool:
     )
 
 
-def _migrate_board_schema(board_id: str) -> None:
+def _migrate_board_schema(board_id: str) -> bool:
     """One-shot schema apply for a pre-existing board. Wraps the DDL pass
     in its own short-lived connection so the caller's connection lifecycle
-    isn't tangled with the migration's, then caches the board as migrated."""
+    isn't tangled with the migration's, then caches the board as migrated only
+    after the apply succeeds."""
     try:
         import ladybug as kuzu  # type: ignore
         path = board_kuzu_path(board_id)
@@ -1437,11 +1437,14 @@ def _migrate_board_schema(board_id: str) -> None:
                 pass
             # Bug d0f6bab2: db is now process-cached; do NOT close here.
         _MIGRATED_BOARDS.add(board_id)
+        return True
     except Exception as exc:
+        _MIGRATED_BOARDS.discard(board_id)
         logger.warning(
             "board_migrate.apply_failed board=%s err=%s",
             board_id, exc,
         )
+        return False
 
 
 def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
@@ -1738,7 +1741,6 @@ def _graph_needs_bootstrap(board_id: str) -> bool:
                 pass
             # Bug d0f6bab2: db is now process-cached; do NOT close here.
         if has_meta:
-            _BOOTSTRAPPED_BOARDS.add(board_id)
             return False
         return True
     except Exception as exc:
@@ -1782,6 +1784,7 @@ def ensure_board_graph_bootstrapped(board_id: str) -> None:
     with lock:
         if board_id in _BOOTSTRAPPED_BOARDS:
             return
+        bootstrapped = False
         if _graph_needs_bootstrap(board_id):
             logger.info(
                 "kg.schema.autobootstrap board=%s path=%s",
@@ -1789,6 +1792,8 @@ def ensure_board_graph_bootstrapped(board_id: str) -> None:
                 extra={"event": "kg.schema.autobootstrap", "board_id": board_id},
             )
             bootstrap_board_graph(board_id)
+            _MIGRATED_BOARDS.add(board_id)
+            bootstrapped = True
         elif (
             _board_needs_migration(board_id)
             or _board_needs_post_v030_migration(board_id)
@@ -1801,8 +1806,12 @@ def ensure_board_graph_bootstrapped(board_id: str) -> None:
                     "board_id": board_id,
                 },
             )
-            _migrate_board_schema(board_id)
-        _BOOTSTRAPPED_BOARDS.add(board_id)
+            bootstrapped = _migrate_board_schema(board_id)
+        else:
+            _MIGRATED_BOARDS.add(board_id)
+            bootstrapped = True
+        if bootstrapped:
+            _BOOTSTRAPPED_BOARDS.add(board_id)
 
 
 def reset_bootstrap_cache_for_tests() -> None:
