@@ -24,6 +24,9 @@ async def test_ts1_boardsettings_persists_skip_flag():
     # Default = False
     s_default = BoardSettings()
     assert s_default.skip_test_evidence_global is False
+    assert s_default.require_spec_validation is True
+    assert s_default.require_spec_resource_task_coverage is True
+    assert s_default.require_task_validation is True
     # JSON dump preserves
     dumped = s.model_dump()
     assert dumped["skip_test_evidence_global"] is True
