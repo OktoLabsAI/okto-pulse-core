@@ -2,6 +2,8 @@
 
 Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — shared models, services, API routes, and MCP server.
 
+> **Ship with AI. Stay in control.**
+
 > **You probably want to install [`okto-pulse`](https://pypi.org/project/okto-pulse/) instead.**
 > This package is the internal engine. The `okto-pulse` package provides the CLI, frontend, and everything you need to get started.
 
@@ -10,15 +12,29 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 - **26 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, etc. (Skills entity dropped in 0.2.0.)
 - **17 service classes** — Full business logic with governance rules (Skills service dropped in 0.2.0.)
 - **11 API route modules** — FastAPI REST endpoints
-- **150+ MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
+- **15 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, evidence, bug traceability and sprint health controls.
+- **216 MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
-  - 22 Knowledge Graph tools (consolidation, query primario/power, health, dead-letter, schema-migrate, decay tick controllability)
+  - 21 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability)
+  - Community runtime exposure: 216 core MCP tools, 0 community-only MCP tools
 - **App factory** — `create_app()` with dependency injection for auth and storage providers
 - **Embedded Knowledge Graph** — per-board Kùzu instance + global discovery meta-graph, deterministic + cognitive workers, 11 node types and 10 relationship types
+
+## Governance Gate Surface
+
+Okto Pulse currently documents and enforces **15 named governance gates**:
+
+| Gate family | Gates |
+| --- | --- |
+| Resource readiness | Resource readiness; resource-to-task coverage |
+| Spec coverage | Scenario/test coverage; functional requirement/business rule coverage; technical requirement/task coverage; API contract/task coverage; active decision/task coverage |
+| Validation and evaluation | Spec validation; spec qualitative evaluation; task validation |
+| Execution quality | Task start/spec readiness; task conclusion; test evidence; bug test-first/traceability |
+| Sprint health | Sprint closure/evaluation |
 
 ## Architecture
 
