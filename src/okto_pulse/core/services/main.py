@@ -59,6 +59,7 @@ from okto_pulse.core.models.schemas import (
     AgentCreate,
     AgentUpdate,
     BoardCreate,
+    BoardSettings,
     BoardShareCreate,
     BoardShareUpdate,
     BoardUpdate,
@@ -379,7 +380,7 @@ class BoardService:
             settings=(
                 data.settings.model_dump(mode="json")
                 if getattr(data, "settings", None)
-                else None
+                else BoardSettings().model_dump(mode="json")
             ),
         )
         self.db.add(board)
@@ -969,7 +970,7 @@ class CardService:
         Returns dict with: required (bool), min_confidence, min_completeness, max_drift, resolved_from.
         """
         # Defaults from board settings
-        board_required = board_settings.get("require_task_validation", False)
+        board_required = board_settings.get("require_task_validation", True)
         board_min_conf = board_settings.get("min_confidence", 70)
         board_min_comp = board_settings.get("min_completeness", 80)
         board_max_drift = board_settings.get("max_drift", 50)
@@ -2839,7 +2840,7 @@ class SpecService:
             board_settings = (board.settings or {}) if board else {}
             if (
                 spec.status == SpecStatus.APPROVED
-                and board_settings.get("require_spec_validation", False)
+                and board_settings.get("require_spec_validation", True)
             ):
                 raise ValueError(
                     "Spec Validation Gate is enabled on this board. Direct "
@@ -3119,7 +3120,7 @@ class SpecService:
         """
         settings = (board.settings if board else None) or {}
         return {
-            "require_spec_validation": bool(settings.get("require_spec_validation", False)),
+            "require_spec_validation": bool(settings.get("require_spec_validation", True)),
             "min_spec_completeness": int(settings.get("min_spec_completeness", 80)),
             "min_spec_assertiveness": int(settings.get("min_spec_assertiveness", 80)),
             "max_spec_ambiguity": int(settings.get("max_spec_ambiguity", 30)),

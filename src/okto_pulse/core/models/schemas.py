@@ -1848,12 +1848,12 @@ class BoardSettings(BaseModel):
     skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
     skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
-    require_task_validation: bool = False  # if True, cards must pass validation before moving to done
+    require_task_validation: bool = True  # if True, cards must pass validation before moving to done
     min_confidence: int = 70  # min reviewer confidence score
     min_completeness: int = 80  # min reviewer completeness score
     max_drift: int = 50  # max reviewer drift score
     # Spec Validation Gate — board-level defaults
-    require_spec_validation: bool = False  # if True, approved→validated requires Spec Validation Gate submission
+    require_spec_validation: bool = True  # if True, approved→validated requires Spec Validation Gate submission
     min_spec_completeness: int = 80  # min spec completeness score
     min_spec_assertiveness: int = 80  # min spec assertiveness score
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
