@@ -13,6 +13,7 @@ Use this to avoid reading the whole file when you only need one answer.
 | Work on a card (implementation) | **2.8 Cards** + **2.11 Task Validation Workflow** |
 | Write or evaluate a spec | **2.3 Specs** → **2.3a Detail Saturation** → **2.3b Spec Evaluation** → **2.3c Coverage Progress** |
 | Pass a value that may contain `\|` | **Multi-value Parameters — Three Input Shapes** |
+| Capture user stories / manage topics before ideation | **2.0 Stories & Topics — optional pre-ideation intake** |
 | Reduce ambiguity at ideation (ASK before advancing) | **2.1 Ideations → Ambiguity-killer protocol** |
 | Run a deep investigation at refinement | **2.2 Refinements → Investigação profunda obrigatória** |
 | Attach KB / mockups directly on a card | **2.8 Cards → Card-level artifact attachment (MANDATORY)** |
@@ -24,6 +25,7 @@ Use this to avoid reading the whole file when you only need one answer.
 | Consult analytics before closing a spec | **Analytics — Metrics-Driven Closure** |
 | Query the KG (at ideation/refinement/spec) | **Query Timing — MANDATORY at every stage** |
 | Consolidate an artifact into the KG | **When and How to Consolidate — Mandatory Triggers** |
+| Close a spec or bug | **Cognitive KG Closeout — mandatory for specs and bugs** |
 | Finish an SDLC/E2E flow or final report | **Final KG consolidation and verification — MANDATORY** |
 | Pick the right KG tool | **Query Patterns per Tool** + **Consolidation patterns per tool** |
 | Handle a KG rate-limit or retry a query | **Tier Power Escape Hatch → Safety rails** |
@@ -41,6 +43,7 @@ Use this to avoid reading the whole file when you only need one answer.
 - `get_*_context` before every move → **Consolidated Context Retrieval**
 - KG query timing per stage → **Query Timing — MANDATORY at every stage**
 - KG consolidation triggers → **When and How to Consolidate — Mandatory Triggers**
+- Spec/bug cognitive closeout → **Cognitive KG Closeout — mandatory for specs and bugs**
 - Final KG consolidation before ending a complete SDLC/E2E flow → **Final KG consolidation and verification — MANDATORY**
 - UI layouts as first-class artifacts (never ASCII in text fields) → **2.7a Pattern & Anti-Pattern — visual artifacts**
 - Architecture as a first-class structural artifact (never hide diagrams, entities, or contracts in prose) → **2.7b Architecture Design — structural artifacts**
@@ -89,6 +92,32 @@ This is an operational protocol rule. The MCP server does not prove that you rea
 **Never skip card execution steps 1 and 5.** Implementing based on the card title alone leads to spec drift, duplicated work, and contradictory decisions. The `okto_pulse_get_task_context` call returns the card, spec requirements, TRs, BRs, test scenarios, API contracts, knowledge bases, mockups, architecture, Q&A, and comments — everything you need.
 
 **Card execution steps 2, 3, and 4 are mandatory before `started → in_progress` when the corresponding artifact applies** — the implementer (you or a future agent picking up the card) reads `card.knowledge_bases`, `card.screen_mockups`, and `card.architecture_designs` directly, never re-querying the spec. This snapshot prevents drift if the spec is later edited and decouples the card from the spec lifecycle. Use `knowledge_ids`, `screen_ids`, and `design_ids` to scope a subset when only part of the spec applies. If the card does not need a particular artifact (e.g. a backend-only card has no mockups), skip explicitly — but document the rationale in a comment.
+
+### Resource Gate pre-flight — mandatory before completion
+
+Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types for ideations, refinements, specs, cards/tasks, tests, and bugs. The canonical `entity_type` matrix is:
+
+| Work item | Resource Gate `entity_type` | Notes |
+|---|---|---|
+| Ideation | `ideation` | First solution-bearing artifact; Story intake is still outside the gate. |
+| Refinement | `refinement` | Focused investigation derived from an ideation. |
+| Spec | `spec` | Validate before spec validation and again before final completion. |
+| Card, task, test, bug | `card` | Tasks, tests, and bugs always use `entity_type=card`. |
+
+Stories stay outside the Resource Gate until conversion to Ideation. Do not mark Story-level resources as N/A to satisfy an ideation/spec/card gate; propagate relevant Story context into the downstream Ideation, Spec, or Card instead.
+
+Knowledge Base can be attached from ideation through task: direct or inherited Knowledge Base entries on ideation, refinement, spec, card/task, test, or bug count when they are reachable by the Resource Gate summary. A direct card Knowledge Base is stored in `Card.knowledge_bases`; inherited spec/refinement/ideation KEs must be copied or linked through the supported copy tools before a card/task/test/bug can rely on them.
+
+Before spec validation, before task start, and before finalization/completion of any spec/card/test/bug, call `okto_pulse_get_resource_gate_summary(board_id, entity_type, entity_id)` and resolve every `missing` resource.
+
+Resolution means one of two things:
+
+- Attach the applicable first-class artifact: Architecture Design, Screen Mockup, or Knowledge Base.
+- Mark the specific resource as N/A with `okto_pulse_mark_resource_not_applicable(board_id, entity_type, entity_id, resource_type, justification)` only when it truly does not apply.
+
+N/A playbook: when using MCP, `justification` is mandatory for N/A. The tool returns a warning because skipping a resource can lead to partial or incorrect solutions if that resource was actually needed. Treat N/A as reversible, auditable scope judgement, not a bypass. If the resource later becomes applicable, clear the mark with `okto_pulse_clear_resource_not_applicable(board_id, entity_type, entity_id, resource_type, reason)` and attach the real artifact.
+
+For specs with provided Architecture, Mockup, or Knowledge Base, those resources must be permeated to implementation tasks through `okto_pulse_copy_architecture_to_card`, `okto_pulse_copy_mockups_to_card`, and `okto_pulse_copy_knowledge_to_card`. If a task that held the only coverage is cancelled, the spec cannot be finalized until another non-cancelled task carries that resource.
 
 **Per-task KE lifecycle**: cards own their KEs via inline `Card.knowledge_bases` JSONB. The full lifecycle is exposed symmetrically:
 
@@ -164,6 +193,23 @@ Test cards have a DIFFERENT lifecycle. They do NOT go through `okto_pulse_submit
 ### Common Errors and How to Fix Them
 
 This table is the **single source of truth** for MCP-level errors. Sections below reference it instead of restating.
+
+Before any ad hoc retry or workaround for Resource Gate, Story, or Topic errors, consult this section and apply the canonical fix.
+
+**Resource Gate:**
+
+| Error message | Cause | Fix |
+|---|---|---|
+| `resource_gate_missing_resources` | Architecture, Mockup, or Knowledge Base is missing and not marked N/A for the entity being validated, started, or completed | Call `okto_pulse_get_resource_gate_summary`, then attach the missing artifact. For cards/tasks/tests/bugs, copy inherited artifacts with `okto_pulse_copy_architecture_to_card`, `okto_pulse_copy_mockups_to_card`, or `okto_pulse_copy_knowledge_to_card`, or add direct card KEs with `okto_pulse_add_card_knowledge`. Use N/A only with a real `justification`. |
+| `invalid_entity_type` | Resource Gate was called with a non-canonical entity type such as `task`, `test`, or `bug` | Retry with the matrix above: `ideation`, `refinement`, `spec`, or `card`. Tasks, tests, and bugs must use `entity_type=card`. |
+
+**Stories / Topics:**
+
+| Error message | Cause | Fix |
+|---|---|---|
+| `topic_not_empty` | Tried to delete a Topic that still has active or archived Stories | Inspect the returned counts, then use `okto_pulse_merge_topics`, `okto_pulse_move_story`, or `okto_pulse_archive_story` according to intent. Do not retry delete until the Topic is empty. |
+| `Only ready Stories can be converted` | Story is still `draft`, `triage`, `converted`, or archived | List the Story, resolve triage, then call `okto_pulse_move_story(status="ready")` before link/convert. Archived Stories must be restored first if they are meant to feed Ideation. |
+| `Story can only be linked to editable Ideations` | Target Ideation is `done`, `cancelled`, archived, or otherwise frozen | Pick an editable Ideation (`draft`, `review`, `approved`, or `evaluating`) or create/restore the correct Ideation before linking. |
 
 **Card / move transitions:**
 
@@ -475,8 +521,9 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 |------|------|---------|
 | `okto_pulse_add_business_rule` / `okto_pulse_update_business_rule` / `okto_pulse_remove_business_rule` / `okto_pulse_list_business_rules` | board_id, spec_id, ... | CRUD for BRs. See **2.5 Business Rules**. |
 | `okto_pulse_add_api_contract` / `okto_pulse_update_api_contract` / `okto_pulse_remove_api_contract` / `okto_pulse_list_api_contracts` | board_id, spec_id, ... | CRUD for API contracts. See **2.6 API Contracts**. |
-| `okto_pulse_add_screen_mockup` / `okto_pulse_update_screen_mockup` / `okto_pulse_delete_screen_mockup` / `okto_pulse_annotate_mockup` / `okto_pulse_list_screen_mockups` | board_id, entity_id, entity_type?, ... | HTML+Tailwind mockups on specs/ideations/refinements/cards. See **2.7 Screen Mockups**. |
+| `okto_pulse_add_screen_mockup` / `okto_pulse_update_screen_mockup` / `okto_pulse_delete_screen_mockup` / `okto_pulse_annotate_mockup` / `okto_pulse_list_screen_mockups` | board_id, entity_id, entity_type?, ... | HTML+Tailwind mockups on specs/ideations/refinements/cards/stories. See **2.7 Screen Mockups**. |
 | `okto_pulse_get_architecture_design_schema` / `okto_pulse_validate_architecture_design_payload` / `okto_pulse_add_architecture_design` / `okto_pulse_update_architecture_design` / `okto_pulse_delete_architecture_design` / `okto_pulse_list_architecture_designs` / `okto_pulse_get_architecture_design` / `okto_pulse_import_excalidraw_architecture_diagram` / `okto_pulse_dump_architecture_diagram` / `okto_pulse_copy_architecture_to_card` | board_id, parent_type, parent_id/design_id, ... | First-class architecture designs on ideations/refinements/specs/cards: global description, diagrams, entities, interfaces, and contracts. Get the schema and dry-run validate generated payloads before persisting. See **2.7b Architecture Design — structural artifacts**. |
+| `okto_pulse_get_resource_gate_summary` / `okto_pulse_mark_resource_not_applicable` / `okto_pulse_clear_resource_not_applicable` | board_id, entity_type, entity_id, resource_type?, justification?/reason? | Resolve mandatory Architecture, Mockup, and Knowledge Base requirements before final transitions. MCP N/A requires justification and returns a risk warning. |
 | Knowledge base creation | spec/card tools only | KB insertion starts at the spec level in the current operating model. During ideation/refinement, capture uncertainty through Q&A, mockups, architecture, and prose; formalize reusable reference knowledge once it reaches the spec. |
 | `okto_pulse_add_spec_knowledge` / `okto_pulse_list_spec_knowledge` / `okto_pulse_get_spec_knowledge` / `okto_pulse_delete_spec_knowledge` | board_id, spec_id, ... | Attach reference documents to a spec. |
 | `okto_pulse_add_refinement_knowledge` / `okto_pulse_list_refinement_knowledge` / `okto_pulse_get_refinement_knowledge` / `okto_pulse_delete_refinement_knowledge` | board_id, refinement_id, ... | Same, for refinements. |
@@ -561,16 +608,79 @@ The board follows a structured development pipeline. **Every step requires analy
 #### Pipeline Overview
 
 ```
-Ideation (raw idea) → Refinement(s) (focused analysis) → Spec (structured requirements) → Cards (tasks)
+Story (optional intake) → Ideation (raw idea) → Refinement(s) (focused analysis) → Spec (structured requirements) → Cards (tasks)
 ```
 
+- **Story** is optional lightweight intake before ideation. Use it when the user gives user-story-shaped needs, backlog signals, or several related requests that should be grouped before deciding which ideation they feed.
 - **Small ideation** (all scope scores < 2): Ideation (done) → Spec directly
 - **Medium/Large ideation**: Ideation (done) → Refinements → Specs
 - **Governance**: Both specs and refinements can only be created from a "done" ideation (immutably snapshotted)
 
+#### 2.0 Stories & Topics — optional pre-ideation intake
+
+Stories are lightweight, optional intake items inspired by user stories. They precede ideation and are grouped by a board-scoped Topic. Use them when the user gives raw needs, multiple user perspectives, or backlog snippets that are not yet ready to become a single ideation.
+
+**Tools and permissions:**
+
+| Action | Tool | Required permission |
+|---|---|---|
+| List Topics | `okto_pulse_list_topics` | `topic.entity.read` |
+| Create Topic | `okto_pulse_create_topic` | `topic.entity.create` |
+| Update Topic fields | `okto_pulse_update_topic` | `topic.entity.edit_fields` |
+| Archive Topic | `okto_pulse_archive_topic` | `topic.entity.archive` |
+| Restore Topic | `okto_pulse_restore_topic` | `topic.entity.restore` |
+| Delete empty Topic | `okto_pulse_delete_topic` | `topic.entity.delete` |
+| Merge Topics | `okto_pulse_merge_topics` | `topic.entity.merge` |
+| List Stories | `okto_pulse_list_stories` | `story.entity.read` |
+| Create Story | `okto_pulse_create_story` | `story.entity.create` |
+| Update Story fields/labels | `okto_pulse_update_story` | `story.entity.edit_fields` and/or `story.entity.label` |
+| Move Story | `okto_pulse_move_story` | matching `story.move.*` flag + `story.interact_in.<current_status>` |
+| Archive Story | `okto_pulse_archive_story` | `story.entity.archive` |
+| Restore Story | `okto_pulse_restore_story` | `story.entity.restore` |
+| Link Story to Ideation | `okto_pulse_link_story_to_ideation` | `story.links.ideation` |
+| Convert Stories to Ideation | `okto_pulse_convert_stories_to_ideation` | `story.conversion.to_ideation` |
+
+**Topic rules:**
+- Reuse an existing Topic when it names the same product area or backlog theme.
+- Create a new Topic only when no existing Topic matches the user's grouping language.
+- Update, archive, restore, delete and merge must use the dedicated Topic tools. Do not simulate merge by silently rewriting Stories one by one.
+- `okto_pulse_delete_topic` is safe-delete only: it succeeds only when the Topic has no active or archived Stories. If it returns `topic_not_empty`, explain the active/archived counts and suggest merge, moving Stories or archiving instead of retrying blindly.
+- `okto_pulse_merge_topics` moves every Story from source to target, preserves Story-Ideation links, archives the source Topic, and returns an `impact` object. Cite that impact when confirming the operation to the user.
+- Topic archive/restore affects only the grouping entity. It must not be described as archiving or restoring the Stories inside it.
+
+**Story content rules:**
+- Write Story text as a user need, not as a solution spec.
+- Fill `actor`, `goal`, and `benefit` when the user provides them or they are directly inferable from the story sentence. Leave unknown fields empty instead of inventing a persona.
+- Use `labels` for cross-cutting tags such as `resource-gate`, `security`, `ux`, or `analytics`; use Topic for the primary grouping.
+- Mockups attached to Stories are optional first-class context. Manage them with `okto_pulse_add_screen_mockup`, `okto_pulse_update_screen_mockup`, `okto_pulse_annotate_mockup`, `okto_pulse_list_screen_mockups`, and `okto_pulse_delete_screen_mockup` using `entity_type="story"`. When a Story becomes an Ideation/Spec, propagate or recreate only the mockups that remain relevant.
+
+**Story/Topic operation pre-flight:**
+- Before link, convert, move, archive, merge, or delete, list the affected Topics and candidate Stories with `okto_pulse_list_topics` and `okto_pulse_list_stories(include_links="true", include_archived="true")`.
+- Inspect each Story's `status`, `archived`, and `ideation_links` before choosing the operation. Do not operate from memory or from a title-only match.
+- For link/convert, verify every candidate Story is `ready`, not archived, and has no existing `ideation_links`; also verify the target Ideation is editable before calling `okto_pulse_link_story_to_ideation`.
+- A Story can link to at most one Ideation. Repeating the same Story + Ideation link returns `already linked`; linking the same Story to a different Ideation is rejected. Multiple Stories may link to the same Ideation when they converge on the same problem space.
+- For merge/delete/archive decisions, use the Topic `impact`/counts and explain whether Stories were moved, preserved, or left untouched.
+
+**Status flow:**
+
+| Status | Meaning | Normal next actions |
+|---|---|---|
+| `draft` | Raw intake, still rough | edit, move to `triage` or `ready` |
+| `triage` | Being reviewed/organized | move to `draft` for rework or `ready` |
+| `ready` | Good enough to feed ideation | link to an existing Ideation or convert to a new Ideation |
+| `converted` | Terminal result of successful link/conversion | read only for normal flow; do not move out |
+
+`converted` is not a normal manual lifecycle move. It is set by a successful Story-Ideation link or conversion path. `okto_pulse_link_story_to_ideation` always marks the Story as `converted`; the `mark_converted` argument is compatibility-only and does not preserve `ready`. If `okto_pulse_move_story(status="converted")` fails, do not retry with broader permissions; use `okto_pulse_link_story_to_ideation` or `okto_pulse_convert_stories_to_ideation` after the Story is `ready`.
+
+**Derivation guidance:**
+- Several Stories can feed one Ideation when they describe the same problem space.
+- One Story cannot link to more than one Ideation. If a Story seems to inform multiple solution tracks, create or select the single consolidation Ideation first, then split downstream through refinements/specs as needed.
+- Before converting, list existing Ideations and prefer linking to an editable/resolvable match over creating a duplicate. Story-Ideation links are allowed only when the target Ideation is editable (`draft`, `review`, `approved`, or `evaluating`); do not link Stories to `done`, `cancelled`, archived, already linked Stories, or to the same Ideation pair twice.
+- Once a Story is converted, treat it as historical lineage context. Do not edit it to match the downstream Ideation; refinements/specs are where solution detail is sharpened.
+
 #### 2.1 Ideations
 
-Ideations are the starting point. When asked to evaluate or create an ideation:
+Ideations are the starting point for solution definition. Stories may exist before them as optional intake context. When asked to evaluate or create an ideation:
 
 > **MANDATORY — Query the KG before evaluating.** Before calling `okto_pulse_evaluate_ideation`, you MUST run the Stage 1 query set from the "Query Timing" section of the Knowledge Graph chapter: `okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_query_global`, `okto_pulse_kg_get_learning_from_bugs`. Cite any hit explicitly in the ideation (decision_id + one-line summary). Failing to do this is a protocol violation — duplicate ideations and cross-board conflicts are traced back to this skip.
 
@@ -622,7 +732,7 @@ Ideations are the starting point. When asked to evaluate or create an ideation:
 
 ##### 2.1a Ambiguity-killer protocol — ASK before advancing (MANDATORY)
 
-> **Reducing ambiguity is your primary job at ideation.** A user's first description of a problem is almost never enough to design a solution. Your job is to interrogate the request until the intent is unambiguous, the scope is bounded, and your understanding is provably aligned with what the user actually wants. **Do not advance the ideation forward (draft → review → approved → evaluating) while ambiguity is still present.**
+> **Reducing ambiguity is your primary job at ideation.** A user's first description of a problem is almost never enough to design a solution. Your job is to interrogate the request until the intent is unambiguous, the scope is bounded, and your understanding is provably aligned with what the user actually wants. **Be aggressive about clarification:** when a requirement admits multiple valid interpretations, treat that as unresolved ambiguity even if one interpretation feels obvious. One extra precise question is cheaper than carrying a hidden assumption. **Do not advance the ideation forward (draft → review → approved → evaluating) while ambiguity is still present.**
 
 **Ambiguity left unresolved at ideation is not free.** Every inferred requirement becomes latent rework: downstream refinements, specs, mockups, Architecture Designs, cards, tests, and validations may need to be rewritten after the user corrects the assumption. That means more elapsed time, more token spend, more review churn, and less trust in the artifact history. Asking one focused Q&A item now is cheaper than rebuilding a requirement chain later.
 
@@ -630,7 +740,7 @@ Ideations are the starting point. When asked to evaluate or create an ideation:
 
 | Symptom of ambiguity | Example | Required action |
 |---|---|---|
-| The user used a vague verb ("improve", "optimize", "support", "handle") | "improve onboarding" | Ask `okto_pulse_ask_ideation_question`: "By 'improve onboarding' do you mean (a) reduce drop-off, (b) shorten time-to-first-value, (c) add new steps, (d) something else? Please pick one or describe a concrete success metric." |
+| The user used a vague verb ("improve", "optimize", "support", "handle") | "improve onboarding" | Ask `okto_pulse_ask_ideation_choice_question` with concrete options such as "Reduce drop-off (Recommended)", "Shorten time-to-first-value", "Add new onboarding steps", and `allow_free_text=true` so the user can add a metric or override. |
 | The user used a noun without a definition or scope ("the dashboard", "the system", "users") | "users should see their data" | Ask which user role, which surface, which data slice. Use `okto_pulse_ask_ideation_choice_question` when there is a finite list. |
 | Multiple plausible interpretations of the same sentence | "send notifications when something changes" | Enumerate the interpretations and let the user pick. |
 | The success criterion is implicit | "make it faster" | Ask for a measurable target (latency p95, throughput, perceived load time, etc.). |
@@ -643,13 +753,21 @@ Ideations are the starting point. When asked to evaluate or create an ideation:
 **Operational protocol:**
 
 1. After receiving the user's request and BEFORE writing `problem_statement` / `proposed_approach`, do an honest ambiguity scan against the table above.
-2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Use `okto_pulse_ask_ideation_choice_question` when the answer is a pick from a known set; use `okto_pulse_ask_ideation_question` for open-ended clarifications.
+2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Prefer `okto_pulse_ask_ideation_choice_question` whenever the answer can be picked from a known set. Use 2-5 mutually exclusive options, mark the safest or most likely option as **Recommended** when you can justify it, include concise tradeoffs in option labels or the question body, and set `allow_free_text=true` so the user has an additional comment field for overrides, combinations, missing options, or constraints. Use `okto_pulse_ask_ideation_question` only when the answer is genuinely open-ended and a finite option set would be misleading.
 3. Use Q&A before creating or finalizing mockups when the visual surface is ambiguous. Use Q&A before creating or finalizing architecture designs when entities, interfaces, contracts, boundaries, or diagrams are ambiguous.
 4. Wait for answers. Do NOT fill the gap with a guess and proceed silently.
 5. After answers come in, re-read the full ideation context (`okto_pulse_get_ideation_context`) and confirm your understanding by either:
    - Updating `problem_statement` / `proposed_approach` to reflect the resolved intent, or
    - Posting a comment summarizing your understanding ("To confirm I understand: the goal is X, the success metric is Y, out-of-scope is Z. Correct?") and waiting for a 👍 / correction.
 6. Only after the loop converges (no remaining ambiguity in your honest assessment), call `okto_pulse_move_ideation(status="review")`.
+
+**Question shape requirements:**
+
+- Bias toward multiple choice. If you can name plausible options, ask a structured choice question instead of embedding "A/B/C" inside a free-text prompt.
+- Include a recommendation whenever you can responsibly make one. Put "(Recommended)" in the option label and explain the reason briefly; the user can still pick another path.
+- Always enable the additional free-text/comment field (`allow_free_text=true`) on choice questions so the user can qualify the selection.
+- Avoid yes/no questions when the real decision has three or more viable paths; enumerate the paths and let the user choose.
+- Do not collapse unrelated ambiguity into one poll. Ask separate Q&A items so each decision can be answered, audited, and reused downstream.
 
 **Anti-pattern (NEVER do this):**
 
@@ -661,7 +779,7 @@ The user did not say which data, in which format, for which audience, with which
 **Correct pattern:**
 
 > User: "Add a feature to export data."
-> Agent: posts 5 Q&A items — (1) which entity (cards, specs, full board)? (2) which format (CSV, JSON, PDF, all)? (3) which audience (board owner only, agents, public)? (4) which trigger (manual button, scheduled, API)? (5) which volume (single record vs bulk)? Waits for answers, then writes a `proposed_approach` that cites every answer back. ✅
+> Agent: posts 5 Q&A items — (1) which entity (cards, specs, full board)? (2) which format (CSV Recommended, JSON, PDF, all, with `allow_free_text=true`)? (3) which audience (board owner only Recommended, agents, public)? (4) which trigger (manual button Recommended, scheduled, API)? (5) which volume (single record vs bulk)? Waits for answers, then writes a `proposed_approach` that cites every answer back. ✅
 
 **When the user pushes back ("just make a reasonable choice"):** that itself is permission, but record it explicitly in a comment ("user delegated decision: chose CSV / manual / board-owner-only based on most common usage pattern. Confirm before spec.") so the decision is auditable. Silent assumptions remain banned.
 
@@ -676,7 +794,7 @@ The user did not say which data, in which format, for which audience, with which
 
 Refinements break down a complex ideation into focused areas. Each refinement covers one specific aspect.
 
-> **MANDATORY — Query the KG before moving to `approved`.** Run the Stage 2 query set: `okto_pulse_kg_find_similar_decisions` for the refinement topic, `okto_pulse_kg_find_contradictions` on anchor decisions the refinement depends on, and `okto_pulse_kg_list_alternatives` on those anchors. Use `okto_pulse_kg_get_related_context` only for a formalized KG artifact/node that actually exists; ideations are discovery artifacts and are not consolidated directly. Every decision referenced in the refinement body must either (a) cite an existing node_id or (b) declare explicitly that it is new knowledge. Silent reuse or silent contradiction is rejected.
+> **MANDATORY — Query the KG before moving to `approved`.** Run the Stage 2 query set: `okto_pulse_kg_find_similar_decisions` for the refinement topic, `okto_pulse_kg_find_contradictions` on anchor decisions the refinement depends on, and `okto_pulse_kg_list_alternatives` on those anchors. Use `okto_pulse_kg_get_related_context` only for a formalized KG artifact/node that actually exists; ideations are lightweight lineage Entity nodes, not cognitive knowledge containers. Every decision referenced in the refinement body must either (a) cite an existing node_id or (b) declare explicitly that it is new knowledge. Silent reuse or silent contradiction is rejected.
 
 
 - **Governance**: Refinements can only be created from a **"done" ideation** — the ideation must be fully reviewed and snapshotted first. This ensures refinements are based on a stable, agreed-upon version of the ideation.
@@ -743,6 +861,8 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 > **MANDATORY — Query the KG before moving the spec out of `draft`.** Run the Stage 3 query set: `okto_pulse_kg_get_related_context(artifact_id=<spec_id>)`, board-wide `okto_pulse_kg_find_contradictions()`, per-major-FR/BR `okto_pulse_kg_find_similar_decisions`, and `okto_pulse_kg_explain_constraint` for every constraint cited. A spec that proceeds to `review` without this sweep will fail validation audit and is a protocol violation. Resolutions (SUPERSEDE targets, contradiction fixes, constraint origins) must be cited in the spec itself.
 
 **After the spec is formalized (`approved`, `validated`, or `done`), consolidate the stable decisions promptly** — see the "When and How to Consolidate" section. The decisions captured in the spec must land in the KG so the next ideation on the same board can find them via `okto_pulse_kg_find_similar_decisions`. Skipping this step quietly breaks the whole chain for every later agent.
+
+**Before you declare a spec finished, perform Cognitive KG Closeout** — see **Cognitive KG Closeout — mandatory for specs and bugs**. This is a separate cognitive judgement step, not a replacement for spec validation, queue health, or deterministic consolidation.
 
 **A spec is NOT a copy of the ideation.** When populating a spec's structured fields, you MUST:
 
@@ -1093,14 +1213,14 @@ After defining requirements and test scenarios, add **screen mockups** whenever 
 
 **Q&A before visual assumptions:** if the intended screen, user role, workflow, empty/error/loading state, interaction, or visual hierarchy is unclear, ask Q&A before creating or finalizing the mockup. A mockup created from inferred requirements is worse than no mockup: it gives reviewers a false visual target, drives implementation in the wrong direction, and causes avoidable rework, extra time, and extra token spend when the user corrects the assumption.
 
-**Tools (work on any entity: spec, ideation, refinement, card):**
+**Tools (work on any entity: spec, ideation, refinement, card, story):**
 - `okto_pulse_add_screen_mockup(board_id, entity_id, title, entity_type?, description?, screen_type?, html_content?)` — Add a screen with HTML content
 - `okto_pulse_update_screen_mockup(board_id, entity_id, screen_id, entity_type?, title?, description?, html_content?, screen_type?)` — Update an existing screen
 - `okto_pulse_annotate_mockup(board_id, entity_id, screen_id, text, entity_type?)` — Add a screen-level design note
 - `okto_pulse_list_screen_mockups(board_id, entity_id, entity_type?)` — List all screens
 - `okto_pulse_delete_screen_mockup(board_id, entity_id, screen_id, entity_type?)` — Delete a screen
 
-`entity_type` defaults to `"spec"`. Set to `"ideation"`, `"refinement"`, or `"card"` to manage mockups on other entities.
+`entity_type` defaults to `"spec"`. Set to `"ideation"`, `"refinement"`, `"card"`, or `"story"` to manage mockups on other entities.
 
 **Screen types:** `page` | `modal` | `drawer` | `popover` | `panel`
 
@@ -1140,6 +1260,7 @@ Write standard HTML using Tailwind CSS utility classes. The HTML is sanitized (s
 2. Iterate on the design: `okto_pulse_update_screen_mockup(board_id, entity_id, screen_id, entity_type="spec", html_content="<div>...updated...</div>")`
 3. Annotate design decisions: `okto_pulse_annotate_mockup(board_id, entity_id, screen_id, "Use OAuth2 provider buttons below the form", entity_type="spec")`
 
+**On stories:** `okto_pulse_add_screen_mockup(board_id, story_id, "Story intake concept", entity_type="story", html_content="...")`
 **On ideations:** `okto_pulse_add_screen_mockup(board_id, ideation_id, "Dashboard Concept", entity_type="ideation", html_content="...")`
 
 **When to use mockups — MANDATORY for any UI work:**
@@ -1150,18 +1271,18 @@ Write standard HTML using Tailwind CSS utility classes. The HTML is sanitized (s
 
 **IMPORTANT:** If the spec involves frontend/UI work, you MUST create screen mockups or explicitly document why no visual artifact applies. The Okto Pulse dashboard renders them as live visual previews that users and other agents can review. Mockups are the primary way to align on UI design before implementation begins. Skipping mockups for UI specs leads to misaligned implementations and rework.
 
-Mockups can also be added to **ideations, refinements, and cards** — not just specs. Use them at any stage to visualize the intended UI.
+Mockups can also be added to **stories, ideations, refinements, and cards** — not just specs. Use them at any stage to visualize the intended UI.
 
 ##### 2.7a Pattern & Anti-Pattern — visual artifacts
 
-The Okto Pulse platform has **first-class support for visual artifacts** (screen mockups via `okto_pulse_add_screen_mockup` on spec, ideation, refinement, and card). Whenever you want to describe a UI layout, state, or interaction, you **MUST** go through the mockup tools — never embed the layout in plain-text fields (description, context, problem_statement, proposed_approach, analysis, notes, conclusion).
+The Okto Pulse platform has **first-class support for visual artifacts** (screen mockups via `okto_pulse_add_screen_mockup` on spec, ideation, refinement, card, and story). Whenever you want to describe a UI layout, state, or interaction, you **MUST** go through the mockup tools — never embed the layout in plain-text fields (description, context, problem_statement, proposed_approach, analysis, notes, conclusion).
 
 **✅ PATTERN — register the mockup as a first-class artifact:**
 
 ```
 okto_pulse_add_screen_mockup(
     board_id=bid,
-    entity_id=ideation_id,        # or spec_id, refinement_id, card_id
+    entity_id=ideation_id,        # or story_id, spec_id, refinement_id, card_id
     entity_type="ideation",
     title="Settings menu — runtime tuning",
     screen_type="panel",           # page | modal | drawer | popover | panel
@@ -1183,7 +1304,7 @@ Why this is correct:
 ```
 ┌─ Settings ─────────────────────────────────────────────┐
 │  LadybugDB buffer pool per board (MB)                  │
-│  [  48  ]  Recommended: 32-128. Safe default: 48.      │
+│  [ 512 ]  Recommended: 512. Safe default: 512.         │
 │  ...                                                   │
 └────────────────────────────────────────────────────────┘
 ```
@@ -1211,6 +1332,7 @@ If while drafting any text field you catch yourself typing `┌`, `─`, `│`, 
 4. Use `okto_pulse_annotate_mockup` for design notes that belong to the screen itself.
 
 Applies equally to:
+- **Stories** (`entity_type="story"`) — use for lightweight intake/context screens before ideation.
 - **Ideations** (`entity_type="ideation"`) — use for concept/vision screens during discovery.
 - **Refinements** (`entity_type="refinement"`) — use for scope-boundary screens (what is in/out).
 - **Specs** (`entity_type="spec"`) — use for the final design surface the implementer will follow.
@@ -1549,6 +1671,8 @@ This is a hard rule, enforced operationally by the implementer's pre-flight (ste
 #### 2.9 Bug Cards — Post-Delivery Bug Tracking
 
 Bug cards track defects discovered after tasks are completed. They enforce a test-first workflow: you MUST create test scenarios and test tasks BEFORE you can start fixing the bug.
+
+Before you declare a bug diagnosed, fixed, or closed, perform **Cognitive KG Closeout — mandatory for specs and bugs**. The closeout must capture the bug's root cause, fix rationale, rejected alternatives, recurring risk, or objective `nothing_changed`/not-applicable result.
 
 **When to create bug cards:**
 - When a completed task has a defect discovered during testing, review, or production use
@@ -2473,7 +2597,7 @@ Edge candidates accepted by `okto_pulse_kg_add_edge_candidate`:
 }
 ```
 
-Only cognitive edge types are accepted from MCP agents: `supersedes`, `contradicts`, `depends_on`, `relates_to`, and `validates`. Reserved deterministic edges (`belongs_to`, `derives_from`, `implements`, `mentions`, `tests`, `violates`) are created by the deterministic worker from structured artifacts. Attempting to emit them manually returns `layer_violation`; recover by removing that edge and letting the worker materialize it.
+Only cognitive edge types are accepted from MCP agents: `supersedes`, `contradicts`, `depends_on`, `relates_to`, and `validates`. Reserved deterministic edges (`belongs_to`, `derives_from`, `implements`, `mentions`, `tests`, `violates`, `originates_from`, `covered_by`) are created by the deterministic worker from structured artifacts. Attempting to emit them manually returns `layer_violation`; recover by removing that edge and letting the worker materialize it.
 
 **Cognitive edge endpoint pairs are strict:** `supersedes`, `contradicts`, and `depends_on` connect `Decision -> Decision`; `relates_to` connects `Decision -> Alternative`; `validates` connects `Learning -> Bug`. Do not use `relates_to` as a generic edge between arbitrary nodes such as `Entity -> Requirement`; the tool will reject it with `invalid_edge_endpoint_types`.
 
@@ -2526,7 +2650,7 @@ Purpose: narrow scope against actual graph state, pull in constraints that the i
 
 | Query | Why it's required at this stage |
 |---|---|
-| `okto_pulse_kg_find_similar_decisions(board_id, topic=<refinement topic>)` | Ideations are not consolidated directly, so query by topic to find prior decisions the refinement may extend, supersede, or contradict. |
+| `okto_pulse_kg_find_similar_decisions(board_id, topic=<refinement topic>)` | Ideations carry lineage only, so query by topic to find prior decisions the refinement may extend, supersede, or contradict. |
 | `okto_pulse_kg_get_related_context(board_id, artifact_id=<formalized_node_or_artifact_id>)` | Use only when the refinement is anchored to an existing formalized KG node/artifact returned by a prior query. Do not pass a raw ideation id unless it is known to exist in the KG. |
 | `okto_pulse_kg_find_contradictions(board_id, node_id=<relevant decision>)` | If the refinement implies a direction that contradicts a prior decision, you must resolve the contradiction *in the refinement* (propose SUPERSEDE or re-open Q&A with the owner) — NOT leave it for the spec to discover. |
 | `okto_pulse_kg_list_alternatives(board_id, decision_id=<anchor decision>)` | Surfaces "why not X" rationale so the refinement doesn't propose an already-rejected alternative without explicit justification for revisiting. |
@@ -2648,7 +2772,7 @@ You can override any hint in `okto_pulse_kg_commit_consolidation.agent_overrides
 
 Consolidation is the mechanism that promotes ephemeral artifact text into the persistent, queryable KG. It is **not** a background housekeeping task — it is a first-class agent responsibility with specific triggers.
 
-**Scope boundary:** ideations are discovery artifacts and are not consolidated directly into the KG. Query the KG during ideation to discover prior knowledge, and attach mockups/architecture or Q&A to ideation when useful. KB insertion starts at spec: only consolidate formalized knowledge once it lands in a spec, sprint, card/test/bug, architecture design snapshot, or final E2E/report artifact. If an ideation Q&A answer contains a real decision, carry it forward into refinement/spec first, then consolidate from the spec-side formalization.
+**Scope boundary:** ideations are discovery artifacts and enter the KG only as deterministic lineage Entity nodes. Query the KG during ideation to discover prior knowledge, and attach mockups/architecture or Q&A to ideation when useful. KB insertion starts at spec: only consolidate formalized knowledge once it lands in a spec, sprint, card/test/bug, architecture design snapshot, or final E2E/report artifact. If an ideation Q&A answer contains a real decision, carry it forward into refinement/spec first, then consolidate from the spec-side formalization.
 
 **Mandatory triggers — you MUST open a consolidation session:**
 
@@ -2704,9 +2828,41 @@ Consolidation is the mechanism that promotes ephemeral artifact text into the pe
 - `okto_pulse_kg_begin_consolidation` returned `nothing_changed=true` — abort, don't re-commit the same state.
 - Q&A answer is a clarification, not a decision (e.g., "what do you mean by X?" → "I meant Y"). Decisions are commitments; clarifications aren't.
 
+### Cognitive KG Closeout — mandatory for specs and bugs
+
+Before declaring a spec or bug complete, you MUST perform a dedicated Cognitive KG Closeout. This is agent semantic work: you review the completed artifact, decide whether it produced new reusable knowledge, consolidate that knowledge when applicable, and report the outcome.
+
+**Operational KG health is not enough.** A clean `queue_depth=0`, `dead_letter_count=0`, no DLQ, no pending migration, or healthy graph file only proves operational consolidation is not currently blocked. It does not prove there are no learnings, decisions, risks, assumptions, root causes, rejected alternatives, or process gaps to consolidate.
+
+**Mandatory closeout sequence for specs and bugs:**
+
+```text
+1. Read the complete context:
+   - spec closeout: okto_pulse_get_spec_context(board_id, spec_id, include_knowledge=true, include_architecture=true, include_mockups=true, include_qa=true)
+   - bug closeout: okto_pulse_get_task_context(board_id, bug_card_id, ...) and okto_pulse_get_task_conclusions(board_id, bug_card_id)
+2. Identify cognitive candidates only: Learning, Decision, Assumption, Risk, Alternative, root cause, rejected alternative, or process gap.
+3. Call okto_pulse_kg_begin_consolidation(board_id, artifact_type, artifact_id, raw_content, deterministic_candidates=[]).
+4. If nothing_changed=true, call okto_pulse_kg_abort_consolidation(session_id, reason="nothing_changed") and report the attempted closeout.
+5. For applicable candidates, call okto_pulse_kg_add_node_candidate and okto_pulse_kg_add_edge_candidate.
+6. Call okto_pulse_kg_propose_reconciliation and inspect every ADD/UPDATE/SUPERSEDE/NOOP hint.
+7. Call okto_pulse_kg_commit_consolidation with summary_text, or okto_pulse_kg_abort_consolidation with a clear reason.
+8. Verify health/queryability when the closeout committed, then include the closeout result in the final response.
+```
+
+**Allowed manual cognitive candidates:** Learning, Decision, Assumption, Risk, Alternative, root cause, rejected alternative, and process gap. Use cognitive edges only: `supersedes`, `contradicts`, `depends_on`, `relates_to`, and `validates`.
+
+**Forbidden manual deterministic artifacts:** do not fabricate Task, Bug, Spec, Requirement, APIContract, TestScenario, deterministic Entity nodes, or deterministic edges such as `implements`, `tests`, `belongs_to`, `mentions`, `violates`, `originates_from`, `covered_by`, and `derives_from`. Those belong to the deterministic worker and structured artifact model. If you need one of those relationships to exist, ensure the structured artifact is correct and let the worker materialize it.
+
+**Final response requirement for spec/bug work:** include a compact Cognitive KG Closeout line naming one of:
+
+- committed: session_id, nodes_added/updated, edges_added, and verification summary.
+- nothing_changed: session_id or aborted session, plus the evidence that reconciliation found no semantic change.
+- not_applicable: objective reason no cognitive candidate existed after context review.
+- blocked: the tool/error that prevented closeout and the follow-up needed before claiming full KG completion.
+
 ### Final KG consolidation and verification — MANDATORY
 
-Before ending any complete SDLC flow, E2E audit, release-validation pass, or multi-stage investigation, you MUST consolidate the final facts into the KG and prove they are queryable. This is mandatory even if automatic queue entries exist: the final session captures the cross-artifact synthesis that individual artifact extractors cannot infer.
+Before ending any complete SDLC flow, E2E audit, release-validation pass, or multi-stage investigation, you MUST consolidate the final facts into the KG and prove they are queryable. This is mandatory even if automatic queue entries exist: the final session captures the cross-artifact synthesis that individual artifact extractors cannot infer. This final SDLC-flow consolidation does not replace the dedicated **Cognitive KG Closeout — mandatory for specs and bugs** when your work specifically closes a spec or bug.
 
 **What to consolidate:**
 
@@ -2748,7 +2904,7 @@ Before ending any complete SDLC flow, E2E audit, release-validation pass, or mul
 | Writing final learnings only in a prose report or card comment | Natural KG queries miss the lessons; repeated E2E validations rediscover the same issue | Consolidate Learnings/Decisions/Constraints with stable `source_artifact_ref`. |
 | Relying on local source-code inspection to discover payload fields | External MCP users and agents fail because they cannot see the repository | Use the payload contracts in this instructions document and schema/validation tools. |
 | Claiming "KG updated" without natural and Cypher verification | Materialization bugs stay hidden; users trust a graph that cannot answer follow-up questions | Query back the facts and relationships before reporting success. |
-| Emitting deterministic edge types manually (`implements`, `tests`, `belongs_to`, `mentions`, `violates`, `derives_from`) | The MCP rejects the edge with `layer_violation`, or the session wastes turns on relationships the worker owns | Emit only cognitive edges and let deterministic extraction own structured artifact relationships. |
+| Emitting deterministic edge types manually (`implements`, `tests`, `belongs_to`, `mentions`, `violates`, `originates_from`, `covered_by`, `derives_from`) | The MCP rejects the edge with `layer_violation`, or the session wastes turns on relationships the worker owns | Emit only cognitive edges and let deterministic extraction own structured artifact relationships. |
 | Omitting interface endpoints, protocols, schemas, connected endpoint entities, or entity responsibilities from final architecture facts | Implementers cannot derive correct tasks/tests; architecture search returns vague components with no actionable contract | Consolidate architecture facts with explicit entities, endpoints, protocols, contracts, responsibilities, and diagram connections that define the two endpoint entities. |
 
 **Consequence matrix — what happens when each trigger is skipped:**
@@ -2785,7 +2941,7 @@ already did.
 | `spec.created` / `spec.moved` | spec lifecycle methods | spec | normal |
 | `spec.version_bumped` | `okto_pulse_update_spec` when content_fields change (FRs/TRs/ACs/context/description) | spec | **high** |
 | `spec.semantic_changed` | `okto_pulse_update_spec` when semantic_fields change (decisions/business_rules/api_contracts/test_scenarios/screen_mockups) **and** version was NOT bumped | spec | normal |
-| `refinement.semantic_changed` | `okto_pulse_update_refinement` (any field) | refinement (no-op extractor today) | normal |
+| `refinement.semantic_changed` | `okto_pulse_update_refinement` (any field) | refinement lineage Entity | normal |
 | `sprint.created` / `sprint.moved` / `sprint.closed` | sprint lifecycle methods | sprint | normal |
 | `ideation.derived_to_spec` / `refinement.derived_to_spec` | derivation methods | spec | normal |
 

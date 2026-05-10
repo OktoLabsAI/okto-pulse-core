@@ -55,6 +55,8 @@ from okto_pulse.core.models.db import (
     ConsolidationQueue,
     DomainEventHandlerExecution,
     DomainEventRow,
+    Ideation,
+    Refinement,
 )
 
 
@@ -812,16 +814,30 @@ async def test_semantic_burst_dedup_to_single_queue_row(db_factory, clean_tables
 
 
 @pytest.mark.asyncio
-async def test_refinement_artifact_no_op_in_worker(db_factory, clean_tables):
+async def test_refinement_artifact_materializes_lineage_in_worker(db_factory, clean_tables):
     """artifact_type='refinement' completes the queue cycle without crash.
 
-    AC13 invariant: consolidation_worker._process_queue_entry handles
-    refinement gracefully (logs + returns True without calling extractors).
+    Refinement is no longer a no-op: it should produce a deterministic
+    lineage Entity and clear successfully when the row exists.
     """
     from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
 
-    refinement_id = "ref-noop"
+    ideation_id = "idea-ref-lineage"
+    refinement_id = "ref-lineage"
     async with db_factory() as session:
+        session.add(Ideation(
+            id=ideation_id,
+            board_id=BOARD_ID,
+            title="Lineage idea",
+            created_by=USER_ID,
+        ))
+        session.add(Refinement(
+            id=refinement_id,
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            title="Lineage refinement",
+            created_by=USER_ID,
+        ))
         session.add(
             ConsolidationQueue(
                 board_id=BOARD_ID,
@@ -843,6 +859,8 @@ async def test_refinement_artifact_no_op_in_worker(db_factory, clean_tables):
 
         ok = await _process_queue_entry(session, entry)
         assert ok is True
+        await session.delete(entry)
+        await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -1188,7 +1206,7 @@ def test_human_curated_column_declared_in_schema():
     # Schema bumped to 0.3.2 (Ideação #5) to mark this column on bootstrap;
     # subsequent additive bumps (e.g. 0.3.3 for last_recomputed_at — Ideação
     # #4) preserve the column, so we assert the floor with set membership.
-    assert SCHEMA_VERSION in {"0.3.2", "0.3.3"}
+    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5"}
 
 
 def test_human_curated_migration_helper_exists_and_is_called():

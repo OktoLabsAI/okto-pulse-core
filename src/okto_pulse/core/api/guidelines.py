@@ -119,20 +119,46 @@ async def link_or_create_board_guideline(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Link an existing guideline to a board."""
+    """Link an existing global guideline to a board or create an inline guideline."""
     board_service = BoardService(db)
     board = await board_service.get_board(board_id, user_id)
     if not board:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
 
     service = GuidelineService(db)
-    guideline = await service.get_guideline(data.guideline_id)
-    if not guideline:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guideline not found")
+    if data.guideline_id:
+        guideline = await service.get_guideline(data.guideline_id)
+        if not guideline:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guideline not found")
 
-    link = await service.link_guideline_to_board(board_id, data.guideline_id, data.priority)
+        link = await service.link_guideline_to_board(board_id, data.guideline_id, data.priority)
+        await db.commit()
+        return {"id": link.id, "board_id": board_id, "guideline_id": data.guideline_id, "priority": link.priority}
+
+    if not data.title or not data.content:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide guideline_id to link a global guideline, or title and content to create an inline guideline.",
+        )
+
+    guideline = await service.create_guideline(
+        user_id,
+        GuidelineCreate(
+            title=data.title,
+            content=data.content,
+            tags=data.tags,
+            scope="inline",
+            board_id=board_id,
+        ),
+    )
     await db.commit()
-    return {"id": link.id, "board_id": board_id, "guideline_id": data.guideline_id, "priority": link.priority}
+    return {
+        "id": guideline.id,
+        "board_id": board_id,
+        "guideline_id": guideline.id,
+        "priority": data.priority,
+        "scope": "inline",
+    }
 
 
 @router.delete("/boards/{board_id}/guidelines/{guideline_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -22,11 +22,14 @@ from okto_pulse.core.models.db import (
     ConsolidationAudit,
     ConsolidationQueue,
     GlobalUpdateOutbox,
+    Ideation,
     KuzuNodeRef,
+    Refinement,
     Spec,
     SpecStatus,
     Sprint,
     SprintStatus,
+    Story,
 )
 
 logger = logging.getLogger("okto_pulse.kg.governance")
@@ -180,6 +183,30 @@ async def start_historical_consolidation(
 
     await _purge_stale_metadata_if_graph_empty(db, board_id)
 
+    story_result = await db.execute(
+        select(Story).where(
+            Story.board_id == board_id,
+            Story.archived.is_(False),
+        )
+    )
+    stories = list(story_result.scalars().all())
+
+    ideation_result = await db.execute(
+        select(Ideation).where(
+            Ideation.board_id == board_id,
+            Ideation.archived.is_(False),
+        )
+    )
+    ideations = list(ideation_result.scalars().all())
+
+    refinement_result = await db.execute(
+        select(Refinement).where(
+            Refinement.board_id == board_id,
+            Refinement.archived.is_(False),
+        )
+    )
+    refinements = list(refinement_result.scalars().all())
+
     # Query done/approved specs for this board
     spec_result = await db.execute(
         select(Spec).where(
@@ -247,6 +274,49 @@ async def start_historical_consolidation(
 
     total = 0
 
+    # Insert pre-spec entries first so lineage targets exist before specs.
+    for story in stories:
+        if ("story", story.id) in already_queued:
+            continue
+        db.add(ConsolidationQueue(
+            id=str(uuid.uuid4()),
+            board_id=board_id,
+            artifact_type="story",
+            artifact_id=story.id,
+            priority="low",
+            source="historical_backfill",
+            status="pending",
+        ))
+        total += 1
+
+    for ideation in ideations:
+        if ("ideation", ideation.id) in already_queued:
+            continue
+        db.add(ConsolidationQueue(
+            id=str(uuid.uuid4()),
+            board_id=board_id,
+            artifact_type="ideation",
+            artifact_id=ideation.id,
+            priority="low",
+            source="historical_backfill",
+            status="pending",
+        ))
+        total += 1
+
+    for refinement in refinements:
+        if ("refinement", refinement.id) in already_queued:
+            continue
+        db.add(ConsolidationQueue(
+            id=str(uuid.uuid4()),
+            board_id=board_id,
+            artifact_type="refinement",
+            artifact_id=refinement.id,
+            priority="low",
+            source="historical_backfill",
+            status="pending",
+        ))
+        total += 1
+
     # Insert queue entries for each spec
     for spec in specs:
         if ("spec", spec.id) in already_queued:
@@ -305,8 +375,10 @@ async def start_historical_consolidation(
     await db.commit()
 
     logger.info(
-        "governance.historical_start board=%s specs=%d sprints=%d cards=%d total=%d",
-        board_id, len(specs), len(sprints), len(cards), total,
+        "governance.historical_start board=%s stories=%d ideations=%d "
+        "refinements=%d specs=%d sprints=%d cards=%d total=%d",
+        board_id, len(stories), len(ideations), len(refinements),
+        len(specs), len(sprints), len(cards), total,
     )
 
     if total > 0:
