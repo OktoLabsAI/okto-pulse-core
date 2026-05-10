@@ -887,17 +887,32 @@ class TestCardDependencies:
             await svc.add_dependency(card_b.id, card_a.id)
             await _mark_all_resources_na(db, "card", card_a.id)
 
-            # Move card_a to done first
+            # Move card_a through the validation gate first.
             await svc.move_card(
                 card_a.id, USER_ID,
                 CardMove(
-                    status=CardStatus.DONE,
+                    status=CardStatus.VALIDATION,
                     conclusion="Dependency done",
                     completeness=100,
                     completeness_justification="Complete",
                     drift=0,
                     drift_justification="No deviation",
                 ),
+            )
+            await svc.submit_task_validation(
+                card_a.id,
+                "reviewer-1",
+                "Reviewer One",
+                {
+                    "confidence": 95,
+                    "confidence_justification": "Dependency work reviewed",
+                    "estimated_completeness": 100,
+                    "completeness_justification": "Dependency is complete",
+                    "estimated_drift": 0,
+                    "drift_justification": "No deviation from plan",
+                    "general_justification": "Approved so dependent work can advance.",
+                    "recommendation": "approve",
+                },
             )
 
             # Now card_b should be able to move forward

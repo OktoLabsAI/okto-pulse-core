@@ -310,15 +310,8 @@ def test_ts9_migration_failure_does_not_cache(legacy_board, monkeypatch):
     )
     monkeypatch.setattr(schema_mod, "apply_schema_to_connection", boom)
 
-    # Trigger via ensure_board_graph_bootstrapped — _migrate_board_schema
-    # currently swallows the exception (so the board still gets cached on
-    # the .add at the end). This test documents the existing behavior:
-    # the wire is in place, but for the cache-add-only-on-success guarantee,
-    # _migrate_board_schema would need to re-raise. Acceptable compromise:
-    # caller (compensate_sync) will surface the issue and the operator
-    # runs migrate-schema explicitly.
+    # Trigger via ensure_board_graph_bootstrapped. Failed migrations must not
+    # cache the board, so the next open re-probes and can retry the apply.
     ensure_board_graph_bootstrapped(legacy_board)
-    # Whether the board is cached depends on _migrate_board_schema's swallow.
-    # The key behavioral guarantee is that the next open re-probes — assert
-    # _MIGRATED_BOARDS does NOT contain the board (since the apply failed).
     assert legacy_board not in _MIGRATED_BOARDS
+    assert legacy_board not in _BOOTSTRAPPED_BOARDS
