@@ -27,6 +27,8 @@ DETERMINISTIC_EDGE_TYPES: Final[frozenset[str]] = frozenset({
     "violates",
     "derives_from",
     "mentions",
+    "originates_from",
+    "covered_by",
     # Hierarchy backbone — Spec ⇄ Sprint ⇄ Card and child artifacts (Req,
     # Constraint, Criterion, TestScenario, APIContract, Decision, Bug) →
     # parent Spec entity. Layer 1 owns this; cognitive agent must not emit.

@@ -200,6 +200,7 @@ async def get_subgraph(
     limit: int = Query(100),
     cursor: str = "",
     min_relevance: float = Query(0.0, ge=0.0),
+    type: str = "",
 ):
     """Return subgraph for visualization — Spec 8 / S1.1, S1.4, S1.5.
 
@@ -236,6 +237,7 @@ async def get_subgraph(
                     min_relevance=min_relevance,
                     max_rows=limit,
                     cursor=cursor or None,
+                    node_type=type or None,
                 )
             except ValueError as exc:
                 return _problem(

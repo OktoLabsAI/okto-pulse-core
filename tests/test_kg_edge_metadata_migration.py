@@ -14,12 +14,15 @@ import os
 
 import pytest
 
+import okto_pulse.core.kg.schema as kg_schema
 from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
 from okto_pulse.core.kg.schema import (
     EDGE_LAYERS,
     EDGE_METADATA_COLUMNS,
     REL_TYPES,
     SCHEMA_VERSION,
+    _ensure_multi_rel_pairs,
+    _show_rel_connection_pairs,
     bootstrap_board_graph,
     close_all_connections,
     migrate_edge_metadata,
@@ -37,7 +40,7 @@ def board():
 
 
 def test_schema_version_is_current():
-    assert SCHEMA_VERSION == "0.3.3"
+    assert SCHEMA_VERSION == "0.3.5"
 
 
 def test_edge_metadata_columns_declared():
@@ -47,6 +50,63 @@ def test_edge_metadata_columns_declared():
 
 def test_edge_layers_catalog_is_closed():
     assert set(EDGE_LAYERS) == {"deterministic", "cognitive", "fallback", "legacy"}
+
+
+def test_multi_rel_pair_migration_adds_architecture_to_bug_pair(tmp_path):
+    import ladybug as kuzu  # type: ignore
+
+    db = kuzu.Database(str(tmp_path / "graph.lbug"))
+    conn = kuzu.Connection(db)
+    try:
+        conn.execute("CREATE NODE TABLE Entity(id STRING PRIMARY KEY)")
+        conn.execute("CREATE NODE TABLE Bug(id STRING PRIMARY KEY)")
+        conn.execute(
+            "CREATE REL TABLE belongs_to(FROM Bug TO Entity, confidence DOUBLE)"
+        )
+
+        added = _ensure_multi_rel_pairs(
+            conn,
+            "belongs_to",
+            (("Bug", "Entity"), ("Entity", "Bug")),
+        )
+
+        assert added == [("Entity", "Bug")]
+        assert ("Entity", "Bug") in _show_rel_connection_pairs(conn, "belongs_to")
+    finally:
+        conn.close()
+        del conn, db
+
+
+def test_board_migration_probe_detects_missing_multi_rel_pair(tmp_path, monkeypatch):
+    import ladybug as kuzu  # type: ignore
+
+    board = "legacy-missing-rel-pair"
+    graph_path = tmp_path / "graph.lbug"
+    db = kuzu.Database(str(graph_path))
+    conn = kuzu.Connection(db)
+    try:
+        for node_type in kg_schema.NODE_TYPES:
+            conn.execute(kg_schema._build_node_ddl(node_type))
+        for rel_name, from_type, to_type in kg_schema.REL_TYPES:
+            conn.execute(kg_schema._build_rel_ddl(rel_name, from_type, to_type))
+        for rel_name, pairs in kg_schema.MULTI_REL_TYPES:
+            legacy_pairs = tuple(
+                pair
+                for pair in pairs
+                if not (rel_name == "belongs_to" and pair == ("Entity", "Bug"))
+            )
+            conn.execute(kg_schema._build_multi_rel_ddl(rel_name, legacy_pairs))
+    finally:
+        conn.close()
+        del conn, db
+
+    monkeypatch.setattr(kg_schema, "board_kuzu_path", lambda _board_id: graph_path)
+    kg_schema._MIGRATED_BOARDS.discard(board)
+    try:
+        assert kg_schema._board_needs_migration(board) is True
+    finally:
+        kg_schema.close_board_db_cache(board)
+        kg_schema._MIGRATED_BOARDS.discard(board)
 
 
 def test_bootstrap_creates_rels_with_metadata_columns(board):

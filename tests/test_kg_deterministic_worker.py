@@ -14,6 +14,7 @@ Covers:
 
 from __future__ import annotations
 
+from okto_pulse.core.kg.primitives import _validate_local_edge_pair
 from okto_pulse.core.kg.workers.deterministic_worker import (
     DeterministicWorker,
     WORKER_ID,
@@ -126,6 +127,84 @@ def test_process_spec_emits_all_node_types():
     types = {n.node_type for n in result.nodes}
     assert {"Entity", "Requirement", "Constraint", "Criterion",
             "TestScenario", "APIContract", "Decision"}.issubset(types)
+
+
+def test_process_pre_spec_lineage_entities():
+    worker = DeterministicWorker()
+    story = worker.process_story({
+        "id": "story-abcdef-123",
+        "title": "Capture intake",
+        "description": "Story details",
+    })
+    ideation = worker.process_ideation({
+        "id": "idea-abcdef-123",
+        "title": "Shape intake",
+        "story_ids": ["story-abcdef-123"],
+    })
+    refinement = worker.process_refinement({
+        "id": "ref-abcdef-123",
+        "title": "Refine intake",
+        "ideation_id": "idea-abcdef-123",
+    })
+    spec = worker.process_spec({
+        **_spec_fixture(),
+        "refinement_id": "ref-abcdef-123",
+    })
+
+    assert story.nodes[0].source_artifact_ref == "story:story-abcdef-123"
+    assert any(
+        e.from_candidate_id == "story_story-ab_entity"
+        and e.to_candidate_id == "ideation_idea-abc_entity"
+        for e in ideation.edges
+    )
+    assert any(
+        e.from_candidate_id == "refinement_ref-abcd_entity"
+        and e.to_candidate_id == "ideation_idea-abc_entity"
+        for e in refinement.edges
+    )
+    assert any(
+        e.from_candidate_id == "spec_11111111_entity"
+        and e.to_candidate_id == "refinement_ref-abcd_entity"
+        for e in spec.edges
+    )
+
+
+def test_process_spec_child_source_refs_are_granular():
+    spec = _spec_fixture()
+    result = DeterministicWorker().process_spec(spec)
+    spec_ref = f"spec:{spec['id']}"
+
+    root_nodes = [
+        n for n in result.nodes
+        if n.node_type == "Entity" and n.source_artifact_ref == spec_ref
+    ]
+    assert len(root_nodes) == 1
+
+    child_types = {
+        "Requirement", "Constraint", "Criterion",
+        "TestScenario", "APIContract", "Decision",
+    }
+    child_refs = [
+        n.source_artifact_ref for n in result.nodes if n.node_type in child_types
+    ]
+    assert spec_ref not in child_refs
+    assert len(child_refs) == len(set(child_refs))
+    assert {
+        f"spec:{spec['id']}:fr:0",
+        f"spec:{spec['id']}:fr:1",
+        f"spec:{spec['id']}:tr:0",
+        f"spec:{spec['id']}:tr:1",
+        f"spec:{spec['id']}:ac:0",
+        f"spec:{spec['id']}:ac:1",
+        f"spec:{spec['id']}:business_rule:br_xp_cap",
+        f"spec:{spec['id']}:test_scenario:ts_1",
+        f"spec:{spec['id']}:test_scenario:ts_2",
+        f"spec:{spec['id']}:api_contract:0",
+        f"spec:{spec['id']}:api_contract:1",
+        f"spec:{spec['id']}:decision_legacy:0",
+        f"spec:{spec['id']}:decision_legacy:1",
+        f"spec:{spec['id']}:decision_legacy:2",
+    }.issubset(set(child_refs))
 
 
 def test_process_spec_edges_carry_v2_metadata():
@@ -285,6 +364,45 @@ def test_process_card_projects_architecture_designs():
     assert "Card snapshot from the spec." in result.raw_content
 
 
+def test_process_bug_card_architecture_belongs_to_bug_is_valid():
+    bug = {
+        "id": "bug-arch-123",
+        "title": "Regression in checkout boundary",
+        "description": "Bug details",
+        "card_type": "bug",
+        "architecture_designs": [
+            {
+                "id": "arch_bug",
+                "title": "Bug Architecture Evidence",
+                "global_description": "Diagnostic architecture attached to the bug.",
+                "entities": [{"name": "Checkout Adapter"}],
+            }
+        ],
+    }
+
+    result = DeterministicWorker().process_card(bug)
+
+    node_types = {node.candidate_id: node.node_type for node in result.nodes}
+    architecture_edge = next(
+        edge
+        for edge in result.edges
+        if edge.rule_id.startswith("belongs_to/architecture_design")
+    )
+    assert node_types[architecture_edge.from_candidate_id] == "Entity"
+    assert node_types[architecture_edge.to_candidate_id] == "Bug"
+    for edge in result.edges:
+        if (
+            edge.from_candidate_id in node_types
+            and edge.to_candidate_id in node_types
+        ):
+            _validate_local_edge_pair(
+                edge.edge_type,
+                node_types[edge.from_candidate_id],
+                node_types[edge.to_candidate_id],
+                session_id="test-bug-architecture",
+            )
+
+
 def test_content_hash_stable_across_runs():
     spec = _spec_fixture()
     r1 = DeterministicWorker().process_spec(spec)
@@ -347,6 +465,30 @@ def test_process_card_bug_emits_violates_missing_link():
     assert missing[0].reason == "origin_task_requires_cross_artifact_resolution"
 
 
+def test_process_card_bug_linked_test_tasks_are_observable():
+    bug = {
+        "id": "bug-1234-5678",
+        "title": "Silent rate limit",
+        "description": "Fails silently",
+        "card_type": "bug",
+        "origin_task_id": "task-zzz",
+        "linked_test_task_ids": ["test-card-1", "test-card-2"],
+    }
+    result = DeterministicWorker().process_card(bug)
+    missing = [
+        c for c in result.missing_link_candidates
+        if c.reason == "linked_test_task_requires_cross_artifact_resolution"
+    ]
+    assert len(missing) == 2
+    assert all(c.edge_type == "tests" for c in missing)
+    assert {tuple(c.suggested_candidates) for c in missing} == {
+        ("test_task:test-card-1",),
+        ("test_task:test-card-2",),
+    }
+    assert "Origin task: task-zzz" in result.raw_content
+    assert "Linked test tasks" in result.raw_content
+
+
 def test_process_card_bug_without_origin_marks_no_origin_task():
     bug = {
         "id": "bug-x",
@@ -362,6 +504,21 @@ def test_process_card_bug_without_origin_marks_no_origin_task():
 
 def test_process_artifact_dispatches_by_type():
     worker = DeterministicWorker()
+    assert worker.process_artifact("story", {
+        "id": "story-1",
+        "title": "s",
+        "description": "d",
+    }).nodes
+    assert worker.process_artifact("ideation", {
+        "id": "idea-1",
+        "title": "i",
+        "story_ids": ["story-1"],
+    }).nodes
+    assert worker.process_artifact("refinement", {
+        "id": "ref-1",
+        "title": "r",
+        "ideation_id": "idea-1",
+    }).nodes
     assert worker.process_artifact("spec", _spec_fixture()).nodes
     assert worker.process_artifact("sprint", {"id": "s-1", "title": "s"}).nodes
     assert worker.process_artifact("card", {"id": "c-1", "title": "c"}).nodes
@@ -370,7 +527,7 @@ def test_process_artifact_dispatches_by_type():
 def test_process_artifact_raises_on_unknown_type():
     import pytest as _pytest
     with _pytest.raises(ValueError, match="unknown artifact_type"):
-        DeterministicWorker().process_artifact("ideation", {"id": "x"})
+        DeterministicWorker().process_artifact("unknown", {"id": "x"})
 
 
 # ---------------------------------------------------------------------------

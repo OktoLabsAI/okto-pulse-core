@@ -114,7 +114,7 @@ class _FakeKGService:
         raise AssertionError("board graph routes must not use global discovery fallback")
 
     def get_schema_version(self, *_):
-        return "0.3.3"
+        return "0.3.5"
 
 
 @pytest.fixture
@@ -202,6 +202,13 @@ class TestLimitContract:
         assert code == 200
         for n in body["nodes"]:
             assert {"id", "node_type", "title", "created_at"}.issubset(n.keys())
+
+    def test_type_filter_is_applied_to_graph_page(self, client):
+        code, body = _get_graph(client, limit=50, type="Bug")
+        assert code == 200, body
+        assert body["nodes"] == []
+        assert body["edges"] == []
+        assert body.get("next_cursor") in (None, "")
 
 
 # ---------------------------------------------------------------------------
@@ -359,8 +366,8 @@ class TestNodesAndStats:
         resp = client.get(f"/api/v1/kg/boards/{SEED_BOARD}/stats")
         body = resp.json()
         assert resp.status_code == 200, body
-        assert body["schema_version"] == "0.3.3"
-        assert body["graph_schema_version"] == "0.3.3"
+        assert body["schema_version"] == "0.3.5"
+        assert body["graph_schema_version"] == "0.3.5"
         assert body["node_counts_by_type"]["Decision"] == SEED_COUNT
         assert body["edge_counts_by_type"] == {"belongs_to": 3}
         assert body["edge_count_status"] == "ok"

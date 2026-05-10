@@ -16,6 +16,10 @@ from okto_pulse.core.models.db import (
     RefinementStatus,
     Spec,
     SpecStatus,
+    Story,
+    StoryIdeationLink,
+    StoryStatus,
+    Topic,
 )
 from okto_pulse.core.models.schemas import (
     BoardResponse,
@@ -128,15 +132,38 @@ async def test_architecture_summary_relationships_are_preloaded(db_factory):
     ideation_id = _id("ideation")
     refinement_id = _id("refinement")
     spec_id = _id("spec")
+    topic_id = _id("topic")
+    story_id = _id("story")
 
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Architecture summary loading", owner_id=user_id))
+        db.add(Topic(id=topic_id, board_id=board_id, name="Intake", created_by=user_id))
         db.add(
             Ideation(
                 id=ideation_id,
                 board_id=board_id,
                 title="Ideation",
                 status=IdeationStatus.DONE,
+                created_by=user_id,
+            )
+        )
+        db.add(
+            Story(
+                id=story_id,
+                board_id=board_id,
+                topic_id=topic_id,
+                title="Related story",
+                description="Story that was linked before ideation refinement.",
+                status=StoryStatus.CONVERTED,
+                created_by=user_id,
+            )
+        )
+        db.add(
+            StoryIdeationLink(
+                id=_id("story-link"),
+                board_id=board_id,
+                story_id=story_id,
+                ideation_id=ideation_id,
                 created_by=user_id,
             )
         )
@@ -196,9 +223,14 @@ async def test_architecture_summary_relationships_are_preloaded(db_factory):
     async with db_factory() as db:
         ideation = await IdeationService(db).get_ideation(ideation_id)
         assert ideation is not None
+        _assert_loaded(ideation, "story_links")
+        _assert_loaded(ideation.story_links[0], "story")
+        _assert_loaded(ideation.story_links[0].story, "ideation_links")
         _assert_loaded(ideation.refinements[0], "architecture_designs")
         _assert_loaded(ideation.specs[0], "architecture_designs")
         response = IdeationResponse.model_validate(ideation)
+        assert response.stories[0].title == "Related story"
+        assert response.stories[0].ideation_links[0].ideation_id == ideation_id
         assert response.specs[0].architecture_designs
 
     async with db_factory() as db:
