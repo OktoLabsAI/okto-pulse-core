@@ -35,6 +35,142 @@ def _source_meta(
     }
 
 
+def _qa_answered(qa: Any) -> bool:
+    answer = getattr(qa, "answer", None)
+    selected = getattr(qa, "selected", None)
+    if isinstance(qa, dict):
+        answer = qa.get("answer")
+        selected = qa.get("selected")
+    return bool(answer) or bool(selected)
+
+
+def _serialize_qa_item(qa: Any) -> dict[str, Any]:
+    if isinstance(qa, dict):
+        return {
+            "id": qa.get("id"),
+            "question": qa.get("question"),
+            "question_type": qa.get("question_type") or "text",
+            "choices": qa.get("choices"),
+            "allow_free_text": qa.get("allow_free_text") or False,
+            "answer": qa.get("answer"),
+            "selected": qa.get("selected"),
+            "asked_by": qa.get("asked_by"),
+            "answered_by": qa.get("answered_by"),
+            "created_at": qa.get("created_at"),
+            "answered_at": qa.get("answered_at"),
+        }
+    created_at = getattr(qa, "created_at", None)
+    answered_at = getattr(qa, "answered_at", None)
+    return {
+        "id": getattr(qa, "id", None),
+        "question": getattr(qa, "question", None),
+        "question_type": getattr(qa, "question_type", None) or "text",
+        "choices": getattr(qa, "choices", None),
+        "allow_free_text": getattr(qa, "allow_free_text", False) or False,
+        "answer": getattr(qa, "answer", None),
+        "selected": getattr(qa, "selected", None),
+        "asked_by": getattr(qa, "asked_by", None),
+        "answered_by": getattr(qa, "answered_by", None),
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+        "answered_at": answered_at.isoformat() if hasattr(answered_at, "isoformat") else answered_at,
+    }
+
+
+def serialize_parent_ideation_context(ideation: Any, *, include_qa: bool = True) -> dict[str, Any] | None:
+    """Return the structured parent ideation payload used by derived contexts."""
+
+    if not ideation:
+        return None
+    payload: dict[str, Any] = {
+        "id": getattr(ideation, "id", None),
+        "title": getattr(ideation, "title", None),
+        "status": _enum_value(getattr(ideation, "status", None)),
+        "version": getattr(ideation, "version", None),
+        "description": getattr(ideation, "description", None),
+        "problem_statement": getattr(ideation, "problem_statement", None),
+        "proposed_approach": getattr(ideation, "proposed_approach", None),
+        "scope_assessment": getattr(ideation, "scope_assessment", None),
+        "complexity": _enum_value(getattr(ideation, "complexity", None)),
+        "labels": getattr(ideation, "labels", None) or [],
+    }
+    if include_qa:
+        payload["qa_items"] = [
+            _serialize_qa_item(qa)
+            for qa in (getattr(ideation, "qa_items", None) or [])
+            if _qa_answered(qa)
+        ]
+    return payload
+
+
+def compile_ideation_parent_context(ideation: Any, *, include_description: bool = True) -> str | None:
+    """Compile the parent ideation's structured intent into markdown context."""
+
+    if not ideation:
+        return None
+
+    context_parts: list[str] = []
+    title = getattr(ideation, "title", None)
+    version = getattr(ideation, "version", None)
+    heading = "## Parent Ideation Context"
+    if title:
+        heading += f"\n- Title: {title}"
+    if version is not None:
+        heading += f"\n- Version: {version}"
+    context_parts.append(heading)
+
+    if include_description and getattr(ideation, "description", None):
+        context_parts.append(f"### Description\n{ideation.description}")
+    if getattr(ideation, "problem_statement", None):
+        context_parts.append(f"### Problem Statement\n{ideation.problem_statement}")
+    if getattr(ideation, "proposed_approach", None):
+        context_parts.append(f"### Proposed Approach\n{ideation.proposed_approach}")
+    if getattr(ideation, "scope_assessment", None):
+        sa = ideation.scope_assessment
+        complexity = _enum_value(getattr(ideation, "complexity", None)) or "not evaluated"
+        context_parts.append(
+            "### Scope Assessment\n"
+            f"- Domains: {sa.get('domains', '?')}/5\n"
+            f"- Ambiguity: {sa.get('ambiguity', '?')}/5\n"
+            f"- Dependencies: {sa.get('dependencies', '?')}/5\n"
+            f"- Complexity: {complexity}"
+        )
+
+    answered_qa = [
+        qa for qa in (getattr(ideation, "qa_items", None) or [])
+        if _qa_answered(qa)
+    ]
+    if answered_qa:
+        qa_lines = []
+        for qa in answered_qa:
+            serialized = _serialize_qa_item(qa)
+            answer = serialized.get("answer")
+            selected = serialized.get("selected")
+            rendered_answer = answer if answer else ", ".join(selected or [])
+            qa_lines.append(f"**Q:** {serialized.get('question')}\n**A:** {rendered_answer}")
+        context_parts.append("### Q&A Decisions\n" + "\n\n".join(qa_lines))
+
+    return "\n\n".join(part for part in context_parts if part.strip()) if len(context_parts) > 1 else None
+
+
+def resolve_parent_ideation_context_reference(
+    ideation: Any,
+    *,
+    include_qa: bool = True,
+) -> dict[str, Any] | None:
+    payload = serialize_parent_ideation_context(ideation, include_qa=include_qa)
+    if not payload:
+        return None
+    payload.update(
+        _source_meta(
+            source_type="ideation",
+            source_id=payload.get("id"),
+            source_title=payload.get("title"),
+            reference_type="parent_ideation",
+        )
+    )
+    return payload
+
+
 def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
     if isinstance(kb, dict):
         data = {
@@ -45,7 +181,17 @@ def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
         }
         if include_content:
             data["content"] = kb.get("content")
-        for attr in ("source", "source_type", "source_id", "created_by", "created_at", "updated_at"):
+        for attr in (
+            "source",
+            "source_type",
+            "source_id",
+            "source_title",
+            "source_version",
+            "source_kb_id",
+            "created_by",
+            "created_at",
+            "updated_at",
+        ):
             if kb.get(attr) is not None:
                 data[attr] = kb.get(attr)
         return data
@@ -58,7 +204,16 @@ def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
     }
     if include_content:
         data["content"] = getattr(kb, "content", None)
-    for attr in ("created_by", "created_at", "updated_at"):
+    for attr in (
+        "source_type",
+        "source_id",
+        "source_title",
+        "source_version",
+        "source_kb_id",
+        "created_by",
+        "created_at",
+        "updated_at",
+    ):
         value = getattr(kb, attr, None)
         if value is not None:
             data[attr] = value.isoformat() if hasattr(value, "isoformat") else value
@@ -380,10 +535,12 @@ def resolve_entity_context_references(
     source_type: str,
     include_content: bool = True,
     architecture_designs: list[Any] | None = None,
+    include_parent_context: bool = True,
+    include_parent_qa: bool = True,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Resolve direct artifacts for ideation/refinement-like context payloads."""
+    """Resolve direct artifacts and inherited parent context for entity payloads."""
 
-    return resolve_artifact_references(
+    refs = resolve_artifact_references(
         entity,
         source_type=source_type,
         source_id=getattr(entity, "id", None),
@@ -392,6 +549,15 @@ def resolve_entity_context_references(
         include_content=include_content,
         architecture_designs=architecture_designs,
     )
+    refs.setdefault("structured_contexts", [])
+    if include_parent_context and source_type == "refinement":
+        parent_ref = resolve_parent_ideation_context_reference(
+            getattr(entity, "ideation", None),
+            include_qa=include_parent_qa,
+        )
+        if parent_ref:
+            refs["structured_contexts"].append(parent_ref)
+    return refs
 
 
 def resolve_task_context_references(

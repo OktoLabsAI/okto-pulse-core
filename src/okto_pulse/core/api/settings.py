@@ -13,10 +13,11 @@ the UI display a banner.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.infra.config import validate_graph_db_max_size_gb
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.services.settings_service import (
     get_runtime_settings,
@@ -60,8 +61,8 @@ class RuntimeSettingsPayload(BaseModel):
     """
 
     # Graph DB tab.
-    kg_kuzu_buffer_pool_mb: int | None = Field(default=None, ge=16, le=512)
-    kg_kuzu_max_db_size_gb: int | None = Field(default=None, ge=1, le=64)
+    kg_kuzu_buffer_pool_mb: int | None = Field(default=None, ge=128, le=512)
+    kg_kuzu_max_db_size_gb: int | None = Field(default=None, ge=2, le=64)
     kg_connection_pool_size: int | None = Field(default=None, ge=1, le=32)
     # Event Queue tab (spec bdcda842).
     kg_queue_max_concurrent_workers: int | None = Field(default=None, ge=1, le=16)
@@ -73,6 +74,13 @@ class RuntimeSettingsPayload(BaseModel):
     kg_decay_tick_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
     kg_decay_tick_staleness_days: int | None = Field(default=None, ge=1, le=365)
     kg_decay_tick_max_age_days: int | None = Field(default=None, ge=0, le=365)
+
+    @field_validator("kg_kuzu_max_db_size_gb")
+    @classmethod
+    def _validate_graph_db_max_size_gb(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        return validate_graph_db_max_size_gb(value)
 
 
 @router.get("/settings/runtime", response_model=RuntimeSettingsResponse)

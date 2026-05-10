@@ -17,6 +17,7 @@ from okto_pulse.core.services.main import (
     CardService,
     CommentService,
     GuidelineService,
+    IdeationKnowledgeService,
     IdeationQAService,
     IdeationService,
     QAService,
@@ -27,6 +28,14 @@ from okto_pulse.core.services.main import (
     SpecKnowledgeService,
     SpecQAService,
     SpecService,
+    StoryService,
+)
+from okto_pulse.core.services.resource_gate import (
+    ResourceGateError,
+    ResourceGateJustificationRequired,
+    ResourceGateNotFound,
+    ResourceGateService,
+    ResourceGateViolation,
 )
 
 __all__ = [
@@ -44,6 +53,7 @@ __all__ = [
     "CardService",
     "CommentService",
     "GuidelineService",
+    "IdeationKnowledgeService",
     "IdeationQAService",
     "IdeationService",
     "QAService",
@@ -54,4 +64,10 @@ __all__ = [
     "SpecKnowledgeService",
     "SpecQAService",
     "SpecService",
+    "StoryService",
+    "ResourceGateError",
+    "ResourceGateJustificationRequired",
+    "ResourceGateNotFound",
+    "ResourceGateService",
+    "ResourceGateViolation",
 ]

@@ -1742,8 +1742,8 @@ class TestBoardLevelConfig:
         assert result["outcome"] == "success"
         assert result["spec_status"] == "validated"
 
-    async def test_default_thresholds_when_not_configured(self, db_factory):
-        """Board without explicit threshold settings should use defaults."""
+    async def test_default_validation_gate_and_thresholds_when_not_configured(self, db_factory):
+        """Board without explicit gate settings should require validation with default thresholds."""
         board_id = "default-threshold-board"
         spec_id = "default-threshold-spec"
         async with db_factory() as db:
@@ -1771,14 +1771,15 @@ class TestBoardLevelConfig:
             await db.commit()
 
             service = SpecService(db)
-            # Board doesn't have require_spec_validation → should raise
-            with pytest.raises(ValueError, match="does not require"):
-                await service.submit_spec_validation(
-                    spec_id=spec_id,
-                    reviewer_id=USER_ID,
-                    reviewer_name="Tester",
-                    data=_valid_submit_data(),
-                )
+            result = await service.submit_spec_validation(
+                spec_id=spec_id,
+                reviewer_id=USER_ID,
+                reviewer_name="Tester",
+                data=_valid_submit_data(),
+            )
+
+        assert result["outcome"] == "success"
+        assert result["spec_status"] == "validated"
 
     async def test_opt_in_required(self, db_factory):
         """Board without require_spec_validation should reject all submissions."""

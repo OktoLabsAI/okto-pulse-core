@@ -378,10 +378,15 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     node_ids = {node["id"] for node in graph["nodes"]}
     edge_pairs = {(edge["source"], edge["target"]) for edge in graph["edges"]}
     node_by_id = {node["id"]: node for node in graph["nodes"]}
+    edge_relationships = {
+        (edge["source"], edge["target"], edge["relationship"])
+        for edge in graph["edges"]
+    }
     assert graph["root_ideation"]["id"] == ideation_id
     assert f"spec:{direct_spec_id}" in node_ids
     assert f"spec:{spec_id}" in node_ids
     assert f"task:{task_id}" in node_ids
+    assert f"test:{test_card_id}" in node_ids
     assert f"bug:{bug_card_id}" in node_ids
     assert all(node["entity_type"] != "artifact" for node in graph["nodes"])
     assert graph["summary"]["artifacts"] == 0
@@ -389,3 +394,144 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     assert (f"ideation:{ideation_id}", f"spec:{direct_spec_id}") in edge_pairs
     assert (f"refinement:{refinement_id}", f"spec:{spec_id}") in edge_pairs
     assert (f"task:{task_id}", f"bug:{bug_card_id}") in edge_pairs
+    assert (
+        f"test:{test_card_id}",
+        f"bug:{bug_card_id}",
+        "regression_test",
+    ) in edge_relationships
+
+
+@pytest.mark.asyncio
+async def test_lineage_graph_allows_standalone_spec_root():
+    db_factory = get_session_factory()
+    board_id = _id("trace-board")
+    spec_id = _id("standalone-spec")
+    sprint_id = _id("standalone-sprint")
+    task_id = _id("standalone-task")
+    test_card_id = _id("standalone-test-card")
+    bug_card_id = _id("standalone-bug-card")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Standalone Spec Board", owner_id=USER_ID))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Standalone KG Bug Spec",
+                status=SpecStatus.APPROVED,
+                created_by=USER_ID,
+                functional_requirements=["Create bug lineage from a spec root"],
+                technical_requirements=[],
+                acceptance_criteria=["Bug lineage graph opens without ideation"],
+                test_scenarios=[
+                    {
+                        "id": "ts-standalone",
+                        "title": "Standalone bug coverage",
+                        "status": "draft",
+                        "linked_criteria": ["0"],
+                        "linked_task_ids": [test_card_id],
+                    }
+                ],
+                business_rules=[],
+                api_contracts=[],
+            )
+        )
+        db.add(
+            Sprint(
+                id=sprint_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Standalone Sprint",
+                status=SprintStatus.CLOSED,
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            Card(
+                id=task_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                sprint_id=sprint_id,
+                title="Implement standalone flow",
+                status=CardStatus.DONE,
+                card_type=CardType.NORMAL,
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            Card(
+                id=test_card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                sprint_id=sprint_id,
+                title="Regression test for standalone bug",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.TEST,
+                test_scenario_ids=["ts-standalone"],
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            Card(
+                id=bug_card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Standalone bug without ideation",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.BUG,
+                severity=BugSeverity.MAJOR,
+                origin_task_id=task_id,
+                expected_behavior="Lineage graph opens from a spec-only flow.",
+                observed_behavior="Lineage graph used to require a root ideation.",
+                linked_test_task_ids=[test_card_id],
+                created_by=USER_ID,
+            )
+        )
+        await db.commit()
+
+    async with db_factory() as db:
+        graph = await build_lineage_graph(
+            db,
+            board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+            include_artifacts=False,
+        )
+        bug_graph = await build_lineage_graph(
+            db,
+            board_id,
+            entity_type="bug",
+            entity_id=bug_card_id,
+            include_artifacts=False,
+        )
+
+    node_ids = {node["id"] for node in graph["nodes"]}
+    edge_relationships = {
+        (edge["source"], edge["target"], edge["relationship"])
+        for edge in graph["edges"]
+    }
+    assert graph["root_entity"] == {
+        "type": "spec",
+        "id": spec_id,
+        "title": "Standalone KG Bug Spec",
+        "status": "approved",
+    }
+    assert graph["root_ideation"]["entity_type"] == "spec"
+    assert graph["summary"]["ideations"] == 0
+    assert graph["summary"]["orphan_specs"] == 1
+    assert graph["warnings"] == [
+        "Selected entity is rooted at a standalone spec because no ideation "
+        "lineage exists."
+    ]
+    assert f"spec:{spec_id}" in node_ids
+    assert f"sprint:{sprint_id}" in node_ids
+    assert f"task:{task_id}" in node_ids
+    assert f"test:{test_card_id}" in node_ids
+    assert f"bug:{bug_card_id}" in node_ids
+    assert (f"spec:{spec_id}", f"sprint:{sprint_id}", "has_sprint") in edge_relationships
+    assert (f"sprint:{sprint_id}", f"task:{task_id}", "contains_card") in edge_relationships
+    assert (f"sprint:{sprint_id}", f"test:{test_card_id}", "contains_card") in edge_relationships
+    assert (f"task:{task_id}", f"bug:{bug_card_id}", "originates_bug") in edge_relationships
+    assert (f"test:{test_card_id}", f"bug:{bug_card_id}", "regression_test") in edge_relationships
+    assert bug_graph["root_entity"]["type"] == "spec"
+    assert {"type": "bug", "id": bug_card_id} in bug_graph["resolution_path"]

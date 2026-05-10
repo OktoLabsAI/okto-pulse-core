@@ -1,7 +1,9 @@
 """Database configuration and session management."""
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Awaitable
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -786,6 +788,45 @@ async def _migrate_add_card_knowledge_bases() -> None:
                 pass
 
 
+async def _migrate_add_knowledge_source_columns() -> None:
+    """Add provenance columns to entity knowledge base tables."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    tables = [
+        "ideation_knowledge_bases",
+        "refinement_knowledge_bases",
+        "spec_knowledge_bases",
+    ]
+    columns = [
+        ("source_type", "VARCHAR(50)"),
+        ("source_id", "VARCHAR(36)"),
+        ("source_title", "VARCHAR(500)"),
+        ("source_version", "INTEGER"),
+        ("source_kb_id", "VARCHAR(36)"),
+    ]
+    async with get_engine().begin() as conn:
+        for table in tables:
+            if dialect == "postgresql":
+                table_check = await conn.execute(sa_text(
+                    f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}')"
+                ))
+                if not table_check.scalar():
+                    continue
+                for col_name, col_type in columns:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                    ))
+            else:
+                for col_name, col_type in columns:
+                    try:
+                        await conn.execute(sa_text(
+                            f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                        ))
+                    except Exception:
+                        pass
+
+
 async def _migrate_drop_spec_skills() -> None:
     """Drop the legacy `spec_skills` table.
 
@@ -852,6 +893,49 @@ async def _migrate_add_consolidation_resilience_columns() -> None:
                     pass
 
 
+async def _migrate_story_ideation_single_link() -> None:
+    """Enforce one Ideation link per Story while preserving many Stories per Ideation."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'story_ideation_links')"
+            ))
+            if not table_check.scalar():
+                return
+        else:
+            try:
+                await conn.execute(sa_text("SELECT 1 FROM story_ideation_links LIMIT 0"))
+            except Exception:
+                return
+
+        await conn.execute(sa_text(
+            """
+            DELETE FROM story_ideation_links
+            WHERE id IN (
+                SELECT id
+                FROM (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY story_id
+                            ORDER BY created_at, id
+                        ) AS rn
+                    FROM story_ideation_links
+                ) ranked
+                WHERE ranked.rn > 1
+            )
+            """
+        ))
+        await conn.execute(sa_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_story_ideation_link_story "
+            "ON story_ideation_links (story_id)"
+        ))
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -878,8 +962,10 @@ async def init_db() -> None:
     await _migrate_add_event_tables()
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _migrate_story_ideation_single_link()
     await _migrate_add_card_sprint_id()
     await _migrate_add_card_knowledge_bases()
+    await _migrate_add_knowledge_source_columns()
     await _migrate_add_sprint_scope_fields()
     await _migrate_agent_boards()
     await _migrate_add_task_validation_columns()
@@ -1490,7 +1576,7 @@ async def _reconcile_agent_permission_flags() -> None:
 
     Non-destructive deep-merge: for each agent with a non-null permission_flags
     dict, walks the current PERMISSION_REGISTRY and adds any keys missing in
-    the stored tree (default False). Existing leaf values are never overwritten
+    the stored tree (default True). Existing leaf values are never overwritten
     — the user's customisations are preserved.
     """
     import logging
@@ -1531,7 +1617,7 @@ async def _reconcile_agent_permission_flags() -> None:
                 await session.commit()
                 logger.info(
                     f"Reconciled {updated} agent(s) permission_flags "
-                    f"(+{total_added} missing leaf keys backfilled as False)"
+                    f"(+{total_added} missing leaf keys backfilled as True)"
                 )
         except Exception as e:
             logger.error(f"Agent permissions reconcile failed: {e}")
@@ -1540,27 +1626,53 @@ async def _reconcile_agent_permission_flags() -> None:
 
 async def close_db() -> None:
     """Close database connections."""
-    await get_engine().dispose()
+    await _await_cleanup(get_engine().dispose())
+
+
+def _consume_cleanup_exception(task: asyncio.Future[None]) -> None:
+    if task.cancelled():
+        return
+    with contextlib.suppress(BaseException):
+        task.exception()
+
+
+async def _await_cleanup(awaitable: Awaitable[None]) -> None:
+    """Let connection cleanup continue even when request shutdown cancels the caller."""
+    task = asyncio.ensure_future(awaitable)
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        task.add_done_callback(_consume_cleanup_exception)
+        raise
+
+
+async def _quiet_cleanup(awaitable: Awaitable[None]) -> None:
+    with contextlib.suppress(BaseException):
+        await _await_cleanup(awaitable)
 
 
 @asynccontextmanager
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session as async context manager."""
-    async with get_session_factory()() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+    session = get_session_factory()()
+    try:
+        yield session
+        await session.commit()
+    except BaseException:
+        await _quiet_cleanup(session.rollback())
+        raise
+    finally:
+        await _quiet_cleanup(session.close())
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency for database session."""
-    async with get_session_factory()() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+    session = get_session_factory()()
+    try:
+        yield session
+        await session.commit()
+    except BaseException:
+        await _quiet_cleanup(session.rollback())
+        raise
+    finally:
+        await _quiet_cleanup(session.close())

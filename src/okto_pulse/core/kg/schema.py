@@ -1,4 +1,4 @@
-"""LadybugDB per-board graph schema — 11 node tables, 10 rel tables, 5 vector indexes.
+"""LadybugDB per-board graph schema — 11 node tables, 13 rel tables, 9 vector indexes.
 
 Idempotent bootstrap: `bootstrap_board_graph(board_id)` creates or opens the
 per-board LadybugDB file under `kg_base_dir/boards/{board_id}/graph.lbug`,
@@ -21,10 +21,12 @@ from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
 
-SCHEMA_VERSION = "0.3.3"
+SCHEMA_VERSION = "0.3.5"
 GRAPH_DB_FILENAME = "graph.lbug"
 CORRUPT_DB_ERROR_MARKERS = (
+    "checksum verification failed",
     "corrupted wal file",
+    "wal file is corrupted",
     "invalid wal record",
     "not a valid lbug database file",
     "wal_record.cpp",
@@ -70,7 +72,11 @@ VECTOR_INDEX_TYPES: tuple[str, ...] = (
     "Decision",
     "Criterion",
     "Constraint",
+    "Requirement",
     "Entity",
+    "APIContract",
+    "TestScenario",
+    "Bug",
     "Learning",
 )
 
@@ -95,12 +101,14 @@ REL_TYPES: tuple[tuple[str, str, str], ...] = (
 # Multi-pair rel types — Kuzu supports `CREATE REL TABLE x (FROM A TO B, FROM
 # C TO D, ...)` and we leverage that for the hierarchy backbone so a single
 # `belongs_to` rel name can connect any artifact-typed node to its parent
-# Entity (Spec/Sprint/Card). Keeps the schema readable and queries terse:
+# Entity (Spec/Sprint/Card) or a typed Card node such as Bug. Keeps the schema
+# readable and queries terse:
 #     MATCH (n)-[:belongs_to]->(p:Entity) RETURN n, p
 # Without this we'd need 8 `belongs_to_<type>` variants polluting the schema.
 MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("belongs_to", (
         ("Entity", "Entity"),
+        ("Entity", "Bug"),
         ("Requirement", "Entity"),
         ("Constraint", "Entity"),
         ("Criterion", "Entity"),
@@ -110,6 +118,13 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("Bug", "Entity"),
         ("Alternative", "Entity"),
         ("Learning", "Entity"),
+    )),
+    ("originates_from", (
+        ("Bug", "Entity"),
+    )),
+    ("covered_by", (
+        ("Bug", "Entity"),
+        ("Bug", "TestScenario"),
     )),
 )
 
@@ -358,6 +373,45 @@ def _is_ladybug_corruption_error(exc: BaseException) -> bool:
     return any(marker in msg for marker in CORRUPT_DB_ERROR_MARKERS)
 
 
+def _ladybug_open_error_context(path: Path, exc: BaseException, settings: Any) -> str:
+    """Build an operator-facing error with the active Graph DB settings."""
+    msg = str(exc)
+    lower = msg.lower()
+    settings_context = (
+        "Graph DB settings in effect: "
+        f"kg_kuzu_buffer_pool_mb={settings.kg_kuzu_buffer_pool_mb}MB, "
+        f"kg_kuzu_max_db_size_gb={settings.kg_kuzu_max_db_size_gb}GB "
+        f"(path={path})."
+    )
+    guidance: list[str] = []
+    if "power of 2" in lower or "power-of-2" in lower:
+        guidance.append(
+            "Set Graph DB max database size per board to one of "
+            "2, 4, 8, 16, 32 or 64 GB; Ladybug requires max_db_size to be "
+            "a power of 2 in bytes."
+        )
+    if (
+        "buffer manager" in lower
+        or "buffer pool" in lower
+        or "unable to allocate memory" in lower
+    ):
+        guidance.append(
+            "Set Graph DB buffer pool per board to 512 MB and restart before "
+            "retrying the consolidation."
+        )
+    if "could not set lock" in lower or "lock contention" in lower:
+        guidance.append(
+            "Another Okto Pulse process may still hold this board graph; stop "
+            "the other process or wait for the lock to release."
+        )
+    if not guidance:
+        guidance.append(
+            "Check for lock contention, pending schema migration, or a corrupt "
+            "Ladybug graph file."
+        )
+    return f"{settings_context} {' '.join(guidance)}"
+
+
 def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[str]:
     """Delete a board's local LadybugDB graph file and sidecars.
 
@@ -490,9 +544,11 @@ def _open_kuzu_db(path: Path):
         "[KG] Failed to open LadybugDB database at %s: %s: %s",
         path, type(e).__name__, e,
     )
+    context = _ladybug_open_error_context(path, e, s)
     raise RuntimeError(
         f"Failed to open LadybugDB database at {path}: "
         f"{type(e).__name__}: {e}. "
+        f"{context} "
         "Possible causes: "
         "(1) lock contention from concurrent writer (wait and retry); "
         "(2) schema migration needed — run "
@@ -560,6 +616,57 @@ def _build_multi_rel_ddl(rel_name: str, pairs: tuple[tuple[str, str], ...]) -> s
     )
 
 
+def _show_rel_connection_pairs(conn, rel_name: str) -> set[tuple[str, str]]:
+    """Return the declared (from, to) pairs for a multi-typed REL table."""
+    res = None
+    try:
+        res = conn.execute(f"CALL SHOW_CONNECTION('{rel_name}') RETURN *")
+        pairs: set[tuple[str, str]] = set()
+        while res.has_next():
+            row = res.get_next()
+            if len(row) >= 2:
+                pairs.add((str(row[0]), str(row[1])))
+        return pairs
+    finally:
+        if res is not None:
+            try:
+                res.close()
+            except Exception:
+                pass
+
+
+def _ensure_multi_rel_pairs(
+    conn,
+    rel_name: str,
+    pairs: tuple[tuple[str, str], ...],
+) -> list[tuple[str, str]]:
+    """ALTER ADD any missing endpoint pair on an existing multi-typed REL table."""
+    added: list[tuple[str, str]] = []
+    for from_type, to_type in pairs:
+        try:
+            conn.execute(f"ALTER TABLE {rel_name} ADD FROM {from_type} TO {to_type}")
+            added.append((from_type, to_type))
+        except Exception:
+            # Pair already exists, rel table was just created with all pairs,
+            # or the current Kuzu build rejected a duplicate ADD. All are safe.
+            pass
+    return added
+
+
+def _ensure_vector_indexes(conn) -> None:
+    """Create every configured vector index, tolerating already-existing ones."""
+    for node_type in VECTOR_INDEX_TYPES:
+        idx = vector_index_name(node_type)
+        try:
+            conn.execute(
+                f"CALL CREATE_VECTOR_INDEX("
+                f"'{node_type}', '{idx}', 'embedding', "
+                f"metric := 'cosine')"
+            )
+        except Exception:
+            pass
+
+
 def _ensure_edge_metadata_columns(conn, rel_name: str) -> list[str]:
     """ALTER TABLE ADD for every v0.2.0 metadata column missing on `rel_name`.
 
@@ -625,7 +732,9 @@ def migrate_edge_metadata(board_id: str) -> dict[str, Any]:
     close_all_connections(board_id)
 
     with open_board_connection(board_id) as (_db, conn):
-        for rel_name, _from_type, _to_type in REL_TYPES:
+        rel_names = [rel_name for rel_name, _from_type, _to_type in REL_TYPES]
+        rel_names.extend(rel_name for rel_name, _pairs in MULTI_REL_TYPES)
+        for rel_name in rel_names:
             added = _ensure_edge_metadata_columns(conn, rel_name)
             _backfill_legacy_edge_metadata(conn, rel_name)
             summary[rel_name] = added
@@ -1079,10 +1188,12 @@ _MIGRATED_BOARDS: set[str] = set()
 
 
 def _board_needs_migration(board_id: str) -> bool:
-    """Returns True iff the per-board Kùzu DB lacks a rel table the current
-    schema expects. Cheap probe: open a short-lived connection and read the
-    rel-table catalog; cache positive results so subsequent opens skip the
-    check entirely."""
+    """Return True iff the board lacks any rel table or endpoint pair.
+
+    The original probe only compared table names. That missed additive
+    changes inside a multi-typed REL table, such as adding ``Entity -> Bug`` to
+    ``belongs_to`` for Architecture Design nodes attached to Bug cards.
+    """
     if board_id in _MIGRATED_BOARDS:
         return False
     try:
@@ -1096,6 +1207,15 @@ def _board_needs_migration(board_id: str) -> bool:
             existing = set()
             while res.has_next():
                 existing.add(res.get_next()[0])
+            res.close()
+            res = None
+            expected = {r[0] for r in REL_TYPES} | {m[0] for m in MULTI_REL_TYPES}
+            if not expected.issubset(existing):
+                return True
+            for rel_name, pairs in MULTI_REL_TYPES:
+                existing_pairs = _show_rel_connection_pairs(conn, rel_name)
+                if not set(pairs).issubset(existing_pairs):
+                    return True
         finally:
             if res is not None:
                 try:
@@ -1107,11 +1227,8 @@ def _board_needs_migration(board_id: str) -> bool:
             except Exception:
                 pass
             # Bug d0f6bab2: db is now process-cached; do NOT close here.
-        expected = {r[0] for r in REL_TYPES} | {m[0] for m in MULTI_REL_TYPES}
-        if expected.issubset(existing):
-            _MIGRATED_BOARDS.add(board_id)
-            return False
-        return True
+        _MIGRATED_BOARDS.add(board_id)
+        return False
     except Exception:
         # Probe failed — assume migration is needed; the apply itself is
         # idempotent so a false positive only costs one extra DDL pass.
@@ -1409,12 +1526,17 @@ def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
             for rel_name, pairs in MULTI_REL_TYPES:
                 try:
                     conn.execute(_build_multi_rel_ddl(rel_name, pairs))
+                    _ensure_multi_rel_pairs(conn, rel_name, pairs)
                     _ensure_edge_metadata_columns(conn, rel_name)
                     _backfill_legacy_edge_metadata(conn, rel_name)
                 except Exception as mrel_exc:
                     errors.append(
                         f"multi_rel_failed: {rel_name}: {mrel_exc}"
                     )
+            try:
+                _ensure_vector_indexes(conn)
+            except Exception as vector_exc:
+                errors.append(f"vector_indexes_failed: {vector_exc}")
         finally:
             try:
                 conn.close()
@@ -1503,8 +1625,10 @@ def apply_schema_to_connection(conn) -> None:
     # Multi-pair rel types (hierarchy backbone — `belongs_to`).
     for rel_name, pairs in MULTI_REL_TYPES:
         conn.execute(_build_multi_rel_ddl(rel_name, pairs))
+        _ensure_multi_rel_pairs(conn, rel_name, pairs)
         _ensure_edge_metadata_columns(conn, rel_name)
         _backfill_legacy_edge_metadata(conn, rel_name)
+    _ensure_vector_indexes(conn)
 
 
 def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
@@ -1533,17 +1657,7 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
         # named metric. We declare `cosine` explicitly so the `1 - distance`
         # conversion in search.py stays correct even if Kùzu's default metric
         # changes across versions.
-        for node_type in VECTOR_INDEX_TYPES:
-            idx = vector_index_name(node_type)
-            try:
-                conn.execute(
-                    f"CALL CREATE_VECTOR_INDEX("
-                    f"'{node_type}', '{idx}', 'embedding', "
-                    f"metric := 'cosine')"
-                )
-            except Exception:
-                # Index exists already — fine.
-                pass
+        _ensure_vector_indexes(conn)
 
         # Record schema version on the BoardMeta singleton. Use DELETE+CREATE
         # so a re-bootstrap updates the version if the schema has evolved.
@@ -1675,7 +1789,10 @@ def ensure_board_graph_bootstrapped(board_id: str) -> None:
                 extra={"event": "kg.schema.autobootstrap", "board_id": board_id},
             )
             bootstrap_board_graph(board_id)
-        elif _board_needs_post_v030_migration(board_id):
+        elif (
+            _board_needs_migration(board_id)
+            or _board_needs_post_v030_migration(board_id)
+        ):
             logger.info(
                 "kg.schema.auto_migrate_post_v030 board=%s path=%s",
                 board_id, board_kuzu_path(board_id),
