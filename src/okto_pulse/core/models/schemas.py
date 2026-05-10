@@ -12,6 +12,7 @@ from okto_pulse.core.models.db import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
+    StoryStatus,
     SprintStatus,
 )
 
@@ -237,6 +238,18 @@ class CommentResponse(BaseSchema):
 # ============================================================================
 
 
+class TestScenarioEvidence(BaseModel):
+    """Structured proof that a test scenario exists or was executed."""
+
+    model_config = ConfigDict(extra="allow")
+
+    test_file_path: str | None = None
+    test_function: str | None = None
+    last_run_at: str | None = None
+    test_run_id: str | None = None
+    output_snippet: str | None = None
+
+
 class TestScenario(BaseModel):
     """A test scenario linked to acceptance criteria and optionally to tasks."""
 
@@ -250,6 +263,8 @@ class TestScenario(BaseModel):
     notes: str | None = None
     status: str = "draft"  # draft | ready | automated | passed | failed
     linked_task_ids: list[str] | None = None  # card IDs that implement/automate this test
+    evidence: TestScenarioEvidence | None = None
+    latest_evidence: TestScenarioEvidence | None = None
 
 
 # ============================================================================
@@ -275,6 +290,177 @@ class ScreenMockup(BaseModel):
     html_content: str = ""
     annotations: list[MockupAnnotation] | None = None
     order: int = 0
+
+
+# ============================================================================
+# Stories Schemas
+# ============================================================================
+
+
+class TopicCreate(BaseModel):
+    """Schema for creating a board-scoped Story Topic."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = None
+
+
+class TopicUpdate(BaseModel):
+    """Schema for updating a Story Topic."""
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = None
+    archived: bool | None = None
+
+
+class TopicResponse(BaseSchema):
+    """Schema for Topic responses."""
+
+    id: str
+    board_id: str
+    name: str
+    description: str | None
+    archived: bool = False
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class TopicSummary(TopicResponse):
+    """Lightweight Topic summary. Kept separate for forward compatibility."""
+
+    story_count: int = 0
+    active_count: int = 0
+    archived_count: int = 0
+    total_associated_count: int = 0
+
+
+class TopicDeleteResponse(BaseModel):
+    """Response for safe Topic deletion."""
+
+    success: bool = True
+    deleted_topic_id: str
+
+
+class TopicMergeRequest(BaseModel):
+    """Request body for merging one Topic into another."""
+
+    target_topic_id: str = Field(..., min_length=1)
+
+
+class TopicMergeResponse(BaseModel):
+    """Response for a Topic merge operation."""
+
+    success: bool = True
+    source: TopicSummary
+    target: TopicSummary
+    moved_count: int
+    active_count: int
+    archived_count: int
+    target_total_before: int = 0
+    target_total_after: int = 0
+
+
+class StoryIdeationLinkResponse(BaseSchema):
+    """Schema for the simple Story-Ideation link."""
+
+    id: str
+    board_id: str
+    story_id: str
+    ideation_id: str
+    created_by: str
+    created_at: datetime
+
+
+class StoryCreate(BaseModel):
+    """Schema for creating a lightweight Story."""
+
+    title: str = Field(..., min_length=1, max_length=500)
+    description: str = Field(..., min_length=1)
+    topic_id: str
+    actor: str | None = None
+    goal: str | None = None
+    benefit: str | None = None
+    labels: list[str] | None = None
+    status: StoryStatus = StoryStatus.DRAFT
+    assignee_id: str | None = None
+    screen_mockups: list[ScreenMockup] | None = None
+
+
+class StoryUpdate(BaseModel):
+    """Schema for updating a Story."""
+
+    title: str | None = Field(None, min_length=1, max_length=500)
+    description: str | None = Field(None, min_length=1)
+    topic_id: str | None = None
+    actor: str | None = None
+    goal: str | None = None
+    benefit: str | None = None
+    labels: list[str] | None = None
+    assignee_id: str | None = None
+    screen_mockups: list[ScreenMockup] | None = None
+
+
+class StoryMove(BaseModel):
+    """Schema for changing Story status."""
+
+    status: StoryStatus
+
+
+class StoryLinkCreate(BaseModel):
+    """Schema for linking a Story to an Ideation."""
+
+    ideation_id: str
+
+
+class StoryConversionRequest(BaseModel):
+    """Schema for creating/linking Ideations from selected Stories."""
+
+    story_ids: list[str] = Field(..., min_length=1)
+    ideation_id: str | None = None
+    title: str | None = Field(None, max_length=500)
+    description: str | None = None
+    problem_statement: str | None = None
+    proposed_approach: str | None = None
+    mockup_ids: list[str] | None = None
+    mark_converted: bool = True
+
+
+class StorySummary(BaseSchema):
+    """Schema for Story list responses."""
+
+    id: str
+    board_id: str
+    topic_id: str
+    title: str
+    description: str
+    actor: str | None
+    goal: str | None
+    benefit: str | None
+    labels: list[str] | None
+    status: StoryStatus
+    assignee_id: str | None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    archived: bool = False
+    pre_archive_status: str | None = None
+    screen_mockups: list[ScreenMockup] | None = None
+    ideation_links: list[StoryIdeationLinkResponse] = []
+
+
+class StoryResponse(StorySummary):
+    """Full Story response."""
+
+    topic: TopicResponse | None = None
+
+
+class StoryConversionResponse(BaseModel):
+    """Response for Story conversion/linking."""
+
+    success: bool
+    ideation: dict[str, Any]
+    links: list[StoryIdeationLinkResponse]
+    propagated_mockups: int = 0
 
 
 # ============================================================================
@@ -730,6 +916,11 @@ class IdeationKnowledgeResponse(BaseSchema):
     description: str | None
     content: str
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -743,6 +934,11 @@ class IdeationKnowledgeSummary(BaseSchema):
     title: str
     description: str | None
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_at: datetime
 
 
@@ -977,6 +1173,11 @@ class RefinementKnowledgeResponse(BaseSchema):
     description: str | None
     content: str
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -990,6 +1191,11 @@ class RefinementKnowledgeSummary(BaseSchema):
     title: str
     description: str | None
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_at: datetime
 
 
@@ -1092,6 +1298,7 @@ class IdeationResponse(BaseSchema):
     archived: bool = False
     pre_archive_status: str | None = None
     refinements: list[RefinementSummary] = []
+    stories: list[StorySummary] = []
     specs: list[SpecSummary] = []
     knowledge_bases: list[IdeationKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
@@ -1239,6 +1446,11 @@ class SpecKnowledgeResponse(BaseSchema):
     description: str | None
     content: str
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -1252,6 +1464,11 @@ class SpecKnowledgeSummary(BaseSchema):
     title: str
     description: str | None
     mime_type: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_title: str | None = None
+    source_version: int | None = None
+    source_kb_id: str | None = None
     created_at: datetime
 
 
@@ -1577,9 +1794,12 @@ class GuidelineResponse(BaseSchema):
 
 
 class BoardGuidelineLinkRequest(BaseModel):
-    """Schema for linking a guideline to a board."""
+    """Schema for linking a global guideline or creating an inline board guideline."""
 
-    guideline_id: str
+    guideline_id: str | None = None
+    title: str | None = Field(None, min_length=1, max_length=500)
+    content: str | None = Field(None, min_length=1)
+    tags: list[str] | None = None
     priority: int = 0
 
 
@@ -1628,15 +1848,17 @@ class BoardSettings(BaseModel):
     skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
     skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
-    require_task_validation: bool = False  # if True, cards must pass validation before moving to done
+    require_task_validation: bool = True  # if True, cards must pass validation before moving to done
     min_confidence: int = 70  # min reviewer confidence score
     min_completeness: int = 80  # min reviewer completeness score
     max_drift: int = 50  # max reviewer drift score
     # Spec Validation Gate — board-level defaults
-    require_spec_validation: bool = False  # if True, approved→validated requires Spec Validation Gate submission
+    require_spec_validation: bool = True  # if True, approved→validated requires Spec Validation Gate submission
     min_spec_completeness: int = 80  # min spec completeness score
     min_spec_assertiveness: int = 80  # min spec assertiveness score
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
+    # Resource Gate - Level 2 spec resource-to-task coverage.
+    require_spec_resource_task_coverage: bool = True
     # Bug Card Gate — NC-6 fix.
     # require_test_task_for_bug: when False, bug cards can advance to in_progress
     #   without a freshly-created linked test task. Default True (gate ATIVO).

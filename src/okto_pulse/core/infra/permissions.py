@@ -117,6 +117,37 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "link": True,
         "unlink": True,
     },
+    # ---- Stories & Topics ----
+    "story": {
+        "entity": {
+            "read": True, "create": True, "edit_fields": True,
+            "assign": True, "label": True,
+            "archive": True, "restore": True, "delete": True,
+        },
+        "move": {
+            "draft_to_triage": True, "draft_to_ready": True,
+            "triage_to_draft": True, "triage_to_ready": True,
+            "ready_to_triage": True,
+        },
+        "interact_in": {
+            "draft": True, "triage": True, "ready": True,
+            "converted": True, "archived": True,
+        },
+        "links": {
+            "ideation": True,
+        },
+        "conversion": {
+            "to_ideation": True,
+        },
+        "history_read": True,
+    },
+    "topic": {
+        "entity": {
+            "read": True, "create": True, "edit_fields": True,
+            "archive": True, "restore": True,
+            "merge": True, "delete": True,
+        },
+    },
     # ---- Ideation ----
     "ideation": {
         "entity": {
@@ -465,6 +496,8 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
     "board:read": [
         "board.read", "board.activity_read", "board.analytics_read",
         "board.mentions_read", "board.mentions_mark_seen",
+        "story.entity.read", "story.history_read",
+        "topic.entity.read",
         "ideation.architecture.read", "refinement.architecture.read",
         "spec.architecture.read", "card.architecture.read",
     ],
@@ -491,8 +524,16 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "card.move.validation_to_done", "card.move.validation_to_not_started",
         "card.move.validation_to_on_hold", "card.move.validation_to_cancelled",
     ],
-    "specs:create": ["spec.entity.create", "sprint.entity.create"],
+    "specs:create": [
+        "story.entity.create", "topic.entity.create",
+        "spec.entity.create", "sprint.entity.create",
+    ],
     "specs:update": [
+        "story.entity.edit_fields", "story.entity.assign", "story.entity.label",
+        "story.entity.archive", "story.entity.restore",
+        "story.links.ideation", "story.conversion.to_ideation",
+        "topic.entity.edit_fields", "topic.entity.archive", "topic.entity.restore",
+        "topic.entity.merge",
         "spec.entity.edit_fields", "spec.entity.edit_coverage_flags",
         "spec.entity.assign", "spec.entity.label", "spec.entity.link_card",
         "spec.tests.create", "spec.tests.update_status",
@@ -508,8 +549,14 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.knowledge.create", "spec.knowledge.delete",
         "spec.cards_derive",
     ],
-    "specs:delete": ["spec.entity.delete"],
+    "specs:delete": [
+        "story.entity.delete", "topic.entity.delete",
+        "spec.entity.delete",
+    ],
     "specs:move": [
+        "story.move.draft_to_triage", "story.move.draft_to_ready",
+        "story.move.triage_to_draft", "story.move.triage_to_ready",
+        "story.move.ready_to_triage",
         "spec.move.draft_to_review", "spec.move.review_to_approved",
         "spec.move.approved_to_validated", "spec.move.validated_to_in_progress",
         "spec.move.in_progress_to_done", "spec.move.any_to_cancelled",
@@ -561,7 +608,7 @@ def map_legacy_permissions(old_permissions: list[str]) -> dict[str, Any]:
     flags = _set_all_flags(copy.deepcopy(PERMISSION_REGISTRY), False)
 
     # Enable all interact_in (backward compat — existing agents could interact in all states)
-    for entity in ("ideation", "refinement", "spec", "sprint", "card"):
+    for entity in ("story", "ideation", "refinement", "spec", "sprint", "card"):
         interact_in = flags.get(entity, {}).get("interact_in", {})
         if isinstance(interact_in, dict):
             for status in interact_in:
@@ -645,6 +692,21 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "board.mentions_read", "board.mentions_mark_seen",
         "guidelines.read",
         "profile.update",
+        # Stories/Topics — pre-ideation intake and grouping owned by Spec.
+        "story.entity.read", "story.entity.create", "story.entity.edit_fields",
+        "story.entity.assign", "story.entity.label",
+        "story.entity.archive", "story.entity.restore", "story.entity.delete",
+            "story.move.draft_to_triage", "story.move.draft_to_ready",
+            "story.move.triage_to_draft", "story.move.triage_to_ready",
+            "story.move.ready_to_triage",
+            "story.interact_in.draft", "story.interact_in.triage",
+        "story.interact_in.ready", "story.interact_in.converted",
+        "story.interact_in.archived",
+        "story.links.ideation", "story.conversion.to_ideation",
+        "story.history_read",
+        "topic.entity.read", "topic.entity.create", "topic.entity.edit_fields",
+        "topic.entity.archive", "topic.entity.restore",
+        "topic.entity.merge", "topic.entity.delete",
         # Ideation — full ownership (create → done), evaluate, derive spec
         "ideation.entity.read", "ideation.entity.create", "ideation.entity.edit_fields",
         "ideation.entity.assign", "ideation.entity.label", "ideation.entity.evaluate",
@@ -760,6 +822,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "board.mentions_read", "board.mentions_mark_seen",
         "guidelines.read",
         "profile.update",
+        "story.entity.read", "story.history_read",
+        "topic.entity.read",
         "ideation.architecture.read",
         "refinement.architecture.read",
         # Spec — read-only, interact while in_progress lifecycle states
@@ -831,6 +895,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "guidelines.read",
         "profile.update",
         # Ideation — read + Q&A to raise test-related questions
+        "story.entity.read", "story.history_read",
+        "topic.entity.read",
         "ideation.entity.read",
         "ideation.qa.read", "ideation.qa.ask", "ideation.qa.ask_choice", "ideation.qa.answer",
         "ideation.mockups.read",
@@ -912,6 +978,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "guidelines.read",
         "profile.update",
         # Ideation — read + Q&A (observer, cannot edit or promote)
+        "story.entity.read", "story.history_read",
+        "topic.entity.read",
         "ideation.entity.read",
         "ideation.qa.read", "ideation.qa.ask", "ideation.qa.answer",
         "ideation.mockups.read",
@@ -1005,6 +1073,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "guidelines.read",
         "profile.update",
         # Ideation — read + Q&A ask
+        "story.entity.read", "story.history_read",
+        "topic.entity.read",
         "ideation.entity.read",
         "ideation.qa.read", "ideation.qa.ask",
         "ideation.mockups.read",
@@ -1074,6 +1144,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "guidelines.read",
         "profile.update",
         # Ideation / Refinement — read + Q&A for planning context
+        "story.entity.read", "story.history_read",
+        "topic.entity.read",
         "ideation.entity.read", "ideation.qa.read", "ideation.qa.ask",
         "ideation.architecture.read",
         "ideation.history_read",
@@ -1135,6 +1207,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
 
 # Flag → short label used to build the "Owns" section.
 _OWNS_LABELS: list[tuple[str, str]] = [
+    ("story.entity.create", "create stories"),
+    ("topic.entity.create", "create topics"),
     ("spec.validation.submit", "submit spec validations"),
     ("spec.evaluations.submit", "submit spec evaluations"),
     ("card.validation.submit", "submit task validations"),

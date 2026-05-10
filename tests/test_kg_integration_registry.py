@@ -257,5 +257,5 @@ class TestBackwardCompat:
 
         assert len(NODE_TYPES) == 11
         assert len(REL_TYPES) == 10
-        assert SCHEMA_VERSION == "0.3.3"
+        assert SCHEMA_VERSION == "0.3.5"
         assert get_embedding_provider() is not None

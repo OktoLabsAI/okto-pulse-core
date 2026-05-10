@@ -15,6 +15,8 @@ from okto_pulse.core.models.db import (
     Refinement,
     Spec,
     Sprint,
+    Story,
+    StoryIdeationLink,
 )
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.reference_resolution import resolve_task_context_references
@@ -42,7 +44,17 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = False) -> dict
             "description": kb.get("description"),
             "mime_type": kb.get("mime_type") or kb.get("content_type") or "text/markdown",
         }
-        for attr in ("ideation_id", "refinement_id", "spec_id", "source", "source_type"):
+        for attr in (
+            "ideation_id",
+            "refinement_id",
+            "spec_id",
+            "source",
+            "source_type",
+            "source_id",
+            "source_title",
+            "source_version",
+            "source_kb_id",
+        ):
             if kb.get(attr):
                 data[attr] = kb[attr]
         if include_content:
@@ -58,7 +70,16 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = False) -> dict
         "description": getattr(kb, "description", None),
         "mime_type": getattr(kb, "mime_type", "text/markdown"),
     }
-    for attr in ("ideation_id", "refinement_id", "spec_id"):
+    for attr in (
+        "ideation_id",
+        "refinement_id",
+        "spec_id",
+        "source_type",
+        "source_id",
+        "source_title",
+        "source_version",
+        "source_kb_id",
+    ):
         value = getattr(kb, attr, None)
         if value:
             data[attr] = value
@@ -165,6 +186,16 @@ def _sprint_summary(sprint: Sprint) -> dict[str, Any]:
         "id": sprint.id,
         "title": sprint.title,
         "status": _enum_value(sprint.status),
+    }
+
+
+def _story_summary(story: Story) -> dict[str, Any]:
+    return {
+        "id": story.id,
+        "title": story.title,
+        "status": _enum_value(story.status),
+        "topic_id": story.topic_id,
+        "mockups_count": len(story.screen_mockups or []),
     }
 
 
@@ -304,6 +335,26 @@ async def build_traceability_report(
     for refinement in refinements:
         refinements_by_ideation.setdefault(refinement.ideation_id, []).append(refinement)
 
+    story_links_by_ideation: dict[str, list[Story]] = {}
+    ideation_ids_for_stories = {ideation.id for ideation in ideations}
+    if ideation_ids_for_stories:
+        story_link_query = (
+            select(StoryIdeationLink)
+            .options(selectinload(StoryIdeationLink.story))
+            .where(StoryIdeationLink.board_id == board_id)
+            .where(StoryIdeationLink.ideation_id.in_(ideation_ids_for_stories))
+        )
+        story_links = list((await db.execute(story_link_query)).scalars().all())
+        seen_story_links: set[tuple[str, str]] = set()
+        for link in story_links:
+            if not link.story or getattr(link.story, "archived", False):
+                continue
+            key = (link.ideation_id, link.story_id)
+            if key in seen_story_links:
+                continue
+            seen_story_links.add(key)
+            story_links_by_ideation.setdefault(link.ideation_id, []).append(link.story)
+
     report_ideations = []
     attached_spec_ids: set[str] = set()
     for ideation in ideations:
@@ -336,6 +387,10 @@ async def build_traceability_report(
             "id": ideation.id,
             "title": ideation.title,
             "status": _enum_value(ideation.status),
+            "stories": [
+                _story_summary(story)
+                for story in story_links_by_ideation.get(ideation.id, [])
+            ],
             "refinements": refinement_payloads,
             "direct_specs": [
                 _spec_summary(spec, include_artifacts=include_artifacts)
@@ -361,6 +416,7 @@ async def build_traceability_report(
             "spec_id": spec_id or None,
         },
         "summary": {
+            "stories": sum(len(item.get("stories") or []) for item in report_ideations),
             "ideations": len(report_ideations),
             "refinements": len(refinements),
             "specs": len(specs),
@@ -379,31 +435,76 @@ async def resolve_root_ideation_id(
     entity_type: str,
     entity_id: str,
 ) -> tuple[str, list[dict[str, str]]]:
+    root_type, root_id, path = await resolve_lineage_root(
+        db,
+        board_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+    if root_type != "ideation":
+        raise TraceabilityReadError(
+            "unresolved_root_ideation",
+            f"Selected {entity_type.lower()} does not resolve to a root ideation.",
+            status_code=409,
+        )
+    return root_id, path
+
+
+async def resolve_lineage_root(
+    db: AsyncSession,
+    board_id: str,
+    *,
+    entity_type: str,
+    entity_id: str,
+) -> tuple[str, str, list[dict[str, str]]]:
     entity_type = entity_type.lower()
     path: list[dict[str, str]] = []
 
-    async def _resolve_spec(spec: Spec | None) -> str:
+    async def _resolve_spec(spec: Spec | None) -> tuple[str, str]:
         if not spec or spec.board_id != board_id:
             raise TraceabilityReadError("entity_not_found", "Selected spec was not found", status_code=404)
         path.append({"type": "spec", "id": spec.id})
         if spec.ideation_id:
-            return spec.ideation_id
+            return "ideation", spec.ideation_id
         if spec.refinement_id:
             refinement = await db.get(Refinement, spec.refinement_id)
             if refinement and refinement.board_id == board_id and refinement.ideation_id:
                 path.append({"type": "refinement", "id": refinement.id})
-                return refinement.ideation_id
-        raise TraceabilityReadError(
-            "unresolved_root_ideation",
-            "Selected spec does not resolve to a root ideation.",
-            status_code=409,
-        )
+                return "ideation", refinement.ideation_id
+        return "spec", spec.id
 
     if entity_type == "ideation":
         ideation = await db.get(Ideation, entity_id)
         if not ideation or ideation.board_id != board_id:
             raise TraceabilityReadError("entity_not_found", "Selected ideation was not found", status_code=404)
-        return ideation.id, [{"type": "ideation", "id": ideation.id}]
+        return "ideation", ideation.id, [{"type": "ideation", "id": ideation.id}]
+
+    if entity_type == "story":
+        story = await db.get(Story, entity_id)
+        if not story or story.board_id != board_id:
+            raise TraceabilityReadError("entity_not_found", "Selected story was not found", status_code=404)
+        links = list((await db.execute(
+            select(StoryIdeationLink).where(
+                StoryIdeationLink.board_id == board_id,
+                StoryIdeationLink.story_id == entity_id,
+            )
+        )).scalars().all())
+        if not links:
+            raise TraceabilityReadError(
+                "unresolved_root_ideation",
+                "Selected story is not linked to an ideation yet.",
+                status_code=409,
+            )
+        if len(links) > 1:
+            raise TraceabilityReadError(
+                "ambiguous_root_ideation",
+                "Selected story has legacy duplicate ideation links. Restart the app to run database healing, then open lineage again.",
+                status_code=409,
+            )
+        return "ideation", links[0].ideation_id, [
+            {"type": "story", "id": story.id},
+            {"type": "ideation", "id": links[0].ideation_id},
+        ]
 
     if entity_type == "refinement":
         refinement = await db.get(Refinement, entity_id)
@@ -415,33 +516,36 @@ async def resolve_root_ideation_id(
                 "Selected refinement does not resolve to a root ideation.",
                 status_code=409,
             )
-        return refinement.ideation_id, [
+        return "ideation", refinement.ideation_id, [
             {"type": "refinement", "id": refinement.id},
             {"type": "ideation", "id": refinement.ideation_id},
         ]
 
     if entity_type == "spec":
-        root = await _resolve_spec(await db.get(Spec, entity_id))
-        path.append({"type": "ideation", "id": root})
-        return root, path
+        root_type, root_id = await _resolve_spec(await db.get(Spec, entity_id))
+        if root_type == "ideation":
+            path.append({"type": "ideation", "id": root_id})
+        return root_type, root_id, path
 
     if entity_type == "sprint":
         sprint = await db.get(Sprint, entity_id)
         if not sprint or sprint.board_id != board_id:
             raise TraceabilityReadError("entity_not_found", "Selected sprint was not found", status_code=404)
         path.append({"type": "sprint", "id": sprint.id})
-        root = await _resolve_spec(await db.get(Spec, sprint.spec_id))
-        path.append({"type": "ideation", "id": root})
-        return root, path
+        root_type, root_id = await _resolve_spec(await db.get(Spec, sprint.spec_id))
+        if root_type == "ideation":
+            path.append({"type": "ideation", "id": root_id})
+        return root_type, root_id, path
 
     if entity_type in {"task", "test", "bug", "card"}:
         card = await db.get(Card, entity_id)
         if not card or card.board_id != board_id:
             raise TraceabilityReadError("entity_not_found", "Selected card was not found", status_code=404)
         path.append({"type": _enum_value(card.card_type) or "card", "id": card.id})
-        root = await _resolve_spec(await db.get(Spec, card.spec_id))
-        path.append({"type": "ideation", "id": root})
-        return root, path
+        root_type, root_id = await _resolve_spec(await db.get(Spec, card.spec_id))
+        if root_type == "ideation":
+            path.append({"type": "ideation", "id": root_id})
+        return root_type, root_id, path
 
     raise TraceabilityReadError(
         "unsupported_entity_type",
@@ -464,24 +568,12 @@ async def build_lineage_graph(
     graph is intentionally limited to SDLC workflow entities:
     ideation -> refinement -> spec -> sprint -> tasks/tests -> bugs.
     """
-    root_id, resolution_path = await resolve_root_ideation_id(
+    root_type, root_id, resolution_path = await resolve_lineage_root(
         db,
         board_id,
         entity_type=entity_type,
         entity_id=entity_id,
     )
-    report = await build_traceability_report(
-        db,
-        board_id,
-        ideation_id=root_id,
-        include_artifacts=False,
-    )
-    if len(report["ideations"]) != 1:
-        raise TraceabilityReadError(
-            "ambiguous_root_ideation",
-            "Lineage graph must resolve to exactly one root ideation.",
-            status_code=409,
-        )
 
     nodes: dict[str, dict[str, Any]] = {}
     edges: dict[str, dict[str, Any]] = {}
@@ -500,19 +592,11 @@ async def build_lineage_graph(
             "relationship": relationship,
         }
 
-    ideation = report["ideations"][0]
-    ideation_node_id = f"ideation:{ideation['id']}"
-    add_node({
-        "id": ideation_node_id,
-        "entity_type": "ideation",
-        "entity_id": ideation["id"],
-        "title": ideation["title"],
-        "label": ideation["title"],
-        "status": ideation.get("status"),
-        "stage": 0,
-    })
-
-    def add_spec(spec: dict[str, Any], parent_node_id: str, relationship: str) -> None:
+    def add_spec(
+        spec: dict[str, Any],
+        parent_node_id: str | None = None,
+        relationship: str | None = None,
+    ) -> None:
         spec_node_id = f"spec:{spec['id']}"
         add_node({
             "id": spec_node_id,
@@ -524,7 +608,8 @@ async def build_lineage_graph(
             "stage": 2,
             "summary": spec.get("card_counts") or {},
         })
-        add_edge(parent_node_id, spec_node_id, relationship)
+        if parent_node_id and relationship:
+            add_edge(parent_node_id, spec_node_id, relationship)
 
         for sprint in spec.get("sprints") or []:
             sprint_node_id = f"sprint:{sprint['id']}"
@@ -586,32 +671,134 @@ async def build_lineage_graph(
             else:
                 add_edge(spec_node_id, bug_node_id, "has_card")
 
-    for direct_spec in ideation.get("direct_specs") or []:
-        add_spec(direct_spec, ideation_node_id, "direct_spec")
+            for test_task_id in (bug.get("bug") or {}).get("linked_test_task_ids") or []:
+                add_edge(
+                    card_node_ids_by_card_id.get(test_task_id, f"test:{test_task_id}"),
+                    bug_node_id,
+                    "regression_test",
+                )
 
-    for refinement in ideation.get("refinements") or []:
-        refinement_node_id = f"refinement:{refinement['id']}"
+    warnings: list[str] = []
+
+    if root_type == "ideation":
+        report = await build_traceability_report(
+            db,
+            board_id,
+            ideation_id=root_id,
+            include_artifacts=False,
+        )
+        if len(report["ideations"]) != 1:
+            raise TraceabilityReadError(
+                "ambiguous_root_ideation",
+                "Lineage graph must resolve to exactly one root ideation.",
+                status_code=409,
+            )
+
+        ideation = report["ideations"][0]
+        ideation_node_id = f"ideation:{ideation['id']}"
+        for story in ideation.get("stories") or []:
+            story_node_id = f"story:{story['id']}"
+            add_node({
+                "id": story_node_id,
+                "entity_type": "story",
+                "entity_id": story["id"],
+                "title": story["title"],
+                "label": story["title"],
+                "status": story.get("status"),
+                "stage": -1,
+                "summary": {"topic_id": story.get("topic_id"), "mockups_count": story.get("mockups_count", 0)},
+            })
         add_node({
-            "id": refinement_node_id,
-            "entity_type": "refinement",
-            "entity_id": refinement["id"],
-            "title": refinement["title"],
-            "label": refinement["title"],
-            "status": refinement.get("status"),
-            "stage": 1,
+            "id": ideation_node_id,
+            "entity_type": "ideation",
+            "entity_id": ideation["id"],
+            "title": ideation["title"],
+            "label": ideation["title"],
+            "status": ideation.get("status"),
+            "stage": 0,
         })
-        add_edge(ideation_node_id, refinement_node_id, "has_refinement")
-        for spec in refinement.get("specs") or []:
-            add_spec(spec, refinement_node_id, "derived_spec")
+        for story in ideation.get("stories") or []:
+            add_edge(f"story:{story['id']}", ideation_node_id, "feeds_ideation")
+
+        for direct_spec in ideation.get("direct_specs") or []:
+            add_spec(direct_spec, ideation_node_id, "direct_spec")
+
+        for refinement in ideation.get("refinements") or []:
+            refinement_node_id = f"refinement:{refinement['id']}"
+            add_node({
+                "id": refinement_node_id,
+                "entity_type": "refinement",
+                "entity_id": refinement["id"],
+                "title": refinement["title"],
+                "label": refinement["title"],
+                "status": refinement.get("status"),
+                "stage": 1,
+            })
+            add_edge(ideation_node_id, refinement_node_id, "has_refinement")
+            for spec in refinement.get("specs") or []:
+                add_spec(spec, refinement_node_id, "derived_spec")
+
+        root_entity = {
+            "type": "ideation",
+            "id": ideation["id"],
+            "title": ideation["title"],
+            "status": ideation.get("status"),
+        }
+        root_ideation = {
+            "id": ideation["id"],
+            "title": ideation["title"],
+            "status": ideation.get("status"),
+        }
+
+    elif root_type == "spec":
+        report = await build_traceability_report(
+            db,
+            board_id,
+            spec_id=root_id,
+            include_artifacts=False,
+        )
+        root_specs = [
+            spec for spec in report["orphan_specs"]
+            if spec.get("id") == root_id
+        ]
+        if len(root_specs) != 1:
+            raise TraceabilityReadError(
+                "unresolved_root_spec",
+                "Lineage graph must resolve to exactly one standalone root spec.",
+                status_code=409,
+            )
+        root_spec = root_specs[0]
+        add_spec(root_spec)
+        root_entity = {
+            "type": "spec",
+            "id": root_spec["id"],
+            "title": root_spec["title"],
+            "status": root_spec.get("status"),
+        }
+        # Backward-compatible field name for the current frontend header.
+        root_ideation = {
+            "id": root_spec["id"],
+            "title": root_spec["title"],
+            "status": root_spec.get("status"),
+            "entity_type": "spec",
+        }
+        warnings.append(
+            "Selected entity is rooted at a standalone spec because no ideation "
+            "lineage exists."
+        )
+
+    else:
+        raise TraceabilityReadError(
+            "unsupported_lineage_root",
+            f"Unsupported lineage root type: {root_type}",
+            status_code=409,
+        )
 
     return {
         "board_id": board_id,
         "selected": {"entity_type": entity_type, "entity_id": entity_id},
-        "root_ideation": {
-            "id": ideation["id"],
-            "title": ideation["title"],
-            "status": ideation.get("status"),
-        },
+        "root_entity": root_entity,
+        "root_ideation": root_ideation,
         "resolution_path": resolution_path,
         "nodes": list(nodes.values()),
         "edges": list(edges.values()),
@@ -621,5 +808,5 @@ async def build_lineage_graph(
             "edges": len(edges),
             "artifacts": 0,
         },
-        "warnings": [],
+        "warnings": warnings,
     }

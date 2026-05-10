@@ -147,7 +147,7 @@ class TestSchemaInfo:
 
     def test_vector_indexes_count(self):
         info = get_schema_info("board-x")
-        assert len(info["vector_indexes"]) == 5
+        assert len(info["vector_indexes"]) == 9
 
     def test_internal_hidden_by_default(self):
         info = get_schema_info("board-x")
@@ -168,6 +168,31 @@ class TestNLQuery:
         result = execute_natural_query("board-nl-test", "test query")
         assert "nodes" in result
         assert "total_matches" in result
+
+    def test_query_exact_fallback_finds_bug_without_vector_index_hit(self):
+        import tempfile
+        os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_tp_"))
+        from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+
+        board_id = "board-nl-bug-test"
+        bootstrap_board_graph(board_id)
+        with open_board_connection(board_id) as (_db, conn):
+            conn.execute(
+                "CREATE (n:Bug {id: 'bug_exact_1', title: 'Exact bug title', "
+                "content: 'Observed failure', source_artifact_ref: 'bug:exact-1', "
+                "source_confidence: 1.0, relevance_score: 0.5})"
+            )
+
+        result = execute_natural_query(
+            board_id,
+            "Exact bug title",
+            min_confidence=0.0,
+        )
+
+        assert any(
+            node["node_id"] == "bug_exact_1" and node["node_type"] == "Bug"
+            for node in result["nodes"]
+        )
 
 
 class TestMCPRegistration:

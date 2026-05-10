@@ -2,23 +2,39 @@
 
 Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — shared models, services, API routes, and MCP server.
 
+> **Ship with AI. Stay in control.**
+
 > **You probably want to install [`okto-pulse`](https://pypi.org/project/okto-pulse/) instead.**
 > This package is the internal engine. The `okto-pulse` package provides the CLI, frontend, and everything you need to get started.
 
 ## What's inside
 
-- **26 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, etc. (Skills entity dropped in 0.1.14.)
-- **17 service classes** — Full business logic with governance rules (Skills service dropped in 0.1.14.)
+- **26 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, etc. (Skills entity dropped in 0.2.0.)
+- **17 service classes** — Full business logic with governance rules (Skills service dropped in 0.2.0.)
 - **11 API route modules** — FastAPI REST endpoints
-- **150+ MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
+- **15 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, evidence, bug traceability and sprint health controls.
+- **216 MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
-  - 22 Knowledge Graph tools (consolidation, query primario/power, health, dead-letter, schema-migrate, decay tick controllability)
+  - 21 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability)
+  - Community runtime exposure: 216 core MCP tools, 0 community-only MCP tools
 - **App factory** — `create_app()` with dependency injection for auth and storage providers
 - **Embedded Knowledge Graph** — per-board Kùzu instance + global discovery meta-graph, deterministic + cognitive workers, 11 node types and 10 relationship types
+
+## Governance Gate Surface
+
+Okto Pulse currently documents and enforces **15 named governance gates**:
+
+| Gate family | Gates |
+| --- | --- |
+| Resource readiness | Resource readiness; resource-to-task coverage |
+| Spec coverage | Scenario/test coverage; functional requirement/business rule coverage; technical requirement/task coverage; API contract/task coverage; active decision/task coverage |
+| Validation and evaluation | Spec validation; spec qualitative evaluation; task validation |
+| Execution quality | Task start/spec readiness; task conclusion; test evidence; bug test-first/traceability |
+| Sprint health | Sprint closure/evaluation |
 
 ## Architecture
 
@@ -65,7 +81,22 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-### 0.1.14 — current
+### 0.2.0 — current
+
+#### Branch changelog (`feature/0.2.0`)
+
+This branch turns 0.2.0 into the governed SDLC + Knowledge Graph release.
+
+- Added Stories and Topics as pre-ideation intake primitives, including REST/MCP services, permissions, lifecycle rules, story-to-ideation traceability and the rule that a Story can reference only one Ideation while an Ideation can reference many Stories.
+- Added Resource Gate readiness across Architecture, Mockups and Knowledge Base, with reversible N/A justification, entity-level readiness summaries and MCP guardrails that keep deterministic resource checks out of ad-hoc agent judgement.
+- Hardened agent instructions for ambiguity handling: agents are directed to ask more clarification questions, prefer multiple-choice questions with recommendations when possible, and preserve an additional comment path for user nuance.
+- Added Ideation Knowledge Base support and propagation, plus lineage/reporting improvements so specs, sprints, tasks, tests and bugs remain traceable even when a flow intentionally starts at Spec without a root Ideation.
+- Expanded deterministic KG ingestion for specs, cards, bugs, tests, outcomes, requirements, criteria, constraints, API contracts and decisions, including resolved Bug `originates_from` and `covered_by` edges and schema migration coverage for those relationship tables.
+- Strengthened KG schema lifecycle and graph runtime resilience: per-board schema bootstrap/migration, edge metadata migration, entity dedup support, Kuzu memory/runtime settings, vector-extension loading on hot-path graph connections and richer health/dead-letter diagnostics.
+- Improved KG query/display contracts: `/kg/boards/{board_id}/graph` now accepts a node `type` filter, `/nodes` total hints remain filter-aware, graph stats expose node/edge histograms and tests cover pagination, type filtering and schema edge counts.
+- Fixed guideline creation/parsing paths that could reject inline guideline additions with 422 responses.
+- Preserved test scenario evidence in REST response schemas, including `latest_evidence` fallback data, so UI audit surfaces can expose recorded execution proof for Test cards.
+- Added and expanded focused tests for Stories, Topic permissions, Resource Gate, Ideation KB, guidelines, deterministic KG workers, graph pagination, schema migration, traceability reports, presets and MCP registration contracts.
 
 #### Fix C: single-process, dual-port serve (Kùzu lock contention)
 
@@ -129,7 +160,7 @@ First hardening pass on the card lifecycle, the analytics contract, and the MCP 
 
 ### 0.1.1 — initial PyPI release
 
-26+1 SQLAlchemy models, 17+1 service classes, 11 API route modules, 119 MCP tools, embedded Kùzu Knowledge Graph with deterministic workers. (Spec Skills shipped here and was removed in 0.1.14.)
+26+1 SQLAlchemy models, 17+1 service classes, 11 API route modules, 119 MCP tools, embedded Kùzu Knowledge Graph with deterministic workers. (Spec Skills shipped here and was removed in 0.2.0.)
 
 (Version 0.1.2 was published to TestPyPI only as a release candidate for 0.1.3.)
 

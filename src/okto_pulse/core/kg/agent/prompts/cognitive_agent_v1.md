@@ -21,7 +21,7 @@ Attempting any other edge_type returns **HTTP 403 `layer_violation`** and
 wastes the turn. The forbidden set is:
 
 ```
-tests, implements, violates, derives_from, mentions
+tests, implements, violates, originates_from, covered_by, derives_from, mentions, belongs_to
 ```
 
 Those are Layer 1's exclusive responsibility. If you see a missing one,

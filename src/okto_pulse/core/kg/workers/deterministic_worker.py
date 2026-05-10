@@ -1,6 +1,7 @@
 """Layer 1 Deterministic Worker — KG Pipeline v2 (spec c48a5c33).
 
-Reads structured fields from the pulse.db artifact (Spec/Sprint/Card) and
+Reads structured fields from the pulse.db artifact
+(Story/Ideation/Refinement/Spec/Sprint/Card) and
 emits node + edge candidates with provenance metadata `{layer, rule_id,
 confidence, created_by}`. NO LLM calls. Any relationship that would require
 semantic judgement is emitted as a `missing_link_candidate` for the
@@ -83,7 +84,7 @@ class EmittedEdge:
 
 @dataclass
 class MissingLinkCandidate:
-    """An edge the worker REFUSED to emit because a linked_* field was empty.
+    """An edge the worker REFUSED to emit because deterministic data is partial.
 
     The cognitive agent consumes these to propose a fallback edge with
     capped confidence (BR `Cognitive Fallback Confidence Cap`, ≤0.85).
@@ -286,6 +287,35 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _ref_token(value: Any) -> str:
+    token = str(value).strip()
+    if not token:
+        return ""
+    token = re.sub(r"\s+", "_", token)
+    return token.replace(":", "_")
+
+
+def _source_item_key(item: Any, index: int) -> str:
+    if isinstance(item, dict):
+        for field_name in (
+            "id",
+            "decision_id",
+            "scenario_id",
+            "contract_id",
+            "rule_id",
+        ):
+            value = item.get(field_name)
+            if value not in (None, ""):
+                token = _ref_token(value)
+                if token:
+                    return token
+    return str(index)
+
+
+def _spec_child_ref(spec_id: str, section: str, item: Any, index: int) -> str:
+    return f"spec:{spec_id}:{section}:{_source_item_key(item, index)}"
+
+
 def _arch_value(value: Any) -> str:
     if value in (None, "", [], {}):
         return ""
@@ -482,6 +512,27 @@ class DeterministicWorker:
             source_confidence=1.0,
         ))
 
+        parent_refinement_id = spec.get("refinement_id")
+        if parent_refinement_id:
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_to_refinement",
+                edge_type="belongs_to",
+                from_candidate_id=spec_entity_id,
+                to_candidate_id=f"refinement_{str(parent_refinement_id)[:8]}_entity",
+                confidence=1.0,
+                rule_id=f"belongs_to/spec_to_refinement@{WORKER_VERSION}",
+            ))
+        elif spec.get("ideation_id"):
+            parent_ideation_id = str(spec["ideation_id"])
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_to_ideation",
+                edge_type="belongs_to",
+                from_candidate_id=spec_entity_id,
+                to_candidate_id=f"ideation_{parent_ideation_id[:8]}_entity",
+                confidence=1.0,
+                rule_id=f"belongs_to/spec_to_ideation@{WORKER_VERSION}",
+            ))
+
         # Helper to attach `belongs_to` edges from each child node to the
         # spec entity, building the hierarchy backbone the UI relies on.
         def _add_belongs_to(child_cid: str, slot: str, idx: int) -> None:
@@ -508,7 +559,7 @@ class DeterministicWorker:
                 node_type="Requirement",
                 title=text[:120],
                 content=text,
-                source_artifact_ref=artifact_ref,
+                source_artifact_ref=_spec_child_ref(spec_id, "fr", req, i),
                 source_confidence=1.0,
             ))
             _add_belongs_to(cid, "fr", i)
@@ -528,7 +579,7 @@ class DeterministicWorker:
                 node_type="Constraint",
                 title=text[:120],
                 content=text,
-                source_artifact_ref=artifact_ref,
+                source_artifact_ref=_spec_child_ref(spec_id, "tr", req, i),
                 source_confidence=1.0,
             ))
             _add_belongs_to(cid, "tr", i)
@@ -550,7 +601,7 @@ class DeterministicWorker:
                 node_type="Criterion",
                 title=text[:120],
                 content=text,
-                source_artifact_ref=artifact_ref,
+                source_artifact_ref=_spec_child_ref(spec_id, "ac", crit, i),
                 source_confidence=1.0,
             ))
             _add_belongs_to(cid, "ac", i)
@@ -574,7 +625,7 @@ class DeterministicWorker:
                 node_type="Constraint",
                 title=title,
                 content=text,
-                source_artifact_ref=artifact_ref,
+                source_artifact_ref=_spec_child_ref(spec_id, "business_rule", rule, i),
                 source_confidence=1.0,
             ))
             _add_belongs_to(cid, "br", i)
@@ -599,7 +650,7 @@ class DeterministicWorker:
                 node_type="TestScenario",
                 title=title,
                 content=content,
-                source_artifact_ref=artifact_ref,
+                source_artifact_ref=_spec_child_ref(spec_id, "test_scenario", ts, i),
                 source_confidence=1.0,
             ))
             _add_belongs_to(ts_cid, "ts", i)
@@ -663,7 +714,7 @@ class DeterministicWorker:
                 node_type="APIContract",
                 title=title,
                 content=content,
-                source_artifact_ref=artifact_ref,
+                source_artifact_ref=_spec_child_ref(spec_id, "api_contract", api, i),
                 source_confidence=1.0,
             ))
             _add_belongs_to(api_cid, "api", i)
@@ -737,7 +788,7 @@ class DeterministicWorker:
                 title=dec_title[:120],
                 content=dec_text,
                 context=dec.get("context") or "",
-                source_artifact_ref=artifact_ref,
+                source_artifact_ref=_spec_child_ref(spec_id, "decision", dec, i),
                 source_confidence=1.0,
             ))
             _add_belongs_to(dec_cid, "fdec", i)
@@ -801,7 +852,7 @@ class DeterministicWorker:
                 node_type="Decision",
                 title=dec_text[:120],
                 content=dec_text,
-                source_artifact_ref=artifact_ref,
+                source_artifact_ref=_spec_child_ref(spec_id, "decision_legacy", dec_text, i),
                 source_confidence=1.0,
             ))
             _add_belongs_to(dec_cid, "dec", i)
@@ -859,6 +910,171 @@ class DeterministicWorker:
                 "edge_count": len(result.edges),
                 "missing_count": len(result.missing_link_candidates),
                 "deterministic_edge_ratio": result.deterministic_edge_ratio(),
+                "content_hash": result.content_hash,
+                "worker_version": WORKER_VERSION,
+            },
+        )
+        return result
+
+
+    # ------------------------------------------------------------------
+    # Pre-spec artifact entry points — Story / Ideation / Refinement
+    # ------------------------------------------------------------------
+
+    def process_story(self, story: dict[str, Any]) -> WorkerResult:
+        sid = story["id"]
+        prefix = f"story_{sid[:8]}"
+        artifact_ref = f"story:{sid}"
+        result = WorkerResult()
+        labels = story.get("labels") or []
+        raw_parts = [
+            story.get("title") or "",
+            story.get("description") or "",
+            story.get("actor") or "",
+            story.get("goal") or "",
+            story.get("benefit") or "",
+            json.dumps(labels, ensure_ascii=False, sort_keys=True) if labels else "",
+        ]
+        context_parts = [
+            f"Topic: {story.get('topic_id')}" if story.get("topic_id") else "",
+            f"Status: {story.get('status')}" if story.get("status") else "",
+        ]
+        result.nodes.append(EmittedNode(
+            candidate_id=f"{prefix}_entity",
+            node_type="Entity",
+            title=story.get("title") or f"Story {sid}",
+            content=story.get("description") or story.get("title") or "",
+            context="\n".join(p for p in context_parts if p),
+            source_artifact_ref=artifact_ref,
+            source_confidence=1.0,
+        ))
+        raw = "\n---\n".join(p for p in raw_parts if p)
+        result.raw_content = raw
+        result.content_hash = _sha256(raw)
+        logger.info(
+            "deterministic_worker.story_processed story=%s nodes=%d edges=%d",
+            sid, len(result.nodes), len(result.edges),
+            extra={
+                "event": "deterministic_worker.story_processed",
+                "story_id": sid,
+                "content_hash": result.content_hash,
+                "worker_version": WORKER_VERSION,
+            },
+        )
+        return result
+
+    def process_ideation(self, ideation: dict[str, Any]) -> WorkerResult:
+        iid = ideation["id"]
+        prefix = f"ideation_{iid[:8]}"
+        artifact_ref = f"ideation:{iid}"
+        result = WorkerResult()
+        raw_parts = [
+            ideation.get("title") or "",
+            ideation.get("description") or "",
+            ideation.get("problem_statement") or "",
+            ideation.get("proposed_approach") or "",
+            json.dumps(ideation.get("scope_assessment") or {}, ensure_ascii=False, sort_keys=True),
+            json.dumps(ideation.get("labels") or [], ensure_ascii=False, sort_keys=True),
+        ]
+        content = "\n\n".join(
+            p for p in (
+                ideation.get("description"),
+                ideation.get("problem_statement"),
+                ideation.get("proposed_approach"),
+            )
+            if p
+        )
+        ideation_cid = f"{prefix}_entity"
+        result.nodes.append(EmittedNode(
+            candidate_id=ideation_cid,
+            node_type="Entity",
+            title=ideation.get("title") or f"Ideation {iid}",
+            content=content or ideation.get("title") or "",
+            context=f"Status: {ideation.get('status') or ''}\nComplexity: {ideation.get('complexity') or ''}".strip(),
+            source_artifact_ref=artifact_ref,
+            source_confidence=1.0,
+        ))
+
+        story_ids = ideation.get("story_ids") or []
+        if isinstance(story_ids, str):
+            story_ids = [story_ids]
+        for idx, story_id in enumerate(str(s) for s in story_ids if s not in (None, "")):
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_story_{idx}",
+                edge_type="belongs_to",
+                from_candidate_id=f"story_{story_id[:8]}_entity",
+                to_candidate_id=ideation_cid,
+                confidence=1.0,
+                rule_id=f"belongs_to/story_to_ideation@{WORKER_VERSION}",
+            ))
+
+        raw = "\n---\n".join(p for p in raw_parts if p and p not in ("{}", "[]"))
+        result.raw_content = raw
+        result.content_hash = _sha256(raw)
+        logger.info(
+            "deterministic_worker.ideation_processed ideation=%s nodes=%d edges=%d",
+            iid, len(result.nodes), len(result.edges),
+            extra={
+                "event": "deterministic_worker.ideation_processed",
+                "ideation_id": iid,
+                "content_hash": result.content_hash,
+                "worker_version": WORKER_VERSION,
+            },
+        )
+        return result
+
+    def process_refinement(self, refinement: dict[str, Any]) -> WorkerResult:
+        rid = refinement["id"]
+        prefix = f"refinement_{rid[:8]}"
+        artifact_ref = f"refinement:{rid}"
+        result = WorkerResult()
+        raw_parts = [
+            refinement.get("title") or "",
+            refinement.get("description") or "",
+            "\n".join(refinement.get("in_scope") or []),
+            "\n".join(refinement.get("out_of_scope") or []),
+            refinement.get("analysis") or "",
+            json.dumps(refinement.get("decisions") or [], ensure_ascii=False, sort_keys=True),
+            json.dumps(refinement.get("labels") or [], ensure_ascii=False, sort_keys=True),
+        ]
+        content = "\n\n".join(
+            p for p in (
+                refinement.get("description"),
+                refinement.get("analysis"),
+            )
+            if p
+        )
+        refinement_cid = f"{prefix}_entity"
+        result.nodes.append(EmittedNode(
+            candidate_id=refinement_cid,
+            node_type="Entity",
+            title=refinement.get("title") or f"Refinement {rid}",
+            content=content or refinement.get("title") or "",
+            context=f"Status: {refinement.get('status') or ''}",
+            source_artifact_ref=artifact_ref,
+            source_confidence=1.0,
+        ))
+        ideation_id = refinement.get("ideation_id")
+        if ideation_id:
+            ideation_id = str(ideation_id)
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_to_ideation",
+                edge_type="belongs_to",
+                from_candidate_id=refinement_cid,
+                to_candidate_id=f"ideation_{ideation_id[:8]}_entity",
+                confidence=1.0,
+                rule_id=f"belongs_to/refinement_to_ideation@{WORKER_VERSION}",
+            ))
+
+        raw = "\n---\n".join(p for p in raw_parts if p and p not in ("[]",))
+        result.raw_content = raw
+        result.content_hash = _sha256(raw)
+        logger.info(
+            "deterministic_worker.refinement_processed refinement=%s nodes=%d edges=%d",
+            rid, len(result.nodes), len(result.edges),
+            extra={
+                "event": "deterministic_worker.refinement_processed",
+                "refinement_id": rid,
                 "content_hash": result.content_hash,
                 "worker_version": WORKER_VERSION,
             },
@@ -995,6 +1211,8 @@ class DeterministicWorker:
             # `violates` needs origin_task_id → linked BR/TR → Constraint; we
             # don't have that lookup here, so defer to fallback.
             origin = card.get("origin_task_id")
+            if origin:
+                raw_parts.append(f"Origin task: {origin}")
             if not origin:
                 result.missing_link_candidates.append(MissingLinkCandidate(
                     edge_type="violates",
@@ -1011,6 +1229,32 @@ class DeterministicWorker:
                     from_candidate_title=card.get("title") or f"Bug {cid}",
                     reason="origin_task_requires_cross_artifact_resolution",
                     suggested_candidates=[f"task:{origin}"],
+                    artifact_ref=artifact_ref,
+                ))
+            linked_test_task_ids = card.get("linked_test_task_ids") or []
+            if isinstance(linked_test_task_ids, str):
+                linked_test_task_ids = [linked_test_task_ids]
+            linked_test_task_ids = [
+                str(test_task_id)
+                for test_task_id in linked_test_task_ids
+                if test_task_id not in (None, "")
+            ]
+            if linked_test_task_ids:
+                raw_parts.append(
+                    "Linked test tasks: "
+                    + json.dumps(
+                        linked_test_task_ids,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
+            for test_task_id in linked_test_task_ids:
+                result.missing_link_candidates.append(MissingLinkCandidate(
+                    edge_type="tests",
+                    from_candidate_id=card_cid,
+                    from_candidate_title=card.get("title") or f"Bug {cid}",
+                    reason="linked_test_task_requires_cross_artifact_resolution",
+                    suggested_candidates=[f"test_task:{test_task_id}"],
                     artifact_ref=artifact_ref,
                 ))
 
@@ -1076,19 +1320,21 @@ class DeterministicWorker:
         Public API for the ConsolidationQueue worker — keeps all dispatch
         in one place so queue code stays a thin wrapper.
 
-        Spec eaf78891 (Ideação #2): artifact_type='refinement' is accepted
-        but currently no-op (graceful fallback). Refinement extraction is
-        a follow-up; the dispatch must not crash when RefinementSemanticChanged
-        events flow through ConsolidationEnqueuer.
+        Pre-spec artifacts are materialised as Entity nodes so deterministic
+        import can preserve lineage before cognitive consolidation.
         """
+        if artifact_type == "story":
+            return self.process_story(artifact)
+        if artifact_type == "ideation":
+            return self.process_ideation(artifact)
+        if artifact_type == "refinement":
+            return self.process_refinement(artifact)
         if artifact_type == "spec":
             return self.process_spec(artifact)
         if artifact_type == "sprint":
             return self.process_sprint(artifact)
         if artifact_type == "card":
             return self.process_card(artifact)
-        if artifact_type == "refinement":
-            return WorkerResult()
         raise ValueError(f"unknown artifact_type: {artifact_type}")
 
 

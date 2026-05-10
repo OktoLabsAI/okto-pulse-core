@@ -46,6 +46,8 @@ class KGEdgeType(str, Enum):
     TESTS = "tests"
     VALIDATES = "validates"
     BELONGS_TO = "belongs_to"
+    ORIGINATES_FROM = "originates_from"
+    COVERED_BY = "covered_by"
 
 
 class ReconciliationOperation(str, Enum):

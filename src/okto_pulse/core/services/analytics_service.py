@@ -31,8 +31,12 @@ from okto_pulse.core.models.db import (
     RefinementStatus,
     Spec,
     SpecStatus,
+    Story,
+    StoryIdeationLink,
+    StoryStatus,
     Sprint,
     SprintStatus,
+    Topic,
 )
 
 
@@ -271,7 +275,7 @@ async def compute_funnel(
     """Compute the full funnel for a board.
 
     Returns the same rich shape as REST `/boards/{id}/analytics/funnel`:
-      - Per-level counts: ideations, refinements, specs, sprints, cards.
+      - Per-level counts: stories, ideations, refinements, specs, sprints, cards.
       - Done counts: done, ideations_done, specs_done, refinements_done.
       - Card type breakdown: cards_impl, cards_test, cards_bug.
       - BR/Contract aggregation: rules_count, contracts_count,
@@ -288,6 +292,7 @@ async def compute_funnel(
     counts: dict = {}
 
     for model, key in [
+        (Story, "stories"),
         (Ideation, "ideations"),
         (Refinement, "refinements"),
         (Spec, "specs"),
@@ -302,6 +307,25 @@ async def compute_funnel(
         if dt_to:
             q = q.where(model.created_at <= dt_to)
         counts[key] = (await db.execute(q)).scalar() or 0
+
+    stories_converted_q = select(func.count(Story.id)).where(
+        Story.board_id == board_id,
+        Story.status == StoryStatus.CONVERTED,
+    )
+    if not include_archived:
+        stories_converted_q = stories_converted_q.where(Story.archived.is_(False))
+    if dt_from:
+        stories_converted_q = stories_converted_q.where(Story.created_at >= dt_from)
+    if dt_to:
+        stories_converted_q = stories_converted_q.where(Story.created_at <= dt_to)
+    counts["stories_converted"] = (await db.execute(stories_converted_q)).scalar() or 0
+    counts["story_conversion_pct"] = (
+        round((counts["stories_converted"] / counts["stories"]) * 100, 1)
+        if counts.get("stories")
+        else 0
+    )
+    story_links_q = select(func.count(StoryIdeationLink.id)).where(StoryIdeationLink.board_id == board_id)
+    counts["story_ideation_links"] = (await db.execute(story_links_q)).scalar() or 0
 
     # Done cards
     done_q = select(func.count(Card.id)).where(
@@ -415,15 +439,20 @@ async def compute_funnel(
     # Ideations/Refinements para cycle_time_by_phase
     board_ideations_q = select(Ideation).where(Ideation.board_id == board_id)
     board_refinements_q = select(Refinement).where(Refinement.board_id == board_id)
+    board_stories_q = select(Story).where(Story.board_id == board_id)
     if not include_archived:
+        board_stories_q = board_stories_q.where(Story.archived.is_(False))
         board_ideations_q = board_ideations_q.where(Ideation.archived.is_(False))
         board_refinements_q = board_refinements_q.where(Refinement.archived.is_(False))
     if dt_from:
+        board_stories_q = board_stories_q.where(Story.created_at >= dt_from)
         board_ideations_q = board_ideations_q.where(Ideation.created_at >= dt_from)
         board_refinements_q = board_refinements_q.where(Refinement.created_at >= dt_from)
     if dt_to:
+        board_stories_q = board_stories_q.where(Story.created_at <= dt_to)
         board_ideations_q = board_ideations_q.where(Ideation.created_at <= dt_to)
         board_refinements_q = board_refinements_q.where(Refinement.created_at <= dt_to)
+    board_stories = list((await db.execute(board_stories_q)).scalars().all())
     board_ideations = list((await db.execute(board_ideations_q)).scalars().all())
     board_refinements = list((await db.execute(board_refinements_q)).scalars().all())
 
@@ -435,6 +464,7 @@ async def compute_funnel(
         return round(sum(times) / len(times), 1) if times else None
 
     counts["cycle_time_by_phase"] = {
+        "story": _phase_ct(board_stories, str(StoryStatus.CONVERTED)),
         "ideation": _phase_ct(board_ideations, str(IdeationStatus.DONE)),
         "refinement": _phase_ct(board_refinements, str(RefinementStatus.DONE)),
         "spec": _phase_ct(spec_objs, str(SpecStatus.DONE)),
@@ -444,6 +474,25 @@ async def compute_funnel(
     counts["refinements_done"] = sum(
         1 for r in board_refinements if str(r.status) == str(RefinementStatus.DONE)
     )
+    counts["story_status_breakdown"] = _status_breakdown(board_stories, StoryStatus)
+    topic_story_on = (Story.topic_id == Topic.id) & (Story.board_id == board_id)
+    if not include_archived:
+        topic_story_on = topic_story_on & Story.archived.is_(False)
+    if dt_from:
+        topic_story_on = topic_story_on & (Story.created_at >= dt_from)
+    if dt_to:
+        topic_story_on = topic_story_on & (Story.created_at <= dt_to)
+    topic_rows = (await db.execute(
+        select(Topic.id, Topic.name, func.count(Story.id))
+        .join(Story, topic_story_on, isouter=True)
+        .where(Topic.board_id == board_id)
+        .group_by(Topic.id, Topic.name)
+        .order_by(Topic.name.asc())
+    )).all()
+    counts["stories_by_topic"] = [
+        {"topic_id": row[0], "topic": row[1], "stories": int(row[2] or 0)}
+        for row in topic_rows
+    ]
 
     return counts
 

@@ -140,6 +140,55 @@ class KGPrimitiveError(Exception):
         self.details = details or {}
 
 
+def _contextualize_ladybug_commit_error(exc: BaseException) -> tuple[str, dict]:
+    """Turn low-level Ladybug buffer errors into actionable operator context."""
+    msg = str(exc)
+    lower = msg.lower()
+    if not any(
+        marker in lower
+        for marker in (
+            "buffer manager",
+            "buffer pool",
+            "unable to allocate memory",
+            "power of 2",
+            "power-of-2",
+        )
+    ):
+        return msg, {}
+
+    details: dict = {}
+    try:
+        from okto_pulse.core.infra.config import get_settings
+
+        s = get_settings()
+        details = {
+            "kg_kuzu_buffer_pool_mb": s.kg_kuzu_buffer_pool_mb,
+            "kg_kuzu_max_db_size_gb": s.kg_kuzu_max_db_size_gb,
+        }
+        if "power of 2" in lower or "power-of-2" in lower:
+            hint = (
+                "Graph DB max database size per board is invalid for Ladybug. "
+                "Use one of 2, 4, 8, 16, 32 or 64 GB; even values such as "
+                f"{s.kg_kuzu_max_db_size_gb} GB may still be invalid unless "
+                "they are powers of 2."
+            )
+        else:
+            hint = (
+                "Graph DB buffer pool was exhausted during consolidation. "
+                "This can leave a partial WAL behind; set "
+                "kg_kuzu_buffer_pool_mb=512 in Settings, restart Okto Pulse, "
+                "and retry the consolidation before reprocessing dead letters. "
+                f"Current settings: buffer={s.kg_kuzu_buffer_pool_mb}MB, "
+                f"max_db={s.kg_kuzu_max_db_size_gb}GB."
+            )
+    except Exception:
+        hint = (
+            "Graph DB buffer/max-size settings may be invalid. Review Settings "
+            "and restart before retrying consolidation."
+        )
+    return f"{msg}. {hint}", details
+
+
 def _not_found(session_id: str) -> KGPrimitiveError:
     return KGPrimitiveError(
         "session_not_found",
@@ -858,10 +907,12 @@ def _do_kuzu_commit(
             raise
         except Exception as exc:
             _compensate_kuzu_writes(board_id, session_id, orch.records)
+            message, details = _contextualize_ladybug_commit_error(exc)
             raise KGPrimitiveError(
                 "commit_failed",
-                f"commit failed and was compensated: {exc}",
+                f"commit failed and was compensated: {message}",
                 session_id=session_id,
+                details=details,
             ) from exc
 
 
@@ -900,10 +951,12 @@ async def commit_consolidation(
         except KGPrimitiveError:
             raise
         except Exception as exc:
+            message, details = _contextualize_ladybug_commit_error(exc)
             raise KGPrimitiveError(
                 "commit_failed",
-                f"Kùzu commit failed: {exc}",
+                f"Kùzu commit failed: {message}",
                 session_id=req.session_id,
+                details=details,
             ) from exc
 
         # --- SQLite audit + outbox (async, remains in event loop) ---
@@ -1007,7 +1060,14 @@ def _node_is_human_curated(kconn, node_type: str, node_id: str) -> bool:
     return False
 
 
-_CROSS_SESSION_PREFIXES: tuple[str, ...] = ("spec_", "sprint_", "card_")
+_CROSS_SESSION_PREFIXES: tuple[str, ...] = (
+    "story_",
+    "ideation_",
+    "refinement_",
+    "spec_",
+    "sprint_",
+    "card_",
+)
 
 
 def _is_cross_session_entity_ref(endpoint: str) -> bool:
@@ -1052,11 +1112,18 @@ def _resolve_endpoint(
     if kconn is None:
         return None, None
     # Cross-session deterministic-id fallback. We only handle the worker's
-    # own naming convention here (`spec_<id8>_entity`, `sprint_<id8>_entity`)
-    # to avoid surprises; new patterns must be opt-in.
+    # own naming convention here (`<artifact>_<id8>_entity`) to avoid
+    # surprises; new patterns must be opt-in.
     if endpoint.endswith("_entity"):
         body = endpoint[:-len("_entity")]
-        for prefix, ref_prefix in (("spec_", "spec:"), ("sprint_", "sprint:"), ("card_", "card:")):
+        for prefix, ref_prefix in (
+            ("story_", "story:"),
+            ("ideation_", "ideation:"),
+            ("refinement_", "refinement:"),
+            ("spec_", "spec:"),
+            ("sprint_", "sprint:"),
+            ("card_", "card:"),
+        ):
             if body.startswith(prefix):
                 short = body[len(prefix):]
                 # Source_artifact_ref uses the full UUID. We probe with a

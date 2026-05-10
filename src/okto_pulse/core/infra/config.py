@@ -3,7 +3,7 @@
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +16,20 @@ def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
         return fallback
 
 
-_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.1.14+local")
+_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.2.0+local")
+GRAPH_DB_MAX_SIZE_GB_VALUES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
+
+
+def validate_graph_db_max_size_gb(value: int) -> int:
+    """Ensure Ladybug receives a max_db_size that is a power of two in bytes."""
+    if value not in GRAPH_DB_MAX_SIZE_GB_VALUES:
+        allowed = ", ".join(str(v) for v in GRAPH_DB_MAX_SIZE_GB_VALUES)
+        raise ValueError(
+            "kg_kuzu_max_db_size_gb must be one of "
+            f"{allowed} GB. Ladybug requires max_db_size to be a power of 2 "
+            "in bytes; even values such as 6 GB are still invalid."
+        )
+    return value
 
 
 class CoreSettings(BaseSettings):
@@ -69,14 +82,20 @@ class CoreSettings(BaseSettings):
     # kg_queue_alert_threshold and emits a DeprecationWarning at startup.
     kg_max_queue_depth: int = Field(200, ge=10, le=10000)
 
-    # Kùzu runtime tuning (0.1.4) — defaults target ≤1.5GB total RAM with 8 pooled boards.
+    # Kùzu runtime tuning (0.1.4) — defaults avoid Ladybug 0.16 HNSW buffer
+    # exhaustion while keeping max_db_size in the supported power-of-two set.
     # Kùzu's own defaults (buffer_pool_size=0 → ~80% system RAM, max_db_size=1<<43=8TB VA)
     # caused 128GB RSS with 3 instances in field reports.
-    kg_kuzu_buffer_pool_mb: int = Field(256, ge=16, le=512)
-    kg_kuzu_max_db_size_gb: int = Field(1, ge=1, le=64)
+    kg_kuzu_buffer_pool_mb: int = Field(512, ge=128, le=512)
+    kg_kuzu_max_db_size_gb: int = Field(2, ge=2, le=64)
     kg_connection_pool_size: int = Field(8, ge=1, le=32)
 
-    # Consolidation queue runtime tuning (spec bdcda842, v0.1.14) — all
+    @field_validator("kg_kuzu_max_db_size_gb")
+    @classmethod
+    def _validate_graph_db_max_size_gb(cls, value: int) -> int:
+        return validate_graph_db_max_size_gb(value)
+
+    # Consolidation queue runtime tuning (spec bdcda842, v0.2.0) — all
     # hot-reload (worker pool re-reads on every claim with 5s debounce).
     # Mudanças aqui NÃO marcam restart_required.
     kg_queue_max_concurrent_workers: int = Field(4, ge=1, le=16)

@@ -23,7 +23,9 @@ DEAD_LETTER_SENTINEL = -1
 GLOBAL_OPEN_ERROR_MARKERS = (
     "failed to open ladybugdb database",
     "discovery.lbug",
+    "checksum verification failed",
     "corrupted wal file",
+    "wal file is corrupted",
     "invalid wal record",
     "wal_record.cpp",
     "unreachable_code",

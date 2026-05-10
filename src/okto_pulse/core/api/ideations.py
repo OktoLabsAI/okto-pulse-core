@@ -8,6 +8,9 @@ from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models.schemas import (
     IdeationCreate,
     IdeationHistoryResponse,
+    IdeationKnowledgeCreate,
+    IdeationKnowledgeResponse,
+    IdeationKnowledgeSummary,
     IdeationMove,
     IdeationQAAnswer,
     IdeationQACreate,
@@ -19,7 +22,13 @@ from okto_pulse.core.models.schemas import (
     IdeationUpdate,
     SpecResponse,
 )
-from okto_pulse.core.services import BoardService, IdeationQAService, IdeationService, SpecService
+from okto_pulse.core.services import (
+    BoardService,
+    IdeationKnowledgeService,
+    IdeationQAService,
+    IdeationService,
+    SpecService,
+)
 
 router = APIRouter()
 
@@ -220,6 +229,73 @@ async def list_ideation_history(
     """Get detailed change history for an ideation."""
     service = IdeationService(db)
     return await service.list_history(ideation_id, limit)
+
+
+# ==================== IDEATION KNOWLEDGE BASE ====================
+
+
+@router.get("/ideations/{ideation_id}/knowledge", response_model=list[IdeationKnowledgeSummary])
+async def list_ideation_knowledge(
+    ideation_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all knowledge base items for an ideation."""
+    service = IdeationKnowledgeService(db)
+    return await service.list_knowledge(ideation_id)
+
+
+@router.get("/ideations/{ideation_id}/knowledge/{knowledge_id}", response_model=IdeationKnowledgeResponse)
+async def get_ideation_knowledge(
+    ideation_id: str,
+    knowledge_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a knowledge base item with full content."""
+    service = IdeationKnowledgeService(db)
+    kb = await service.get_knowledge(knowledge_id)
+    if not kb or kb.ideation_id != ideation_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base item not found")
+    return kb
+
+
+@router.post(
+    "/ideations/{ideation_id}/knowledge",
+    response_model=IdeationKnowledgeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_ideation_knowledge(
+    ideation_id: str,
+    data: IdeationKnowledgeCreate,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a knowledge base item on an ideation."""
+    service = IdeationKnowledgeService(db)
+    kb = await service.create_knowledge(ideation_id, user_id, data)
+    if not kb:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
+    await db.commit()
+    return kb
+
+
+@router.delete("/ideations/{ideation_id}/knowledge/{knowledge_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_ideation_knowledge(
+    ideation_id: str,
+    knowledge_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a knowledge base item from an ideation."""
+    service = IdeationKnowledgeService(db)
+    kb = await service.get_knowledge(knowledge_id)
+    if not kb or kb.ideation_id != ideation_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base item not found")
+    deleted = await service.delete_knowledge(knowledge_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base item not found")
+    await db.commit()
 
 
 # ==================== IDEATION Q&A ====================
