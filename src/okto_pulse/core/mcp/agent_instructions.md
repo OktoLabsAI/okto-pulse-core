@@ -2493,7 +2493,7 @@ When creating multiple children from the same parent (e.g., 2 refinements from 1
 - `okto_pulse_derive_spec_from_refinement(refinement_id=X, kb_ids="kb_3|kb_7")` → only selected KBs
 
 ### For cards (explicit only):
-Card creation does NOT auto-propagate. Use `okto_pulse_copy_mockups_to_card` and `okto_pulse_copy_knowledge_to_card` explicitly to select which artifacts a card needs.
+Card creation auto-propagates Spec resources only when the board setting `auto_derive_spec_resources_enabled` is active, and only for the selected resource types. Otherwise, use `okto_pulse_copy_mockups_to_card`, `okto_pulse_copy_knowledge_to_card`, and `okto_pulse_copy_architecture_to_card` explicitly to select which artifacts a card needs.
 
 ### Best practice:
 Always use create/derive with parent ID instead of creating orphan entities. This ensures context, decisions, and visual artifacts flow through the pipeline.

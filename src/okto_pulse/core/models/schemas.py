@@ -1,9 +1,10 @@
 """Pydantic schemas for API request/response models."""
 
 from datetime import datetime
+from enum import Enum as PyEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from okto_pulse.core.models.db import (
     CardPriority,
@@ -1838,6 +1839,14 @@ class BoardShareResponse(BaseSchema):
 # ============================================================================
 
 
+class SpecResourceType(str, PyEnum):
+    """Resource types supported by Spec-to-card auto propagation."""
+
+    KNOWLEDGE_BASE = "knowledge_base"
+    ARCHITECTURE = "architecture"
+    MOCKUP = "mockup"
+
+
 class BoardSettings(BaseModel):
     """Board-level settings for governance rules."""
 
@@ -1859,6 +1868,10 @@ class BoardSettings(BaseModel):
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
     # Resource Gate - Level 2 spec resource-to-task coverage.
     require_spec_resource_task_coverage: bool = True
+    # Spec resource automation — when enabled, selected resources are copied
+    # from a linked Spec to newly-created or newly-linked cards.
+    auto_derive_spec_resources_enabled: bool = False
+    auto_derive_spec_resource_types: list[SpecResourceType] = Field(default_factory=list)
     # Bug Card Gate — NC-6 fix.
     # require_test_task_for_bug: when False, bug cards can advance to in_progress
     #   without a freshly-created linked test task. Default True (gate ATIVO).
@@ -1881,6 +1894,24 @@ class BoardSettings(BaseModel):
     # Absent or None → CognitiveExtractionHandler skips Learning extraction
     # and emits log info. Alternative + Assumption (regex) run regardless.
     cognitive_llm_config: dict | None = None
+
+    @field_validator("auto_derive_spec_resource_types")
+    @classmethod
+    def _deduplicate_auto_derive_resource_types(
+        cls,
+        value: list[SpecResourceType],
+    ) -> list[SpecResourceType]:
+        return list(dict.fromkeys(value or []))
+
+    @model_validator(mode="after")
+    def _validate_auto_derive_resource_selection(self) -> "BoardSettings":
+        resource_types = self.auto_derive_spec_resource_types or []
+        if self.auto_derive_spec_resources_enabled and not (1 <= len(resource_types) <= 3):
+            raise ValueError(
+                "auto_derive_spec_resource_types must include between 1 and 3 resource types "
+                "when auto_derive_spec_resources_enabled is true"
+            )
+        return self
 
 
 class BoardCreate(BaseModel):

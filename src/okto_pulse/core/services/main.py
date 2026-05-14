@@ -105,6 +105,7 @@ from okto_pulse.core.models.schemas import (
 from okto_pulse.core.services.analytics_service import resolve_linked_criteria_to_indices
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
 from okto_pulse.core.services.resource_gate import ResourceGateService
+from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 settings = get_settings()
 
@@ -484,7 +485,7 @@ class BoardService:
         # Serialize settings if present
         if "settings" in update_data and update_data["settings"] is not None:
             update_data["settings"] = (
-                update_data["settings"].model_dump()
+                update_data["settings"].model_dump(mode="json")
                 if hasattr(update_data["settings"], "model_dump")
                 else update_data["settings"]
             )
@@ -680,6 +681,14 @@ class CardService:
                 spec=spec,
             )
 
+        await SpecResourcePropagationService(self.db).propagate_for_card(
+            board_id=board_id,
+            spec_id=card.spec_id,
+            card_id=card.id,
+            actor_id=user_id,
+            trigger="card_created",
+        )
+
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import CardCreated
 
@@ -799,6 +808,7 @@ class CardService:
 
         old_priority = _enum_value(card.priority)
         old_severity = _enum_value(getattr(card, "severity", None))
+        old_spec_id = card.spec_id
 
         # Serialize screen_mockups if present
         if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
@@ -807,11 +817,20 @@ class CardService:
                 for s in update_data["screen_mockups"]
             ]
 
-        card_json_fields = {"labels", "test_scenario_ids", "conclusions", "screen_mockups"}
+        card_json_fields = {"labels", "test_scenario_ids", "conclusions", "screen_mockups", "knowledge_bases"}
         for key, value in update_data.items():
             setattr(card, key, value)
             if key in card_json_fields:
                 flag_modified(card, key)
+
+        if "spec_id" in update_data and card.spec_id and card.spec_id != old_spec_id:
+            await SpecResourcePropagationService(self.db).propagate_for_card(
+                board_id=card.board_id,
+                spec_id=card.spec_id,
+                card_id=card.id,
+                actor_id=user_id,
+                trigger="card_linked_via_update",
+            )
 
         actor_name = await resolve_actor_name(self.db, user_id, card.board_id)
         await self._log_activity(
@@ -3065,6 +3084,14 @@ class SpecService:
         if not card or card.board_id != spec.board_id:
             return False
         card.spec_id = spec_id
+
+        await SpecResourcePropagationService(self.db).propagate_for_card(
+            board_id=spec.board_id,
+            spec_id=spec_id,
+            card_id=card_id,
+            actor_id=user_id or card.created_by,
+            trigger="card_linked_to_spec",
+        )
 
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import CardLinkedToSpec

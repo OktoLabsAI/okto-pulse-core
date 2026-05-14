@@ -490,11 +490,7 @@ async def resolve_lineage_root(
             )
         )).scalars().all())
         if not links:
-            raise TraceabilityReadError(
-                "unresolved_root_ideation",
-                "Selected story is not linked to an ideation yet.",
-                status_code=409,
-            )
+            return "story", story.id, [{"type": "story", "id": story.id}]
         if len(links) > 1:
             raise TraceabilityReadError(
                 "ambiguous_root_ideation",
@@ -785,6 +781,54 @@ async def build_lineage_graph(
         warnings.append(
             "Selected entity is rooted at a standalone spec because no ideation "
             "lineage exists."
+        )
+
+    elif root_type == "story":
+        story = await db.get(Story, root_id)
+        if not story or story.board_id != board_id:
+            raise TraceabilityReadError("entity_not_found", "Selected story was not found", status_code=404)
+
+        story_payload = _story_summary(story)
+        story_node_id = f"story:{story.id}"
+        add_node({
+            "id": story_node_id,
+            "entity_type": "story",
+            "entity_id": story.id,
+            "title": story.title,
+            "label": story.title,
+            "status": _enum_value(story.status),
+            "stage": -1,
+            "summary": {
+                "topic_id": story.topic_id,
+                "mockups_count": story_payload.get("mockups_count", 0),
+            },
+        })
+        root_entity = {
+            "type": "story",
+            "id": story.id,
+            "title": story.title,
+            "status": _enum_value(story.status),
+        }
+        # Backward-compatible field name for the current frontend header.
+        root_ideation = {
+            "id": story.id,
+            "title": story.title,
+            "status": _enum_value(story.status),
+            "entity_type": "story",
+        }
+        report = {
+            "summary": {
+                "stories": 1,
+                "ideations": 0,
+                "refinements": 0,
+                "specs": 0,
+                "orphan_specs": 0,
+                "cards": 0,
+            }
+        }
+        warnings.append(
+            "Selected story is not linked to an ideation yet, so the lineage "
+            "graph is rooted at the story."
         )
 
     else:

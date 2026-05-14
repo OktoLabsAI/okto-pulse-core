@@ -87,6 +87,7 @@ class TelemetryService:
                 "changed_at": state.get("changed_at"),
                 "policy_version": state.get("policy_version"),
                 "schema_version": state.get("schema_version"),
+                "acknowledged_items": list(state.get("acknowledged_items") or []),
             },
             "resolved_precedence": list(cfg.resolved_precedence),
         }
@@ -98,6 +99,7 @@ class TelemetryService:
         source: str,
         policy_version: str | None = None,
         schema_version: str | None = None,
+        acknowledged_items: list[str] | None = None,
     ) -> dict[str, Any]:
         if source not in {"settings_ui", "cli"}:
             raise ValueError("invalid telemetry settings source")
@@ -109,6 +111,7 @@ class TelemetryService:
             source=source,  # type: ignore[arg-type]
             policy_version=policy_version,
             schema_version=schema_version,
+            acknowledged_items=acknowledged_items,
         )
         cfg = self.config()
         return {
@@ -117,6 +120,7 @@ class TelemetryService:
             "changed_at": state["changed_at"],
             "source": source,
             "schema_version": state.get("schema_version"),
+            "acknowledged_items": list(state.get("acknowledged_items") or []),
             "next_opt_in_prompt_after": state.get("next_opt_in_prompt_after"),
             "resolved_precedence": list(cfg.resolved_precedence),
         }
