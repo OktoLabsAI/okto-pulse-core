@@ -179,6 +179,20 @@ def test_stale_persisted_beacon_consent_falls_back_to_local_only(tmp_path: Path)
     assert summary["beacon_status"]["schema_status"] == "stale_consent"
 
 
+def test_metrics_settings_persist_acknowledged_items(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    service = TelemetryService(settings)
+
+    result = service.update_settings(
+        mode="local_only",
+        source="cli",
+        acknowledged_items=["schema", "privacy_policy", "schema"],
+    )
+
+    assert result["acknowledged_items"] == ["schema", "privacy_policy"]
+    assert service.summary()["consent"]["acknowledged_items"] == ["schema", "privacy_policy"]
+
+
 def test_hourly_batch_adds_product_aggregates_without_identifiers(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "pulse.db"
     conn = sqlite3.connect(db_path)

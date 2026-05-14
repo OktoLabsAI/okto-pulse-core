@@ -58,6 +58,7 @@ async def post_metrics_settings(
             source=payload.source,
             policy_version=payload.policy_version,
             schema_version=payload.schema_version,
+            acknowledged_items=payload.acknowledged_items,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

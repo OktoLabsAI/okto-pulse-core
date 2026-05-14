@@ -86,6 +86,7 @@ def record_consent(
     source: Literal["settings_ui", "cli"],
     policy_version: str | None = None,
     schema_version: str | None = None,
+    acknowledged_items: list[str] | None = None,
 ) -> dict[str, Any]:
     metrics_dir = metrics_dir_for(settings)
     current = load_state(metrics_dir)
@@ -98,6 +99,7 @@ def record_consent(
     if mode != "anonymous_beacon":
         interval = int(getattr(settings, "metrics_opt_in_prompt_interval_days", 30))
         next_prompt = (utc_now() + timedelta(days=interval)).isoformat().replace("+00:00", "Z")
+    acknowledgements = list(dict.fromkeys(item for item in acknowledged_items or [] if item))
     history = list(current.get("history") or [])
     history.append(
         {
@@ -106,6 +108,7 @@ def record_consent(
             "changed_at": changed_at,
             "policy_version": policy,
             "schema_version": schema,
+            "acknowledged_items": acknowledgements,
         }
     )
     state = {
@@ -115,6 +118,7 @@ def record_consent(
         "changed_at": changed_at,
         "policy_version": policy,
         "schema_version": schema,
+        "acknowledged_items": acknowledgements,
         "next_opt_in_prompt_after": next_prompt,
         "history": history[-50:],
     }
