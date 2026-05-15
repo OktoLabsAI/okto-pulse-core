@@ -564,7 +564,7 @@ async def compute_velocity(
 
 def spec_coverage_summary(
     spec, *, scenarios=None, rules=None, contracts=None, trs=None, decisions=None,
-    cards=None,
+    integration_requirements=None, observability_requirements=None, cards=None,
 ) -> dict:
     """Compute coverage stats for a single spec — used by validation gate + UI.
 
@@ -591,6 +591,16 @@ def spec_coverage_summary(
     _contracts = contracts if contracts is not None else (spec.api_contracts or [])
     _trs = trs if trs is not None else (spec.technical_requirements or [])
     _decisions = decisions if decisions is not None else (getattr(spec, "decisions", None) or [])
+    _irs = (
+        integration_requirements
+        if integration_requirements is not None
+        else (getattr(spec, "integration_requirements", None) or [])
+    )
+    _ors = (
+        observability_requirements
+        if observability_requirements is not None
+        else (getattr(spec, "observability_requirements", None) or [])
+    )
 
     cancelled_card_ids: set = set()
     if cards:
@@ -658,6 +668,33 @@ def spec_coverage_summary(
         d.get("id") for d in active_decisions
         if not (set(d.get("linked_task_ids") or []) - cancelled_card_ids) and d.get("id")
     ]
+    active_irs = [
+        ir for ir in _irs
+        if isinstance(ir, dict) and ir.get("status", "active") == "active"
+    ]
+    ir_total = len(active_irs)
+    ir_linked = sum(
+        1 for ir in active_irs
+        if (set(ir.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
+    ir_uncovered_ids = [
+        ir.get("id") for ir in active_irs
+        if not (set(ir.get("linked_task_ids") or []) - cancelled_card_ids) and ir.get("id")
+    ]
+
+    active_ors = [
+        req for req in _ors
+        if isinstance(req, dict) and req.get("status", "active") == "active"
+    ]
+    or_total = len(active_ors)
+    or_linked = sum(
+        1 for req in active_ors
+        if (set(req.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
+    or_uncovered_ids = [
+        req.get("id") for req in active_ors
+        if not (set(req.get("linked_task_ids") or []) - cancelled_card_ids) and req.get("id")
+    ]
 
     def _pct(n, d):
         return round((n / d * 100) if d > 0 else 100, 1)
@@ -687,9 +724,19 @@ def spec_coverage_summary(
         "decisions_linked": d_linked,
         "decisions_total": d_total,
         "decisions_uncovered_ids": d_uncovered_ids,
+        "ir_task_linkage_pct": _pct(ir_linked, ir_total),
+        "irs_linked": ir_linked,
+        "irs_total": ir_total,
+        "irs_uncovered_ids": ir_uncovered_ids,
+        "or_task_linkage_pct": _pct(or_linked, or_total),
+        "ors_linked": or_linked,
+        "ors_total": or_total,
+        "ors_uncovered_ids": or_uncovered_ids,
         "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
         "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
         "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", False),
+        "skip_ir_coverage": getattr(spec, "skip_ir_coverage", False),
+        "skip_or_coverage": getattr(spec, "skip_or_coverage", False),
     }
 
 

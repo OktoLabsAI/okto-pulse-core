@@ -75,6 +75,99 @@ class SpecResourcePropagationService:
             "results": results,
         }
 
+    async def propagate_for_spec(
+        self,
+        *,
+        board_id: str,
+        spec_id: str,
+        actor_id: str,
+        trigger: str,
+    ) -> dict[str, Any]:
+        """Copy selected Spec resources to every linked non-archived card."""
+        board = await self.db.get(Board, board_id)
+        if not board:
+            return {"enabled": False, "reason": "board_not_found", "cards": []}
+
+        resource_types = self._resolve_resource_types(board)
+        if not resource_types:
+            return {"enabled": False, "reason": "disabled", "cards": []}
+
+        spec = await self.db.get(Spec, spec_id)
+        if not spec or spec.board_id != board_id:
+            return {"enabled": True, "reason": "spec_not_found", "cards": []}
+
+        result = await self.db.execute(
+            select(Card)
+            .where(
+                Card.board_id == board_id,
+                Card.spec_id == spec_id,
+                Card.archived.is_(False),
+            )
+            .order_by(Card.created_at.asc(), Card.title.asc())
+        )
+        cards = list(result.scalars().all())
+        card_results = []
+        for card in cards:
+            card_results.append(
+                await self.propagate_for_card(
+                    board_id=board_id,
+                    spec_id=spec_id,
+                    card_id=card.id,
+                    actor_id=actor_id,
+                    trigger=trigger,
+                )
+            )
+
+        return {
+            "enabled": True,
+            "trigger": trigger,
+            "board_id": board_id,
+            "spec_id": spec_id,
+            "resource_types": resource_types,
+            "cards": card_results,
+        }
+
+    async def propagate_for_board(
+        self,
+        *,
+        board_id: str,
+        actor_id: str,
+        trigger: str,
+    ) -> dict[str, Any]:
+        """Backfill selected Spec resources for all specs in a board."""
+        board = await self.db.get(Board, board_id)
+        if not board:
+            return {"enabled": False, "reason": "board_not_found", "specs": []}
+
+        resource_types = self._resolve_resource_types(board)
+        if not resource_types:
+            return {"enabled": False, "reason": "disabled", "specs": []}
+
+        result = await self.db.execute(
+            select(Spec.id)
+            .where(Spec.board_id == board_id, Spec.archived.is_(False))
+            .order_by(Spec.created_at.asc(), Spec.title.asc())
+        )
+        spec_ids = [row[0] for row in result.all()]
+        spec_results = []
+        for spec_id in spec_ids:
+            spec_results.append(
+                await self.propagate_for_spec(
+                    board_id=board_id,
+                    spec_id=spec_id,
+                    actor_id=actor_id,
+                    trigger=trigger,
+                )
+            )
+
+        return {
+            "enabled": True,
+            "trigger": trigger,
+            "board_id": board_id,
+            "resource_types": resource_types,
+            "specs": spec_results,
+        }
+
     def _resolve_resource_types(self, board: Board) -> list[str]:
         settings = board.settings or {}
         if not settings.get("auto_derive_spec_resources_enabled", False):

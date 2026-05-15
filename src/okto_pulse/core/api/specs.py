@@ -314,6 +314,126 @@ async def unlink_task_from_scenario(
     return {"success": True, "spec_id": spec_id, "scenario_id": scenario_id, "card_id": card_id}
 
 
+@router.post(
+    "/specs/{spec_id}/integration-requirements/{requirement_id}/link-task/{card_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def link_task_to_integration_requirement(
+    spec_id: str,
+    requirement_id: str,
+    card_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Link a task card to an integration requirement."""
+    from okto_pulse.core.services import CardService
+
+    spec_service = SpecService(db)
+    spec = await spec_service.get_spec(spec_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+
+    card_service = CardService(db)
+    card = await card_service.get_card(card_id)
+    if not card:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Card '{card_id}' not found — cannot link a non-existent card.",
+        )
+
+    requirements = list(spec.integration_requirements or [])
+    target = next((item for item in requirements if item.get("id") == requirement_id), None)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Integration requirement '{requirement_id}' not found in spec.",
+        )
+
+    task_ids = list(target.get("linked_task_ids") or [])
+    if card_id not in task_ids:
+        task_ids.append(card_id)
+    target["linked_task_ids"] = task_ids
+
+    try:
+        await spec_service.update_spec(
+            spec_id,
+            user_id,
+            SpecUpdate(integration_requirements=requirements),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+        )
+
+    await db.commit()
+    return {
+        "success": True,
+        "spec_id": spec_id,
+        "requirement_id": requirement_id,
+        "card_id": card_id,
+    }
+
+
+@router.post(
+    "/specs/{spec_id}/observability-requirements/{requirement_id}/link-task/{card_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def link_task_to_observability_requirement(
+    spec_id: str,
+    requirement_id: str,
+    card_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Link a task card to an observability requirement."""
+    from okto_pulse.core.services import CardService
+
+    spec_service = SpecService(db)
+    spec = await spec_service.get_spec(spec_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+
+    card_service = CardService(db)
+    card = await card_service.get_card(card_id)
+    if not card:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Card '{card_id}' not found — cannot link a non-existent card.",
+        )
+
+    requirements = list(spec.observability_requirements or [])
+    target = next((item for item in requirements if item.get("id") == requirement_id), None)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Observability requirement '{requirement_id}' not found in spec.",
+        )
+
+    task_ids = list(target.get("linked_task_ids") or [])
+    if card_id not in task_ids:
+        task_ids.append(card_id)
+    target["linked_task_ids"] = task_ids
+
+    try:
+        await spec_service.update_spec(
+            spec_id,
+            user_id,
+            SpecUpdate(observability_requirements=requirements),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+        )
+
+    await db.commit()
+    return {
+        "success": True,
+        "spec_id": spec_id,
+        "requirement_id": requirement_id,
+        "card_id": card_id,
+    }
+
+
 # ==================== SPEC KNOWLEDGE BASE ====================
 
 

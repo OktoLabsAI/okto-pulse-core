@@ -17,8 +17,20 @@ from okto_pulse.core.models.db import (
     SpecKnowledgeBase,
     SpecStatus,
 )
-from okto_pulse.core.models.schemas import BoardSettings, BoardUpdate, CardCreate
-from okto_pulse.core.services.main import BoardService, CardService, SpecService
+from okto_pulse.core.models.schemas import (
+    BoardSettings,
+    BoardUpdate,
+    CardCreate,
+    SpecCreate,
+    SpecKnowledgeCreate,
+    SpecUpdate,
+)
+from okto_pulse.core.services.main import (
+    BoardService,
+    CardService,
+    SpecKnowledgeService,
+    SpecService,
+)
 from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 
@@ -211,6 +223,196 @@ async def test_create_card_auto_propagates_selected_spec_resources_idempotently(
             "knowledge_base",
             "mockup",
             "architecture",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_enabling_board_setting_backfills_existing_linked_cards(db_factory):
+    board_id = _id("board-backfill-resources")
+    actor_id = _id("agent-backfill-resources")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Backfill board", owner_id=actor_id))
+        ids = await _seed_spec_with_resources(db, board_id=board_id, actor_id=actor_id)
+        spec_id = ids["spec_id"]
+        await db.flush()
+
+        card = await CardService(db).create_card(
+            board_id,
+            actor_id,
+            CardCreate(title="Existing implementation card", spec_id=spec_id),
+        )
+        assert card.knowledge_bases in (None, [])
+        assert card.screen_mockups in (None, [])
+
+        await BoardService(db).update_board(
+            board_id,
+            actor_id,
+            BoardUpdate(
+                settings=BoardSettings(
+                    auto_derive_spec_resources_enabled=True,
+                    auto_derive_spec_resource_types=[
+                        "knowledge_base",
+                        "mockup",
+                        "architecture",
+                    ],
+                )
+            ),
+        )
+
+        refreshed = await db.get(Card, card.id)
+        assert [item["id"] for item in refreshed.knowledge_bases or []] == [
+            f"cardkb_{ids['knowledge_id']}"
+        ]
+        assert [item["id"] for item in refreshed.screen_mockups or []] == [
+            ids["mockup_id"]
+        ]
+        copied_architecture = (
+            await db.execute(
+                select(ArchitectureDesign).where(ArchitectureDesign.card_id == card.id)
+            )
+        ).scalars().all()
+        assert len(copied_architecture) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_spec_persists_mockups_for_later_auto_backfill(db_factory):
+    board_id = _id("board-create-spec-resources")
+    actor_id = _id("agent-create-spec-resources")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Create spec resources", owner_id=actor_id))
+        await db.flush()
+
+        spec = await SpecService(db).create_spec(
+            board_id,
+            actor_id,
+            SpecCreate(
+                title="Spec created with resources",
+                status=SpecStatus.APPROVED,
+                screen_mockups=[
+                    {
+                        "id": "created-mockup",
+                        "title": "Created mockup",
+                        "screen_type": "page",
+                        "html_content": "<div>Created</div>",
+                    }
+                ],
+                business_rules=[
+                    {
+                        "id": "created-br",
+                        "title": "Created BR",
+                        "rule": "Persist rule",
+                        "when": "Spec is created",
+                        "then": "Rule is available",
+                    }
+                ],
+                api_contracts=[
+                    {
+                        "id": "created-api",
+                        "method": "GET",
+                        "path": "/created",
+                        "description": "Persist contract",
+                    }
+                ],
+            ),
+        )
+        assert spec.screen_mockups[0]["id"] == "created-mockup"
+        assert spec.business_rules[0]["id"] == "created-br"
+        assert spec.api_contracts[0]["id"] == "created-api"
+
+        card = await CardService(db).create_card(
+            board_id,
+            actor_id,
+            CardCreate(title="Existing task", spec_id=spec.id),
+        )
+        assert card.screen_mockups in (None, [])
+
+        await BoardService(db).update_board(
+            board_id,
+            actor_id,
+            BoardUpdate(
+                settings=BoardSettings(
+                    auto_derive_spec_resources_enabled=True,
+                    auto_derive_spec_resource_types=["mockup"],
+                )
+            ),
+        )
+
+        refreshed = await db.get(Card, card.id)
+        assert [item["id"] for item in refreshed.screen_mockups or []] == [
+            "created-mockup"
+        ]
+
+
+@pytest.mark.asyncio
+async def test_spec_resource_changes_backfill_existing_linked_cards(db_factory):
+    board_id = _id("board-resource-change")
+    actor_id = _id("agent-resource-change")
+    spec_id = _id("spec-resource-change")
+
+    async with db_factory() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name="Resource change board",
+                owner_id=actor_id,
+                settings=_settings("knowledge_base", "mockup"),
+            )
+        )
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec receives resources later",
+                status=SpecStatus.APPROVED,
+                created_by=actor_id,
+                functional_requirements=[],
+                acceptance_criteria=[],
+                test_scenarios=[],
+                business_rules=[],
+                api_contracts=[],
+            )
+        )
+        await db.flush()
+
+        card = await CardService(db).create_card(
+            board_id,
+            actor_id,
+            CardCreate(title="Linked before resources", spec_id=spec_id),
+        )
+        assert card.knowledge_bases in (None, [])
+        assert card.screen_mockups in (None, [])
+
+        await SpecKnowledgeService(db).create_knowledge(
+            spec_id,
+            actor_id,
+            SpecKnowledgeCreate(
+                title="Late KB",
+                description="Created after cards exist",
+                content="Use this in linked tasks.",
+            ),
+        )
+        await SpecService(db).update_spec(
+            spec_id,
+            actor_id,
+            SpecUpdate(
+                screen_mockups=[
+                    {
+                        "id": "late-mockup",
+                        "title": "Late mockup",
+                        "screen_type": "form",
+                        "html_content": "<div>Late</div>",
+                    }
+                ]
+            ),
+        )
+
+        refreshed = await db.get(Card, card.id)
+        assert len(refreshed.knowledge_bases or []) == 1
+        assert refreshed.knowledge_bases[0]["title"] == "Late KB"
+        assert [item["id"] for item in refreshed.screen_mockups or []] == [
+            "late-mockup"
         ]
 
 

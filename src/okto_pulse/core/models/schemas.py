@@ -498,6 +498,69 @@ class ApiContract(BaseModel):
     notes: str | None = None
 
 
+IntegrationRequirementStatus = Literal["active", "superseded", "revoked"]
+IntegrationRequirementType = Literal[
+    "api",
+    "queue",
+    "stored_procedure",
+    "data_contract",
+    "event",
+    "file",
+    "other",
+]
+
+
+class IntegrationRequirement(BaseModel):
+    """An integration requirement for APIs, queues, SPs, events, or data contracts."""
+
+    id: str
+    title: str
+    integration_type: IntegrationRequirementType = "api"
+    description: str = ""
+    provider: str | None = None
+    consumer: str | None = None
+    contract_ref: str | None = None
+    endpoint: str | None = None
+    method: str | None = None
+    data_contract: dict[str, Any] | None = None
+    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_api_contracts: list[str] | None = None  # ApiContract IDs
+    linked_task_ids: list[str] | None = None  # Card IDs linked to this IR
+    status: IntegrationRequirementStatus = "active"
+    notes: str | None = None
+
+
+ObservabilityRequirementStatus = Literal["active", "superseded", "revoked"]
+ObservabilitySignalType = Literal[
+    "metric",
+    "log",
+    "trace",
+    "dashboard",
+    "alert",
+    "slo",
+    "other",
+]
+
+
+class ObservabilityRequirement(BaseModel):
+    """An observability requirement for dashboards, metrics, alerts, and thresholds."""
+
+    id: str
+    title: str
+    signal_type: ObservabilitySignalType = "metric"
+    description: str = ""
+    target: str | None = None
+    metric_name: str | None = None
+    threshold: str | None = None
+    severity: str | None = None
+    owner: str | None = None
+    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_integration_requirements: list[str] | None = None  # IntegrationRequirement IDs
+    linked_task_ids: list[str] | None = None  # Card IDs linked to this OR
+    status: ObservabilityRequirementStatus = "active"
+    notes: str | None = None
+
+
 DecisionStatus = Literal["active", "superseded", "revoked"]
 
 
@@ -1218,6 +1281,8 @@ class SpecCreate(BaseModel):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    integration_requirements: list[IntegrationRequirement] | None = None
+    observability_requirements: list[ObservabilityRequirement] | None = None
     decisions: list[Decision] | None = None
     status: SpecStatus = SpecStatus.DRAFT
     assignee_id: str | None = None
@@ -1239,10 +1304,15 @@ class SpecUpdate(BaseModel):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    integration_requirements: list[IntegrationRequirement] | None = None
+    observability_requirements: list[ObservabilityRequirement] | None = None
     decisions: list[Decision] | None = None
     skip_test_coverage: bool | None = None
     skip_rules_coverage: bool | None = None
     skip_trs_coverage: bool | None = None
+    skip_contract_coverage: bool | None = None
+    skip_ir_coverage: bool | None = None
+    skip_or_coverage: bool | None = None
     skip_decisions_coverage: bool | None = None
     assignee_id: str | None = None
     labels: list[str] | None = None
@@ -1499,12 +1569,16 @@ class SpecResponse(BaseSchema):
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None
     api_contracts: list[ApiContract] | None = None
+    integration_requirements: list[IntegrationRequirement] | None = None
+    observability_requirements: list[ObservabilityRequirement] | None = None
     decisions: list[Decision] | None = None
     skip_test_coverage: bool = False
     skip_rules_coverage: bool = False
     skip_decisions_coverage: bool = False  # default False (ideação #10 Fase 1 parity)
     skip_trs_coverage: bool = False
     skip_contract_coverage: bool = False
+    skip_ir_coverage: bool = False
+    skip_or_coverage: bool = False
     archived: bool = False
     pre_archive_status: str | None = None
     status: SpecStatus
@@ -1855,6 +1929,8 @@ class BoardSettings(BaseModel):
     skip_rules_coverage_global: bool = False  # if True, all specs bypass FR→BR coverage checks
     skip_trs_coverage_global: bool = False  # if True, all specs bypass TR→Task coverage checks
     skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
+    skip_ir_coverage_global: bool = False  # if True, all specs bypass IR→Task coverage checks
+    skip_or_coverage_global: bool = False  # if True, all specs bypass OR→Task coverage checks
     skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = True  # if True, cards must pass validation before moving to done

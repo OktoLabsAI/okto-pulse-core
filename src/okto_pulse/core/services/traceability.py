@@ -141,6 +141,8 @@ def _spec_coverage(spec: Spec) -> dict[str, Any]:
         "test_scenarios_total": coverage.get("scenarios_total", 0),
         "business_rules_total": coverage.get("brs_total", 0),
         "api_contracts_total": coverage.get("contracts_total", 0),
+        "integration_requirements_total": coverage.get("irs_total", 0),
+        "observability_requirements_total": coverage.get("ors_total", 0),
         "cards_total": len(cards),
         "cards_done": sum(1 for c in cards if _enum_value(c.status) == "done"),
     }
