@@ -516,6 +516,8 @@ def _mcp_spec_coverage_summary(spec: Any) -> dict[str, Any]:
         "test_scenarios_total": coverage.get("scenarios_total", 0),
         "business_rules_total": coverage.get("brs_total", 0),
         "api_contracts_total": coverage.get("contracts_total", 0),
+        "integration_requirements_total": coverage.get("irs_total", 0),
+        "observability_requirements_total": coverage.get("ors_total", 0),
         "cards_total": len(cards),
         "cards_done": sum(1 for c in cards if getattr(getattr(c, "status", None), "value", None) == "done"),
     }
@@ -2121,6 +2123,8 @@ async def okto_pulse_get_task_context(
                     "test_scenarios": spec.test_scenarios or [],
                     "business_rules": spec.business_rules or [],
                     "api_contracts": spec.api_contracts or [],
+                    "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+                    "observability_requirements": getattr(spec, "observability_requirements", None) or [],
                     "decisions": _filter_decisions_by_status(
                         getattr(spec, "decisions", None) or [],
                         include_superseded=_inc_superseded,
@@ -6559,6 +6563,8 @@ async def okto_pulse_create_spec(
                     "functional_requirements": spec.functional_requirements,
                     "technical_requirements": spec.technical_requirements,
                     "acceptance_criteria": spec.acceptance_criteria,
+                    "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+                    "observability_requirements": getattr(spec, "observability_requirements", None) or [],
                 },
             },
             default=str,
@@ -6603,6 +6609,8 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
                 "functional_requirements": spec.functional_requirements,
                 "technical_requirements": spec.technical_requirements,
                 "acceptance_criteria": spec.acceptance_criteria,
+                "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+                "observability_requirements": getattr(spec, "observability_requirements", None) or [],
                 "status": spec.status.value,
                 "version": spec.version,
                 "assignee_id": spec.assignee_id,
@@ -6705,6 +6713,8 @@ async def okto_pulse_get_spec_context(
             "test_scenarios": spec.test_scenarios or [],
             "business_rules": spec.business_rules or [],
             "api_contracts": spec.api_contracts or [],
+            "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+            "observability_requirements": getattr(spec, "observability_requirements", None) or [],
             "decisions": _filter_decisions_by_status(
                 getattr(spec, "decisions", None) or [],
                 include_superseded=_inc_superseded,
@@ -6717,6 +6727,8 @@ async def okto_pulse_get_spec_context(
             # Skip flags
             "skip_test_coverage": spec.skip_test_coverage,
             "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
+            "skip_ir_coverage": getattr(spec, "skip_ir_coverage", False),
+            "skip_or_coverage": getattr(spec, "skip_or_coverage", False),
             "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", True),
             "skip_qualitative_validation": getattr(spec, "skip_qualitative_validation", False),
             "validation_threshold": getattr(spec, "validation_threshold", None),
@@ -9547,6 +9559,357 @@ def _parse_linked_requirements(raw: str, frs: list) -> tuple[list[str] | None, s
         else:
             return None, f"Requirement index {idx} out of range (0-{len(frs)-1})"
     return out, None
+
+
+@mcp.tool()
+async def okto_pulse_list_integration_requirements(
+    board_id: str,
+    spec_id: str,
+    include_inactive: str = "false",
+) -> str:
+    """List Integration Requirements (IR) for a spec."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    include_all = _flag_enabled(include_inactive)
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        requirements = list(getattr(spec, "integration_requirements", None) or [])
+        if not include_all:
+            requirements = [
+                item for item in requirements
+                if not isinstance(item, dict) or item.get("status", "active") == "active"
+            ]
+        return json.dumps(
+            {"spec_id": spec_id, "integration_requirements": requirements},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_add_integration_requirement(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    integration_type: str = "api",
+    description: str = "",
+    provider: str = "",
+    consumer: str = "",
+    contract_ref: str = "",
+    endpoint: str = "",
+    method: str = "",
+    data_contract_json: str = "",
+    linked_requirements: str = "",
+    linked_api_contracts: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Add an Integration Requirement (IR) to a spec.
+
+    Use IR for APIs, queues, stored procedures, events, files, and data
+    contracts that need traceability beyond a single endpoint.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    allowed_types = {"api", "queue", "stored_procedure", "data_contract", "event", "file", "other"}
+    if integration_type not in allowed_types:
+        return json.dumps({"error": f"Invalid integration_type. Use one of: {sorted(allowed_types)}"})
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+
+        req_list, err = _parse_linked_requirements(linked_requirements, spec.functional_requirements or [])
+        if err:
+            return json.dumps({"error": err})
+
+        data_contract = None
+        if data_contract_json:
+            data_contract, json_err = _parse_json_arg(data_contract_json, None)
+            if json_err:
+                return json.dumps({"error": json_err})
+
+        requirement = {
+            "id": f"ir_{_uuid.uuid4().hex[:8]}",
+            "title": title,
+            "integration_type": integration_type,
+            "description": description.replace("\\n", "\n") if description else "",
+            "provider": provider or None,
+            "consumer": consumer or None,
+            "contract_ref": contract_ref or None,
+            "endpoint": endpoint or None,
+            "method": method or None,
+            "data_contract": data_contract,
+            "linked_requirements": req_list,
+            "linked_api_contracts": parse_multi_value(linked_api_contracts) or None,
+            "linked_task_ids": None,
+            "status": "active",
+            "notes": notes.replace("\\n", "\n") if notes else None,
+        }
+
+        requirements = list(getattr(spec, "integration_requirements", None) or [])
+        requirements.append(requirement)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, update_err = await _safe_spec_update(
+            service,
+            spec_id,
+            ctx.agent_id,
+            SpecUpdate(integration_requirements=requirements),
+        )
+        if update_err:
+            return update_err
+        await db.commit()
+
+        coverage = _spec_coverage(spec, integration_requirements=requirements)
+        return json.dumps(
+            {"success": True, "integration_requirement": requirement, "coverage": coverage},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_link_task_to_integration_requirement(
+    board_id: str,
+    spec_id: str,
+    requirement_id: str,
+    card_id: str,
+) -> str:
+    """Link a task card to an Integration Requirement (IR)."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        requirements = list(getattr(spec, "integration_requirements", None) or [])
+        target = next((item for item in requirements if item.get("id") == requirement_id), None)
+        if target is None:
+            return json.dumps({"error": f"Integration requirement '{requirement_id}' not found"})
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        if card_id not in task_ids:
+            task_ids.append(card_id)
+        target["linked_task_ids"] = task_ids
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, update_err = await _safe_spec_update(
+            spec_service,
+            spec_id,
+            ctx.agent_id,
+            SpecUpdate(integration_requirements=requirements),
+        )
+        if update_err:
+            return update_err
+        await db.commit()
+
+        coverage = _spec_coverage(spec, integration_requirements=requirements)
+        return json.dumps(
+            {
+                "success": True,
+                "requirement_id": requirement_id,
+                "card_id": card_id,
+                "linked_tasks": task_ids,
+                "coverage": coverage,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_observability_requirements(
+    board_id: str,
+    spec_id: str,
+    include_inactive: str = "false",
+) -> str:
+    """List Observability Requirements (OR) for a spec."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    include_all = _flag_enabled(include_inactive)
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        requirements = list(getattr(spec, "observability_requirements", None) or [])
+        if not include_all:
+            requirements = [
+                item for item in requirements
+                if not isinstance(item, dict) or item.get("status", "active") == "active"
+            ]
+        return json.dumps(
+            {"spec_id": spec_id, "observability_requirements": requirements},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_add_observability_requirement(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    signal_type: str = "metric",
+    description: str = "",
+    target: str = "",
+    metric_name: str = "",
+    threshold: str = "",
+    severity: str = "",
+    owner: str = "",
+    linked_requirements: str = "",
+    linked_integration_requirements: str = "",
+    notes: str = "",
+) -> str:
+    """Add an Observability Requirement (OR) to a spec."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    allowed_types = {"metric", "log", "trace", "dashboard", "alert", "slo", "other"}
+    if signal_type not in allowed_types:
+        return json.dumps({"error": f"Invalid signal_type. Use one of: {sorted(allowed_types)}"})
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+
+        req_list, err = _parse_linked_requirements(linked_requirements, spec.functional_requirements or [])
+        if err:
+            return json.dumps({"error": err})
+
+        requirement = {
+            "id": f"or_{_uuid.uuid4().hex[:8]}",
+            "title": title,
+            "signal_type": signal_type,
+            "description": description.replace("\\n", "\n") if description else "",
+            "target": target or None,
+            "metric_name": metric_name or None,
+            "threshold": threshold or None,
+            "severity": severity or None,
+            "owner": owner or None,
+            "linked_requirements": req_list,
+            "linked_integration_requirements": parse_multi_value(linked_integration_requirements) or None,
+            "linked_task_ids": None,
+            "status": "active",
+            "notes": notes.replace("\\n", "\n") if notes else None,
+        }
+
+        requirements = list(getattr(spec, "observability_requirements", None) or [])
+        requirements.append(requirement)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, update_err = await _safe_spec_update(
+            service,
+            spec_id,
+            ctx.agent_id,
+            SpecUpdate(observability_requirements=requirements),
+        )
+        if update_err:
+            return update_err
+        await db.commit()
+
+        coverage = _spec_coverage(spec, observability_requirements=requirements)
+        return json.dumps(
+            {"success": True, "observability_requirement": requirement, "coverage": coverage},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_link_task_to_observability_requirement(
+    board_id: str,
+    spec_id: str,
+    requirement_id: str,
+    card_id: str,
+) -> str:
+    """Link a task card to an Observability Requirement (OR)."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        requirements = list(getattr(spec, "observability_requirements", None) or [])
+        target = next((item for item in requirements if item.get("id") == requirement_id), None)
+        if target is None:
+            return json.dumps({"error": f"Observability requirement '{requirement_id}' not found"})
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        if card_id not in task_ids:
+            task_ids.append(card_id)
+        target["linked_task_ids"] = task_ids
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, update_err = await _safe_spec_update(
+            spec_service,
+            spec_id,
+            ctx.agent_id,
+            SpecUpdate(observability_requirements=requirements),
+        )
+        if update_err:
+            return update_err
+        await db.commit()
+
+        coverage = _spec_coverage(spec, observability_requirements=requirements)
+        return json.dumps(
+            {
+                "success": True,
+                "requirement_id": requirement_id,
+                "card_id": card_id,
+                "linked_tasks": task_ids,
+                "coverage": coverage,
+            },
+            default=str,
+        )
 
 
 @mcp.tool()
@@ -12671,6 +13034,8 @@ async def okto_pulse_get_sprint_context(
                 spec_brs = spec.business_rules or []
                 spec_trs = spec.technical_requirements or []
                 spec_contracts = spec.api_contracts or []
+                spec_irs = getattr(spec, "integration_requirements", None) or []
+                spec_ors = getattr(spec, "observability_requirements", None) or []
 
                 # Resolve scoped items
                 scoped_ts_ids = set(sprint.test_scenario_ids or [])
@@ -12683,6 +13048,10 @@ async def okto_pulse_get_sprint_context(
                               any(tid in sprint_card_ids for tid in (tr.get("linked_task_ids") or []))]
                 scoped_contracts = [c for c in spec_contracts if
                                     any(tid in sprint_card_ids for tid in (c.get("linked_task_ids") or []))]
+                scoped_irs = [ir for ir in spec_irs if
+                              any(tid in sprint_card_ids for tid in (ir.get("linked_task_ids") or []))]
+                scoped_ors = [req for req in spec_ors if
+                              any(tid in sprint_card_ids for tid in (req.get("linked_task_ids") or []))]
 
                 result["spec"] = {
                     "id": spec.id,
@@ -12694,6 +13063,8 @@ async def okto_pulse_get_sprint_context(
                     "test_scenarios": spec_ts,
                     "business_rules": spec_brs,
                     "api_contracts": spec_contracts,
+                    "integration_requirements": spec_irs,
+                    "observability_requirements": spec_ors,
                 }
 
                 result["scoped"] = {
@@ -12701,6 +13072,8 @@ async def okto_pulse_get_sprint_context(
                     "business_rules": scoped_brs,
                     "technical_requirements": scoped_trs,
                     "api_contracts": scoped_contracts,
+                    "integration_requirements": scoped_irs,
+                    "observability_requirements": scoped_ors,
                 }
 
         return json.dumps(result, default=str)

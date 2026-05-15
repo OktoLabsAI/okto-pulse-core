@@ -27,6 +27,7 @@ from okto_pulse.core.services.architecture import (
     ArchitecturePayloadValidationError,
     ArchitecturePropagationService,
 )
+from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 router = APIRouter()
 
@@ -158,6 +159,13 @@ async def _create_architecture(
     except ValueError as error:
         raise _http_error_from_value(error)
     response = repo.to_response(design)
+    if parent_type == "spec":
+        await SpecResourcePropagationService(db).propagate_for_spec(
+            board_id=design.board_id,
+            spec_id=parent_id,
+            actor_id=user_id,
+            trigger="spec_architecture_created",
+        )
     await db.commit()
     return response
 
