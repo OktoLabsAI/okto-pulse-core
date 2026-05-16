@@ -3633,6 +3633,15 @@ class SpecKnowledgeService:
         update_data = data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(kb, key, value)
+        await self.db.flush()
+        spec = await self.db.get(Spec, kb.spec_id)
+        if spec is not None:
+            await SpecResourcePropagationService(self.db).propagate_for_spec(
+                board_id=spec.board_id,
+                spec_id=kb.spec_id,
+                actor_id=kb.created_by or "system",
+                trigger="spec_knowledge_updated",
+            )
         return kb
 
     async def delete_knowledge(self, knowledge_id: str) -> bool:
@@ -3640,7 +3649,20 @@ class SpecKnowledgeService:
         kb = await self.get_knowledge(knowledge_id)
         if not kb:
             return False
+        spec_id = kb.spec_id
+        kb_id = kb.id
+        actor_id = kb.created_by or "system"
+        spec = await self.db.get(Spec, spec_id)
         await self.db.delete(kb)
+        await self.db.flush()
+        if spec is not None:
+            await SpecResourcePropagationService(self.db).propagate_for_spec(
+                board_id=spec.board_id,
+                spec_id=spec_id,
+                actor_id=actor_id,
+                trigger="spec_knowledge_deleted",
+                removed_kb_ids={kb_id},
+            )
         return True
 
 

@@ -18,13 +18,17 @@ from okto_pulse.core.models.db import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import (
+    ArchitectureDesignCreate,
+    ArchitectureDesignUpdate,
     BoardSettings,
     BoardUpdate,
     CardCreate,
     SpecCreate,
     SpecKnowledgeCreate,
+    SpecKnowledgeUpdate,
     SpecUpdate,
 )
+from okto_pulse.core.services.architecture import ArchitectureDesignRepository
 from okto_pulse.core.services.main import (
     BoardService,
     CardService,
@@ -506,3 +510,302 @@ async def test_link_card_to_spec_runs_auto_propagation(db_factory):
         card = await db.get(Card, card_id)
         assert card.spec_id == spec_id
         assert [item["id"] for item in card.knowledge_bases or []] == [f"cardkb_{ids['knowledge_id']}"]
+
+
+# ---------------------------------------------------------------------------
+# Spec 9af2cf05 — service-layer propagation closing the 10-path gap.
+# Each test exercises a repository/service entrypoint directly to prove the
+# fix can't regress if a new handler skips the call. See KB
+# "Diagnostic: 10 propagation paths bypass auto-derive".
+# ---------------------------------------------------------------------------
+
+
+async def _seed_board_spec_card(db, *, resource_types: tuple[str, ...]) -> dict[str, str]:
+    board_id = _id("board-svc")
+    actor_id = _id("agent-svc")
+    spec_id = _id("spec-svc")
+    card_id = _id("card-svc")
+    settings = (
+        _settings(*resource_types) if resource_types else {"auto_derive_spec_resources_enabled": False}
+    )
+    db.add(Board(id=board_id, name="Service layer board", owner_id=actor_id, settings=settings))
+    db.add(
+        Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Service layer spec",
+            status=SpecStatus.APPROVED,
+            created_by=actor_id,
+            functional_requirements=["FR"],
+            acceptance_criteria=["AC"],
+            test_scenarios=[],
+            business_rules=[],
+            api_contracts=[],
+        )
+    )
+    db.add(
+        Card(
+            id=card_id,
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Service layer card",
+            status=CardStatus.NOT_STARTED,
+            card_type=CardType.NORMAL,
+            created_by=actor_id,
+        )
+    )
+    await db.flush()
+    return {"board_id": board_id, "actor_id": actor_id, "spec_id": spec_id, "card_id": card_id}
+
+
+async def _arch_create_payload() -> ArchitectureDesignCreate:
+    return ArchitectureDesignCreate(
+        title="Service layer arch",
+        global_description="Designed via repository.create to verify propagation.",
+        entities=[
+            {
+                "id": "svc-api",
+                "name": "Demo API",
+                "entity_type": "api",
+                "responsibility": "Handles demo traffic.",
+            }
+        ],
+        interfaces=[],
+        diagrams=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_architecture_create_via_repository_propagates_to_linked_cards(db_factory):
+    """Spec 9af2cf05 — AC1 / ts_7046a567."""
+    async with db_factory() as db:
+        ctx = await _seed_board_spec_card(db, resource_types=("architecture",))
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("spec", ctx["spec_id"], await _arch_create_payload(), ctx["actor_id"])
+
+        card_designs = (
+            await db.execute(
+                select(ArchitectureDesign).where(ArchitectureDesign.card_id == ctx["card_id"])
+            )
+        ).scalars().all()
+        assert len(card_designs) == 1
+        assert card_designs[0].source_ref == f"architecture_design:{design.id}"
+
+        audits = (
+            await db.execute(
+                select(ActivityLog).where(
+                    ActivityLog.board_id == ctx["board_id"],
+                    ActivityLog.action == "spec_resources_auto_propagated",
+                )
+            )
+        ).scalars().all()
+        triggers = [audit.details.get("trigger") for audit in audits]
+        assert "spec_architecture_created" in triggers
+        latest = next(audit for audit in audits if audit.details.get("trigger") == "spec_architecture_created")
+        assert latest.details["results"]["architecture"]["copied_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_architecture_update_via_repository_propagates_to_linked_cards(db_factory):
+    """Spec 9af2cf05 — AC2 / ts_b11f707b."""
+    async with db_factory() as db:
+        ctx = await _seed_board_spec_card(db, resource_types=("architecture",))
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("spec", ctx["spec_id"], await _arch_create_payload(), ctx["actor_id"])
+
+        await repo.update(
+            design.id,
+            ArchitectureDesignUpdate(
+                entities=[
+                    {
+                        "id": "svc-api",
+                        "name": "Demo API v2",
+                        "entity_type": "api",
+                        "responsibility": "Handles demo traffic — refreshed.",
+                    }
+                ],
+                change_summary="Renamed entity",
+            ),
+            ctx["actor_id"],
+        )
+
+        card_designs = (
+            await db.execute(
+                select(ArchitectureDesign).where(ArchitectureDesign.card_id == ctx["card_id"])
+            )
+        ).scalars().all()
+        assert len(card_designs) == 1
+        refreshed = card_designs[0]
+        assert refreshed.source_ref == f"architecture_design:{design.id}"
+        entity_names = {entity["name"] for entity in refreshed.entities or []}
+        assert "Demo API v2" in entity_names
+
+        triggers = {
+            audit.details.get("trigger")
+            for audit in (
+                await db.execute(
+                    select(ActivityLog).where(
+                        ActivityLog.board_id == ctx["board_id"],
+                        ActivityLog.action == "spec_resources_auto_propagated",
+                    )
+                )
+            ).scalars().all()
+        }
+        assert "spec_architecture_updated" in triggers
+
+
+@pytest.mark.asyncio
+async def test_architecture_delete_via_repository_cleans_linked_cards(db_factory):
+    """Spec 9af2cf05 — AC3 / ts_eeac02f8."""
+    async with db_factory() as db:
+        ctx = await _seed_board_spec_card(db, resource_types=("architecture",))
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("spec", ctx["spec_id"], await _arch_create_payload(), ctx["actor_id"])
+        design_id = design.id
+
+        deleted = await repo.delete(design_id, ctx["actor_id"])
+        assert deleted is True
+
+        remaining = (
+            await db.execute(
+                select(ArchitectureDesign).where(
+                    ArchitectureDesign.card_id == ctx["card_id"],
+                    ArchitectureDesign.source_ref == f"architecture_design:{design_id}",
+                )
+            )
+        ).scalars().all()
+        assert remaining == []
+
+        delete_audits = [
+            audit for audit in (
+                await db.execute(
+                    select(ActivityLog).where(
+                        ActivityLog.board_id == ctx["board_id"],
+                        ActivityLog.action == "spec_resources_auto_propagated",
+                    )
+                )
+            ).scalars().all()
+            if audit.details.get("trigger") == "spec_architecture_deleted"
+        ]
+        assert delete_audits
+        assert delete_audits[-1].details["results"]["architecture"]["removed_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_spec_knowledge_update_propagates_content_to_linked_cards(db_factory):
+    """Spec 9af2cf05 — AC4 / ts_b0835218."""
+    async with db_factory() as db:
+        ctx = await _seed_board_spec_card(db, resource_types=("knowledge_base",))
+        kb_service = SpecKnowledgeService(db)
+        kb = await kb_service.create_knowledge(
+            ctx["spec_id"],
+            ctx["actor_id"],
+            SpecKnowledgeCreate(title="Old title", content="Old content", description="Old desc"),
+        )
+        assert kb is not None
+
+        await kb_service.update_knowledge(
+            kb.id,
+            SpecKnowledgeUpdate(title="NEW TITLE", content="NEW CONTENT"),
+        )
+
+        card = await db.get(Card, ctx["card_id"])
+        entry = next(item for item in (card.knowledge_bases or []) if item.get("id") == f"cardkb_{kb.id}")
+        assert entry["title"] == "NEW TITLE"
+        assert entry["content"] == "NEW CONTENT"
+
+        update_audits = [
+            audit for audit in (
+                await db.execute(
+                    select(ActivityLog).where(
+                        ActivityLog.board_id == ctx["board_id"],
+                        ActivityLog.action == "spec_resources_auto_propagated",
+                    )
+                )
+            ).scalars().all()
+            if audit.details.get("trigger") == "spec_knowledge_updated"
+        ]
+        assert update_audits
+        assert update_audits[-1].details["results"]["knowledge_base"]["copied_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_spec_knowledge_delete_removes_cardkb_from_linked_cards(db_factory):
+    """Spec 9af2cf05 — AC5 / ts_37bba06b."""
+    async with db_factory() as db:
+        ctx = await _seed_board_spec_card(db, resource_types=("knowledge_base",))
+        kb_service = SpecKnowledgeService(db)
+        kb = await kb_service.create_knowledge(
+            ctx["spec_id"],
+            ctx["actor_id"],
+            SpecKnowledgeCreate(title="Ephemeral", content="Ephemeral content"),
+        )
+        assert kb is not None
+        kb_id = kb.id
+
+        deleted = await kb_service.delete_knowledge(kb_id)
+        assert deleted is True
+
+        card = await db.get(Card, ctx["card_id"])
+        ids = [item.get("id") for item in (card.knowledge_bases or [])]
+        assert f"cardkb_{kb_id}" not in ids
+
+        delete_audits = [
+            audit for audit in (
+                await db.execute(
+                    select(ActivityLog).where(
+                        ActivityLog.board_id == ctx["board_id"],
+                        ActivityLog.action == "spec_resources_auto_propagated",
+                    )
+                )
+            ).scalars().all()
+            if audit.details.get("trigger") == "spec_knowledge_deleted"
+        ]
+        assert delete_audits
+        assert delete_audits[-1].details["results"]["knowledge_base"]["removed_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_disabled_auto_derive_skips_all_service_layer_propagation(db_factory):
+    """Spec 9af2cf05 — AC6 / ts_23a809b1."""
+    async with db_factory() as db:
+        ctx = await _seed_board_spec_card(db, resource_types=())  # toggle OFF
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("spec", ctx["spec_id"], await _arch_create_payload(), ctx["actor_id"])
+        await repo.update(
+            design.id,
+            ArchitectureDesignUpdate(
+                entities=[{"id": "svc-api", "name": "Renamed", "entity_type": "api", "responsibility": "x"}],
+                change_summary="rename",
+            ),
+            ctx["actor_id"],
+        )
+        await repo.delete(design.id, ctx["actor_id"])
+
+        kb_service = SpecKnowledgeService(db)
+        kb = await kb_service.create_knowledge(
+            ctx["spec_id"],
+            ctx["actor_id"],
+            SpecKnowledgeCreate(title="x", content="x"),
+        )
+        await kb_service.update_knowledge(kb.id, SpecKnowledgeUpdate(content="y"))
+        await kb_service.delete_knowledge(kb.id)
+
+        audits = (
+            await db.execute(
+                select(ActivityLog).where(
+                    ActivityLog.board_id == ctx["board_id"],
+                    ActivityLog.action == "spec_resources_auto_propagated",
+                )
+            )
+        ).scalars().all()
+        assert audits == []
+
+        card = await db.get(Card, ctx["card_id"])
+        assert (card.knowledge_bases or []) == []
+        card_designs = (
+            await db.execute(
+                select(ArchitectureDesign).where(ArchitectureDesign.card_id == ctx["card_id"])
+            )
+        ).scalars().all()
+        assert card_designs == []

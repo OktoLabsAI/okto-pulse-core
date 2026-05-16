@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.models.db import ActivityLog, Board, Card, Spec, SpecKnowledgeBase
+from okto_pulse.core.models.schemas import ArchitectureDesignUpdate
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitecturePropagationService,
@@ -33,6 +34,8 @@ class SpecResourcePropagationService:
         card_id: str,
         actor_id: str,
         trigger: str,
+        removed_kb_ids: set[str] | None = None,
+        removed_architecture_design_ids: set[str] | None = None,
     ) -> dict[str, Any]:
         board = await self.db.get(Board, board_id)
         if not board:
@@ -50,11 +53,19 @@ class SpecResourcePropagationService:
         results: dict[str, dict[str, Any]] = {}
         for resource_type in resource_types:
             if resource_type == "knowledge_base":
-                results[resource_type] = await self._copy_knowledge(spec, card, actor_id)
+                if removed_kb_ids:
+                    results[resource_type] = await self._remove_knowledge(spec, card, removed_kb_ids)
+                else:
+                    results[resource_type] = await self._copy_knowledge(spec, card, actor_id)
             elif resource_type == "mockup":
                 results[resource_type] = await self._copy_mockups(spec, card)
             elif resource_type == "architecture":
-                results[resource_type] = await self._copy_architecture(spec, card, actor_id)
+                if removed_architecture_design_ids:
+                    results[resource_type] = await self._remove_architecture(
+                        spec, card, removed_architecture_design_ids
+                    )
+                else:
+                    results[resource_type] = await self._copy_architecture(spec, card, actor_id)
 
         await self._log_audit(
             board_id=board_id,
@@ -82,6 +93,8 @@ class SpecResourcePropagationService:
         spec_id: str,
         actor_id: str,
         trigger: str,
+        removed_kb_ids: set[str] | None = None,
+        removed_architecture_design_ids: set[str] | None = None,
     ) -> dict[str, Any]:
         """Copy selected Spec resources to every linked non-archived card."""
         board = await self.db.get(Board, board_id)
@@ -115,6 +128,8 @@ class SpecResourcePropagationService:
                     card_id=card.id,
                     actor_id=actor_id,
                     trigger=trigger,
+                    removed_kb_ids=removed_kb_ids,
+                    removed_architecture_design_ids=removed_architecture_design_ids,
                 )
             )
 
@@ -193,43 +208,71 @@ class SpecResourcePropagationService:
         )
         source_items = list(result.scalars().all())
         existing = list(card.knowledge_bases or [])
-        existing_sources = {
-            str(item.get("source") or "")
-            for item in existing
-            if isinstance(item, dict)
-        }
-        existing_ids = {
-            str(item.get("id") or "")
-            for item in existing
-            if isinstance(item, dict)
-        }
+
+        def _kb_index_by_source() -> dict[str, int]:
+            return {
+                str(item.get("source") or ""): idx
+                for idx, item in enumerate(existing)
+                if isinstance(item, dict)
+            }
+
+        def _kb_index_by_id() -> dict[str, int]:
+            return {
+                str(item.get("id") or ""): idx
+                for idx, item in enumerate(existing)
+                if isinstance(item, dict)
+            }
+
+        source_index = _kb_index_by_source()
+        id_index = _kb_index_by_id()
 
         copied = 0
         ignored = 0
         copied_ids: list[str] = []
+        mutated = False
         for kb in source_items:
             source = f"copied_from_spec:{spec.id}:{kb.id}"
             card_kb_id = f"cardkb_{kb.id}"
-            if source in existing_sources or card_kb_id in existing_ids:
-                ignored += 1
+            target_idx = source_index.get(source)
+            if target_idx is None:
+                target_idx = id_index.get(card_kb_id)
+            new_payload = {
+                "id": card_kb_id,
+                "title": kb.title,
+                "description": getattr(kb, "description", None),
+                "content": kb.content,
+                "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
+                "source": source,
+                "author_id": actor_id,
+            }
+            if target_idx is not None:
+                current = existing[target_idx]
+                preserved_author = (
+                    current.get("author_id") if isinstance(current, dict) else None
+                ) or actor_id
+                refreshed = {**new_payload, "author_id": preserved_author}
+                if isinstance(current, dict) and all(
+                    current.get(key) == refreshed.get(key)
+                    for key in ("title", "description", "content", "mime_type", "source")
+                ):
+                    ignored += 1
+                    continue
+                existing[target_idx] = refreshed
+                source_index[source] = target_idx
+                id_index[card_kb_id] = target_idx
+                copied_ids.append(card_kb_id)
+                copied += 1
+                mutated = True
                 continue
-            existing.append(
-                {
-                    "id": card_kb_id,
-                    "title": kb.title,
-                    "description": getattr(kb, "description", None),
-                    "content": kb.content,
-                    "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
-                    "source": source,
-                    "author_id": actor_id,
-                }
-            )
-            existing_sources.add(source)
-            existing_ids.add(card_kb_id)
+            existing.append(new_payload)
+            new_idx = len(existing) - 1
+            source_index[source] = new_idx
+            id_index[card_kb_id] = new_idx
             copied_ids.append(card_kb_id)
             copied += 1
+            mutated = True
 
-        if copied:
+        if mutated:
             card.knowledge_bases = existing
             flag_modified(card, "knowledge_bases")
             await self.db.flush()
@@ -239,6 +282,38 @@ class SpecResourcePropagationService:
             "copied_count": copied,
             "ignored_count": ignored,
             "copied_ids": copied_ids,
+            "warnings": [],
+        }
+
+    async def _remove_knowledge(
+        self,
+        spec: Spec,
+        card: Card,
+        kb_ids: set[str],
+    ) -> dict[str, Any]:
+        existing = list(card.knowledge_bases or [])
+        sources_to_remove = {f"copied_from_spec:{spec.id}:{kb_id}" for kb_id in kb_ids}
+        ids_to_remove = {f"cardkb_{kb_id}" for kb_id in kb_ids}
+        removed_ids: list[str] = []
+        kept: list[Any] = []
+        for item in existing:
+            if isinstance(item, dict):
+                source = str(item.get("source") or "")
+                item_id = str(item.get("id") or "")
+                if source in sources_to_remove or item_id in ids_to_remove:
+                    removed_ids.append(item_id or source)
+                    continue
+            kept.append(item)
+        if removed_ids:
+            card.knowledge_bases = kept
+            flag_modified(card, "knowledge_bases")
+            await self.db.flush()
+        return {
+            "source_count": len(kb_ids),
+            "copied_count": 0,
+            "ignored_count": 0,
+            "removed_count": len(removed_ids),
+            "removed_ids": removed_ids,
             "warnings": [],
         }
 
@@ -294,32 +369,80 @@ class SpecResourcePropagationService:
         repository = ArchitectureDesignRepository(self.db)
         source_designs = await repository.list("spec", spec.id, include_payloads=False)
         existing_designs = await repository.list("card", card.id, include_payloads=False)
-        existing_refs = {
-            design.source_ref
+        existing_by_ref = {
+            getattr(design, "source_ref", None): design
             for design in existing_designs
             if getattr(design, "source_ref", None)
         }
         copied_count = 0
         ignored_count = 0
+        copied_ids: list[str] = []
+        refreshed = False
         for design in source_designs:
             source_ref = repository.source_ref_for(design)
-            if source_ref in existing_refs:
-                ignored_count += 1
-            else:
+            target = existing_by_ref.get(source_ref)
+            if target is None:
                 copied_count += 1
+                refreshed = True
+                continue
+            target_version = getattr(target, "source_version", None)
+            spec_version = getattr(design, "version", None)
+            if target_version == spec_version:
+                ignored_count += 1
+                continue
+            patch = ArchitectureDesignUpdate(
+                title=design.title,
+                global_description=design.global_description,
+                entities=design.entities,
+                interfaces=design.interfaces,
+                diagrams=design.diagrams or [],
+                source_ref=source_ref,
+                source_version=spec_version,
+                source_design_id=design.id,
+                change_summary=f"Refresh from spec design {design.id} v{spec_version}",
+            )
+            await repository.update(target.id, patch, actor_id)
+            copied_count += 1
+            copied_ids.append(target.id)
+            refreshed = True
 
-        copied_designs = []
-        if source_designs:
-            copied_designs = await ArchitecturePropagationService(
+        if refreshed:
+            propagation_service = ArchitecturePropagationService(
                 self.db,
                 repository=repository,
-            ).copy_spec_to_card(spec.id, card.id, actor_id)
+            )
+            new_designs = await propagation_service.copy_spec_to_card(spec.id, card.id, actor_id)
+            copied_ids.extend(design.id for design in new_designs if design.id not in copied_ids)
 
         return {
             "source_count": len(source_designs),
             "copied_count": copied_count,
             "ignored_count": ignored_count,
-            "copied_ids": [design.id for design in copied_designs],
+            "copied_ids": copied_ids,
+            "warnings": [],
+        }
+
+    async def _remove_architecture(
+        self,
+        spec: Spec,
+        card: Card,
+        spec_design_ids: set[str],
+    ) -> dict[str, Any]:
+        repository = ArchitectureDesignRepository(self.db)
+        existing_designs = await repository.list("card", card.id, include_payloads=False)
+        refs_to_remove = {f"architecture_design:{design_id}" for design_id in spec_design_ids}
+        removed_ids: list[str] = []
+        for design in existing_designs:
+            source_ref = getattr(design, "source_ref", None)
+            if source_ref in refs_to_remove:
+                await repository.delete(design.id, None)
+                removed_ids.append(design.id)
+        return {
+            "source_count": len(spec_design_ids),
+            "copied_count": 0,
+            "ignored_count": 0,
+            "removed_count": len(removed_ids),
+            "removed_ids": removed_ids,
             "warnings": [],
         }
 

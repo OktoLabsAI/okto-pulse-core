@@ -20,7 +20,7 @@ from okto_pulse.core.telemetry.settings import (
     resolve_telemetry_config,
     save_state,
 )
-from okto_pulse.core.telemetry.store import LocalTelemetryStore, parse_iso
+from okto_pulse.core.telemetry.store import LocalTelemetryStore, add_guided_help_counts, parse_iso
 
 
 def install_id_path(settings: CoreSettings) -> Path:
@@ -115,6 +115,8 @@ class TelemetryBeaconSender:
         cfg = resolve_telemetry_config(self.settings)
         store = self._store()
         buckets: dict[str, Counter[str]] = defaultdict(Counter)
+        bucket_starts: list[str] = []
+        guided_help_counts: Counter[str] = Counter()
         duration_buckets: Counter[str] = Counter()
         error_class_counts: Counter[str] = Counter()
         for event in store.iter_events():
@@ -123,8 +125,12 @@ class TelemetryBeaconSender:
                 continue
             bucket = occurred.replace(minute=0, second=0, microsecond=0)
             key = bucket.isoformat().replace("+00:00", "Z")
+            bucket_starts.append(key)
             event_type = str(event.get("event_type", "unknown"))
             payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            if event_type == "guided_help":
+                add_guided_help_counts(guided_help_counts, payload)
+                continue
             label = str(
                 payload.get("command")
                 or payload.get("route_template")
@@ -148,11 +154,10 @@ class TelemetryBeaconSender:
             product_metrics = ProductTelemetryAggregator(self.settings, cfg.metrics_dir).aggregate()
         except Exception:
             product_metrics = {}
-        if not buckets and not product_metrics:
+        if not buckets and not product_metrics and not guided_help_counts:
             return None
-        if buckets:
-            first_key = sorted(buckets)[0]
-            bucket_start = first_key.split(":", 1)[1]
+        if bucket_starts:
+            bucket_start = sorted(bucket_starts)[0]
         else:
             bucket_start = (
                 datetime.now(timezone.utc)
@@ -169,6 +174,8 @@ class TelemetryBeaconSender:
             "error_class_counts": dict(error_class_counts),
         }
         metrics.update(product_metrics)
+        if guided_help_counts:
+            metrics["guided_help_counts"] = dict(sorted(guided_help_counts.items()))
         for key, counts in buckets.items():
             event_type, _ = key.split(":", 1)
             if event_type == "cli":

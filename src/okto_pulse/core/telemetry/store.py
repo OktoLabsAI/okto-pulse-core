@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from okto_pulse.core.telemetry.schema import canonical_json
+from okto_pulse.core.telemetry.schema import GUIDED_HELP_ALLOWED_VALUES, canonical_json
 
 
 def parse_iso(value: str) -> datetime | None:
@@ -25,6 +25,14 @@ def ensure_inside(base: Path, candidate: Path) -> Path:
     if candidate_resolved != base_resolved and base_resolved not in candidate_resolved.parents:
         raise ValueError("PATH_OUTSIDE_METRICS_DIR")
     return candidate_resolved
+
+
+def add_guided_help_counts(counts: Counter[str], payload: dict[str, Any]) -> None:
+    """Aggregate only closed-schema guided help categories."""
+    for field, allowed_values in GUIDED_HELP_ALLOWED_VALUES.items():
+        value = payload.get(field)
+        if isinstance(value, str) and value in allowed_values:
+            counts[f"{field}.{value}"] += 1
 
 
 class LocalTelemetryStore:
@@ -101,6 +109,7 @@ class LocalTelemetryStore:
         since = datetime.now(timezone.utc) - timedelta(days=window_days)
         by_type: Counter[str] = Counter()
         by_day: Counter[str] = Counter()
+        guided_help_counts: Counter[str] = Counter()
         files = 0
         for path in self.events_dir.glob("events-*.jsonl") if self.events_dir.exists() else []:
             ensure_inside(self.metrics_dir, path)
@@ -111,10 +120,14 @@ class LocalTelemetryStore:
             day = str(event.get("occurred_at", ""))[:10]
             if day:
                 by_day[day] += 1
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            if event_type == "guided_help":
+                add_guided_help_counts(guided_help_counts, payload)
         return {
             "event_count": sum(by_type.values()),
             "by_event_type": dict(sorted(by_type.items())),
             "by_day": dict(sorted(by_day.items())),
+            "guided_help_counts": dict(sorted(guided_help_counts.items())),
             "files_count": files,
         }
 

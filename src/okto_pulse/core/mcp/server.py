@@ -5,11 +5,75 @@ import inspect
 import json
 import logging
 import os
+import random
 import re
+import sqlite3
+import threading
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+# ---------------------------------------------------------------------------
+# Deprecation sample logging (spec P0.B — TR-B4)
+#
+# Invocations of the 15 legacy list_* tools are sampled at a configurable
+# rate and persisted to a SQLite table so we can track adoption of the new
+# consolidated handlers.  The default sample rate is 1% (0.01).
+# ---------------------------------------------------------------------------
+
+_DEPRECATION_SAMPLE_RATE: float = float(
+    os.getenv("OKTO_PULSE_DEPRECATION_SAMPLE_RATE", "0.01")
+)
+_DEPRECATION_DB_PATH: str = os.getenv(
+    "OKTO_PULSE_DEPRECATION_LOG_PATH",
+    str(Path(__file__).parent.parent.parent.parent.parent / "data" / "deprecation_sample.db"),
+)
+_DEPRECATION_DB_LOCK: threading.Lock = threading.Lock()
+
+
+def _ensure_deprecation_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS deprecation_sample (
+            timestamp TEXT NOT NULL,
+            agent_id TEXT,
+            tool_name TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+
+
+def _log_deprecated_invocation(tool_name: str, agent_id: str | None) -> None:
+    """Probabilistically record a legacy tool invocation into the SQLite sample log.
+
+    Skip (silently) when:
+    * Random sample check fails.
+    * The data directory does not exist yet (container starting up).
+    * Any DB error (never raise from a logging path).
+    """
+    if random.random() > _DEPRECATION_SAMPLE_RATE:
+        return
+    db_path = _DEPRECATION_DB_PATH
+    try:
+        db_dir = Path(db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+        with _DEPRECATION_DB_LOCK:
+            conn = sqlite3.connect(db_path, timeout=5)
+            try:
+                _ensure_deprecation_table(conn)
+                conn.execute(
+                    "INSERT INTO deprecation_sample (timestamp, agent_id, tool_name) VALUES (?, ?, ?)",
+                    (datetime.now(timezone.utc).isoformat(), agent_id, tool_name),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as _exc:  # noqa: BLE001
+        logging.getLogger(__name__).debug(
+            "deprecation_sample log failed for %s: %s", tool_name, _exc
+        )
 
 import uvicorn
 from fastmcp import FastMCP
@@ -18,7 +82,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
-from okto_pulse.core.mcp.helpers import coerce_to_list_str, parse_multi_value
+from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value
 from okto_pulse.core.mcp.trace_middleware import install_if_enabled as _install_trace
 from okto_pulse.core.models.db import Board
 from okto_pulse.core.services.main import (
@@ -103,6 +167,63 @@ mcp = FastMCP(
 # Settings
 mcp_settings = get_mcp_settings()
 settings = get_settings()
+
+# ============================================================================
+# MCP Resources — okto-pulse:// URI scheme
+# Lazy-loaded at startup; clients that support resources/read see these.
+# ============================================================================
+
+_resources_cache: dict[str, str] = {}
+
+
+def _get_resource_dir() -> Path:
+    return Path(__file__).parent / "resources"
+
+
+def _load_resource_file(relative_path: str) -> str:
+    """Load and cache a resource file by its path relative to the resources/ dir."""
+    if relative_path not in _resources_cache:
+        candidate = _get_resource_dir() / relative_path
+        if candidate.exists():
+            _resources_cache[relative_path] = candidate.read_text(encoding="utf-8")
+        else:
+            _resources_cache[relative_path] = ""
+    return _resources_cache[relative_path]
+
+
+_RESOURCE_REGISTRY = [
+    ("okto-pulse://workflows/stories", "workflows/stories.md", "Stories & Topics workflow — pre-ideation intake."),
+    ("okto-pulse://workflows/ideations", "workflows/ideations.md", "Ideations workflow — scope + ambiguity-killer."),
+    ("okto-pulse://workflows/refinements", "workflows/refinements.md", "Refinements workflow — deep investigation."),
+    ("okto-pulse://workflows/specs", "workflows/specs.md", "Specs workflow — saturation, gate, evaluation."),
+    ("okto-pulse://workflows/cards", "workflows/cards.md", "Cards workflow — impl/bug/test execution."),
+    ("okto-pulse://workflows/sprints", "workflows/sprints.md", "Sprints workflow — lifecycle e evaluation."),
+    ("okto-pulse://workflows/kg", "workflows/kg.md", "KG workflow — consolidation, query, governance."),
+    ("okto-pulse://reference/errors", "reference/errors.md", "MCP errors matrix com fixes canônicos."),
+    ("okto-pulse://reference/multivalue", "reference/multivalue.md", "Multi-value parameter input shapes."),
+    ("okto-pulse://reference/destructive_ops", "reference/destructive_ops.md", "Destructive operations governance."),
+    ("okto-pulse://reference/card_types", "reference/card_types.md", "Card types — normal/test/bug rules."),
+    ("okto-pulse://reference/spec_gates", "reference/spec_gates.md", "Spec validation gate + evaluation gates."),
+]
+
+
+def _make_resource_handler(path: str) -> "Callable[[], str]":
+    """Create a closure-safe handler for a specific resource path."""
+    def handler() -> str:
+        return _load_resource_file(path)
+    return handler
+
+
+# Register 12 resources dynamically
+for _uri, _path, _desc in _RESOURCE_REGISTRY:
+    _handler = _make_resource_handler(_path)
+    _handler.__name__ = f"resource_{_path.replace('/', '_').replace('.md', '')}"
+    _handler.__doc__ = _desc
+    mcp.resource(_uri, description=_desc)(_handler)
+
+# Pre-warm the resource cache so first-read latency is minimal
+for _, _path, _ in _RESOURCE_REGISTRY:
+    _load_resource_file(_path)
 
 # ============================================================================
 # SESSION-BASED AUTH (API key extracted from request)
@@ -1898,16 +2019,7 @@ async def okto_pulse_create_card(
 
 @mcp.tool()
 async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
-    """
-    Get detailed card information including attachments, Q&A, and comments.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON with full card details
-    """
+    """Get detailed card information including attachments, Q&A, and comments."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2298,33 +2410,11 @@ async def okto_pulse_update_card(
     action_plan: str = "",
     linked_test_task_ids: list[str] | str = "",
 ) -> str:
-    """
-    Update card details.
+    """Update card details. Pass only the fields you want to change; omit the rest.
 
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        title: New title (optional, empty = no change)
-        description: New description (optional)
-        details: New details (optional)
-        priority: New priority - one of: none, low, medium, high, very_high, critical (optional, empty = no change)
-        assignee_id: New assignee (optional)
-        labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
-            legacy string accepted as JSON array or pipe-separated. Comma-only
-            string is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-        test_scenario_ids: Multi-value test scenario IDs — same input shapes as
-            ``labels``. Use ``okto_pulse_link_task_to_scenario`` for
-            bidirectional linking.
-        severity: Bug severity - one of: critical, major, minor (optional, bug cards only)
-        expected_behavior: Expected behavior description (optional, bug cards only)
-        observed_behavior: Observed behavior description (optional, bug cards only)
-        steps_to_reproduce: Steps to reproduce the bug (optional, bug cards only)
-        action_plan: Plan for fixing the bug (optional, bug cards only)
-        linked_test_task_ids: Multi-value test task card IDs linked to this bug
-            (optional, bug cards only) — same input shapes as ``labels``.
-
-    Returns:
-        JSON with updated card details
+    Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
+    native list; legacy pipe-separated string is also accepted. Comma-only strings
+    are REJECTED. For bidirectional scenario linking, use okto_pulse_link_task_to_scenario.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -2438,25 +2528,12 @@ async def okto_pulse_move_card(
     drift: int = -1,
     drift_justification: str = "",
 ) -> str:
-    """
-    Move a card to a different column/position on the board.
-    Moving execution work to 'validation' REQUIRES the executor's conclusion,
-    completeness, and drift — all with justifications — so the reviewer can
-    validate the claim. Moving directly to 'done' also requires the same report.
+    """Move a card to a different column/position on the board.
 
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        status: New status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
-        position: New position in column (-1 = end of column)
-        conclusion: REQUIRED when moving execution work to status='validation' or status='done'. Detailed summary of changes, files modified, decisions, test results, and follow-ups. Supports Markdown and Mermaid diagrams (```mermaid code blocks).
-        completeness: REQUIRED when moving execution work to status='validation' or status='done'. 0-100, how much of the planned work was actually implemented. 100 = fully complete, 0 = nothing delivered. Use -1 when no execution report is required.
-        completeness_justification: REQUIRED when moving execution work to status='validation' or status='done'. Explains why the completeness score is what it is. E.g. "All planned endpoints implemented and tested" or "Deferred pagination to follow-up card".
-        drift: REQUIRED when moving execution work to status='validation' or status='done'. 0-100, how much the implementation deviated from the original plan. 0 = exactly as planned, 100 = completely different approach. Use -1 when no execution report is required.
-        drift_justification: REQUIRED when moving execution work to status='validation' or status='done'. Explains what caused deviation from the original plan. E.g. "No deviation" or "Had to switch from REST to WebSocket due to real-time requirements discovered during implementation".
-
-    Returns:
-        JSON with updated card details
+    Moving to 'validation' or 'done' REQUIRES conclusion, completeness (0-100),
+    completeness_justification, drift (0-100), and drift_justification so the
+    reviewer can validate the claim. Use -1 for completeness/drift when no
+    execution report is required (e.g. moving to on_hold or started).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -2533,16 +2610,7 @@ async def okto_pulse_move_card(
 
 @mcp.tool()
 async def okto_pulse_delete_card(board_id: str, card_id: str) -> str:
-    """
-    Delete a card from the board.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON with success status
-    """
+    """Delete a card from the board. This operation is permanent and cannot be undone."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2689,20 +2757,10 @@ async def okto_pulse_list_cards_by_status(
     offset: int = 0,
     limit: int = 50,
 ) -> str:
-    """
-    List cards on the board with optional filters and pagination.
+    """List cards on the board with optional filters and pagination.
 
-    Args:
-        board_id: Board ID
-        status: Filter by status (optional, empty = all). One of: not_started, started, in_progress, validation, on_hold, done, cancelled. Use "open" for cards NOT in done/cancelled.
-        spec_id: Filter by spec ID (optional) — only cards linked to this spec
-        priority: Filter by priority (optional) — one of: none, low, medium, high, very_high, critical
-        assignee_id: Filter by assignee (optional)
-        offset: Skip first N cards (default 0)
-        limit: Max cards to return (default 50, max 200)
-
-    Returns:
-        JSON with filtered/paginated cards and summary counts
+    status: empty = all, or one of not_started/started/in_progress/validation/on_hold/done/cancelled/open.
+    Use 'open' for all cards NOT in done/cancelled. Max limit is 200.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -3546,10 +3604,15 @@ async def okto_pulse_create_topic(board_id: str, name: str, description: str = "
 
 @mcp.tool()
 async def okto_pulse_list_topics(board_id: str, include_archived: str = "false") -> str:
-    """List Topics for a board."""
+    """List Topics for a board.
+
+    DEPRECATED: Use okto_pulse_list_by_board(entity_type='topic') instead.
+    This tool will be removed in 0.3.0.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_topics", getattr(ctx, "agent_id", None))
     perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.read", Permissions.BOARD_READ)
     if perm_err:
         return _mcp_permission_error_response(perm_err)
@@ -3558,6 +3621,7 @@ async def okto_pulse_list_topics(board_id: str, include_archived: str = "false")
         await db.commit()
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_by_board with entity_type='topic' instead.",
                 "count": len(topics),
                 "topics": [
                     {
@@ -3994,10 +4058,15 @@ async def okto_pulse_list_stories(
     converted: str = "",
     include_archived: str = "false",
 ) -> str:
-    """List Stories for a board with optional filters."""
+    """List Stories for a board with optional filters.
+
+    DEPRECATED: Use okto_pulse_list_by_board(entity_type='story') instead.
+    This tool will be removed in 0.3.0.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_stories", getattr(ctx, "agent_id", None))
     perm_err = _mcp_check_permission(ctx.permissions, "story.entity.read", Permissions.BOARD_READ)
     if perm_err:
         return _mcp_permission_error_response(perm_err)
@@ -4022,7 +4091,11 @@ async def okto_pulse_list_stories(
             return json.dumps({"error": str(e)})
         await db.commit()
         return json.dumps(
-            {"count": len(stories), "stories": [_story_payload(story) for story in stories]},
+            {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_by_board with entity_type='story' instead.",
+                "count": len(stories),
+                "stories": [_story_payload(story) for story in stories],
+            },
             default=str,
         )
 
@@ -4578,10 +4651,13 @@ async def okto_pulse_get_ideation_context(
 
 @mcp.tool()
 async def okto_pulse_list_ideations(
-    board_id: str, status: str = "", offset: int = 0, limit: int = 50
+    board_id: str, status: str = "", offset: int = 0, limit: int = 100
 ) -> str:
     """
     List ideations for a board with optional filtering and pagination.
+
+    DEPRECATED: Use okto_pulse_list_by_board(entity_type='ideation') instead.
+    This tool will be removed in 0.3.0.
 
     Args:
         board_id: Board ID
@@ -4595,6 +4671,7 @@ async def okto_pulse_list_ideations(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_ideations", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -4612,6 +4689,7 @@ async def okto_pulse_list_ideations(
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_by_board with entity_type='ideation' instead.",
                 "board_id": board_id,
                 "total": total,
                 "offset": offset,
@@ -4990,6 +5068,9 @@ async def okto_pulse_list_ideation_snapshots(board_id: str, ideation_id: str) ->
     List all version snapshots of an ideation. Each snapshot is an immutable copy
     of the ideation's state at the moment it was marked as 'done'.
 
+    DEPRECATED: Use okto_pulse_list_snapshots(entity_type='ideation') instead.
+    This tool will be removed in 0.3.0.
+
     Args:
         board_id: Board ID
         ideation_id: Ideation ID
@@ -5000,6 +5081,7 @@ async def okto_pulse_list_ideation_snapshots(board_id: str, ideation_id: str) ->
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_ideation_snapshots", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -5012,6 +5094,7 @@ async def okto_pulse_list_ideation_snapshots(board_id: str, ideation_id: str) ->
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_snapshots with entity_type='ideation' instead.",
                 "ideation_id": ideation_id,
                 "count": len(snapshots),
                 "snapshots": [
@@ -5139,6 +5222,9 @@ async def okto_pulse_list_ideation_knowledge(board_id: str, ideation_id: str) ->
     """
     List all knowledge base items attached to an ideation.
 
+    DEPRECATED: Use okto_pulse_list_knowledge(entity_type='ideation') instead.
+    This tool will be removed in 0.3.0.
+
     Use this before deriving refinements/specs when the ideation references
     domain rules, source documents, decisions, constraints, or contextual
     evidence that should travel through the SDLC chain.
@@ -5146,6 +5232,7 @@ async def okto_pulse_list_ideation_knowledge(board_id: str, ideation_id: str) ->
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_ideation_knowledge", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -5159,6 +5246,7 @@ async def okto_pulse_list_ideation_knowledge(board_id: str, ideation_id: str) ->
         await db.commit()
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_knowledge with entity_type='ideation' instead.",
                 "ideation_id": ideation_id,
                 "count": len(items),
                 "knowledge_bases": [
@@ -5493,6 +5581,9 @@ async def okto_pulse_list_ideation_qa(board_id: str, ideation_id: str) -> str:
     """
     List all Q&A items on an ideation. Check this to understand open questions or clarifications.
 
+    DEPRECATED: Use okto_pulse_list_qa(entity_type='ideation') instead.
+    This tool will be removed in 0.3.0.
+
     Args:
         board_id: Board ID
         ideation_id: Ideation ID
@@ -5503,6 +5594,7 @@ async def okto_pulse_list_ideation_qa(board_id: str, ideation_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_ideation_qa", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -5515,6 +5607,7 @@ async def okto_pulse_list_ideation_qa(board_id: str, ideation_id: str) -> str:
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_qa with entity_type='ideation' instead.",
                 "ideation_id": ideation_id,
                 "count": len(items),
                 "qa_items": [
@@ -5847,10 +5940,13 @@ async def okto_pulse_get_refinement_context(
 
 @mcp.tool()
 async def okto_pulse_list_refinements(
-    board_id: str, ideation_id: str, status: str = "", offset: int = 0, limit: int = 50
+    board_id: str, ideation_id: str, status: str = "", offset: int = 0, limit: int = 100
 ) -> str:
     """
     List refinements for an ideation with optional filtering and pagination.
+
+    DEPRECATED: Use okto_pulse_list_by_board(entity_type='refinement', filters={'ideation_id': ...}) instead.
+    This tool will be removed in 0.3.0.
 
     Args:
         board_id: Board ID
@@ -5865,6 +5961,7 @@ async def okto_pulse_list_refinements(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_refinements", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -5885,6 +5982,7 @@ async def okto_pulse_list_refinements(
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_by_board with entity_type='refinement' and filters={'ideation_id': '...'} instead.",
                 "ideation_id": ideation_id,
                 "total": total,
                 "offset": offset,
@@ -6432,6 +6530,9 @@ async def okto_pulse_list_refinement_qa(board_id: str, refinement_id: str) -> st
     """
     List all Q&A items on a refinement. Check this to understand open questions or clarifications.
 
+    DEPRECATED: Use okto_pulse_list_qa(entity_type='refinement') instead.
+    This tool will be removed in 0.3.0.
+
     Args:
         board_id: Board ID
         refinement_id: Refinement ID
@@ -6442,6 +6543,7 @@ async def okto_pulse_list_refinement_qa(board_id: str, refinement_id: str) -> st
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_refinement_qa", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -6454,6 +6556,7 @@ async def okto_pulse_list_refinement_qa(board_id: str, refinement_id: str) -> st
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_qa with entity_type='refinement' instead.",
                 "refinement_id": refinement_id,
                 "count": len(items),
                 "qa_items": [
@@ -6863,10 +6966,13 @@ async def okto_pulse_get_spec_context(
 
 @mcp.tool()
 async def okto_pulse_list_specs(
-    board_id: str, status: str = "", offset: int = 0, limit: int = 50
+    board_id: str, status: str = "", offset: int = 0, limit: int = 100
 ) -> str:
     """
     List specs for a board with optional filtering and pagination.
+
+    DEPRECATED: Use okto_pulse_list_by_board(entity_type='spec') instead.
+    This tool will be removed in 0.3.0.
 
     Args:
         board_id: Board ID
@@ -6880,6 +6986,7 @@ async def okto_pulse_list_specs(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_specs", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -6897,6 +7004,7 @@ async def okto_pulse_list_specs(
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_by_board with entity_type='spec' instead.",
                 "board_id": board_id,
                 "total": total,
                 "offset": offset,
@@ -7985,15 +8093,31 @@ async def okto_pulse_get_architecture_design_schema(board_id: str) -> str:
 
     Call this before authoring a non-trivial Architecture Design payload. The
     schema includes allowed enums, entity/interface contracts, Excalidraw
-    adapter payload rules, bad examples, good examples, and a complete minimal
-    payload example. Use it together with
-    okto_pulse_validate_architecture_design_payload before create/update.
+    adapter payload rules, bad examples, good examples, the complete minimal
+    payload example AND a `semantic_node_registry` section (spec cc497a0d) that
+    defines the canonical mapping from entity_type to
+    {displayType, architectureKind, iconName} plus the icon allowlist.
+
+    MANDATORY validation flow for MCP agents:
+        1. okto_pulse_get_architecture_design_schema(board_id) — read the registry.
+        2. Build payload: prefer letting the registry normalize linked nodes by setting
+           entity.entity_type + diagram element.linkedEntityId only (text/displayType/
+           architectureKind/iconName auto-filled at persist time).
+        3. okto_pulse_validate_architecture_design_payload(...) — confirm valid=true and
+           surface warnings (semantic_metadata_normalized) to the human.
+        4. okto_pulse_add_architecture_design / update_architecture_design — backend
+           re-applies normalization + rejects ambiguous payloads (FR3 of spec cc497a0d).
+
+    Do NOT invent iconName/displayType/architectureKind outside the registry. Linked
+    nodes (linkedEntityId set) must either provide all four metadata fields explicitly
+    or rely on the registry to fill them deterministically; otherwise the payload is
+    rejected with suggested_fixes.
 
     Args:
         board_id: Board ID
 
     Returns:
-        JSON with success=true and schema.
+        JSON with success=true and schema (includes semantic_node_registry).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -8806,10 +8930,14 @@ async def okto_pulse_list_card_knowledge(board_id: str, card_id: str) -> str:
     List all knowledge base entries attached to a card.
     Returns titles + descriptions + ids; full content is included as well
     since the rows live inline (no separate fetch path).
+
+    DEPRECATED: Use okto_pulse_list_knowledge(entity_type='card') instead.
+    This tool will be removed in 0.3.0.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_card_knowledge", getattr(ctx, "agent_id", None))
 
     async with get_db_for_mcp() as db:
         service = CardService(db)
@@ -8817,7 +8945,7 @@ async def okto_pulse_list_card_knowledge(board_id: str, card_id: str) -> str:
         if not card or card.board_id != board_id:
             return json.dumps({"error": "Card not found"})
 
-    return json.dumps({"success": True, "card_id": card_id, "knowledge": list(card.knowledge_bases or [])}, default=str)
+    return json.dumps({"_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_knowledge with entity_type='card' instead.", "success": True, "card_id": card_id, "knowledge": list(card.knowledge_bases or [])}, default=str)
 
 
 @mcp.tool()
@@ -12127,6 +12255,9 @@ async def okto_pulse_list_spec_qa(board_id: str, spec_id: str) -> str:
     List all Q&A items on a spec. Check this before starting work to understand
     any open questions or clarifications about the spec.
 
+    DEPRECATED: Use okto_pulse_list_qa(entity_type='spec') instead.
+    This tool will be removed in 0.3.0.
+
     Args:
         board_id: Board ID
         spec_id: Spec ID
@@ -12137,6 +12268,7 @@ async def okto_pulse_list_spec_qa(board_id: str, spec_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_spec_qa", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -12149,6 +12281,7 @@ async def okto_pulse_list_spec_qa(board_id: str, spec_id: str) -> str:
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_qa with entity_type='spec' instead.",
                 "spec_id": spec_id,
                 "count": len(items),
                 "qa_items": [
@@ -12284,6 +12417,9 @@ async def okto_pulse_list_spec_knowledge(board_id: str, spec_id: str) -> str:
     """
     List all knowledge base items attached to a spec (titles and descriptions, without content).
 
+    DEPRECATED: Use okto_pulse_list_knowledge(entity_type='spec') instead.
+    This tool will be removed in 0.3.0.
+
     Args:
         board_id: Board ID
         spec_id: Spec ID
@@ -12294,6 +12430,7 @@ async def okto_pulse_list_spec_knowledge(board_id: str, spec_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_spec_knowledge", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -12306,6 +12443,7 @@ async def okto_pulse_list_spec_knowledge(board_id: str, spec_id: str) -> str:
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_knowledge with entity_type='spec' instead.",
                 "spec_id": spec_id,
                 "count": len(items),
                 "knowledge_bases": [
@@ -12483,6 +12621,9 @@ async def okto_pulse_list_refinement_snapshots(board_id: str, refinement_id: str
     List all version snapshots of a refinement. Each snapshot is an immutable copy
     of the refinement's state at the moment it was marked as 'done'.
 
+    DEPRECATED: Use okto_pulse_list_snapshots(entity_type='refinement') instead.
+    This tool will be removed in 0.3.0.
+
     Args:
         board_id: Board ID
         refinement_id: Refinement ID
@@ -12493,6 +12634,7 @@ async def okto_pulse_list_refinement_snapshots(board_id: str, refinement_id: str
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_refinement_snapshots", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -12505,6 +12647,7 @@ async def okto_pulse_list_refinement_snapshots(board_id: str, refinement_id: str
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_snapshots with entity_type='refinement' instead.",
                 "refinement_id": refinement_id,
                 "count": len(snapshots),
                 "snapshots": [
@@ -12581,6 +12724,9 @@ async def okto_pulse_list_refinement_knowledge(board_id: str, refinement_id: str
     """
     List all knowledge base items attached to a refinement (titles and descriptions, without content).
 
+    DEPRECATED: Use okto_pulse_list_knowledge(entity_type='refinement') instead.
+    This tool will be removed in 0.3.0.
+
     Args:
         board_id: Board ID
         refinement_id: Refinement ID
@@ -12591,6 +12737,7 @@ async def okto_pulse_list_refinement_knowledge(board_id: str, refinement_id: str
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_refinement_knowledge", getattr(ctx, "agent_id", None))
 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
@@ -12603,6 +12750,7 @@ async def okto_pulse_list_refinement_knowledge(board_id: str, refinement_id: str
 
         return json.dumps(
             {
+                "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_knowledge with entity_type='refinement' instead.",
                 "refinement_id": refinement_id,
                 "count": len(items),
                 "knowledge_bases": [
@@ -13163,6 +13311,9 @@ async def okto_pulse_list_sprints(board_id: str, spec_id: str) -> str:
     """
     List all sprints for a spec.
 
+    DEPRECATED: Use okto_pulse_list_by_board(entity_type='sprint', filters={'spec_id': ...}) instead.
+    This tool will be removed in 0.3.0.
+
     Args:
         board_id: Board ID
         spec_id: Spec ID
@@ -13173,12 +13324,14 @@ async def okto_pulse_list_sprints(board_id: str, spec_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+    _log_deprecated_invocation("okto_pulse_list_sprints", getattr(ctx, "agent_id", None))
 
     async with get_db_for_mcp() as db:
         from okto_pulse.core.services.main import SprintService
         service = SprintService(db)
         sprints = await service.list_sprints(spec_id)
         return json.dumps({
+            "_deprecation_warning": "This tool will be removed in 0.3.0. Use okto_pulse_list_by_board with entity_type='sprint' and filters={'spec_id': '...'} instead.",
             "spec_id": spec_id,
             "count": len(sprints),
             "sprints": [
@@ -14333,6 +14486,592 @@ async def okto_pulse_kg_tick_run_now(
         "status": "running",
         "scheduled_at": scheduled_at,
     })
+
+
+# ============================================================================
+# CONSOLIDATED POLYMORPHIC LIST HANDLERS (spec P0.B — TR-B1)
+#
+# These 4 tools replace the 15 individual okto_pulse_list_* tools.
+# The old tools remain functional (with a _deprecation_warning field) for
+# one minor release cycle; they will be removed in 0.3.0.
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_list_by_board(
+    board_id: str,
+    entity_type: str,
+    filters: dict[str, Any] | str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> str:
+    """List top-level entities of a board by type.
+
+    Consolidates: list_specs, list_ideations, list_refinements,
+    list_sprints, list_stories, list_topics.
+
+    Use this single tool instead of the individual list_* tools.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of: spec, ideation, refinement, sprint, story, topic
+        filters: Optional filter dict OR JSON string; validated server-side per entity_type.
+            spec: status, labels, assignee_id
+            ideation: status, labels
+            refinement: status, labels, ideation_id
+            sprint: status (requires filters.spec_id to identify parent spec)
+            story: status, topic_id, linked, converted, include_archived
+            topic: include_archived
+        limit: Max results (default 100, max 200)
+        offset: Skip first N results (default 0)
+
+    Returns:
+        JSON {items: [...], total: int, entity_type: str} or structured error
+    """
+    from okto_pulse.core.mcp.filters import validate_filters
+
+    # Auto-deserialize string JSON (MCP transport convention — other tools use coerce_to_list_str)
+    if isinstance(filters, str):
+        if not filters.strip():
+            filters = None
+        else:
+            try:
+                filters = json.loads(filters)
+            except json.JSONDecodeError as e:
+                return _structured_error("invalid_filter", [], None, f"Invalid JSON in filters: {e}")
+
+    SUPPORTED = ["spec", "ideation", "refinement", "sprint", "story", "topic"]
+    if entity_type not in SUPPORTED:
+        return _structured_error(
+            "unsupported_entity",
+            SUPPORTED,
+            None,
+            f"entity_type='{entity_type}' is not supported by okto_pulse_list_by_board",
+        )
+
+    ok, err = validate_filters(entity_type, filters or {}, scope="by_board")
+    if not ok:
+        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    limit = min(limit, 200)
+    filters = filters or {}
+
+    async with get_db_for_mcp() as db:
+        if entity_type == "spec":
+            service = SpecService(db)
+            items = await service.list_specs(board_id, filters.get("status"))
+            if "labels" in filters and filters["labels"]:
+                label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
+                items = [s for s in items if any(l in (s.labels or []) for l in label_filter)]
+            if "assignee_id" in filters and filters["assignee_id"]:
+                items = [s for s in items if s.assignee_id == filters["assignee_id"]]
+            await db.commit()
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "description": s.description,
+                        "status": s.status.value,
+                        "version": s.version,
+                        "assignee_id": s.assignee_id,
+                        "labels": s.labels,
+                        "created_at": s.created_at.isoformat(),
+                        "updated_at": s.updated_at.isoformat(),
+                    }
+                    for s in paginated
+                ],
+            }, default=str)
+
+        elif entity_type == "ideation":
+            service = IdeationService(db)
+            items = await service.list_ideations(board_id, filters.get("status"))
+            if "labels" in filters and filters["labels"]:
+                label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
+                items = [i for i in items if any(l in (i.labels or []) for l in label_filter)]
+            await db.commit()
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [
+                    {
+                        "id": i.id,
+                        "title": i.title,
+                        "description": i.description,
+                        "problem_statement": i.problem_statement,
+                        "complexity": i.complexity.value if i.complexity else None,
+                        "status": i.status.value,
+                        "version": i.version,
+                        "assignee_id": i.assignee_id,
+                        "labels": i.labels,
+                        "created_at": i.created_at.isoformat(),
+                        "updated_at": i.updated_at.isoformat(),
+                    }
+                    for i in paginated
+                ],
+            }, default=str)
+
+        elif entity_type == "refinement":
+            ideation_id = filters.get("ideation_id", "")
+            if not ideation_id:
+                return _structured_error(
+                    "missing_required_filter",
+                    ["ideation_id"],
+                    None,
+                    "entity_type='refinement' requires filters.ideation_id",
+                )
+            service = RefinementService(db)
+            items = await service.list_refinements(ideation_id)
+            if "status" in filters and filters["status"]:
+                items = [r for r in items if r.status.value == filters["status"]]
+            if "labels" in filters and filters["labels"]:
+                label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
+                items = [r for r in items if any(l in (r.labels or []) for l in label_filter)]
+            await db.commit()
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "ideation_id": ideation_id,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [
+                    {
+                        "id": r.id,
+                        "title": r.title,
+                        "description": r.description,
+                        "in_scope": r.in_scope,
+                        "out_of_scope": r.out_of_scope,
+                        "status": r.status.value,
+                        "version": r.version,
+                        "assignee_id": r.assignee_id,
+                        "labels": r.labels,
+                        "created_at": r.created_at.isoformat(),
+                        "updated_at": r.updated_at.isoformat(),
+                    }
+                    for r in paginated
+                ],
+            }, default=str)
+
+        elif entity_type == "sprint":
+            spec_id = filters.get("spec_id", "")
+            if not spec_id:
+                return _structured_error(
+                    "missing_required_filter",
+                    ["spec_id"],
+                    None,
+                    "entity_type='sprint' requires filters.spec_id to identify the parent spec",
+                )
+            from okto_pulse.core.services.main import SprintService
+            service = SprintService(db)
+            items = await service.list_sprints(spec_id)
+            if "status" in filters and filters["status"]:
+                items = [s for s in items if s.status.value == filters["status"]]
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "spec_id": spec_id,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "status": s.status.value,
+                        "spec_version": s.spec_version,
+                        "test_scenario_ids": s.test_scenario_ids,
+                        "business_rule_ids": s.business_rule_ids,
+                        "labels": s.labels,
+                    }
+                    for s in paginated
+                ],
+            }, default=str)
+
+        elif entity_type == "story":
+            def _optional_bool_filter(value: Any) -> bool | None:
+                if value is None or value == "":
+                    return None
+                if isinstance(value, bool):
+                    return value
+                return _flag_enabled(str(value))
+
+            service = StoryService(db)
+            items = await service.list_stories(
+                board_id,
+                status_filter=filters.get("status") or None,
+                topic_id=filters.get("topic_id") or None,
+                linked=_optional_bool_filter(filters.get("linked")),
+                converted=_optional_bool_filter(filters.get("converted")),
+                include_archived=_flag_enabled(str(filters.get("include_archived", "false"))),
+            )
+            await db.commit()
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [_story_payload(s) for s in paginated],
+            }, default=str)
+
+        else:  # topic
+            service = StoryService(db)
+            topics = await service.list_topics(
+                board_id,
+                include_archived=_flag_enabled(str(filters.get("include_archived", "false"))),
+            )
+            await db.commit()
+            total = len(topics)
+            paginated = topics[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [_topic_payload(t) for t in paginated],
+            }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_qa(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    filters: dict[str, Any] | str | None = None,
+) -> str:
+    """List Q&A items for a spec, ideation, or refinement.
+
+    Consolidates: list_spec_qa, list_ideation_qa, list_refinement_qa.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of: spec, ideation, refinement
+        entity_id: ID of the entity (spec_id, ideation_id, or refinement_id)
+        filters: Optional filter dict OR JSON string.
+            status: filter by answer status
+            asked_by: filter by agent/user who asked
+
+    Returns:
+        JSON {qa_items: [...], count: int, entity_type: str} or structured error
+    """
+    from okto_pulse.core.mcp.filters import validate_filters
+
+    # Auto-deserialize string JSON (MCP transport convention)
+    if isinstance(filters, str):
+        if not filters.strip():
+            filters = None
+        else:
+            try:
+                filters = json.loads(filters)
+            except json.JSONDecodeError as e:
+                return _structured_error("invalid_filter", [], None, f"Invalid JSON in filters: {e}")
+
+    SUPPORTED = ["spec", "ideation", "refinement"]
+    if entity_type not in SUPPORTED:
+        return _structured_error(
+            "unsupported_entity",
+            SUPPORTED,
+            None,
+            f"entity_type='{entity_type}' is not supported by okto_pulse_list_qa",
+        )
+
+    ok, err = validate_filters(entity_type, filters or {}, scope="qa")
+    if not ok:
+        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    filters = filters or {}
+
+    def _qa_item(qa) -> dict:
+        return {
+            "id": qa.id,
+            "question": qa.question,
+            "question_type": qa.question_type,
+            "choices": qa.choices,
+            "allow_free_text": getattr(qa, "allow_free_text", None),
+            "answer": qa.answer,
+            "selected": qa.selected,
+            "asked_by": qa.asked_by,
+            "answered_by": qa.answered_by,
+            "created_at": qa.created_at.isoformat(),
+            "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
+        }
+
+    async with get_db_for_mcp() as db:
+        if entity_type == "spec":
+            service = SpecQAService(db)
+            items = await service.list_qa(entity_id)
+        elif entity_type == "ideation":
+            service = IdeationQAService(db)
+            items = await service.list_qa(entity_id)
+        else:  # refinement
+            service = RefinementQAService(db)
+            items = await service.list_qa(entity_id)
+
+        await db.commit()
+
+        # Apply optional filters
+        if filters.get("asked_by"):
+            items = [q for q in items if q.asked_by == filters["asked_by"]]
+
+        return json.dumps({
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "count": len(items),
+            "qa_items": [_qa_item(q) for q in items],
+        }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_knowledge(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    filters: dict[str, Any] | str | None = None,
+) -> str:
+    """List knowledge base items for a spec, ideation, refinement, or card.
+
+    Consolidates: list_spec_knowledge, list_ideation_knowledge,
+    list_refinement_knowledge, list_card_knowledge.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of: spec, ideation, refinement, card
+        entity_id: ID of the entity
+        filters: Optional filter dict OR JSON string.
+            mime_type: filter by MIME type
+
+    Returns:
+        JSON {knowledge_bases: [...], count: int, entity_type: str} or structured error
+    """
+    from okto_pulse.core.mcp.filters import validate_filters
+
+    # Auto-deserialize string JSON (MCP transport convention)
+    if isinstance(filters, str):
+        if not filters.strip():
+            filters = None
+        else:
+            try:
+                filters = json.loads(filters)
+            except json.JSONDecodeError as e:
+                return _structured_error("invalid_filter", [], None, f"Invalid JSON in filters: {e}")
+
+    SUPPORTED = ["spec", "ideation", "refinement", "card"]
+    if entity_type not in SUPPORTED:
+        return _structured_error(
+            "unsupported_entity",
+            SUPPORTED,
+            None,
+            f"entity_type='{entity_type}' is not supported by okto_pulse_list_knowledge",
+        )
+
+    ok, err = validate_filters(entity_type, filters or {}, scope="knowledge")
+    if not ok:
+        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    filters = filters or {}
+    mime_filter: str | None = filters.get("mime_type")
+
+    async with get_db_for_mcp() as db:
+        if entity_type == "spec":
+            service = SpecKnowledgeService(db)
+            items = await service.list_knowledge(entity_id)
+            await db.commit()
+            if mime_filter:
+                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    {
+                        "id": kb.id,
+                        "title": kb.title,
+                        "description": kb.description,
+                        "mime_type": kb.mime_type,
+                        "created_at": kb.created_at.isoformat(),
+                    }
+                    for kb in items
+                ],
+            }, default=str)
+
+        elif entity_type == "ideation":
+            ideation = await IdeationService(db).get_ideation(entity_id)
+            if not ideation or ideation.board_id != board_id:
+                return json.dumps({"error": "Ideation not found"})
+            service = IdeationKnowledgeService(db)
+            items = await service.list_knowledge(entity_id)
+            await db.commit()
+            if mime_filter:
+                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    _serialize_knowledge_base(kb, include_content=False)
+                    for kb in items
+                ],
+            }, default=str)
+
+        elif entity_type == "refinement":
+            service = RefinementKnowledgeService(db)
+            items = await service.list_knowledge(entity_id)
+            await db.commit()
+            if mime_filter:
+                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    {
+                        "id": kb.id,
+                        "title": kb.title,
+                        "description": kb.description,
+                        "mime_type": kb.mime_type,
+                        "created_at": kb.created_at.isoformat(),
+                    }
+                    for kb in items
+                ],
+            }, default=str)
+
+        else:  # card
+            service = CardService(db)
+            card = await service.get_card(entity_id)
+            if not card or card.board_id != board_id:
+                return json.dumps({"error": "Card not found"})
+            kbs = list(card.knowledge_bases or [])
+            if mime_filter:
+                kbs = [kb for kb in kbs if kb.get("mime_type") == mime_filter]
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(kbs),
+                "knowledge_bases": kbs,
+            }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_snapshots(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+) -> str:
+    """List version snapshots for an ideation or refinement.
+
+    Consolidates: list_ideation_snapshots, list_refinement_snapshots.
+
+    Each snapshot is an immutable copy of the entity's state at the moment
+    it was marked as 'done'.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of: ideation, refinement
+        entity_id: ID of the entity
+
+    Returns:
+        JSON {snapshots: [...], count: int, entity_type: str} or structured error
+    """
+    SUPPORTED = ["ideation", "refinement"]
+    if entity_type not in SUPPORTED:
+        return _structured_error(
+            "unsupported_entity",
+            SUPPORTED,
+            None,
+            f"entity_type='{entity_type}' is not supported by okto_pulse_list_snapshots",
+        )
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        if entity_type == "ideation":
+            service = IdeationService(db)
+            snapshots = await service.list_snapshots(entity_id)
+            await db.commit()
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(snapshots),
+                "snapshots": [
+                    {
+                        "version": s.version,
+                        "title": s.title,
+                        "complexity": s.complexity,
+                        "created_by": s.created_by,
+                        "created_at": s.created_at.isoformat(),
+                    }
+                    for s in snapshots
+                ],
+            }, default=str)
+
+        else:  # refinement
+            service = RefinementService(db)
+            snapshots = await service.list_snapshots(entity_id)
+            await db.commit()
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(snapshots),
+                "snapshots": [
+                    {
+                        "version": s.version,
+                        "title": s.title,
+                        "created_by": s.created_by,
+                        "created_at": s.created_at.isoformat(),
+                    }
+                    for s in snapshots
+                ],
+            }, default=str)
 
 
 # ============================================================================
