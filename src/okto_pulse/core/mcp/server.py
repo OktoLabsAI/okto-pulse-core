@@ -1991,8 +1991,9 @@ async def okto_pulse_get_task_context(
     """
     Get the FULL execution context for a task card. Aggregates the card data with
     all relevant spec information: functional requirements, technical requirements,
-    acceptance criteria, test scenarios, business rules, API contracts, knowledge
-    base entries, screen mockups, Q&A, and comments.
+    acceptance criteria, test scenarios, business rules, API contracts, integration
+    requirements, observability requirements, knowledge base entries, screen
+    mockups, Q&A, and comments.
 
     **Always call this before starting work on a task** — it provides everything
     an agent needs to understand what to build, how to test it, and what rules apply.
@@ -2123,8 +2124,6 @@ async def okto_pulse_get_task_context(
                     "test_scenarios": spec.test_scenarios or [],
                     "business_rules": spec.business_rules or [],
                     "api_contracts": spec.api_contracts or [],
-                    "integration_requirements": getattr(spec, "integration_requirements", None) or [],
-                    "observability_requirements": getattr(spec, "observability_requirements", None) or [],
                     "decisions": _filter_decisions_by_status(
                         getattr(spec, "decisions", None) or [],
                         include_superseded=_inc_superseded,
@@ -2137,6 +2136,22 @@ async def okto_pulse_get_task_context(
                         include_superseded=_inc_superseded,
                     ),
                 }
+                if _mcp_check_permission(
+                    ctx.permissions,
+                    "spec.integration_requirements.read",
+                    Permissions.BOARD_READ,
+                ) is None:
+                    spec_data["integration_requirements"] = (
+                        getattr(spec, "integration_requirements", None) or []
+                    )
+                if _mcp_check_permission(
+                    ctx.permissions,
+                    "spec.observability_requirements.read",
+                    Permissions.BOARD_READ,
+                ) is None:
+                    spec_data["observability_requirements"] = (
+                        getattr(spec, "observability_requirements", None) or []
+                    )
 
                 if _inc_mockups and spec.screen_mockups:
                     spec_data["screen_mockups"] = spec.screen_mockups
@@ -6599,38 +6614,50 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
         if not spec:
             return json.dumps({"error": "Spec not found"})
 
-        return json.dumps(
-            {
-                "id": spec.id,
-                "board_id": spec.board_id,
-                "title": spec.title,
-                "description": spec.description,
-                "context": spec.context,
-                "functional_requirements": spec.functional_requirements,
-                "technical_requirements": spec.technical_requirements,
-                "acceptance_criteria": spec.acceptance_criteria,
-                "integration_requirements": getattr(spec, "integration_requirements", None) or [],
-                "observability_requirements": getattr(spec, "observability_requirements", None) or [],
-                "status": spec.status.value,
-                "version": spec.version,
-                "assignee_id": spec.assignee_id,
-                "created_by": spec.created_by,
-                "created_at": spec.created_at.isoformat(),
-                "updated_at": spec.updated_at.isoformat(),
-                "labels": spec.labels,
-                "cards": [
-                    {
-                        "id": c.id,
-                        "title": c.title,
-                        "status": c.status.value,
-                        "priority": c.priority.value,
-                        "assignee_id": c.assignee_id,
-                    }
-                    for c in spec.cards
-                ],
-            },
-            default=str,
-        )
+        payload = {
+            "id": spec.id,
+            "board_id": spec.board_id,
+            "title": spec.title,
+            "description": spec.description,
+            "context": spec.context,
+            "functional_requirements": spec.functional_requirements,
+            "technical_requirements": spec.technical_requirements,
+            "acceptance_criteria": spec.acceptance_criteria,
+            "status": spec.status.value,
+            "version": spec.version,
+            "assignee_id": spec.assignee_id,
+            "created_by": spec.created_by,
+            "created_at": spec.created_at.isoformat(),
+            "updated_at": spec.updated_at.isoformat(),
+            "labels": spec.labels,
+            "cards": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "status": c.status.value,
+                    "priority": c.priority.value,
+                    "assignee_id": c.assignee_id,
+                }
+                for c in spec.cards
+            ],
+        }
+        if _mcp_check_permission(
+            ctx.permissions,
+            "spec.integration_requirements.read",
+            Permissions.BOARD_READ,
+        ) is None:
+            payload["integration_requirements"] = (
+                getattr(spec, "integration_requirements", None) or []
+            )
+        if _mcp_check_permission(
+            ctx.permissions,
+            "spec.observability_requirements.read",
+            Permissions.BOARD_READ,
+        ) is None:
+            payload["observability_requirements"] = (
+                getattr(spec, "observability_requirements", None) or []
+            )
+        return json.dumps(payload, default=str)
 
 
 @mcp.tool()
@@ -6647,8 +6674,8 @@ async def okto_pulse_get_spec_context(
     Get the FULL consolidated context of a spec. Returns ALL structured data
     needed to evaluate, validate, or review this spec before advancing it.
 
-    Includes: requirements, test scenarios, business rules, API contracts,
-    screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
+    Includes: requirements, test scenarios, business rules, API contracts, IRs,
+    ORs, screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
 
     **Always call this before evaluating, moving, or creating cards from a spec.**
 
@@ -6709,12 +6736,10 @@ async def okto_pulse_get_spec_context(
             "functional_requirements": spec.functional_requirements or [],
             "technical_requirements": spec.technical_requirements or [],
             "acceptance_criteria": spec.acceptance_criteria or [],
-            # Structured sections — ALWAYS included
+            # Structured sections — gated by their own granular read flags when available.
             "test_scenarios": spec.test_scenarios or [],
             "business_rules": spec.business_rules or [],
             "api_contracts": spec.api_contracts or [],
-            "integration_requirements": getattr(spec, "integration_requirements", None) or [],
-            "observability_requirements": getattr(spec, "observability_requirements", None) or [],
             "decisions": _filter_decisions_by_status(
                 getattr(spec, "decisions", None) or [],
                 include_superseded=_inc_superseded,
@@ -6749,6 +6774,22 @@ async def okto_pulse_get_spec_context(
             # Sprints — loaded separately to avoid lazy-load issues
             "sprints": [],
         }
+        if _mcp_check_permission(
+            ctx.permissions,
+            "spec.integration_requirements.read",
+            Permissions.BOARD_READ,
+        ) is None:
+            result["integration_requirements"] = (
+                getattr(spec, "integration_requirements", None) or []
+            )
+        if _mcp_check_permission(
+            ctx.permissions,
+            "spec.observability_requirements.read",
+            Permissions.BOARD_READ,
+        ) is None:
+            result["observability_requirements"] = (
+                getattr(spec, "observability_requirements", None) or []
+            )
 
         if _inc_mockups and spec.screen_mockups:
             result["screen_mockups"] = spec.screen_mockups
@@ -9571,7 +9612,11 @@ async def okto_pulse_list_integration_requirements(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.integration_requirements.read",
+        Permissions.BOARD_READ,
+    )
     if perm_err:
         return _perm_error(perm_err)
 
@@ -9619,7 +9664,11 @@ async def okto_pulse_add_integration_requirement(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.integration_requirements.create",
+        Permissions.SPECS_UPDATE,
+    )
     if perm_err:
         return _perm_error(perm_err)
 
@@ -9695,7 +9744,18 @@ async def okto_pulse_link_task_to_integration_requirement(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.integration_requirements.link_task",
+        Permissions.SPECS_UPDATE,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "card.link_to.ir",
+        Permissions.CARDS_UPDATE,
+    )
     if perm_err:
         return _perm_error(perm_err)
 
@@ -9753,7 +9813,11 @@ async def okto_pulse_list_observability_requirements(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.observability_requirements.read",
+        Permissions.BOARD_READ,
+    )
     if perm_err:
         return _perm_error(perm_err)
 
@@ -9795,7 +9859,11 @@ async def okto_pulse_add_observability_requirement(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.observability_requirements.create",
+        Permissions.SPECS_UPDATE,
+    )
     if perm_err:
         return _perm_error(perm_err)
 
@@ -9864,7 +9932,18 @@ async def okto_pulse_link_task_to_observability_requirement(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.observability_requirements.link_task",
+        Permissions.SPECS_UPDATE,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "card.link_to.or",
+        Permissions.CARDS_UPDATE,
+    )
     if perm_err:
         return _perm_error(perm_err)
 
