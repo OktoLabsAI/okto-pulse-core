@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
+from okto_pulse.core.api.specs import _spec_update_permission_requirements
 from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
 from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecUpdate
@@ -13,6 +15,60 @@ from okto_pulse.core.services.main import CardService, SpecService
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
+
+
+def test_ir_or_spec_update_permissions_detect_create_edit_delete_and_links():
+    spec = SimpleNamespace(
+        integration_requirements=[
+            {"id": "ir_1", "title": "Existing IR", "linked_task_ids": ["card_1"]}
+        ],
+        observability_requirements=[
+            {"id": "or_1", "title": "Existing OR", "linked_task_ids": None}
+        ],
+    )
+
+    requirements = _spec_update_permission_requirements(
+        spec,
+        SpecUpdate(
+            integration_requirements=[
+                {"id": "ir_1", "title": "Edited IR", "linked_task_ids": ["card_2"]},
+                {"id": "ir_2", "title": "New IR"},
+            ],
+            observability_requirements=[],
+        ),
+    )
+
+    assert "spec.integration_requirements.create" in requirements
+    assert "spec.integration_requirements.edit" in requirements
+    assert "spec.integration_requirements.link_task" in requirements
+    assert "card.link_to.ir" in requirements
+    assert "spec.observability_requirements.delete" in requirements
+
+
+def test_ir_or_spec_update_permissions_do_not_treat_default_materialization_as_edit():
+    spec = SimpleNamespace(
+        integration_requirements=[{"id": "ir_1", "title": "Existing IR"}],
+        observability_requirements=[{"id": "or_1", "title": "Existing OR"}],
+    )
+
+    requirements = _spec_update_permission_requirements(
+        spec,
+        SpecUpdate(
+            integration_requirements=[
+                {"id": "ir_1", "title": "Existing IR", "linked_task_ids": ["card_1"]}
+            ],
+            observability_requirements=[
+                {"id": "or_1", "title": "Existing OR", "linked_task_ids": ["card_1"]}
+            ],
+        ),
+    )
+
+    assert requirements == {
+        "spec.integration_requirements.link_task",
+        "card.link_to.ir",
+        "spec.observability_requirements.link_task",
+        "card.link_to.or",
+    }
 
 
 @pytest.mark.asyncio
