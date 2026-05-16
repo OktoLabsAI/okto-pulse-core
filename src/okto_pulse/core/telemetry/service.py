@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +32,7 @@ class TelemetryService:
         cfg = self.config()
         state = dict(cfg.state)
         if cfg.mode == "disabled":
-            return {"written": False, "mode": cfg.mode, "rejected_fields_count": 0}
+            return {"written": False, "mode": cfg.mode, "rejected_fields_count": 0, "schema_version": cfg.schema_version}
         try:
             event, rejected = normalize_event(
                 event_type,
@@ -44,7 +43,7 @@ class TelemetryService:
         except Exception:
             state["schema_reject_count"] = int(state.get("schema_reject_count") or 0) + 1
             save_state(cfg.metrics_dir, state)
-            return {"written": False, "mode": cfg.mode, "rejected_fields_count": 1}
+            return {"written": False, "mode": cfg.mode, "rejected_fields_count": 1, "schema_version": cfg.schema_version}
         path = self.store().append_event(event)
         if rejected:
             state["rejected_fields_count"] = int(state.get("rejected_fields_count") or 0) + rejected
@@ -55,6 +54,7 @@ class TelemetryService:
             "file": str(path),
             "event_id": event["event_id"],
             "rejected_fields_count": rejected,
+            "schema_version": cfg.schema_version,
         }
 
     def summary(self, *, window_days: int = 30) -> dict[str, Any]:

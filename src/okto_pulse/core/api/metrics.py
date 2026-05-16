@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.config import get_settings
+from okto_pulse.core.telemetry.schema import SchemaReject, count_rejected_payload_fields, sanitize_payload
 from okto_pulse.core.telemetry.service import TelemetryService
 
 router = APIRouter()
@@ -24,6 +26,33 @@ class MetricsSettingsPayload(BaseModel):
     acknowledged_items: list[str] = Field(default_factory=list)
 
 
+class LocalMetricsEventPayload(BaseModel):
+    event_type: str = Field(min_length=1, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+def _public_event_response(*, written: bool, rejected_fields_count: int, schema_version: str) -> dict[str, Any]:
+    return {
+        "written": written,
+        "rejected_fields_count": max(0, rejected_fields_count),
+        "schema_version": schema_version,
+    }
+
+
+def _public_event_error(error: str, *, rejected_fields_count: int, schema_version: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": error,
+            **_public_event_response(
+                written=False,
+                rejected_fields_count=max(1, rejected_fields_count),
+                schema_version=schema_version,
+            ),
+        },
+    )
+
+
 @router.get("/metrics/local/summary")
 async def get_local_metrics_summary(
     window_days: int = Query(default=30, ge=1, le=400),
@@ -31,6 +60,50 @@ async def get_local_metrics_summary(
 ):
     service = TelemetryService(get_settings())
     return service.summary(window_days=window_days)
+
+
+@router.post("/metrics/local/events")
+async def post_local_metrics_event(
+    payload: LocalMetricsEventPayload,
+    _: str = Depends(require_user),
+):
+    service = TelemetryService(get_settings())
+    cfg = service.config()
+    schema_version = cfg.schema_version
+    rejected_fields_count = count_rejected_payload_fields(payload.event_type, payload.payload)
+    if payload.event_type != "guided_help":
+        return _public_event_error(
+            "INVALID_EVENT_TYPE",
+            rejected_fields_count=rejected_fields_count,
+            schema_version=schema_version,
+        )
+    try:
+        sanitize_payload(payload.event_type, payload.payload)
+    except SchemaReject:
+        return _public_event_error(
+            "INVALID_PAYLOAD",
+            rejected_fields_count=rejected_fields_count,
+            schema_version=schema_version,
+        )
+    try:
+        result = service.record_event(payload.event_type, payload.payload)
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "EVENT_STORE_FAILED",
+                **_public_event_response(
+                    written=False,
+                    rejected_fields_count=rejected_fields_count,
+                    schema_version=schema_version,
+                ),
+            },
+        )
+    return _public_event_response(
+        written=bool(result.get("written")),
+        rejected_fields_count=int(result.get("rejected_fields_count") or 0),
+        schema_version=str(result.get("schema_version") or schema_version),
+    )
 
 
 @router.post("/metrics/settings")

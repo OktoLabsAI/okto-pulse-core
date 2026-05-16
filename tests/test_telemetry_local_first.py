@@ -4,6 +4,10 @@ import json
 import sqlite3
 from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from okto_pulse.core.api import metrics as metrics_api
 from okto_pulse.core.infra.config import CoreSettings, DEFAULT_METRICS_BEACON_URL
 from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION
 from okto_pulse.core.telemetry.sender import TelemetryBeaconSender, get_or_create_install_id, sign_payload
@@ -15,6 +19,15 @@ def _settings(tmp_path: Path, **overrides) -> CoreSettings:
     values = {"metrics_dir": str(tmp_path / "metrics"), "metrics_mode": ""}
     values.update(overrides)
     return CoreSettings(**values)
+
+
+def _metrics_client(tmp_path: Path, monkeypatch, **overrides) -> TestClient:
+    settings = _settings(tmp_path, **overrides)
+    monkeypatch.setattr(metrics_api, "get_settings", lambda: settings)
+    app = FastAPI()
+    app.include_router(metrics_api.router, prefix="/api/v1")
+    app.dependency_overrides[metrics_api.require_user] = lambda: "test-user"
+    return TestClient(app)
 
 
 def test_fresh_install_resolves_local_only_without_network(tmp_path: Path) -> None:
@@ -71,6 +84,309 @@ def test_allowlist_drops_sensitive_payload_before_store(tmp_path: Path) -> None:
     assert "dev@example.com" not in serialized
     assert "9ec5f06f" not in serialized
     assert "D:\\Projects" not in serialized
+
+
+def test_guided_help_event_is_normalized_with_categorical_payload(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    service = TelemetryService(settings)
+
+    result = service.record_event(
+        "guided_help",
+        {
+            "action": "viewed",
+            "tour_surface": "metrics",
+            "step_kind": "navigation",
+            "status": "success",
+            "duration_ms": "42",
+        },
+    )
+
+    assert result["written"] is True
+    assert result["rejected_fields_count"] == 0
+    event_file = next((tmp_path / "metrics" / "events").glob("events-*.jsonl"))
+    event = json.loads(event_file.read_text(encoding="utf-8").splitlines()[0])
+    assert event["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert event["event_type"] == "guided_help"
+    assert event["payload"] == {
+        "action": "viewed",
+        "tour_surface": "metrics",
+        "step_kind": "navigation",
+        "status": "success",
+        "duration_ms": 42,
+    }
+
+
+def test_guided_help_drops_forbidden_fields_before_store(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    service = TelemetryService(settings)
+
+    result = service.record_event(
+        "guided_help",
+        {
+            "action": "step_completed",
+            "tour_surface": "specs",
+            "step_kind": "feature",
+            "status": "success",
+            "duration_ms": 125,
+            "board_id": "9ec5f06f-2028-42a7-81fd-3ad36f98a89d",
+            "spec_id": "secret-spec-id",
+            "title": "private roadmap",
+            "selector": "[data-tour-id='private']",
+            "url": "https://example.test/specs?secret=1",
+            "content": "sensitive popover body",
+            "token": "secret-token",
+            "tour_id": "guided-help-intro",
+            "step_id": "metrics-menu",
+            "skipped_all": True,
+        },
+    )
+
+    assert result["written"] is True
+    assert result["rejected_fields_count"] >= 10
+    event_file = next((tmp_path / "metrics" / "events").glob("events-*.jsonl"))
+    event = json.loads(event_file.read_text(encoding="utf-8").splitlines()[0])
+    assert event["payload"] == {
+        "action": "step_completed",
+        "tour_surface": "specs",
+        "step_kind": "feature",
+        "status": "success",
+        "duration_ms": 125,
+    }
+    serialized = json.dumps(event)
+    assert "9ec5f06f" not in serialized
+    assert "secret-spec-id" not in serialized
+    assert "private roadmap" not in serialized
+    assert "data-tour-id" not in serialized
+    assert "example.test" not in serialized
+    assert "sensitive popover body" not in serialized
+    assert "secret-token" not in serialized
+    assert "guided-help-intro" not in serialized
+    assert "metrics-menu" not in serialized
+    assert "skipped_all" not in serialized
+
+
+def test_guided_help_rejects_unknown_event_type_and_invalid_payload(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    service = TelemetryService(settings)
+
+    unknown = service.record_event("guided_help_raw", {"action": "viewed"})
+    invalid = service.record_event(
+        "guided_help",
+        {
+            "action": "raw_private_action",
+            "tour_surface": "metrics",
+            "step_kind": "navigation",
+            "status": "success",
+            "duration_ms": 42,
+        },
+    )
+
+    assert unknown["written"] is False
+    assert invalid["written"] is False
+    assert not list((tmp_path / "metrics").glob("events/*.jsonl"))
+
+
+def test_local_events_endpoint_accepts_safe_guided_help_payload(tmp_path: Path, monkeypatch) -> None:
+    client = _metrics_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/v1/metrics/local/events",
+        json={
+            "event_type": "guided_help",
+            "payload": {
+                "action": "viewed",
+                "tour_surface": "metrics",
+                "step_kind": "navigation",
+                "status": "success",
+                "duration_ms": 64,
+                "board_id": "9ec5f06f-2028-42a7-81fd-3ad36f98a89d",
+                "selector": "[data-tour-id='private']",
+                "path": "D:\\Projects\\private",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "written": True,
+        "rejected_fields_count": 3,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+    }
+    assert "file" not in body
+    assert "payload" not in body
+    assert "stacktrace" not in json.dumps(body).lower()
+
+    event_file = next((tmp_path / "metrics" / "events").glob("events-*.jsonl"))
+    event = json.loads(event_file.read_text(encoding="utf-8").splitlines()[0])
+    assert event["event_type"] == "guided_help"
+    assert event["payload"] == {
+        "action": "viewed",
+        "tour_surface": "metrics",
+        "step_kind": "navigation",
+        "status": "success",
+        "duration_ms": 64,
+    }
+    serialized = json.dumps(event)
+    assert "9ec5f06f" not in serialized
+    assert "data-tour-id" not in serialized
+    assert "D:\\Projects" not in serialized
+
+    summary = client.get("/api/v1/metrics/local/summary").json()
+    assert summary["mode"] == "local_only"
+    assert summary["summary"]["by_event_type"] == {"guided_help": 1}
+    assert summary["summary"]["guided_help_counts"] == {
+        "action.viewed": 1,
+        "status.success": 1,
+        "step_kind.navigation": 1,
+        "tour_surface.metrics": 1,
+    }
+    assert summary["beacon_status"]["enabled"] is False
+    assert "payload" not in json.dumps(summary)
+
+
+def test_local_events_endpoint_disabled_mode_does_not_write(tmp_path: Path, monkeypatch) -> None:
+    client = _metrics_client(tmp_path, monkeypatch, metrics_mode="disabled")
+
+    response = client.post(
+        "/api/v1/metrics/local/events",
+        json={
+            "event_type": "guided_help",
+            "payload": {
+                "action": "viewed",
+                "tour_surface": "help",
+                "step_kind": "feature",
+                "status": "disabled",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "written": False,
+        "rejected_fields_count": 0,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+    }
+    assert not list((tmp_path / "metrics").glob("events/*.jsonl"))
+
+
+def test_local_events_endpoint_rejects_invalid_event_without_leaking_payload(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _metrics_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/v1/metrics/local/events",
+        json={
+            "event_type": "guided_help_raw",
+            "payload": {
+                "action": "viewed",
+                "title": "private roadmap",
+                "path": "D:\\Projects\\private",
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body == {
+        "error": "INVALID_EVENT_TYPE",
+        "written": False,
+        "rejected_fields_count": 3,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+    }
+    serialized = json.dumps(body)
+    assert "private roadmap" not in serialized
+    assert "D:\\Projects" not in serialized
+    assert "stack" not in serialized.lower()
+
+    invalid_payload = client.post(
+        "/api/v1/metrics/local/events",
+        json={
+            "event_type": "guided_help",
+            "payload": {
+                "action": "raw_private_action",
+                "tour_surface": "metrics",
+                "step_kind": "navigation",
+                "status": "success",
+            },
+        },
+    )
+    assert invalid_payload.status_code == 400
+    assert invalid_payload.json() == {
+        "error": "INVALID_PAYLOAD",
+        "written": False,
+        "rejected_fields_count": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+    }
+    assert not list((tmp_path / "metrics").glob("events/*.jsonl"))
+
+
+def test_guided_help_does_not_persist_server_side_progress(tmp_path: Path, monkeypatch) -> None:
+    client = _metrics_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/v1/metrics/local/events",
+        json={
+            "event_type": "guided_help",
+            "payload": {
+                "action": "viewed",
+                "tour_surface": "help",
+                "step_kind": "feature",
+                "status": "success",
+                "tour_id": "guided-help-intro",
+                "step_id": "metrics-menu",
+                "completed": True,
+                "skipped": False,
+                "skipped_all": True,
+                "board_id": "9ec5f06f-2028-42a7-81fd-3ad36f98a89d",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "written": True,
+        "rejected_fields_count": 6,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+    }
+    event_file = next((tmp_path / "metrics" / "events").glob("events-*.jsonl"))
+    event = json.loads(event_file.read_text(encoding="utf-8").splitlines()[0])
+    assert event["payload"] == {
+        "action": "viewed",
+        "tour_surface": "help",
+        "step_kind": "feature",
+        "status": "success",
+    }
+
+    summary = client.get("/api/v1/metrics/local/summary").json()
+    assert summary["summary"]["guided_help_counts"] == {
+        "action.viewed": 1,
+        "status.success": 1,
+        "step_kind.feature": 1,
+        "tour_surface.help": 1,
+    }
+    serialized = json.dumps({"event": event, "summary": summary})
+    for forbidden in (
+        "guided-help-intro",
+        "metrics-menu",
+        "tour_id",
+        "step_id",
+        "completed",
+        "skipped",
+        "skipped_all",
+        "9ec5f06f",
+    ):
+        assert forbidden not in serialized
+
+    api_and_models = "\n".join(
+        path.read_text(encoding="utf-8")
+        for root in (Path("src/okto_pulse/core/api"), Path("src/okto_pulse/core/models"))
+        for path in root.rglob("*.py")
+    )
+    for forbidden in ("tour_id", "step_id", "guided_help_progress", "GuidedHelpProgress", "TourProgress"):
+        assert forbidden not in api_and_models
 
 
 def test_summary_export_and_purge_are_local_only(tmp_path: Path) -> None:
@@ -135,6 +451,63 @@ def test_hourly_batch_keeps_full_iso_bucket_start(tmp_path: Path, monkeypatch) -
     assert batch is not None
     assert batch["bucket_start"].endswith(":00:00Z")
     assert len(batch["bucket_start"]) == len("2026-05-11T01:00:00Z")
+
+
+def test_hourly_batch_exports_guided_help_counts_without_identifiers(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings = _settings(tmp_path, metrics_mode="anonymous_beacon")
+    monkeypatch.setenv("OKTO_PULSE_INSTALL_ID_PATH", str(tmp_path / "install_id"))
+    service = TelemetryService(settings)
+    service.record_event(
+        "guided_help",
+        {
+            "action": "viewed",
+            "tour_surface": "metrics",
+            "step_kind": "navigation",
+            "status": "success",
+            "duration_ms": 125,
+            "board_id": "9ec5f06f-2028-42a7-81fd-3ad36f98a89d",
+            "selector": "[data-tour-id='private']",
+            "url": "https://example.test/specs?secret=1",
+            "content": "private popover body",
+        },
+    )
+    service.store().append_event(
+        {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "event_type": "guided_help",
+            "occurred_at": "2026-05-16T18:00:00Z",
+            "payload": {
+                "action": "D:\\Projects\\private",
+                "tour_surface": "metrics",
+                "step_kind": "navigation",
+                "status": "success",
+                "selector": "[data-tour-id='tampered']",
+                "content": "tampered private text",
+            },
+        }
+    )
+
+    batch = TelemetryBeaconSender(settings).hourly_batch()
+
+    assert batch is not None
+    metrics = batch["metrics"]
+    assert metrics["guided_help_counts"] == {
+        "action.viewed": 1,
+        "status.success": 2,
+        "step_kind.navigation": 2,
+        "tour_surface.metrics": 2,
+    }
+    serialized = json.dumps(batch)
+    assert "payload" not in serialized
+    assert "9ec5f06f" not in serialized
+    assert "data-tour-id" not in serialized
+    assert "example.test" not in serialized
+    assert "private popover body" not in serialized
+    assert "D:\\Projects" not in serialized
+    assert "tampered private text" not in serialized
 
 
 def test_beacon_rejects_legacy_schema_cutover(tmp_path: Path) -> None:

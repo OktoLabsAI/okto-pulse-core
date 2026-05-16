@@ -68,6 +68,18 @@ packages = ["src/okto_pulse"]
 "src/okto_pulse/core/mcp/agent_instructions.md" = "okto_pulse/core/mcp/agent_instructions.md"
 "src/okto_pulse/core/kg/workers/tech_entities.yml" = "okto_pulse/core/kg/workers/tech_entities.yml"
 "src/okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md" = "okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md"
+"src/okto_pulse/core/mcp/resources/workflows/stories.md" = "okto_pulse/core/mcp/resources/workflows/stories.md"
+"src/okto_pulse/core/mcp/resources/workflows/ideations.md" = "okto_pulse/core/mcp/resources/workflows/ideations.md"
+"src/okto_pulse/core/mcp/resources/workflows/refinements.md" = "okto_pulse/core/mcp/resources/workflows/refinements.md"
+"src/okto_pulse/core/mcp/resources/workflows/specs.md" = "okto_pulse/core/mcp/resources/workflows/specs.md"
+"src/okto_pulse/core/mcp/resources/workflows/cards.md" = "okto_pulse/core/mcp/resources/workflows/cards.md"
+"src/okto_pulse/core/mcp/resources/workflows/sprints.md" = "okto_pulse/core/mcp/resources/workflows/sprints.md"
+"src/okto_pulse/core/mcp/resources/workflows/kg.md" = "okto_pulse/core/mcp/resources/workflows/kg.md"
+"src/okto_pulse/core/mcp/resources/reference/errors.md" = "okto_pulse/core/mcp/resources/reference/errors.md"
+"src/okto_pulse/core/mcp/resources/reference/multivalue.md" = "okto_pulse/core/mcp/resources/reference/multivalue.md"
+"src/okto_pulse/core/mcp/resources/reference/destructive_ops.md" = "okto_pulse/core/mcp/resources/reference/destructive_ops.md"
+"src/okto_pulse/core/mcp/resources/reference/card_types.md" = "okto_pulse/core/mcp/resources/reference/card_types.md"
+"src/okto_pulse/core/mcp/resources/reference/spec_gates.md" = "okto_pulse/core/mcp/resources/reference/spec_gates.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
