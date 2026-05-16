@@ -78,24 +78,57 @@ Every MCP write that touches a spec aggregate (`add_business_rule`,
 This is the same payload `get_resource_gate_summary` already exposes — and which
 `submit_spec_validation` consults internally.
 
-### Proposal
+### Proposal (preferred — minimal saturation envelope)
 
-Default write responses to `{success, id, <small entity echo>}`. Move coverage
-behind an opt-in flag (`include_coverage=true`) or rely on the existing
-`get_resource_gate_summary` for the one moment that matters (before submitting
-the validation gate).
+Replace the verbose `coverage{}` block with a **two-field envelope** that
+preserves the progressive signal while collapsing the bytes:
+
+```json
+{
+  "success": true,
+  "id": "br_61de4741",
+  "saturation": {
+    "pct": 87.5,
+    "blocking": ["decisions", "scenarios"]
+  }
+}
+```
+
+- `saturation.pct` is the aggregate completion across all required dimensions
+  (FR/AC/BR/TR/decisions/scenarios/IR/OR) weighted equally, rounded to one
+  decimal.
+- `saturation.blocking` is the (possibly empty) ordered list of dimension keys
+  that still gate `submit_spec_validation` (i.e. percentages < 100 or required
+  links missing). Skip-flagged dimensions are excluded.
+- Payload size: ~60 bytes vs ~1500 bytes today (25× smaller).
+- Agents keep the ongoing-completeness signal that the original design
+  carried, AND get a directional hint (`blocking`) so they can focus the next
+  call instead of trusting a misleading average.
+
+A fallback `include_coverage=true` flag can still expose the full block for
+clients that depend on every dimension count today.
+
+### Alternative (rejected)
+
+Default write responses to `{success, id}` with no progress signal at all,
+relying on `get_resource_gate_summary` at the end. Saves more bytes per call
+(~30 bytes) but loses the ongoing feedback that turned out to be load-bearing
+for agents authoring multi-step saturations. The minimal envelope above is
+the better trade.
 
 ### Tradeoff
 
-Agents that previously used the progressive coverage signal to decide when to
-stop saturating would need one extra read at the end. That extra read is a single
-small call against a tool that already exists; for free-form authoring agents
-the saving is ≈30 KB per spec.
+The aggregate `pct` can mask a single low-coverage dimension behind a high
+average. Mitigated by `blocking[]`: when the list is non-empty the agent
+knows where to focus regardless of the headline number. When `blocking[]` is
+empty, the gate will pass — that is the truthful signal agents need.
 
 ### Expected impact
 
-**High.** Highest per-session saving observed in this run. Closes the most-common
-hot path. Pure additive change behind a flag — zero breaking risk.
+**High.** Highest per-session saving observed in this run (≈30 KB per spec
+saturation cycle), zero extra round-trip, zero loss of feedback. Pure
+additive change behind a default — clients reading `coverage{}` today can opt
+in via the legacy flag. Lowest-risk, highest-value optimisation.
 
 ---
 
