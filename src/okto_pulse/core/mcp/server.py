@@ -1,5 +1,6 @@
 """MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
 
+import base64
 import functools
 import inspect
 import json
@@ -1896,10 +1897,46 @@ def _activity_log_summary(action: str, details: Any) -> str:
     return ""
 
 
+def _encode_activity_cursor(created_at: datetime, row_id: str) -> str:
+    """Encode an activity_log row position as an opaque base64 cursor.
+
+    Ideação MCP-token-optimization (cursor-pagination spec). Cursor is the
+    URL-safe base64 of a 2-key JSON ``{"ts": <iso>, "id": <row_id>}``. Opaque
+    so callers don't depend on the shape — future versions may add fields
+    (HMAC, schema version) without breaking existing callers.
+    """
+    payload = json.dumps({"ts": created_at.isoformat(), "id": row_id})
+    return base64.urlsafe_b64encode(payload.encode()).decode()
+
+
+def _decode_activity_cursor(cursor: str) -> tuple[datetime, str] | None:
+    """Decode an opaque cursor back to its ``(created_at, row_id)`` pair.
+
+    Returns ``None`` on malformed input (invalid base64, invalid JSON, or
+    missing required keys) — the caller surfaces a structured error
+    (``error_code=invalid_cursor``) instead of silently falling back to the
+    first page. Never raises.
+    """
+    if not cursor:
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        payload = json.loads(raw)
+        ts_str = payload["ts"]
+        row_id = payload["id"]
+        if not isinstance(ts_str, str) or not isinstance(row_id, str):
+            return None
+        return (datetime.fromisoformat(ts_str), row_id)
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+
 @mcp.tool()
 async def okto_pulse_get_activity_log(
     board_id: str,
     limit: int = 50,
+    cursor: str = "",
+    envelope: bool = False,
     offset: int = 0,
     action: str = "",
     card_id: str = "",
@@ -1913,17 +1950,28 @@ async def okto_pulse_get_activity_log(
     server-side from details — ~120B per row vs ~1.5KB. Pass include_details=true
     to receive the full nested details object (legacy shape).
 
+    Cursor-pagination follow-up: pass ``cursor`` (opaque base64 from a prior
+    ``next_cursor``) for O(1) keyset pagination independent of page depth.
+    Pass ``envelope=true`` to receive ``{items, next_cursor}`` instead of a
+    raw list (default keeps Story 3 list shape — backward compat). Legacy
+    ``offset`` is silently ignored unless ``OKTO_PULSE_LEGACY_OFFSET=1``.
+
     Args:
         board_id: Board ID
         limit: Maximum number of entries to return (default 50, max 200)
-        offset: Skip first N entries (default 0)
+        cursor: Opaque continuation token from a previous call's ``next_cursor``.
+            Empty string = first page. Invalid cursor returns a structured error.
+        envelope: When true, response is ``{items: [...], next_cursor: str|null}``.
+            Default false returns raw list (preserves Story 3 contract).
+        offset: DEPRECATED — silently ignored unless OKTO_PULSE_LEGACY_OFFSET=1.
         action: Filter by action type (optional) — e.g. card_created, card_moved, spec_updated
         card_id: Filter by card ID (optional) — only activities for this card
         include_details: When true, include the full `details` object on each row.
             Default false returns the minimal envelope only.
 
     Returns:
-        JSON array of activity log entries
+        JSON list (default) or ``{items, next_cursor}`` dict when envelope=true.
+        Invalid cursor returns ``{error, error_code: "invalid_cursor"}``.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -1935,7 +1983,19 @@ async def okto_pulse_get_activity_log(
 
     limit = min(limit, 200)
 
-    from sqlalchemy import select
+    # Cursor takes precedence; offset is a deprecated escape hatch.
+    cursor_pair: tuple[datetime, str] | None = None
+    if cursor:
+        cursor_pair = _decode_activity_cursor(cursor)
+        if cursor_pair is None:
+            return json.dumps(
+                {"error": "Invalid cursor", "error_code": "invalid_cursor"}
+            )
+
+    legacy_offset = os.getenv("OKTO_PULSE_LEGACY_OFFSET") == "1"
+    effective_offset = offset if (legacy_offset and not cursor_pair) else 0
+
+    from sqlalchemy import select, tuple_
 
     from okto_pulse.core.models.db import ActivityLog
 
@@ -1945,10 +2005,23 @@ async def okto_pulse_get_activity_log(
             query = query.where(ActivityLog.action == action)
         if card_id:
             query = query.where(ActivityLog.card_id == card_id)
-        query = query.order_by(ActivityLog.created_at.desc()).offset(offset).limit(limit)
+        if cursor_pair is not None:
+            ts, rid = cursor_pair
+            query = query.where(
+                tuple_(ActivityLog.created_at, ActivityLog.id) < (ts, rid)
+            )
+        query = (
+            query.order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
+            .offset(effective_offset)
+            .limit(limit + 1)
+        )
         result = await db.execute(query)
         logs = list(result.scalars().all())
         await db.commit()
+
+        has_more = len(logs) > limit
+        if has_more:
+            logs = logs[:limit]
 
         rows: list[dict[str, Any]] = []
         for log in logs:
@@ -1967,6 +2040,15 @@ async def okto_pulse_get_activity_log(
                 row["details"] = log.details
             rows.append(row)
 
+        next_cursor: str | None = None
+        if has_more and logs:
+            last = logs[-1]
+            next_cursor = _encode_activity_cursor(last.created_at, last.id)
+
+        if envelope:
+            return json.dumps(
+                {"items": rows, "next_cursor": next_cursor}, default=str
+            )
         return json.dumps(rows, default=str)
 
 
