@@ -1995,7 +1995,7 @@ async def okto_pulse_get_activity_log(
     legacy_offset = os.getenv("OKTO_PULSE_LEGACY_OFFSET") == "1"
     effective_offset = offset if (legacy_offset and not cursor_pair) else 0
 
-    from sqlalchemy import and_, or_, select
+    from sqlalchemy import and_, func, or_, select
 
     from okto_pulse.core.models.db import ActivityLog
 
@@ -2012,10 +2012,22 @@ async def okto_pulse_get_activity_log(
             # comparison is not honored by SQLite's translator and silently
             # degrades to single-column compare, breaking the strict-less-
             # than semantic of the tiebreaker.
+            #
+            # Microsecond normalization (SQLite quirk): SQLite's func.now()
+            # writes `'YYYY-MM-DD HH:MM:SS'` (no microseconds), but SQLAlchemy
+            # binds a Python naive datetime as `'... .000000'`. Lexicographic
+            # comparison then mis-orders: the row's bare string is "less than"
+            # the cursor's `.000000`-suffixed string, so the anchor row would
+            # leak into batch 2. Casting both sides via SQLAlchemy's DateTime
+            # adapter normalises the format and yields semantic comparison.
+            ts_normalized = ts.replace(microsecond=0)
             query = query.where(
                 or_(
-                    ActivityLog.created_at < ts,
-                    and_(ActivityLog.created_at == ts, ActivityLog.id < rid),
+                    func.datetime(ActivityLog.created_at) < func.datetime(ts_normalized),
+                    and_(
+                        func.datetime(ActivityLog.created_at) == func.datetime(ts_normalized),
+                        ActivityLog.id < rid,
+                    ),
                 )
             )
         query = (
