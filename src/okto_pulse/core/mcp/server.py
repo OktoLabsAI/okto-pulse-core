@@ -1763,9 +1763,111 @@ def _activity_log_summary(action: str, details: Any) -> str:
 
     Ideação MCP-token-optimization Story 3. Format is stable within a major
     API version; new resource types append counters at the end.
+
+    NC-1 fix: expanded to cover the highest-frequency action types so agents
+    no longer need to fetch raw ``details`` for routine board activity. Output
+    is always ≤200 chars.
     """
     if not isinstance(details, dict):
         return ""
+
+    if action == "card_moved":
+        frm = details.get("from_status")
+        to = details.get("to_status")
+        card_id = details.get("card_id", "")
+        if frm and to:
+            base = f"{frm}->{to}"
+        else:
+            status = details.get("status", "?")
+            base = f"status={status}"
+        if card_id:
+            base = f"card={card_id[:8]} {base}"
+        return base[:200]
+
+    if action in ("card_created", "card_updated", "card_deleted"):
+        title = details.get("title", "")
+        status = details.get("status", "")
+        parts = [action.replace("card_", "")]
+        if title:
+            parts.append(f'"{title[:60]}"')
+        if status:
+            parts.append(f"status={status}")
+        return " ".join(parts)[:200]
+
+    if action == "validation_submitted":
+        outcome = details.get("outcome", "?")
+        card_title = details.get("card_title", "")
+        confidence = details.get("confidence")
+        base = f"outcome={outcome}"
+        if card_title:
+            base += f' card="{card_title[:50]}"'
+        if confidence is not None:
+            base += f" confidence={confidence}"
+        return base[:200]
+
+    if action in ("spec_validation_submitted", "spec_validated"):
+        outcome = details.get("outcome", "?")
+        spec_id = details.get("spec_id", "")
+        frm = details.get("from_status", "")
+        to = details.get("to_status", "")
+        base = f"outcome={outcome}"
+        if spec_id:
+            base += f" spec={spec_id[:8]}"
+        if frm and to:
+            base += f" {frm}->{to}"
+        return base[:200]
+
+    if action == "task_validated":
+        outcome = details.get("outcome", "?")
+        card_id = details.get("card_id", "")
+        base = f"task outcome={outcome}"
+        if card_id:
+            base += f" card={card_id[:8]}"
+        return base[:200]
+
+    if action in (
+        "ideation_created",
+        "spec_created",
+        "refinement_created",
+        "sprint_created",
+    ):
+        resource = action.replace("_created", "")
+        resource_id = (
+            details.get(f"{resource}_id")
+            or details.get("id")
+            or ""
+        )
+        title = details.get("title", "")
+        base = f"{resource} created"
+        if title:
+            base += f': "{title[:60]}"'
+        if resource_id:
+            base += f" id={resource_id[:8]}"
+        return base[:200]
+
+    if action in ("ideation_moved", "spec_moved", "refinement_moved"):
+        frm = details.get("from_status", "?")
+        to = details.get("to_status", "?")
+        resource = action.replace("_moved", "")
+        resource_id = details.get(f"{resource}_id") or details.get("id") or ""
+        base = f"{resource} {frm}->{to}"
+        if resource_id:
+            base += f" id={resource_id[:8]}"
+        return base[:200]
+
+    if action in ("comment_added", "choice_comment_added"):
+        content = details.get("content", "")
+        question = details.get("question", "")
+        text = question or content
+        if action == "choice_comment_added":
+            opt_count = details.get("option_count", "?")
+            base = f"choice_comment options={opt_count}"
+        else:
+            base = "comment"
+        if text:
+            base += f': "{text[:80]}"'
+        return base[:200]
+
     if action == "spec_resources_auto_propagated":
         results = details.get("results") or {}
         parts: list[str] = []
@@ -1787,6 +1889,7 @@ def _activity_log_summary(action: str, details: Any) -> str:
                 piece += f" {short}.removed={removed}"
             parts.append(piece)
         return " ".join(parts)
+
     trigger = details.get("trigger")
     if trigger:
         return f"trigger={trigger}"
@@ -2686,16 +2789,6 @@ async def okto_pulse_move_card(
         if not updated:
             return json.dumps({"error": "Failed to move card"})
 
-        board_service = BoardService(db)
-        await board_service._log_activity(
-            board_id=board_id,
-            card_id=card_id,
-            action="card_moved",
-            actor_type="agent",
-            actor_id=ctx.agent_id,
-            actor_name=ctx.agent_name,
-            details={"status": status, "position": position},
-        )
         await db.commit()
 
         return json.dumps(
@@ -7786,46 +7879,35 @@ async def okto_pulse_link_task(
         return json.dumps({
             "error": f"Unknown target_type '{target_type}'. Must be one of: {', '.join(_LINK_TASK_TARGET_TYPES)}"
         })
+    # Dispatch to internal helpers (no @mcp.tool() decoration — see commit
+    # removing 8 link_task_to_* shims in favor of this unified entry point).
     if target_type == "spec":
-        return await okto_pulse_link_card_to_spec.fn(board_id, target_id, card_id)
+        return await _link_card_to_spec_internal(board_id, target_id, card_id)
     if not spec_id:
         return json.dumps({"error": f"spec_id is required when target_type='{target_type}'"})
     if target_type == "scenario":
-        return await okto_pulse_link_task_to_scenario.fn(board_id, spec_id, target_id, card_id)
+        return await _link_task_to_scenario_internal(board_id, spec_id, target_id, card_id)
     if target_type == "rule":
-        return await okto_pulse_link_task_to_rule.fn(board_id, spec_id, target_id, card_id)
+        return await _link_task_to_rule_internal(board_id, spec_id, target_id, card_id)
     if target_type == "decision":
-        return await okto_pulse_link_task_to_decision.fn(board_id, spec_id, target_id, card_id)
+        return await _link_task_to_decision_internal(board_id, spec_id, target_id, card_id)
     if target_type == "tr":
-        return await okto_pulse_link_task_to_tr.fn(board_id, spec_id, target_id, card_id)
+        return await _link_task_to_tr_internal(board_id, spec_id, target_id, card_id)
     if target_type == "contract":
-        return await okto_pulse_link_task_to_contract.fn(board_id, spec_id, target_id, card_id)
+        return await _link_task_to_contract_internal(board_id, spec_id, target_id, card_id)
     if target_type == "ir":
-        return await okto_pulse_link_task_to_integration_requirement.fn(board_id, spec_id, target_id, card_id)
+        return await _link_task_to_integration_requirement_internal(board_id, spec_id, target_id, card_id)
     if target_type == "or":
-        return await okto_pulse_link_task_to_observability_requirement.fn(board_id, spec_id, target_id, card_id)
+        return await _link_task_to_observability_requirement_internal(board_id, spec_id, target_id, card_id)
     return json.dumps({"error": f"Internal dispatch error for target_type '{target_type}'"})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_scenario(
+async def _link_task_to_scenario_internal(
     board_id: str, spec_id: str, scenario_id: str, card_id: str
 ) -> str:
-    """
-    Link a card (task) to a test scenario, creating bidirectional traceability.
-    Updates both the scenario's linked_task_ids and the card's test_scenario_ids.
-    This is intentionally treated as a traceability update: it may be used
-    after spec validation to connect regression test cards to existing
-    scenarios without unlocking, invalidating, or rewriting the spec content.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        scenario_id: Test scenario ID
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
+    """Internal helper for link_task target_type='scenario'. Invoked exclusively
+    by okto_pulse_link_task — no @mcp.tool() registration to keep the inventory
+    focused on the unified dispatcher (Story 5).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7890,22 +7972,11 @@ async def okto_pulse_link_task_to_scenario(
         return json.dumps({"success": True, "scenario_id": scenario_id, "card_id": card_id, **_saturation_or_coverage(cov)})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_rule(
+async def _link_task_to_rule_internal(
     board_id: str, spec_id: str, rule_id: str, card_id: str
 ) -> str:
-    """
-    Link a card (task) to a business rule, creating traceability.
-    Updates the rule's linked_task_ids in the spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        rule_id: Business rule ID (e.g. "br_abc123")
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
+    """Internal helper for link_task target_type='rule'. Invoked exclusively
+    by okto_pulse_link_task.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7952,23 +8023,10 @@ async def okto_pulse_link_task_to_rule(
         return json.dumps({"success": True, "rule_id": rule_id, "card_id": card_id, **_saturation_or_coverage(cov)})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_contract(
+async def _link_task_to_contract_internal(
     board_id: str, spec_id: str, contract_id: str, card_id: str
 ) -> str:
-    """
-    Link a card (task) to an API contract, creating traceability.
-    Updates the contract's linked_task_ids in the spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        contract_id: API contract ID (e.g. "api_abc123")
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
-    """
+    """Internal helper for link_task target_type='contract'."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8012,23 +8070,10 @@ async def okto_pulse_link_task_to_contract(
         return json.dumps({"success": True, "contract_id": contract_id, "card_id": card_id, **_saturation_or_coverage(cov)})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_tr(
+async def _link_task_to_tr_internal(
     board_id: str, spec_id: str, tr_id: str, card_id: str
 ) -> str:
-    """
-    Link a card (task) to a technical requirement, creating traceability.
-    Updates the TR's linked_task_ids in the spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        tr_id: Technical requirement ID (e.g. "tr_abc123")
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
-    """
+    """Internal helper for link_task target_type='tr'."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10064,14 +10109,13 @@ async def okto_pulse_add_integration_requirement(
         )
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_integration_requirement(
+async def _link_task_to_integration_requirement_internal(
     board_id: str,
     spec_id: str,
     requirement_id: str,
     card_id: str,
 ) -> str:
-    """Link a task card to an Integration Requirement (IR)."""
+    """Internal helper for link_task target_type='ir'."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10252,14 +10296,13 @@ async def okto_pulse_add_observability_requirement(
         )
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_observability_requirement(
+async def _link_task_to_observability_requirement_internal(
     board_id: str,
     spec_id: str,
     requirement_id: str,
     card_id: str,
 ) -> str:
-    """Link a task card to an Observability Requirement (OR)."""
+    """Internal helper for link_task target_type='or'."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10582,29 +10625,16 @@ async def okto_pulse_remove_decision(
         return json.dumps({"success": True, "revoked": decision_id, "decision": target})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_decision(
+async def _link_task_to_decision_internal(
     board_id: str,
     spec_id: str,
     decision_id: str,
     card_id: str,
 ) -> str:
-    """
-    Link a task card to a Decision, creating traceability.
-
-    Idempotent — re-linking the same card is a no-op. Symmetric with
-    okto_pulse_link_task_to_rule; populates decision.linked_task_ids so the
-    opt-in coverage gate (skip_decisions_coverage=False) can verify each
+    """Internal helper for link_task target_type='decision'. Idempotent —
+    re-linking the same card is a no-op. Populates decision.linked_task_ids so
+    the opt-in coverage gate (skip_decisions_coverage=False) can verify each
     active Decision has at least one linked task.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        decision_id: Decision ID
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -11885,18 +11915,9 @@ async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
         return json.dumps({"success": True})
 
 
-@mcp.tool()
-async def okto_pulse_link_card_to_spec(board_id: str, spec_id: str, card_id: str) -> str:
-    """
-    Link an existing card to a spec. The card and spec must belong to the same board.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
+async def _link_card_to_spec_internal(board_id: str, spec_id: str, card_id: str) -> str:
+    """Internal helper for link_task target_type='spec'. The card and spec
+    must belong to the same board.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
