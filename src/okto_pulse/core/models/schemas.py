@@ -2019,6 +2019,7 @@ class BoardResponse(BaseSchema):
     updated_at: datetime
     cards: list[CardResponse] = []
     agents: list[AgentSummary] = []
+    counts: dict[str, int] | None = None
 
 
 class BoardSummary(BaseSchema):

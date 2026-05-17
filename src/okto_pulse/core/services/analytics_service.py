@@ -740,6 +740,45 @@ def spec_coverage_summary(
     }
 
 
+def spec_saturation_envelope(coverage: dict[str, Any]) -> dict[str, Any]:
+    """Return the minimal saturation envelope: {pct, blocking[]}.
+
+    Ideação MCP-token-optimization Story 1: replaces the verbose coverage{}
+    block on write/link responses. Aggregates the per-dimension percentages
+    weighted equally; blocking[] lists dimension keys whose percentage is
+    below 100 (or whose linkage is short) and that aren't skip-flagged.
+    """
+    if not coverage:
+        return {"pct": 100.0, "blocking": []}
+    dims = [
+        ("acceptance_criteria", "ac_coverage_pct", "ac_total", "skip_test_coverage"),
+        ("functional_requirements", "fr_coverage_pct", "fr_total", None),
+        ("scenarios", "scenario_task_linkage_pct", "scenarios_total", "skip_test_coverage"),
+        ("rules", "br_task_linkage_pct", "brs_total", "skip_rules_coverage"),
+        ("contracts", "contract_task_linkage_pct", "contracts_total", None),
+        ("trs", "tr_task_linkage_pct", "trs_total", None),
+        ("decisions", "decisions_coverage_pct", "decisions_total", "skip_decisions_coverage"),
+        ("irs", "ir_task_linkage_pct", "irs_total", "skip_ir_coverage"),
+        ("ors", "or_task_linkage_pct", "ors_total", "skip_or_coverage"),
+    ]
+    pcts: list[float] = []
+    blocking: list[str] = []
+    for name, pct_key, total_key, skip_key in dims:
+        if skip_key and coverage.get(skip_key):
+            continue
+        total = coverage.get(total_key, 0) or 0
+        if total <= 0:
+            continue
+        pct = float(coverage.get(pct_key, 0) or 0)
+        pcts.append(pct)
+        if pct < 100:
+            blocking.append(name)
+    if not pcts:
+        return {"pct": 100.0, "blocking": []}
+    avg = round(sum(pcts) / len(pcts), 1)
+    return {"pct": avg, "blocking": blocking}
+
+
 # ---------------------------------------------------------------------------
 # D-8 · Decisions filtering / stats
 # ---------------------------------------------------------------------------
