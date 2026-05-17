@@ -421,3 +421,48 @@ async def test_invalid_cursor_returns_error_envelope(db_factory):
     assert isinstance(parsed, dict)
     assert parsed.get("error_code") == "invalid_cursor"
     assert "error" in parsed
+
+
+# ---------------------------------------------------------------------------
+# Regression — cursor pointing to a row MUST NOT redeliver that row
+# (smoke E2E pós-restart detectou: sqlalchemy tuple_(col1, col2) < (val1, val2)
+# em SQLite não honra row comparison e degenera para col1 < val1, deixando o
+# tiebreaker passar. Fix: or_(col1 < val1, and_(col1 == val1, col2 < val2)).)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cursor_strict_less_than_excludes_anchor_row(db_factory):
+    """Bug regression: when cursor anchors on row R, batch 2 must NOT include R.
+
+    Builds a cursor MANUALLY for an existing row in the DB and asserts the
+    very next call with that cursor returns rows ONLY older than R (by ts)
+    or with same ts and id strictly less than R.id.
+    """
+    board_id = _id("board-strict-less")
+    await _seed_board(db_factory, board_id)
+    await _seed_logs(db_factory, board_id=board_id, count=10)
+
+    first_raw = await _call_tool(db_factory, board_id=board_id, limit=5, envelope=True)
+    first = json.loads(first_raw)
+    anchor = first["items"][-1]  # last row of first batch
+    anchor_ts = datetime.fromisoformat(anchor["created_at"])
+
+    # Forge cursor pointing exactly at the anchor (same as next_cursor would)
+    forged = _encode_activity_cursor(anchor_ts, anchor["id"])
+
+    second_raw = await _call_tool(
+        db_factory, board_id=board_id, limit=10, cursor=forged, envelope=True
+    )
+    second = json.loads(second_raw)
+
+    second_ids = [r["id"] for r in second["items"]]
+    assert anchor["id"] not in second_ids, (
+        f"anchor row {anchor['id']!r} must NOT appear in batch 2 — "
+        "keyset filter must be strict-less-than"
+    )
+    for row in second["items"]:
+        row_ts = datetime.fromisoformat(row["created_at"])
+        assert (row_ts, row["id"]) < (anchor_ts, anchor["id"]), (
+            f"row {row['id']!r} broke strict-less-than invariant"
+        )
