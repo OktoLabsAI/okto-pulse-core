@@ -1995,7 +1995,7 @@ async def okto_pulse_get_activity_log(
     legacy_offset = os.getenv("OKTO_PULSE_LEGACY_OFFSET") == "1"
     effective_offset = offset if (legacy_offset and not cursor_pair) else 0
 
-    from sqlalchemy import select, tuple_
+    from sqlalchemy import and_, or_, select
 
     from okto_pulse.core.models.db import ActivityLog
 
@@ -2007,8 +2007,16 @@ async def okto_pulse_get_activity_log(
             query = query.where(ActivityLog.card_id == card_id)
         if cursor_pair is not None:
             ts, rid = cursor_pair
+            # Boolean-expanded keyset filter — portable across SQLite,
+            # PostgreSQL, MySQL. `tuple_(col1, col2) < (val1, val2)` row
+            # comparison is not honored by SQLite's translator and silently
+            # degrades to single-column compare, breaking the strict-less-
+            # than semantic of the tiebreaker.
             query = query.where(
-                tuple_(ActivityLog.created_at, ActivityLog.id) < (ts, rid)
+                or_(
+                    ActivityLog.created_at < ts,
+                    and_(ActivityLog.created_at == ts, ActivityLog.id < rid),
+                )
             )
         query = (
             query.order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
