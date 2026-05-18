@@ -1276,6 +1276,43 @@ class CardService:
 
     # ---- Coverage gate functions (used by SpecService.move_spec) ----
 
+    async def check_ac_scenario_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every acceptance criterion is covered by at least one test scenario.
+
+        Mirrors the AC→Scenario gate enforced at move_spec→done, but runs at
+        submit_spec_validation time so the failure surfaces BEFORE the spec is
+        locked. Without this pre-check, validation could succeed (locking the
+        spec) and then move→done would fail because uncovered ACs cannot be
+        addressed without first unlocking and resubmitting validation.
+        """
+        skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
+        if spec.skip_test_coverage or skip_global:
+            return
+        criteria = list(spec.acceptance_criteria or [])
+        scenarios = list(spec.test_scenarios or [])
+        if not criteria:
+            return
+        covered_indices: set[int] = set()
+        for scenario in scenarios:
+            covered_indices |= resolve_linked_criteria_to_indices(
+                scenario.get("linked_criteria"),
+                criteria,
+            )
+        uncovered = [
+            f"[{i}] {criterion[:80]}..."
+            for i, criterion in enumerate(criteria)
+            if i not in covered_indices
+        ]
+        if uncovered:
+            raise ValueError(
+                f"Cannot validate spec: {len(uncovered)} acceptance criteria lack test scenarios. "
+                f"Uncovered: {'; '.join(uncovered[:5])}"
+                f"{f' (and {len(uncovered) - 5} more)' if len(uncovered) > 5 else ''}. "
+                f"Create test scenarios linked to each AC BEFORE submitting validation — "
+                f"once validation passes the spec is locked and scenarios cannot be added. "
+                f"Alternatively, enable 'skip test coverage' on the spec or board."
+            )
+
     async def check_test_coverage(self, spec: "Spec", board: "Board | None") -> None:
         """Check that every test scenario has at least one linked card of type TEST."""
         skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
@@ -1346,7 +1383,7 @@ class CardService:
         uncovered = [(i, fr) for i, fr in enumerate(frs) if i not in covered_fr_indices]
         if uncovered:
             previews = ", ".join(
-                f'"FR{i}: {fr[:40]}..."' if len(fr) > 40 else f'"FR{i}: {fr}"'
+                f'"[{i}] {fr[:40]}..."' if len(fr) > 40 else f'"[{i}] {fr}"'
                 for i, fr in uncovered[:3]
             )
             suffix = f" and {len(uncovered) - 3} more" if len(uncovered) > 3 else ""
@@ -3364,7 +3401,11 @@ class SpecService:
             )
 
         # Run coverage gates as pre-requisite — reuses existing CardService checks.
+        # AC→Scenario coverage must run FIRST so uncovered ACs are caught before
+        # the spec gets locked by a successful validation (the move→done gate
+        # checks the same thing, but by then the spec is already locked).
         card_service = CardService(self.db)
+        await card_service.check_ac_scenario_coverage(spec, board)
         await card_service.check_test_coverage(spec, board)
         await card_service.check_rules_coverage(spec, board)
         await card_service.check_trs_coverage(spec, board)

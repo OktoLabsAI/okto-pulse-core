@@ -12,14 +12,14 @@ Stories are lightweight, optional intake items inspired by user stories. They pr
 
 | Action | Tool | Required permission |
 |---|---|---|
-| List Topics | `okto_pulse_list_topics` | `topic.entity.read` |
+| List Topics | `okto_pulse_list_by_board(entity_type="topic")` | `topic.entity.read` |
 | Create Topic | `okto_pulse_create_topic` | `topic.entity.create` |
 | Update Topic fields | `okto_pulse_update_topic` | `topic.entity.edit_fields` |
 | Archive Topic | `okto_pulse_archive_topic` | `topic.entity.archive` |
 | Restore Topic | `okto_pulse_restore_topic` | `topic.entity.restore` |
 | Delete empty Topic | `okto_pulse_delete_topic` | `topic.entity.delete` |
 | Merge Topics | `okto_pulse_merge_topics` | `topic.entity.merge` |
-| List Stories | `okto_pulse_list_stories` | `story.entity.read` |
+| List Stories | `okto_pulse_list_by_board(entity_type="story")` | `story.entity.read` |
 | Create Story | `okto_pulse_create_story` | `story.entity.create` |
 | Update Story fields/labels | `okto_pulse_update_story` | `story.entity.edit_fields` and/or `story.entity.label` |
 | Move Story | `okto_pulse_move_story` | matching `story.move.*` flag + `story.interact_in.<current_status>` |
@@ -43,7 +43,7 @@ Stories are lightweight, optional intake items inspired by user stories. They pr
 - Mockups attached to Stories are optional first-class context. Manage them with `okto_pulse_add_screen_mockup`, `okto_pulse_update_screen_mockup`, `okto_pulse_annotate_mockup`, `okto_pulse_list_screen_mockups`, and `okto_pulse_delete_screen_mockup` using `entity_type="story"`. When a Story becomes an Ideation/Spec, propagate or recreate only the mockups that remain relevant.
 
 **Story/Topic operation pre-flight:**
-- Before link, convert, move, archive, merge, or delete, list the affected Topics and candidate Stories with `okto_pulse_list_topics` and `okto_pulse_list_stories(include_links="true", include_archived="true")`.
+- Before link, convert, move, archive, merge, or delete, list the affected Topics and candidate Stories with `okto_pulse_list_by_board(entity_type="topic", filters={"include_archived":"true"})` and `okto_pulse_list_by_board(entity_type="story", filters={"include_archived":"true"})`.
 - Inspect each Story's `status`, `archived`, and `ideation_links` before choosing the operation. Do not operate from memory or from a title-only match.
 - For link/convert, verify every candidate Story is `ready`, not archived, and has no existing `ideation_links`; also verify the target Ideation is editable before calling `okto_pulse_link_story_to_ideation`.
 - A Story can link to at most one Ideation. Repeating the same Story + Ideation link returns `already linked`; linking the same Story to a different Ideation is rejected. Multiple Stories may link to the same Ideation when they converge on the same problem space.

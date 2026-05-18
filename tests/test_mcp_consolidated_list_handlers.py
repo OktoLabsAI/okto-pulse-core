@@ -1,11 +1,10 @@
 """Tests for the consolidated polymorphic list handlers (spec P0.B).
 
 Coverage mandated by TR-B5:
-1. Equivalence — new handlers return equivalent payload to legacy handlers.
+1. Structure — new handlers return the expected consolidated payloads.
 2. Structured error — invalid entity_type returns error_code='unsupported_entity'.
 3. Filter validation — invalid filter key returns error_code='invalid_filter'.
-4. Legacy tools still functional + emit _deprecation_warning.
-5. Sample log captures invocation when OKTO_PULSE_DEPRECATION_SAMPLE_RATE=1.0.
+4. Legacy entity-specific list tools are not registered.
 
 Design
 ------
@@ -21,8 +20,6 @@ and function-scoped respectively; they apply automatically (autouse=True).
 from __future__ import annotations
 
 import json
-import os
-import sqlite3
 import uuid
 from pathlib import Path
 
@@ -48,6 +45,31 @@ from okto_pulse.core.models.db import (
 BOARD_ID = "consol-list-board-001"
 AGENT_ID = "consol-agent-001"
 API_KEY = "consol-api-key-001"
+
+LEGACY_LIST_TOOLS = (
+    "okto_pulse_list_topics",
+    "okto_pulse_list_stories",
+    "okto_pulse_list_ideations",
+    "okto_pulse_list_ideation_snapshots",
+    "okto_pulse_list_ideation_knowledge",
+    "okto_pulse_list_ideation_qa",
+    "okto_pulse_list_refinements",
+    "okto_pulse_list_refinement_qa",
+    "okto_pulse_list_specs",
+    "okto_pulse_list_card_knowledge",
+    "okto_pulse_list_spec_qa",
+    "okto_pulse_list_spec_knowledge",
+    "okto_pulse_list_refinement_snapshots",
+    "okto_pulse_list_refinement_knowledge",
+    "okto_pulse_list_sprints",
+)
+
+CONSOLIDATED_LIST_TOOLS = (
+    "okto_pulse_list_by_board",
+    "okto_pulse_list_qa",
+    "okto_pulse_list_knowledge",
+    "okto_pulse_list_snapshots",
+)
 
 def _get_tool_fn(name: str):
     """Unwrap FastMCP FunctionTool to its underlying async function."""
@@ -417,84 +439,95 @@ async def test_list_by_board_accepts_empty_string_filters():
 
 
 # ---------------------------------------------------------------------------
-# 4c. Bug regression — limit default unified to 100 (post-release fix 717e9915)
+# 4c. Bug regression — consolidated limit default is 100 (post-release fix 717e9915)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_legacy_list_specs_default_limit_is_100(seeded_board):
-    """Regression for bug 717e9915: legacy list_specs must default limit=100,
-    aligned with the new list_by_board, to avoid silent pagination changes
-    when clients migrate."""
-    result = await _call_tool("okto_pulse_list_specs", board_id=BOARD_ID)
+async def test_list_by_board_spec_default_limit_is_100(seeded_board):
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
+        board_id=BOARD_ID,
+        entity_type="spec",
+    )
     data = _parse(result)
     assert data.get("limit") == 100, f"Expected limit=100, got {data.get('limit')}"
 
 
 @pytest.mark.asyncio
-async def test_legacy_list_ideations_default_limit_is_100(seeded_board):
-    """Regression for bug 717e9915: legacy list_ideations default limit=100."""
-    result = await _call_tool("okto_pulse_list_ideations", board_id=BOARD_ID)
+async def test_list_by_board_ideation_default_limit_is_100(seeded_board):
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
+        board_id=BOARD_ID,
+        entity_type="ideation",
+    )
     data = _parse(result)
     assert data.get("limit") == 100, f"Expected limit=100, got {data.get('limit')}"
 
 
 # ---------------------------------------------------------------------------
-# 5. Equivalence — new list_by_board vs legacy list_specs (structural)
+# 5. Structure — consolidated list_by_board payloads
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_list_by_board_spec_structure(seeded_board):
-    new_result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="spec",
     )
-    legacy_result = await _call_tool("okto_pulse_list_specs",board_id=BOARD_ID)
+    data = _parse(result)
 
-    new_data = _parse(new_result)
-    legacy_data = _parse(legacy_result)
-
-    # Both should return item lists successfully
-    assert "items" in new_data, f"new handler missing 'items': {new_data}"
-    assert "specs" in legacy_data, f"legacy handler missing 'specs': {legacy_data}"
-
-    # Item shape parity
-    if new_data["items"] and legacy_data["specs"]:
-        new_keys = set(new_data["items"][0].keys())
-        legacy_keys = set(legacy_data["specs"][0].keys())
-        # All legacy keys should be present in new (new may have extra)
-        assert legacy_keys <= new_keys, f"Missing keys in new handler: {legacy_keys - new_keys}"
-
-    # Legacy still has deprecation warning
-    assert "_deprecation_warning" in legacy_data
+    assert data.get("entity_type") == "spec"
+    assert "items" in data, f"handler missing 'items': {data}"
+    if data["items"]:
+        expected_keys = {
+            "id",
+            "title",
+            "description",
+            "status",
+            "version",
+            "assignee_id",
+            "labels",
+            "created_at",
+            "updated_at",
+        }
+        assert expected_keys <= set(data["items"][0].keys())
 
 
 @pytest.mark.asyncio
 async def test_list_by_board_ideation_structure(seeded_board):
-    new_result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="ideation",
     )
-    legacy_result = await _call_tool("okto_pulse_list_ideations",board_id=BOARD_ID)
+    data = _parse(result)
 
-    new_data = _parse(new_result)
-    legacy_data = _parse(legacy_result)
-
-    assert "items" in new_data
-    assert "ideations" in legacy_data
-    assert "_deprecation_warning" in legacy_data
-
-    if new_data["items"] and legacy_data["ideations"]:
-        new_keys = set(new_data["items"][0].keys())
-        legacy_keys = set(legacy_data["ideations"][0].keys())
-        assert legacy_keys <= new_keys
+    assert data.get("entity_type") == "ideation"
+    assert "items" in data
+    if data["items"]:
+        expected_keys = {
+            "id",
+            "title",
+            "description",
+            "problem_statement",
+            "complexity",
+            "status",
+            "version",
+            "assignee_id",
+            "labels",
+            "created_at",
+            "updated_at",
+        }
+        assert expected_keys <= set(data["items"][0].keys())
 
 
 @pytest.mark.asyncio
 async def test_list_by_board_refinement_requires_ideation_id(seeded_board):
-    # Without ideation_id filter -> structured error
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="refinement",
     )
@@ -506,178 +539,66 @@ async def test_list_by_board_refinement_requires_ideation_id(seeded_board):
 async def test_list_by_board_refinement_with_ideation_id(seeded_board):
     ideation_id = seeded_board["ideation_id"]
 
-    new_result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="refinement",
         filters={"ideation_id": ideation_id},
     )
-    legacy_result = await _call_tool("okto_pulse_list_refinements",
-        board_id=BOARD_ID,
-        ideation_id=ideation_id,
-    )
+    data = _parse(result)
 
-    new_data = _parse(new_result)
-    legacy_data = _parse(legacy_result)
-
-    assert "items" in new_data, f"new handler missing 'items': {new_data}"
-    assert "refinements" in legacy_data
-    assert "_deprecation_warning" in legacy_data
+    assert data.get("entity_type") == "refinement"
+    assert data.get("ideation_id") == ideation_id
+    assert "items" in data, f"handler missing 'items': {data}"
+    if data["items"]:
+        expected_keys = {
+            "id",
+            "title",
+            "description",
+            "in_scope",
+            "out_of_scope",
+            "status",
+            "version",
+            "assignee_id",
+            "labels",
+            "created_at",
+            "updated_at",
+        }
+        assert expected_keys <= set(data["items"][0].keys())
 
 
 # ---------------------------------------------------------------------------
-# 6. Legacy tools still functional + emit _deprecation_warning
+# 6. Legacy entity-specific list tools are removed from the MCP registry
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_legacy_list_specs_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_specs",board_id=BOARD_ID)
-    data = _parse(result)
-    assert "specs" in data or "error" in data  # may be empty board
-    assert "_deprecation_warning" in data
-    assert "0.3.0" in data["_deprecation_warning"]
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_ideations_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_ideations",board_id=BOARD_ID)
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_topics_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_topics",board_id=BOARD_ID)
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_stories_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_stories",board_id=BOARD_ID)
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_spec_qa_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_spec_qa",
-        board_id=BOARD_ID,
-        spec_id=seeded_board["spec_id"],
-    )
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_ideation_snapshots_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_ideation_snapshots",
-        board_id=BOARD_ID,
-        ideation_id=seeded_board["ideation_id"],
-    )
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_refinement_snapshots_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_refinement_snapshots",
-        board_id=BOARD_ID,
-        refinement_id=seeded_board["refinement_id"],
-    )
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_spec_knowledge_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_spec_knowledge",
-        board_id=BOARD_ID,
-        spec_id=seeded_board["spec_id"],
-    )
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_ideation_knowledge_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_ideation_knowledge",
-        board_id=BOARD_ID,
-        ideation_id=seeded_board["ideation_id"],
-    )
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-@pytest.mark.asyncio
-async def test_legacy_list_sprints_still_works_and_warns(seeded_board):
-    result = await _call_tool("okto_pulse_list_sprints",
-        board_id=BOARD_ID,
-        spec_id=seeded_board["spec_id"],
-    )
-    data = _parse(result)
-    assert "_deprecation_warning" in data
-
-
-# ---------------------------------------------------------------------------
-# 7. Sample log captures invocation when SAMPLE_RATE=1.0
-# ---------------------------------------------------------------------------
-
-
-def test_sample_log_captured_when_rate_is_1(tmp_path):
-    """When OKTO_PULSE_DEPRECATION_SAMPLE_RATE=1.0, every invocation is logged."""
+async def test_legacy_list_tools_are_not_registered():
     import okto_pulse.core.mcp.server as srv
 
-    db_path = str(tmp_path / "test_deprecation.db")
-    original_rate = srv._DEPRECATION_SAMPLE_RATE
-    original_path = srv._DEPRECATION_DB_PATH
-    try:
-        srv._DEPRECATION_SAMPLE_RATE = 1.0
-        srv._DEPRECATION_DB_PATH = db_path
-        srv._log_deprecated_invocation("okto_pulse_list_specs", "agent-xyz")
-    finally:
-        srv._DEPRECATION_SAMPLE_RATE = original_rate
-        srv._DEPRECATION_DB_PATH = original_path
-
-    # Verify the row landed in SQLite
-    conn = sqlite3.connect(db_path)
-    try:
-        rows = conn.execute("SELECT tool_name, agent_id FROM deprecation_sample").fetchall()
-    finally:
-        conn.close()
-
-    assert len(rows) == 1
-    assert rows[0][0] == "okto_pulse_list_specs"
-    assert rows[0][1] == "agent-xyz"
+    tools = await srv.mcp.get_tools()
+    registered_legacy_tools = set(LEGACY_LIST_TOOLS) & set(tools.keys())
+    assert registered_legacy_tools == set()
 
 
-def test_sample_log_skipped_when_rate_is_0(tmp_path):
-    """When OKTO_PULSE_DEPRECATION_SAMPLE_RATE=0.0, nothing is logged."""
+@pytest.mark.asyncio
+async def test_consolidated_list_tools_are_registered():
     import okto_pulse.core.mcp.server as srv
 
-    db_path = str(tmp_path / "test_deprecation_zero.db")
-    original_rate = srv._DEPRECATION_SAMPLE_RATE
-    original_path = srv._DEPRECATION_DB_PATH
-    try:
-        srv._DEPRECATION_SAMPLE_RATE = 0.0
-        srv._DEPRECATION_DB_PATH = db_path
-        srv._log_deprecated_invocation("okto_pulse_list_specs", "agent-xyz")
-    finally:
-        srv._DEPRECATION_SAMPLE_RATE = original_rate
-        srv._DEPRECATION_DB_PATH = original_path
+    tools = await srv.mcp.get_tools()
+    assert set(CONSOLIDATED_LIST_TOOLS) <= set(tools.keys())
 
-    # DB might not even be created
-    if Path(db_path).exists():
-        conn = sqlite3.connect(db_path)
-        try:
-            rows = conn.execute(
-                "SELECT count(*) FROM deprecation_sample"
-            ).fetchone()
-            assert rows[0] == 0
-        except sqlite3.OperationalError:
-            pass  # table doesn't exist either — also fine
-        finally:
-            conn.close()
+
+# ---------------------------------------------------------------------------
+# 7. Deprecated list logging was removed with the legacy tools
+# ---------------------------------------------------------------------------
+
+
+def test_deprecated_list_logging_helpers_are_absent():
+    import okto_pulse.core.mcp.server as srv
+
+    assert not hasattr(srv, "_log_deprecated_invocation")
+    assert not hasattr(srv, "_DEPRECATION_SAMPLE_RATE")
 
 
 # ---------------------------------------------------------------------------
@@ -754,13 +675,8 @@ async def test_list_snapshots_refinement(seeded_board):
 # ---------------------------------------------------------------------------
 
 
-def test_agent_instructions_old_tool_names_only_in_deprecation_blocks():
-    """TS-b624b4d8 — agent_instructions.md must reference legacy list-* tool
-    names ONLY inside deprecation-notice lines (lines starting with '> ').
-
-    Non-deprecation lines must not recommend the 15 old list tools as primary
-    tools — all primary references must use the new consolidated handlers.
-    """
+def test_agent_instructions_do_not_reference_legacy_list_tools():
+    """The agent-facing instructions must only expose consolidated list tools."""
     ai_path = (
         Path(__file__).resolve().parent.parent
         / "src" / "okto_pulse" / "core" / "mcp" / "agent_instructions.md"
@@ -768,35 +684,5 @@ def test_agent_instructions_old_tool_names_only_in_deprecation_blocks():
     assert ai_path.exists(), f"agent_instructions.md not found at {ai_path}"
     text = ai_path.read_text(encoding="utf-8")
 
-    old_primary_tools = [
-        "okto_pulse_list_specs",
-        "okto_pulse_list_ideations",
-        "okto_pulse_list_refinements",
-        "okto_pulse_list_sprints",
-        "okto_pulse_list_stories",
-        "okto_pulse_list_topics",
-        "okto_pulse_list_spec_qa",
-        "okto_pulse_list_ideation_qa",
-        "okto_pulse_list_refinement_qa",
-        "okto_pulse_list_spec_knowledge",
-        "okto_pulse_list_ideation_knowledge",
-        "okto_pulse_list_refinement_knowledge",
-        "okto_pulse_list_ideation_snapshots",
-        "okto_pulse_list_refinement_snapshots",
-        "okto_pulse_list_spec_snapshots",
-    ]
-
-    # Each old tool that appears must appear ONLY in deprecation-notice lines
-    violations = []
-    for tool in old_primary_tools:
-        for lineno, line in enumerate(text.split("\n"), 1):
-            if tool in line:
-                stripped = line.strip()
-                # Deprecation notices start with "> " (blockquote)
-                if not stripped.startswith(">"):
-                    violations.append(f"L{lineno}: {stripped[:120]}")
-
-    assert violations == [], (
-        "Old list-* tools found outside deprecation blocks in agent_instructions.md:\n"
-        + "\n".join(violations)
-    )
+    leaked = [tool for tool in LEGACY_LIST_TOOLS if tool in text]
+    assert leaked == []

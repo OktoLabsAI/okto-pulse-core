@@ -888,11 +888,12 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
 
         listed_archived_story = await _call_mcp(
             db_factory,
-            "okto_pulse_list_stories",
+            "okto_pulse_list_by_board",
             board_id=board_id,
-            include_archived="true",
+            entity_type="story",
+            filters={"include_archived": "true"},
         )
-        assert any(item["id"] == story_id and item["archived"] is True for item in listed_archived_story["stories"])
+        assert any(item["id"] == story_id and item["archived"] is True for item in listed_archived_story["items"])
 
         restored_story = await _call_mcp(
             db_factory,
@@ -1000,13 +1001,13 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
 
         listed = await _call_mcp(
             db_factory,
-            "okto_pulse_list_stories",
+            "okto_pulse_list_by_board",
             board_id=board_id,
-            converted="true",
-            include_archived="true",
+            entity_type="story",
+            filters={"converted": "true", "include_archived": "true"},
         )
-        assert listed["count"] == 1
-        assert listed["stories"][0]["status"] == "converted"
+        assert listed["total"] == 1
+        assert listed["items"][0]["status"] == "converted"
 
         link_topic = await _call_mcp(
             db_factory,

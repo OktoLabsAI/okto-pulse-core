@@ -152,3 +152,33 @@ async def test_spec_target_does_not_require_spec_id():
     assert "spec_id is required" not in result
     # Must NOT raise TypeError
     assert "takes 0 positional arguments" not in str(result)
+
+
+# Helpers whose success response must include the saturation envelope so
+# agents get consistent progress feedback after every link. The decision
+# helper was an outlier (missing saturation) — this test pins parity.
+_HELPERS_WITH_SATURATION_ENVELOPE = [
+    "_link_task_to_scenario_internal",
+    "_link_task_to_rule_internal",
+    "_link_task_to_decision_internal",
+    "_link_task_to_tr_internal",
+    "_link_task_to_contract_internal",
+    "_link_task_to_integration_requirement_internal",
+    "_link_task_to_observability_requirement_internal",
+]
+
+
+@pytest.mark.parametrize("helper_name", _HELPERS_WITH_SATURATION_ENVELOPE)
+def test_link_helper_returns_saturation_envelope(helper_name):
+    """Every link_task internal helper must spread _saturation_or_coverage(cov)
+    into its success JSON. Without this, agents calling the dispatcher get
+    different response shapes per target_type and lose the saturation signal
+    that drives 'continue linking vs submit validation' decisions.
+    """
+    import inspect
+    helper = getattr(server, helper_name)
+    src = inspect.getsource(helper)
+    assert "_saturation_or_coverage" in src, (
+        f"{helper_name} success response is missing the saturation envelope. "
+        f"Expected `**_saturation_or_coverage(cov)` in the json.dumps payload."
+    )
