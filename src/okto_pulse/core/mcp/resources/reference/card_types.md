@@ -1,0 +1,79 @@
+---
+version: "1.0"
+---
+
+# Card Types — Normal, Test & Bug Rules
+
+## There Are Three Types of Cards
+
+1. **Implementation cards** (`card_type="normal"`) — implement functional/technical requirements from the spec.
+2. **Test cards** (`card_type="test"`, with `test_scenario_ids`) — implement, execute, or validate test scenarios defined in the spec.
+3. **Bug cards** (`card_type="bug"`) — track and fix bugs discovered during or after implementation.
+
+## Normal Card Rules
+
+- `card_type="normal"` → spec must be in `approved`, `in_progress`, or `done`
+- Goes through the standard validation gate when `validation_config.required == true`
+- Requires conclusion, completeness, and drift when moving to `validation` or `done`
+- Transition: `not_started` → `started` → `in_progress` → `validation` → `done`
+
+## Test Card Rules
+
+- `card_type="test"` **requires** `test_scenario_ids` to be non-empty — the server rejects card creation without it.
+- Spec must be in `approved`, `validated`, `in_progress`, or `done` for test card creation.
+- The scenario-coverage gate counts **only cards with `card_type="test"`**. A `card_type="normal"` card with `test_scenario_ids` does NOT count toward scenario coverage.
+- **Always use `card_type="test"` when the intent is to cover a scenario.**
+- Test cards skip `okto_pulse_submit_task_validation` — moving to `done` is controlled by scenario status.
+- When moving test card to `done`, `okto_pulse_move_card` requires: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification`.
+- **Before moving to `done`**: ALL linked test scenarios must be `passed` or `automated` (not `draft` or `ready`). Call `okto_pulse_update_test_scenario_status` first.
+
+**Test card naming convention:** Prefix with `[TEST]`:
+Example: `[TEST] E2E — Valid OAuth2 token grants access`
+
+| Status to set | Evidence required |
+|---|---|
+| `draft`, `ready` | none |
+| `automated` | `test_file_path` + `test_function` |
+| `passed`, `failed` | `last_run_at` + (`output_snippet` OR `test_run_id`) |
+
+Pass evidence as a JSON string in the `evidence` parameter of `okto_pulse_update_test_scenario_status`.
+
+## Bug Card Rules
+
+- `card_type="bug"` → spec must be in `approved`, `in_progress`, or `done`
+- `origin_task_id` is **required** — the task that has the bug. `spec_id` is auto-resolved from it.
+- Bug cards can ONLY be created with status `not_started` or `started`.
+- Required fields: `severity` (`critical` | `major` | `minor`), `expected_behavior`, `observed_behavior`.
+- Optional fields: `steps_to_reproduce`, `action_plan`.
+
+**Bug card lifecycle (enforced by the system):**
+
+```
+1. Create bug card (status: not_started)
+2. Triage & create NEW test scenarios (status: started)
+3. Create test task & link to bug (still started)
+   └── okto_pulse_update_card(card_id=bug_id, linked_test_task_ids="<test_task_id>")
+4. Move to in_progress (BLOCKED until step 3 is done)
+   └── System validates:
+       ✓ At least 1 test task linked
+       ✓ Each test task has test_scenario_ids
+       ✓ Each test task belongs to the same spec as the bug
+       ✓ Each test scenario was created AFTER the bug card (pre-existing scenarios don't count)
+5. Fix the bug (in_progress)
+6. Complete (done) — provide conclusion with what was fixed
+```
+
+## Coverage Gate Interactions
+
+**Normal and test cards contribute differently:**
+
+| Card type | Counts for scenario coverage gate? | Counts for BR/task linkage gate? |
+|---|---|---|
+| `card_type="normal"` | NO (even if `test_scenario_ids` set) | YES |
+| `card_type="test"` | YES | YES |
+| `card_type="bug"` | NO | YES |
+
+**A spec cannot move to `done` unless:**
+- Every acceptance criterion has at least one test scenario.
+- Every test scenario has at least one linked `card_type="test"` card.
+- All linked non-bug, non-archived cards are `done` or `cancelled`.

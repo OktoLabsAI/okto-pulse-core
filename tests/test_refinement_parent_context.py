@@ -144,6 +144,53 @@ async def test_create_refinement_preserves_parent_context_with_explicit_descript
 
 
 @pytest.mark.asyncio
+async def test_create_refinement_serializes_manual_screen_mockups():
+    board_id, ideation_id, _ = await _seed_ideation()
+    db_factory = get_session_factory()
+
+    async with db_factory() as db:
+        refinement = await RefinementService(db).create_refinement(
+            ideation_id,
+            USER_ID,
+            RefinementCreate(
+                ideation_id=ideation_id,
+                title="Refine Resource Gate Mockups",
+                description="Refinement with a manually supplied mockup.",
+                in_scope=["Mockup persistence"],
+                screen_mockups=[
+                    {
+                        "id": "mock-refinement-1",
+                        "title": "Board settings modal",
+                        "description": "Auto propagation controls.",
+                        "screen_type": "modal",
+                        "html_content": "<section>Board settings</section>",
+                        "annotations": [
+                            {
+                                "id": "ann-1",
+                                "text": "Resource selector appears below the toggle.",
+                            }
+                        ],
+                        "order": 1,
+                    }
+                ],
+            ),
+            skip_ownership_check=True,
+        )
+        await db.commit()
+        refinement_id = refinement.id
+
+    async with db_factory() as db:
+        refinement = await RefinementService(db).get_refinement(refinement_id)
+        assert refinement is not None
+        assert refinement.screen_mockups is not None
+        assert isinstance(refinement.screen_mockups[0], dict)
+        assert refinement.screen_mockups[0]["id"] == "mock-refinement-1"
+        assert refinement.screen_mockups[0]["annotations"][0]["id"] == "ann-1"
+
+    assert board_id
+
+
+@pytest.mark.asyncio
 async def test_mcp_refinement_context_exposes_parent_ideation_and_resolved_reference():
     board_id, ideation_id, kb_id = await _seed_ideation()
     db_factory = get_session_factory()

@@ -2,6 +2,8 @@
 
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from pathlib import Path
+import tomllib
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,14 +12,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
     """Read version from installed package metadata; fallback if not installed
     (e.g. running from source tree without ``pip install -e``)."""
+    pyproject = Path(__file__).resolve().parents[4] / "pyproject.toml"
+    if pyproject.exists():
+        try:
+            return tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+        except Exception:
+            pass
     try:
         return _pkg_version(package_name)
     except PackageNotFoundError:
         return fallback
 
 
-_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.2.0+local")
+_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.2.1+local")
 GRAPH_DB_MAX_SIZE_GB_VALUES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
+DEFAULT_METRICS_BEACON_URL = "https://metrics.oktolabs.ai"
 
 
 def validate_graph_db_max_size_gb(value: int) -> int:
@@ -60,6 +69,16 @@ class CoreSettings(BaseSettings):
     # Storage
     upload_dir: str = "./uploads"
     max_upload_size: int = 10 * 1024 * 1024  # 10MB
+
+    # Local-first telemetry (v0.2.1). Empty values mean "not explicitly set"
+    # so the resolver can still let persisted consent win over defaults.
+    metrics_mode: str = ""
+    metrics_dir: str = ""
+    metrics_retention_days: int = Field(30, ge=1, le=400)
+    metrics_beacon_url: str = DEFAULT_METRICS_BEACON_URL
+    metrics_policy_version: str = "2026-05-11"
+    metrics_schema_version: str = "1.1.0"
+    metrics_opt_in_prompt_interval_days: int = Field(30, ge=1, le=365)
 
     # MCP Server
     mcp_server_name: str = "okto-pulse"
