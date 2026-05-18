@@ -269,6 +269,17 @@ async def test_mcp_get_architecture_schema_exposes_authoring_contract(_seed_spec
     assert schema["interface_contract"]["anti_patterns"]
     assert "linkedInterfaceIds" in schema["excalidraw_adapter_payload_contract"]["edge_element"]
     assert schema["complete_minimal_payload_example"]["diagrams"][0]["format"] == "excalidraw_json"
+    # Spec cc497a0d — semantic_node_registry must be exposed for MCP agents.
+    registry_section = schema["semantic_node_registry"]
+    assert "api" in registry_section["mappings"]
+    assert "database" in registry_section["mappings"]
+    assert set(registry_section["required_node_fields_for_linked"]) >= {
+        "text", "displayType", "architectureKind", "iconName", "linkedEntityId",
+    }
+    assert "server" in registry_section["allowed_icon_names"]
+    flow = registry_section["validation_flow_for_agents"]
+    assert any("get_architecture_design_schema" in step for step in flow)
+    assert any("validate" in step.lower() for step in flow)
 
 
 @pytest.mark.asyncio

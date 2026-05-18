@@ -1,4 +1,4 @@
-"""Shared helpers for MCP tool parameter parsing.
+"""Shared helpers for MCP tool parameter parsing and structured errors.
 
 History
 -------
@@ -16,6 +16,8 @@ History
 - v4: strict mode accepts a bare single value (e.g. ``"1"``) while still
   rejecting comma-only multi-value strings. This keeps simple MCP calls
   ergonomic without reintroducing ambiguous comma splitting.
+- v5 (spec P0.B — TR-B3): adds ``_structured_error()`` for the
+  polymorphic consolidated list handlers.
 
 Design
 ------
@@ -198,8 +200,46 @@ def coerce_to_list_str(
     return parse_multi_value(value, strict_mode=strict_mode)
 
 
+def _structured_error(
+    error_code: str,
+    supported: list,
+    suggested_tool: str | None,
+    error_msg: str | None = None,
+) -> str:
+    """Return a machine-readable structured error JSON string.
+
+    Used by the consolidated polymorphic list handlers (TR-B3).
+    Keeps backward compat: always includes the legacy ``"error"`` key so
+    existing callers that check ``result["error"]`` keep working.
+
+    Parameters
+    ----------
+    error_code:
+        Short stable identifier, e.g. ``"unsupported_entity"`` or
+        ``"invalid_filter"``.
+    supported:
+        List of values that ARE supported (for agent self-correction).
+    suggested_tool:
+        Replacement tool name when the agent used an old tool, or ``None``.
+    error_msg:
+        Human-readable detail; included as ``"error"`` for compat and as
+        ``"detail"`` for structured consumers.
+    """
+    payload: dict = {
+        "error": error_msg or error_code,
+        "error_code": error_code,
+        "supported": supported,
+    }
+    if suggested_tool is not None:
+        payload["suggested_tool"] = suggested_tool
+    if error_msg:
+        payload["detail"] = error_msg
+    return json.dumps(payload)
+
+
 __all__ = [
     "parse_multi_value",
     "coerce_to_list_str",
     "_clean_str_list",
+    "_structured_error",
 ]

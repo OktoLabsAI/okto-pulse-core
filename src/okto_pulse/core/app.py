@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from okto_pulse.core.infra.config import CoreSettings, configure_settings
 from okto_pulse.core.infra.database import create_database, init_db, close_db, get_session_factory
 from okto_pulse.core.infra.storage import StorageProvider, configure_storage
 from okto_pulse.core.api import api_router
+from okto_pulse.core.telemetry.service import TelemetryService
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +239,33 @@ def create_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    @app.middleware("http")
+    async def telemetry_http_middleware(request, call_next):
+        started = time.perf_counter()
+        status_code = 500
+        error_class = None
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception as exc:
+            error_class = exc.__class__.__name__
+            raise
+        finally:
+            path = request.url.path
+            if path.startswith("/api/"):
+                route = request.scope.get("route")
+                route_template = getattr(route, "path", path)
+                payload = {
+                    "method": request.method,
+                    "route_template": route_template,
+                    "status_code": status_code,
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                }
+                if error_class:
+                    payload["error_class"] = error_class
+                TelemetryService(settings).record_event("http", payload)
 
     # Health check
     @app.get("/health")

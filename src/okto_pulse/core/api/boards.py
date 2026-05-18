@@ -59,17 +59,30 @@ async def list_boards(
 @router.get("/{board_id}", response_model=BoardResponse)
 async def get_board(
     board_id: str,
+    compact: bool = Query(False, description="When true, omit inline cards/agents and return only the overview envelope with counts. Default false preserves the legacy full payload for the existing frontend."),
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a board by ID with all cards and agents."""
+    """Get a board by ID. By default returns the full board (legacy shape);
+    pass `compact=true` for the overview envelope (Ideação token-optimization
+    Story 2 — ~200B vs ~10KB).
+    """
     service = BoardService(db)
     board = await service.get_board(board_id, user_id)
     if not board:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
-    # Populate agents via junction table
     agent_service = AgentService(db)
-    board.__dict__["agents"] = await agent_service.list_agents_for_board(board_id)
+    board_agents = await agent_service.list_agents_for_board(board_id)
+    cards_list = list(board.cards or [])
+    board.__dict__["counts"] = {
+        "cards": len(cards_list),
+        "agents": len(board_agents),
+    }
+    if compact:
+        board.__dict__["agents"] = []
+        board.__dict__["cards"] = []
+    else:
+        board.__dict__["agents"] = board_agents
     return board
 
 

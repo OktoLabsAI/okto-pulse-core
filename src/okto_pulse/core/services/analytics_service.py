@@ -564,7 +564,7 @@ async def compute_velocity(
 
 def spec_coverage_summary(
     spec, *, scenarios=None, rules=None, contracts=None, trs=None, decisions=None,
-    cards=None,
+    integration_requirements=None, observability_requirements=None, cards=None,
 ) -> dict:
     """Compute coverage stats for a single spec — used by validation gate + UI.
 
@@ -591,6 +591,16 @@ def spec_coverage_summary(
     _contracts = contracts if contracts is not None else (spec.api_contracts or [])
     _trs = trs if trs is not None else (spec.technical_requirements or [])
     _decisions = decisions if decisions is not None else (getattr(spec, "decisions", None) or [])
+    _irs = (
+        integration_requirements
+        if integration_requirements is not None
+        else (getattr(spec, "integration_requirements", None) or [])
+    )
+    _ors = (
+        observability_requirements
+        if observability_requirements is not None
+        else (getattr(spec, "observability_requirements", None) or [])
+    )
 
     cancelled_card_ids: set = set()
     if cards:
@@ -658,6 +668,33 @@ def spec_coverage_summary(
         d.get("id") for d in active_decisions
         if not (set(d.get("linked_task_ids") or []) - cancelled_card_ids) and d.get("id")
     ]
+    active_irs = [
+        ir for ir in _irs
+        if isinstance(ir, dict) and ir.get("status", "active") == "active"
+    ]
+    ir_total = len(active_irs)
+    ir_linked = sum(
+        1 for ir in active_irs
+        if (set(ir.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
+    ir_uncovered_ids = [
+        ir.get("id") for ir in active_irs
+        if not (set(ir.get("linked_task_ids") or []) - cancelled_card_ids) and ir.get("id")
+    ]
+
+    active_ors = [
+        req for req in _ors
+        if isinstance(req, dict) and req.get("status", "active") == "active"
+    ]
+    or_total = len(active_ors)
+    or_linked = sum(
+        1 for req in active_ors
+        if (set(req.get("linked_task_ids") or []) - cancelled_card_ids)
+    )
+    or_uncovered_ids = [
+        req.get("id") for req in active_ors
+        if not (set(req.get("linked_task_ids") or []) - cancelled_card_ids) and req.get("id")
+    ]
 
     def _pct(n, d):
         return round((n / d * 100) if d > 0 else 100, 1)
@@ -687,10 +724,59 @@ def spec_coverage_summary(
         "decisions_linked": d_linked,
         "decisions_total": d_total,
         "decisions_uncovered_ids": d_uncovered_ids,
+        "ir_task_linkage_pct": _pct(ir_linked, ir_total),
+        "irs_linked": ir_linked,
+        "irs_total": ir_total,
+        "irs_uncovered_ids": ir_uncovered_ids,
+        "or_task_linkage_pct": _pct(or_linked, or_total),
+        "ors_linked": or_linked,
+        "ors_total": or_total,
+        "ors_uncovered_ids": or_uncovered_ids,
         "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
         "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
         "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", False),
+        "skip_ir_coverage": getattr(spec, "skip_ir_coverage", False),
+        "skip_or_coverage": getattr(spec, "skip_or_coverage", False),
     }
+
+
+def spec_saturation_envelope(coverage: dict[str, Any]) -> dict[str, Any]:
+    """Return the minimal saturation envelope: {pct, blocking[]}.
+
+    Ideação MCP-token-optimization Story 1: replaces the verbose coverage{}
+    block on write/link responses. Aggregates the per-dimension percentages
+    weighted equally; blocking[] lists dimension keys whose percentage is
+    below 100 (or whose linkage is short) and that aren't skip-flagged.
+    """
+    if not coverage:
+        return {"pct": 100.0, "blocking": []}
+    dims = [
+        ("acceptance_criteria", "ac_coverage_pct", "ac_total", "skip_test_coverage"),
+        ("functional_requirements", "fr_coverage_pct", "fr_total", None),
+        ("scenarios", "scenario_task_linkage_pct", "scenarios_total", "skip_test_coverage"),
+        ("rules", "br_task_linkage_pct", "brs_total", "skip_rules_coverage"),
+        ("contracts", "contract_task_linkage_pct", "contracts_total", None),
+        ("trs", "tr_task_linkage_pct", "trs_total", None),
+        ("decisions", "decisions_coverage_pct", "decisions_total", "skip_decisions_coverage"),
+        ("irs", "ir_task_linkage_pct", "irs_total", "skip_ir_coverage"),
+        ("ors", "or_task_linkage_pct", "ors_total", "skip_or_coverage"),
+    ]
+    pcts: list[float] = []
+    blocking: list[str] = []
+    for name, pct_key, total_key, skip_key in dims:
+        if skip_key and coverage.get(skip_key):
+            continue
+        total = coverage.get(total_key, 0) or 0
+        if total <= 0:
+            continue
+        pct = float(coverage.get(pct_key, 0) or 0)
+        pcts.append(pct)
+        if pct < 100:
+            blocking.append(name)
+    if not pcts:
+        return {"pct": 100.0, "blocking": []}
+    avg = round(sum(pcts) / len(pcts), 1)
+    return {"pct": avg, "blocking": blocking}
 
 
 # ---------------------------------------------------------------------------

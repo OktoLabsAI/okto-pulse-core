@@ -460,6 +460,39 @@ async def _migrate_add_spec_validation_columns() -> None:
                     pass
 
 
+async def _migrate_add_ir_or_columns() -> None:
+    """Add first-class IR/OR JSON columns and coverage flags to specs."""
+    from sqlalchemy import text as sa_text
+
+    columns = [
+        ("integration_requirements", "JSON"),
+        ("observability_requirements", "JSON"),
+        ("skip_ir_coverage", "BOOLEAN DEFAULT false NOT NULL"),
+        ("skip_or_coverage", "BOOLEAN DEFAULT false NOT NULL"),
+    ]
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'specs')"
+            ))
+            if not table_check.scalar():
+                return
+            for col_name, col_type in columns:
+                await conn.execute(sa_text(
+                    f"ALTER TABLE specs ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                ))
+        else:
+            for col_name, col_type in columns:
+                try:
+                    col_type_sqlite = col_type.replace("false", "0")
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE specs ADD COLUMN {col_name} {col_type_sqlite}"
+                    ))
+                except Exception:
+                    pass
+
+
 async def _migrate_heal_task_validation_field_names() -> None:
     """One-shot healing for pre-existing card.validations records that used legacy
     field names (estimated_completeness, estimated_drift, outcome, reviewer_id,
@@ -955,6 +988,7 @@ async def init_db() -> None:
     await _migrate_decisions_default_false()
     await _migrate_add_archive_columns()
     await _migrate_add_spec_validation_columns()
+    await _migrate_add_ir_or_columns()
     await _migrate_add_spec_validation_gate_columns()
     await _migrate_heal_task_validation_field_names()
     await _migrate_status_renames()

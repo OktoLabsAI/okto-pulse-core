@@ -2055,3 +2055,144 @@ class TestEdgeCases:
             )
         # Empty coverage should pass the pre-checks (nothing to cover)
         assert result["outcome"] == "success"
+
+
+@pytest.mark.asyncio
+class TestAcScenarioPrecheck:
+    """submit_spec_validation must reject uncovered ACs BEFORE locking the spec.
+
+    Without this gate, validation could pass (locking the spec) and then
+    move_spec→done would fail on the same condition — but by then the spec
+    is locked and scenarios cannot be added without unlocking.
+    """
+
+    async def _seed_spec_with_uncovered_ac(self, db_factory) -> tuple[str, str]:
+        board_id = str(uuid.uuid4())
+        spec_id = str(uuid.uuid4())
+        async with db_factory() as db:
+            db.add(Board(
+                id=board_id,
+                name="AC Precheck Board",
+                owner_id=USER_ID,
+                settings={
+                    "require_spec_validation": True,
+                    "min_spec_completeness": 80,
+                    "min_spec_assertiveness": 80,
+                    "max_spec_ambiguity": 30,
+                    "skip_test_coverage_global": False,
+                },
+            ))
+            db.add(Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="AC Precheck Spec",
+                status=SpecStatus.APPROVED,
+                archived=False,
+                skip_test_coverage=False,
+                acceptance_criteria=[
+                    "AC1: covered behavior",
+                    "AC2: UNcovered behavior",
+                ],
+                functional_requirements=[],
+                test_scenarios=[
+                    {
+                        "id": "ts_covered",
+                        "title": "Covered scenario",
+                        "given": "g",
+                        "when": "w",
+                        "then": "t",
+                        "scenario_type": "integration",
+                        "linked_criteria": [0],
+                        "linked_task_ids": [],
+                        "status": "passed",
+                    },
+                ],
+                business_rules=[],
+                technical_requirements=[],
+                api_contracts=[],
+                decisions=[],
+                created_by=USER_ID,
+            ))
+            await db.commit()
+        return board_id, spec_id
+
+    async def test_uncovered_ac_blocks_validation_before_lock(self, db_factory):
+        """AC without a linked scenario must raise BEFORE the spec gets locked."""
+        board_id, spec_id = await self._seed_spec_with_uncovered_ac(db_factory)
+        async with db_factory() as db:
+            service = SpecService(db)
+            with pytest.raises(ValueError, match="acceptance criteria lack test scenarios"):
+                await service.submit_spec_validation(
+                    spec_id=spec_id,
+                    reviewer_id=USER_ID,
+                    reviewer_name="Tester",
+                    data=_valid_submit_data(),
+                )
+            # Spec must still be in 'approved' (not locked) so the caller can
+            # add the missing scenario and retry without unlocking.
+            spec = await service.get_spec(spec_id)
+            assert spec.status == SpecStatus.APPROVED
+            assert spec.current_validation_id is None
+
+
+@pytest.mark.asyncio
+class TestFrCoverageMessageFormat:
+    """The uncovered-FR error message must not duplicate the 'FRN:' prefix.
+
+    Bug: the formatter prepended 'FR{i}:' where i is the 0-based Python
+    index, but the FR text already starts with a 1-based 'FRN:' label
+    chosen by the author. The combination produced strings like
+    '"FR1: FR2: ..."' which confuse the reader about which FR is meant.
+    """
+
+    async def test_message_uses_index_marker_not_duplicated_label(self, db_factory):
+        spec_id = str(uuid.uuid4())
+        board_id = str(uuid.uuid4())
+        async with db_factory() as db:
+            db.add(Board(
+                id=board_id,
+                name="FR Coverage Board",
+                owner_id=USER_ID,
+                settings={
+                    "require_spec_validation": True,
+                    "min_spec_completeness": 80,
+                    "min_spec_assertiveness": 80,
+                    "max_spec_ambiguity": 30,
+                },
+            ))
+            db.add(Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="FR Coverage Spec",
+                status=SpecStatus.APPROVED,
+                archived=False,
+                skip_test_coverage=True,
+                acceptance_criteria=[],
+                functional_requirements=[
+                    "FR1: do thing A",
+                    "FR2: do thing B",
+                ],
+                test_scenarios=[],
+                business_rules=[],
+                technical_requirements=[],
+                api_contracts=[],
+                decisions=[],
+                created_by=USER_ID,
+            ))
+            await db.commit()
+
+            service = SpecService(db)
+            with pytest.raises(ValueError) as exc_info:
+                await service.submit_spec_validation(
+                    spec_id=spec_id,
+                    reviewer_id=USER_ID,
+                    reviewer_name="Tester",
+                    data=_valid_submit_data(),
+                )
+        msg = str(exc_info.value)
+        # Bug repro: must NOT contain a duplicated label like 'FR0: FR1:' or 'FR1: FR2:'
+        assert "FR0: FR1:" not in msg
+        assert "FR1: FR2:" not in msg
+        # Fix verification: the message uses bracket index marker '[0]', '[1]'
+        # to identify the uncovered FR without colliding with the author's label.
+        assert "[0]" in msg and "[1]" in msg

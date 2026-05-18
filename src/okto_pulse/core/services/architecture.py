@@ -63,6 +63,53 @@ ALLOWED_CONNECTION_TYPES = {
     "elbow",
 }
 
+# Spec cc497a0d — Semantic registry that maps entity_type -> canonical Excalidraw
+# node metadata. Used to (a) normalize linkedEntityId-only nodes safely before
+# persistence, (b) reject ambiguous/divergent payloads, (c) expose the contract
+# to MCP agents via okto_pulse_get_architecture_design_schema.
+SEMANTIC_NODE_REGISTRY: dict[str, dict[str, str]] = {
+    # Application & runtime
+    "web_app": {"displayType": "Web App", "architectureKind": "frontend", "iconName": "monitor"},
+    "mobile_app": {"displayType": "Mobile App", "architectureKind": "frontend", "iconName": "smartphone"},
+    "api": {"displayType": "API", "architectureKind": "service", "iconName": "server"},
+    "service": {"displayType": "Service", "architectureKind": "service", "iconName": "server"},
+    "worker": {"displayType": "Worker", "architectureKind": "compute", "iconName": "cpu"},
+    "agent": {"displayType": "Agent", "architectureKind": "service", "iconName": "workflow"},
+    "cli": {"displayType": "CLI", "architectureKind": "interface", "iconName": "terminal"},
+    # Data
+    "database": {"displayType": "Database", "architectureKind": "data", "iconName": "database"},
+    "cache": {"displayType": "Cache", "architectureKind": "data", "iconName": "hard_drive"},
+    "blob_store": {"displayType": "Blob Storage", "architectureKind": "data", "iconName": "hard_drive"},
+    "file_store": {"displayType": "File Storage", "architectureKind": "data", "iconName": "hard_drive"},
+    "vector_store": {"displayType": "Vector Store", "architectureKind": "data", "iconName": "database"},
+    "graph_store": {"displayType": "Graph Store", "architectureKind": "data", "iconName": "database"},
+    # Messaging
+    "queue": {"displayType": "Queue", "architectureKind": "messaging", "iconName": "message"},
+    "topic": {"displayType": "Topic", "architectureKind": "messaging", "iconName": "message"},
+    "event_bus": {"displayType": "Event Bus", "architectureKind": "messaging", "iconName": "workflow"},
+    "stream": {"displayType": "Stream", "architectureKind": "messaging", "iconName": "workflow"},
+    # External & identity
+    "external_service": {"displayType": "External Service", "architectureKind": "external", "iconName": "globe"},
+    "identity_provider": {"displayType": "Identity Provider", "architectureKind": "security", "iconName": "lock"},
+    "payment_gateway": {"displayType": "Payment Gateway", "architectureKind": "external", "iconName": "lock"},
+    "model_provider": {"displayType": "Model Provider", "architectureKind": "external", "iconName": "cpu"},
+    "mcp_server": {"displayType": "MCP Server", "architectureKind": "service", "iconName": "server"},
+    "mcp_client": {"displayType": "MCP Client", "architectureKind": "service", "iconName": "terminal"},
+    # Infrastructure
+    "scheduler": {"displayType": "Scheduler", "architectureKind": "workflow", "iconName": "workflow"},
+    "gateway": {"displayType": "Gateway", "architectureKind": "network", "iconName": "network"},
+    "load_balancer": {"displayType": "Load Balancer", "architectureKind": "network", "iconName": "network"},
+}
+
+ALLOWED_NODE_ICON_NAMES: frozenset[str] = frozenset({
+    "boxes", "server", "database", "message", "user", "network", "cloud", "cpu",
+    "globe", "hard_drive", "lock", "monitor", "package", "smartphone", "terminal", "workflow",
+})
+
+REQUIRED_LINKED_NODE_FIELDS: tuple[str, ...] = (
+    "text", "displayType", "architectureKind", "iconName", "linkedEntityId",
+)
+
 ARCHITECTURE_DESIGN_SCHEMA_VERSION = "2026-05-04"
 SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT = "excalidraw_json"
 
@@ -228,6 +275,30 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     },
                 ],
             },
+            "semantic_node_registry": {
+                "description": (
+                    "Spec cc497a0d — canonical map from entity_type to "
+                    "{displayType, architectureKind, iconName} applied to Excalidraw nodes "
+                    "before persistence. Linked nodes (linkedEntityId set) must either provide "
+                    "all four fields explicitly or rely on this registry to fill them safely."
+                ),
+                "required_node_fields_for_linked": list(REQUIRED_LINKED_NODE_FIELDS),
+                "allowed_icon_names": sorted(ALLOWED_NODE_ICON_NAMES),
+                "mappings": copy.deepcopy(SEMANTIC_NODE_REGISTRY),
+                "rules": [
+                    "Linked nodes (linkedEntityId set) must carry text, displayType, architectureKind, and iconName.",
+                    "Missing fields are auto-filled deterministically when entity.entity_type is in the registry.",
+                    "displayType divergence from the registry is rejected with suggested_fixes; align or change entity_type.",
+                    "iconName outside the allowed set is rejected; remove the field to inherit the canonical icon.",
+                    "When entity_type has no canonical mapping AND no explicit metadata is provided, payload is rejected.",
+                ],
+                "validation_flow_for_agents": [
+                    "1. okto_pulse_get_architecture_design_schema — fetch this registry.",
+                    "2. Build payload: prefer relying on registry by setting only linkedEntityId + entity_type.",
+                    "3. POST /api/v1/architecture/validate — check valid=true, surface warnings to user.",
+                    "4. add/update_architecture_design — backend re-applies normalization and rejection.",
+                ],
+            },
             "excalidraw_adapter_payload_contract": {
                 "root": {
                     "type": "excalidraw",
@@ -245,6 +316,10 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     "height": 88,
                     "label": "Checkout API\\napi",
                     "linkedEntityId": "entity-checkout-api",
+                    "text": "Checkout API",
+                    "displayType": "API",
+                    "architectureKind": "service",
+                    "iconName": "server",
                 },
                 "edge_element": {
                     "id": "edge-create-order",
@@ -427,6 +502,168 @@ def _linked_interface_refs(item: dict[str, Any], path: str, issues: list[str] | 
 
 def _same_ordered_refs(left: list[Any], right: list[Any]) -> bool:
     return [_canonical_ref(item) for item in left] == [_canonical_ref(item) for item in right]
+
+
+def _semantic_registry_key(entity_type: Any) -> str:
+    return re.sub(r"[\s\-]+", "_", str(entity_type or "").strip().lower())
+
+
+def _resolve_semantic_canonical(registry_key: str) -> dict[str, str] | None:
+    """Resolve the canonical semantic metadata for an entity_type.
+
+    Exact match takes precedence. Falls back to family matching so
+    specialized types (``database_table``, ``api_route``, ``worker_pool``) inherit
+    their parent's canonical metadata when the suffix is just a refinement.
+    """
+    if not registry_key:
+        return None
+    canonical = SEMANTIC_NODE_REGISTRY.get(registry_key)
+    if canonical is not None:
+        return canonical
+    # Family inheritance: <known>_<suffix> falls back to <known>.
+    parts = registry_key.split("_")
+    for cutoff in range(len(parts) - 1, 0, -1):
+        candidate = "_".join(parts[:cutoff])
+        if candidate in SEMANTIC_NODE_REGISTRY:
+            return SEMANTIC_NODE_REGISTRY[candidate]
+    return None
+
+
+def normalize_excalidraw_semantics(
+    payload: dict[str, Any],
+    entities: list[dict[str, Any]],
+    *,
+    path_prefix: str = "diagrams[*].adapter_payload",
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """Apply the semantic node registry to a linked Excalidraw payload.
+
+    For every node element with ``linkedEntityId`` pointing to an entity whose
+    ``entity_type`` exists in ``SEMANTIC_NODE_REGISTRY``, deterministically fill
+    the canonical ``displayType``/``architectureKind``/``iconName``/``text`` when
+    missing. Reject the payload when metadata diverges from the registry, the
+    icon is outside the allowlist, or the entity_type has no canonical mapping
+    AND the node was supplied with only ``linkedEntityId``.
+
+    Returns:
+        Tuple ``(normalized_payload, warnings, issues)``.
+          - ``normalized_payload``: deep-copied payload with safe fills applied.
+          - ``warnings``: ``semantic_metadata_normalized`` entries (one per element with auto-fill).
+          - ``issues``: blocking validation messages. When non-empty, the caller
+            MUST reject the payload before persistence (FR3 / br_semantic_reject_ambiguous_payload).
+    """
+    if not isinstance(payload, dict):
+        return payload, [], []
+    elements = payload.get("elements")
+    if not isinstance(elements, list):
+        return payload, [], []
+
+    entity_lookup: dict[str, dict[str, Any]] = {}
+    for entity in entities or []:
+        if not isinstance(entity, dict):
+            continue
+        ent_id = _canonical_ref(entity.get("id"))
+        ent_name = _canonical_ref(entity.get("name"))
+        if ent_id:
+            entity_lookup[ent_id] = entity
+        if ent_name:
+            entity_lookup.setdefault(ent_name, entity)
+
+    normalized_payload = copy.deepcopy(payload)
+    normalized_elements = normalized_payload.get("elements") or []
+    warnings: list[str] = []
+    issues: list[str] = []
+
+    for index, element in enumerate(normalized_elements):
+        if not isinstance(element, dict):
+            continue
+        linked_entity_id = _custom_or_top_level(element, "linkedEntityId")
+        # Skip edges/lines — semantic registry applies to entity-bound nodes only.
+        if linked_entity_id in (None, "") or element.get("type") in ("arrow", "line"):
+            continue
+        entity = entity_lookup.get(_canonical_ref(linked_entity_id))
+        if entity is None:
+            # Dangling reference is already caught by _validate_excalidraw_links.
+            continue
+        entity_type_raw = str(entity.get("entity_type") or "").strip()
+        registry_key = _semantic_registry_key(entity_type_raw)
+        canonical = _resolve_semantic_canonical(registry_key)
+        path = f"{path_prefix}.elements[{index}]"
+
+        if canonical is None:
+            has_explicit_metadata = any(
+                str(element.get(field) or "").strip()
+                for field in ("text", "displayType", "architectureKind", "iconName")
+            )
+            if not has_explicit_metadata:
+                if entity_type_raw:
+                    issues.append(
+                        f"{path}.linkedEntityId='{linked_entity_id}' resolves to entity_type='{entity_type_raw}', "
+                        f"but no canonical mapping exists in SEMANTIC_NODE_REGISTRY. Either set "
+                        f"text/displayType/architectureKind/iconName explicitly, or rename the entity_type to one "
+                        f"of: {sorted(SEMANTIC_NODE_REGISTRY.keys())}."
+                    )
+                else:
+                    issues.append(
+                        f"{path}.linkedEntityId='{linked_entity_id}' resolves to an entity without entity_type. "
+                        f"Set the entity's entity_type so the diagram node can inherit semantic metadata."
+                    )
+            else:
+                current_icon = element.get("iconName")
+                if current_icon not in (None, "") and current_icon not in ALLOWED_NODE_ICON_NAMES:
+                    issues.append(
+                        f"{path}.iconName='{current_icon}' is not in the allowed icon set. "
+                        f"Allowed: {sorted(ALLOWED_NODE_ICON_NAMES)}."
+                    )
+            continue
+
+        normalized_anywhere = False
+        normalized_fields: list[str] = []
+
+        current_icon = element.get("iconName")
+        if current_icon in (None, ""):
+            element["iconName"] = canonical["iconName"]
+            normalized_fields.append("iconName")
+            normalized_anywhere = True
+        elif current_icon not in ALLOWED_NODE_ICON_NAMES:
+            issues.append(
+                f"{path}.iconName='{current_icon}' is not in the allowed icon set. "
+                f"Allowed: {sorted(ALLOWED_NODE_ICON_NAMES)}. Remove the field to inherit "
+                f"'{canonical['iconName']}' from the registry, or pick an allowed name."
+            )
+            continue
+
+        current_display = str(element.get("displayType") or "").strip()
+        if not current_display:
+            element["displayType"] = canonical["displayType"]
+            normalized_fields.append("displayType")
+            normalized_anywhere = True
+        elif current_display.casefold() != canonical["displayType"].casefold():
+            issues.append(
+                f"{path}.displayType='{current_display}' diverges from entity_type='{entity_type_raw}' "
+                f"(registry expects '{canonical['displayType']}'). Remove the field to inherit the canonical "
+                f"value, align it to '{canonical['displayType']}', or change the entity's entity_type."
+            )
+            continue
+
+        current_kind = str(element.get("architectureKind") or "").strip()
+        if not current_kind:
+            element["architectureKind"] = canonical["architectureKind"]
+            normalized_fields.append("architectureKind")
+            normalized_anywhere = True
+
+        current_text = str(element.get("text") or "").strip()
+        if not current_text:
+            element["text"] = str(entity.get("name") or canonical["displayType"]).strip()
+            normalized_fields.append("text")
+            normalized_anywhere = True
+
+        if normalized_anywhere:
+            warnings.append(
+                f"{path} semantic_metadata_normalized: filled {normalized_fields} from registry "
+                f"for entity_type='{entity_type_raw}' (linkedEntityId='{linked_entity_id}')."
+            )
+
+    return normalized_payload, warnings, issues
 
 
 class ArchitectureDiagramAdapter:
@@ -697,12 +934,23 @@ class ArchitectureDesignRepository:
         )
         self.db.add(design)
         await self.db.flush()
-        design.diagrams = await self._normalize_diagrams(board_id, design.id, payload.get("diagrams") or [])
+        design.diagrams = await self._normalize_diagrams(
+            board_id,
+            design.id,
+            payload.get("diagrams") or [],
+            entities=payload.get("entities") or [],
+        )
         flag_modified(design, "diagrams")
         await self.snapshot(design.id, actor_id, "Initial architecture design")
         await self._publish_parent_semantic_change(design, actor_id)
         await self.db.flush()
         await self.db.refresh(design)
+        if parent_type == "spec":
+            await self._propagate_spec_architecture_change(
+                design,
+                actor_id,
+                trigger="spec_architecture_created",
+            )
         return design
 
     async def update(self, design_id: str, patch: ArchitectureDesignUpdate | dict[str, Any], actor_id: str) -> ArchitectureDesign:
@@ -729,7 +977,12 @@ class ArchitectureDesignRepository:
                 setattr(design, field_name, payload[field_name] or [])
                 flag_modified(design, field_name)
         if "diagrams" in payload:
-            design.diagrams = await self._normalize_diagrams(design.board_id, design.id, payload["diagrams"] or [])
+            design.diagrams = await self._normalize_diagrams(
+                design.board_id,
+                design.id,
+                payload["diagrams"] or [],
+                entities=candidate_payload.get("entities") or [],
+            )
             flag_modified(design, "diagrams")
         for field_name in ("source_ref", "source_version", "source_design_id"):
             if field_name in payload:
@@ -743,16 +996,63 @@ class ArchitectureDesignRepository:
             await self._publish_parent_semantic_change(design, actor_id)
         await self.db.flush()
         await self.db.refresh(design)
+        if design.parent_type == "spec":
+            await self._propagate_spec_architecture_change(
+                design,
+                actor_id,
+                trigger="spec_architecture_updated",
+            )
         return design
 
     async def delete(self, design_id: str, actor_id: str | None = None) -> bool:
         design = await self.get(design_id)
         if design is None:
             return False
+        spec_parent_id = (
+            self.parent_id_for(design) if design.parent_type == "spec" else None
+        )
+        spec_board_id = design.board_id if design.parent_type == "spec" else None
+        deleted_design_id = design.id
         await self._publish_parent_semantic_change(design, actor_id)
         await self.db.delete(design)
         await self.db.flush()
+        if spec_parent_id and spec_board_id:
+            from okto_pulse.core.services.spec_resource_propagation import (
+                SpecResourcePropagationService,
+            )
+
+            await SpecResourcePropagationService(self.db).propagate_for_spec(
+                board_id=spec_board_id,
+                spec_id=spec_parent_id,
+                actor_id=actor_id or "system",
+                trigger="spec_architecture_deleted",
+                removed_architecture_design_ids={deleted_design_id},
+            )
         return True
+
+    async def _propagate_spec_architecture_change(
+        self,
+        design: ArchitectureDesign,
+        actor_id: str | None,
+        *,
+        trigger: str,
+    ) -> None:
+        from okto_pulse.core.services.spec_resource_propagation import (
+            SpecResourcePropagationService,
+        )
+
+        if design.parent_type != "spec":
+            return
+        parent_id = self.parent_id_for(design)
+        if not parent_id:
+            return
+        resolved_actor = actor_id or "system"
+        await SpecResourcePropagationService(self.db).propagate_for_spec(
+            board_id=design.board_id,
+            spec_id=parent_id,
+            actor_id=resolved_actor,
+            trigger=trigger,
+        )
 
     async def snapshot(self, design_id: str, actor_id: str, reason: str | None = None) -> ArchitectureDesignVersion:
         design = await self.get(design_id)
@@ -889,6 +1189,27 @@ class ArchitectureDesignRepository:
         interface_refs = self._ref_index(interfaces)
         interface_items = self._ref_item_index(interfaces)
         self._validate_diagrams(payload.get("diagrams"), entity_refs, interface_refs, interface_items, issues, warnings)
+
+        # Spec cc497a0d — semantic node normalization. Runs after structural
+        # validation so dangling refs surface their own messages first, then
+        # checks that linked nodes carry text/displayType/architectureKind/iconName
+        # consistent with the entity's entity_type and the canonical registry.
+        diagrams_value = payload.get("diagrams")
+        if isinstance(diagrams_value, list):
+            for d_index, raw_diagram in enumerate(diagrams_value):
+                if not isinstance(raw_diagram, dict):
+                    continue
+                adapter_payload = raw_diagram.get("adapter_payload")
+                if not isinstance(adapter_payload, dict):
+                    continue
+                _, sem_warnings, sem_issues = normalize_excalidraw_semantics(
+                    adapter_payload,
+                    entities,
+                    path_prefix=f"diagrams[{d_index}].adapter_payload",
+                )
+                warnings.extend(sem_warnings)
+                issues.extend(sem_issues)
+
         return {
             "valid": not issues,
             "issues": issues,
@@ -1328,13 +1649,38 @@ class ArchitectureDesignRepository:
                 fixes.append("Add a concise responsibility that states what the component owns, guarantees, or persists.")
             elif "boundaries" in lower:
                 fixes.append("Add boundaries describing runtime, data, tenancy, external-system, or ownership limits.")
+            elif "semantic_node_registry" in lower or "canonical mapping" in lower:
+                fixes.append(
+                    "Add the entity_type to SEMANTIC_NODE_REGISTRY or rename the entity to a known type. "
+                    "Until then, set displayType, architectureKind, iconName and text explicitly on the diagram node."
+                )
+            elif "iconname" in lower and "allowed icon set" in lower:
+                fixes.append(
+                    "Use one of the allowed iconName values (boxes, server, database, message, user, network, cloud, "
+                    "cpu, globe, hard_drive, lock, monitor, package, smartphone, terminal, workflow) or remove the field "
+                    "to inherit the canonical icon from the registry."
+                )
+            elif "displaytype" in lower and "diverges" in lower:
+                fixes.append(
+                    "Remove the diverging displayType to inherit the registry value, align it to the canonical one, "
+                    "or change the entity's entity_type to match the intended category."
+                )
+            elif "without entity_type" in lower:
+                fixes.append("Set the entity's entity_type so diagram nodes can inherit semantic metadata via the registry.")
         deduped: list[str] = []
         for fix in fixes:
             if fix not in deduped:
                 deduped.append(fix)
         return deduped
 
-    async def _normalize_diagrams(self, board_id: str, design_id: str, diagrams: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def _normalize_diagrams(
+        self,
+        board_id: str,
+        design_id: str,
+        diagrams: list[dict[str, Any]],
+        *,
+        entities: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         normalized_diagrams: list[dict[str, Any]] = []
         for raw_diagram in diagrams:
             diagram = dict(raw_diagram)
@@ -1346,6 +1692,17 @@ class ArchitectureDesignRepository:
             if payload is not None:
                 adapter = self.adapter_registry.get(format_name)
                 normalized_payload = adapter.normalize(payload)
+                # Spec cc497a0d FR2: apply semantic registry to fill safe defaults
+                # before persistence so renderers/agents see complete metadata. Validation
+                # gate already raised on issues; here we just normalize warnings.
+                if (
+                    format_name == SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT
+                    and isinstance(normalized_payload, dict)
+                    and entities is not None
+                ):
+                    normalized_payload, _, _ = normalize_excalidraw_semantics(
+                        normalized_payload, entities,
+                    )
                 payload_row = await self.diagram_store.save_payload(
                     board_id=board_id,
                     design_id=design_id,

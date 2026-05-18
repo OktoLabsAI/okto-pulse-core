@@ -773,6 +773,14 @@ class Spec(Base):
     business_rules: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # API contracts: [{id, method, path, description, request_body, response_success, response_errors, linked_requirements, linked_rules, notes}]
     api_contracts: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Integration requirements: [{id, title, integration_type, description, provider,
+    # consumer, contract_ref, endpoint, method, data_contract, linked_requirements,
+    # linked_api_contracts, linked_task_ids, status, notes}]
+    integration_requirements: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Observability requirements: [{id, title, signal_type, description, target,
+    # metric_name, threshold, severity, owner, linked_requirements,
+    # linked_integration_requirements, linked_task_ids, status, notes}]
+    observability_requirements: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Decisions (spec 0eb51d3e R2.1 + Decisions formalization):
     # [{id, title, rationale, context, alternatives_considered, supersedes_decision_id,
     #   linked_requirements, linked_task_ids, status, notes}]
@@ -791,6 +799,10 @@ class Spec(Base):
     )
     # If true, spec can move to validated without full API contract coverage
     skip_contract_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    # If true, spec can move forward without full IR→Task coverage
+    skip_ir_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    # If true, spec can move forward without full OR→Task coverage
+    skip_or_coverage: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # If true, spec can skip qualitative validation (validated→in_progress without evaluations)
     skip_qualitative_validation: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     # Minimum avg score for qualitative validation (None = use board or default 70)

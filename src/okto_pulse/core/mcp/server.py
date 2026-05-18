@@ -1,5 +1,6 @@
 """MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
 
+import base64
 import functools
 import inspect
 import json
@@ -9,7 +10,7 @@ import re
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import uvicorn
 from fastmcp import FastMCP
@@ -18,7 +19,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
-from okto_pulse.core.mcp.helpers import coerce_to_list_str, parse_multi_value
+from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value
 from okto_pulse.core.mcp.trace_middleware import install_if_enabled as _install_trace
 from okto_pulse.core.models.db import Board
 from okto_pulse.core.services.main import (
@@ -103,6 +104,66 @@ mcp = FastMCP(
 # Settings
 mcp_settings = get_mcp_settings()
 settings = get_settings()
+
+# ============================================================================
+# MCP Resources — okto-pulse:// URI scheme
+# Lazy-loaded at startup; clients that support resources/read see these.
+# ============================================================================
+
+_resources_cache: dict[str, str] = {}
+
+
+def _get_resource_dir() -> Path:
+    return Path(__file__).parent / "resources"
+
+
+def _load_resource_file(relative_path: str) -> str:
+    """Load and cache a resource file by its path relative to the resources/ dir."""
+    if relative_path not in _resources_cache:
+        candidate = _get_resource_dir() / relative_path
+        if candidate.exists():
+            _resources_cache[relative_path] = candidate.read_text(encoding="utf-8")
+        else:
+            _resources_cache[relative_path] = ""
+    return _resources_cache[relative_path]
+
+
+_RESOURCE_REGISTRY = [
+    ("okto-pulse://workflows/stories", "workflows/stories.md", "Stories & Topics workflow — pre-ideation intake."),
+    ("okto-pulse://workflows/ideations", "workflows/ideations.md", "Ideations workflow — scope + ambiguity-killer."),
+    ("okto-pulse://workflows/refinements", "workflows/refinements.md", "Refinements workflow — deep investigation."),
+    ("okto-pulse://workflows/specs", "workflows/specs.md", "Specs workflow — saturation, gate, evaluation."),
+    ("okto-pulse://workflows/cards", "workflows/cards.md", "Cards workflow — impl/bug/test execution."),
+    ("okto-pulse://workflows/sprints", "workflows/sprints.md", "Sprints workflow — lifecycle e evaluation."),
+    ("okto-pulse://workflows/kg", "workflows/kg.md", "KG workflow — consolidation, query, governance."),
+    ("okto-pulse://reference/errors", "reference/errors.md", "MCP errors matrix com fixes canônicos."),
+    ("okto-pulse://reference/multivalue", "reference/multivalue.md", "Multi-value parameter input shapes."),
+    ("okto-pulse://reference/destructive_ops", "reference/destructive_ops.md", "Destructive operations governance."),
+    ("okto-pulse://reference/card_types", "reference/card_types.md", "Card types — normal/test/bug rules."),
+    ("okto-pulse://reference/spec_gates", "reference/spec_gates.md", "Spec validation gate + evaluation gates."),
+    ("okto-pulse://reference/transitions", "reference/transitions.md", "Status transitions matrix — cards/sprints/specs."),
+    ("okto-pulse://reference/list_tools", "reference/list_tools.md", "Consolidated polymorphic list_* tools."),
+    ("okto-pulse://reference/tools_catalog", "reference/tools_catalog.md", "Full MCP tool catalog grouped by domain."),
+]
+
+
+def _make_resource_handler(path: str) -> "Callable[[], str]":
+    """Create a closure-safe handler for a specific resource path."""
+    def handler() -> str:
+        return _load_resource_file(path)
+    return handler
+
+
+# Register 12 resources dynamically
+for _uri, _path, _desc in _RESOURCE_REGISTRY:
+    _handler = _make_resource_handler(_path)
+    _handler.__name__ = f"resource_{_path.replace('/', '_').replace('.md', '')}"
+    _handler.__doc__ = _desc
+    mcp.resource(_uri, description=_desc)(_handler)
+
+# Pre-warm the resource cache so first-read latency is minimal
+for _, _path, _ in _RESOURCE_REGISTRY:
+    _load_resource_file(_path)
 
 # ============================================================================
 # SESSION-BASED AUTH (API key extracted from request)
@@ -516,9 +577,33 @@ def _mcp_spec_coverage_summary(spec: Any) -> dict[str, Any]:
         "test_scenarios_total": coverage.get("scenarios_total", 0),
         "business_rules_total": coverage.get("brs_total", 0),
         "api_contracts_total": coverage.get("contracts_total", 0),
+        "integration_requirements_total": coverage.get("irs_total", 0),
+        "observability_requirements_total": coverage.get("ors_total", 0),
         "cards_total": len(cards),
         "cards_done": sum(1 for c in cards if getattr(getattr(c, "status", None), "value", None) == "done"),
     }
+
+
+_LEGACY_COVERAGE_ENV = "OKTO_PULSE_LEGACY_COVERAGE"
+
+
+def _legacy_coverage_default() -> bool:
+    return os.environ.get(_LEGACY_COVERAGE_ENV, "").lower() in ("1", "true", "yes")
+
+
+def _saturation_or_coverage(coverage_dict: dict[str, Any]) -> dict[str, Any]:
+    """Pack the minimal saturation envelope (Ideação token-optimization Story 1).
+
+    Returns {"saturation": {"pct", "blocking"}} by default — ~60 bytes vs ~1.5KB
+    of the full coverage block. When OKTO_PULSE_LEGACY_COVERAGE=1, also
+    includes the verbose "coverage" block for backwards compatibility.
+    """
+    from okto_pulse.core.services.analytics_service import spec_saturation_envelope
+
+    out: dict[str, Any] = {"saturation": spec_saturation_envelope(coverage_dict)}
+    if _legacy_coverage_default():
+        out["coverage"] = coverage_dict
+    return out
 
 
 def _parse_json_arg(value: Any, default: Any) -> tuple[Any, str | None]:
@@ -1390,16 +1475,40 @@ async def okto_pulse_get_unseen_summary(board_id: str) -> str:
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_get_board(board_id: str) -> str:
+_BOARD_INCLUDE_KEYS = ("ideations", "specs", "cards", "agents")
+
+
+def _parse_include(include: str) -> set[str]:
+    """Parse the ?include= csv into a set of board collection keys.
+
+    `*` expands to every known collection. Unknown tokens are silently dropped.
     """
-    Get board details with all cards and agents.
+    if not include:
+        return set()
+    if include.strip() == "*":
+        return set(_BOARD_INCLUDE_KEYS)
+    tokens = {tok.strip() for tok in include.split(",") if tok.strip()}
+    return tokens & set(_BOARD_INCLUDE_KEYS)
+
+
+@mcp.tool()
+async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
+    """
+    Get board details. Defaults to a minimal overview envelope; pass `include` to
+    inline collections.
+
+    Ideação MCP-token-optimization Story 2: the default response carries id,
+    name, description, owner_id, settings, counts{} and timestamps — ~200B vs
+    ~10KB on a typical board.
 
     Args:
-        board_id: Board ID to retrieve
+        board_id: Board ID to retrieve.
+        include: Comma-separated list of collections to inline. Accepts any
+            subset of `ideations`, `specs`, `cards`, `agents`. Pass `*` to
+            inline every collection (legacy shape).
 
     Returns:
-        JSON string with board details
+        JSON string with the board overview, plus any inlined collections.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -1408,6 +1517,8 @@ async def okto_pulse_get_board(board_id: str) -> str:
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
+
+    wanted = _parse_include(include)
 
     async with get_db_for_mcp() as db:
         service = BoardService(db)
@@ -1418,71 +1529,78 @@ async def okto_pulse_get_board(board_id: str) -> str:
             return json.dumps({"error": "Board not found"})
 
         agent_service = AgentService(db)
-        board_agents = await agent_service.list_agents_for_board(board_id)
-
         spec_service = SpecService(db)
-        board_specs = await spec_service.list_specs(board_id)
-
         ideation_service = IdeationService(db)
-        board_ideations = await ideation_service.list_ideations(board_id)
 
-        return json.dumps(
-            {
-                "id": board.id,
-                "name": board.name,
-                "description": board.description,
-                "owner_id": board.owner_id,
-                "created_at": board.created_at.isoformat(),
-                "updated_at": board.updated_at.isoformat(),
-                "ideations": [
-                    {
-                        "id": i.id,
-                        "title": i.title,
-                        "status": i.status.value,
-                        "complexity": i.complexity.value if i.complexity else None,
-                        "version": i.version,
-                        "labels": i.labels,
-                    }
-                    for i in board_ideations
-                ],
-                "specs": [
-                    {
-                        "id": s.id,
-                        "title": s.title,
-                        "status": s.status.value,
-                        "version": s.version,
-                        "labels": s.labels,
-                    }
-                    for s in board_specs
-                ],
-                "cards": [
-                    {
-                        "id": c.id,
-                        "title": c.title,
-                        "description": c.description,
-                        "status": c.status.value,
-                        "position": c.position,
-                        "assignee_id": c.assignee_id,
-                        "spec_id": c.spec_id,
-                        "due_date": (
-                            c.due_date.isoformat() if c.due_date else None
-                        ),
-                        "labels": c.labels,
-                    }
-                    for c in board.cards
-                ],
-                "agents": [
-                    {
-                        "id": a.id,
-                        "name": a.name,
-                        "description": a.description,
-                        "is_active": a.is_active,
-                    }
-                    for a in board_agents
-                ],
+        board_agents = await agent_service.list_agents_for_board(board_id)
+        board_specs = await spec_service.list_specs(board_id)
+        board_ideations = await ideation_service.list_ideations(board_id)
+        board_cards = list(board.cards or [])
+
+        payload: dict[str, Any] = {
+            "id": board.id,
+            "name": board.name,
+            "description": board.description,
+            "owner_id": board.owner_id,
+            "settings": board.settings or {},
+            "created_at": board.created_at.isoformat(),
+            "updated_at": board.updated_at.isoformat(),
+            "counts": {
+                "ideations": len(board_ideations),
+                "specs": len(board_specs),
+                "cards": len(board_cards),
+                "agents": len(board_agents),
             },
-            default=str,
-        )
+        }
+        if "ideations" in wanted:
+            payload["ideations"] = [
+                {
+                    "id": i.id,
+                    "title": i.title,
+                    "status": i.status.value,
+                    "complexity": i.complexity.value if i.complexity else None,
+                    "version": i.version,
+                    "labels": i.labels,
+                }
+                for i in board_ideations
+            ]
+        if "specs" in wanted:
+            payload["specs"] = [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "status": s.status.value,
+                    "version": s.version,
+                    "labels": s.labels,
+                }
+                for s in board_specs
+            ]
+        if "cards" in wanted:
+            payload["cards"] = [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "description": c.description,
+                    "status": c.status.value,
+                    "position": c.position,
+                    "assignee_id": c.assignee_id,
+                    "spec_id": c.spec_id,
+                    "due_date": (c.due_date.isoformat() if c.due_date else None),
+                    "labels": c.labels,
+                }
+                for c in board_cards
+            ]
+        if "agents" in wanted:
+            payload["agents"] = [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "description": a.description,
+                    "is_active": a.is_active,
+                }
+                for a in board_agents
+            ]
+        return json.dumps(payload, default=str)
 
 
 @mcp.tool()
@@ -1580,22 +1698,219 @@ async def okto_pulse_list_board_members(board_id: str) -> str:
         )
 
 
+def _activity_log_summary(action: str, details: Any) -> str:
+    """Build a deterministic one-line summary string for an activity log row.
+
+    Ideação MCP-token-optimization Story 3. Format is stable within a major
+    API version; new resource types append counters at the end.
+
+    NC-1 fix: expanded to cover the highest-frequency action types so agents
+    no longer need to fetch raw ``details`` for routine board activity. Output
+    is always ≤200 chars.
+    """
+    if not isinstance(details, dict):
+        return ""
+
+    if action == "card_moved":
+        frm = details.get("from_status")
+        to = details.get("to_status")
+        card_id = details.get("card_id", "")
+        if frm and to:
+            base = f"{frm}->{to}"
+        else:
+            status = details.get("status", "?")
+            base = f"status={status}"
+        if card_id:
+            base = f"card={card_id[:8]} {base}"
+        return base[:200]
+
+    if action in ("card_created", "card_updated", "card_deleted"):
+        title = details.get("title", "")
+        status = details.get("status", "")
+        parts = [action.replace("card_", "")]
+        if title:
+            parts.append(f'"{title[:60]}"')
+        if status:
+            parts.append(f"status={status}")
+        return " ".join(parts)[:200]
+
+    if action == "validation_submitted":
+        outcome = details.get("outcome", "?")
+        card_title = details.get("card_title", "")
+        confidence = details.get("confidence")
+        base = f"outcome={outcome}"
+        if card_title:
+            base += f' card="{card_title[:50]}"'
+        if confidence is not None:
+            base += f" confidence={confidence}"
+        return base[:200]
+
+    if action in ("spec_validation_submitted", "spec_validated"):
+        outcome = details.get("outcome", "?")
+        spec_id = details.get("spec_id", "")
+        frm = details.get("from_status", "")
+        to = details.get("to_status", "")
+        base = f"outcome={outcome}"
+        if spec_id:
+            base += f" spec={spec_id[:8]}"
+        if frm and to:
+            base += f" {frm}->{to}"
+        return base[:200]
+
+    if action == "task_validated":
+        outcome = details.get("outcome", "?")
+        card_id = details.get("card_id", "")
+        base = f"task outcome={outcome}"
+        if card_id:
+            base += f" card={card_id[:8]}"
+        return base[:200]
+
+    if action in (
+        "ideation_created",
+        "spec_created",
+        "refinement_created",
+        "sprint_created",
+    ):
+        resource = action.replace("_created", "")
+        resource_id = (
+            details.get(f"{resource}_id")
+            or details.get("id")
+            or ""
+        )
+        title = details.get("title", "")
+        base = f"{resource} created"
+        if title:
+            base += f': "{title[:60]}"'
+        if resource_id:
+            base += f" id={resource_id[:8]}"
+        return base[:200]
+
+    if action in ("ideation_moved", "spec_moved", "refinement_moved"):
+        frm = details.get("from_status", "?")
+        to = details.get("to_status", "?")
+        resource = action.replace("_moved", "")
+        resource_id = details.get(f"{resource}_id") or details.get("id") or ""
+        base = f"{resource} {frm}->{to}"
+        if resource_id:
+            base += f" id={resource_id[:8]}"
+        return base[:200]
+
+    if action in ("comment_added", "choice_comment_added"):
+        content = details.get("content", "")
+        question = details.get("question", "")
+        text = question or content
+        if action == "choice_comment_added":
+            opt_count = details.get("option_count", "?")
+            base = f"choice_comment options={opt_count}"
+        else:
+            base = "comment"
+        if text:
+            base += f': "{text[:80]}"'
+        return base[:200]
+
+    if action == "spec_resources_auto_propagated":
+        results = details.get("results") or {}
+        parts: list[str] = []
+        trigger = details.get("trigger")
+        if trigger:
+            parts.append(f"trigger={trigger}")
+        for rtype in ("knowledge_base", "architecture", "mockup"):
+            r = results.get(rtype)
+            if not isinstance(r, dict):
+                continue
+            short = "kb" if rtype == "knowledge_base" else ("arch" if rtype == "architecture" else "mockup")
+            copied = r.get("copied_count", 0)
+            ignored = r.get("ignored_count", 0)
+            removed = r.get("removed_count", 0)
+            piece = f"{short}.copied={copied}"
+            if ignored:
+                piece += f" {short}.ignored={ignored}"
+            if removed:
+                piece += f" {short}.removed={removed}"
+            parts.append(piece)
+        return " ".join(parts)
+
+    trigger = details.get("trigger")
+    if trigger:
+        return f"trigger={trigger}"
+    return ""
+
+
+def _encode_activity_cursor(created_at: datetime, row_id: str) -> str:
+    """Encode an activity_log row position as an opaque base64 cursor.
+
+    Ideação MCP-token-optimization (cursor-pagination spec). Cursor is the
+    URL-safe base64 of a 2-key JSON ``{"ts": <iso>, "id": <row_id>}``. Opaque
+    so callers don't depend on the shape — future versions may add fields
+    (HMAC, schema version) without breaking existing callers.
+    """
+    payload = json.dumps({"ts": created_at.isoformat(), "id": row_id})
+    return base64.urlsafe_b64encode(payload.encode()).decode()
+
+
+def _decode_activity_cursor(cursor: str) -> tuple[datetime, str] | None:
+    """Decode an opaque cursor back to its ``(created_at, row_id)`` pair.
+
+    Returns ``None`` on malformed input (invalid base64, invalid JSON, or
+    missing required keys) — the caller surfaces a structured error
+    (``error_code=invalid_cursor``) instead of silently falling back to the
+    first page. Never raises.
+    """
+    if not cursor:
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        payload = json.loads(raw)
+        ts_str = payload["ts"]
+        row_id = payload["id"]
+        if not isinstance(ts_str, str) or not isinstance(row_id, str):
+            return None
+        return (datetime.fromisoformat(ts_str), row_id)
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+
 @mcp.tool()
 async def okto_pulse_get_activity_log(
-    board_id: str, limit: int = 50, offset: int = 0, action: str = "", card_id: str = ""
+    board_id: str,
+    limit: int = 50,
+    cursor: str = "",
+    envelope: bool = False,
+    offset: int = 0,
+    action: str = "",
+    card_id: str = "",
+    include_details: bool = False,
 ) -> str:
     """
     Get the activity log (history) for the board with optional filtering and pagination.
 
+    Ideação MCP-token-optimization Story 3: default response carries id, action,
+    trigger, card_id, created_at + a deterministic `summary` string built
+    server-side from details — ~120B per row vs ~1.5KB. Pass include_details=true
+    to receive the full nested details object (legacy shape).
+
+    Cursor-pagination follow-up: pass ``cursor`` (opaque base64 from a prior
+    ``next_cursor``) for O(1) keyset pagination independent of page depth.
+    Pass ``envelope=true`` to receive ``{items, next_cursor}`` instead of a
+    raw list (default keeps Story 3 list shape — backward compat). Legacy
+    ``offset`` is silently ignored unless ``OKTO_PULSE_LEGACY_OFFSET=1``.
+
     Args:
         board_id: Board ID
         limit: Maximum number of entries to return (default 50, max 200)
-        offset: Skip first N entries (default 0)
+        cursor: Opaque continuation token from a previous call's ``next_cursor``.
+            Empty string = first page. Invalid cursor returns a structured error.
+        envelope: When true, response is ``{items: [...], next_cursor: str|null}``.
+            Default false returns raw list (preserves Story 3 contract).
+        offset: DEPRECATED — silently ignored unless OKTO_PULSE_LEGACY_OFFSET=1.
         action: Filter by action type (optional) — e.g. card_created, card_moved, spec_updated
         card_id: Filter by card ID (optional) — only activities for this card
+        include_details: When true, include the full `details` object on each row.
+            Default false returns the minimal envelope only.
 
     Returns:
-        JSON array of activity log entries
+        JSON list (default) or ``{items, next_cursor}`` dict when envelope=true.
+        Invalid cursor returns ``{error, error_code: "invalid_cursor"}``.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -1607,7 +1922,19 @@ async def okto_pulse_get_activity_log(
 
     limit = min(limit, 200)
 
-    from sqlalchemy import select
+    # Cursor takes precedence; offset is a deprecated escape hatch.
+    cursor_pair: tuple[datetime, str] | None = None
+    if cursor:
+        cursor_pair = _decode_activity_cursor(cursor)
+        if cursor_pair is None:
+            return json.dumps(
+                {"error": "Invalid cursor", "error_code": "invalid_cursor"}
+            )
+
+    legacy_offset = os.getenv("OKTO_PULSE_LEGACY_OFFSET") == "1"
+    effective_offset = offset if (legacy_offset and not cursor_pair) else 0
+
+    from sqlalchemy import and_, func, or_, select
 
     from okto_pulse.core.models.db import ActivityLog
 
@@ -1617,27 +1944,71 @@ async def okto_pulse_get_activity_log(
             query = query.where(ActivityLog.action == action)
         if card_id:
             query = query.where(ActivityLog.card_id == card_id)
-        query = query.order_by(ActivityLog.created_at.desc()).offset(offset).limit(limit)
+        if cursor_pair is not None:
+            ts, rid = cursor_pair
+            # Boolean-expanded keyset filter — portable across SQLite,
+            # PostgreSQL, MySQL. `tuple_(col1, col2) < (val1, val2)` row
+            # comparison is not honored by SQLite's translator and silently
+            # degrades to single-column compare, breaking the strict-less-
+            # than semantic of the tiebreaker.
+            #
+            # Microsecond normalization (SQLite quirk): SQLite's func.now()
+            # writes `'YYYY-MM-DD HH:MM:SS'` (no microseconds), but SQLAlchemy
+            # binds a Python naive datetime as `'... .000000'`. Lexicographic
+            # comparison then mis-orders: the row's bare string is "less than"
+            # the cursor's `.000000`-suffixed string, so the anchor row would
+            # leak into batch 2. Casting both sides via SQLAlchemy's DateTime
+            # adapter normalises the format and yields semantic comparison.
+            ts_normalized = ts.replace(microsecond=0)
+            query = query.where(
+                or_(
+                    func.datetime(ActivityLog.created_at) < func.datetime(ts_normalized),
+                    and_(
+                        func.datetime(ActivityLog.created_at) == func.datetime(ts_normalized),
+                        ActivityLog.id < rid,
+                    ),
+                )
+            )
+        query = (
+            query.order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
+            .offset(effective_offset)
+            .limit(limit + 1)
+        )
         result = await db.execute(query)
         logs = list(result.scalars().all())
         await db.commit()
 
-        return json.dumps(
-            [
-                {
-                    "id": log.id,
-                    "action": log.action,
-                    "actor_type": log.actor_type,
-                    "actor_id": log.actor_id,
-                    "actor_name": log.actor_name,
-                    "card_id": log.card_id,
-                    "details": log.details,
-                    "created_at": log.created_at.isoformat(),
-                }
-                for log in logs
-            ],
-            default=str,
-        )
+        has_more = len(logs) > limit
+        if has_more:
+            logs = logs[:limit]
+
+        rows: list[dict[str, Any]] = []
+        for log in logs:
+            row: dict[str, Any] = {
+                "id": log.id,
+                "action": log.action,
+                "card_id": log.card_id,
+                "created_at": log.created_at.isoformat(),
+                "trigger": (log.details or {}).get("trigger") if isinstance(log.details, dict) else None,
+                "summary": _activity_log_summary(log.action, log.details),
+            }
+            if include_details:
+                row["actor_type"] = log.actor_type
+                row["actor_id"] = log.actor_id
+                row["actor_name"] = log.actor_name
+                row["details"] = log.details
+            rows.append(row)
+
+        next_cursor: str | None = None
+        if has_more and logs:
+            last = logs[-1]
+            next_cursor = _encode_activity_cursor(last.created_at, last.id)
+
+        if envelope:
+            return json.dumps(
+                {"items": rows, "next_cursor": next_cursor}, default=str
+            )
+        return json.dumps(rows, default=str)
 
 
 # ============================================================================
@@ -1896,16 +2267,7 @@ async def okto_pulse_create_card(
 
 @mcp.tool()
 async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
-    """
-    Get detailed card information including attachments, Q&A, and comments.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON with full card details
-    """
+    """Get detailed card information including attachments, Q&A, and comments."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -1989,8 +2351,9 @@ async def okto_pulse_get_task_context(
     """
     Get the FULL execution context for a task card. Aggregates the card data with
     all relevant spec information: functional requirements, technical requirements,
-    acceptance criteria, test scenarios, business rules, API contracts, knowledge
-    base entries, screen mockups, Q&A, and comments.
+    acceptance criteria, test scenarios, business rules, API contracts, integration
+    requirements, observability requirements, knowledge base entries, screen
+    mockups, Q&A, and comments.
 
     **Always call this before starting work on a task** — it provides everything
     an agent needs to understand what to build, how to test it, and what rules apply.
@@ -2133,6 +2496,22 @@ async def okto_pulse_get_task_context(
                         include_superseded=_inc_superseded,
                     ),
                 }
+                if _mcp_check_permission(
+                    ctx.permissions,
+                    "spec.integration_requirements.read",
+                    Permissions.BOARD_READ,
+                ) is None:
+                    spec_data["integration_requirements"] = (
+                        getattr(spec, "integration_requirements", None) or []
+                    )
+                if _mcp_check_permission(
+                    ctx.permissions,
+                    "spec.observability_requirements.read",
+                    Permissions.BOARD_READ,
+                ) is None:
+                    spec_data["observability_requirements"] = (
+                        getattr(spec, "observability_requirements", None) or []
+                    )
 
                 if _inc_mockups and spec.screen_mockups:
                     spec_data["screen_mockups"] = spec.screen_mockups
@@ -2279,33 +2658,11 @@ async def okto_pulse_update_card(
     action_plan: str = "",
     linked_test_task_ids: list[str] | str = "",
 ) -> str:
-    """
-    Update card details.
+    """Update card details. Pass only the fields you want to change; omit the rest.
 
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        title: New title (optional, empty = no change)
-        description: New description (optional)
-        details: New details (optional)
-        priority: New priority - one of: none, low, medium, high, very_high, critical (optional, empty = no change)
-        assignee_id: New assignee (optional)
-        labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
-            legacy string accepted as JSON array or pipe-separated. Comma-only
-            string is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-        test_scenario_ids: Multi-value test scenario IDs — same input shapes as
-            ``labels``. Use ``okto_pulse_link_task_to_scenario`` for
-            bidirectional linking.
-        severity: Bug severity - one of: critical, major, minor (optional, bug cards only)
-        expected_behavior: Expected behavior description (optional, bug cards only)
-        observed_behavior: Observed behavior description (optional, bug cards only)
-        steps_to_reproduce: Steps to reproduce the bug (optional, bug cards only)
-        action_plan: Plan for fixing the bug (optional, bug cards only)
-        linked_test_task_ids: Multi-value test task card IDs linked to this bug
-            (optional, bug cards only) — same input shapes as ``labels``.
-
-    Returns:
-        JSON with updated card details
+    Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
+    native list; legacy pipe-separated string is also accepted. Comma-only strings
+    are REJECTED. For bidirectional scenario linking, use okto_pulse_link_task_to_scenario.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -2419,25 +2776,12 @@ async def okto_pulse_move_card(
     drift: int = -1,
     drift_justification: str = "",
 ) -> str:
-    """
-    Move a card to a different column/position on the board.
-    Moving execution work to 'validation' REQUIRES the executor's conclusion,
-    completeness, and drift — all with justifications — so the reviewer can
-    validate the claim. Moving directly to 'done' also requires the same report.
+    """Move a card to a different column/position on the board.
 
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        status: New status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
-        position: New position in column (-1 = end of column)
-        conclusion: REQUIRED when moving execution work to status='validation' or status='done'. Detailed summary of changes, files modified, decisions, test results, and follow-ups. Supports Markdown and Mermaid diagrams (```mermaid code blocks).
-        completeness: REQUIRED when moving execution work to status='validation' or status='done'. 0-100, how much of the planned work was actually implemented. 100 = fully complete, 0 = nothing delivered. Use -1 when no execution report is required.
-        completeness_justification: REQUIRED when moving execution work to status='validation' or status='done'. Explains why the completeness score is what it is. E.g. "All planned endpoints implemented and tested" or "Deferred pagination to follow-up card".
-        drift: REQUIRED when moving execution work to status='validation' or status='done'. 0-100, how much the implementation deviated from the original plan. 0 = exactly as planned, 100 = completely different approach. Use -1 when no execution report is required.
-        drift_justification: REQUIRED when moving execution work to status='validation' or status='done'. Explains what caused deviation from the original plan. E.g. "No deviation" or "Had to switch from REST to WebSocket due to real-time requirements discovered during implementation".
-
-    Returns:
-        JSON with updated card details
+    Moving to 'validation' or 'done' REQUIRES conclusion, completeness (0-100),
+    completeness_justification, drift (0-100), and drift_justification so the
+    reviewer can validate the claim. Use -1 for completeness/drift when no
+    execution report is required (e.g. moving to on_hold or started).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -2486,16 +2830,6 @@ async def okto_pulse_move_card(
         if not updated:
             return json.dumps({"error": "Failed to move card"})
 
-        board_service = BoardService(db)
-        await board_service._log_activity(
-            board_id=board_id,
-            card_id=card_id,
-            action="card_moved",
-            actor_type="agent",
-            actor_id=ctx.agent_id,
-            actor_name=ctx.agent_name,
-            details={"status": status, "position": position},
-        )
         await db.commit()
 
         return json.dumps(
@@ -2514,16 +2848,7 @@ async def okto_pulse_move_card(
 
 @mcp.tool()
 async def okto_pulse_delete_card(board_id: str, card_id: str) -> str:
-    """
-    Delete a card from the board.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON with success status
-    """
+    """Delete a card from the board. This operation is permanent and cannot be undone."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2670,20 +2995,10 @@ async def okto_pulse_list_cards_by_status(
     offset: int = 0,
     limit: int = 50,
 ) -> str:
-    """
-    List cards on the board with optional filters and pagination.
+    """List cards on the board with optional filters and pagination.
 
-    Args:
-        board_id: Board ID
-        status: Filter by status (optional, empty = all). One of: not_started, started, in_progress, validation, on_hold, done, cancelled. Use "open" for cards NOT in done/cancelled.
-        spec_id: Filter by spec ID (optional) — only cards linked to this spec
-        priority: Filter by priority (optional) — one of: none, low, medium, high, very_high, critical
-        assignee_id: Filter by assignee (optional)
-        offset: Skip first N cards (default 0)
-        limit: Max cards to return (default 50, max 200)
-
-    Returns:
-        JSON with filtered/paginated cards and summary counts
+    status: empty = all, or one of not_started/started/in_progress/validation/on_hold/done/cancelled/open.
+    Use 'open' for all cards NOT in done/cancelled. Max limit is 200.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -3526,40 +3841,6 @@ async def okto_pulse_create_topic(board_id: str, name: str, description: str = "
 
 
 @mcp.tool()
-async def okto_pulse_list_topics(board_id: str, include_archived: str = "false") -> str:
-    """List Topics for a board."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.read", Permissions.BOARD_READ)
-    if perm_err:
-        return _mcp_permission_error_response(perm_err)
-    async with get_db_for_mcp() as db:
-        topics = await StoryService(db).list_topics(board_id, include_archived=_flag_enabled(include_archived))
-        await db.commit()
-        return json.dumps(
-            {
-                "count": len(topics),
-                "topics": [
-                    {
-                        "id": topic.id,
-                        "board_id": topic.board_id,
-                        "name": topic.name,
-                        "description": topic.description,
-                        "archived": topic.archived,
-                        "story_count": getattr(topic, "story_count", 0),
-                        "active_count": getattr(topic, "active_count", getattr(topic, "story_count", 0)),
-                        "archived_count": getattr(topic, "archived_count", 0),
-                        "total_associated_count": getattr(topic, "total_associated_count", getattr(topic, "story_count", 0)),
-                    }
-                    for topic in topics
-                ],
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
 async def okto_pulse_update_topic(
     board_id: str,
     topic_id: str,
@@ -3963,49 +4244,6 @@ async def okto_pulse_create_story(
         if not story:
             return json.dumps({"error": "Board not found"})
         return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_list_stories(
-    board_id: str,
-    status: str = "",
-    topic_id: str = "",
-    search: str = "",
-    linked: str = "",
-    converted: str = "",
-    include_archived: str = "false",
-) -> str:
-    """List Stories for a board with optional filters."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    perm_err = _mcp_check_permission(ctx.permissions, "story.entity.read", Permissions.BOARD_READ)
-    if perm_err:
-        return _mcp_permission_error_response(perm_err)
-
-    def _optional_bool(value: str) -> bool | None:
-        if not value:
-            return None
-        return _flag_enabled(value)
-
-    async with get_db_for_mcp() as db:
-        try:
-            stories = await StoryService(db).list_stories(
-                board_id,
-                status_filter=status or None,
-                topic_id=topic_id or None,
-                search=search or None,
-                linked=_optional_bool(linked),
-                converted=_optional_bool(converted),
-                include_archived=_flag_enabled(include_archived),
-            )
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
-        await db.commit()
-        return json.dumps(
-            {"count": len(stories), "stories": [_story_payload(story) for story in stories]},
-            default=str,
-        )
 
 
 @mcp.tool()
@@ -4558,67 +4796,6 @@ async def okto_pulse_get_ideation_context(
 
 
 @mcp.tool()
-async def okto_pulse_list_ideations(
-    board_id: str, status: str = "", offset: int = 0, limit: int = 50
-) -> str:
-    """
-    List ideations for a board with optional filtering and pagination.
-
-    Args:
-        board_id: Board ID
-        status: Filter by status (optional) — one of: draft, review, approved, evaluating, done, cancelled
-        offset: Skip first N ideations (default 0)
-        limit: Max ideations to return (default 50, max 200)
-
-    Returns:
-        JSON with filtered/paginated ideations
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    limit = min(limit, 200)
-
-    async with get_db_for_mcp() as db:
-        service = IdeationService(db)
-        ideations = await service.list_ideations(board_id, status or None)
-        await db.commit()
-
-        total = len(ideations)
-        paginated = ideations[offset:offset + limit]
-
-        return json.dumps(
-            {
-                "board_id": board_id,
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-                "ideations": [
-                    {
-                        "id": i.id,
-                        "title": i.title,
-                        "description": i.description,
-                        "problem_statement": i.problem_statement,
-                        "complexity": i.complexity.value if i.complexity else None,
-                        "status": i.status.value,
-                        "version": i.version,
-                        "assignee_id": i.assignee_id,
-                        "labels": i.labels,
-                        "created_at": i.created_at.isoformat(),
-                        "updated_at": i.updated_at.isoformat(),
-                    }
-                    for i in paginated
-                ],
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
 async def okto_pulse_update_ideation(
     board_id: str,
     ideation_id: str,
@@ -4817,6 +4994,15 @@ async def okto_pulse_evaluate_ideation(
 
     Each score MUST include a justification explaining why that score was given.
 
+    PRE-REQUISITE — ideation status MUST be 'evaluating' before calling this tool.
+    The full transition flow is: draft → review → approved → evaluating → (this tool) → done.
+    If the ideation is in any other status this call fails with:
+        "Evaluation can only be performed in 'evaluating' status (current: '<status>'). ..."
+    Use okto_pulse_move_ideation(..., status='review'/'approved'/'evaluating') to advance through
+    the states first. The tool does NOT auto-promote because each transition is an explicit
+    gate decision (review = ready for stakeholder approval; approved = ready to score; evaluating
+    = scoring in progress).
+
     Args:
         board_id: Board ID
         ideation_id: Ideation ID
@@ -4966,51 +5152,6 @@ async def okto_pulse_derive_spec_from_ideation(
 
 
 @mcp.tool()
-async def okto_pulse_list_ideation_snapshots(board_id: str, ideation_id: str) -> str:
-    """
-    List all version snapshots of an ideation. Each snapshot is an immutable copy
-    of the ideation's state at the moment it was marked as 'done'.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-
-    Returns:
-        JSON with list of snapshot summaries (version, title, complexity, created_at)
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = IdeationService(db)
-        snapshots = await service.list_snapshots(ideation_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "ideation_id": ideation_id,
-                "count": len(snapshots),
-                "snapshots": [
-                    {
-                        "version": s.version,
-                        "title": s.title,
-                        "complexity": s.complexity,
-                        "created_by": s.created_by,
-                        "created_at": s.created_at.isoformat(),
-                    }
-                    for s in snapshots
-                ],
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
 async def okto_pulse_get_ideation_snapshot(board_id: str, ideation_id: str, version: str) -> str:
     """
     Get the full immutable snapshot of an ideation at a specific version.
@@ -5113,42 +5254,6 @@ async def okto_pulse_get_ideation_history(board_id: str, ideation_id: str, limit
 # ============================================================================
 # IDEATION KNOWLEDGE BASE TOOLS
 # ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_list_ideation_knowledge(board_id: str, ideation_id: str) -> str:
-    """
-    List all knowledge base items attached to an ideation.
-
-    Use this before deriving refinements/specs when the ideation references
-    domain rules, source documents, decisions, constraints, or contextual
-    evidence that should travel through the SDLC chain.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        ideation = await IdeationService(db).get_ideation(ideation_id)
-        if not ideation or ideation.board_id != board_id:
-            return json.dumps({"error": "Ideation not found"})
-        items = await IdeationKnowledgeService(db).list_knowledge(ideation_id)
-        await db.commit()
-        return json.dumps(
-            {
-                "ideation_id": ideation_id,
-                "count": len(items),
-                "knowledge_bases": [
-                    _serialize_knowledge_base(kb, include_content=False)
-                    for kb in items
-                ],
-            },
-            default=str,
-        )
 
 
 @mcp.tool()
@@ -5470,61 +5575,6 @@ async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, q
 
 
 @mcp.tool()
-async def okto_pulse_list_ideation_qa(board_id: str, ideation_id: str) -> str:
-    """
-    List all Q&A items on an ideation. Check this to understand open questions or clarifications.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-
-    Returns:
-        JSON with list of Q&A items
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = IdeationQAService(db)
-        items = await service.list_qa(ideation_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "ideation_id": ideation_id,
-                "count": len(items),
-                "qa_items": [
-                    {
-                        "id": qa.id,
-                        "question": qa.question,
-                        "question_type": qa.question_type,
-                        "choices": qa.choices,
-                        "allow_free_text": qa.allow_free_text,
-                        "answer": qa.answer,
-                        "selected": qa.selected,
-                        "asked_by": qa.asked_by,
-                        "answered_by": qa.answered_by,
-                        "created_at": qa.created_at.isoformat(),
-                        "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
-                    }
-                    for qa in items
-                ],
-            },
-            default=str,
-        )
-
-
-# ============================================================================
-# REFINEMENT TOOLS
-# ============================================================================
-
-
-@mcp.tool()
 async def okto_pulse_create_refinement(
     board_id: str,
     ideation_id: str,
@@ -5824,71 +5874,6 @@ async def okto_pulse_get_refinement_context(
         result["resolved_references"] = resolved_references
 
         return json.dumps(result, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_list_refinements(
-    board_id: str, ideation_id: str, status: str = "", offset: int = 0, limit: int = 50
-) -> str:
-    """
-    List refinements for an ideation with optional filtering and pagination.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        status: Filter by status (optional) — one of: draft, in_progress, done, cancelled
-        offset: Skip first N refinements (default 0)
-        limit: Max refinements to return (default 50, max 200)
-
-    Returns:
-        JSON with filtered/paginated refinements
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    limit = min(limit, 200)
-
-    async with get_db_for_mcp() as db:
-        service = RefinementService(db)
-        refinements = await service.list_refinements(ideation_id)
-        await db.commit()
-
-        if status:
-            refinements = [r for r in refinements if r.status.value == status]
-
-        total = len(refinements)
-        paginated = refinements[offset:offset + limit]
-
-        return json.dumps(
-            {
-                "ideation_id": ideation_id,
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-                "refinements": [
-                    {
-                        "id": r.id,
-                        "title": r.title,
-                        "description": r.description,
-                        "in_scope": r.in_scope,
-                        "out_of_scope": r.out_of_scope,
-                        "status": r.status.value,
-                        "version": r.version,
-                        "assignee_id": r.assignee_id,
-                        "labels": r.labels,
-                        "created_at": r.created_at.isoformat(),
-                        "updated_at": r.updated_at.isoformat(),
-                    }
-                    for r in paginated
-                ],
-            },
-            default=str,
-        )
 
 
 @mcp.tool()
@@ -6409,61 +6394,6 @@ async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: st
 
 
 @mcp.tool()
-async def okto_pulse_list_refinement_qa(board_id: str, refinement_id: str) -> str:
-    """
-    List all Q&A items on a refinement. Check this to understand open questions or clarifications.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-
-    Returns:
-        JSON with list of Q&A items
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = RefinementQAService(db)
-        items = await service.list_qa(refinement_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "refinement_id": refinement_id,
-                "count": len(items),
-                "qa_items": [
-                    {
-                        "id": qa.id,
-                        "question": qa.question,
-                        "question_type": qa.question_type,
-                        "choices": qa.choices,
-                        "allow_free_text": qa.allow_free_text,
-                        "answer": qa.answer,
-                        "selected": qa.selected,
-                        "asked_by": qa.asked_by,
-                        "answered_by": qa.answered_by,
-                        "created_at": qa.created_at.isoformat(),
-                        "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
-                    }
-                    for qa in items
-                ],
-            },
-            default=str,
-        )
-
-
-# ============================================================================
-# SPEC TOOLS
-# ============================================================================
-
-
-@mcp.tool()
 async def okto_pulse_create_spec(
     board_id: str,
     title: str,
@@ -6559,6 +6489,8 @@ async def okto_pulse_create_spec(
                     "functional_requirements": spec.functional_requirements,
                     "technical_requirements": spec.technical_requirements,
                     "acceptance_criteria": spec.acceptance_criteria,
+                    "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+                    "observability_requirements": getattr(spec, "observability_requirements", None) or [],
                 },
             },
             default=str,
@@ -6593,36 +6525,50 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
         if not spec:
             return json.dumps({"error": "Spec not found"})
 
-        return json.dumps(
-            {
-                "id": spec.id,
-                "board_id": spec.board_id,
-                "title": spec.title,
-                "description": spec.description,
-                "context": spec.context,
-                "functional_requirements": spec.functional_requirements,
-                "technical_requirements": spec.technical_requirements,
-                "acceptance_criteria": spec.acceptance_criteria,
-                "status": spec.status.value,
-                "version": spec.version,
-                "assignee_id": spec.assignee_id,
-                "created_by": spec.created_by,
-                "created_at": spec.created_at.isoformat(),
-                "updated_at": spec.updated_at.isoformat(),
-                "labels": spec.labels,
-                "cards": [
-                    {
-                        "id": c.id,
-                        "title": c.title,
-                        "status": c.status.value,
-                        "priority": c.priority.value,
-                        "assignee_id": c.assignee_id,
-                    }
-                    for c in spec.cards
-                ],
-            },
-            default=str,
-        )
+        payload = {
+            "id": spec.id,
+            "board_id": spec.board_id,
+            "title": spec.title,
+            "description": spec.description,
+            "context": spec.context,
+            "functional_requirements": spec.functional_requirements,
+            "technical_requirements": spec.technical_requirements,
+            "acceptance_criteria": spec.acceptance_criteria,
+            "status": spec.status.value,
+            "version": spec.version,
+            "assignee_id": spec.assignee_id,
+            "created_by": spec.created_by,
+            "created_at": spec.created_at.isoformat(),
+            "updated_at": spec.updated_at.isoformat(),
+            "labels": spec.labels,
+            "cards": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "status": c.status.value,
+                    "priority": c.priority.value,
+                    "assignee_id": c.assignee_id,
+                }
+                for c in spec.cards
+            ],
+        }
+        if _mcp_check_permission(
+            ctx.permissions,
+            "spec.integration_requirements.read",
+            Permissions.BOARD_READ,
+        ) is None:
+            payload["integration_requirements"] = (
+                getattr(spec, "integration_requirements", None) or []
+            )
+        if _mcp_check_permission(
+            ctx.permissions,
+            "spec.observability_requirements.read",
+            Permissions.BOARD_READ,
+        ) is None:
+            payload["observability_requirements"] = (
+                getattr(spec, "observability_requirements", None) or []
+            )
+        return json.dumps(payload, default=str)
 
 
 @mcp.tool()
@@ -6639,8 +6585,8 @@ async def okto_pulse_get_spec_context(
     Get the FULL consolidated context of a spec. Returns ALL structured data
     needed to evaluate, validate, or review this spec before advancing it.
 
-    Includes: requirements, test scenarios, business rules, API contracts,
-    screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
+    Includes: requirements, test scenarios, business rules, API contracts, IRs,
+    ORs, screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
 
     **Always call this before evaluating, moving, or creating cards from a spec.**
 
@@ -6701,7 +6647,7 @@ async def okto_pulse_get_spec_context(
             "functional_requirements": spec.functional_requirements or [],
             "technical_requirements": spec.technical_requirements or [],
             "acceptance_criteria": spec.acceptance_criteria or [],
-            # Structured sections — ALWAYS included
+            # Structured sections — gated by their own granular read flags when available.
             "test_scenarios": spec.test_scenarios or [],
             "business_rules": spec.business_rules or [],
             "api_contracts": spec.api_contracts or [],
@@ -6717,6 +6663,8 @@ async def okto_pulse_get_spec_context(
             # Skip flags
             "skip_test_coverage": spec.skip_test_coverage,
             "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
+            "skip_ir_coverage": getattr(spec, "skip_ir_coverage", False),
+            "skip_or_coverage": getattr(spec, "skip_or_coverage", False),
             "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", True),
             "skip_qualitative_validation": getattr(spec, "skip_qualitative_validation", False),
             "validation_threshold": getattr(spec, "validation_threshold", None),
@@ -6737,6 +6685,22 @@ async def okto_pulse_get_spec_context(
             # Sprints — loaded separately to avoid lazy-load issues
             "sprints": [],
         }
+        if _mcp_check_permission(
+            ctx.permissions,
+            "spec.integration_requirements.read",
+            Permissions.BOARD_READ,
+        ) is None:
+            result["integration_requirements"] = (
+                getattr(spec, "integration_requirements", None) or []
+            )
+        if _mcp_check_permission(
+            ctx.permissions,
+            "spec.observability_requirements.read",
+            Permissions.BOARD_READ,
+        ) is None:
+            result["observability_requirements"] = (
+                getattr(spec, "observability_requirements", None) or []
+            )
 
         if _inc_mockups and spec.screen_mockups:
             result["screen_mockups"] = spec.screen_mockups
@@ -6806,65 +6770,6 @@ async def okto_pulse_get_spec_context(
             pass
 
         return json.dumps(result, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_list_specs(
-    board_id: str, status: str = "", offset: int = 0, limit: int = 50
-) -> str:
-    """
-    List specs for a board with optional filtering and pagination.
-
-    Args:
-        board_id: Board ID
-        status: Filter by status (optional) — one of: draft, review, approved, in_progress, done, cancelled
-        offset: Skip first N specs (default 0)
-        limit: Max specs to return (default 50, max 200)
-
-    Returns:
-        JSON with filtered/paginated specs
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    limit = min(limit, 200)
-
-    async with get_db_for_mcp() as db:
-        service = SpecService(db)
-        specs = await service.list_specs(board_id, status or None)
-        await db.commit()
-
-        total = len(specs)
-        paginated = specs[offset:offset + limit]
-
-        return json.dumps(
-            {
-                "board_id": board_id,
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-                "specs": [
-                    {
-                        "id": s.id,
-                        "title": s.title,
-                        "description": s.description,
-                        "status": s.status.value,
-                        "version": s.version,
-                        "assignee_id": s.assignee_id,
-                        "labels": s.labels,
-                        "created_at": s.created_at.isoformat(),
-                        "updated_at": s.updated_at.isoformat(),
-                    }
-                    for s in paginated
-                ],
-            },
-            default=str,
-        )
 
 
 @mcp.tool()
@@ -7119,7 +7024,7 @@ async def okto_pulse_add_test_scenario(
         await db.commit()
 
         cov = _spec_coverage(spec, scenarios=scenarios)
-        return json.dumps({"success": True, "scenario": scenario, "coverage": cov}, default=str)
+        return json.dumps({"success": True, "scenario": scenario, **_saturation_or_coverage(cov)}, default=str)
 
 
 @mcp.tool()
@@ -7481,25 +7386,75 @@ async def okto_pulse_update_test_scenario_status(
         })
 
 
+_LINK_TASK_TARGET_TYPES = ("scenario", "rule", "decision", "tr", "contract", "ir", "or", "spec")
+
+
 @mcp.tool()
-async def okto_pulse_link_task_to_scenario(
-    board_id: str, spec_id: str, scenario_id: str, card_id: str
+async def okto_pulse_link_task(
+    board_id: str,
+    target_type: str,
+    target_id: str,
+    card_id: str,
+    spec_id: str = "",
 ) -> str:
     """
-    Link a card (task) to a test scenario, creating bidirectional traceability.
-    Updates both the scenario's linked_task_ids and the card's test_scenario_ids.
-    This is intentionally treated as a traceability update: it may be used
-    after spec validation to connect regression test cards to existing
-    scenarios without unlocking, invalidating, or rewriting the spec content.
+    Generic task-linking tool — dispatches on `target_type`. Equivalent to the
+    per-type tools (`okto_pulse_link_task_to_rule`, `…_to_decision`, `…_to_tr`,
+    `…_to_integration_requirement`, `…_to_observability_requirement`,
+    `…_to_scenario`, `…_to_contract`, `okto_pulse_link_card_to_spec`) but
+    exposes a single entry point so agents don't have to pre-load eight near-
+    identical tool schemas.
+
+    Ideação MCP-token-optimization Story 5.
 
     Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        scenario_id: Test scenario ID
-        card_id: Card ID to link
+        board_id: Board ID.
+        target_type: One of: rule, decision, tr, ir, or, scenario, contract, spec.
+            Keywords link rule decision tr ir or scenario contract spec.
+        target_id: ID of the target artifact (rule_id, decision_id, tr_id,
+            ir_id/requirement_id, or_id/requirement_id, scenario_id,
+            contract_id, or spec_id when target_type=='spec').
+        card_id: ID of the card to link.
+        spec_id: Required for every target_type except 'spec'.
 
     Returns:
-        JSON with success status
+        JSON identical to the corresponding per-type tool (success + ids +
+        saturation envelope).
+    """
+    target_type = (target_type or "").strip().lower()
+    if target_type not in _LINK_TASK_TARGET_TYPES:
+        return json.dumps({
+            "error": f"Unknown target_type '{target_type}'. Must be one of: {', '.join(_LINK_TASK_TARGET_TYPES)}"
+        })
+    # Dispatch to internal helpers (no @mcp.tool() decoration — see commit
+    # removing 8 link_task_to_* shims in favor of this unified entry point).
+    if target_type == "spec":
+        return await _link_card_to_spec_internal(board_id, target_id, card_id)
+    if not spec_id:
+        return json.dumps({"error": f"spec_id is required when target_type='{target_type}'"})
+    if target_type == "scenario":
+        return await _link_task_to_scenario_internal(board_id, spec_id, target_id, card_id)
+    if target_type == "rule":
+        return await _link_task_to_rule_internal(board_id, spec_id, target_id, card_id)
+    if target_type == "decision":
+        return await _link_task_to_decision_internal(board_id, spec_id, target_id, card_id)
+    if target_type == "tr":
+        return await _link_task_to_tr_internal(board_id, spec_id, target_id, card_id)
+    if target_type == "contract":
+        return await _link_task_to_contract_internal(board_id, spec_id, target_id, card_id)
+    if target_type == "ir":
+        return await _link_task_to_integration_requirement_internal(board_id, spec_id, target_id, card_id)
+    if target_type == "or":
+        return await _link_task_to_observability_requirement_internal(board_id, spec_id, target_id, card_id)
+    return json.dumps({"error": f"Internal dispatch error for target_type '{target_type}'"})
+
+
+async def _link_task_to_scenario_internal(
+    board_id: str, spec_id: str, scenario_id: str, card_id: str
+) -> str:
+    """Internal helper for link_task target_type='scenario'. Invoked exclusively
+    by okto_pulse_link_task — no @mcp.tool() registration to keep the inventory
+    focused on the unified dispatcher (Story 5).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7561,25 +7516,14 @@ async def okto_pulse_link_task_to_scenario(
         await db.commit()
 
         cov = _spec_coverage(spec, scenarios=scenarios)
-        return json.dumps({"success": True, "scenario_id": scenario_id, "card_id": card_id, "coverage": cov})
+        return json.dumps({"success": True, "scenario_id": scenario_id, "card_id": card_id, **_saturation_or_coverage(cov)})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_rule(
+async def _link_task_to_rule_internal(
     board_id: str, spec_id: str, rule_id: str, card_id: str
 ) -> str:
-    """
-    Link a card (task) to a business rule, creating traceability.
-    Updates the rule's linked_task_ids in the spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        rule_id: Business rule ID (e.g. "br_abc123")
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
+    """Internal helper for link_task target_type='rule'. Invoked exclusively
+    by okto_pulse_link_task.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7623,26 +7567,13 @@ async def okto_pulse_link_task_to_rule(
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
-        return json.dumps({"success": True, "rule_id": rule_id, "card_id": card_id, "coverage": cov})
+        return json.dumps({"success": True, "rule_id": rule_id, "card_id": card_id, **_saturation_or_coverage(cov)})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_contract(
+async def _link_task_to_contract_internal(
     board_id: str, spec_id: str, contract_id: str, card_id: str
 ) -> str:
-    """
-    Link a card (task) to an API contract, creating traceability.
-    Updates the contract's linked_task_ids in the spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        contract_id: API contract ID (e.g. "api_abc123")
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
-    """
+    """Internal helper for link_task target_type='contract'."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7683,26 +7614,13 @@ async def okto_pulse_link_task_to_contract(
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=contracts)
-        return json.dumps({"success": True, "contract_id": contract_id, "card_id": card_id, "coverage": cov})
+        return json.dumps({"success": True, "contract_id": contract_id, "card_id": card_id, **_saturation_or_coverage(cov)})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_tr(
+async def _link_task_to_tr_internal(
     board_id: str, spec_id: str, tr_id: str, card_id: str
 ) -> str:
-    """
-    Link a card (task) to a technical requirement, creating traceability.
-    Updates the TR's linked_task_ids in the spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        tr_id: Technical requirement ID (e.g. "tr_abc123")
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
-    """
+    """Internal helper for link_task target_type='tr'."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7747,7 +7665,7 @@ async def okto_pulse_link_task_to_tr(
         await db.commit()
 
         cov = _spec_coverage(spec, trs=trs)
-        return json.dumps({"success": True, "tr_id": tr_id, "card_id": card_id, "coverage": cov})
+        return json.dumps({"success": True, "tr_id": tr_id, "card_id": card_id, **_saturation_or_coverage(cov)})
 
 
 # ==================== ARCHIVE & RESTORE ====================
@@ -7932,15 +7850,31 @@ async def okto_pulse_get_architecture_design_schema(board_id: str) -> str:
 
     Call this before authoring a non-trivial Architecture Design payload. The
     schema includes allowed enums, entity/interface contracts, Excalidraw
-    adapter payload rules, bad examples, good examples, and a complete minimal
-    payload example. Use it together with
-    okto_pulse_validate_architecture_design_payload before create/update.
+    adapter payload rules, bad examples, good examples, the complete minimal
+    payload example AND a `semantic_node_registry` section (spec cc497a0d) that
+    defines the canonical mapping from entity_type to
+    {displayType, architectureKind, iconName} plus the icon allowlist.
+
+    MANDATORY validation flow for MCP agents:
+        1. okto_pulse_get_architecture_design_schema(board_id) — read the registry.
+        2. Build payload: prefer letting the registry normalize linked nodes by setting
+           entity.entity_type + diagram element.linkedEntityId only (text/displayType/
+           architectureKind/iconName auto-filled at persist time).
+        3. okto_pulse_validate_architecture_design_payload(...) — confirm valid=true and
+           surface warnings (semantic_metadata_normalized) to the human.
+        4. okto_pulse_add_architecture_design / update_architecture_design — backend
+           re-applies normalization + rejects ambiguous payloads (FR3 of spec cc497a0d).
+
+    Do NOT invent iconName/displayType/architectureKind outside the registry. Linked
+    nodes (linkedEntityId set) must either provide all four metadata fields explicitly
+    or rely on the registry to fill them deterministically; otherwise the payload is
+    rejected with suggested_fixes.
 
     Args:
         board_id: Board ID
 
     Returns:
-        JSON with success=true and schema.
+        JSON with success=true and schema (includes semantic_node_registry).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7964,6 +7898,8 @@ async def okto_pulse_validate_architecture_design_payload(
     entities: list[dict] | str = "",
     interfaces: list[dict] | str = "",
     diagrams: list[dict] | str = "",
+    commit: bool = False,
+    include_design: bool = False,
 ) -> str:
     """
     Dry-run critique for an Architecture Design payload without persisting it.
@@ -8068,8 +8004,44 @@ async def okto_pulse_validate_architecture_design_payload(
             }
 
         critique = repo.critique_payload(candidate)
-        await db.commit()
-        return json.dumps({"success": True, "mode": mode, **critique}, default=str)
+        if not commit or not critique.get("valid"):
+            await db.commit()
+            return json.dumps({"success": True, "mode": mode, **critique}, default=str)
+
+        try:
+            if mode == "create":
+                payload = ArchitectureDesignCreate(
+                    title=candidate["title"],
+                    global_description=candidate["global_description"],
+                    entities=candidate.get("entities") or [],
+                    interfaces=candidate.get("interfaces") or [],
+                    diagrams=candidate.get("diagrams") or [],
+                )
+                design = await repo.create(parent_type, parent_id, payload, ctx.agent_id)
+            else:
+                patch_payload = ArchitectureDesignUpdate(**{
+                    k: candidate[k]
+                    for k in ("title", "global_description", "entities", "interfaces", "diagrams")
+                    if candidate.get(k) is not None
+                })
+                design = await repo.update(design_id, patch_payload, ctx.agent_id)
+            await db.commit()
+        except ValueError as exc:
+            return json.dumps({"error": str(exc)})
+
+        warnings = list(critique.get("warnings") or [])
+        envelope: dict[str, Any] = {
+            "success": True,
+            "mode": mode,
+            "committed": True,
+            "id": design.id,
+            "version": design.version,
+            "warnings_count": len(warnings),
+            "normalized": bool(warnings),
+        }
+        if include_design:
+            envelope["architecture_design"] = _dump_model(repo.to_response(design))
+        return json.dumps(envelope, default=str)
 
 
 @mcp.tool()
@@ -8748,26 +8720,6 @@ async def okto_pulse_add_card_knowledge(
 
 
 @mcp.tool()
-async def okto_pulse_list_card_knowledge(board_id: str, card_id: str) -> str:
-    """
-    List all knowledge base entries attached to a card.
-    Returns titles + descriptions + ids; full content is included as well
-    since the rows live inline (no separate fetch path).
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    async with get_db_for_mcp() as db:
-        service = CardService(db)
-        card = await service.get_card(card_id)
-        if not card or card.board_id != board_id:
-            return json.dumps({"error": "Card not found"})
-
-    return json.dumps({"success": True, "card_id": card_id, "knowledge": list(card.knowledge_bases or [])}, default=str)
-
-
-@mcp.tool()
 async def okto_pulse_get_card_knowledge(board_id: str, card_id: str, knowledge_id: str) -> str:
     """Get a single KE by id from a card's inline knowledge_bases array."""
     ctx = await _get_agent_ctx(board_id)
@@ -9370,7 +9322,7 @@ async def okto_pulse_add_business_rule(
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
-        return json.dumps({"success": True, "business_rule": br, "coverage": cov}, default=str)
+        return json.dumps({"success": True, "business_rule": br, **_saturation_or_coverage(cov)}, default=str)
 
 
 @mcp.tool()
@@ -9465,7 +9417,7 @@ async def okto_pulse_update_business_rule(
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
-        return json.dumps({"success": True, "business_rule": target, "coverage": cov}, default=str)
+        return json.dumps({"success": True, "business_rule": target, **_saturation_or_coverage(cov)}, default=str)
 
 
 @mcp.tool()
@@ -9511,7 +9463,7 @@ async def okto_pulse_remove_business_rule(
         await db.commit()
 
         cov = _spec_coverage(spec, rules=new_rules)
-        return json.dumps({"success": True, "removed": rule_id, "remaining": len(new_rules), "coverage": cov})
+        return json.dumps({"success": True, "removed": rule_id, "remaining": len(new_rules), **_saturation_or_coverage(cov)})
 
 
 # ============================================================================
@@ -9547,6 +9499,393 @@ def _parse_linked_requirements(raw: str, frs: list) -> tuple[list[str] | None, s
         else:
             return None, f"Requirement index {idx} out of range (0-{len(frs)-1})"
     return out, None
+
+
+@mcp.tool()
+async def okto_pulse_list_integration_requirements(
+    board_id: str,
+    spec_id: str,
+    include_inactive: str = "false",
+) -> str:
+    """List Integration Requirements (IR) for a spec."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.integration_requirements.read",
+        Permissions.BOARD_READ,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+
+    include_all = _flag_enabled(include_inactive)
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        requirements = list(getattr(spec, "integration_requirements", None) or [])
+        if not include_all:
+            requirements = [
+                item for item in requirements
+                if not isinstance(item, dict) or item.get("status", "active") == "active"
+            ]
+        return json.dumps(
+            {"spec_id": spec_id, "integration_requirements": requirements},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_add_integration_requirement(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    integration_type: str = "api",
+    description: str = "",
+    provider: str = "",
+    consumer: str = "",
+    contract_ref: str = "",
+    endpoint: str = "",
+    method: str = "",
+    data_contract_json: str = "",
+    linked_requirements: str = "",
+    linked_api_contracts: str = "",
+    notes: str = "",
+) -> str:
+    """
+    Add an Integration Requirement (IR) to a spec.
+
+    Use IR for APIs, queues, stored procedures, events, files, and data
+    contracts that need traceability beyond a single endpoint.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.integration_requirements.create",
+        Permissions.SPECS_UPDATE,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+
+    allowed_types = {"api", "queue", "stored_procedure", "data_contract", "event", "file", "other"}
+    if integration_type not in allowed_types:
+        return json.dumps({"error": f"Invalid integration_type. Use one of: {sorted(allowed_types)}"})
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+
+        req_list, err = _parse_linked_requirements(linked_requirements, spec.functional_requirements or [])
+        if err:
+            return json.dumps({"error": err})
+
+        data_contract = None
+        if data_contract_json:
+            data_contract, json_err = _parse_json_arg(data_contract_json, None)
+            if json_err:
+                return json.dumps({"error": json_err})
+
+        requirement = {
+            "id": f"ir_{_uuid.uuid4().hex[:8]}",
+            "title": title,
+            "integration_type": integration_type,
+            "description": description.replace("\\n", "\n") if description else "",
+            "provider": provider or None,
+            "consumer": consumer or None,
+            "contract_ref": contract_ref or None,
+            "endpoint": endpoint or None,
+            "method": method or None,
+            "data_contract": data_contract,
+            "linked_requirements": req_list,
+            "linked_api_contracts": parse_multi_value(linked_api_contracts) or None,
+            "linked_task_ids": None,
+            "status": "active",
+            "notes": notes.replace("\\n", "\n") if notes else None,
+        }
+
+        requirements = list(getattr(spec, "integration_requirements", None) or [])
+        requirements.append(requirement)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, update_err = await _safe_spec_update(
+            service,
+            spec_id,
+            ctx.agent_id,
+            SpecUpdate(integration_requirements=requirements),
+        )
+        if update_err:
+            return update_err
+        await db.commit()
+
+        coverage = _spec_coverage(spec, integration_requirements=requirements)
+        return json.dumps(
+            {"success": True, "integration_requirement": requirement, **_saturation_or_coverage(coverage)},
+            default=str,
+        )
+
+
+async def _link_task_to_integration_requirement_internal(
+    board_id: str,
+    spec_id: str,
+    requirement_id: str,
+    card_id: str,
+) -> str:
+    """Internal helper for link_task target_type='ir'."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.integration_requirements.link_task",
+        Permissions.SPECS_UPDATE,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "card.link_to.ir",
+        Permissions.CARDS_UPDATE,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        requirements = list(getattr(spec, "integration_requirements", None) or [])
+        target = next((item for item in requirements if item.get("id") == requirement_id), None)
+        if target is None:
+            return json.dumps({"error": f"Integration requirement '{requirement_id}' not found"})
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        if card_id not in task_ids:
+            task_ids.append(card_id)
+        target["linked_task_ids"] = task_ids
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, update_err = await _safe_spec_update(
+            spec_service,
+            spec_id,
+            ctx.agent_id,
+            SpecUpdate(integration_requirements=requirements),
+        )
+        if update_err:
+            return update_err
+        await db.commit()
+
+        coverage = _spec_coverage(spec, integration_requirements=requirements)
+        return json.dumps(
+            {
+                "success": True,
+                "requirement_id": requirement_id,
+                "card_id": card_id,
+                "linked_tasks": task_ids,
+                **_saturation_or_coverage(coverage),
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_list_observability_requirements(
+    board_id: str,
+    spec_id: str,
+    include_inactive: str = "false",
+) -> str:
+    """List Observability Requirements (OR) for a spec."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.observability_requirements.read",
+        Permissions.BOARD_READ,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+
+    include_all = _flag_enabled(include_inactive)
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        requirements = list(getattr(spec, "observability_requirements", None) or [])
+        if not include_all:
+            requirements = [
+                item for item in requirements
+                if not isinstance(item, dict) or item.get("status", "active") == "active"
+            ]
+        return json.dumps(
+            {"spec_id": spec_id, "observability_requirements": requirements},
+            default=str,
+        )
+
+
+@mcp.tool()
+async def okto_pulse_add_observability_requirement(
+    board_id: str,
+    spec_id: str,
+    title: str,
+    signal_type: str = "metric",
+    description: str = "",
+    target: str = "",
+    metric_name: str = "",
+    threshold: str = "",
+    severity: str = "",
+    owner: str = "",
+    linked_requirements: str = "",
+    linked_integration_requirements: str = "",
+    notes: str = "",
+) -> str:
+    """Add an Observability Requirement (OR) to a spec."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.observability_requirements.create",
+        Permissions.SPECS_UPDATE,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+
+    allowed_types = {"metric", "log", "trace", "dashboard", "alert", "slo", "other"}
+    if signal_type not in allowed_types:
+        return json.dumps({"error": f"Invalid signal_type. Use one of: {sorted(allowed_types)}"})
+
+    import uuid as _uuid
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        spec = await service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+
+        req_list, err = _parse_linked_requirements(linked_requirements, spec.functional_requirements or [])
+        if err:
+            return json.dumps({"error": err})
+
+        requirement = {
+            "id": f"or_{_uuid.uuid4().hex[:8]}",
+            "title": title,
+            "signal_type": signal_type,
+            "description": description.replace("\\n", "\n") if description else "",
+            "target": target or None,
+            "metric_name": metric_name or None,
+            "threshold": threshold or None,
+            "severity": severity or None,
+            "owner": owner or None,
+            "linked_requirements": req_list,
+            "linked_integration_requirements": parse_multi_value(linked_integration_requirements) or None,
+            "linked_task_ids": None,
+            "status": "active",
+            "notes": notes.replace("\\n", "\n") if notes else None,
+        }
+
+        requirements = list(getattr(spec, "observability_requirements", None) or [])
+        requirements.append(requirement)
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, update_err = await _safe_spec_update(
+            service,
+            spec_id,
+            ctx.agent_id,
+            SpecUpdate(observability_requirements=requirements),
+        )
+        if update_err:
+            return update_err
+        await db.commit()
+
+        coverage = _spec_coverage(spec, observability_requirements=requirements)
+        return json.dumps(
+            {"success": True, "observability_requirement": requirement, **_saturation_or_coverage(coverage)},
+            default=str,
+        )
+
+
+async def _link_task_to_observability_requirement_internal(
+    board_id: str,
+    spec_id: str,
+    requirement_id: str,
+    card_id: str,
+) -> str:
+    """Internal helper for link_task target_type='or'."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "spec.observability_requirements.link_task",
+        Permissions.SPECS_UPDATE,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+    perm_err = _mcp_check_permission(
+        ctx.permissions,
+        "card.link_to.or",
+        Permissions.CARDS_UPDATE,
+    )
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec or spec.board_id != board_id:
+            return json.dumps({"error": "Spec not found"})
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        requirements = list(getattr(spec, "observability_requirements", None) or [])
+        target = next((item for item in requirements if item.get("id") == requirement_id), None)
+        if target is None:
+            return json.dumps({"error": f"Observability requirement '{requirement_id}' not found"})
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        if card_id not in task_ids:
+            task_ids.append(card_id)
+        target["linked_task_ids"] = task_ids
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, update_err = await _safe_spec_update(
+            spec_service,
+            spec_id,
+            ctx.agent_id,
+            SpecUpdate(observability_requirements=requirements),
+        )
+        if update_err:
+            return update_err
+        await db.commit()
+
+        coverage = _spec_coverage(spec, observability_requirements=requirements)
+        return json.dumps(
+            {
+                "success": True,
+                "requirement_id": requirement_id,
+                "card_id": card_id,
+                "linked_tasks": task_ids,
+                **_saturation_or_coverage(coverage),
+            },
+            default=str,
+        )
 
 
 @mcp.tool()
@@ -9809,29 +10148,16 @@ async def okto_pulse_remove_decision(
         return json.dumps({"success": True, "revoked": decision_id, "decision": target})
 
 
-@mcp.tool()
-async def okto_pulse_link_task_to_decision(
+async def _link_task_to_decision_internal(
     board_id: str,
     spec_id: str,
     decision_id: str,
     card_id: str,
 ) -> str:
-    """
-    Link a task card to a Decision, creating traceability.
-
-    Idempotent — re-linking the same card is a no-op. Symmetric with
-    okto_pulse_link_task_to_rule; populates decision.linked_task_ids so the
-    opt-in coverage gate (skip_decisions_coverage=False) can verify each
+    """Internal helper for link_task target_type='decision'. Idempotent —
+    re-linking the same card is a no-op. Populates decision.linked_task_ids so
+    the opt-in coverage gate (skip_decisions_coverage=False) can verify each
     active Decision has at least one linked task.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        decision_id: Decision ID
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -9870,11 +10196,13 @@ async def okto_pulse_link_task_to_decision(
             return _err
         await db.commit()
 
+        cov = _spec_coverage(spec, decisions=decisions)
         return json.dumps({
             "success": True,
             "decision_id": decision_id,
             "card_id": card_id,
             "linked_tasks": task_ids,
+            **_saturation_or_coverage(cov),
         })
 
 
@@ -10161,7 +10489,7 @@ async def okto_pulse_add_api_contract(
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=contracts)
-        return json.dumps({"success": True, "api_contract": contract, "coverage": cov}, default=str)
+        return json.dumps({"success": True, "api_contract": contract, **_saturation_or_coverage(cov)}, default=str)
 
 
 @mcp.tool()
@@ -10345,7 +10673,7 @@ async def okto_pulse_remove_api_contract(
         await db.commit()
 
         cov = _spec_coverage(spec, contracts=new_contracts)
-        return json.dumps({"success": True, "removed": contract_id, "remaining": len(new_contracts), "coverage": cov})
+        return json.dumps({"success": True, "removed": contract_id, "remaining": len(new_contracts), **_saturation_or_coverage(cov)})
 
 
 @mcp.tool()
@@ -11112,18 +11440,9 @@ async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
         return json.dumps({"success": True})
 
 
-@mcp.tool()
-async def okto_pulse_link_card_to_spec(board_id: str, spec_id: str, card_id: str) -> str:
-    """
-    Link an existing card to a spec. The card and spec must belong to the same board.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        card_id: Card ID to link
-
-    Returns:
-        JSON with success status
+async def _link_card_to_spec_internal(board_id: str, spec_id: str, card_id: str) -> str:
+    """Internal helper for link_task target_type='spec'. The card and spec
+    must belong to the same board.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -11680,100 +11999,6 @@ async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: st
 
 
 @mcp.tool()
-async def okto_pulse_list_spec_qa(board_id: str, spec_id: str) -> str:
-    """
-    List all Q&A items on a spec. Check this before starting work to understand
-    any open questions or clarifications about the spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with list of Q&A items
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecQAService(db)
-        items = await service.list_qa(spec_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "spec_id": spec_id,
-                "count": len(items),
-                "qa_items": [
-                    {
-                        "id": qa.id,
-                        "question": qa.question,
-                        "question_type": qa.question_type,
-                        "choices": qa.choices,
-                        "allow_free_text": qa.allow_free_text,
-                        "answer": qa.answer,
-                        "selected": qa.selected,
-                        "asked_by": qa.asked_by,
-                        "answered_by": qa.answered_by,
-                        "created_at": qa.created_at.isoformat(),
-                        "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
-                    }
-                    for qa in items
-                ],
-            },
-            default=str,
-        )
-
-
-# ============================================================================
-# TRACEABILITY REPORT
-# ============================================================================
-
-
-def _mcp_artifact_summary(entity: Any) -> dict[str, Any]:
-    return {
-        "mockups_count": len(getattr(entity, "screen_mockups", None) or []),
-        "knowledge_bases_count": len(getattr(entity, "knowledge_bases", None) or []),
-        "architecture_designs_count": len(
-            getattr(entity, "architecture_designs", None) or []
-        ),
-    }
-
-
-def _mcp_artifact_refs(entity: Any) -> dict[str, Any]:
-    return {
-        "mockups": [
-            {
-                "id": item.get("id"),
-                "title": item.get("title") or item.get("name"),
-                "origin_id": item.get("origin_id"),
-            }
-            for item in (getattr(entity, "screen_mockups", None) or [])
-            if isinstance(item, dict)
-        ],
-        "knowledge_bases": [
-            _serialize_knowledge_base(kb, include_content=False)
-            for kb in (getattr(entity, "knowledge_bases", None) or [])
-        ],
-        "architecture_designs": [
-            {
-                "id": design.id,
-                "title": design.title,
-                "parent_type": design.parent_type,
-                "source_design_id": design.source_design_id,
-                "version": design.version,
-            }
-            for design in (getattr(entity, "architecture_designs", None) or [])
-        ],
-    }
-
-
-@mcp.tool()
 async def okto_pulse_get_traceability_report(
     board_id: str,
     ideation_id: str = "",
@@ -11835,50 +12060,6 @@ async def okto_pulse_get_traceability_report(
 # ============================================================================
 # SPEC KNOWLEDGE BASE TOOLS
 # ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_list_spec_knowledge(board_id: str, spec_id: str) -> str:
-    """
-    List all knowledge base items attached to a spec (titles and descriptions, without content).
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with list of knowledge base items
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecKnowledgeService(db)
-        items = await service.list_knowledge(spec_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "spec_id": spec_id,
-                "count": len(items),
-                "knowledge_bases": [
-                    {
-                        "id": kb.id,
-                        "title": kb.title,
-                        "description": kb.description,
-                        "mime_type": kb.mime_type,
-                        "created_at": kb.created_at.isoformat(),
-                    }
-                    for kb in items
-                ],
-            },
-            default=str,
-        )
 
 
 @mcp.tool()
@@ -12036,50 +12217,6 @@ async def okto_pulse_delete_spec_knowledge(board_id: str, spec_id: str, knowledg
 
 
 @mcp.tool()
-async def okto_pulse_list_refinement_snapshots(board_id: str, refinement_id: str) -> str:
-    """
-    List all version snapshots of a refinement. Each snapshot is an immutable copy
-    of the refinement's state at the moment it was marked as 'done'.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-
-    Returns:
-        JSON with list of snapshot summaries (version, title, created_at)
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = RefinementService(db)
-        snapshots = await service.list_snapshots(refinement_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "refinement_id": refinement_id,
-                "count": len(snapshots),
-                "snapshots": [
-                    {
-                        "version": s.version,
-                        "title": s.title,
-                        "created_by": s.created_by,
-                        "created_at": s.created_at.isoformat(),
-                    }
-                    for s in snapshots
-                ],
-            },
-            default=str,
-        )
-
-
-@mcp.tool()
 async def okto_pulse_get_refinement_snapshot(board_id: str, refinement_id: str, version: str) -> str:
     """
     Get the full immutable snapshot of a refinement at a specific version.
@@ -12132,50 +12269,6 @@ async def okto_pulse_get_refinement_snapshot(board_id: str, refinement_id: str, 
 # ============================================================================
 # REFINEMENT KNOWLEDGE BASE TOOLS
 # ============================================================================
-
-
-@mcp.tool()
-async def okto_pulse_list_refinement_knowledge(board_id: str, refinement_id: str) -> str:
-    """
-    List all knowledge base items attached to a refinement (titles and descriptions, without content).
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-
-    Returns:
-        JSON with list of knowledge base items
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = RefinementKnowledgeService(db)
-        items = await service.list_knowledge(refinement_id)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "refinement_id": refinement_id,
-                "count": len(items),
-                "knowledge_bases": [
-                    {
-                        "id": kb.id,
-                        "title": kb.title,
-                        "description": kb.description,
-                        "mime_type": kb.mime_type,
-                        "created_at": kb.created_at.isoformat(),
-                    }
-                    for kb in items
-                ],
-            },
-            default=str,
-        )
 
 
 @mcp.tool()
@@ -12671,6 +12764,8 @@ async def okto_pulse_get_sprint_context(
                 spec_brs = spec.business_rules or []
                 spec_trs = spec.technical_requirements or []
                 spec_contracts = spec.api_contracts or []
+                spec_irs = getattr(spec, "integration_requirements", None) or []
+                spec_ors = getattr(spec, "observability_requirements", None) or []
 
                 # Resolve scoped items
                 scoped_ts_ids = set(sprint.test_scenario_ids or [])
@@ -12683,6 +12778,10 @@ async def okto_pulse_get_sprint_context(
                               any(tid in sprint_card_ids for tid in (tr.get("linked_task_ids") or []))]
                 scoped_contracts = [c for c in spec_contracts if
                                     any(tid in sprint_card_ids for tid in (c.get("linked_task_ids") or []))]
+                scoped_irs = [ir for ir in spec_irs if
+                              any(tid in sprint_card_ids for tid in (ir.get("linked_task_ids") or []))]
+                scoped_ors = [req for req in spec_ors if
+                              any(tid in sprint_card_ids for tid in (req.get("linked_task_ids") or []))]
 
                 result["spec"] = {
                     "id": spec.id,
@@ -12694,6 +12793,8 @@ async def okto_pulse_get_sprint_context(
                     "test_scenarios": spec_ts,
                     "business_rules": spec_brs,
                     "api_contracts": spec_contracts,
+                    "integration_requirements": spec_irs,
+                    "observability_requirements": spec_ors,
                 }
 
                 result["scoped"] = {
@@ -12701,45 +12802,11 @@ async def okto_pulse_get_sprint_context(
                     "business_rules": scoped_brs,
                     "technical_requirements": scoped_trs,
                     "api_contracts": scoped_contracts,
+                    "integration_requirements": scoped_irs,
+                    "observability_requirements": scoped_ors,
                 }
 
         return json.dumps(result, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_list_sprints(board_id: str, spec_id: str) -> str:
-    """
-    List all sprints for a spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with list of sprint summaries
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    async with get_db_for_mcp() as db:
-        from okto_pulse.core.services.main import SprintService
-        service = SprintService(db)
-        sprints = await service.list_sprints(spec_id)
-        return json.dumps({
-            "spec_id": spec_id,
-            "count": len(sprints),
-            "sprints": [
-                {
-                    "id": s.id, "title": s.title, "status": s.status.value,
-                    "spec_version": s.spec_version,
-                    "test_scenario_ids": s.test_scenario_ids,
-                    "business_rule_ids": s.business_rule_ids,
-                    "labels": s.labels,
-                }
-                for s in sprints
-            ],
-        })
 
 
 @mcp.tool()
@@ -13881,6 +13948,591 @@ async def okto_pulse_kg_tick_run_now(
         "status": "running",
         "scheduled_at": scheduled_at,
     })
+
+
+# ============================================================================
+# CONSOLIDATED POLYMORPHIC LIST HANDLERS (spec P0.B — TR-B1)
+#
+# These 4 tools are the supported list surface. The 15 entity-specific
+# okto_pulse_list_* tools are intentionally not registered.
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_list_by_board(
+    board_id: str,
+    entity_type: str,
+    filters: dict[str, Any] | str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> str:
+    """List top-level entities of a board by type.
+
+    Consolidates: list_specs, list_ideations, list_refinements,
+    list_sprints, list_stories, list_topics.
+
+    Use this single tool instead of the individual list_* tools.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of: spec, ideation, refinement, sprint, story, topic
+        filters: Optional filter dict OR JSON string; validated server-side per entity_type.
+            spec: status, labels, assignee_id
+            ideation: status, labels
+            refinement: status, labels, ideation_id
+            sprint: status (requires filters.spec_id to identify parent spec)
+            story: status, topic_id, linked, converted, include_archived
+            topic: include_archived
+        limit: Max results (default 100, max 200)
+        offset: Skip first N results (default 0)
+
+    Returns:
+        JSON {items: [...], total: int, entity_type: str} or structured error
+    """
+    from okto_pulse.core.mcp.filters import validate_filters
+
+    # Auto-deserialize string JSON (MCP transport convention — other tools use coerce_to_list_str)
+    if isinstance(filters, str):
+        if not filters.strip():
+            filters = None
+        else:
+            try:
+                filters = json.loads(filters)
+            except json.JSONDecodeError as e:
+                return _structured_error("invalid_filter", [], None, f"Invalid JSON in filters: {e}")
+
+    SUPPORTED = ["spec", "ideation", "refinement", "sprint", "story", "topic"]
+    if entity_type not in SUPPORTED:
+        return _structured_error(
+            "unsupported_entity",
+            SUPPORTED,
+            None,
+            f"entity_type='{entity_type}' is not supported by okto_pulse_list_by_board",
+        )
+
+    ok, err = validate_filters(entity_type, filters or {}, scope="by_board")
+    if not ok:
+        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    limit = min(limit, 200)
+    filters = filters or {}
+
+    async with get_db_for_mcp() as db:
+        if entity_type == "spec":
+            service = SpecService(db)
+            items = await service.list_specs(board_id, filters.get("status"))
+            if "labels" in filters and filters["labels"]:
+                label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
+                items = [s for s in items if any(l in (s.labels or []) for l in label_filter)]
+            if "assignee_id" in filters and filters["assignee_id"]:
+                items = [s for s in items if s.assignee_id == filters["assignee_id"]]
+            await db.commit()
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "description": s.description,
+                        "status": s.status.value,
+                        "version": s.version,
+                        "assignee_id": s.assignee_id,
+                        "labels": s.labels,
+                        "created_at": s.created_at.isoformat(),
+                        "updated_at": s.updated_at.isoformat(),
+                    }
+                    for s in paginated
+                ],
+            }, default=str)
+
+        elif entity_type == "ideation":
+            service = IdeationService(db)
+            items = await service.list_ideations(board_id, filters.get("status"))
+            if "labels" in filters and filters["labels"]:
+                label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
+                items = [i for i in items if any(l in (i.labels or []) for l in label_filter)]
+            await db.commit()
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [
+                    {
+                        "id": i.id,
+                        "title": i.title,
+                        "description": i.description,
+                        "problem_statement": i.problem_statement,
+                        "complexity": i.complexity.value if i.complexity else None,
+                        "status": i.status.value,
+                        "version": i.version,
+                        "assignee_id": i.assignee_id,
+                        "labels": i.labels,
+                        "created_at": i.created_at.isoformat(),
+                        "updated_at": i.updated_at.isoformat(),
+                    }
+                    for i in paginated
+                ],
+            }, default=str)
+
+        elif entity_type == "refinement":
+            ideation_id = filters.get("ideation_id", "")
+            if not ideation_id:
+                return _structured_error(
+                    "missing_required_filter",
+                    ["ideation_id"],
+                    None,
+                    "entity_type='refinement' requires filters.ideation_id",
+                )
+            service = RefinementService(db)
+            items = await service.list_refinements(ideation_id)
+            if "status" in filters and filters["status"]:
+                items = [r for r in items if r.status.value == filters["status"]]
+            if "labels" in filters and filters["labels"]:
+                label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
+                items = [r for r in items if any(l in (r.labels or []) for l in label_filter)]
+            await db.commit()
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "ideation_id": ideation_id,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [
+                    {
+                        "id": r.id,
+                        "title": r.title,
+                        "description": r.description,
+                        "in_scope": r.in_scope,
+                        "out_of_scope": r.out_of_scope,
+                        "status": r.status.value,
+                        "version": r.version,
+                        "assignee_id": r.assignee_id,
+                        "labels": r.labels,
+                        "created_at": r.created_at.isoformat(),
+                        "updated_at": r.updated_at.isoformat(),
+                    }
+                    for r in paginated
+                ],
+            }, default=str)
+
+        elif entity_type == "sprint":
+            spec_id = filters.get("spec_id", "")
+            if not spec_id:
+                return _structured_error(
+                    "missing_required_filter",
+                    ["spec_id"],
+                    None,
+                    "entity_type='sprint' requires filters.spec_id to identify the parent spec",
+                )
+            from okto_pulse.core.services.main import SprintService
+            service = SprintService(db)
+            items = await service.list_sprints(spec_id)
+            if "status" in filters and filters["status"]:
+                items = [s for s in items if s.status.value == filters["status"]]
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "spec_id": spec_id,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "status": s.status.value,
+                        "spec_version": s.spec_version,
+                        "test_scenario_ids": s.test_scenario_ids,
+                        "business_rule_ids": s.business_rule_ids,
+                        "labels": s.labels,
+                    }
+                    for s in paginated
+                ],
+            }, default=str)
+
+        elif entity_type == "story":
+            def _optional_bool_filter(value: Any) -> bool | None:
+                if value is None or value == "":
+                    return None
+                if isinstance(value, bool):
+                    return value
+                return _flag_enabled(str(value))
+
+            service = StoryService(db)
+            items = await service.list_stories(
+                board_id,
+                status_filter=filters.get("status") or None,
+                topic_id=filters.get("topic_id") or None,
+                linked=_optional_bool_filter(filters.get("linked")),
+                converted=_optional_bool_filter(filters.get("converted")),
+                include_archived=_flag_enabled(str(filters.get("include_archived", "false"))),
+            )
+            await db.commit()
+            total = len(items)
+            paginated = items[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [_story_payload(s) for s in paginated],
+            }, default=str)
+
+        else:  # topic
+            service = StoryService(db)
+            topics = await service.list_topics(
+                board_id,
+                include_archived=_flag_enabled(str(filters.get("include_archived", "false"))),
+            )
+            await db.commit()
+            total = len(topics)
+            paginated = topics[offset:offset + limit]
+            return json.dumps({
+                "board_id": board_id,
+                "entity_type": entity_type,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [_topic_payload(t) for t in paginated],
+            }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_qa(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    filters: dict[str, Any] | str | None = None,
+) -> str:
+    """List Q&A items for a spec, ideation, or refinement.
+
+    Consolidates: list_spec_qa, list_ideation_qa, list_refinement_qa.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of: spec, ideation, refinement
+        entity_id: ID of the entity (spec_id, ideation_id, or refinement_id)
+        filters: Optional filter dict OR JSON string.
+            status: filter by answer status
+            asked_by: filter by agent/user who asked
+
+    Returns:
+        JSON {qa_items: [...], count: int, entity_type: str} or structured error
+    """
+    from okto_pulse.core.mcp.filters import validate_filters
+
+    # Auto-deserialize string JSON (MCP transport convention)
+    if isinstance(filters, str):
+        if not filters.strip():
+            filters = None
+        else:
+            try:
+                filters = json.loads(filters)
+            except json.JSONDecodeError as e:
+                return _structured_error("invalid_filter", [], None, f"Invalid JSON in filters: {e}")
+
+    SUPPORTED = ["spec", "ideation", "refinement"]
+    if entity_type not in SUPPORTED:
+        return _structured_error(
+            "unsupported_entity",
+            SUPPORTED,
+            None,
+            f"entity_type='{entity_type}' is not supported by okto_pulse_list_qa",
+        )
+
+    ok, err = validate_filters(entity_type, filters or {}, scope="qa")
+    if not ok:
+        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    filters = filters or {}
+
+    def _qa_item(qa) -> dict:
+        return {
+            "id": qa.id,
+            "question": qa.question,
+            "question_type": qa.question_type,
+            "choices": qa.choices,
+            "allow_free_text": getattr(qa, "allow_free_text", None),
+            "answer": qa.answer,
+            "selected": qa.selected,
+            "asked_by": qa.asked_by,
+            "answered_by": qa.answered_by,
+            "created_at": qa.created_at.isoformat(),
+            "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
+        }
+
+    async with get_db_for_mcp() as db:
+        if entity_type == "spec":
+            service = SpecQAService(db)
+            items = await service.list_qa(entity_id)
+        elif entity_type == "ideation":
+            service = IdeationQAService(db)
+            items = await service.list_qa(entity_id)
+        else:  # refinement
+            service = RefinementQAService(db)
+            items = await service.list_qa(entity_id)
+
+        await db.commit()
+
+        # Apply optional filters
+        if filters.get("asked_by"):
+            items = [q for q in items if q.asked_by == filters["asked_by"]]
+
+        return json.dumps({
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "count": len(items),
+            "qa_items": [_qa_item(q) for q in items],
+        }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_knowledge(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    filters: dict[str, Any] | str | None = None,
+) -> str:
+    """List knowledge base items for a spec, ideation, refinement, or card.
+
+    Consolidates: list_spec_knowledge, list_ideation_knowledge,
+    list_refinement_knowledge, list_card_knowledge.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of: spec, ideation, refinement, card
+        entity_id: ID of the entity
+        filters: Optional filter dict OR JSON string.
+            mime_type: filter by MIME type
+
+    Returns:
+        JSON {knowledge_bases: [...], count: int, entity_type: str} or structured error
+    """
+    from okto_pulse.core.mcp.filters import validate_filters
+
+    # Auto-deserialize string JSON (MCP transport convention)
+    if isinstance(filters, str):
+        if not filters.strip():
+            filters = None
+        else:
+            try:
+                filters = json.loads(filters)
+            except json.JSONDecodeError as e:
+                return _structured_error("invalid_filter", [], None, f"Invalid JSON in filters: {e}")
+
+    SUPPORTED = ["spec", "ideation", "refinement", "card"]
+    if entity_type not in SUPPORTED:
+        return _structured_error(
+            "unsupported_entity",
+            SUPPORTED,
+            None,
+            f"entity_type='{entity_type}' is not supported by okto_pulse_list_knowledge",
+        )
+
+    ok, err = validate_filters(entity_type, filters or {}, scope="knowledge")
+    if not ok:
+        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    filters = filters or {}
+    mime_filter: str | None = filters.get("mime_type")
+
+    async with get_db_for_mcp() as db:
+        if entity_type == "spec":
+            service = SpecKnowledgeService(db)
+            items = await service.list_knowledge(entity_id)
+            await db.commit()
+            if mime_filter:
+                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    {
+                        "id": kb.id,
+                        "title": kb.title,
+                        "description": kb.description,
+                        "mime_type": kb.mime_type,
+                        "created_at": kb.created_at.isoformat(),
+                    }
+                    for kb in items
+                ],
+            }, default=str)
+
+        elif entity_type == "ideation":
+            ideation = await IdeationService(db).get_ideation(entity_id)
+            if not ideation or ideation.board_id != board_id:
+                return json.dumps({"error": "Ideation not found"})
+            service = IdeationKnowledgeService(db)
+            items = await service.list_knowledge(entity_id)
+            await db.commit()
+            if mime_filter:
+                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    _serialize_knowledge_base(kb, include_content=False)
+                    for kb in items
+                ],
+            }, default=str)
+
+        elif entity_type == "refinement":
+            service = RefinementKnowledgeService(db)
+            items = await service.list_knowledge(entity_id)
+            await db.commit()
+            if mime_filter:
+                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(items),
+                "knowledge_bases": [
+                    {
+                        "id": kb.id,
+                        "title": kb.title,
+                        "description": kb.description,
+                        "mime_type": kb.mime_type,
+                        "created_at": kb.created_at.isoformat(),
+                    }
+                    for kb in items
+                ],
+            }, default=str)
+
+        else:  # card
+            service = CardService(db)
+            card = await service.get_card(entity_id)
+            if not card or card.board_id != board_id:
+                return json.dumps({"error": "Card not found"})
+            kbs = list(card.knowledge_bases or [])
+            if mime_filter:
+                kbs = [kb for kb in kbs if kb.get("mime_type") == mime_filter]
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(kbs),
+                "knowledge_bases": kbs,
+            }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_list_snapshots(
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+) -> str:
+    """List version snapshots for an ideation or refinement.
+
+    Consolidates: list_ideation_snapshots, list_refinement_snapshots.
+
+    Each snapshot is an immutable copy of the entity's state at the moment
+    it was marked as 'done'.
+
+    Args:
+        board_id: Board ID
+        entity_type: One of: ideation, refinement
+        entity_id: ID of the entity
+
+    Returns:
+        JSON {snapshots: [...], count: int, entity_type: str} or structured error
+    """
+    SUPPORTED = ["ideation", "refinement"]
+    if entity_type not in SUPPORTED:
+        return _structured_error(
+            "unsupported_entity",
+            SUPPORTED,
+            None,
+            f"entity_type='{entity_type}' is not supported by okto_pulse_list_snapshots",
+        )
+
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        if entity_type == "ideation":
+            service = IdeationService(db)
+            snapshots = await service.list_snapshots(entity_id)
+            await db.commit()
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(snapshots),
+                "snapshots": [
+                    {
+                        "version": s.version,
+                        "title": s.title,
+                        "complexity": s.complexity,
+                        "created_by": s.created_by,
+                        "created_at": s.created_at.isoformat(),
+                    }
+                    for s in snapshots
+                ],
+            }, default=str)
+
+        else:  # refinement
+            service = RefinementService(db)
+            snapshots = await service.list_snapshots(entity_id)
+            await db.commit()
+            return json.dumps({
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "count": len(snapshots),
+                "snapshots": [
+                    {
+                        "version": s.version,
+                        "title": s.title,
+                        "created_by": s.created_by,
+                        "created_at": s.created_at.isoformat(),
+                    }
+                    for s in snapshots
+                ],
+            }, default=str)
 
 
 # ============================================================================
