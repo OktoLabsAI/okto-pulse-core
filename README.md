@@ -9,18 +9,18 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 ## What's inside
 
-- **26 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, etc. (Skills entity dropped in 0.2.0.)
-- **17 service classes** — Full business logic with governance rules (Skills service dropped in 0.2.0.)
-- **11 API route modules** — FastAPI REST endpoints
+- **49 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, KG queues, discovery entities and audit/outbox records. (Skills entity dropped in 0.2.0.)
+- **24 service classes** — Full business logic with governance rules, resource propagation, archive/restore, traceability and board-level resource readiness. (Skills service dropped in 0.2.0.)
+- **26 API route modules** — FastAPI REST endpoints
 - **15 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, evidence, bug traceability and sprint health controls.
-- **216 MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
+- **204 MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
   - 21 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability)
-  - Community runtime exposure: 216 core MCP tools, 0 community-only MCP tools
+  - Community runtime exposure: 204 core MCP tools, 0 community-only MCP tools
 - **App factory** — `create_app()` with dependency injection for auth and storage providers
 - **Embedded Knowledge Graph** — per-board Kùzu instance + global discovery meta-graph, deterministic + cognitive workers, 11 node types and 10 relationship types
 
@@ -81,7 +81,46 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-### 0.2.0 — current
+### 0.2.1 — current
+
+#### Branch changelog (`feature/0.2.1`)
+
+This branch turns 0.2.1 into the IR/OR, telemetry, resource-propagation and MCP-surface optimization release.
+
+- Added local-first telemetry and metrics infrastructure: product event schema, settings model, local event store, sender, privacy-aware service layer, metrics REST API and tests for local-only, disabled and anonymous-beacon modes.
+- Added first-class Integration Requirements (IR) and Observability Requirements (OR) across database models, Pydantic schemas, REST responses, MCP handlers, permission registry and presets.
+- Extended spec context, sprint context and coverage summaries so agents and UI callers can see IR/OR items alongside technical requirements, business rules, API contracts, decisions and test scenarios.
+- Added service-layer spec resource propagation. Knowledge Base entries, architecture designs and mockups can be copied from specs to cards automatically when board settings enable auto-derive resources.
+- Hardened propagation triggers on card creation/linking, spec resource edits and architecture updates so downstream task cards stay self-contained without relying on "see the spec" references.
+- Added granular IR/OR permissions (`read`, `create`, `link_task`) and enforced them consistently across API, MCP and permission presets.
+- Added four consolidated MCP list handlers: `okto_pulse_list_by_board`, `okto_pulse_list_qa`, `okto_pulse_list_knowledge` and `okto_pulse_list_snapshots`.
+- Added server-side MCP filter validation and JSON-string filter decoding so tool transports can pass either dict objects or JSON-encoded filter strings.
+- Split the large root MCP agent instructions into a compact pre-flight plus 12 lazy MCP resources under `okto-pulse://workflows/...` and `okto-pulse://reference/...`.
+- Added a runtime MCP schema-generation pilot for card CRUD tools, backed by Pydantic v2 model schemas and a snapshot fixture.
+- Added minimal-envelope response modes and token-optimization refinements for agent workflows, including tighter list/context payloads and refreshed workflow documentation.
+- Added cursor-based keyset pagination to `okto_pulse_get_activity_log`, including opaque `next_cursor`, invalid-cursor structured errors and SQLite timestamp normalization for microsecond-safe pagination.
+- Improved activity-log summaries and card-move logging by covering more action shapes and de-duplicating noisy `card_moved` entries.
+- Hardened architecture services with semantic normalization and additional validation coverage used by the community Architecture UI and Excalidraw import flow.
+- Added focused regression coverage for spec resource propagation, telemetry, IR/OR requirements, consolidated MCP handlers, MCP resources, schema generation, activity-log pagination and story/refinement regressions.
+
+#### Post-release polish already on the branch
+
+- Aligned authoritative handler signatures for the four consolidated MCP list handlers.
+- Unified list handler defaults to `limit=100` for consistency across old and consolidated paths.
+- Clarified that the implementation keeps `board_id` for ACL/auth and uses `entity_type/entity_id` naming for knowledge listings.
+
+#### SDLC E2E gate polish (4 issues from end-to-end run 2026-05-17)
+
+A full ceremonial E2E run (Story → Ideation → Refinement → Spec → Sprint → Cards → Sprint closeout) on the `E2E` board surfaced four small but recurring issues across the spec validation gates, error messages and tool response shapes. All four were fixed in the same `Unreleased` cycle and validated in-vivo against the live MCP server. See `CHANGELOG.md` for the full diff and rationale; the short summary:
+
+- `submit_spec_validation` now runs the AC → test-scenario coverage check as the first pre-requisite, so a spec with uncovered ACs fails BEFORE the validation locks it. The error message also reminds the caller that the spec is locked after a successful validation.
+- The "FR has no linked business rule" error message now uses an `[i]` index marker instead of `FR{i}:`, removing the confusing `FR1: FR2: ...` duplication that occurred whenever the FR text already started with its own label.
+- `okto_pulse_link_task` with `target_type='decision'` now returns the same `saturation` envelope as the other six target types. Previously only the decision branch returned the bare `{success, decision_id, card_id, linked_tasks}` shape, breaking agents that drive "continue linking vs submit validation" off the saturation signal.
+- The `okto_pulse_evaluate_ideation` MCP docstring now states the `status='evaluating'` pre-requisite and the full `draft → review → approved → evaluating → done` flow up front, so agents stop discovering the requirement by trial and error.
+
+Anti-regression tests were added for each fix (`test_spec_validation_gate.py::TestAcScenarioPrecheck`, `TestFrCoverageMessageFormat`, and `test_link_task_dispatcher.py::test_link_helper_returns_saturation_envelope`). The `submit_spec_validation` baseline hash in `tests/.cache/validation_gates_baseline.txt` was bumped to reflect the intentional addition of the new coverage call.
+
+### 0.2.0
 
 #### Branch changelog (`feature/0.2.0`)
 

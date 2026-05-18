@@ -16,7 +16,7 @@ version: "1.0"
    - Current architecture and patterns (requirements must be compatible)
    - Technical constraints (language, frameworks, dependencies)
    - File structure and naming conventions
-3. **Check knowledge bases**: Use `okto_pulse_list_spec_knowledge` and `okto_pulse_get_spec_knowledge` to read attached reference documents
+3. **Check knowledge bases**: Use `okto_pulse_list_knowledge(entity_type="spec")` and `okto_pulse_get_spec_knowledge` to read attached reference documents
 4. **Review Q&A history**: Read all Q&A on the spec AND on the parent ideation/refinement — decisions made during Q&A are binding context
 5. **Then write requirements**:
    - **Functional requirements**: Specific, testable behaviors. Reference real components, endpoints, or modules from the codebase when applicable.
