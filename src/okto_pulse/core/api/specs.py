@@ -1,10 +1,20 @@
 """Spec API endpoints."""
 
+from collections.abc import Iterable
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.infra.permissions import (
+    PermissionSet,
+    check_permission,
+    map_legacy_permissions,
+    resolve_permissions,
+)
+from okto_pulse.core.models.db import Agent, PermissionPreset
 from okto_pulse.core.models.schemas import (
     SpecCreate,
     SpecKnowledgeCreate,
@@ -33,6 +43,151 @@ def _resource_gate_detail(exc: ResourceGateError) -> dict:
         "message": str(exc),
         "details": exc.details,
     }
+
+
+def _raise_permission_denied(error: str) -> None:
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error)
+
+
+async def _resolve_user_permissions(db: AsyncSession, user_id: str, board_id: str) -> PermissionSet:
+    """Resolve the same best-effort permission model exposed by /me/permissions."""
+    result = await db.execute(select(Agent).where(Agent.created_by == user_id).limit(1))
+    agent = result.scalar_one_or_none()
+
+    agent_flags: dict | None = None
+    preset_flags: dict | None = None
+
+    if agent is not None:
+        if isinstance(agent.permission_flags, dict) and agent.permission_flags:
+            agent_flags = agent.permission_flags
+        elif isinstance(agent.permissions, list) and agent.permissions:
+            agent_flags = map_legacy_permissions(agent.permissions)
+
+        if agent.preset_id:
+            preset = await db.get(PermissionPreset, agent.preset_id)
+            if preset and preset.flags:
+                preset_flags = preset.flags
+
+    return resolve_permissions(agent_flags, preset_flags, None)
+
+
+async def _require_permissions(
+    db: AsyncSession,
+    user_id: str,
+    board_id: str,
+    permissions: str | Iterable[str | None],
+) -> None:
+    permission_set = await _resolve_user_permissions(db, user_id, board_id)
+    permission_names = [permissions] if isinstance(permissions, str) else list(permissions)
+    for permission in permission_names:
+        if not permission:
+            continue
+        error = check_permission(permission_set, permission)
+        if error:
+            _raise_permission_denied(error)
+
+
+def _schema_item(value) -> dict:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return dict(value)
+    return {"value": value}
+
+
+def _items_by_id(items) -> dict[str, dict]:
+    indexed: dict[str, dict] = {}
+    for index, item in enumerate(items or []):
+        data = _schema_item(item)
+        key = str(data.get("id") or f"__index_{index}")
+        indexed[key] = data
+    return indexed
+
+
+def _without_linked_tasks(item: dict) -> dict:
+    data = dict(item)
+    data.pop("linked_task_ids", None)
+    return data
+
+
+def _canonical_requirement_for_edit(item: dict) -> dict:
+    data = _without_linked_tasks(item)
+    neutral_defaults = {
+        "description": "",
+        "status": "active",
+        "integration_type": "api",
+        "signal_type": "metric",
+    }
+    for key, default in neutral_defaults.items():
+        if data.get(key) == default:
+            data.pop(key, None)
+    return {
+        key: value
+        for key, value in data.items()
+        if value not in (None, [], {})
+    }
+
+
+def _linked_task_ids(item: dict) -> list[str]:
+    return sorted(str(value) for value in (item.get("linked_task_ids") or []))
+
+
+def _requirement_change_permissions(*, current_items, next_items, prefix: str) -> set[str]:
+    current = _items_by_id(current_items)
+    next_by_key = _items_by_id(next_items)
+    current_keys = set(current)
+    next_keys = set(next_by_key)
+
+    required: set[str] = set()
+    if next_keys - current_keys:
+        required.add(f"{prefix}.create")
+        if any(_linked_task_ids(next_by_key[key]) for key in next_keys - current_keys):
+            required.add(f"{prefix}.link_task")
+    if current_keys - next_keys:
+        required.add(f"{prefix}.delete")
+
+    for key in current_keys & next_keys:
+        before = current[key]
+        after = next_by_key[key]
+        if _linked_task_ids(before) != _linked_task_ids(after):
+            required.add(f"{prefix}.link_task")
+        if _canonical_requirement_for_edit(before) != _canonical_requirement_for_edit(after):
+            required.add(f"{prefix}.edit")
+
+    return required
+
+
+def _spec_update_permission_requirements(spec, data: SpecUpdate) -> set[str]:
+    fields_set = set(
+        getattr(data, "model_fields_set", None)
+        or getattr(data, "__fields_set__", set())
+    )
+    required: set[str] = set()
+
+    if "integration_requirements" in fields_set:
+        required.update(
+            _requirement_change_permissions(
+                current_items=getattr(spec, "integration_requirements", None) or [],
+                next_items=data.integration_requirements or [],
+                prefix="spec.integration_requirements",
+            )
+        )
+        if "spec.integration_requirements.link_task" in required:
+            required.add("card.link_to.ir")
+    if "observability_requirements" in fields_set:
+        required.update(
+            _requirement_change_permissions(
+                current_items=getattr(spec, "observability_requirements", None) or [],
+                next_items=data.observability_requirements or [],
+                prefix="spec.observability_requirements",
+            )
+        )
+        if "spec.observability_requirements.link_task" in required:
+            required.add("card.link_to.or")
+    if {"skip_ir_coverage", "skip_or_coverage"} & fields_set:
+        required.add("spec.entity.edit_coverage_flags")
+
+    return required
 
 
 @router.post(
@@ -103,6 +258,12 @@ async def update_spec(
     `_validate_spec_linked_refs` in services/main.py for the exact rules.
     """
     service = SpecService(db)
+    existing = await service.get_spec(spec_id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+    required_permissions = _spec_update_permission_requirements(existing, data)
+    if required_permissions:
+        await _require_permissions(db, user_id, existing.board_id, sorted(required_permissions))
     try:
         spec = await service.update_spec(spec_id, user_id, data)
     except ValueError as e:
@@ -312,6 +473,138 @@ async def unlink_task_from_scenario(
 
     await db.commit()
     return {"success": True, "spec_id": spec_id, "scenario_id": scenario_id, "card_id": card_id}
+
+
+@router.post(
+    "/specs/{spec_id}/integration-requirements/{requirement_id}/link-task/{card_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def link_task_to_integration_requirement(
+    spec_id: str,
+    requirement_id: str,
+    card_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Link a task card to an integration requirement."""
+    from okto_pulse.core.services import CardService
+
+    spec_service = SpecService(db)
+    spec = await spec_service.get_spec(spec_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+    await _require_permissions(
+        db,
+        user_id,
+        spec.board_id,
+        ["spec.integration_requirements.link_task", "card.link_to.ir"],
+    )
+
+    card_service = CardService(db)
+    card = await card_service.get_card(card_id)
+    if not card:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Card '{card_id}' not found — cannot link a non-existent card.",
+        )
+
+    requirements = list(spec.integration_requirements or [])
+    target = next((item for item in requirements if item.get("id") == requirement_id), None)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Integration requirement '{requirement_id}' not found in spec.",
+        )
+
+    task_ids = list(target.get("linked_task_ids") or [])
+    if card_id not in task_ids:
+        task_ids.append(card_id)
+    target["linked_task_ids"] = task_ids
+
+    try:
+        await spec_service.update_spec(
+            spec_id,
+            user_id,
+            SpecUpdate(integration_requirements=requirements),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+        )
+
+    await db.commit()
+    return {
+        "success": True,
+        "spec_id": spec_id,
+        "requirement_id": requirement_id,
+        "card_id": card_id,
+    }
+
+
+@router.post(
+    "/specs/{spec_id}/observability-requirements/{requirement_id}/link-task/{card_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def link_task_to_observability_requirement(
+    spec_id: str,
+    requirement_id: str,
+    card_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Link a task card to an observability requirement."""
+    from okto_pulse.core.services import CardService
+
+    spec_service = SpecService(db)
+    spec = await spec_service.get_spec(spec_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+    await _require_permissions(
+        db,
+        user_id,
+        spec.board_id,
+        ["spec.observability_requirements.link_task", "card.link_to.or"],
+    )
+
+    card_service = CardService(db)
+    card = await card_service.get_card(card_id)
+    if not card:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Card '{card_id}' not found — cannot link a non-existent card.",
+        )
+
+    requirements = list(spec.observability_requirements or [])
+    target = next((item for item in requirements if item.get("id") == requirement_id), None)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Observability requirement '{requirement_id}' not found in spec.",
+        )
+
+    task_ids = list(target.get("linked_task_ids") or [])
+    if card_id not in task_ids:
+        task_ids.append(card_id)
+    target["linked_task_ids"] = task_ids
+
+    try:
+        await spec_service.update_spec(
+            spec_id,
+            user_id,
+            SpecUpdate(observability_requirements=requirements),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+        )
+
+    await db.commit()
+    return {
+        "success": True,
+        "spec_id": spec_id,
+        "requirement_id": requirement_id,
+        "card_id": card_id,
+    }
 
 
 # ==================== SPEC KNOWLEDGE BASE ====================

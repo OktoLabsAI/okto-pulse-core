@@ -224,6 +224,14 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "tests": {"read": True, "create": True, "update_status": True},
         "rules": {"read": True, "create": True, "edit": True, "delete": True},
         "contracts": {"read": True, "create": True, "edit": True, "delete": True},
+        "integration_requirements": {
+            "read": True, "create": True, "edit": True,
+            "delete": True, "link_task": True,
+        },
+        "observability_requirements": {
+            "read": True, "create": True, "edit": True,
+            "delete": True, "link_task": True,
+        },
         "mockups": {"read": True, "create": True, "edit": True, "delete": True, "annotate": True},
         "architecture": {
             "read": True, "create": True, "edit": True,
@@ -267,7 +275,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "manage_dependencies": True, "delete": True,
         },
         "copy_from_spec": {"mockups": True, "knowledge": True, "qa": True, "architecture": True},
-        "link_to": {"scenario": True, "tr": True, "rule": True, "contract": True},
+        "link_to": {"scenario": True, "tr": True, "rule": True, "contract": True, "ir": True, "or": True},
         "move": {
             "not_started_to_started": True, "started_to_in_progress": True,
             "in_progress_to_on_hold": True, "on_hold_to_in_progress": True,
@@ -514,6 +522,7 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "card.architecture.create", "card.architecture.edit",
         "card.architecture.delete", "card.architecture.import", "card.architecture.render",
         "card.link_to.scenario", "card.link_to.tr", "card.link_to.rule", "card.link_to.contract",
+        "card.link_to.ir", "card.link_to.or",
     ],
     "cards:delete": ["card.entity.delete"],
     "cards:move": [
@@ -539,6 +548,10 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.tests.create", "spec.tests.update_status",
         "spec.rules.create", "spec.rules.edit", "spec.rules.delete",
         "spec.contracts.create", "spec.contracts.edit", "spec.contracts.delete",
+        "spec.integration_requirements.create", "spec.integration_requirements.edit",
+        "spec.integration_requirements.delete", "spec.integration_requirements.link_task",
+        "spec.observability_requirements.create", "spec.observability_requirements.edit",
+        "spec.observability_requirements.delete", "spec.observability_requirements.link_task",
         "spec.mockups.create", "spec.mockups.edit", "spec.mockups.delete", "spec.mockups.annotate",
         "ideation.architecture.create", "ideation.architecture.edit",
         "ideation.architecture.delete", "ideation.architecture.import", "ideation.architecture.render",
@@ -683,8 +696,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     # ------------------------------------------------------------------
     # Spec — defines WHAT to build
     # ------------------------------------------------------------------
-    # Owns: ideation + refinement + spec content (BRs/TRs/contracts/mockups/
-    # knowledge/test scenarios), sprint planning, initial card breakdown.
+    # Owns: ideation + refinement + spec content (BRs/TRs/contracts/IRs/ORs/
+    # mockups/knowledge/test scenarios), sprint planning, initial card breakdown.
     # Cannot: submit gates, validate anything, move cards past not_started,
     # move specs past approved (Validator promotes to validated).
     spec_writer = _build_preset_flags([
@@ -758,6 +771,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.tests.read", "spec.tests.create", "spec.tests.update_status",
         "spec.rules.read", "spec.rules.create", "spec.rules.edit", "spec.rules.delete",
         "spec.contracts.read", "spec.contracts.create", "spec.contracts.edit", "spec.contracts.delete",
+        "spec.integration_requirements.read", "spec.integration_requirements.create",
+        "spec.integration_requirements.edit", "spec.integration_requirements.delete",
+        "spec.integration_requirements.link_task",
+        "spec.observability_requirements.read", "spec.observability_requirements.create",
+        "spec.observability_requirements.edit", "spec.observability_requirements.delete",
+        "spec.observability_requirements.link_task",
         "spec.mockups.read", "spec.mockups.create", "spec.mockups.edit",
         "spec.mockups.delete", "spec.mockups.annotate",
         "spec.architecture.read", "spec.architecture.create", "spec.architecture.edit",
@@ -786,6 +805,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.copy_from_spec.mockups", "card.copy_from_spec.knowledge",
         "card.copy_from_spec.qa", "card.copy_from_spec.architecture",
         "card.link_to.scenario", "card.link_to.tr", "card.link_to.rule", "card.link_to.contract",
+        "card.link_to.ir", "card.link_to.or",
         "card.comments.read", "card.comments.create",
         "card.attachments.read",
         "card.mockups.read",
@@ -831,6 +851,8 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.qa.read", "spec.qa.ask",
         "spec.tests.read",
         "spec.rules.read", "spec.contracts.read",
+        "spec.integration_requirements.read", "spec.integration_requirements.link_task",
+        "spec.observability_requirements.read", "spec.observability_requirements.link_task",
         "spec.mockups.read",
         "spec.architecture.read",
         "spec.knowledge.read",
@@ -867,6 +889,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "card.mockups.read", "card.mockups.annotate",
         "card.architecture.read",
         "card.tests.read",
+        "card.link_to.ir", "card.link_to.or",
         "card.conclusion.read", "card.conclusion.write",
         "card.validation.read",  # read-only — cannot submit, cannot delete
         "card.activity_read",
@@ -915,6 +938,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.qa.read", "spec.qa.ask", "spec.qa.ask_choice", "spec.qa.answer",
         "spec.tests.read", "spec.tests.create", "spec.tests.update_status",
         "spec.rules.read", "spec.contracts.read", "spec.mockups.read",
+        "spec.integration_requirements.read", "spec.observability_requirements.read",
         "spec.architecture.read",
         "spec.knowledge.read",
         "spec.evaluations.read",   # read-only — Validator submits
@@ -997,6 +1021,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.entity.read",
         "spec.qa.read", "spec.qa.ask", "spec.qa.answer",
         "spec.tests.read", "spec.rules.read", "spec.contracts.read",
+        "spec.integration_requirements.read", "spec.observability_requirements.read",
         "spec.mockups.read",
         "spec.architecture.read",
         "spec.knowledge.read",
@@ -1094,6 +1119,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.entity.read",
         "spec.qa.read", "spec.qa.ask",
         "spec.tests.read", "spec.rules.read", "spec.contracts.read",
+        "spec.integration_requirements.read", "spec.observability_requirements.read",
         "spec.mockups.read", "spec.architecture.read", "spec.knowledge.read",
         "spec.evaluations.read", "spec.validation.read",
         "spec.history_read",
@@ -1156,6 +1182,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.entity.read",
         "spec.qa.read", "spec.qa.ask",
         "spec.tests.read", "spec.rules.read", "spec.contracts.read",
+        "spec.integration_requirements.read", "spec.observability_requirements.read",
         "spec.mockups.read", "spec.architecture.read", "spec.knowledge.read",
         "spec.evaluations.read", "spec.validation.read",
         "spec.history_read",
@@ -1214,6 +1241,8 @@ _OWNS_LABELS: list[tuple[str, str]] = [
     ("card.validation.submit", "submit task validations"),
     ("sprint.evaluations.submit", "submit sprint evaluations"),
     ("spec.entity.create", "create specs"),
+    ("spec.integration_requirements.create", "author integration requirements"),
+    ("spec.observability_requirements.create", "author observability requirements"),
     ("card.entity.create", "create cards"),
     ("card.entity.create_test", "create test cards"),
     ("kg.session.commit", "commit KG consolidation"),

@@ -399,6 +399,8 @@ def resolve_spec_references(
     scenarios = list(getattr(spec, "test_scenarios", None) or [])
     rules = list(getattr(spec, "business_rules", None) or [])
     contracts = list(getattr(spec, "api_contracts", None) or [])
+    integration_requirements = list(getattr(spec, "integration_requirements", None) or [])
+    observability_requirements = list(getattr(spec, "observability_requirements", None) or [])
     decisions = [
         item for item in (getattr(spec, "decisions", None) or [])
         if include_superseded or not isinstance(item, dict) or item.get("status", "active") == "active"
@@ -419,7 +421,7 @@ def resolve_spec_references(
             )
 
     linked_fr_indices: set[int] = set()
-    for collection in (rules, contracts, decisions):
+    for collection in (rules, contracts, integration_requirements, observability_requirements, decisions):
         for item in collection:
             if isinstance(item, dict) and _is_linked_to_card(item, card_id):
                 linked_fr_indices |= resolve_linked_fr_indices(
@@ -501,6 +503,30 @@ def resolve_spec_references(
                 linked=_is_linked_to_card(item, card_id),
             )
             for item in contracts
+        ],
+        "integration_requirements": [
+            _structured_item(
+                item,
+                source_type="spec",
+                source_id=spec_id,
+                source_title=spec_title,
+                default_reference_type=structured_reference_type,
+                linked_reference_type="linked_task",
+                linked=_is_linked_to_card(item, card_id),
+            )
+            for item in integration_requirements
+        ],
+        "observability_requirements": [
+            _structured_item(
+                item,
+                source_type="spec",
+                source_id=spec_id,
+                source_title=spec_title,
+                default_reference_type=structured_reference_type,
+                linked_reference_type="linked_task",
+                linked=_is_linked_to_card(item, card_id),
+            )
+            for item in observability_requirements
         ],
         "decisions": [
             _structured_item(

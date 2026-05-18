@@ -2,7 +2,7 @@
 
 Exercises the 5 new MCP handlers via the FastMCP tool registry:
 - okto_pulse_add_card_knowledge
-- okto_pulse_list_card_knowledge
+- okto_pulse_list_knowledge (entity_type="card")
 - okto_pulse_get_card_knowledge
 - okto_pulse_update_card_knowledge
 - okto_pulse_delete_card_knowledge
@@ -90,11 +90,16 @@ async def test_add_then_list_returns_the_kb(_seed_card):
     assert add.get("success") is True, add
     kb_id = add["knowledge"]["id"]
 
-    listed = await _call("okto_pulse_list_card_knowledge", board_id=BOARD_ID, card_id=card_id)
-    assert listed.get("success") is True
-    titles = [k["title"] for k in listed["knowledge"]]
+    listed = await _call(
+        "okto_pulse_list_knowledge",
+        board_id=BOARD_ID,
+        entity_type="card",
+        entity_id=card_id,
+    )
+    assert listed.get("entity_type") == "card"
+    titles = [k["title"] for k in listed["knowledge_bases"]]
     assert "Auth design" in titles
-    ids = [k["id"] for k in listed["knowledge"]]
+    ids = [k["id"] for k in listed["knowledge_bases"]]
     assert kb_id in ids
 
 
@@ -151,8 +156,13 @@ async def test_delete_removes_only_target(_seed_card):
     )
     assert rem.get("success") is True
 
-    listed = await _call("okto_pulse_list_card_knowledge", board_id=BOARD_ID, card_id=card_id)
-    ids = [k["id"] for k in listed["knowledge"]]
+    listed = await _call(
+        "okto_pulse_list_knowledge",
+        board_id=BOARD_ID,
+        entity_type="card",
+        entity_id=card_id,
+    )
+    ids = [k["id"] for k in listed["knowledge_bases"]]
     assert a_id not in ids and b_id in ids
 
 

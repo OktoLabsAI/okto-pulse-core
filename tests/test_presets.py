@@ -729,6 +729,110 @@ def test_legacy_permission_map_includes_architecture_flags():
 
 
 # ---------------------------------------------------------------------------
+# IR / OR permissions
+# ---------------------------------------------------------------------------
+
+
+IR_OR_RESOURCE_FLAGS = (
+    "spec.integration_requirements.read",
+    "spec.integration_requirements.create",
+    "spec.integration_requirements.edit",
+    "spec.integration_requirements.delete",
+    "spec.integration_requirements.link_task",
+    "spec.observability_requirements.read",
+    "spec.observability_requirements.create",
+    "spec.observability_requirements.edit",
+    "spec.observability_requirements.delete",
+    "spec.observability_requirements.link_task",
+)
+
+
+def test_ir_or_registry_contains_first_class_resource_flags():
+    from okto_pulse.core.infra.permissions import ALL_FLAGS
+
+    for flag in IR_OR_RESOURCE_FLAGS:
+        assert flag in ALL_FLAGS
+    assert "card.link_to.ir" in ALL_FLAGS
+    assert "card.link_to.or" in ALL_FLAGS
+
+
+def test_spec_preset_owns_ir_or_authoring_and_task_links(presets_by_name):
+    flags = presets_by_name["Spec"]["flags"]
+
+    for flag in IR_OR_RESOURCE_FLAGS:
+        assert _get_nested(flags, flag) is True
+    assert _get_nested(flags, "card.link_to.ir") is True
+    assert _get_nested(flags, "card.link_to.or") is True
+
+
+def test_executor_can_read_and_link_ir_or_without_authoring(presets_by_name):
+    flags = presets_by_name["Executor"]["flags"]
+
+    assert _get_nested(flags, "spec.integration_requirements.read") is True
+    assert _get_nested(flags, "spec.integration_requirements.link_task") is True
+    assert _get_nested(flags, "spec.observability_requirements.read") is True
+    assert _get_nested(flags, "spec.observability_requirements.link_task") is True
+    assert _get_nested(flags, "card.link_to.ir") is True
+    assert _get_nested(flags, "card.link_to.or") is True
+
+    for flag in (
+        "spec.integration_requirements.create",
+        "spec.integration_requirements.edit",
+        "spec.integration_requirements.delete",
+        "spec.observability_requirements.create",
+        "spec.observability_requirements.edit",
+        "spec.observability_requirements.delete",
+    ):
+        assert _get_nested(flags, flag) is False
+
+
+@pytest.mark.parametrize("preset_name", ["QA", "Validator", "Reporter", "Sprint Manager"])
+def test_non_authoring_presets_read_ir_or_without_editing(presets_by_name, preset_name):
+    flags = presets_by_name[preset_name]["flags"]
+
+    assert _get_nested(flags, "spec.integration_requirements.read") is True
+    assert _get_nested(flags, "spec.observability_requirements.read") is True
+    for flag in (
+        "spec.integration_requirements.create",
+        "spec.integration_requirements.edit",
+        "spec.integration_requirements.delete",
+        "spec.integration_requirements.link_task",
+        "spec.observability_requirements.create",
+        "spec.observability_requirements.edit",
+        "spec.observability_requirements.delete",
+        "spec.observability_requirements.link_task",
+        "card.link_to.ir",
+        "card.link_to.or",
+    ):
+        assert _get_nested(flags, flag) is False
+
+
+def test_legacy_permission_map_includes_ir_or_flags():
+    from okto_pulse.core.infra.permissions import map_legacy_permissions
+
+    read_flags = map_legacy_permissions(["board:read"])
+    assert _get_nested(read_flags, "spec.integration_requirements.read") is True
+    assert _get_nested(read_flags, "spec.observability_requirements.read") is True
+
+    spec_update_flags = map_legacy_permissions(["specs:update"])
+    for flag in (
+        "spec.integration_requirements.create",
+        "spec.integration_requirements.edit",
+        "spec.integration_requirements.delete",
+        "spec.integration_requirements.link_task",
+        "spec.observability_requirements.create",
+        "spec.observability_requirements.edit",
+        "spec.observability_requirements.delete",
+        "spec.observability_requirements.link_task",
+    ):
+        assert _get_nested(spec_update_flags, flag) is True
+
+    card_update_flags = map_legacy_permissions(["cards:update"])
+    assert _get_nested(card_update_flags, "card.link_to.ir") is True
+    assert _get_nested(card_update_flags, "card.link_to.or") is True
+
+
+# ---------------------------------------------------------------------------
 # Stories and Topics permissions
 # ---------------------------------------------------------------------------
 
