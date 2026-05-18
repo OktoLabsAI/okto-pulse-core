@@ -700,6 +700,7 @@ class DeterministicWorker:
 
         # 7. APIContract + `implements` edges to Requirement via linked_requirements.
         fr_text_to_cid = {text.strip(): cid for cid, text in fr_ids}
+        api_ids_by_id: dict[str, str] = {}
         for i, api in enumerate(spec.get("api_contracts") or []):
             if not isinstance(api, dict):
                 continue
@@ -718,6 +719,9 @@ class DeterministicWorker:
                 source_confidence=1.0,
             ))
             _add_belongs_to(api_cid, "api", i)
+            api_id = api.get("id")
+            if api_id:
+                api_ids_by_id[str(api_id)] = api_cid
             linked = api.get("linked_requirements") or []
             if not linked:
                 result.missing_link_candidates.append(MissingLinkCandidate(
@@ -751,6 +755,88 @@ class DeterministicWorker:
                     confidence=1.0,
                     rule_id=f"implements/fr_match@{WORKER_VERSION}",
                 ))
+
+        # 7a. Integration Requirements → Requirement. IRs reuse the existing
+        # Requirement node type by design: they are actionable requirements
+        # about APIs, queues, stored procedures, events, files, and data
+        # contracts. When linked_api_contracts is present, emit deterministic
+        # APIContract → Requirement implements edges.
+        ir_ids_by_id: dict[str, str] = {}
+        for i, ir in enumerate(spec.get("integration_requirements") or []):
+            if not isinstance(ir, dict) or ir.get("status", "active") != "active":
+                continue
+            title = ir.get("title") or f"IR-{i+1}"
+            content_parts = [
+                ir.get("description") or "",
+                f"type={ir.get('integration_type')}" if ir.get("integration_type") else "",
+                f"provider={ir.get('provider')}" if ir.get("provider") else "",
+                f"consumer={ir.get('consumer')}" if ir.get("consumer") else "",
+                f"endpoint={ir.get('endpoint')}" if ir.get("endpoint") else "",
+                f"contract_ref={ir.get('contract_ref')}" if ir.get("contract_ref") else "",
+            ]
+            content = "\n".join(part for part in content_parts if part).strip() or title
+            raw_parts.append(content)
+            ir_cid = f"{prefix}_ir_{i}"
+            ir_id = ir.get("id")
+            if ir_id:
+                ir_ids_by_id[str(ir_id)] = ir_cid
+            result.nodes.append(EmittedNode(
+                candidate_id=ir_cid,
+                node_type="Requirement",
+                title=title[:120],
+                content=content,
+                source_artifact_ref=_spec_child_ref(spec_id, "integration_requirement", ir, i),
+                source_confidence=1.0,
+            ))
+            _add_belongs_to(ir_cid, "ir", i)
+            for idx, contract_ref in enumerate(ir.get("linked_api_contracts") or []):
+                api_cid = api_ids_by_id.get(str(contract_ref))
+                if api_cid is None:
+                    result.missing_link_candidates.append(MissingLinkCandidate(
+                        edge_type="implements",
+                        from_candidate_id=f"api_contract:{contract_ref}",
+                        from_candidate_title=str(contract_ref),
+                        reason="no_api_contract_match",
+                        suggested_candidates=list(api_ids_by_id.values()),
+                        artifact_ref=artifact_ref,
+                    ))
+                    continue
+                result.edges.append(EmittedEdge(
+                    candidate_id=f"{prefix}_edge_api_{idx}_implements_ir_{i}",
+                    edge_type="implements",
+                    from_candidate_id=api_cid,
+                    to_candidate_id=ir_cid,
+                    confidence=1.0,
+                    rule_id=f"implements/ir_api_contract_link@{WORKER_VERSION}",
+                ))
+
+        # 7c. Observability Requirements → Constraint. ORs reuse the existing
+        # Constraint node type because they constrain delivery with dashboards,
+        # metrics, alerts, SLOs, thresholds, logs, or traces.
+        for i, req in enumerate(spec.get("observability_requirements") or []):
+            if not isinstance(req, dict) or req.get("status", "active") != "active":
+                continue
+            title = req.get("title") or f"OR-{i+1}"
+            content_parts = [
+                req.get("description") or "",
+                f"signal={req.get('signal_type')}" if req.get("signal_type") else "",
+                f"target={req.get('target')}" if req.get("target") else "",
+                f"metric={req.get('metric_name')}" if req.get("metric_name") else "",
+                f"threshold={req.get('threshold')}" if req.get("threshold") else "",
+                f"severity={req.get('severity')}" if req.get("severity") else "",
+            ]
+            content = "\n".join(part for part in content_parts if part).strip() or title
+            raw_parts.append(content)
+            or_cid = f"{prefix}_or_{i}"
+            result.nodes.append(EmittedNode(
+                candidate_id=or_cid,
+                node_type="Constraint",
+                title=title[:120],
+                content=content,
+                source_artifact_ref=_spec_child_ref(spec_id, "observability_requirement", req, i),
+                source_confidence=1.0,
+            ))
+            _add_belongs_to(or_cid, "or", i)
 
         # 7b. Architecture Design light KG projection. No new Kuzu types are
         # needed: architecture envelope/entities map to Entity, while

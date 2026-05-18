@@ -37,6 +37,9 @@ from okto_pulse.core.services.resource_gate import (
     ResourceGateService,
     ResourceGateViolation,
 )
+from okto_pulse.core.services.spec_resource_propagation import (
+    SpecResourcePropagationService,
+)
 
 __all__ = [
     "ArchitectureDesignRepository",
@@ -70,4 +73,5 @@ __all__ = [
     "ResourceGateNotFound",
     "ResourceGateService",
     "ResourceGateViolation",
+    "SpecResourcePropagationService",
 ]

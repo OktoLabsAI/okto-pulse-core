@@ -286,7 +286,11 @@ class TestSpecCoverageSummaryParity:
         # Ideação #10 Fase 1 — decisions paridade
         "decisions_coverage_pct", "decisions_linked", "decisions_total",
         "decisions_uncovered_ids",
+        # IR/OR first-class requirement coverage
+        "ir_task_linkage_pct", "irs_linked", "irs_total", "irs_uncovered_ids",
+        "or_task_linkage_pct", "ors_linked", "ors_total", "ors_uncovered_ids",
         "skip_test_coverage", "skip_rules_coverage", "skip_decisions_coverage",
+        "skip_ir_coverage", "skip_or_coverage",
     }
 
     class _FakeSpec:

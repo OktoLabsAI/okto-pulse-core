@@ -101,6 +101,8 @@ def _spec_to_dict(spec: Spec) -> dict:
         "business_rules": spec.business_rules or [],
         "test_scenarios": spec.test_scenarios or [],
         "api_contracts": spec.api_contracts or [],
+        "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+        "observability_requirements": getattr(spec, "observability_requirements", None) or [],
         "decisions": spec.decisions or [],
         "architecture_designs": [
             _architecture_design_to_dict(design)

@@ -105,6 +105,7 @@ from okto_pulse.core.models.schemas import (
 from okto_pulse.core.services.analytics_service import resolve_linked_criteria_to_indices
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
 from okto_pulse.core.services.resource_gate import ResourceGateService
+from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 settings = get_settings()
 
@@ -480,11 +481,12 @@ class BoardService:
         if not board:
             return None
 
+        previous_settings = dict(board.settings or {})
         update_data = data.model_dump(exclude_unset=True)
         # Serialize settings if present
         if "settings" in update_data and update_data["settings"] is not None:
             update_data["settings"] = (
-                update_data["settings"].model_dump()
+                update_data["settings"].model_dump(mode="json")
                 if hasattr(update_data["settings"], "model_dump")
                 else update_data["settings"]
             )
@@ -492,6 +494,25 @@ class BoardService:
             setattr(board, key, value)
             if key == "settings":
                 flag_modified(board, "settings")
+
+        settings_changed = "settings" in update_data and update_data.get("settings") is not None
+        if settings_changed:
+            next_settings = dict(board.settings or {})
+            previous_auto = bool(previous_settings.get("auto_derive_spec_resources_enabled", False))
+            next_auto = bool(next_settings.get("auto_derive_spec_resources_enabled", False))
+            previous_types = list(previous_settings.get("auto_derive_spec_resource_types") or [])
+            next_types = list(next_settings.get("auto_derive_spec_resource_types") or [])
+            resource_automation_changed = (
+                previous_auto != next_auto
+                or previous_types != next_types
+            )
+            if next_auto and resource_automation_changed:
+                await self.db.flush()
+                await SpecResourcePropagationService(self.db).propagate_for_board(
+                    board_id=board_id,
+                    actor_id=user_id,
+                    trigger="board_settings_auto_derive_changed",
+                )
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
@@ -680,6 +701,14 @@ class CardService:
                 spec=spec,
             )
 
+        await SpecResourcePropagationService(self.db).propagate_for_card(
+            board_id=board_id,
+            spec_id=card.spec_id,
+            card_id=card.id,
+            actor_id=user_id,
+            trigger="card_created",
+        )
+
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import CardCreated
 
@@ -748,6 +777,8 @@ class CardService:
         inherit_linked_task_ids("test_scenarios", collect_scenarios=True)
         inherit_linked_task_ids("business_rules")
         inherit_linked_task_ids("api_contracts")
+        inherit_linked_task_ids("integration_requirements")
+        inherit_linked_task_ids("observability_requirements")
         inherit_linked_task_ids("technical_requirements")
         inherit_linked_task_ids("decisions")
 
@@ -799,6 +830,7 @@ class CardService:
 
         old_priority = _enum_value(card.priority)
         old_severity = _enum_value(getattr(card, "severity", None))
+        old_spec_id = card.spec_id
 
         # Serialize screen_mockups if present
         if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
@@ -807,11 +839,20 @@ class CardService:
                 for s in update_data["screen_mockups"]
             ]
 
-        card_json_fields = {"labels", "test_scenario_ids", "conclusions", "screen_mockups"}
+        card_json_fields = {"labels", "test_scenario_ids", "conclusions", "screen_mockups", "knowledge_bases"}
         for key, value in update_data.items():
             setattr(card, key, value)
             if key in card_json_fields:
                 flag_modified(card, key)
+
+        if "spec_id" in update_data and card.spec_id and card.spec_id != old_spec_id:
+            await SpecResourcePropagationService(self.db).propagate_for_card(
+                board_id=card.board_id,
+                spec_id=card.spec_id,
+                card_id=card.id,
+                actor_id=user_id,
+                trigger="card_linked_via_update",
+            )
 
         actor_name = await resolve_actor_name(self.db, user_id, card.board_id)
         await self._log_activity(
@@ -1235,6 +1276,43 @@ class CardService:
 
     # ---- Coverage gate functions (used by SpecService.move_spec) ----
 
+    async def check_ac_scenario_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every acceptance criterion is covered by at least one test scenario.
+
+        Mirrors the AC→Scenario gate enforced at move_spec→done, but runs at
+        submit_spec_validation time so the failure surfaces BEFORE the spec is
+        locked. Without this pre-check, validation could succeed (locking the
+        spec) and then move→done would fail because uncovered ACs cannot be
+        addressed without first unlocking and resubmitting validation.
+        """
+        skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
+        if spec.skip_test_coverage or skip_global:
+            return
+        criteria = list(spec.acceptance_criteria or [])
+        scenarios = list(spec.test_scenarios or [])
+        if not criteria:
+            return
+        covered_indices: set[int] = set()
+        for scenario in scenarios:
+            covered_indices |= resolve_linked_criteria_to_indices(
+                scenario.get("linked_criteria"),
+                criteria,
+            )
+        uncovered = [
+            f"[{i}] {criterion[:80]}..."
+            for i, criterion in enumerate(criteria)
+            if i not in covered_indices
+        ]
+        if uncovered:
+            raise ValueError(
+                f"Cannot validate spec: {len(uncovered)} acceptance criteria lack test scenarios. "
+                f"Uncovered: {'; '.join(uncovered[:5])}"
+                f"{f' (and {len(uncovered) - 5} more)' if len(uncovered) > 5 else ''}. "
+                f"Create test scenarios linked to each AC BEFORE submitting validation — "
+                f"once validation passes the spec is locked and scenarios cannot be added. "
+                f"Alternatively, enable 'skip test coverage' on the spec or board."
+            )
+
     async def check_test_coverage(self, spec: "Spec", board: "Board | None") -> None:
         """Check that every test scenario has at least one linked card of type TEST."""
         skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
@@ -1305,7 +1383,7 @@ class CardService:
         uncovered = [(i, fr) for i, fr in enumerate(frs) if i not in covered_fr_indices]
         if uncovered:
             previews = ", ".join(
-                f'"FR{i}: {fr[:40]}..."' if len(fr) > 40 else f'"FR{i}: {fr}"'
+                f'"[{i}] {fr[:40]}..."' if len(fr) > 40 else f'"[{i}] {fr}"'
                 for i, fr in uncovered[:3]
             )
             suffix = f" and {len(uncovered) - 3} more" if len(uncovered) > 3 else ""
@@ -1384,6 +1462,60 @@ class CardService:
                 f"REQUIRED ACTION: Link task cards to each API contract via "
                 f"okto_pulse_link_task_to_contract. "
                 f"Alternatively, enable 'skip contract coverage' on the spec or board."
+            )
+
+    async def check_ir_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every active integration requirement has a linked task."""
+        skip_global = (board.settings or {}).get("skip_ir_coverage_global", False) if board else False
+        if getattr(spec, "skip_ir_coverage", False) or skip_global:
+            return
+        requirements = [
+            ir for ir in (getattr(spec, "integration_requirements", None) or [])
+            if isinstance(ir, dict) and ir.get("status", "active") == "active"
+        ]
+        if not requirements:
+            return
+        unlinked = [ir for ir in requirements if not ir.get("linked_task_ids")]
+        if unlinked:
+            titles = ", ".join(
+                f'"{ir.get("title", ir.get("id", "?"))}"'
+                for ir in unlinked[:3]
+            )
+            suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(unlinked)} integration requirement(s) "
+                f"in spec '{spec.title}' have no linked task cards "
+                f"({titles}{suffix}). "
+                f"REQUIRED ACTION: Link task cards to each IR via "
+                f"okto_pulse_link_task_to_integration_requirement. "
+                f"Alternatively, enable 'skip IR coverage' on the spec or board."
+            )
+
+    async def check_or_coverage(self, spec: "Spec", board: "Board | None") -> None:
+        """Check that every active observability requirement has a linked task."""
+        skip_global = (board.settings or {}).get("skip_or_coverage_global", False) if board else False
+        if getattr(spec, "skip_or_coverage", False) or skip_global:
+            return
+        requirements = [
+            req for req in (getattr(spec, "observability_requirements", None) or [])
+            if isinstance(req, dict) and req.get("status", "active") == "active"
+        ]
+        if not requirements:
+            return
+        unlinked = [req for req in requirements if not req.get("linked_task_ids")]
+        if unlinked:
+            titles = ", ".join(
+                f'"{req.get("title", req.get("id", "?"))}"'
+                for req in unlinked[:3]
+            )
+            suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(unlinked)} observability requirement(s) "
+                f"in spec '{spec.title}' have no linked task cards "
+                f"({titles}{suffix}). "
+                f"REQUIRED ACTION: Link task cards to each OR via "
+                f"okto_pulse_link_task_to_observability_requirement. "
+                f"Alternatively, enable 'skip OR coverage' on the spec or board."
             )
 
     async def check_decisions_coverage(self, spec: "Spec", board: "Board | None") -> None:
@@ -1860,6 +1992,8 @@ class CardService:
                     "test_scenarios",
                     "business_rules",
                     "api_contracts",
+                    "integration_requirements",
+                    "observability_requirements",
                     "technical_requirements",
                     "decisions",
                 )
@@ -2320,15 +2454,21 @@ async def _validate_spec_linked_refs(
         AC labels like "AC1" are rejected — the SpecModal coverage widget
         does not recognise them and they would silently appear uncovered.
 
-    - linked_requirements (business_rules + api_contracts → FR):
+    - linked_requirements (business_rules + api_contracts + IR + OR → FR):
         Same rule — index "0".."N-1" OR exact FR text. Anything else
         (including "FR1" labels) is rejected.
 
     - linked_rules (api_contracts → BR):
         Must match an existing business_rule.id in the same spec.
 
+    - linked_api_contracts (IR → API contract):
+        Must match an existing api_contract.id in the same spec.
+
+    - linked_integration_requirements (OR → IR):
+        Must match an existing integration_requirement.id in the same spec.
+
     - linked_task_ids (test_scenarios + business_rules + api_contracts +
-      structured_trs → Card):
+      IR + OR + structured_trs → Card):
         Each id must resolve to an existing Card row in the DB.
 
     Raises ValueError with all offenders enumerated so the caller can fix
@@ -2348,6 +2488,14 @@ async def _validate_spec_linked_refs(
     final_contracts: list[dict] = [
         c if isinstance(c, dict) else c.model_dump()
         for c in (_final("api_contracts", []) or [])
+    ]
+    final_irs: list[dict] = [
+        ir if isinstance(ir, dict) else ir.model_dump()
+        for ir in (_final("integration_requirements", []) or [])
+    ]
+    final_ors: list[dict] = [
+        req if isinstance(req, dict) else req.model_dump()
+        for req in (_final("observability_requirements", []) or [])
     ]
     final_scenarios: list[dict] = [
         s if isinstance(s, dict) else s.model_dump()
@@ -2370,6 +2518,8 @@ async def _validate_spec_linked_refs(
     valid_fr_texts = set(final_frs)
     valid_ac_texts = set(final_acs)
     valid_br_ids = {br.get("id") for br in final_brs if br.get("id")}
+    valid_contract_ids = {ct.get("id") for ct in final_contracts if ct.get("id")}
+    valid_ir_ids = {ir.get("id") for ir in final_irs if ir.get("id")}
 
     errors: list[str] = []
 
@@ -2401,6 +2551,30 @@ async def _validate_spec_linked_refs(
                 errors.append(
                     f"{owner}: linked_rules reference '{ref}' does not match any business_rule.id "
                     f"in the spec (valid: {sorted(valid_br_ids) or 'none'})."
+                )
+
+    # integration_requirements.linked_requirements → FR
+    # integration_requirements.linked_api_contracts → api_contract.id
+    for ir in final_irs:
+        owner = f"IR '{ir.get('id') or ir.get('title') or '?'}'"
+        _check_index_or_text(ir.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+        for ref in ir.get("linked_api_contracts") or []:
+            if str(ref) not in valid_contract_ids:
+                errors.append(
+                    f"{owner}: linked_api_contracts reference '{ref}' does not match any api_contract.id "
+                    f"in the spec (valid: {sorted(valid_contract_ids) or 'none'})."
+                )
+
+    # observability_requirements.linked_requirements → FR
+    # observability_requirements.linked_integration_requirements → IR.id
+    for req in final_ors:
+        owner = f"OR '{req.get('id') or req.get('title') or '?'}'"
+        _check_index_or_text(req.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+        for ref in req.get("linked_integration_requirements") or []:
+            if str(ref) not in valid_ir_ids:
+                errors.append(
+                    f"{owner}: linked_integration_requirements reference '{ref}' does not match any integration_requirement.id "
+                    f"in the spec (valid: {sorted(valid_ir_ids) or 'none'})."
                 )
 
     # test_scenarios.linked_criteria → AC
@@ -2441,6 +2615,16 @@ async def _validate_spec_linked_refs(
         for tid in ct.get("linked_task_ids") or []:
             all_task_ids.add(tid)
             task_owners.setdefault(tid, []).append(owner)
+    for ir in final_irs:
+        owner = f"IR '{ir.get('id') or ir.get('title') or '?'}'"
+        for tid in ir.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for req in final_ors:
+        owner = f"OR '{req.get('id') or req.get('title') or '?'}'"
+        for tid in req.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
     for tr in final_trs_structured:
         owner = f"TR '{tr.get('id')}'"
         for tid in tr.get("linked_task_ids") or []:
@@ -2470,6 +2654,7 @@ async def _validate_spec_linked_refs(
         raise ValueError(
             f"Cannot update spec: {len(errors)} orphan link reference(s) found. {joined}{more}. "
             f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC, the BR.id for linked_rules, "
+            f"the api_contract.id / integration_requirement.id for cross-resource links, "
             f"and an existing Card.id for linked_task_ids."
         )
 
@@ -2563,6 +2748,11 @@ class SpecService:
             technical_requirements=data.technical_requirements,
             acceptance_criteria=data.acceptance_criteria,
             test_scenarios=[s.model_dump() for s in data.test_scenarios] if data.test_scenarios else None,
+            screen_mockups=[s.model_dump() for s in data.screen_mockups] if data.screen_mockups else None,
+            business_rules=[r.model_dump() for r in data.business_rules] if data.business_rules else None,
+            api_contracts=[c.model_dump() for c in data.api_contracts] if data.api_contracts else None,
+            integration_requirements=[ir.model_dump() for ir in data.integration_requirements] if data.integration_requirements else None,
+            observability_requirements=[req.model_dump() for req in data.observability_requirements] if data.observability_requirements else None,
             decisions=[d.model_dump() for d in data.decisions] if data.decisions else None,
             status=data.status,
             assignee_id=data.assignee_id,
@@ -2615,6 +2805,8 @@ class SpecService:
                 *([{"field": "functional_requirements", "old": None, "new": data.functional_requirements}] if data.functional_requirements else []),
                 *([{"field": "technical_requirements", "old": None, "new": data.technical_requirements}] if data.technical_requirements else []),
                 *([{"field": "acceptance_criteria", "old": None, "new": data.acceptance_criteria}] if data.acceptance_criteria else []),
+                *([{"field": "integration_requirements", "old": None, "new": [ir.model_dump() for ir in data.integration_requirements]}] if data.integration_requirements else []),
+                *([{"field": "observability_requirements", "old": None, "new": [req.model_dump() for req in data.observability_requirements]}] if data.observability_requirements else []),
             ],
         )
         return spec
@@ -2680,6 +2872,7 @@ class SpecService:
         # them so ConsolidationEnqueuer re-extracts the spec into the KG.
         semantic_fields = {
             "decisions", "business_rules", "api_contracts",
+            "integration_requirements", "observability_requirements",
             "test_scenarios", "screen_mockups",
         }
         bumps_version = bool(content_fields & update_data.keys())
@@ -2688,8 +2881,16 @@ class SpecService:
         # Capture old values for diff
         old_data = {k: getattr(spec, k) for k in update_data.keys()}
 
-        # Serialize test_scenarios, screen_mockups, business_rules, api_contracts, decisions if present
-        for json_list_field in ("test_scenarios", "screen_mockups", "business_rules", "api_contracts", "decisions"):
+        # Serialize structured JSON list fields if present.
+        for json_list_field in (
+            "test_scenarios",
+            "screen_mockups",
+            "business_rules",
+            "api_contracts",
+            "integration_requirements",
+            "observability_requirements",
+            "decisions",
+        ):
             if json_list_field in update_data and update_data[json_list_field] is not None:
                 update_data[json_list_field] = [
                     s.model_dump() if hasattr(s, "model_dump") else s
@@ -2702,7 +2903,19 @@ class SpecService:
         # rejects orphan references with a precise error message.
         await _validate_spec_linked_refs(self.db, spec, update_data)
 
-        json_fields = {"test_scenarios", "screen_mockups", "business_rules", "api_contracts", "decisions", "functional_requirements", "technical_requirements", "acceptance_criteria", "labels"}
+        json_fields = {
+            "test_scenarios",
+            "screen_mockups",
+            "business_rules",
+            "api_contracts",
+            "integration_requirements",
+            "observability_requirements",
+            "decisions",
+            "functional_requirements",
+            "technical_requirements",
+            "acceptance_criteria",
+            "labels",
+        }
         for key, value in update_data.items():
             setattr(spec, key, value)
             if key in json_fields:
@@ -2768,6 +2981,13 @@ class SpecService:
                 changes=changes, version=spec.version,
                 summary=f"Updated: {changed_fields}",
             )
+        if "screen_mockups" in update_data:
+            await SpecResourcePropagationService(self.db).propagate_for_spec(
+                board_id=spec.board_id,
+                spec_id=spec.id,
+                actor_id=user_id,
+                trigger="spec_mockups_changed",
+            )
         return spec
 
     # ---- Spec state machine ----
@@ -2830,6 +3050,9 @@ class SpecService:
             await card_service.check_rules_coverage(spec, board)
             await card_service.check_trs_coverage(spec, board)
             await card_service.check_contract_coverage(spec, board)
+            await card_service.check_ir_coverage(spec, board)
+            await card_service.check_or_coverage(spec, board)
+            await card_service.check_decisions_coverage(spec, board)
 
             # Spec Validation Gate: when enabled, the only path to validated is via
             # submit_spec_validation (which runs the semantic gate). Direct move_spec
@@ -2856,6 +3079,9 @@ class SpecService:
             await card_service.check_rules_coverage(spec, board)
             await card_service.check_trs_coverage(spec, board)
             await card_service.check_contract_coverage(spec, board)
+            await card_service.check_ir_coverage(spec, board)
+            await card_service.check_or_coverage(spec, board)
+            await card_service.check_decisions_coverage(spec, board)
 
             # Qualitative validation gate
             auto_validate = (board.settings or {}).get("auto_validate", False) if board else False
@@ -3066,6 +3292,14 @@ class SpecService:
             return False
         card.spec_id = spec_id
 
+        await SpecResourcePropagationService(self.db).propagate_for_card(
+            board_id=spec.board_id,
+            spec_id=spec_id,
+            card_id=card_id,
+            actor_id=user_id or card.created_by,
+            trigger="card_linked_to_spec",
+        )
+
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import CardLinkedToSpec
 
@@ -3167,11 +3401,17 @@ class SpecService:
             )
 
         # Run coverage gates as pre-requisite — reuses existing CardService checks.
+        # AC→Scenario coverage must run FIRST so uncovered ACs are caught before
+        # the spec gets locked by a successful validation (the move→done gate
+        # checks the same thing, but by then the spec is already locked).
         card_service = CardService(self.db)
+        await card_service.check_ac_scenario_coverage(spec, board)
         await card_service.check_test_coverage(spec, board)
         await card_service.check_rules_coverage(spec, board)
         await card_service.check_trs_coverage(spec, board)
         await card_service.check_contract_coverage(spec, board)
+        await card_service.check_ir_coverage(spec, board)
+        await card_service.check_or_coverage(spec, board)
         # Decisions coverage is OPT-IN — no-op when skip_decisions_coverage=True
         # (spec or board). See check_decisions_coverage for details.
         await card_service.check_decisions_coverage(spec, board)
@@ -3404,6 +3644,12 @@ class SpecKnowledgeService:
         )
         self.db.add(kb)
         await self.db.flush()
+        await SpecResourcePropagationService(self.db).propagate_for_spec(
+            board_id=spec.board_id,
+            spec_id=spec_id,
+            actor_id=user_id,
+            trigger="spec_knowledge_created",
+        )
         return kb
 
     async def get_knowledge(self, knowledge_id: str) -> SpecKnowledgeBase | None:
@@ -3428,6 +3674,15 @@ class SpecKnowledgeService:
         update_data = data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(kb, key, value)
+        await self.db.flush()
+        spec = await self.db.get(Spec, kb.spec_id)
+        if spec is not None:
+            await SpecResourcePropagationService(self.db).propagate_for_spec(
+                board_id=spec.board_id,
+                spec_id=kb.spec_id,
+                actor_id=kb.created_by or "system",
+                trigger="spec_knowledge_updated",
+            )
         return kb
 
     async def delete_knowledge(self, knowledge_id: str) -> bool:
@@ -3435,7 +3690,20 @@ class SpecKnowledgeService:
         kb = await self.get_knowledge(knowledge_id)
         if not kb:
             return False
+        spec_id = kb.spec_id
+        kb_id = kb.id
+        actor_id = kb.created_by or "system"
+        spec = await self.db.get(Spec, spec_id)
         await self.db.delete(kb)
+        await self.db.flush()
+        if spec is not None:
+            await SpecResourcePropagationService(self.db).propagate_for_spec(
+                board_id=spec.board_id,
+                spec_id=spec_id,
+                actor_id=actor_id,
+                trigger="spec_knowledge_deleted",
+                removed_kb_ids={kb_id},
+            )
         return True
 
 
@@ -4192,6 +4460,9 @@ class StoryService:
         if propagated:
             flag_modified(ideation, "screen_mockups")
         await self.db.flush()
+        await self.db.refresh(ideation)
+        for link in links:
+            await self.db.refresh(link)
         return ideation, links, propagated
 
     def _propagate_story_mockups(
@@ -4963,7 +5234,10 @@ class RefinementService:
             out_of_scope=data.out_of_scope,
             analysis=data.analysis,
             decisions=data.decisions,
-            screen_mockups=data.screen_mockups,  # manual mockups only; propagation adds via propagate_artifacts
+            screen_mockups=[
+                item.model_dump() if hasattr(item, "model_dump") else item
+                for item in (data.screen_mockups or [])
+            ] or None,  # manual mockups only; propagation adds via propagate_artifacts
             assignee_id=data.assignee_id,
             created_by=user_id,
             labels=data.labels or ideation.labels,

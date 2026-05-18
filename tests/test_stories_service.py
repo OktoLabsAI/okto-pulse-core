@@ -191,6 +191,69 @@ async def test_story_conversion_propagates_mockups_to_ideation_and_lineage(db_fa
 
 
 @pytest.mark.asyncio
+async def test_lineage_graph_allows_unlinked_story_root(db_factory):
+    board_id = _id("story-board")
+    actor_id = _id("agent")
+    await _seed_board(db_factory, board_id, actor_id)
+
+    async with db_factory() as db:
+        service = StoryService(db)
+        topic = await service.create_topic(board_id, actor_id, TopicCreate(name="Standalone intake"))
+        assert topic is not None
+        story = await service.create_story(
+            board_id,
+            actor_id,
+            StoryCreate(
+                topic_id=topic.id,
+                title="Capture standalone story",
+                description="As a product user, I want to register intake before ideation exists.",
+            ),
+        )
+        assert story is not None
+        story_id = story.id
+        await db.commit()
+
+    async with db_factory() as db:
+        graph = await build_lineage_graph(
+            db,
+            board_id,
+            entity_type="story",
+            entity_id=story_id,
+            include_artifacts=False,
+        )
+
+    assert graph["root_entity"] == {
+        "type": "story",
+        "id": story_id,
+        "title": "Capture standalone story",
+        "status": "draft",
+    }
+    assert graph["root_ideation"]["entity_type"] == "story"
+    assert graph["resolution_path"] == [{"type": "story", "id": story_id}]
+    assert graph["nodes"] == [
+        {
+            "id": f"story:{story_id}",
+            "entity_type": "story",
+            "entity_id": story_id,
+            "title": "Capture standalone story",
+            "label": "Capture standalone story",
+            "status": "draft",
+            "stage": -1,
+            "summary": {"topic_id": topic.id, "mockups_count": 0},
+        }
+    ]
+    assert graph["edges"] == []
+    assert graph["summary"]["stories"] == 1
+    assert graph["summary"]["ideations"] == 0
+    assert graph["summary"]["nodes"] == 1
+    assert graph["summary"]["edges"] == 0
+    assert graph["warnings"] == [
+        "Selected story is not linked to an ideation yet, so the lineage "
+        "graph is rooted at the story."
+    ]
+
+
+@pytest.mark.asyncio
 async def test_story_conversion_does_not_enqueue_story_kg_nodes(db_factory):
     board_id = _id("story-board")
     actor_id = _id("agent")
@@ -825,11 +888,12 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
 
         listed_archived_story = await _call_mcp(
             db_factory,
-            "okto_pulse_list_stories",
+            "okto_pulse_list_by_board",
             board_id=board_id,
-            include_archived="true",
+            entity_type="story",
+            filters={"include_archived": "true"},
         )
-        assert any(item["id"] == story_id and item["archived"] is True for item in listed_archived_story["stories"])
+        assert any(item["id"] == story_id and item["archived"] is True for item in listed_archived_story["items"])
 
         restored_story = await _call_mcp(
             db_factory,
@@ -937,13 +1001,13 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
 
         listed = await _call_mcp(
             db_factory,
-            "okto_pulse_list_stories",
+            "okto_pulse_list_by_board",
             board_id=board_id,
-            converted="true",
-            include_archived="true",
+            entity_type="story",
+            filters={"converted": "true", "include_archived": "true"},
         )
-        assert listed["count"] == 1
-        assert listed["stories"][0]["status"] == "converted"
+        assert listed["total"] == 1
+        assert listed["items"][0]["status"] == "converted"
 
         link_topic = await _call_mcp(
             db_factory,

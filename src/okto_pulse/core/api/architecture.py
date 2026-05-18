@@ -27,6 +27,7 @@ from okto_pulse.core.services.architecture import (
     ArchitecturePayloadValidationError,
     ArchitecturePropagationService,
 )
+from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 router = APIRouter()
 
