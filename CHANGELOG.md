@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-18
+
+Patch release rolling up the post-0.2.1 fixes (SDLC E2E gate polish + the related agent-instructions refactor and reference docs). See the entries below for the full picture.
+
 ### Fixed — SDLC E2E gate polish (4 issues from end-to-end ceremonial run 2026-05-17)
 
 A complete end-to-end ceremonial run on the `E2E` board (Story → Ideation → Refinement → Spec → Sprint → Card execution → Sprint closeout) exposed four small but recurring issues across spec validation, error messages and tool response shapes. All four were fixed with minimal-surface code/docs changes inside the `Unreleased` cycle and validated in-vivo against the live MCP server:

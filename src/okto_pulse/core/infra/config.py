@@ -24,7 +24,7 @@ def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
         return fallback
 
 
-_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.2.1+local")
+_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.2.2+local")
 GRAPH_DB_MAX_SIZE_GB_VALUES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
 DEFAULT_METRICS_BEACON_URL = "https://metrics.oktolabs.ai"
 

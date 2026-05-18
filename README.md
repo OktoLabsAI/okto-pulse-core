@@ -81,7 +81,23 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-### 0.2.1 — current
+### 0.2.2 — current
+
+Patch release rolling up the post-0.2.1 fixes. Same surface as `0.2.1` plus:
+
+- **SDLC E2E gate polish (4 issues from the 2026-05-17 ceremonial run)** —
+  - `submit_spec_validation` now runs the AC → test-scenario coverage check as its first pre-requisite, so a spec with uncovered ACs fails BEFORE the validation locks the content (previously the move → done gate raised the same error but only after the spec was already locked).
+  - The "FR has no linked business rule" error now uses an `[i]` index marker rather than the duplicated `FR{i}:` prefix that collided with the author's own `FRN:` label and produced strings like `"FR1: FR2: ..."`.
+  - `okto_pulse_link_task target_type='decision'` now spreads the saturation envelope into its success JSON, in parity with the other six target types. A parametrised dispatcher test pins the contract so a future eighth helper can't regress it silently.
+  - `okto_pulse_evaluate_ideation` docstring now states the `status='evaluating'` pre-requisite and the full `draft → review → approved → evaluating → done` flow up front. The tool deliberately does not auto-promote — each transition is an explicit gate decision.
+- **Agent instructions split + reference catalogue** — `agent_instructions.md` trimmed by extracting the static reference material into three new MCP resources (`okto-pulse://reference/list_tools`, `tools_catalog`, `transitions`). Workflow docs (`refinements`, `specs`, `stories`) refreshed in lockstep.
+- **MCP server module slim-down** — `core/mcp/server.py` lost ~970 lines of helpers that now live in supporting modules. Public tool surface is unchanged; this is purely an organisational refactor on top of `0.2.1`.
+
+Anti-regression tests added for each of the four E2E fixes (`tests/test_spec_validation_gate.py::TestAcScenarioPrecheck`, `TestFrCoverageMessageFormat`, `tests/test_link_task_dispatcher.py::test_link_helper_returns_saturation_envelope`). The `submit_spec_validation` baseline hash in `tests/.cache/validation_gates_baseline.txt` was bumped to reflect the intentional addition of the new AC → scenario pre-check.
+
+See `CHANGELOG.md` for the diff-level rationale and the per-fix bug card references.
+
+### 0.2.1
 
 #### Branch changelog (`feature/0.2.1`)
 
