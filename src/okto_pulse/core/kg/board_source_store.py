@@ -1,0 +1,359 @@
+"""Production source store for KG rebuild (bug b4c6920c).
+
+Reads non-cancelled artifacts (specs, refinements, task/test/bug cards) from the
+SQLite-backed SQLAlchemy store and returns the canonical RebuildSourceRow
+list expected by ``RebuildSourceEnumerator`` (KG-02.2).
+
+Replaces the ``_empty_source_store`` stub that ``core/api/kg_rebuild.py``
+was wiring in production — that stub caused preflight to always report
+``eligible_source_count=0`` even for boards with content.
+
+Design choices:
+
+* **Sync interface** — ``RebuildSourceEnumerator.enumerate`` calls the
+  source_store synchronously inside ``preflight``. We use the same
+  SQLite file the async engine uses but with the stdlib ``sqlite3``
+  module (read-only). This is safe because:
+  - rebuild preflight is administrative + not on a hot path,
+  - the read is row-by-row, takes <100ms even for boards with thousands
+    of artifacts,
+  - SQLite supports concurrent readers without blocking the async writer.
+
+* **content_hash deterministic** — there is no ``content_hash`` column
+  on the source tables. We compute a stable SHA-256 over the canonical
+  JSON of the load-bearing fields (title + description + version + any
+  structured JSON arrays). KG-02.5 ``EXCLUDED_HASH_FIELDS`` excludes
+  timestamps + ids from the structural hash, so the content_hash here
+  feeds into the source-side hash only (not the structural hash).
+
+* **source_version** — uses the existing ``version`` integer column
+  when present (specs/refinements), while task/test/bug cards fall back
+  to '1'.
+
+* **source_ref** — uses ``<artifact_type>:<id>`` to match the convention
+  used by the cognitive badge surface. Formal spec decisions are emitted as
+  first-class semantic sources using ``decision:<spec_id>:<decision_id>``.
+  Card rows are typed as task/test/bug even though the deterministic worker
+  still consumes them via the legacy ConsolidationQueue ``card`` artifact type.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger("okto_pulse.kg.board_source_store")
+
+
+# Artifact types read directly from dedicated tables. Cards are read below
+# through a polymorphic query that maps card_type normal/test/bug to
+# source artifact_type task/test/bug.
+ARTIFACT_QUERIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    # (artifact_type, table, status_column, content_columns_for_hash)
+    (
+        "spec",
+        "specs",
+        "status",
+        (
+            "title", "description", "context", "version",
+            "functional_requirements", "technical_requirements",
+            "acceptance_criteria", "test_scenarios",
+            "business_rules", "api_contracts", "decisions",
+        ),
+    ),
+    (
+        "refinement",
+        "refinements",
+        "status",
+        ("title", "description", "analysis", "version"),
+    ),
+)
+
+
+CARD_CONTENT_COLUMNS: tuple[str, ...] = (
+    "title",
+    "description",
+    "details",
+    "status",
+    "priority",
+    "card_type",
+    "spec_id",
+    "sprint_id",
+    "test_scenario_ids",
+    "conclusions",
+    "screen_mockups",
+    "knowledge_bases",
+    "validations",
+    "origin_task_id",
+    "severity",
+    "expected_behavior",
+    "observed_behavior",
+    "steps_to_reproduce",
+    "action_plan",
+    "linked_test_task_ids",
+)
+
+
+def _canonical_content_hash(row: sqlite3.Row, columns: tuple[str, ...]) -> str:
+    """SHA-256 over a canonical-JSON encoding of the load-bearing fields.
+
+    Stable across runs as long as the underlying values don't change.
+    Uses sorted keys + tight separators (matches KG-02.5
+    `_canonical_json` style)."""
+
+    payload: dict[str, Any] = {}
+    for col in columns:
+        value: Any
+        try:
+            value = row[col]
+        except (IndexError, KeyError):
+            value = None
+        if isinstance(value, (bytes, bytearray)):
+            value = value.decode("utf-8", errors="replace")
+        if isinstance(value, str):
+            # Most JSON columns are stored as TEXT — try to parse so the
+            # hash is invariant to whitespace re-formatting.
+            try:
+                value = json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        payload[col] = value
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _canonical_payload_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _to_iso(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {str(row["name"]) for row in rows}
+
+
+def _card_artifact_type(row: sqlite3.Row) -> str:
+    try:
+        raw_value = row["card_type"]
+    except (IndexError, KeyError):
+        raw_value = "normal"
+    raw = str(raw_value or "normal").lower()
+    if raw == "test":
+        return "test"
+    if raw == "bug":
+        return "bug"
+    return "task"
+
+
+def _load_json_array(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
+def _decision_id(decision: dict[str, Any], index: int) -> str:
+    explicit = decision.get("id")
+    if explicit:
+        return str(explicit)
+    fingerprint = _canonical_payload_hash(decision)[:12]
+    return f"idx-{index}-{fingerprint}"
+
+
+def _decision_sources_from_spec(row: sqlite3.Row) -> list[dict[str, Any]]:
+    try:
+        raw_decisions = row["decisions"]
+    except (IndexError, KeyError):
+        return []
+
+    decisions = _load_json_array(raw_decisions)
+    if not decisions:
+        return []
+
+    spec_id = str(row["id"])
+    try:
+        spec_version = row["version"]
+    except (IndexError, KeyError):
+        spec_version = 1
+    source_version = str(spec_version if spec_version is not None else 1)
+    try:
+        spec_title = row["title"]
+    except (IndexError, KeyError):
+        spec_title = ""
+    try:
+        created_at = row["created_at"]
+    except (IndexError, KeyError):
+        created_at = ""
+
+    out: list[dict[str, Any]] = []
+    for index, raw in enumerate(decisions):
+        if not isinstance(raw, dict):
+            continue
+        status = str(raw.get("status", "active") or "active").lower()
+        if status != "active":
+            continue
+        title = str(raw.get("title") or "").strip()
+        rationale = str(raw.get("rationale") or raw.get("description") or "").strip()
+        if not title and not rationale:
+            continue
+        local_id = _decision_id(raw, index)
+        payload = {
+            "parent_type": "spec",
+            "parent_id": spec_id,
+            "parent_title": spec_title,
+            "decision": raw,
+        }
+        out.append({
+            "artifact_type": "decision",
+            "id": f"{spec_id}:{local_id}",
+            "source_ref": f"decision:{spec_id}:{local_id}",
+            "source_version": source_version,
+            "content_hash": _canonical_payload_hash(payload),
+            "created_at": _to_iso(created_at),
+        })
+    return out
+
+
+@dataclass(frozen=True, slots=True)
+class BoardSourceStore:
+    """File-backed source store reading directly from the pulse SQLite.
+
+    Wire as the ``source_store`` callable of ``RebuildSourceEnumerator``::
+
+        store = BoardSourceStore(db_path=Path("~/.okto-pulse/data/pulse.db"))
+        enumerator = RebuildSourceEnumerator(source_store=store.fetch)
+
+    Returns ``list[dict]`` (not list[RebuildSourceRow]) because the
+    enumerator coerces dicts internally and accepting dicts keeps the
+    test seam wide.
+    """
+
+    db_path: Path
+
+    def fetch(self, board_id: str) -> list[dict[str, Any]]:
+        """Return the source rows for a board, excluding cancelled.
+
+        Best-effort: if a table doesn't exist (e.g. the schema is older
+        than the queries here), the entry is skipped silently with a
+        warning so the rebuild can still proceed with partial sources.
+        """
+
+        if not self.db_path.exists():
+            logger.warning(
+                "kg.board_source_store.db_missing path=%s — returning empty",
+                self.db_path,
+            )
+            return []
+
+        out: list[dict[str, Any]] = []
+        conn = sqlite3.connect(
+            f"file:{self.db_path}?mode=ro&immutable=0",
+            uri=True,
+            timeout=5.0,
+        )
+        conn.row_factory = sqlite3.Row
+        try:
+            for artifact_type, table, status_col, content_cols in ARTIFACT_QUERIES:
+                # Skip table if the schema doesn't have it yet.
+                exists = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                ).fetchone()
+                if not exists:
+                    logger.warning(
+                        "kg.board_source_store.table_missing table=%s — skipped",
+                        table,
+                    )
+                    continue
+                # Stable ordering: created_at first (lex on ISO date),
+                # then id for tie-breaking. Excludes cancelled.
+                rows = conn.execute(
+                    f"SELECT * FROM {table} "
+                    f"WHERE board_id = ? AND {status_col} != 'cancelled' "
+                    f"ORDER BY created_at ASC, id ASC",
+                    (board_id,),
+                ).fetchall()
+                for row in rows:
+                    row_id = str(row["id"])
+                    try:
+                        version_raw = row["version"]
+                    except (IndexError, KeyError):
+                        version_raw = 1
+                    source_version = str(version_raw if version_raw is not None else 1)
+                    content_hash = _canonical_content_hash(row, content_cols)
+                    out.append({
+                        "artifact_type": artifact_type,
+                        "id": row_id,
+                        "source_ref": f"{artifact_type}:{row_id}",
+                        "source_version": source_version,
+                        "content_hash": content_hash,
+                        "created_at": _to_iso(row["created_at"]),
+                    })
+                    if artifact_type == "spec":
+                        out.extend(_decision_sources_from_spec(row))
+            cards_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='cards'"
+            ).fetchone()
+            if not cards_exists:
+                logger.warning(
+                    "kg.board_source_store.table_missing table=cards — skipped",
+                )
+            else:
+                card_columns = _table_columns(conn, "cards")
+                archived_clause = (
+                    "AND (archived = 0 OR archived IS NULL)"
+                    if "archived" in card_columns
+                    else ""
+                )
+                rows = conn.execute(
+                    "SELECT * FROM cards "
+                    "WHERE board_id = ? AND status != 'cancelled' "
+                    f"{archived_clause} "
+                    "ORDER BY created_at ASC, id ASC",
+                    (board_id,),
+                ).fetchall()
+                for row in rows:
+                    row_id = str(row["id"])
+                    artifact_type = _card_artifact_type(row)
+                    content_hash = _canonical_content_hash(
+                        row,
+                        CARD_CONTENT_COLUMNS,
+                    )
+                    out.append({
+                        "artifact_type": artifact_type,
+                        "id": row_id,
+                        "source_ref": f"{artifact_type}:{row_id}",
+                        "source_version": "1",
+                        "content_hash": content_hash,
+                        "created_at": _to_iso(row["created_at"]),
+                    })
+        finally:
+            conn.close()
+        return out
+
+
+__all__ = ["BoardSourceStore", "ARTIFACT_QUERIES", "CARD_CONTENT_COLUMNS"]

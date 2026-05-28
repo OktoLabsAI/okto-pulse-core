@@ -140,12 +140,13 @@ def test_open_board_connection_autobootstraps(fresh_board):
         res.close()
 
 
-def test_corrupt_ladybug_wal_is_purged_before_rebootstrap(fresh_board, monkeypatch):
+def test_corrupt_ladybug_wal_is_preserved_and_blocks_rebootstrap(fresh_board, monkeypatch):
     """A crash during LadybugDB commit can leave graph.lbug.wal corrupt.
 
-    The next bootstrap probe should remove only the local graph file and
-    sidecars so a clean graph can be recreated instead of sending every
-    consolidation attempt to DLQ.
+    The next bootstrap probe must not quarantine or replace the existing
+    graph automatically. A probe is not an operator-approved recovery action;
+    preserving graph.lbug + graph.lbug.wal is safer than silently creating an
+    empty graph.
     """
     from okto_pulse.core.kg import schema as schema_module
 
@@ -164,9 +165,10 @@ def test_corrupt_ladybug_wal_is_purged_before_rebootstrap(fresh_board, monkeypat
     monkeypatch.setattr(schema_module, "_open_kuzu_db_path_cached", _raise_corrupt)
     reset_bootstrap_cache_for_tests()
 
-    assert schema_module._graph_needs_bootstrap(fresh_board) is True
-    assert not path.exists()
-    assert not wal_path.exists()
+    with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
+        schema_module._graph_needs_bootstrap(fresh_board)
+    assert path.exists()
+    assert wal_path.exists()
 
 
 # ---------------------------------------------------------------------------

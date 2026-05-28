@@ -8030,6 +8030,8 @@ async def okto_pulse_validate_architecture_design_payload(
             return json.dumps({"error": str(exc)})
 
         warnings = list(critique.get("warnings") or [])
+        structured_warnings = list(critique.get("structured_warnings") or [])
+        suppressed_warnings = list(critique.get("suppressed_warnings") or [])
         envelope: dict[str, Any] = {
             "success": True,
             "mode": mode,
@@ -8037,6 +8039,8 @@ async def okto_pulse_validate_architecture_design_payload(
             "id": design.id,
             "version": design.version,
             "warnings_count": len(warnings),
+            "structured_warnings_count": len(structured_warnings),
+            "suppressed_warnings_count": len(suppressed_warnings),
             "normalized": bool(warnings),
         }
         if include_design:
@@ -13753,14 +13757,23 @@ async def okto_pulse_kg_dead_letter_reprocess(
         await db.commit()
 
     if _flag_enabled(process_now):
-        from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
-
-        worker = ConsolidationWorker(
-            _mcp_session_factory,
-            heartbeat_seconds=1,
-            batch_size=max(1, min(int(limit or 50), 50)),
+        from okto_pulse.core.kg.workers.consolidation import (
+            get_consolidation_worker,
+            signal_consolidation_worker,
         )
-        data["processed_now_count"] = await worker.process_batch()
+
+        worker = get_consolidation_worker(_mcp_session_factory)
+        signal_consolidation_worker()
+        data["worker_running"] = worker.is_running
+        if worker.is_running:
+            data["processed_now_count"] = 0
+            data["process_now_mode"] = "signalled_singleton"
+        else:
+            # MCP can be hosted without the background startup hook in
+            # tests or ad-hoc tooling. In that case run one batch through
+            # the singleton object instead of creating a competing worker.
+            data["processed_now_count"] = await worker.process_batch()
+            data["process_now_mode"] = "singleton_direct_batch"
 
     return json.dumps(data, default=str)
 

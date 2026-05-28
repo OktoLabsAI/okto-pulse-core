@@ -76,6 +76,86 @@ def _mermaid_diagrams() -> list[dict]:
     ]
 
 
+def _topology_entities() -> list[dict]:
+    return [
+        {
+            "id": "entity-web",
+            "name": "Customer Portal",
+            "entity_type": "web_app",
+            "responsibility": "Sends requests.",
+            "boundaries": "Browser.",
+        },
+        {
+            "id": "entity-api",
+            "name": "Pulse API",
+            "entity_type": "api",
+            "responsibility": "Handles requests.",
+            "boundaries": "Backend.",
+        },
+        {
+            "id": "entity-audit",
+            "name": "Audit Sink",
+            "entity_type": "service",
+            "responsibility": "Consumes audit records.",
+            "boundaries": "Async sink.",
+        },
+    ]
+
+
+def _topology_diagrams() -> list[dict]:
+    return [
+        {
+            "id": "diagram-runtime",
+            "title": "Runtime",
+            "diagram_type": "runtime",
+            "format": "excalidraw_json",
+            "adapter_payload": {
+                "type": "excalidraw",
+                "version": 2,
+                "elements": [
+                    {
+                        "id": "node-web",
+                        "type": "rectangle",
+                        "linkedEntityId": "entity-web",
+                        "text": "Customer Portal",
+                        "displayType": "Web App",
+                        "architectureKind": "frontend",
+                        "iconName": "monitor",
+                    },
+                    {
+                        "id": "node-api",
+                        "type": "rectangle",
+                        "linkedEntityId": "entity-api",
+                        "text": "Pulse API",
+                        "displayType": "API",
+                        "architectureKind": "service",
+                        "iconName": "server",
+                    },
+                    {
+                        "id": "node-audit",
+                        "type": "rectangle",
+                        "linkedEntityId": "entity-audit",
+                        "text": "Audit Sink",
+                        "displayType": "Service",
+                        "architectureKind": "service",
+                        "iconName": "server",
+                    },
+                    {
+                        "id": "edge-web-api",
+                        "type": "arrow",
+                        "sourceElementId": "node-web",
+                        "targetElementId": "node-api",
+                        "linkedInterfaceIds": ["interface-web-api"],
+                        "connectionType": "elbow",
+                    },
+                ],
+                "appState": {},
+                "files": {},
+            },
+        }
+    ]
+
+
 @pytest_asyncio.fixture
 async def _seed_spec_card():
     from okto_pulse.core.infra.database import get_session_factory
@@ -373,6 +453,151 @@ async def test_mcp_validate_architecture_payload_rejects_non_excalidraw_diagram_
     assert "diagrams[0].format='mermaid' is unsupported" in joined_issues
     assert "format='excalidraw_json'" in joined_issues
     assert any("Mermaid" in item and "diagram formats" in item for item in critique["suggested_fixes"])
+
+
+@pytest.mark.asyncio
+async def test_mcp_validate_architecture_payload_matches_backend_structured_warning_contract(_seed_spec_card):
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.services.architecture import ArchitectureDesignRepository
+
+    board_id, spec_id, _ = _seed_spec_card
+    entities = _topology_entities()
+    diagrams = _topology_diagrams()
+
+    critique = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Topology Contract",
+        global_description="MCP and REST share the backend critic result.",
+        entities=json.dumps(entities),
+        interfaces=json.dumps([
+            {
+                "id": "interface-web-api",
+                "name": "Call Pulse API",
+                "description": "Customer Portal calls Pulse API.",
+                "participants": ["entity-web", "entity-api"],
+                "direction": "source_to_target",
+                "endpoint": "GET /pulse",
+                "protocol": "REST",
+                "contract_type": "OpenAPI",
+                "request_schema": {"type": "object"},
+                "response_schema": {"type": "object"},
+            }
+        ]),
+        diagrams=json.dumps(diagrams),
+    )
+
+    db_factory = get_session_factory()
+    interfaces = [
+        {
+            "id": "interface-web-api",
+            "name": "Call Pulse API",
+            "description": "Customer Portal calls Pulse API.",
+            "participants": ["entity-web", "entity-api"],
+            "direction": "source_to_target",
+            "endpoint": "GET /pulse",
+            "protocol": "REST",
+            "contract_type": "OpenAPI",
+            "request_schema": {"type": "object"},
+            "response_schema": {"type": "object"},
+        }
+    ]
+    async with db_factory() as db:
+        expected = ArchitectureDesignRepository(db).critique_payload(
+            {
+                "title": "Topology Contract",
+                "global_description": "MCP and REST share the backend critic result.",
+                "entities": entities,
+                "interfaces": interfaces,
+                "diagrams": diagrams,
+            }
+        )
+
+    assert critique.get("success") is True, critique
+    assert critique["valid"] is True
+    assert critique["warnings"] == expected["warnings"]
+    assert critique["structured_warnings"] == expected["structured_warnings"]
+    assert critique["suppressed_warnings"] == expected["suppressed_warnings"]
+    assert critique["summary"]["structured_warning_codes"] == ["isolated_entity_node"]
+    assert critique["summary"] == expected["summary"]
+
+
+@pytest.mark.asyncio
+async def test_rest_and_mcp_validate_architecture_payload_return_identical_warning_contract(_seed_spec_card):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from okto_pulse.core.api.architecture import router as architecture_router
+    from okto_pulse.core.infra import auth as _auth_mod
+    from okto_pulse.core.infra.database import get_db, get_session_factory
+
+    board_id, spec_id, _ = _seed_spec_card
+    entities = _topology_entities()
+    diagrams = _topology_diagrams()
+    interfaces = [
+        {
+            "id": "interface-web-api",
+            "name": "Call Pulse API",
+            "description": "Customer Portal calls Pulse API.",
+            "participants": ["entity-web", "entity-api"],
+            "direction": "source_to_target",
+            "endpoint": "GET /pulse",
+            "protocol": "REST",
+            "contract_type": "OpenAPI",
+            "request_schema": {"type": "object"},
+            "response_schema": {"type": "object"},
+        }
+    ]
+    payload = {
+        "title": "Topology Contract",
+        "global_description": "MCP and REST share the backend critic result.",
+        "entities": entities,
+        "interfaces": interfaces,
+        "diagrams": diagrams,
+    }
+
+    db_factory = get_session_factory()
+    app = FastAPI()
+    app.include_router(architecture_router, prefix="/api/v1")
+
+    async def _override_db():
+        async with db_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+
+    rest_response = TestClient(app).post("/api/v1/architecture/validate", json=payload)
+    rest_response.raise_for_status()
+    rest = rest_response.json()
+
+    mcp = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title=payload["title"],
+        global_description=payload["global_description"],
+        entities=json.dumps(entities),
+        interfaces=json.dumps(interfaces),
+        diagrams=json.dumps(diagrams),
+    )
+
+    assert mcp.get("success") is True, mcp
+    comparable_keys = [
+        "valid",
+        "issues",
+        "warnings",
+        "structured_warnings",
+        "suppressed_warnings",
+        "suggested_fixes",
+        "summary",
+    ]
+    assert {key: mcp[key] for key in comparable_keys} == {key: rest[key] for key in comparable_keys}
+    assert rest["summary"]["structured_warning_codes"] == ["isolated_entity_node"]
+    assert rest["summary"]["structured_warnings_count"] == 1
 
 
 @pytest.mark.asyncio

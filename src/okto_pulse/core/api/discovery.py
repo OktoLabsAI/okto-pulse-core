@@ -10,9 +10,11 @@ GlobalSearchView.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,15 +24,125 @@ from okto_pulse.core.models.db import (
     DiscoveryIntent,
     DiscoverySavedSearch,
     DiscoverySearchHistory,
+    Spec,
 )
 from okto_pulse.core.models.schemas import (
     DiscoveryIntentResponse,
     DiscoverySavedSearchResponse,
     DiscoverySearchHistoryResponse,
 )
-from okto_pulse.core.services.discovery_executor import execute_intent
+from okto_pulse.core.services import ShareService
+from okto_pulse.core.services.discovery_selector_catalog import (
+    DiscoverySelectorAccessDenied,
+    DiscoverySelectorCatalog,
+    DiscoverySelectorInvalidRequest,
+    DiscoverySelectorSpecNotFound,
+    DiscoverySelectorUnsafeProjection,
+    SelectorAccessPolicy,
+    get_default_discovery_selector_cache,
+)
+from okto_pulse.core.services.discovery_executor import (
+    DiscoverySelectorExecutionError,
+    execute_intent,
+)
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+class DiscoverySelectorRestAccessPolicy(SelectorAccessPolicy):
+    """Board/spec read policy used by the selector REST endpoint."""
+
+    async def can_read_board(
+        self,
+        db: AsyncSession,
+        identity: Any,
+        board_id: str,
+    ) -> bool:
+        user_id = str(identity or "")
+        if not user_id:
+            return False
+        permission = await ShareService(db).get_user_permission(board_id, user_id)
+        return permission is not None
+
+    async def can_read_spec(
+        self,
+        db: AsyncSession,
+        identity: Any,
+        spec: Spec,
+    ) -> bool:
+        board_id = getattr(spec, "board_id", None)
+        if not board_id:
+            return False
+        return await self.can_read_board(db, identity, str(board_id))
+
+
+def _selector_error(
+    status_code: int,
+    error: str,
+) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"error": error})
+
+
+def _selector_metric(
+    *,
+    board_id: str,
+    selector_kind: str,
+    child_type: str | None,
+    status_filter: str | None,
+    cache_status: str,
+    outcome: str,
+    reason: str | None,
+    duration_ms: int,
+) -> None:
+    logger.info(
+        "discovery.selector_options outcome=%s reason=%s",
+        outcome,
+        reason or "none",
+        extra={
+            "event": "discovery.selector_options",
+            "board_id": board_id,
+            "selector_kind": selector_kind,
+            "child_type": child_type or "none",
+            "status": status_filter or "none",
+            "cache_status": cache_status,
+            "outcome": outcome,
+            "reason": reason or "none",
+            "duration_ms": duration_ms,
+            "metric_name": "discovery_selector_options_latency_ms",
+            "value": duration_ms,
+        },
+    )
+    if outcome == "forbidden":
+        logger.info(
+            "discovery.selector_access_denied reason=%s",
+            reason or "none",
+            extra={
+                "event": "discovery.selector_access_denied",
+                "metric_name": "discovery_selector_access_denied_total",
+                "value": 1,
+                "board_id": board_id,
+                "selector_kind": selector_kind,
+                "child_type": child_type or "none",
+                "outcome": outcome,
+                "reason": reason or "none",
+            },
+        )
+    if outcome == "unsafe_projection":
+        logger.info(
+            "discovery.selector_unsafe_projection reason=%s",
+            reason or "none",
+            extra={
+                "event": "discovery.selector_unsafe_projection",
+                "metric_name": "discovery_selector_unsafe_projection_total",
+                "value": 1,
+                "board_id": board_id,
+                "selector_kind": selector_kind,
+                "child_type": child_type or "none",
+                "outcome": outcome,
+                "reason": reason or "none",
+            },
+        )
 
 
 @router.get(
@@ -48,6 +160,85 @@ async def list_discovery_intents(
         .order_by(DiscoveryIntent.category, DiscoveryIntent.label)
     )
     return list(result.scalars().all())
+
+
+@router.get("/discovery/boards/{board_id}/selector-options")
+async def list_discovery_selector_options(
+    board_id: str,
+    selector_kind: str = Query("spec"),
+    spec_id: str | None = Query(None),
+    child_type: str | None = Query(None),
+    status_filter: str | None = Query("active", alias="status"),
+    q: str | None = Query(None, max_length=200),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    include_superseded: bool = Query(False),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Return metadata-only Discovery selector options for a board.
+
+    The API performs an explicit board read check before catalog projection so
+    403 responses do not reveal whether requested specs or children exist.
+    """
+
+    started = time.perf_counter()
+    cache_status = "bypass"
+    outcome = "success"
+    reason: str | None = None
+    policy = DiscoverySelectorRestAccessPolicy()
+    try:
+        if not await policy.can_read_board(db, user_id, board_id):
+            outcome = "forbidden"
+            reason = "selector_access_denied"
+            raise _selector_error(status.HTTP_403_FORBIDDEN, "selector_access_denied")
+
+        catalog = DiscoverySelectorCatalog(
+            policy,
+            cache=get_default_discovery_selector_cache(),
+        )
+        result = await catalog.list_options(
+            db,
+            board_id=board_id,
+            selector_kind=selector_kind,  # type: ignore[arg-type]
+            identity=user_id,
+            spec_id=spec_id,
+            child_type=child_type,
+            status=status_filter,
+            q=q,
+            limit=limit,
+            offset=offset,
+            include_superseded=include_superseded,
+        )
+        cache_status = result.cache_status
+        return result.to_dict()
+    except DiscoverySelectorInvalidRequest as exc:
+        outcome = "invalid_request"
+        reason = exc.code
+        raise _selector_error(status.HTTP_400_BAD_REQUEST, exc.code) from exc
+    except DiscoverySelectorAccessDenied as exc:
+        outcome = "forbidden"
+        reason = "selector_access_denied"
+        raise _selector_error(status.HTTP_403_FORBIDDEN, "selector_access_denied") from exc
+    except DiscoverySelectorSpecNotFound as exc:
+        outcome = "not_found"
+        reason = "selector_spec_not_found"
+        raise _selector_error(status.HTTP_404_NOT_FOUND, "selector_spec_not_found") from exc
+    except DiscoverySelectorUnsafeProjection as exc:
+        outcome = "unsafe_projection"
+        reason = "selector_projection_failed"
+        raise _selector_error(status.HTTP_500_INTERNAL_SERVER_ERROR, "selector_projection_failed") from exc
+    finally:
+        _selector_metric(
+            board_id=board_id,
+            selector_kind=selector_kind,
+            child_type=child_type,
+            status_filter=status_filter,
+            cache_status=cache_status,
+            outcome=outcome,
+            reason=reason,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+        )
 
 
 @router.get(
@@ -123,6 +314,11 @@ async def execute_discovery_intent(
     params = (payload or {}).get("params") or {}
     try:
         result = await execute_intent(db, user_id, board_id, intent, params)
+    except DiscoverySelectorExecutionError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail={"error": e.code},
+        ) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     result["intent_id"] = intent.id

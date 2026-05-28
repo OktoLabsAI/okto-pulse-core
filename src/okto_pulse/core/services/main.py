@@ -4,7 +4,7 @@ import hashlib
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5119,11 +5119,41 @@ class IdeationQAService:
         return True
 
 
+def _build_default_refinement_cognitive_done_guard() -> Any:
+    """Default factory for ``RefinementCognitiveCompletionGuard`` used by
+    ``RefinementService.move_refinement`` (KG-03.7 + ir_3ef406f4).
+
+    The guard reads the cognitive item ledger via the file-backed
+    ``CognitiveConsolidationItemStore`` resolved through
+    ``default_rebuild_base_dir()`` so REST + MCP runtime paths see the
+    same on-disk state. Tests can override this by assigning a different
+    factory to ``RefinementService._cognitive_done_guard_factory``.
+    """
+
+    from okto_pulse.core.kg.rebuild_audit import (
+        CognitiveConsolidationItemStore,
+        default_rebuild_base_dir,
+    )
+    from okto_pulse.core.kg.refinement_cognitive_guard import (
+        RefinementCognitiveCompletionGuard,
+    )
+
+    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    return RefinementCognitiveCompletionGuard(store=store)
+
+
 class RefinementService:
     """Service for refinement operations."""
 
     def __init__(self, db: AsyncSession):
         self.db = db
+        # KG-03.7 + ir_3ef406f4 — refinement done transition consumes
+        # ``RefinementCognitiveCompletionGuard`` BEFORE snapshot/status
+        # mutation. The guard is fail-closed; tests inject a custom
+        # factory to control the cognitive store.
+        self._cognitive_done_guard_factory: Callable[
+            [], Any
+        ] = _build_default_refinement_cognitive_done_guard
 
     _STATUS_ORDER = {
         RefinementStatus.DRAFT: 0,
@@ -5460,6 +5490,37 @@ class RefinementService:
                 )
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, refinement.board_id)
+
+        # KG-03.7 + ir_3ef406f4 — fail-closed cognitive completion gate
+        # MUST run BEFORE ResourceGateService, snapshot creation,
+        # activity logging, or status mutation. A blocked guard
+        # response preserves the refinement in its current status with
+        # no snapshot/history/activity changes (br_f6fc7cbc + AC16).
+        if data.status == RefinementStatus.DONE:
+            guard = self._cognitive_done_guard_factory()
+            try:
+                guard_result = guard.evaluate(
+                    board_id=refinement.board_id,
+                    refinement_id=refinement.id,
+                    target_status="done",
+                )
+            except Exception as exc:
+                # Unexpected guard exception — propagate as fail-closed
+                # ValueError so the move is rejected and no downstream
+                # mutation occurs.
+                raise ValueError(
+                    "cognitive_status_unavailable: refinement done "
+                    f"transition blocked ({type(exc).__name__})"
+                ) from exc
+            if not guard_result.allowed:
+                blocking_ids = [
+                    item.item_id for item in guard_result.blocking_items
+                ]
+                raise ValueError(
+                    f"{guard_result.reason}: refinement done transition "
+                    "blocked by active cognitive consolidation items "
+                    f"({len(blocking_ids)})"
+                )
 
         # Snapshot on done
         if data.status == RefinementStatus.DONE:

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +32,12 @@ GLOBAL_OPEN_ERROR_MARKERS = (
     "wal_record.cpp",
     "unreachable_code",
     "not a valid lbug database file",
+)
+BOARD_READ_ERROR_MARKERS = (
+    "outbox.read_board_failed",
+    "could not read source graph nodes",
+    "existing ladybugdb graph could not be opened",
+    "bootstrap_probe",
 )
 
 # Node types mirrored into the global discovery layer as DecisionDigest.
@@ -75,6 +83,7 @@ class OutboxWorker:
         processed = 0
         async with self._factory() as db:
             await self._recover_dead_lettered_global_open_failures(db)
+            await self._recover_dead_lettered_board_read_failures(db)
             pending = await db.execute(
                 select(GlobalUpdateOutbox)
                 .where(
@@ -86,10 +95,18 @@ class OutboxWorker:
                 .limit(50)
             )
             events = list(pending.scalars().all())
+            processed_events: list[GlobalUpdateOutbox] = []
             for event in events:
                 try:
-                    await self._apply_event(event, db)
+                    from okto_pulse.core.kg.write_barrier import (
+                        under_global_safe_write,
+                    )
+
+                    owner_token = f"global-outbox-{event.event_id}"
+                    with under_global_safe_write(owner_token, "global_outbox_apply"):
+                        await self._apply_event(event, db)
                     event.processed_at = datetime.now(timezone.utc)
+                    processed_events.append(event)
                     processed += 1
                 except Exception as exc:
                     event.retry_count += 1
@@ -105,6 +122,26 @@ class OutboxWorker:
                                 "board_id": event.board_id,
                             },
                         )
+            if processed_events:
+                try:
+                    self._flush_global_discovery_storage_after_batch()
+                except Exception as exc:
+                    logger.warning(
+                        "outbox.global_discovery_flush_failed count=%d err=%s",
+                        len(processed_events), exc,
+                        extra={
+                            "event": "outbox.global_discovery_flush_failed",
+                            "count": len(processed_events),
+                        },
+                    )
+                    for event in processed_events:
+                        event.processed_at = None
+                        event.retry_count += 1
+                        event.last_error = (
+                            "global_discovery_flush_failed: "
+                            f"{type(exc).__name__}: {exc}"
+                        )[:500]
+                    processed = 0
             await db.commit()
         if processed:
             logger.info(
@@ -169,6 +206,65 @@ class OutboxWorker:
         )
         return len(rows)
 
+    async def _recover_dead_lettered_board_read_failures(
+        self,
+        db: AsyncSession,
+    ) -> int:
+        """Requeue terminal rows whose source board graph is now queryable.
+
+        Board rebuild/recovery may happen after global outbox events already
+        reached the terminal sentinel because ``_read_board_nodes_for_refs``
+        could not open the per-board graph. Those events are not semantically
+        invalid; they were blocked by a transient storage state. Once the
+        source board opens again, requeue them so the global discovery cache
+        catches up instead of carrying permanent operational debt.
+        """
+
+        rows_res = await db.execute(
+            select(GlobalUpdateOutbox)
+            .where(
+                GlobalUpdateOutbox.processed_at.is_(None),
+                GlobalUpdateOutbox.retry_count == DEAD_LETTER_SENTINEL,
+            )
+            .order_by(GlobalUpdateOutbox.created_at.asc())
+            .limit(50)
+        )
+        rows = [
+            row for row in rows_res.scalars().all()
+            if _is_retryable_board_read_error(row.last_error)
+        ]
+        if not rows:
+            return 0
+
+        queryable_by_board: dict[str, bool] = {}
+        requeued = 0
+        for row in rows:
+            board_id = row.board_id
+            if not board_id:
+                continue
+            if board_id not in queryable_by_board:
+                queryable_by_board[board_id] = self._board_graph_is_queryable(
+                    board_id
+                )
+            if not queryable_by_board[board_id]:
+                continue
+            row.retry_count = 0
+            row.last_error = None
+            requeued += 1
+
+        if not requeued:
+            return 0
+        await db.flush()
+        logger.warning(
+            "outbox.recovery.requeued_board_read_dead_letters count=%d",
+            requeued,
+            extra={
+                "event": "outbox.recovery.requeued_board_read_dead_letters",
+                "count": requeued,
+            },
+        )
+        return requeued
+
     async def _apply_event(self, event: GlobalUpdateOutbox, db: AsyncSession) -> None:
         """Apply a single outbox event to the global discovery meta-graph.
 
@@ -176,9 +272,19 @@ class OutboxWorker:
         added during the session into DecisionDigest (id, title, summary,
         node_type, embedding) linked via (Board)-[:CONTAINS_DECISION]->.
         Without this mirror, `query_global` has nothing to search over.
+
+        KG-01.3.1 boundary: this is a write path against discovery.lbug.
+        process_once wraps this call in ``under_global_safe_write`` and this
+        method requires the global guard before touching the global graph.
+        After a processed batch, process_once closes/fsyncs/reopen-probes the
+        global graph so successful rows are not marked processed while the WAL
+        is only readable through a live process handle.
         """
+        from okto_pulse.core.kg.write_barrier import require_global_write_token
+
         payload = event.payload or {}
         board_id = event.board_id
+        require_global_write_token()
         session_id = payload.get("session_id", "") or event.session_id
         nodes_added = payload.get("nodes_added", 0)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
@@ -297,6 +403,58 @@ class OutboxWorker:
             del gconn, gdb
 
     @staticmethod
+    def _fsync_if_file(path: Path) -> None:
+        if not path.is_file():
+            return
+        # Windows rejects os.fsync on a read-only descriptor. r+b does not
+        # truncate and gives a real durability boundary for file contents.
+        with path.open("r+b") as fh:
+            os.fsync(fh.fileno())
+
+    def _flush_global_discovery_storage_after_batch(self) -> None:
+        """Close, fsync and reopen-probe discovery.lbug after a write batch.
+
+        The global discovery graph is a rebuildable cache, but it still must
+        not leave a large unprobed WAL after marking outbox events processed.
+        If the probe fails, process_once keeps those events retryable so the
+        next run can re-apply idempotently after operator recovery.
+        """
+
+        from okto_pulse.core.kg.global_discovery.schema import (
+            _global_kuzu_path,
+            close_global_connection,
+            open_global_connection,
+        )
+
+        path = _global_kuzu_path()
+        close_global_connection()
+        if not path.exists():
+            raise RuntimeError(f"global discovery file missing at {path}")
+
+        self._fsync_if_file(path)
+        for sibling in sorted(path.parent.glob(path.name + ".*")):
+            self._fsync_if_file(sibling)
+
+        _db, conn = open_global_connection()
+        try:
+            res = conn.execute("CALL SHOW_TABLES() RETURN name")
+            try:
+                if res.has_next():
+                    res.get_next()
+            finally:
+                if hasattr(res, "close"):
+                    res.close()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            close_global_connection()
+        self._fsync_if_file(path)
+        for sibling in sorted(path.parent.glob(path.name + ".*")):
+            self._fsync_if_file(sibling)
+
+    @staticmethod
     def _read_board_nodes_for_refs(
         board_id: str,
         refs: list[KuzuNodeRef],
@@ -333,6 +491,31 @@ class OutboxWorker:
             )
             return None
         return out
+
+    @staticmethod
+    def _board_graph_is_queryable(board_id: str) -> bool:
+        from okto_pulse.core.kg.schema import open_board_connection
+
+        try:
+            with open_board_connection(board_id) as (_db, conn):
+                res = conn.execute("CALL SHOW_TABLES() RETURN name")
+                try:
+                    if res.has_next():
+                        res.get_next()
+                finally:
+                    if hasattr(res, "close"):
+                        res.close()
+            return True
+        except Exception as exc:
+            logger.warning(
+                "outbox.recovery.board_unavailable board=%s err=%s",
+                board_id, exc,
+                extra={
+                    "event": "outbox.recovery.board_unavailable",
+                    "board_id": board_id,
+                },
+            )
+            return False
 
     async def _loop(self) -> None:
         try:
@@ -371,3 +554,10 @@ def _is_retryable_global_open_error(error: str | None) -> bool:
         return False
     msg = error.lower()
     return any(marker in msg for marker in GLOBAL_OPEN_ERROR_MARKERS)
+
+
+def _is_retryable_board_read_error(error: str | None) -> bool:
+    if not error:
+        return False
+    msg = error.lower()
+    return any(marker in msg for marker in BOARD_READ_ERROR_MARKERS)

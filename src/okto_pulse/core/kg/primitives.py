@@ -927,9 +927,24 @@ async def commit_consolidation(
     Kùzu writes are offloaded to the thread pool via ``_run_kuzu`` and
     ``_do_kuzu_commit``.  Audit persistence (SQLite) remains in the async
     context via ``_commit_audit_records``.
+
+    KG-01 FR5/FR6 enforcement: this primitive is a write path against
+    `graph.lbug` and MUST run inside a `under_safe_write` guard. In SOFT
+    mode (default) a missing guard logs `kg.write_barrier.unguarded` and
+    bumps `kg_unguarded_write_total` without blocking — production wires
+    callers to enter the guard via KGSafeWriteLifecycle. In STRICT mode
+    (tests + dedicated production deployments) the absence of a guard
+    raises ``WriteLifecycleViolation`` before the Kùzu write begins.
     """
+    from okto_pulse.core.kg.write_barrier import require_write_token
+
     registry = get_kg_registry()
     session = await _require_open_session(req.session_id, agent_id)
+
+    # FR5/FR6 barrier check. Uses session.board_id so a multi-board
+    # process never blocks the wrong board. Raises in STRICT, logs+counter
+    # in SOFT.
+    require_write_token(session.board_id)
 
     async with session.lock:
         effective_hints = dict(session.reconciliation_hints)

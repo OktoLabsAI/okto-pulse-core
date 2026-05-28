@@ -81,6 +81,29 @@ def create_app(
         await event_dispatcher.start()
         set_dispatcher(event_dispatcher)
 
+        # Start the deterministic KG consolidation worker. The dispatcher
+        # only enqueues consolidation work; this worker is the component that
+        # drains consolidation_queue into graph.lbug. Without it, DLQ
+        # reprocess and rebuild backlogs remain pending until an ad-hoc MCP
+        # process_now call runs a one-off batch.
+        consolidation_worker = None
+        try:
+            from okto_pulse.core.kg.workers.consolidation import (
+                get_consolidation_worker,
+            )
+
+            consolidation_worker = get_consolidation_worker()
+            await consolidation_worker.start()
+        except Exception as exc:
+            logger.warning(
+                "kg.consolidation_worker.start_failed err=%s",
+                exc,
+                extra={
+                    "event": "kg.consolidation_worker.start_failed",
+                    "error": str(exc),
+                },
+            )
+
         # NC-10 fix: migrate per-board KG schemas idempotently on boot.
         # Boards created before SCHEMA_VERSION 0.3.3 lack the
         # ``last_recomputed_at`` column on every node type, which floods
@@ -218,10 +241,29 @@ def create_app(
                     pass
             await event_dispatcher.stop(timeout=5.0)
             set_dispatcher(None)
+            if consolidation_worker is not None:
+                await consolidation_worker.stop()
             if cleanup_worker is not None:
                 await cleanup_worker.stop()
             if outbox_worker is not None:
                 await outbox_worker.stop()
+            # Release LadybugDB handles explicitly on graceful shutdown.
+            # Relying on interpreter teardown can leave WAL sidecars as the
+            # only holder of recent writes; a later bootstrap probe may then
+            # see a corrupt WAL and previously attempted an automatic purge.
+            try:
+                from okto_pulse.core.kg.schema import close_all_connections
+
+                close_all_connections()
+            except Exception as exc:
+                logger.warning(
+                    "kg.shutdown.close_connections_failed err=%s",
+                    exc,
+                    extra={
+                        "event": "kg.shutdown.close_connections_failed",
+                        "error": str(exc),
+                    },
+                )
             await close_db()
 
     app = FastAPI(

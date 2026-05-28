@@ -13,6 +13,8 @@ import hashlib
 import json
 import re
 import uuid
+from collections import Counter
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
@@ -113,6 +115,490 @@ REQUIRED_LINKED_NODE_FIELDS: tuple[str, ...] = (
 ARCHITECTURE_DESIGN_SCHEMA_VERSION = "2026-05-04"
 SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT = "excalidraw_json"
 
+TOPOLOGY_WARNING_CODES: frozenset[str] = frozenset({
+    "isolated_entity_node",
+    "disconnected_subgraph",
+    "dangling_connector",
+    "entity_without_diagram",
+    "conceptual_justification_invalid",
+})
+
+TOPOLOGY_SUGGESTED_FIXES: dict[str, str] = {
+    "isolated_entity_node": "Connect '{label}' to a producer/consumer, remove it from this diagram, or add a valid conceptual justification.",
+    "disconnected_subgraph": "Connect the disconnected subgraph to the main flow, split it into a separate diagram, or justify it when the diagram is conceptual.",
+    "dangling_connector": "Set both sourceElementId and targetElementId to existing diagram elements or remove the connector.",
+    "entity_without_diagram": "Add a linked diagram node for entity '{entity_name}' or document why the entity is intentionally not visualized.",
+    "conceptual_justification_invalid": "Replace the placeholder justification with a specific reason for why this element is intentionally isolated.",
+}
+
+CONCEPTUAL_CONNECTIVITY_WARNING_CODES: frozenset[str] = frozenset({
+    "isolated_entity_node",
+    "disconnected_subgraph",
+})
+
+CONCEPTUAL_JUSTIFICATION_PLACEHOLDERS: frozenset[str] = frozenset({
+    "todo",
+    "tbd",
+    "n/a",
+    "na",
+    "none",
+    "fix later",
+})
+
+CONCEPTUAL_JUSTIFICATION_MIN_CHARS = 12
+CONCEPTUAL_JUSTIFICATION_MAX_CHARS = 500
+
+
+@dataclass(frozen=True)
+class ArchitectureWarningRecord:
+    """Structured non-blocking architecture validation warning."""
+
+    code: str
+    message: str
+    path: str
+    suggested_fix: str
+    severity: str = "warning"
+    diagram_id: str | None = None
+    diagram_type: str | None = None
+    element_id: str | None = None
+    entity_id: str | None = None
+    node_ref: str | None = None
+    justification: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.code not in TOPOLOGY_WARNING_CODES:
+            raise ValueError(f"unknown architecture warning code: {self.code}")
+        if self.severity != "warning":
+            raise ValueError("ArchitectureWarningRecord severity must be 'warning'")
+        target_count = sum(1 for value in (self.element_id, self.entity_id, self.node_ref) if value)
+        if target_count > 1:
+            raise ValueError("ArchitectureWarningRecord accepts at most one primary target")
+        if not self.path:
+            raise ValueError("ArchitectureWarningRecord.path is required")
+
+    def to_dict(self) -> dict[str, Any]:
+        data = {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "path": self.path,
+            "suggested_fix": self.suggested_fix,
+            "diagram_id": self.diagram_id,
+            "diagram_type": self.diagram_type,
+            "element_id": self.element_id,
+            "entity_id": self.entity_id,
+            "node_ref": self.node_ref,
+            "justification": self.justification,
+        }
+        return {key: value for key, value in data.items() if value not in (None, "")}
+
+
+@dataclass(frozen=True)
+class TopologyWarningEvaluation:
+    """Result produced by the pure architecture topology analyzer."""
+
+    warnings: tuple[ArchitectureWarningRecord, ...]
+    suppressed_warnings: tuple[ArchitectureWarningRecord, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "warnings": [warning.to_dict() for warning in self.warnings],
+            "suppressed_warnings": [warning.to_dict() for warning in self.suppressed_warnings],
+        }
+
+
+@dataclass(frozen=True)
+class _TopologyNode:
+    ref: str
+    element_id: str | None
+    path: str
+    label: str
+    linked_entity_ref: str | None
+
+
+class TopologyWarningEngine:
+    """Pure, adapter-neutral topology checks for Architecture Design diagrams."""
+
+    EDGE_TYPES = frozenset({"arrow", "line"})
+
+    def evaluate(
+        self,
+        *,
+        entities: list[dict[str, Any]],
+        diagrams: list[dict[str, Any]],
+        existing_issues: list[str] | None = None,
+    ) -> TopologyWarningEvaluation:
+        """Return deterministic non-blocking topology and coverage warnings.
+
+        ``existing_issues`` is accepted for the later payload-critic wiring path.
+        The engine never downgrades or removes existing blocking issues.
+        """
+        _ = existing_issues
+        if not isinstance(entities, list) or not isinstance(diagrams, list):
+            return TopologyWarningEvaluation(warnings=())
+
+        declared_entities, entity_ref_to_declared = self._declared_entities(entities)
+        covered_entities: set[str] = set()
+        warnings: list[ArchitectureWarningRecord] = []
+        suppressed_warnings: list[ArchitectureWarningRecord] = []
+
+        for diagram_index, raw_diagram in enumerate(diagrams):
+            if not isinstance(raw_diagram, dict):
+                continue
+            if (raw_diagram.get("format") or SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT) != SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT:
+                continue
+            payload = raw_diagram.get("adapter_payload")
+            if not isinstance(payload, dict):
+                continue
+            diagram_warnings, diagram_covered = self._evaluate_diagram(
+                raw_diagram,
+                payload,
+                diagram_index,
+                entity_ref_to_declared,
+            )
+            active_warnings, suppressed, justification_warnings = self._apply_conceptual_justifications(
+                raw_diagram,
+                diagram_index,
+                diagram_warnings,
+            )
+            warnings.extend(active_warnings)
+            warnings.extend(justification_warnings)
+            suppressed_warnings.extend(suppressed)
+            covered_entities.update(diagram_covered)
+
+        for declared in declared_entities:
+            if declared["declared_ref"] in covered_entities:
+                continue
+            entity_name = declared["name"] or declared["entity_id"]
+            warnings.append(
+                ArchitectureWarningRecord(
+                    code="entity_without_diagram",
+                    diagram_id=None,
+                    diagram_type=None,
+                    entity_id=declared["entity_id"],
+                    path=declared["path"],
+                    message=f"Architecture entity '{entity_name}' is not represented by any linked diagram node.",
+                    suggested_fix=TOPOLOGY_SUGGESTED_FIXES["entity_without_diagram"].format(entity_name=entity_name),
+                )
+            )
+
+        return TopologyWarningEvaluation(
+            warnings=tuple(self._sort_warnings(warnings)),
+            suppressed_warnings=tuple(self._sort_warnings(suppressed_warnings)),
+        )
+
+    def _evaluate_diagram(
+        self,
+        diagram: dict[str, Any],
+        payload: dict[str, Any],
+        diagram_index: int,
+        entity_ref_to_declared: dict[str, str],
+    ) -> tuple[list[ArchitectureWarningRecord], set[str]]:
+        diagram_id = str(diagram.get("id") or f"diagram[{diagram_index}]")
+        diagram_type = str(diagram.get("diagram_type") or "")
+        elements = payload.get("elements") or []
+        if not isinstance(elements, list):
+            return [], set()
+
+        nodes: dict[str, _TopologyNode] = {}
+        covered_entities: set[str] = set()
+        warnings: list[ArchitectureWarningRecord] = []
+        edge_candidates: list[tuple[int, dict[str, Any]]] = []
+
+        diagram_path = f"diagrams[{diagram_index}].adapter_payload"
+        for element_index, raw_element in enumerate(elements):
+            if not isinstance(raw_element, dict):
+                continue
+            element_type = str(raw_element.get("type") or "")
+            if element_type in self.EDGE_TYPES:
+                edge_candidates.append((element_index, raw_element))
+                continue
+            element_id = str(raw_element.get("id") or "").strip() or None
+            element_ref = self._node_ref(raw_element, element_id)
+            if not element_ref:
+                continue
+            linked_entity_raw = _custom_or_top_level(raw_element, "linkedEntityId")
+            linked_entity_ref = _canonical_ref(linked_entity_raw)
+            declared_ref = entity_ref_to_declared.get(linked_entity_ref) if linked_entity_ref else None
+            if declared_ref:
+                covered_entities.add(declared_ref)
+            nodes[element_ref] = _TopologyNode(
+                ref=element_ref,
+                element_id=element_id,
+                path=f"{diagram_path}.elements[{element_index}]",
+                label=self._element_label(raw_element, element_id or element_ref),
+                linked_entity_ref=declared_ref,
+            )
+
+        adjacency: dict[str, set[str]] = {node_ref: set() for node_ref in nodes}
+        for element_index, raw_edge in edge_candidates:
+            edge_path = f"{diagram_path}.elements[{element_index}]"
+            source_id = _custom_or_top_level(raw_edge, "sourceElementId")
+            target_id = _custom_or_top_level(raw_edge, "targetElementId")
+            source_ref = _canonical_ref(source_id)
+            target_ref = _canonical_ref(target_id)
+            if not source_ref or not target_ref or source_ref not in nodes or target_ref not in nodes:
+                element_id = str(raw_edge.get("id") or "").strip() or None
+                warnings.append(
+                    ArchitectureWarningRecord(
+                        code="dangling_connector",
+                        diagram_id=diagram_id,
+                        diagram_type=diagram_type,
+                        element_id=element_id,
+                        path=edge_path,
+                        message="Diagram connector does not resolve both sourceElementId and targetElementId to existing nodes.",
+                        suggested_fix=TOPOLOGY_SUGGESTED_FIXES["dangling_connector"],
+                    )
+                )
+                continue
+            adjacency[source_ref].add(target_ref)
+            adjacency[target_ref].add(source_ref)
+
+        for node_ref, node in nodes.items():
+            if node.linked_entity_ref and not adjacency[node_ref]:
+                warnings.append(
+                    ArchitectureWarningRecord(
+                        code="isolated_entity_node",
+                        diagram_id=diagram_id,
+                        diagram_type=diagram_type,
+                        element_id=node.element_id,
+                        node_ref=None if node.element_id else node.ref,
+                        path=node.path,
+                        message=f"Diagram entity node '{node.label}' has no incident connector.",
+                        suggested_fix=TOPOLOGY_SUGGESTED_FIXES["isolated_entity_node"].format(label=node.label),
+                    )
+                )
+
+        connected_components = self._connected_components(adjacency)
+        connected_components = [component for component in connected_components if any(adjacency[node_ref] for node_ref in component)]
+        if len(connected_components) > 1:
+            primary = connected_components[0]
+            for component in connected_components:
+                if component == primary:
+                    continue
+                focus_ref = sorted(component)[0]
+                focus = nodes[focus_ref]
+                warnings.append(
+                    ArchitectureWarningRecord(
+                        code="disconnected_subgraph",
+                        diagram_id=diagram_id,
+                        diagram_type=diagram_type,
+                        element_id=focus.element_id,
+                        node_ref=None if focus.element_id else focus.ref,
+                        path=focus.path,
+                        message=f"Diagram contains a disconnected subgraph with {len(component)} node(s).",
+                        suggested_fix=TOPOLOGY_SUGGESTED_FIXES["disconnected_subgraph"],
+                    )
+                )
+
+        return warnings, covered_entities
+
+    def _apply_conceptual_justifications(
+        self,
+        diagram: dict[str, Any],
+        diagram_index: int,
+        warnings: list[ArchitectureWarningRecord],
+    ) -> tuple[list[ArchitectureWarningRecord], list[ArchitectureWarningRecord], list[ArchitectureWarningRecord]]:
+        raw_justifications = diagram.get("connectivity_justifications")
+        if not isinstance(raw_justifications, dict) or not raw_justifications:
+            return warnings, [], []
+
+        valid_justifications: dict[str, str] = {}
+        invalid_warnings: list[ArchitectureWarningRecord] = []
+        for raw_key, raw_value in raw_justifications.items():
+            key = str(raw_key or "").strip()
+            path = f"diagrams[{diagram_index}].connectivity_justifications[{key!r}]"
+            if not key:
+                invalid_warnings.append(self._invalid_justification_warning(diagram, diagram_index, path, None, None))
+                continue
+            justification, invalid_reason = self._validate_connectivity_justification(raw_value)
+            if invalid_reason:
+                target_warning = self._warning_for_justification_key(warnings, key)
+                invalid_warnings.append(
+                    self._invalid_justification_warning(
+                        diagram,
+                        diagram_index,
+                        path,
+                        target_warning,
+                        invalid_reason,
+                    )
+                )
+                continue
+            valid_justifications[_canonical_ref(key)] = justification
+
+        if not self._is_conceptual_diagram(diagram):
+            return warnings, [], invalid_warnings
+
+        active_warnings: list[ArchitectureWarningRecord] = []
+        suppressed_warnings: list[ArchitectureWarningRecord] = []
+        for warning in warnings:
+            if warning.code not in CONCEPTUAL_CONNECTIVITY_WARNING_CODES:
+                active_warnings.append(warning)
+                continue
+            justification = self._matching_justification(warning, valid_justifications)
+            if not justification:
+                active_warnings.append(warning)
+                continue
+            suppressed_warnings.append(
+                ArchitectureWarningRecord(
+                    code=warning.code,
+                    message=warning.message,
+                    path=warning.path,
+                    suggested_fix=warning.suggested_fix,
+                    severity=warning.severity,
+                    diagram_id=warning.diagram_id,
+                    diagram_type=warning.diagram_type,
+                    element_id=warning.element_id,
+                    entity_id=warning.entity_id,
+                    node_ref=warning.node_ref,
+                    justification=justification,
+                )
+            )
+        return active_warnings, suppressed_warnings, invalid_warnings
+
+    def _invalid_justification_warning(
+        self,
+        diagram: dict[str, Any],
+        diagram_index: int,
+        path: str,
+        target_warning: ArchitectureWarningRecord | None,
+        reason: str | None,
+    ) -> ArchitectureWarningRecord:
+        reason_suffix = f" {reason}" if reason else ""
+        return ArchitectureWarningRecord(
+            code="conceptual_justification_invalid",
+            diagram_id=str(diagram.get("id") or f"diagram[{diagram_index}]"),
+            diagram_type=str(diagram.get("diagram_type") or ""),
+            element_id=target_warning.element_id if target_warning else None,
+            node_ref=(None if target_warning and target_warning.element_id else target_warning.node_ref) if target_warning else None,
+            path=path,
+            message=f"Conceptual connectivity justification is invalid.{reason_suffix}",
+            suggested_fix=TOPOLOGY_SUGGESTED_FIXES["conceptual_justification_invalid"],
+        )
+
+    def _validate_connectivity_justification(self, value: Any) -> tuple[str, str | None]:
+        justification = str(value or "").strip()
+        if not justification:
+            return "", "Provide a non-empty justification."
+        length = len(justification)
+        if length < CONCEPTUAL_JUSTIFICATION_MIN_CHARS:
+            return justification, f"Use at least {CONCEPTUAL_JUSTIFICATION_MIN_CHARS} characters after trimming."
+        if length > CONCEPTUAL_JUSTIFICATION_MAX_CHARS:
+            return justification, f"Use at most {CONCEPTUAL_JUSTIFICATION_MAX_CHARS} characters after trimming."
+        lowered = justification.casefold()
+        compacted = re.sub(r"[\s/._-]+", "", lowered)
+        if lowered in CONCEPTUAL_JUSTIFICATION_PLACEHOLDERS or compacted in {"todo", "tbd", "na", "none", "fixlater"}:
+            return justification, "Replace placeholder text with a specific reason."
+        if lowered.startswith(("todo", "tbd", "fix later")):
+            return justification, "Replace placeholder text with a specific reason."
+        return justification, None
+
+    def _warning_for_justification_key(
+        self,
+        warnings: list[ArchitectureWarningRecord],
+        key: str,
+    ) -> ArchitectureWarningRecord | None:
+        key_ref = _canonical_ref(key)
+        for warning in warnings:
+            if warning.element_id and _canonical_ref(warning.element_id) == key_ref:
+                return warning
+        for warning in warnings:
+            if not warning.element_id and warning.node_ref and _canonical_ref(warning.node_ref) == key_ref:
+                return warning
+        return None
+
+    def _matching_justification(
+        self,
+        warning: ArchitectureWarningRecord,
+        valid_justifications: dict[str, str],
+    ) -> str | None:
+        if warning.element_id:
+            return valid_justifications.get(_canonical_ref(warning.element_id))
+        if warning.node_ref:
+            return valid_justifications.get(_canonical_ref(warning.node_ref))
+        return None
+
+    def _is_conceptual_diagram(self, diagram: dict[str, Any]) -> bool:
+        if diagram.get("is_conceptual") is True:
+            return True
+        diagram_type = _canonical_ref(diagram.get("diagram_type"))
+        return "concept" in diagram_type
+
+    def _declared_entities(self, entities: list[dict[str, Any]]) -> tuple[list[dict[str, str]], dict[str, str]]:
+        declared: list[dict[str, str]] = []
+        ref_to_declared: dict[str, str] = {}
+        for index, entity in enumerate(entities):
+            if not isinstance(entity, dict):
+                continue
+            entity_id = str(entity.get("id") or entity.get("name") or f"entities[{index}]").strip()
+            entity_name = str(entity.get("name") or "").strip()
+            declared_ref = _canonical_ref(entity.get("id") or entity.get("name") or entity_id)
+            if not declared_ref:
+                continue
+            declared.append(
+                {
+                    "declared_ref": declared_ref,
+                    "entity_id": entity_id,
+                    "name": entity_name,
+                    "path": f"entities[{index}]",
+                }
+            )
+            for ref_value in (entity.get("id"), entity.get("name")):
+                ref = _canonical_ref(ref_value)
+                if ref:
+                    ref_to_declared[ref] = declared_ref
+        return declared, ref_to_declared
+
+    def _connected_components(self, adjacency: dict[str, set[str]]) -> list[set[str]]:
+        visited: set[str] = set()
+        components: list[set[str]] = []
+        for node_ref in adjacency:
+            if node_ref in visited:
+                continue
+            stack = [node_ref]
+            component: set[str] = set()
+            while stack:
+                current = stack.pop()
+                if current in visited:
+                    continue
+                visited.add(current)
+                component.add(current)
+                stack.extend(sorted(adjacency[current] - visited, reverse=True))
+            components.append(component)
+        return components
+
+    def _element_label(self, element: dict[str, Any], fallback: str) -> str:
+        for key in ("text", "label", "name"):
+            value = str(element.get(key) or "").strip()
+            if value:
+                return value.splitlines()[0].strip()
+        return fallback
+
+    def _node_ref(self, element: dict[str, Any], element_id: str | None) -> str:
+        for value in (
+            element_id,
+            _custom_or_top_level(element, "node_ref"),
+            _custom_or_top_level(element, "nodeRef"),
+        ):
+            ref = _canonical_ref(value)
+            if ref:
+                return ref
+        return ""
+
+    def _sort_warnings(self, warnings: list[ArchitectureWarningRecord]) -> list[ArchitectureWarningRecord]:
+        return sorted(
+            warnings,
+            key=lambda warning: (
+                warning.severity,
+                warning.code,
+                warning.diagram_id or "",
+                warning.path,
+                warning.element_id or "",
+                warning.entity_id or "",
+                warning.node_ref or "",
+            ),
+        )
+
 
 def architecture_design_payload_schema() -> dict[str, Any]:
     """Machine-readable authoring contract for Architecture Design payloads."""
@@ -124,6 +610,28 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                 "interface.direction": sorted(ALLOWED_INTERFACE_DIRECTIONS),
                 "diagram.format": [SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT],
                 "excalidraw.connectionType": sorted(ALLOWED_CONNECTION_TYPES),
+                "topology_warning.code": sorted(TOPOLOGY_WARNING_CODES),
+                "topology_warning.severity": ["warning"],
+            },
+            "topology_warning_contract": {
+                "record_shape": {
+                    "required": ["code", "severity", "message", "path", "suggested_fix"],
+                    "target_fields": ["element_id", "entity_id", "node_ref"],
+                    "target_rule": "At most one primary target field is set; node_ref is legacy/import fallback.",
+                },
+                "connectivity_justifications": {
+                    "location": "diagram.connectivity_justifications",
+                    "scope": "conceptual diagrams only",
+                    "key_preference": "Use element_id keys; use node_ref only for legacy/imported diagrams without stable ids.",
+                    "value_constraints": {
+                        "min_trimmed_chars": CONCEPTUAL_JUSTIFICATION_MIN_CHARS,
+                        "max_trimmed_chars": CONCEPTUAL_JUSTIFICATION_MAX_CHARS,
+                        "placeholder_values": sorted(CONCEPTUAL_JUSTIFICATION_PLACEHOLDERS),
+                    },
+                    "suppressible_codes": sorted(CONCEPTUAL_CONNECTIVITY_WARNING_CODES),
+                    "non_suppressible_codes": ["dangling_connector", "entity_without_diagram"],
+                },
+                "suggested_fix_templates": copy.deepcopy(TOPOLOGY_SUGGESTED_FIXES),
             },
             "root_contract": {
                 "required": ["title", "global_description"],
@@ -333,6 +841,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     "Each element needs a stable id.",
                     "Nodes should set linkedEntityId to an entity id or name.",
                     "Edges should set sourceElementId, targetElementId, linkedInterfaceIds and connectionType.",
+                    "For conceptual diagrams, diagram.connectivity_justifications may suppress isolated_entity_node and disconnected_subgraph warnings only with valid explicit reasons.",
                     "Use linkedInterfaceIds for one or more contracts on the same connection; linkedInterfaceId remains accepted for legacy single-contract edges.",
                     "The source and target linkedEntityId values of the edge define the two endpoint entities for linked interfaces.",
                     "connectionType accepts only direct or elbow. Use elbow for routed/orthogonal connections. Do not use curved.",
@@ -1172,6 +1681,8 @@ class ArchitectureDesignRepository:
                 "valid": False,
                 "issues": issues,
                 "warnings": warnings,
+                "structured_warnings": [],
+                "suppressed_warnings": [],
                 "suggested_fixes": self._suggest_fixes(issues),
                 "summary": self._payload_summary({}),
             }
@@ -1190,11 +1701,20 @@ class ArchitectureDesignRepository:
         interface_items = self._ref_item_index(interfaces)
         self._validate_diagrams(payload.get("diagrams"), entity_refs, interface_refs, interface_items, issues, warnings)
 
+        diagrams_value = payload.get("diagrams")
+        topology_evaluation = TopologyWarningEngine().evaluate(
+            entities=entities,
+            diagrams=diagrams_value if isinstance(diagrams_value, list) else [],
+            existing_issues=issues,
+        )
+        topology_result = topology_evaluation.to_dict()
+        structured_warnings = topology_result["warnings"]
+        suppressed_warnings = topology_result["suppressed_warnings"]
+
         # Spec cc497a0d — semantic node normalization. Runs after structural
         # validation so dangling refs surface their own messages first, then
         # checks that linked nodes carry text/displayType/architectureKind/iconName
         # consistent with the entity's entity_type and the canonical registry.
-        diagrams_value = payload.get("diagrams")
         if isinstance(diagrams_value, list):
             for d_index, raw_diagram in enumerate(diagrams_value):
                 if not isinstance(raw_diagram, dict):
@@ -1210,12 +1730,35 @@ class ArchitectureDesignRepository:
                 warnings.extend(sem_warnings)
                 issues.extend(sem_issues)
 
+        summary = self._payload_summary(payload)
+        summary["structured_warnings_count"] = len(structured_warnings)
+        summary["suppressed_warnings_count"] = len(suppressed_warnings)
+        summary["structured_warning_codes"] = [warning["code"] for warning in structured_warnings]
+        by_code = Counter(str(warning.get("code") or "unknown") for warning in structured_warnings)
+        by_code_and_diagram_type = Counter(
+            (
+                str(warning.get("code") or "unknown"),
+                str(warning.get("diagram_type") or "unknown"),
+            )
+            for warning in structured_warnings
+        )
+        summary["structured_warning_counts_by_code"] = {
+            code: by_code[code]
+            for code in sorted(by_code)
+        }
+        summary["structured_warning_counts_by_code_and_diagram_type"] = [
+            {"code": code, "diagram_type": diagram_type, "count": count}
+            for (code, diagram_type), count in sorted(by_code_and_diagram_type.items())
+        ]
+
         return {
             "valid": not issues,
             "issues": issues,
             "warnings": warnings,
+            "structured_warnings": structured_warnings,
+            "suppressed_warnings": suppressed_warnings,
             "suggested_fixes": self._suggest_fixes(issues + warnings),
-            "summary": self._payload_summary(payload),
+            "summary": summary,
         }
 
     def validate_payload(self, payload: dict[str, Any]) -> None:

@@ -6,6 +6,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from okto_pulse.core.discovery_params_schema import (
+    DiscoveryParamsSchema,
+    normalize_discovery_params_schema,
+)
 from okto_pulse.core.models.db import (
     CardPriority,
     CardStatus,
@@ -1663,6 +1667,40 @@ class ConclusionEntry(BaseModel):
     drift: int = 0  # 0-100
     drift_justification: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_shapes(cls, value: Any) -> Any:
+        """Accept historical executor/MCP conclusion payload variants.
+
+        `cards.conclusions` is an append-only JSON field and older/newer
+        writers have used `description`/`body` and `author`/`author_agent_id`.
+        The public card response keeps the stable `text` + `author_id` shape.
+        """
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        if not data.get("text"):
+            data["text"] = (
+                data.get("description")
+                or data.get("body")
+                or data.get("summary")
+                or data.get("conclusion")
+                or data.get("message")
+                or ""
+            )
+        if not data.get("author_id"):
+            data["author_id"] = (
+                data.get("author")
+                or data.get("author_agent_id")
+                or data.get("actor_id")
+                or data.get("reviewer_id")
+                or data.get("created_by")
+                or "unknown"
+            )
+        if not data.get("created_at"):
+            data["created_at"] = "1970-01-01T00:00:00+00:00"
+        return data
+
 
 class CardMove(BaseModel):
     """Schema for moving a card between columns."""
@@ -2262,13 +2300,20 @@ class DiscoveryIntentResponse(BaseModel):
     description: str | None = None
     category: str
     tool_binding: str
-    params_schema: dict[str, Any] | None = None
+    params_schema: DiscoveryParamsSchema | None = None
     renderer: str = "table"
     min_permission: str | None = None
     active: bool = True
     is_seed: bool = False
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("params_schema", mode="before")
+    @classmethod
+    def _normalize_params_schema(
+        cls, value: dict[str, Any] | None
+    ) -> DiscoveryParamsSchema | None:
+        return normalize_discovery_params_schema(value)
 
 
 class DiscoverySavedSearchResponse(BaseModel):

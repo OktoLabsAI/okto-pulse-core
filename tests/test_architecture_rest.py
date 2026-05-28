@@ -61,6 +61,101 @@ def _architecture_body(title: str = "Runtime Architecture") -> dict:
     }
 
 
+def _topology_warning_body() -> dict:
+    return {
+        "title": "Runtime topology warnings",
+        "global_description": "Topology warning contract fixture.",
+        "entities": [
+            {
+                "id": "entity-web",
+                "name": "Customer Portal",
+                "entity_type": "web_app",
+                "responsibility": "Sends requests.",
+                "boundaries": "Browser.",
+            },
+            {
+                "id": "entity-api",
+                "name": "Pulse API",
+                "entity_type": "api",
+                "responsibility": "Handles requests.",
+                "boundaries": "Backend.",
+            },
+            {
+                "id": "entity-audit",
+                "name": "Audit Sink",
+                "entity_type": "service",
+                "responsibility": "Consumes audit records.",
+                "boundaries": "Async sink.",
+            },
+        ],
+        "interfaces": [
+            {
+                "id": "interface-web-api",
+                "name": "Call Pulse API",
+                "description": "Customer Portal calls Pulse API.",
+                "participants": ["entity-web", "entity-api"],
+                "direction": "source_to_target",
+                "endpoint": "GET /pulse",
+                "protocol": "REST",
+                "contract_type": "OpenAPI",
+                "request_schema": {"type": "object"},
+                "response_schema": {"type": "object"},
+            }
+        ],
+        "diagrams": [
+            {
+                "id": "diagram-runtime",
+                "title": "Runtime",
+                "diagram_type": "runtime",
+                "format": "excalidraw_json",
+                "adapter_payload": {
+                    "type": "excalidraw",
+                    "version": 2,
+                    "elements": [
+                        {
+                            "id": "node-web",
+                            "type": "rectangle",
+                            "linkedEntityId": "entity-web",
+                            "text": "Customer Portal",
+                            "displayType": "Web App",
+                            "architectureKind": "frontend",
+                            "iconName": "monitor",
+                        },
+                        {
+                            "id": "node-api",
+                            "type": "rectangle",
+                            "linkedEntityId": "entity-api",
+                            "text": "Pulse API",
+                            "displayType": "API",
+                            "architectureKind": "service",
+                            "iconName": "server",
+                        },
+                        {
+                            "id": "node-audit",
+                            "type": "rectangle",
+                            "linkedEntityId": "entity-audit",
+                            "text": "Audit Sink",
+                            "displayType": "Service",
+                            "architectureKind": "service",
+                            "iconName": "server",
+                        },
+                        {
+                            "id": "edge-web-api",
+                            "type": "arrow",
+                            "sourceElementId": "node-web",
+                            "targetElementId": "node-api",
+                            "linkedInterfaceIds": ["interface-web-api"],
+                            "connectionType": "elbow",
+                        },
+                    ],
+                    "appState": {},
+                    "files": {},
+                },
+            }
+        ],
+    }
+
+
 @pytest_asyncio.fixture
 async def _client_and_entities():
     db_factory = get_session_factory()
@@ -207,6 +302,44 @@ def test_rest_validate_architecture_payload_returns_warnings_without_persisting(
     assert any("entities[0].responsibility" in item for item in body["warnings"])
 
 
+def test_rest_validate_architecture_payload_returns_structured_topology_warnings(_client_and_entities):
+    client, _ = _client_and_entities
+
+    critique = client.post("/api/v1/architecture/validate", json=_topology_warning_body())
+
+    assert critique.status_code == 200, critique.text
+    body = critique.json()
+    assert body["valid"] is True
+    assert body["issues"] == []
+    assert body["warnings"] == []
+    assert body["suppressed_warnings"] == []
+    assert [item["code"] for item in body["structured_warnings"]] == ["isolated_entity_node"]
+    warning = body["structured_warnings"][0]
+    assert warning["severity"] == "warning"
+    assert warning["diagram_id"] == "diagram-runtime"
+    assert warning["element_id"] == "node-audit"
+    assert warning["suggested_fix"].startswith("Connect 'Audit Sink'")
+    assert body["summary"]["structured_warnings_count"] == 1
+    assert body["summary"]["structured_warning_codes"] == ["isolated_entity_node"]
+
+
+def test_rest_invalid_linked_entity_remains_blocking_issue_not_isolated_warning(_client_and_entities):
+    client, _ = _client_and_entities
+    payload = _topology_warning_body()
+    payload["entities"] = [payload["entities"][0]]
+    payload["diagrams"][0]["adapter_payload"]["elements"] = [
+        {"id": "node-bad", "type": "rectangle", "linkedEntityId": "entity-missing", "text": "Missing"},
+    ]
+
+    critique = client.post("/api/v1/architecture/validate", json=payload)
+
+    assert critique.status_code == 200, critique.text
+    body = critique.json()
+    assert body["valid"] is False
+    assert any("linkedEntityId references 'entity-missing'" in issue for issue in body["issues"])
+    assert "isolated_entity_node" not in [item["code"] for item in body["structured_warnings"]]
+
+
 def test_rest_rejects_non_excalidraw_diagram_format(_client_and_entities):
     client, ids = _client_and_entities
     body = _architecture_body("Mermaid Architecture")
@@ -248,6 +381,7 @@ def test_copy_architecture_from_spec_to_card_does_not_mark_stale(_client_and_ent
     assert card_design["source_design_id"] == source["id"]
     assert card_design["source_version"] == 1
     assert card_design["diagrams"][0]["adapter_payload_ref"] != source["diagrams"][0]["adapter_payload_ref"]
+    assert card_design["diagrams"][0]["content_hash"] == source["diagrams"][0]["content_hash"]
 
     changed = client.patch(
         f"/api/v1/architecture/{source['id']}",

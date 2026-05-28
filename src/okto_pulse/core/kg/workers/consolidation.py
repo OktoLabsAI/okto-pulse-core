@@ -8,7 +8,10 @@ For each pending queue entry the worker:
     3. Drives the primitives pipeline: begin → propose_reconciliation →
        commit. The session uses `agent_id="system:historical_consolidation"`
        so the layer-ownership BR allows deterministic edges through.
-    4. Marks the queue entry as `done` (or `failed`).
+    4. Runs the LadybugDB safe-write lifecycle before the queue row is
+       acknowledged, proving the graph is readable from disk after
+       close/reopen.
+    5. Marks the queue entry as `done` (or `failed`).
 
 The cognitive agent picks up `missing_link_candidates` later and proposes
 the residual semantic edges (capped at confidence 0.85 per BR `Cognitive
@@ -51,6 +54,14 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
+from okto_pulse.core.kg.safe_write_lifecycle import (
+    HealthProbe,
+    KGSafeWriteLifecycle,
+    LockOwnerProbe,
+    SafeWriteLifecycleStatus,
+)
+from okto_pulse.core.kg.schema import apply_ladybug_lifecycle_step
+from okto_pulse.core.kg.write_barrier import under_safe_write
 from okto_pulse.core.kg.workers.deterministic_worker import (
     DeterministicWorker,
     EmittedEdge,
@@ -63,6 +74,122 @@ from okto_pulse.core.kg.workers.deterministic_worker import (
 logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
 AGENT_ID = "system:historical_consolidation"
+CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
+_board_processing_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_board_processing_lock(board_id: str) -> asyncio.Lock:
+    lock = _board_processing_locks.get(board_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _board_processing_locks[board_id] = lock
+    return lock
+
+
+def _worker_owner_probe(_board_id: str, owner_token: str) -> bool:
+    """Validate process-local consolidation owner tokens.
+
+    The historical consolidation worker is already serialised by the
+    queue-claim contract for one board inside one server process. The
+    critical durability gap was that normal worker commits never entered
+    the safe-write guard/lifecycle before acknowledging the queue row.
+    This probe keeps KGSafeWriteLifecycle's owner-token contract explicit
+    for the worker-owned token generated per queue entry.
+    """
+
+    return owner_token.startswith("consolidation-worker:")
+
+
+def _worker_health_probe(
+    _board_id: str,
+    _graph_type: str,
+    status: SafeWriteLifecycleStatus,
+    _step: str | None,
+) -> str:
+    return "healthy" if status is SafeWriteLifecycleStatus.APPLIED else "recovery_needed"
+
+
+def _apply_board_graph_lifecycle_after_commit(
+    *,
+    board_id: str,
+    owner_token: str,
+    mutation_ref: str,
+):
+    """Run checkpoint/flush/fsync/close-reopen before queue acknowledgement."""
+
+    lifecycle = KGSafeWriteLifecycle(
+        step_adapter=apply_ladybug_lifecycle_step,
+        owner_probe=LockOwnerProbe(is_active_owner=_worker_owner_probe),
+        health_probe=HealthProbe(classify=_worker_health_probe),
+    )
+    response = lifecycle.apply(
+        board_id=board_id,
+        graph_type="board_graph",
+        operation=CONSOLIDATION_COMMIT_OPERATION,
+        owner_token=owner_token,
+        mutation_ref=mutation_ref,
+    )
+    if response.status is not SafeWriteLifecycleStatus.APPLIED:
+        raise RuntimeError(
+            "board_graph_safe_lifecycle_failed "
+            f"board_id={board_id} mutation_ref={mutation_ref} "
+            f"failed_step={response.failed_step} "
+            f"health_state_after={response.health_state_after} "
+            f"correlation_id={response.correlation_id}"
+        )
+    return response
+
+
+async def _commit_consolidation_with_board_graph_lifecycle(
+    *,
+    entry: ConsolidationQueue,
+    session_id: str,
+    summary_text: str,
+    db: AsyncSession,
+):
+    """Commit a queue item and prove the persisted graph before ACK.
+
+    A previous implementation called ``commit_consolidation`` directly and
+    then deleted the queue row. Field evidence showed the graph could be
+    readable through the process handle while reopening after restart
+    produced an empty/corrupt graph. This wrapper makes the ACK depend on
+    the same LadybugDB lifecycle used by explicit rebuild recovery.
+    """
+
+    owner_token = f"consolidation-worker:{entry.id}:{uuid.uuid4().hex}"
+    mutation_ref = f"{entry.artifact_type}:{entry.artifact_id}:{session_id}"
+    with under_safe_write(entry.board_id, owner_token, CONSOLIDATION_COMMIT_OPERATION):
+        commit_resp = await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=session_id,
+                summary_text=summary_text,
+            ),
+            agent_id=AGENT_ID,
+            db=db,
+        )
+        _apply_board_graph_lifecycle_after_commit(
+            board_id=entry.board_id,
+            owner_token=owner_token,
+            mutation_ref=mutation_ref,
+        )
+    return commit_resp
+
+
+async def _process_queue_entry_serialized(
+    db: AsyncSession,
+    entry: ConsolidationQueue,
+) -> bool:
+    """Process one queue row under a process-local per-board mutex.
+
+    The queue claim contract prevents duplicate rows, but reprocess tools,
+    background workers and rebuild waiters can instantiate more than one
+    worker object in the same server process. LadybugDB allows only one
+    write transaction per graph. Without this guard, two workers can claim
+    different rows for the same board and collide at commit time.
+    """
+
+    async with _get_board_processing_lock(entry.board_id):
+        return await _process_queue_entry(db, entry)
 
 
 # ---------------------------------------------------------------------------
@@ -642,13 +769,16 @@ async def _process_queue_entry(
         force_reprocess=True,
     )
 
-    # 4. commit
-    commit_resp = await commit_consolidation(
-        CommitConsolidationRequest(
-            session_id=session_id,
-            summary_text=f"Historical consolidation of {entry.artifact_type} '{getattr(artifact, 'title', entry.artifact_id)}'",
+    # 4. commit + safe lifecycle. The queue row is only acknowledged after
+    # graph.lbug survives close/reopen from disk.
+    commit_resp = await _commit_consolidation_with_board_graph_lifecycle(
+        entry=entry,
+        session_id=session_id,
+        summary_text=(
+            "Historical consolidation of "
+            f"{entry.artifact_type} "
+            f"'{getattr(artifact, 'title', entry.artifact_id)}'"
         ),
-        agent_id=AGENT_ID,
         db=db,
     )
 
@@ -985,7 +1115,7 @@ class ConsolidationWorker:
         for entry in entries:
             try:
                 async with self.session_factory() as db:
-                    success = await _process_queue_entry(db, entry)
+                    success = await _process_queue_entry_serialized(db, entry)
                     fresh = await db.get(ConsolidationQueue, entry.id)
                     if fresh is None:
                         # Row was already removed (e.g. recovery scan +
@@ -1073,6 +1203,14 @@ class ConsolidationWorker:
                         logger.info(
                             "kg.consolidation_worker.batch processed=%d", processed,
                         )
+                        # Keep draining while there is real progress. The
+                        # rebuild path waits synchronously for this queue to
+                        # reach zero before promoting a generation; sleeping
+                        # the full heartbeat between successful batches turns
+                        # large deterministic rebuilds into artificial
+                        # timeout failures even though the worker is healthy.
+                        await asyncio.sleep(0)
+                        continue
                 except Exception as exc:
                     logger.error(
                         "kg.consolidation_worker.batch_failed: %s", exc, exc_info=True,

@@ -190,6 +190,7 @@ async def _reset_last_recomputed_at(board_id: str | None) -> None:
         VECTOR_INDEX_TYPES,
         open_board_connection,
     )
+    from okto_pulse.core.kg.write_barrier import require_write_token
     from okto_pulse.core.models.db import Board
     from sqlalchemy import select
 
@@ -202,6 +203,12 @@ async def _reset_last_recomputed_at(board_id: str | None) -> None:
             board_ids = list(rows)
 
     for bid in board_ids:
+        # KG-01.3.1 boundary: force_full_rebuild is a write path against
+        # graph.lbug. require_write_token() raises in STRICT mode if no
+        # safe-write guard is active; in SOFT mode (default) it logs and
+        # bumps kg_unguarded_write_total. Production wires the caller to
+        # enter KGSafeWriteLifecycle before invoking this path.
+        require_write_token(bid)
         try:
             conn = open_board_connection(bid)
             with conn as (_kdb, kconn):

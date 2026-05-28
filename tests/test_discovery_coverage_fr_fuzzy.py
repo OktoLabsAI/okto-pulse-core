@@ -46,6 +46,19 @@ def _intent(name: str = "coverage_for_fr") -> SimpleNamespace:
     return SimpleNamespace(name=name)
 
 
+def _validated_fr_selector() -> discovery_executor.ValidatedSpecChildSelector:
+    return discovery_executor.ValidatedSpecChildSelector(
+        param_name="fr_id",
+        spec_id="spec-1",
+        spec_title="Test spec",
+        child_type="functional_requirement",
+        child_id="0",
+        child_index=0,
+        child_ref="spec:spec-1:functional_requirement:0",
+        item={"id": "0", "index": 0, "text": "Adicionar handler"},
+    )
+
+
 @pytest.mark.asyncio
 async def test_fr_id_fuzzy_match_returns_scenarios():
     """fr_id="FR1" matches linked_criteria=["FR1 — texto longo"]."""
@@ -124,6 +137,38 @@ async def test_fr1_collides_with_fr10_documented_in_tr5():
         db, "board-1", _intent("coverage_for_fr"), {"fr_id": "FR1"},
     )
     assert out["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_selector_selected_fr1_does_not_match_fr10():
+    """Selector-backed coverage uses exact FR refs, not substring matching."""
+    spec = _spec(scenarios=[
+        {
+            "id": "ts-fr10",
+            "title": "FR10 scenario",
+            "linked_criteria": ["FR10 — Mapeamento agregado"],
+            "linked_task_ids": ["c1"],
+        },
+        {
+            "id": "ts-fr1",
+            "title": "FR1 scenario",
+            "linked_criteria": ["FR1 — Adicionar handler"],
+            "linked_task_ids": ["c2"],
+        },
+    ])
+    db = _StubSession([spec])
+    out = await discovery_executor._exec_test_scenarios(
+        db,
+        "board-1",
+        _intent("coverage_for_fr"),
+        {"fr_id": {"child_ref": "spec:spec-1:functional_requirement:0"}},
+        selector_values={"fr_id": _validated_fr_selector()},
+    )
+    assert out["total"] == 1
+    assert out["rows"][0]["id"] == "ts-fr1"
+    assert out["rows"][0]["meta"]["selected_child_ref"] == (
+        "spec:spec-1:functional_requirement:0"
+    )
 
 
 @pytest.mark.asyncio

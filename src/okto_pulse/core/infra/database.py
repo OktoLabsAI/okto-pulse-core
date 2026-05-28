@@ -1034,7 +1034,12 @@ async def _bootstrap_default_discovery_intents() -> None:
             "category": "coverage_tracing",
             "tool_binding": "okto_pulse_list_test_scenarios",
             "params_schema": {
-                "fr_id": {"type": "text", "required": True, "label": "FR id"}
+                "fr_id": {
+                    "type": "spec_child_selector",
+                    "required": True,
+                    "label": "Functional requirement",
+                    "child_types": ["functional_requirement"],
+                }
             },
             "renderer": "table",
             "min_permission": "kg.query.global",
@@ -1149,9 +1154,10 @@ async def _bootstrap_default_discovery_intents() -> None:
             "tool_binding": "okto_pulse_get_card_dependencies",
             "params_schema": {
                 "card_id": {
-                    "type": "text",
+                    "type": "entity_selector",
+                    "entity_type": "card",
                     "required": True,
-                    "label": "Card id",
+                    "label": "Card",
                 }
             },
             "renderer": "table",

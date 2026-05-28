@@ -8,6 +8,7 @@ spec 849ca9ae-f744-439e-95f8-9083e2148c0a.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from unittest.mock import patch
@@ -115,6 +116,57 @@ def test_open_kuzu_db_failure_message_includes_graph_settings(tmp_path):
     assert "kg_kuzu_buffer_pool_mb=512MB" in msg
     assert "kg_kuzu_max_db_size_gb=2GB" in msg
     assert "2, 4, 8, 16, 32 or 64 GB" in msg
+
+
+def test_open_kuzu_db_retries_pybind_when_capi_shared_lib_is_missing(tmp_path):
+    """A missing C-API shared library is a backend issue, not KG corruption."""
+    from okto_pulse.core.kg import schema as schema_module
+
+    configure_settings(CoreSettings(
+        kg_kuzu_buffer_pool_mb=512,
+        kg_kuzu_max_db_size_gb=2,
+        kg_connection_pool_size=8,
+    ))
+
+    previous_backend = os.environ.get("LBUG_PYTHON_BACKEND")
+    os.environ["LBUG_PYTHON_BACKEND"] = "capi"
+    calls: list[tuple[str | None, str | None]] = []
+
+    class _FakeDatabase:
+        def __init__(
+            self,
+            path,
+            *,
+            buffer_pool_size,
+            max_db_size,
+            backend=None,
+        ):
+            calls.append((os.environ.get("LBUG_PYTHON_BACKEND"), backend))
+            if os.environ.get("LBUG_PYTHON_BACKEND") != "pybind":
+                raise RuntimeError(
+                    "Could not find lbug C API shared library. "
+                    "Set LBUG_C_API_LIB_PATH or download a shared lib."
+                )
+            self.path = path
+
+    class _FakeKuzuModule:
+        Database = _FakeDatabase
+
+    try:
+        with (
+            patch.dict("sys.modules", {"ladybug": _FakeKuzuModule}),
+            patch.object(schema_module, "_ladybug_pybind_available", return_value=True),
+        ):
+            db = schema_module._open_kuzu_db(tmp_path / "graph.lbug")
+    finally:
+        if previous_backend is None:
+            os.environ.pop("LBUG_PYTHON_BACKEND", None)
+        else:
+            os.environ["LBUG_PYTHON_BACKEND"] = previous_backend
+
+    assert db.path == str(tmp_path / "graph.lbug")
+    assert calls == [("capi", None), ("pybind", "pybind")]
+    assert os.environ.get("LBUG_PYTHON_BACKEND") == previous_backend
 
 
 # ----------------------------------------------------------------------

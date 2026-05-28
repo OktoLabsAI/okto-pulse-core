@@ -81,6 +81,8 @@ class ArchitecturePayloadValidationResponse(BaseModel):
     valid: bool
     issues: list[str]
     warnings: list[str]
+    structured_warnings: list[dict[str, Any]] = Field(default_factory=list)
+    suppressed_warnings: list[dict[str, Any]] = Field(default_factory=list)
     suggested_fixes: list[str]
     summary: dict[str, Any]
 

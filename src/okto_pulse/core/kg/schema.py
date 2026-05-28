@@ -32,6 +32,7 @@ CORRUPT_DB_ERROR_MARKERS = (
     "wal_record.cpp",
     "unreachable_code",
 )
+CAPI_SHARED_LIB_MISSING_MARKER = "could not find lbug c api shared library"
 
 # Provenance metadata required on every rel (KG Pipeline v2 — spec c48a5c33).
 # `layer` is a closed enum validated by the worker/agent and the layer_isolation
@@ -373,6 +374,42 @@ def _is_ladybug_corruption_error(exc: BaseException) -> bool:
     return any(marker in msg for marker in CORRUPT_DB_ERROR_MARKERS)
 
 
+def _raise_existing_graph_open_failed(
+    *,
+    board_id: str,
+    path: Path,
+    operation: str,
+    exc: BaseException,
+) -> None:
+    """Fail closed when an existing graph cannot be opened.
+
+    A bootstrap/migration probe is not an operator-approved recovery action.
+    Earlier code quarantined the active graph on WAL corruption and then
+    created a fresh empty graph, which made a previously queryable KG appear
+    to vanish. Preserve evidence in place; explicit recovery/rebuild tooling
+    owns any destructive move.
+    """
+    logger.error(
+        "kg.schema.existing_graph_open_failed_preserved "
+        "board=%s operation=%s path=%s err=%s",
+        board_id, operation, path, exc,
+        extra={
+            "event": "kg.schema.existing_graph_open_failed_preserved",
+            "board_id": board_id,
+            "operation": operation,
+            "path": str(path),
+            "error": str(exc),
+        },
+    )
+    raise RuntimeError(
+        "Existing LadybugDB graph could not be opened during "
+        f"{operation}; refusing to auto-bootstrap or purge it. "
+        f"board_id={board_id} path={path}. "
+        "Use the explicit KG Health recovery flow after reviewing the "
+        "quarantine/rebuild report; the current files were preserved."
+    ) from exc
+
+
 def _ladybug_open_error_context(path: Path, exc: BaseException, settings: Any) -> str:
     """Build an operator-facing error with the active Graph DB settings."""
     msg = str(exc)
@@ -412,40 +449,82 @@ def _ladybug_open_error_context(path: Path, exc: BaseException, settings: Any) -
     return f"{settings_context} {' '.join(guidance)}"
 
 
-def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[str]:
-    """Delete a board's local LadybugDB graph file and sidecars.
+def _board_quarantine_service():
+    """Build the canonical KGQuarantineService for board graph purges.
 
-    The SQLite application data remains untouched. This is intentionally
-    narrow: remove ``graph.lbug`` plus ``graph.lbug.*`` siblings so the
-    next bootstrap recreates the local graph from the consolidation queue.
+    The scope_roots are the per-board storage root (parent of every
+    board_kuzu_path). The quarantine base_dir lives under the same KG
+    storage root so the operator's recovery tooling is one filesystem
+    away from the evidence.
     """
+    from okto_pulse.core.kg.quarantine import KGQuarantineService
+
+    sample_path = board_kuzu_path("__scope_probe__")
+    storage_root = sample_path.parent.parent  # boards/ root
+    quarantine_base = storage_root.parent  # one level up: KG storage root
+    return KGQuarantineService(
+        base_dir=quarantine_base,
+        scope_roots=[storage_root],
+    )
+
+
+def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[str]:
+    """Quarantine-then-clear a board's local LadybugDB graph file and sidecars.
+
+    KG-01.4 (val_79e6f555 rework): purges of `graph.lbug` and sidecars
+    MUST go through ``KGQuarantineService`` first. The service moves the
+    files into a quarantine directory and writes an auditable manifest
+    BEFORE the originals are gone. Direct unlink/rmtree is gone — if
+    quarantine fails the whole purge is aborted with the evidence
+    preserved at the original path (per FR7 / AC10 / IR ir_f175bc42).
+
+    The returned list is the set of paths that were moved into
+    quarantine, kept for backward compatibility with callers that
+    counted removed entries.
+    """
+    from okto_pulse.core.kg.quarantine import (
+        QuarantineError,
+        QuarantineErrorCode,
+    )
+
     path = board_kuzu_path(board_id)
     close_board_db_cache(board_id)
-    removed: list[str] = []
     targets: list[Path] = []
     if path.exists():
         targets.append(path)
     if path.parent.exists():
         targets.extend(sorted(path.parent.glob(path.name + ".*")))
 
-    for target in targets:
-        try:
-            if target.is_dir():
-                shutil.rmtree(target, ignore_errors=True)
-            else:
-                target.unlink(missing_ok=True)
-            removed.append(str(target))
-        except Exception as exc:
-            logger.warning(
-                "kg.schema.graph_purge_failed board=%s path=%s reason=%s err=%s",
-                board_id, target, reason, exc,
-                extra={
-                    "event": "kg.schema.graph_purge_failed",
-                    "board_id": board_id,
-                    "path": str(target),
-                    "reason": reason,
-                },
-            )
+    if not targets:
+        return []
+
+    service = _board_quarantine_service()
+    try:
+        response = service.create(
+            board_id=board_id,
+            graph_type="board_graph",
+            affected_paths=[str(t) for t in targets],
+            reason=reason,
+            correlation_ids=[],
+        )
+    except QuarantineError as exc:
+        logger.error(
+            "kg.schema.graph_purge_blocked_quarantine_failed "
+            "board=%s reason=%s code=%s err=%s",
+            board_id, reason, exc.code.value, exc.reason,
+            extra={
+                "event": "kg.schema.graph_purge_blocked_quarantine_failed",
+                "board_id": board_id,
+                "reason": reason,
+                "code": exc.code.value,
+            },
+        )
+        # FR7: refuse the purge so corruption evidence survives.
+        return []
+
+    moved = list(response.files_moved_paths if hasattr(response, "files_moved_paths") else [])
+    moved_count = response.files_moved
+    removed_str = [str(t) for t in targets[:moved_count]]
 
     if path.parent.exists() and not any(path.parent.iterdir()):
         try:
@@ -457,18 +536,229 @@ def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[
         _BOOTSTRAPPED_BOARDS.discard(board_id)
     if "_MIGRATED_BOARDS" in globals():
         _MIGRATED_BOARDS.discard(board_id)
-    if removed:
-        logger.warning(
-            "kg.schema.graph_purged board=%s reason=%s removed=%d",
-            board_id, reason, len(removed),
-            extra={
-                "event": "kg.schema.graph_purged",
-                "board_id": board_id,
-                "reason": reason,
-                "removed": removed,
-            },
+
+    logger.warning(
+        "kg.schema.graph_purged board=%s reason=%s removed=%d "
+        "quarantine_id=%s manifest=%s",
+        board_id, reason, moved_count,
+        response.quarantine_id, response.manifest_ref,
+        extra={
+            "event": "kg.schema.graph_purged",
+            "board_id": board_id,
+            "reason": reason,
+            "quarantine_id": response.quarantine_id,
+            "manifest_ref": response.manifest_ref,
+            "files_moved": moved_count,
+        },
+    )
+    return removed_str
+
+
+def _fsync_if_file(path: Path) -> None:
+    if not path.is_file():
+        return
+    # Windows rejects os.fsync() on a read-only descriptor with EBADF. Use
+    # read/write without truncation so the durability step is real but does not
+    # mutate content.
+    with path.open("r+b") as fh:
+        os.fsync(fh.fileno())
+
+
+def _fsync_board_graph_files(board_id: str) -> None:
+    path = board_kuzu_path(board_id)
+    _fsync_if_file(path)
+    for sibling in sorted(path.parent.glob(path.name + ".*")):
+        _fsync_if_file(sibling)
+    # Directory fsync is POSIX-only in practice. Keep it best-effort so
+    # Windows does not fail a valid lifecycle just because directories cannot
+    # be opened as file descriptors there.
+    try:
+        fd = os.open(str(path.parent), os.O_RDONLY)
+    except Exception:
+        return
+    try:
+        try:
+            os.fsync(fd)
+        except OSError:
+            # Windows can allow opening the directory but still reject fsync
+            # on that descriptor. File fsyncs above are the required durable
+            # boundary there; directory fsync remains best-effort.
+            return
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _close_reopen_probe_existing_board_graph(board_id: str) -> tuple[bool, str | None]:
+    """Close process handles, reopen the existing graph, and verify BoardMeta.
+
+    This intentionally bypasses ``ensure_board_graph_bootstrapped``. A
+    lifecycle probe must validate the graph that was just materialized, not
+    auto-create a fresh empty graph if the expected file is missing or
+    unreadable.
+    """
+
+    path = board_kuzu_path(board_id)
+    if not path.exists():
+        return False, f"{GRAPH_DB_FILENAME} missing at {path}"
+
+    close_all_connections(board_id)
+    try:
+        db = _open_kuzu_db_path_cached(path)
+        conn = kuzu.Connection(db)
+        try:
+            res = conn.execute(
+                "CALL SHOW_TABLES() WHERE name = 'BoardMeta' RETURN name"
+            )
+            try:
+                has_meta_table = res.has_next()
+            finally:
+                res.close()
+            if not has_meta_table:
+                return False, "BoardMeta table missing after reopen"
+
+            res = conn.execute(
+                "MATCH (m:BoardMeta {board_id: $bid}) RETURN m.schema_version",
+                {"bid": board_id},
+            )
+            try:
+                if not res.has_next():
+                    return False, "BoardMeta row missing after reopen"
+                row = res.get_next()
+                schema_version = row[0] if row else None
+            finally:
+                res.close()
+            if not schema_version:
+                return False, "BoardMeta schema_version empty after reopen"
+            return True, None
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    finally:
+        # Force the next dashboard/API read to prove it can open from disk too,
+        # instead of reusing a probe-created Database object.
+        close_board_db_cache(board_id)
+        if "_BOOTSTRAPPED_BOARDS" in globals():
+            _BOOTSTRAPPED_BOARDS.discard(board_id)
+
+
+def apply_ladybug_lifecycle_step(
+    board_id: str,
+    graph_type: str,
+    step: str,
+):
+    """Production KG safe-write lifecycle adapter for board ``graph.lbug``.
+
+    Earlier REST rebuild wiring used a fake ``LifecycleStepResult(ok=True)``
+    for every step. That allowed rebuild reports to say COMPLETED while the
+    real graph was still only readable through a live process handle. This
+    adapter performs the minimum real boundary checks LadybugDB exposes:
+    close handles to force WAL flush, fsync graph files, and reopen-probe the
+    existing graph without auto-bootstrap.
+    """
+
+    from okto_pulse.core.kg.safe_write_lifecycle import (
+        LifecycleStepResult,
+        STEP_CHECKPOINT,
+        STEP_CLOSE_REOPEN_PROBE,
+        STEP_FLUSH,
+        STEP_FSYNC,
+    )
+
+    if graph_type != "board_graph":
+        return LifecycleStepResult(
+            ok=False,
+            detail=f"unsupported_graph_type={graph_type}",
         )
-    return removed
+
+    path = board_kuzu_path(board_id)
+    try:
+        if step in (STEP_CHECKPOINT, STEP_FLUSH):
+            close_all_connections(board_id)
+            if not path.exists():
+                return LifecycleStepResult(
+                    ok=False,
+                    detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                )
+            return LifecycleStepResult(ok=True)
+
+        if step == STEP_FSYNC:
+            close_all_connections(board_id)
+            if not path.exists():
+                return LifecycleStepResult(
+                    ok=False,
+                    detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                )
+            _fsync_board_graph_files(board_id)
+            return LifecycleStepResult(ok=True)
+
+        if step == STEP_CLOSE_REOPEN_PROBE:
+            ok, detail = _close_reopen_probe_existing_board_graph(board_id)
+            return LifecycleStepResult(ok=ok, detail=detail)
+
+        return LifecycleStepResult(ok=False, detail=f"unknown_step={step}")
+    except Exception as exc:
+        return LifecycleStepResult(
+            ok=False,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def _is_ladybug_capi_shared_lib_missing(exc: BaseException) -> bool:
+    return CAPI_SHARED_LIB_MISSING_MARKER in str(exc).lower()
+
+
+def _ladybug_pybind_available() -> bool:
+    try:
+        import ladybug._lbug  # type: ignore  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def _open_ladybug_database_forced_pybind(
+    kuzu_module: Any,
+    path: str,
+    *,
+    buffer_pool_size: int,
+    max_db_size: int,
+) -> Any:
+    """Open LadybugDB through pybind when the C-API shim is unavailable.
+
+    Some desktop launches inherit ``LBUG_PYTHON_BACKEND=capi`` or hit
+    Ladybug's C-API fallback even though the bundled ``_lbug`` pybind
+    extension is present. The C-API shim needs an extra shared library that
+    the wheel does not install on Windows. Treat that as a backend selection
+    issue, not as a graph corruption signal.
+    """
+
+    previous_backend = os.environ.get("LBUG_PYTHON_BACKEND")
+    os.environ["LBUG_PYTHON_BACKEND"] = "pybind"
+    try:
+        try:
+            return kuzu_module.Database(
+                path,
+                buffer_pool_size=buffer_pool_size,
+                max_db_size=max_db_size,
+                backend="pybind",
+            )
+        except TypeError:
+            return kuzu_module.Database(
+                path,
+                buffer_pool_size=buffer_pool_size,
+                max_db_size=max_db_size,
+            )
+    finally:
+        if previous_backend is None:
+            os.environ.pop("LBUG_PYTHON_BACKEND", None)
+        else:
+            os.environ["LBUG_PYTHON_BACKEND"] = previous_backend
 
 
 def _open_kuzu_db(path: Path):
@@ -511,14 +801,36 @@ def _open_kuzu_db(path: Path):
     last_exc: BaseException | None = None
     for attempt in range(1, 6):
         try:
-            db = kuzu.Database(
-                str(path),
-                buffer_pool_size=bp,
-                max_db_size=mds,
-            )
+            db = kuzu.Database(str(path), buffer_pool_size=bp, max_db_size=mds)
             logger.debug("[KG] kuzu.Database() created successfully for path=%s", path)
             return db
         except Exception as e:
+            if _is_ladybug_capi_shared_lib_missing(e) and _ladybug_pybind_available():
+                try:
+                    logger.warning(
+                        "kg.db_open.capi_missing_retry_pybind path=%s attempt=%d/5 err=%s",
+                        path,
+                        attempt,
+                        e,
+                        extra={
+                            "event": "kg.db_open.capi_missing_retry_pybind",
+                            "path": str(path),
+                            "attempt": attempt,
+                        },
+                    )
+                    db = _open_ladybug_database_forced_pybind(
+                        kuzu,
+                        str(path),
+                        buffer_pool_size=bp,
+                        max_db_size=mds,
+                    )
+                    logger.debug(
+                        "[KG] kuzu.Database() created successfully with pybind backend for path=%s",
+                        path,
+                    )
+                    return db
+                except Exception as retry_exc:
+                    e = retry_exc
             last_exc = e
             msg = str(e)
             is_lock_contention = "Could not set lock" in msg or "lock contention" in msg.lower()
@@ -1111,10 +1423,12 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     try:
         db = _open_kuzu_db_path_cached(path)
     except Exception as exc:
-        if not _is_ladybug_corruption_error(exc):
-            raise
-        purge_board_graph_storage(board_id, reason="corrupt_open_during_bootstrap")
-        db = _open_kuzu_db_path_cached(path)
+        _raise_existing_graph_open_failed(
+            board_id=board_id,
+            path=path,
+            operation="schema_migration_open",
+            exc=exc,
+        )
     conn = kuzu.Connection(db)
     try:
         for node_type in NODE_TYPES:
@@ -1744,23 +2058,12 @@ def _graph_needs_bootstrap(board_id: str) -> bool:
             return False
         return True
     except Exception as exc:
-        if _is_ladybug_corruption_error(exc):
-            logger.warning(
-                "kg.schema.corrupt_graph_detected board=%s path=%s err=%s",
-                board_id, path, exc,
-                extra={
-                    "event": "kg.schema.corrupt_graph_detected",
-                    "board_id": board_id,
-                    "path": str(path),
-                },
-            )
-            purge_board_graph_storage(board_id, reason="corrupt_bootstrap_probe")
-            return True
-        logger.debug(
-            "kg.schema.bootstrap_probe_failed board=%s err=%s — will bootstrap",
-            board_id, exc,
+        _raise_existing_graph_open_failed(
+            board_id=board_id,
+            path=path,
+            operation="bootstrap_probe",
+            exc=exc,
         )
-        return True
 
 
 def ensure_board_graph_bootstrapped(board_id: str) -> None:
