@@ -1972,6 +1972,7 @@ class BoardSettings(BaseModel):
     skip_ir_coverage_global: bool = False  # if True, all specs bypass IR→Task coverage checks
     skip_or_coverage_global: bool = False  # if True, all specs bypass OR→Task coverage checks
     skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
+    skip_cognitive_consolidation: bool = False  # if True, done closeout bypasses active cognitive pending blockers
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = True  # if True, cards must pass validation before moving to done
     min_confidence: int = 70  # min reviewer confidence score
@@ -2097,6 +2098,8 @@ class ActivityLogResponse(BaseSchema):
     actor_type: str
     actor_id: str
     actor_name: str
+    trigger: str | None = None
+    summary: str = ""
     details: dict[str, Any] | None
     created_at: datetime
 

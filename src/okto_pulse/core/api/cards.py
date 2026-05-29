@@ -20,6 +20,11 @@ from okto_pulse.core.models import (
 )
 from okto_pulse.core.models.db import ActivityLog, Agent, AgentSeenItem
 from okto_pulse.core.services import CardService
+from okto_pulse.core.services.activity_log import (
+    activity_log_summary,
+    activity_log_trigger,
+    sanitize_activity_details,
+)
 
 router = APIRouter()
 
@@ -157,7 +162,22 @@ async def get_card_activity(
         .limit(limit)
     )
     result = await db.execute(query)
-    return list(result.scalars().all())
+    return [
+        ActivityLogResponse(
+            id=log.id,
+            board_id=log.board_id,
+            card_id=log.card_id,
+            action=log.action,
+            actor_type=log.actor_type,
+            actor_id=log.actor_id,
+            actor_name=log.actor_name,
+            trigger=activity_log_trigger(log.details),
+            summary=activity_log_summary(log.action, log.details),
+            details=sanitize_activity_details(log.details),
+            created_at=log.created_at,
+        )
+        for log in result.scalars().all()
+    ]
 
 
 @router.get("/{card_id}/seen")

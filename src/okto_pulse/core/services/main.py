@@ -110,6 +110,92 @@ from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropa
 settings = get_settings()
 
 
+def _build_default_cognitive_closeout_gate() -> Any:
+    """Build the shared cognitive closeout gate lazily.
+
+    The lazy import keeps the service layer from importing KG storage at module
+    import time while still letting tests inject a lightweight fake gate.
+    """
+
+    from okto_pulse.core.kg.cognitive_closeout_gate import (
+        build_default_cognitive_closeout_gate,
+    )
+
+    return build_default_cognitive_closeout_gate()
+
+
+def _board_skip_cognitive_consolidation(board: Board | None) -> bool:
+    settings = (board.settings or {}) if board else {}
+    return bool(settings.get("skip_cognitive_consolidation", False))
+
+
+def _card_cognitive_entity_type(card: Card) -> str:
+    card_type = getattr(card, "card_type", CardType.NORMAL)
+    card_type_value = getattr(card_type, "value", str(card_type)).lower()
+    if card_type_value == CardType.TEST.value:
+        return "test"
+    if card_type_value == CardType.BUG.value:
+        return "bug"
+    return "task"
+
+
+def _cognitive_blocking_count(result: Any) -> int:
+    count = getattr(result, "blocking_count", None)
+    if count is not None:
+        return int(count)
+    blocking_items = getattr(result, "blocking_items", ()) or ()
+    return len(blocking_items)
+
+
+def _evaluate_cognitive_closeout_or_raise(
+    *,
+    gate_factory: Callable[[], Any],
+    board: Board | None,
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    entity: Any,
+    target_label: str,
+) -> None:
+    """Evaluate the shared closeout gate and raise a stable service error.
+
+    This helper is intentionally side-effect free. Callers must invoke it before
+    any status assignment, resource-gate side effect, conclusion append, or
+    lifecycle activity write for a ``done`` transition.
+    """
+
+    skip_enabled = _board_skip_cognitive_consolidation(board)
+    gate = gate_factory()
+    try:
+        result = gate.evaluate(
+            board_id=board_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            entity=entity,
+            target_status="done",
+            board_skip_enabled=skip_enabled,
+        )
+    except Exception as exc:
+        raise ValueError(
+            f"cognitive_status_unavailable: {target_label} done transition "
+            f"blocked ({type(exc).__name__})"
+        ) from exc
+
+    if getattr(result, "allowed", False):
+        return
+
+    reason = str(getattr(result, "reason", "cognitive_consolidation_pending"))
+    blocking_count = _cognitive_blocking_count(result)
+    if reason == "cognitive_status_unavailable":
+        detail = "because cognitive status could not be read"
+    else:
+        detail = "by active cognitive consolidation items"
+    raise ValueError(
+        f"{reason}: {target_label} done transition blocked {detail} "
+        f"({blocking_count})"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Spec Validation Gate — exception and lock helper
 # ---------------------------------------------------------------------------
@@ -562,6 +648,9 @@ class CardService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+        self._cognitive_closeout_gate_factory: Callable[
+            [], Any
+        ] = _build_default_cognitive_closeout_gate
 
     async def create_card(
         self, board_id: str, user_id: str, data: CardCreate, skip_ownership_check: bool = False
@@ -1104,6 +1193,17 @@ class CardService:
             outcome = "failed"
         else:
             outcome = "success"
+
+        if outcome == "success":
+            _evaluate_cognitive_closeout_or_raise(
+                gate_factory=self._cognitive_closeout_gate_factory,
+                board=board,
+                board_id=card.board_id,
+                entity_type=_card_cognitive_entity_type(card),
+                entity_id=card.id,
+                entity=card,
+                target_label="card",
+            )
 
         # Build validation entry.
         # Dual naming: we persist BOTH the legacy names (estimated_*, outcome, reviewer_id,
@@ -1768,6 +1868,17 @@ class CardService:
                             f"The scenario may have been deleted. Link the test task to an existing scenario, "
                             f"or move the spec back to an editable status if a new scenario is truly required."
                         )
+
+        if data.status == CardStatus.DONE:
+            _evaluate_cognitive_closeout_or_raise(
+                gate_factory=self._cognitive_closeout_gate_factory,
+                board=board,
+                board_id=card.board_id,
+                entity_type=_card_cognitive_entity_type(card),
+                entity_id=card.id,
+                entity=card,
+                target_label="card",
+            )
 
         report_target = None
         if data.status == CardStatus.DONE:
@@ -2721,6 +2832,9 @@ class SpecService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+        self._cognitive_closeout_gate_factory: Callable[
+            [], Any
+        ] = _build_default_cognitive_closeout_gate
 
     # ---- Status progression order ----
     _STATUS_ORDER = {
@@ -3246,6 +3360,16 @@ class SpecService:
                     f"Pending: {task_list}{extra}. "
                     f"Complete or cancel all linked tasks before finalizing the spec."
                 )
+
+            _evaluate_cognitive_closeout_or_raise(
+                gate_factory=self._cognitive_closeout_gate_factory,
+                board=board,
+                board_id=spec.board_id,
+                entity_type="spec",
+                entity_id=spec.id,
+                entity=spec,
+                target_label="spec",
+            )
 
             resource_gate = ResourceGateService(self.db)
             await resource_gate.validate_or_raise_spec_resource_task_coverage(
@@ -5177,26 +5301,9 @@ class IdeationQAService:
 
 
 def _build_default_refinement_cognitive_done_guard() -> Any:
-    """Default factory for ``RefinementCognitiveCompletionGuard`` used by
-    ``RefinementService.move_refinement`` (KG-03.7 + ir_3ef406f4).
+    """Backward-compatible alias for the shared closeout gate factory."""
 
-    The guard reads the cognitive item ledger via the file-backed
-    ``CognitiveConsolidationItemStore`` resolved through
-    ``default_rebuild_base_dir()`` so REST + MCP runtime paths see the
-    same on-disk state. Tests can override this by assigning a different
-    factory to ``RefinementService._cognitive_done_guard_factory``.
-    """
-
-    from okto_pulse.core.kg.rebuild_audit import (
-        CognitiveConsolidationItemStore,
-        default_rebuild_base_dir,
-    )
-    from okto_pulse.core.kg.refinement_cognitive_guard import (
-        RefinementCognitiveCompletionGuard,
-    )
-
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
-    return RefinementCognitiveCompletionGuard(store=store)
+    return _build_default_cognitive_closeout_gate()
 
 
 class RefinementService:
@@ -5204,10 +5311,9 @@ class RefinementService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        # KG-03.7 + ir_3ef406f4 — refinement done transition consumes
-        # ``RefinementCognitiveCompletionGuard`` BEFORE snapshot/status
-        # mutation. The guard is fail-closed; tests inject a custom
-        # factory to control the cognitive store.
+        # Cognitive closeout must run BEFORE snapshot/status mutation.
+        # Keep the historical attribute name so existing tests and callers
+        # that inject a fake guard continue to work.
         self._cognitive_done_guard_factory: Callable[
             [], Any
         ] = _build_default_refinement_cognitive_done_guard
@@ -5548,36 +5654,21 @@ class RefinementService:
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, refinement.board_id)
 
-        # KG-03.7 + ir_3ef406f4 — fail-closed cognitive completion gate
-        # MUST run BEFORE ResourceGateService, snapshot creation,
-        # activity logging, or status mutation. A blocked guard
-        # response preserves the refinement in its current status with
-        # no snapshot/history/activity changes (br_f6fc7cbc + AC16).
+        # Fail-closed cognitive closeout gate. This MUST run BEFORE
+        # ResourceGateService, snapshot creation, activity logging, or status
+        # mutation. A blocked response preserves the refinement in its current
+        # status with no snapshot/history/activity changes.
         if data.status == RefinementStatus.DONE:
-            guard = self._cognitive_done_guard_factory()
-            try:
-                guard_result = guard.evaluate(
-                    board_id=refinement.board_id,
-                    refinement_id=refinement.id,
-                    target_status="done",
-                )
-            except Exception as exc:
-                # Unexpected guard exception — propagate as fail-closed
-                # ValueError so the move is rejected and no downstream
-                # mutation occurs.
-                raise ValueError(
-                    "cognitive_status_unavailable: refinement done "
-                    f"transition blocked ({type(exc).__name__})"
-                ) from exc
-            if not guard_result.allowed:
-                blocking_ids = [
-                    item.item_id for item in guard_result.blocking_items
-                ]
-                raise ValueError(
-                    f"{guard_result.reason}: refinement done transition "
-                    "blocked by active cognitive consolidation items "
-                    f"({len(blocking_ids)})"
-                )
+            board = await self.db.get(Board, refinement.board_id)
+            _evaluate_cognitive_closeout_or_raise(
+                gate_factory=self._cognitive_done_guard_factory,
+                board=board,
+                board_id=refinement.board_id,
+                entity_type="refinement",
+                entity_id=refinement.id,
+                entity=refinement,
+                target_label="refinement",
+            )
 
         # Snapshot on done
         if data.status == RefinementStatus.DONE:

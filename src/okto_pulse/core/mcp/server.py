@@ -50,6 +50,10 @@ from okto_pulse.core.services.architecture import (
     ArchitecturePropagationService,
     architecture_design_payload_schema,
 )
+from okto_pulse.core.services.activity_log import (
+    activity_log_summary,
+    sanitize_activity_details,
+)
 from okto_pulse.core.services.reference_resolution import (
     resolve_entity_context_references,
     resolve_spec_references,
@@ -1703,141 +1707,8 @@ async def okto_pulse_list_board_members(board_id: str) -> str:
 
 
 def _activity_log_summary(action: str, details: Any) -> str:
-    """Build a deterministic one-line summary string for an activity log row.
-
-    Ideação MCP-token-optimization Story 3. Format is stable within a major
-    API version; new resource types append counters at the end.
-
-    NC-1 fix: expanded to cover the highest-frequency action types so agents
-    no longer need to fetch raw ``details`` for routine board activity. Output
-    is always ≤200 chars.
-    """
-    if not isinstance(details, dict):
-        return ""
-
-    if action == "card_moved":
-        frm = details.get("from_status")
-        to = details.get("to_status")
-        card_id = details.get("card_id", "")
-        if frm and to:
-            base = f"{frm}->{to}"
-        else:
-            status = details.get("status", "?")
-            base = f"status={status}"
-        if card_id:
-            base = f"card={card_id[:8]} {base}"
-        return base[:200]
-
-    if action in ("card_created", "card_updated", "card_deleted"):
-        title = details.get("title", "")
-        status = details.get("status", "")
-        parts = [action.replace("card_", "")]
-        if title:
-            parts.append(f'"{title[:60]}"')
-        if status:
-            parts.append(f"status={status}")
-        return " ".join(parts)[:200]
-
-    if action == "validation_submitted":
-        outcome = details.get("outcome", "?")
-        card_title = details.get("card_title", "")
-        confidence = details.get("confidence")
-        base = f"outcome={outcome}"
-        if card_title:
-            base += f' card="{card_title[:50]}"'
-        if confidence is not None:
-            base += f" confidence={confidence}"
-        return base[:200]
-
-    if action in ("spec_validation_submitted", "spec_validated"):
-        outcome = details.get("outcome", "?")
-        spec_id = details.get("spec_id", "")
-        frm = details.get("from_status", "")
-        to = details.get("to_status", "")
-        base = f"outcome={outcome}"
-        if spec_id:
-            base += f" spec={spec_id[:8]}"
-        if frm and to:
-            base += f" {frm}->{to}"
-        return base[:200]
-
-    if action == "task_validated":
-        outcome = details.get("outcome", "?")
-        card_id = details.get("card_id", "")
-        base = f"task outcome={outcome}"
-        if card_id:
-            base += f" card={card_id[:8]}"
-        return base[:200]
-
-    if action in (
-        "ideation_created",
-        "spec_created",
-        "refinement_created",
-        "sprint_created",
-    ):
-        resource = action.replace("_created", "")
-        resource_id = (
-            details.get(f"{resource}_id")
-            or details.get("id")
-            or ""
-        )
-        title = details.get("title", "")
-        base = f"{resource} created"
-        if title:
-            base += f': "{title[:60]}"'
-        if resource_id:
-            base += f" id={resource_id[:8]}"
-        return base[:200]
-
-    if action in ("ideation_moved", "spec_moved", "refinement_moved"):
-        frm = details.get("from_status", "?")
-        to = details.get("to_status", "?")
-        resource = action.replace("_moved", "")
-        resource_id = details.get(f"{resource}_id") or details.get("id") or ""
-        base = f"{resource} {frm}->{to}"
-        if resource_id:
-            base += f" id={resource_id[:8]}"
-        return base[:200]
-
-    if action in ("comment_added", "choice_comment_added"):
-        content = details.get("content", "")
-        question = details.get("question", "")
-        text = question or content
-        if action == "choice_comment_added":
-            opt_count = details.get("option_count", "?")
-            base = f"choice_comment options={opt_count}"
-        else:
-            base = "comment"
-        if text:
-            base += f': "{text[:80]}"'
-        return base[:200]
-
-    if action == "spec_resources_auto_propagated":
-        results = details.get("results") or {}
-        parts: list[str] = []
-        trigger = details.get("trigger")
-        if trigger:
-            parts.append(f"trigger={trigger}")
-        for rtype in ("knowledge_base", "architecture", "mockup"):
-            r = results.get(rtype)
-            if not isinstance(r, dict):
-                continue
-            short = "kb" if rtype == "knowledge_base" else ("arch" if rtype == "architecture" else "mockup")
-            copied = r.get("copied_count", 0)
-            ignored = r.get("ignored_count", 0)
-            removed = r.get("removed_count", 0)
-            piece = f"{short}.copied={copied}"
-            if ignored:
-                piece += f" {short}.ignored={ignored}"
-            if removed:
-                piece += f" {short}.removed={removed}"
-            parts.append(piece)
-        return " ".join(parts)
-
-    trigger = details.get("trigger")
-    if trigger:
-        return f"trigger={trigger}"
-    return ""
+    """Backward-compatible wrapper for the shared activity summary service."""
+    return activity_log_summary(action, details)
 
 
 def _encode_activity_cursor(created_at: datetime, row_id: str) -> str:
@@ -2000,7 +1871,7 @@ async def okto_pulse_get_activity_log(
                 row["actor_type"] = log.actor_type
                 row["actor_id"] = log.actor_id
                 row["actor_name"] = log.actor_name
-                row["details"] = log.details
+                row["details"] = sanitize_activity_details(log.details)
             rows.append(row)
 
         next_cursor: str | None = None

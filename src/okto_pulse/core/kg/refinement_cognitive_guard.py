@@ -43,6 +43,7 @@ from enum import Enum
 from typing import Any
 
 from okto_pulse.core.kg.rebuild_audit import (
+    ACTIVE_ITEM_STATUSES,
     CognitiveConsolidationItem,
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
@@ -71,11 +72,7 @@ class RefinementGuardOutcome(str, Enum):
     INVALID_TARGET_STATUS = "invalid_target_status"
 
 
-_ACTIVE_STATUSES: frozenset[str] = frozenset({
-    CognitiveItemStatus.PENDING.value,
-    CognitiveItemStatus.IN_PROGRESS.value,
-    CognitiveItemStatus.FAILED.value,
-})
+_ACTIVE_STATUSES = ACTIVE_ITEM_STATUSES
 
 
 @dataclass(frozen=True, slots=True)

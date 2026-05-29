@@ -27,9 +27,24 @@ async def test_ts1_boardsettings_persists_skip_flag():
     assert s_default.require_spec_validation is True
     assert s_default.require_spec_resource_task_coverage is True
     assert s_default.require_task_validation is True
+    assert s_default.skip_cognitive_consolidation is False
     # JSON dump preserves
     dumped = s.model_dump()
     assert dumped["skip_test_evidence_global"] is True
+
+
+async def test_boardsettings_persists_cognitive_closeout_skip_flag():
+    """CCG.1 — BoardSettings.skip_cognitive_consolidation defaults false
+    and survives JSON serialization for existing PATCH settings flow.
+    """
+    from okto_pulse.core.models.schemas import BoardSettings
+
+    settings = BoardSettings(skip_cognitive_consolidation=True)
+    dumped = settings.model_dump()
+
+    assert settings.skip_cognitive_consolidation is True
+    assert dumped["skip_cognitive_consolidation"] is True
+    assert BoardSettings().skip_cognitive_consolidation is False
 
 
 async def test_ts2_gate_rejects_automated_without_evidence():
