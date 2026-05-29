@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import uuid
 from collections import Counter, defaultdict
@@ -21,6 +22,8 @@ from okto_pulse.core.telemetry.settings import (
     save_state,
 )
 from okto_pulse.core.telemetry.store import LocalTelemetryStore, add_guided_help_counts, parse_iso
+
+logger = logging.getLogger("okto_pulse.telemetry.sender")
 
 
 def install_id_path(settings: CoreSettings) -> Path:
@@ -52,6 +55,29 @@ def sign_payload(secret: str, timestamp: str, nonce: str, batch_seq: int, payloa
     return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
+def _log_runtime_skip(*, reason: str) -> None:
+    logger.info(
+        "metrics.runtime_skip",
+        extra={
+            "metric_name": "metrics_runtime_skip_total",
+            "component": "beacon_sender",
+            "outcome": "skipped",
+            "reason": reason,
+        },
+    )
+
+
+def _log_beacon_outcome(*, reason: str, outcome: str = "skipped") -> None:
+    logger.info(
+        "metrics.beacon_outcome",
+        extra={
+            "metric_name": "metrics_beacon_outcome_total",
+            "outcome": outcome,
+            "reason": reason,
+        },
+    )
+
+
 class TelemetryBeaconSender:
     def __init__(self, settings: CoreSettings, session: requests.Session | None = None):
         self.settings = settings
@@ -64,6 +90,8 @@ class TelemetryBeaconSender:
     def handshake(self) -> dict[str, Any] | None:
         cfg = resolve_telemetry_config(self.settings)
         if cfg.mode != "anonymous_beacon":
+            _log_runtime_skip(reason="disabled")
+            _log_beacon_outcome(reason="disabled")
             return None
         state = dict(cfg.state)
         payload = {
@@ -85,14 +113,17 @@ class TelemetryBeaconSender:
             )
         except requests.RequestException:
             self._open_circuit(state, cfg, "HANDSHAKE_NETWORK")
+            _log_beacon_outcome(reason="transport_failed")
             return None
         if resp.status_code in {410, 426}:
-            state["mode"] = "local_only"
+            state["mode"] = "disabled"
             state["schema_status"] = "gone" if resp.status_code == 410 else "sunset"
             save_state(cfg.metrics_dir, state)
+            _log_beacon_outcome(reason="consent_stale")
             return None
         if resp.status_code == 429 or resp.status_code >= 500:
             self._open_circuit(state, cfg, f"HANDSHAKE_{resp.status_code}")
+            _log_beacon_outcome(reason="transport_failed")
             return None
         resp.raise_for_status()
         data = resp.json()
@@ -113,6 +144,10 @@ class TelemetryBeaconSender:
 
     def hourly_batch(self) -> dict[str, Any] | None:
         cfg = resolve_telemetry_config(self.settings)
+        if cfg.mode != "anonymous_beacon":
+            _log_runtime_skip(reason="disabled")
+            _log_beacon_outcome(reason="disabled")
+            return None
         store = self._store()
         buckets: dict[str, Counter[str]] = defaultdict(Counter)
         bucket_starts: list[str] = []
@@ -197,10 +232,13 @@ class TelemetryBeaconSender:
     def send_once(self) -> dict[str, Any]:
         cfg = resolve_telemetry_config(self.settings)
         if cfg.mode != "anonymous_beacon":
+            _log_runtime_skip(reason="disabled")
+            _log_beacon_outcome(reason="disabled")
             return {"sent": False, "reason": "not_enabled"}
         state = dict(cfg.state)
         circuit_until = parse_iso(str(state.get("circuit_open_until", "")))
         if circuit_until and circuit_until > datetime.now(timezone.utc):
+            _log_beacon_outcome(reason="transport_failed")
             return {"sent": False, "reason": "circuit_open"}
         if not state.get("install_token"):
             self.handshake()
@@ -208,6 +246,7 @@ class TelemetryBeaconSender:
             state = dict(cfg.state)
         token = state.get("install_token")
         if not token:
+            _log_beacon_outcome(reason="ack_missing")
             return {"sent": False, "reason": "missing_token"}
         batch = self.hourly_batch()
         if not batch:
@@ -231,14 +270,17 @@ class TelemetryBeaconSender:
             )
         except requests.RequestException:
             self._open_circuit(state, cfg, "USAGE_NETWORK")
+            _log_beacon_outcome(reason="transport_failed")
             return {"sent": False, "reason": "network"}
         if resp.status_code in {410, 426}:
-            state["mode"] = "local_only"
+            state["mode"] = "disabled"
             state["schema_status"] = "gone" if resp.status_code == 410 else "sunset"
             save_state(cfg.metrics_dir, state)
+            _log_beacon_outcome(reason="consent_stale")
             return {"sent": False, "reason": "schema_incompatible"}
         if resp.status_code == 429 or resp.status_code >= 500:
             self._open_circuit(state, cfg, f"USAGE_{resp.status_code}")
+            _log_beacon_outcome(reason="transport_failed")
             return {"sent": False, "reason": "retryable"}
         resp.raise_for_status()
         state["last_send_at"] = now_utc()
@@ -252,6 +294,7 @@ class TelemetryBeaconSender:
                 "response_status": resp.status_code,
             }
         )
+        _log_beacon_outcome(reason="sent", outcome="sent")
         return {"sent": True, "batch_seq": batch_seq}
 
     def _open_circuit(self, state: dict[str, Any], cfg, code: str) -> None:

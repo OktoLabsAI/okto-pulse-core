@@ -149,6 +149,35 @@ class SpecSemanticChanged(DomainEvent):
     changed_fields: list[str] = Field(default_factory=list)
 
 
+class StructuredSpecEntityEvent(DomainEvent):
+    """Base payload for structured spec child entity changes.
+
+    The event row columns carry board_id, actor_id and occurred_at. The
+    payload stores stable child metadata so Discovery and deterministic KG
+    handlers can reprocess the parent spec without depending on list indexes.
+    """
+
+    spec_id: str
+    entity_type: str
+    entity_id: str
+    child_ref: str
+    operation: str
+    changed_fields: list[str] = Field(default_factory=list)
+    spec_version: int
+
+
+class StructuredSpecEntityCreated(StructuredSpecEntityEvent):
+    event_type: ClassVar[str] = "structured_entity.created"
+
+
+class StructuredSpecEntityUpdated(StructuredSpecEntityEvent):
+    event_type: ClassVar[str] = "structured_entity.updated"
+
+
+class StructuredSpecEntityRevoked(StructuredSpecEntityEvent):
+    event_type: ClassVar[str] = "structured_entity.revoked"
+
+
 class RefinementSemanticChanged(DomainEvent):
     """Fired when semantic refinement content changes.
 
@@ -301,6 +330,9 @@ EVENT_TYPES: list[str] = [
     SpecMoved.event_type,
     SpecVersionBumped.event_type,
     SpecSemanticChanged.event_type,
+    StructuredSpecEntityCreated.event_type,
+    StructuredSpecEntityUpdated.event_type,
+    StructuredSpecEntityRevoked.event_type,
     RefinementSemanticChanged.event_type,
     SprintCreated.event_type,
     SprintMoved.event_type,
@@ -326,6 +358,9 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     SpecMoved.event_type: SpecMoved,
     SpecVersionBumped.event_type: SpecVersionBumped,
     SpecSemanticChanged.event_type: SpecSemanticChanged,
+    StructuredSpecEntityCreated.event_type: StructuredSpecEntityCreated,
+    StructuredSpecEntityUpdated.event_type: StructuredSpecEntityUpdated,
+    StructuredSpecEntityRevoked.event_type: StructuredSpecEntityRevoked,
     RefinementSemanticChanged.event_type: RefinementSemanticChanged,
     SprintCreated.event_type: SprintCreated,
     SprintMoved.event_type: SprintMoved,

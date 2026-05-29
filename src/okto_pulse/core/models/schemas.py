@@ -483,6 +483,7 @@ class BusinessRule(BaseModel):
     then: str
     linked_requirements: list[str] | None = None  # 0-based FR indices
     linked_task_ids: list[str] | None = None  # Card IDs linked to this rule
+    status: Literal["active", "superseded", "revoked"] = "active"
     notes: str | None = None
 
 
@@ -499,6 +500,7 @@ class ApiContract(BaseModel):
     linked_requirements: list[str] | None = None
     linked_rules: list[str] | None = None
     linked_task_ids: list[str] | None = None  # Card IDs linked to this contract
+    status: Literal["active", "superseded", "revoked"] = "active"
     notes: str | None = None
 
 
@@ -1278,9 +1280,9 @@ class SpecCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500, description="Titulo da spec (1-500 chars).")
     description: str | None = Field(None, description="Descricao resumida do que a spec cobre.")
     context: str | None = Field(None, description="Contexto de negocio e tecnico para a spec.")
-    functional_requirements: list[str] | None = Field(None, description="Lista de requisitos funcionais (FRs) em texto livre.")
+    functional_requirements: list[str | dict] | None = Field(None, description="Lista de requisitos funcionais (FRs) em texto livre ou objetos estruturados {id, text, ...}.")
     technical_requirements: list[str | dict] | None = Field(None, description="Requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.")
-    acceptance_criteria: list[str] | None = Field(None, description="Criterios de aceite para validacao da spec.")
+    acceptance_criteria: list[str | dict] | None = Field(None, description="Criterios de aceite em texto livre ou objetos estruturados {id, text, ...}.")
     test_scenarios: list[TestScenario] | None = Field(None, description="Cenarios de teste vinculados a spec.")
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela associados a spec.")
     business_rules: list[BusinessRule] | None = Field(None, description="Regras de negocio que governam o comportamento do sistema.")
@@ -1301,9 +1303,9 @@ class SpecUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo da spec (opcional).")
     description: str | None = Field(None, description="Nova descricao resumida da spec (opcional).")
     context: str | None = Field(None, description="Novo contexto de negocio e tecnico da spec (opcional).")
-    functional_requirements: list[str] | None = Field(None, description="Nova lista de requisitos funcionais (substitui a existente).")
+    functional_requirements: list[str | dict] | None = Field(None, description="Nova lista de requisitos funcionais (substitui a existente).")
     technical_requirements: list[str | dict] | None = Field(None, description="Novos requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.")
-    acceptance_criteria: list[str] | None = Field(None, description="Novos criterios de aceite (substitui a lista existente).")
+    acceptance_criteria: list[str | dict] | None = Field(None, description="Novos criterios de aceite (substitui a lista existente).")
     test_scenarios: list[TestScenario] | None = Field(None, description="Novos cenarios de teste vinculados a spec.")
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela associados a spec.")
     business_rules: list[BusinessRule] | None = Field(None, description="Novas regras de negocio (substitui a lista existente).")
@@ -1566,9 +1568,9 @@ class SpecResponse(BaseSchema):
     title: str
     description: str | None
     context: str | None
-    functional_requirements: list[str] | None
+    functional_requirements: list[str | dict] | None
     technical_requirements: list[str | dict] | None  # str (legacy) or {id, text, linked_task_ids}
-    acceptance_criteria: list[str] | None
+    acceptance_criteria: list[str | dict] | None
     test_scenarios: list[TestScenario] | None = None
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None

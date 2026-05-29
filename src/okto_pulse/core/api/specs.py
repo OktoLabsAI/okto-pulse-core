@@ -1,8 +1,10 @@
 """Spec API endpoints."""
 
 from collections.abc import Iterable
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,8 +35,53 @@ from okto_pulse.core.services import (
     SpecQAService,
     SpecService,
 )
+from okto_pulse.core.services.spec_structured_entities import (
+    StructuredSpecEntityCommand,
+    StructuredSpecEntityErrorCode,
+    StructuredSpecEntityService,
+)
 
 router = APIRouter()
+
+STRUCTURED_SPEC_ENTITY_DEPRECATION_WARNING = (
+    "Spec child entity edits should use /api/v1/specs/{spec_id}/structured-entities/"
+    "{entity_type}; legacy whole-spec child list updates are compatibility-only."
+)
+
+_STRUCTURED_SPEC_ENTITY_UPDATE_FIELDS = {
+    "functional_requirements",
+    "acceptance_criteria",
+    "technical_requirements",
+    "business_rules",
+    "api_contracts",
+    "integration_requirements",
+    "observability_requirements",
+    "decisions",
+}
+
+
+class StructuredSpecEntityMutationRequest(BaseModel):
+    operation: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    expected_spec_version: int | None = None
+    task_id: str | None = None
+    ack_token: str | None = None
+
+
+def _structured_entity_status_code(error_code: str | None) -> int:
+    return {
+        StructuredSpecEntityErrorCode.AUTHORIZATION_DENIED: status.HTTP_403_FORBIDDEN,
+        StructuredSpecEntityErrorCode.VERSION_CONFLICT: status.HTTP_409_CONFLICT,
+        StructuredSpecEntityErrorCode.IMPACT_ACK_REQUIRED: status.HTTP_409_CONFLICT,
+        StructuredSpecEntityErrorCode.IMPACT_ACK_INVALID: status.HTTP_409_CONFLICT,
+        StructuredSpecEntityErrorCode.ENTITY_NOT_FOUND: status.HTTP_404_NOT_FOUND,
+        StructuredSpecEntityErrorCode.SPEC_NOT_FOUND: status.HTTP_404_NOT_FOUND,
+        StructuredSpecEntityErrorCode.SPEC_LOCKED: status.HTTP_409_CONFLICT,
+        StructuredSpecEntityErrorCode.UNSUPPORTED_ENTITY_TYPE: status.HTTP_422_UNPROCESSABLE_CONTENT,
+        StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION: status.HTTP_422_UNPROCESSABLE_CONTENT,
+        StructuredSpecEntityErrorCode.VALIDATION_FAILED: status.HTTP_422_UNPROCESSABLE_CONTENT,
+        StructuredSpecEntityErrorCode.LINK_TARGET_INVALID: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    }.get(error_code, status.HTTP_400_BAD_REQUEST)
 
 
 def _resource_gate_detail(exc: ResourceGateError) -> dict:
@@ -85,6 +132,55 @@ async def _require_permissions(
         error = check_permission(permission_set, permission)
         if error:
             _raise_permission_denied(error)
+
+
+async def _run_structured_spec_entity_command(
+    *,
+    db: AsyncSession,
+    user_id: str,
+    spec_id: str,
+    entity_type: str,
+    operation: str,
+    payload: dict[str, Any] | None = None,
+    entity_id: str | None = None,
+    expected_spec_version: int | None = None,
+    task_id: str | None = None,
+    ack_token: str | None = None,
+    preview_only: bool = False,
+) -> dict[str, Any]:
+    spec_service = SpecService(db)
+    spec = await spec_service.get_spec(spec_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+
+    permission_set = await _resolve_user_permissions(db, user_id, spec.board_id)
+    service = StructuredSpecEntityService(db)
+    result = await service.apply(
+        StructuredSpecEntityCommand(
+            board_id=spec.board_id,
+            spec_id=spec_id,
+            actor_id=user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            operation=operation,
+            payload=payload or {},
+            expected_spec_version=expected_spec_version,
+            task_id=task_id,
+            ack_token=ack_token,
+            preview_only=preview_only,
+            permission_set=permission_set,
+        )
+    )
+    body = result.as_dict()
+    if not result.success:
+        await db.rollback()
+        raise HTTPException(
+            status_code=_structured_entity_status_code(result.error_code),
+            detail=body,
+        )
+    if result.changed_fields:
+        await db.commit()
+    return body
 
 
 def _schema_item(value) -> dict:
@@ -250,6 +346,7 @@ async def get_spec(
 async def update_spec(
     spec_id: str,
     data: SpecUpdate,
+    response: Response,
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -261,6 +358,14 @@ async def update_spec(
     existing = await service.get_spec(spec_id)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+    fields_set = set(
+        getattr(data, "model_fields_set", None)
+        or getattr(data, "__fields_set__", set())
+    )
+    if fields_set & _STRUCTURED_SPEC_ENTITY_UPDATE_FIELDS:
+        response.headers["X-Okto-Pulse-Deprecation"] = (
+            STRUCTURED_SPEC_ENTITY_DEPRECATION_WARNING
+        )
     required_permissions = _spec_update_permission_requirements(existing, data)
     if required_permissions:
         await _require_permissions(db, user_id, existing.board_id, sorted(required_permissions))
@@ -275,6 +380,111 @@ async def update_spec(
     await db.commit()
     spec = await service.get_spec(spec_id)
     return spec
+
+
+@router.post("/specs/{spec_id}/structured-entities/{entity_type}")
+async def create_structured_spec_entity(
+    spec_id: str,
+    entity_type: str,
+    data: StructuredSpecEntityMutationRequest,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create one structured spec child entity through StructuredSpecEntityService."""
+    return await _run_structured_spec_entity_command(
+        db=db,
+        user_id=user_id,
+        spec_id=spec_id,
+        entity_type=entity_type,
+        operation="create",
+        payload=data.payload,
+        expected_spec_version=data.expected_spec_version,
+        task_id=data.task_id,
+        ack_token=data.ack_token,
+    )
+
+
+@router.patch("/specs/{spec_id}/structured-entities/{entity_type}/{entity_id}")
+async def update_structured_spec_entity(
+    spec_id: str,
+    entity_type: str,
+    entity_id: str,
+    data: StructuredSpecEntityMutationRequest,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update one structured spec child entity."""
+    return await _run_structured_spec_entity_command(
+        db=db,
+        user_id=user_id,
+        spec_id=spec_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        operation=data.operation or "update",
+        payload=data.payload,
+        expected_spec_version=data.expected_spec_version,
+        task_id=data.task_id,
+        ack_token=data.ack_token,
+    )
+
+
+@router.post("/specs/{spec_id}/structured-entities/{entity_type}/{entity_id}")
+async def operate_structured_spec_entity(
+    spec_id: str,
+    entity_type: str,
+    entity_id: str,
+    data: StructuredSpecEntityMutationRequest,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run a structured operation such as revoke, supersede, restore, reorder, link_task or unlink_task."""
+    if not data.operation:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="operation is required.",
+        )
+    return await _run_structured_spec_entity_command(
+        db=db,
+        user_id=user_id,
+        spec_id=spec_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        operation=data.operation,
+        payload=data.payload,
+        expected_spec_version=data.expected_spec_version,
+        task_id=data.task_id,
+        ack_token=data.ack_token,
+    )
+
+
+@router.post("/specs/{spec_id}/structured-entities/{entity_type}/{entity_id}/impact-preview")
+async def preview_structured_spec_entity_impact(
+    spec_id: str,
+    entity_type: str,
+    entity_id: str,
+    data: StructuredSpecEntityMutationRequest,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Preview impact for destructive-like structured operations without mutating."""
+    if not data.operation:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="operation is required.",
+        )
+    return await _run_structured_spec_entity_command(
+        db=db,
+        user_id=user_id,
+        spec_id=spec_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        operation=data.operation,
+        payload=data.payload,
+        expected_spec_version=data.expected_spec_version,
+        task_id=data.task_id,
+        ack_token=data.ack_token,
+        preview_only=True,
+    )
 
 
 @router.post("/specs/{spec_id}/move", response_model=SpecResponse)

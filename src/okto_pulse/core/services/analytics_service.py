@@ -38,6 +38,9 @@ from okto_pulse.core.models.db import (
     SprintStatus,
     Topic,
 )
+from okto_pulse.core.services.coverage_calculator import (
+    spec_saturation_envelope_from_coverage,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -46,8 +49,44 @@ from okto_pulse.core.models.db import (
 # ---------------------------------------------------------------------------
 
 
+def _structured_ref_text(item) -> str:
+    if isinstance(item, dict):
+        return str(item.get("text") or item.get("title") or item.get("description") or "")
+    return str(item)
+
+
+def _structured_ref_id(item) -> str | None:
+    if isinstance(item, dict):
+        raw = item.get("id")
+        return str(raw) if raw not in (None, "") else None
+    return None
+
+
+def _utc_datetime(value) -> _dt | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = _dt.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(value, _dt):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=_tz.utc)
+    return value.astimezone(_tz.utc)
+
+
+def _hours_between(start, end) -> float | None:
+    start_dt = _utc_datetime(start)
+    end_dt = _utc_datetime(end)
+    if not start_dt or not end_dt:
+        return None
+    return (end_dt - start_dt).total_seconds() / 3600.0
+
+
 def resolve_linked_criteria_to_indices(
-    linked_list: list | None, ac_list: list[str]
+    linked_list: list | None, ac_list: list
 ) -> set[int]:
     """Normalize heterogeneous `linked_criteria` entries into a deduplicated set
     of 0-based AC indices.
@@ -83,13 +122,20 @@ def resolve_linked_criteria_to_indices(
                     resolved.add(idx)
                 continue
             for i, ac in enumerate(ac_list):
-                if stripped == ac or ac.startswith(stripped) or stripped.startswith(ac):
+                ac_text = _structured_ref_text(ac)
+                ac_id = _structured_ref_id(ac)
+                if (
+                    stripped == ac_id
+                    or stripped == ac_text
+                    or (ac_text and ac_text.startswith(stripped))
+                    or (ac_text and stripped.startswith(ac_text))
+                ):
                     resolved.add(i)
                     break
     return resolved
 
 
-def resolve_linked_fr_indices(linked_refs: list, frs: list[str]) -> set[int]:
+def resolve_linked_fr_indices(linked_refs: list, frs: list) -> set[int]:
     """Resolve linked_requirements (indices or FR text) to FR indices."""
     indices: set[int] = set()
     for ref in linked_refs:
@@ -101,8 +147,10 @@ def resolve_linked_fr_indices(linked_refs: list, frs: list[str]) -> set[int]:
                 continue
         except (ValueError, TypeError):
             pass
-        for i, fr_text in enumerate(frs):
-            if ref_str in fr_text or fr_text in ref_str:
+        for i, fr in enumerate(frs):
+            fr_text = _structured_ref_text(fr)
+            fr_id = _structured_ref_id(fr)
+            if ref_str == fr_id or (fr_text and (ref_str in fr_text or fr_text in ref_str)):
                 indices.add(i)
                 break
     return indices
@@ -185,6 +233,16 @@ def _coverage_row_for_spec(spec: Spec, cards: list | None = None) -> dict:
         "decisions_total": cov["decisions_total"],
         "tr_task_linkage_pct": cov["tr_task_linkage_pct"],
         "trs_total": cov["trs_total"],
+        "irs_linked": cov["irs_linked"],
+        "irs_total": cov["irs_total"],
+        "ir_task_linkage_pct": cov["ir_task_linkage_pct"],
+        "irs_uncovered_ids": cov["irs_uncovered_ids"],
+        "skip_ir_coverage": cov["skip_ir_coverage"],
+        "ors_linked": cov["ors_linked"],
+        "ors_total": cov["ors_total"],
+        "or_task_linkage_pct": cov["or_task_linkage_pct"],
+        "ors_uncovered_ids": cov["ors_uncovered_ids"],
+        "skip_or_coverage": cov["skip_or_coverage"],
     }
 
 
@@ -426,10 +484,9 @@ async def compute_funnel(
     done_cards_board = [c for c in all_cards if c.status == CardStatus.DONE]
     cycle_times_board: list[float] = []
     for c in done_cards_board:
-        if c.created_at and c.updated_at:
-            cycle_times_board.append(
-                (c.updated_at - c.created_at).total_seconds() / 3600.0
-            )
+        hours = _hours_between(c.created_at, c.updated_at)
+        if hours is not None:
+            cycle_times_board.append(hours)
     counts["avg_cycle_hours"] = (
         round(sum(cycle_times_board) / len(cycle_times_board), 1)
         if cycle_times_board
@@ -460,7 +517,9 @@ async def compute_funnel(
         times = []
         for it in items:
             if str(it.status) == done_status_str and it.created_at and it.updated_at:
-                times.append((it.updated_at - it.created_at).total_seconds() / 3600.0)
+                hours = _hours_between(it.created_at, it.updated_at)
+                if hours is not None:
+                    times.append(hours)
         return round(sum(times) / len(times), 1) if times else None
 
     counts["cycle_time_by_phase"] = {
@@ -748,35 +807,7 @@ def spec_saturation_envelope(coverage: dict[str, Any]) -> dict[str, Any]:
     weighted equally; blocking[] lists dimension keys whose percentage is
     below 100 (or whose linkage is short) and that aren't skip-flagged.
     """
-    if not coverage:
-        return {"pct": 100.0, "blocking": []}
-    dims = [
-        ("acceptance_criteria", "ac_coverage_pct", "ac_total", "skip_test_coverage"),
-        ("functional_requirements", "fr_coverage_pct", "fr_total", None),
-        ("scenarios", "scenario_task_linkage_pct", "scenarios_total", "skip_test_coverage"),
-        ("rules", "br_task_linkage_pct", "brs_total", "skip_rules_coverage"),
-        ("contracts", "contract_task_linkage_pct", "contracts_total", None),
-        ("trs", "tr_task_linkage_pct", "trs_total", None),
-        ("decisions", "decisions_coverage_pct", "decisions_total", "skip_decisions_coverage"),
-        ("irs", "ir_task_linkage_pct", "irs_total", "skip_ir_coverage"),
-        ("ors", "or_task_linkage_pct", "ors_total", "skip_or_coverage"),
-    ]
-    pcts: list[float] = []
-    blocking: list[str] = []
-    for name, pct_key, total_key, skip_key in dims:
-        if skip_key and coverage.get(skip_key):
-            continue
-        total = coverage.get(total_key, 0) or 0
-        if total <= 0:
-            continue
-        pct = float(coverage.get(pct_key, 0) or 0)
-        pcts.append(pct)
-        if pct < 100:
-            blocking.append(name)
-    if not pcts:
-        return {"pct": 100.0, "blocking": []}
-    avg = round(sum(pcts) / len(pcts), 1)
-    return {"pct": avg, "blocking": blocking}
+    return spec_saturation_envelope_from_coverage(coverage)
 
 
 # ---------------------------------------------------------------------------

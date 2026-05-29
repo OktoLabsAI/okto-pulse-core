@@ -35,6 +35,7 @@ logger = logging.getLogger("okto_pulse.core.events.consolidation_enqueuer")
 
 _CARD_EVENT_PREFIX = "card."
 _SPEC_EVENT_PREFIX = "spec."
+_STRUCTURED_ENTITY_EVENT_PREFIX = "structured_entity."
 _SPRINT_EVENT_PREFIX = "sprint."
 _REFINEMENT_EVENT_PREFIX = "refinement."
 _DERIVED_EVENTS = {
@@ -70,6 +71,9 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "spec.moved",
     "spec.version_bumped",
     "spec.semantic_changed",
+    "structured_entity.created",
+    "structured_entity.updated",
+    "structured_entity.revoked",
     "refinement.semantic_changed",
     "sprint.created",
     "sprint.moved",
@@ -212,6 +216,29 @@ class ConsolidationEnqueuer:
                     "card_id": getattr(event, "card_id", None),
                 },
             )
+        if (
+            artifact_type == "spec"
+            and event.event_type.startswith(_STRUCTURED_ENTITY_EVENT_PREFIX)
+        ):
+            logger.info(
+                "spec_structured_entity_kg_reenqueue_total event_type=%s board=%s "
+                "spec_id=%s child_ref=%s outcome=enqueued",
+                event.event_type,
+                event.board_id,
+                artifact_id,
+                getattr(event, "child_ref", None),
+                extra={
+                    "event": "spec_structured_entity_kg_reenqueue_total",
+                    "metric_name": "spec_structured_entity_kg_reenqueue_total",
+                    "board_id": event.board_id,
+                    "spec_id": artifact_id,
+                    "child_ref": getattr(event, "child_ref", None),
+                    "entity_type": getattr(event, "entity_type", "unknown"),
+                    "operation": getattr(event, "operation", "unknown"),
+                    "outcome": "enqueued",
+                    "reason": "structured_entity_event",
+                },
+            )
 
     def _map_targets(
         self, event: DomainEvent
@@ -258,6 +285,11 @@ class ConsolidationEnqueuer:
             return targets
 
         # Single-target legacy paths.
+        if et.startswith(_STRUCTURED_ENTITY_EVENT_PREFIX):
+            sid = getattr(event, "spec_id", None)
+            if sid:
+                targets.append(("spec", sid))
+            return targets
         if et.startswith(_CARD_EVENT_PREFIX):
             cid = getattr(event, "card_id", None)
             if cid:

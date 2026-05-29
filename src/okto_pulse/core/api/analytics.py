@@ -55,6 +55,35 @@ def _parse_date(value: str | None, end_of_day: bool = False) -> datetime | None:
         return None
 
 
+def _utc_datetime(value) -> datetime | None:
+    """Normalize persisted datetimes before arithmetic.
+
+    SQLite can return a mix of offset-naive and offset-aware datetimes,
+    especially across records created by different code paths. Analytics must
+    treat naive persisted values as UTC instead of letting subtraction raise.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _hours_between(start, end) -> float | None:
+    start_dt = _utc_datetime(start)
+    end_dt = _utc_datetime(end)
+    if not start_dt or not end_dt:
+        return None
+    return (end_dt - start_dt).total_seconds() / 3600.0
+
+
 def _extract_conclusion(card) -> dict | None:
     """Return the last conclusion entry from a card's conclusions JSON list."""
     conclusions = card.conclusions
@@ -81,8 +110,21 @@ def _is_bug_card(card) -> bool:
     return getattr(card, "card_type", None) == CardType.BUG
 
 
+def _structured_ref_text(item) -> str:
+    if isinstance(item, dict):
+        return str(item.get("text") or item.get("title") or item.get("description") or "")
+    return str(item)
+
+
+def _structured_ref_id(item) -> str | None:
+    if isinstance(item, dict):
+        raw = item.get("id")
+        return str(raw) if raw not in (None, "") else None
+    return None
+
+
 def _resolve_linked_criteria_to_indices(
-    linked_list: list | None, ac_list: list[str]
+    linked_list: list | None, ac_list: list
 ) -> set[int]:
     """Normalize heterogeneous `linked_criteria` entries into a deduplicated set of
     0-based AC indices.
@@ -122,7 +164,14 @@ def _resolve_linked_criteria_to_indices(
                 continue
             # text match — tolerant, aligned with mcp/server.py::_spec_coverage
             for i, ac in enumerate(ac_list):
-                if stripped == ac or ac.startswith(stripped) or stripped.startswith(ac):
+                ac_text = _structured_ref_text(ac)
+                ac_id = _structured_ref_id(ac)
+                if (
+                    stripped == ac_id
+                    or stripped == ac_text
+                    or (ac_text and ac_text.startswith(stripped))
+                    or (ac_text and stripped.startswith(ac_text))
+                ):
                     resolved.add(i)
                     break
     return resolved
@@ -292,7 +341,7 @@ def _sprint_status_breakdown(sprints: list) -> dict[str, int]:
     return out
 
 
-def _resolve_linked_fr_indices(linked_refs: list, frs: list[str]) -> set[int]:
+def _resolve_linked_fr_indices(linked_refs: list, frs: list) -> set[int]:
     """Resolve linked_requirements (which can be indices or FR text) to FR indices."""
     indices: set[int] = set()
     for ref in linked_refs:
@@ -304,9 +353,11 @@ def _resolve_linked_fr_indices(linked_refs: list, frs: list[str]) -> set[int]:
                 continue
         except (ValueError, TypeError):
             pass
-        # Try matching by text content
-        for i, fr_text in enumerate(frs):
-            if ref_str in fr_text or fr_text in ref_str:
+        # Try matching by structured id or text content.
+        for i, fr in enumerate(frs):
+            fr_text = _structured_ref_text(fr)
+            fr_id = _structured_ref_id(fr)
+            if ref_str == fr_id or (fr_text and (ref_str in fr_text or fr_text in ref_str)):
                 indices.add(i)
                 break
     return indices
@@ -544,8 +595,9 @@ async def analytics_overview(
                     if earliest is None or tt.created_at < earliest:
                         earliest = tt.created_at
             if earliest:
-                delta_hours = (earliest - c.created_at).total_seconds() / 3600
-                triage_times.append(delta_hours)
+                delta_hours = _hours_between(c.created_at, earliest)
+                if delta_hours is not None:
+                    triage_times.append(delta_hours)
 
     avg_triage_hours = round(sum(triage_times) / len(triage_times), 1) if triage_times else None
 
@@ -558,8 +610,9 @@ async def analytics_overview(
     # Cycle time: avg hours from created_at to updated_at for done cards
     cycle_times: list[float] = []
     for c in done_cards:
-        if c.created_at and c.updated_at:
-            ct = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
+        ct_raw = _hours_between(c.created_at, c.updated_at)
+        if ct_raw is not None:
+            ct = round(ct_raw, 1)
             cycle_times.append(ct)
     avg_cycle_hours = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None
 
@@ -567,7 +620,9 @@ async def analytics_overview(
         times = []
         for item in items:
             if str(item.status) == done_status_str and item.created_at and item.updated_at:
-                times.append((item.updated_at - item.created_at).total_seconds() / 3600.0)
+                hours = _hours_between(item.created_at, item.updated_at)
+                if hours is not None:
+                    times.append(hours)
         return round(sum(times) / len(times), 1) if times else None
 
     cycle_time_by_level = {
@@ -1144,6 +1199,8 @@ async def board_spec_analytics(
         "task_validation_summary": _aggregate_task_validation_gate(cards),
         "spec_evaluation": _aggregate_spec_evaluation([spec]),
         "coverage_summary": coverage_summary,
+        "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+        "observability_requirements": getattr(spec, "observability_requirements", None) or [],
         "cards_summary": {
             "total": len(cards),
             "by_status": _card_status_breakdown(cards),
@@ -1936,6 +1993,8 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         Card.archived.is_(False),
     )
     cards = list((await db.execute(cards_q)).scalars().all())
+    from okto_pulse.core.services.analytics_service import spec_coverage_summary
+    coverage_summary = spec_coverage_summary(spec, cards=cards)
     card_data = []
     for c in cards:
         concl = _extract_conclusion(c)
@@ -1956,8 +2015,8 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
     done_cards = [c for c in cards if c.status == CardStatus.DONE]
     cycle_times = []
     for c in done_cards:
-        if c.created_at and c.updated_at:
-            delta = (c.updated_at - c.created_at).total_seconds() / 3600.0
+        delta = _hours_between(c.created_at, c.updated_at)
+        if delta is not None:
             cycle_times.append(round(delta, 1))
     avg_cycle_hours = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None
 
@@ -2016,8 +2075,9 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         sp_drift = [cn.get("drift") for cn in sp_concls if cn.get("drift") is not None]
         sp_cycle = []
         for c in sp_done:
-            if c.created_at and c.updated_at:
-                sp_cycle.append(round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1))
+            delta = _hours_between(c.created_at, c.updated_at)
+            if delta is not None:
+                sp_cycle.append(round(delta, 1))
         sprint_summaries.append({
             "sprint_id": sp.id, "title": sp.title, "status": sp.status.value,
             "tasks_total": len(sp_cards), "tasks_done": len(sp_done),
@@ -2045,6 +2105,9 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         "api_contracts": contracts,
         "rules_coverage": rules_coverage,
         "contracts_coverage": contracts_coverage,
+        "coverage_summary": coverage_summary,
+        "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+        "observability_requirements": getattr(spec, "observability_requirements", None) or [],
         "bugs_count": len(bug_cards),
         "sprints": sprint_summaries,
     }
@@ -2098,7 +2161,8 @@ async def _card_detail(db: AsyncSession, board_id: str, card_id: str) -> dict:
     concl = _extract_conclusion(card)
     cycle_hours = None
     if card.status == CardStatus.DONE and card.created_at and card.updated_at:
-        cycle_hours = round((card.updated_at - card.created_at).total_seconds() / 3600.0, 1)
+        delta = _hours_between(card.created_at, card.updated_at)
+        cycle_hours = round(delta, 1) if delta is not None else None
 
     # Normalize card_type to lowercase string (enum or raw).
     ct = getattr(card, "card_type", "normal")
@@ -2204,8 +2268,10 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
                     dr = last_val.get("drift") or last_val.get("estimated_drift")
         ct_hours = None
         if c.status == CardStatus.DONE and c.created_at and c.updated_at:
-            ct_hours = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
-            cycle_times.append(ct_hours)
+            delta = _hours_between(c.created_at, c.updated_at)
+            if delta is not None:
+                ct_hours = round(delta, 1)
+                cycle_times.append(ct_hours)
         if comp is not None:
             completeness_vals.append(comp)
         if dr is not None:

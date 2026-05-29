@@ -40,6 +40,15 @@ from okto_pulse.core.services.resource_gate import (
 from okto_pulse.core.services.spec_resource_propagation import (
     SpecResourcePropagationService,
 )
+from okto_pulse.core.services.spec_structured_entities import (
+    InMemoryStructuredSpecEntityMetricsSink,
+    StructuredSpecEntityCommand,
+    StructuredSpecEntityErrorCode,
+    StructuredSpecEntityMetricEvent,
+    StructuredSpecEntityMetricsSink,
+    StructuredSpecEntityResult,
+    StructuredSpecEntityService,
+)
 
 __all__ = [
     "ArchitectureDesignRepository",
@@ -74,4 +83,11 @@ __all__ = [
     "ResourceGateService",
     "ResourceGateViolation",
     "SpecResourcePropagationService",
+    "InMemoryStructuredSpecEntityMetricsSink",
+    "StructuredSpecEntityCommand",
+    "StructuredSpecEntityErrorCode",
+    "StructuredSpecEntityMetricEvent",
+    "StructuredSpecEntityMetricsSink",
+    "StructuredSpecEntityResult",
+    "StructuredSpecEntityService",
 ]

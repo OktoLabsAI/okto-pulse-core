@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +11,26 @@ from okto_pulse.core.telemetry.product import PRODUCT_AGGREGATE_FAMILIES
 from okto_pulse.core.telemetry.schema import normalize_event, now_utc
 from okto_pulse.core.telemetry.settings import (
     TelemetryMode,
+    mark_migration_notice_seen,
     record_consent,
     resolve_telemetry_config,
     save_state,
 )
 from okto_pulse.core.telemetry.store import LocalTelemetryStore
+
+logger = logging.getLogger("okto_pulse.telemetry.service")
+
+
+def _log_runtime_skip(*, component: str, reason: str) -> None:
+    logger.info(
+        "metrics.runtime_skip",
+        extra={
+            "metric_name": "metrics_runtime_skip_total",
+            "component": component,
+            "outcome": "skipped",
+            "reason": reason,
+        },
+    )
 
 
 class TelemetryService:
@@ -32,6 +48,7 @@ class TelemetryService:
         cfg = self.config()
         state = dict(cfg.state)
         if cfg.mode == "disabled":
+            _log_runtime_skip(component="record_event", reason="disabled")
             return {"written": False, "mode": cfg.mode, "rejected_fields_count": 0, "schema_version": cfg.schema_version}
         try:
             event, rejected = normalize_event(
@@ -72,8 +89,21 @@ class TelemetryService:
             "circuit_open_until": state.get("circuit_open_until"),
             "schema_status": schema_status,
         }
+        if cfg.migration_notice and cfg.migration_notice.get("pending"):
+            logger.info(
+                "metrics.migration_notice",
+                extra={
+                    "metric_name": "metrics_migration_notice_total",
+                    "notice_key": cfg.migration_notice.get("type"),
+                    "outcome": "pending_returned",
+                },
+            )
         return {
             "mode": cfg.mode,
+            "ui_mode": cfg.ui_mode,
+            "enabled": cfg.mode == "anonymous_beacon",
+            "normalized_from": cfg.normalized_from,
+            "migration_notice": cfg.migration_notice,
             "source": cfg.source,
             "metrics_dir": str(cfg.metrics_dir),
             "retention_days": cfg.retention_days,
@@ -114,8 +144,13 @@ class TelemetryService:
             acknowledged_items=acknowledged_items,
         )
         cfg = self.config()
+        effective_mode = str(state.get("mode") or cfg.mode)
         return {
-            "mode": mode,
+            "mode": effective_mode,
+            "ui_mode": "on" if effective_mode == "anonymous_beacon" else "off",
+            "enabled": effective_mode == "anonymous_beacon",
+            "normalized_from": state.get("normalized_from"),
+            "migration_notice": cfg.migration_notice,
             "changed": True,
             "changed_at": state["changed_at"],
             "source": source,
@@ -124,6 +159,18 @@ class TelemetryService:
             "next_opt_in_prompt_after": state.get("next_opt_in_prompt_after"),
             "resolved_precedence": list(cfg.resolved_precedence),
         }
+
+    def mark_migration_notice_seen(self, *, notice_key: str) -> dict[str, Any]:
+        result = mark_migration_notice_seen(self.settings, notice_key=notice_key)
+        logger.info(
+            "metrics.migration_notice",
+            extra={
+                "metric_name": "metrics_migration_notice_total",
+                "notice_key": notice_key,
+                "outcome": "seen_idempotent" if result["idempotent"] else "seen_acknowledged",
+            },
+        )
+        return result
 
     def export_local(self, output_path: str | None = None) -> dict[str, Any]:
         path = Path(output_path).expanduser() if output_path else None

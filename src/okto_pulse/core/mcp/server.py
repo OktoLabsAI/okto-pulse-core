@@ -61,6 +61,10 @@ from okto_pulse.core.services.resource_gate import (
     ResourceGateError,
     ResourceGateService,
 )
+from okto_pulse.core.services.spec_structured_entities import (
+    StructuredSpecEntityCommand,
+    StructuredSpecEntityService,
+)
 from okto_pulse.core.services.story_permissions import (
     story_move_permission,
     story_state,
@@ -9242,6 +9246,154 @@ async def okto_pulse_list_blockers(
 # ============================================================================
 
 
+_STRUCTURED_SPEC_ENTITY_MCP_TYPES = {
+    "functional_requirement",
+    "business_rule",
+    "technical_requirement",
+    "decision",
+    "acceptance_criterion",
+    "integration_requirement",
+    "observability_requirement",
+}
+
+_STRUCTURED_SPEC_ENTITY_LEGACY_WARNING = (
+    "This legacy per-type mutation surface is compatibility-only. Prefer "
+    "okto_pulse_update_spec_entity or okto_pulse_update_spec_api_contract for "
+    "atomic structured spec child edits."
+)
+
+
+def _parse_expected_spec_version(raw: str) -> int | None:
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return int(str(raw).strip())
+    except ValueError as exc:
+        raise ValueError("expected_spec_version must be an integer when provided.") from exc
+
+
+async def _mcp_apply_structured_spec_entity(
+    *,
+    board_id: str,
+    spec_id: str,
+    entity_type: str,
+    operation: str,
+    entity_id: str = "",
+    payload_json: str = "",
+    expected_spec_version: str = "",
+    task_id: str = "",
+    ack_token: str = "",
+    allow_api_contract: bool = False,
+) -> str:
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    if entity_type == "api_contract" and not allow_api_contract:
+        return json.dumps({
+            "error": "api_contract uses the dedicated okto_pulse_update_spec_api_contract wrapper.",
+        })
+    if entity_type != "api_contract" and entity_type not in _STRUCTURED_SPEC_ENTITY_MCP_TYPES:
+        return json.dumps({"error": f"Unsupported structured spec entity type: {entity_type}"})
+
+    try:
+        payload = json.loads(payload_json) if payload_json else {}
+    except json.JSONDecodeError as exc:
+        return json.dumps({"error": f"Invalid payload_json: {exc}"})
+    if not isinstance(payload, dict):
+        return json.dumps({"error": "payload_json must decode to an object."})
+    try:
+        expected = _parse_expected_spec_version(expected_spec_version)
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+
+    async with get_db_for_mcp() as db:
+        service = StructuredSpecEntityService(db)
+        result = await service.apply(
+            StructuredSpecEntityCommand(
+                board_id=board_id,
+                spec_id=spec_id,
+                actor_id=ctx.agent_id,
+                entity_type=entity_type,
+                entity_id=entity_id or None,
+                operation=operation,
+                payload=payload,
+                expected_spec_version=expected,
+                task_id=task_id or None,
+                ack_token=ack_token or None,
+                permission_set=ctx.permissions,
+            )
+        )
+        if result.success and result.changed_fields:
+            await db.commit()
+        else:
+            await db.rollback()
+        return json.dumps(result.as_dict(), default=str)
+
+
+@mcp.tool()
+async def okto_pulse_update_spec_entity(
+    board_id: str,
+    spec_id: str,
+    entity_type: str,
+    operation: str,
+    entity_id: str = "",
+    payload_json: str = "",
+    expected_spec_version: str = "",
+    task_id: str = "",
+    ack_token: str = "",
+) -> str:
+    """
+    Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC, IR and OR.
+
+    API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
+    payload shape remains explicit while still delegating to StructuredSpecEntityService.
+    """
+    return await _mcp_apply_structured_spec_entity(
+        board_id=board_id,
+        spec_id=spec_id,
+        entity_type=entity_type,
+        operation=operation,
+        entity_id=entity_id,
+        payload_json=payload_json,
+        expected_spec_version=expected_spec_version,
+        task_id=task_id,
+        ack_token=ack_token,
+        allow_api_contract=False,
+    )
+
+
+@mcp.tool()
+async def okto_pulse_update_spec_api_contract(
+    board_id: str,
+    spec_id: str,
+    contract_id: str,
+    operation: str = "update",
+    payload_json: str = "",
+    expected_spec_version: str = "",
+    task_id: str = "",
+    ack_token: str = "",
+) -> str:
+    """
+    Thin API Contract structured mutation wrapper.
+
+    This wrapper owns no authorization, persistence, impact or event logic; it only fixes
+    entity_type=api_contract and delegates to StructuredSpecEntityService.
+    """
+    return await _mcp_apply_structured_spec_entity(
+        board_id=board_id,
+        spec_id=spec_id,
+        entity_type="api_contract",
+        operation=operation,
+        entity_id=contract_id,
+        payload_json=payload_json,
+        expected_spec_version=expected_spec_version,
+        task_id=task_id,
+        ack_token=ack_token,
+        allow_api_contract=True,
+    )
+
+
 @mcp.tool()
 async def okto_pulse_add_business_rule(
     board_id: str,
@@ -9421,7 +9573,12 @@ async def okto_pulse_update_business_rule(
         await db.commit()
 
         cov = _spec_coverage(spec, rules=rules)
-        return json.dumps({"success": True, "business_rule": target, **_saturation_or_coverage(cov)}, default=str)
+        return json.dumps({
+            "success": True,
+            "business_rule": target,
+            "deprecation_warning": _STRUCTURED_SPEC_ENTITY_LEGACY_WARNING,
+            **_saturation_or_coverage(cov),
+        }, default=str)
 
 
 @mcp.tool()
@@ -10096,7 +10253,11 @@ async def okto_pulse_update_decision(
             return _err
         await db.commit()
 
-        return json.dumps({"success": True, "decision": target}, default=str)
+        return json.dumps({
+            "success": True,
+            "decision": target,
+            "deprecation_warning": _STRUCTURED_SPEC_ENTITY_LEGACY_WARNING,
+        }, default=str)
 
 
 @mcp.tool()
@@ -10315,6 +10476,7 @@ async def okto_pulse_migrate_spec_decisions(
 async def okto_pulse_list_business_rules(
     board_id: str,
     spec_id: str,
+    include_inactive: str = "false",
 ) -> str:
     """
     List all business rules for a spec with linked functional requirements resolved as text.
@@ -10336,7 +10498,13 @@ async def okto_pulse_list_business_rules(
         if not spec:
             return json.dumps({"error": "Spec not found"})
 
-        rules = spec.business_rules or []
+        include_all = _flag_enabled(include_inactive)
+        rules = list(spec.business_rules or [])
+        if not include_all:
+            rules = [
+                item for item in rules
+                if not isinstance(item, dict) or item.get("status", "active") == "active"
+            ]
         frs = spec.functional_requirements or []
 
         result = []
@@ -10631,7 +10799,11 @@ async def okto_pulse_update_api_contract(
             return _err
         await db.commit()
 
-        return json.dumps({"success": True, "api_contract": target}, default=str)
+        return json.dumps({
+            "success": True,
+            "api_contract": target,
+            "deprecation_warning": _STRUCTURED_SPEC_ENTITY_LEGACY_WARNING,
+        }, default=str)
 
 
 @mcp.tool()
@@ -10684,6 +10856,7 @@ async def okto_pulse_remove_api_contract(
 async def okto_pulse_list_api_contracts(
     board_id: str,
     spec_id: str,
+    include_inactive: str = "false",
 ) -> str:
     """
     List all API contracts for a spec with linked business rules resolved.
@@ -10705,7 +10878,13 @@ async def okto_pulse_list_api_contracts(
         if not spec:
             return json.dumps({"error": "Spec not found"})
 
-        contracts = spec.api_contracts or []
+        include_all = _flag_enabled(include_inactive)
+        contracts = list(spec.api_contracts or [])
+        if not include_all:
+            contracts = [
+                item for item in contracts
+                if not isinstance(item, dict) or item.get("status", "active") == "active"
+            ]
         existing_rules = {r.get("id"): r for r in (spec.business_rules or [])}
         frs = spec.functional_requirements or []
 

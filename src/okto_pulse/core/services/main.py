@@ -2479,8 +2479,21 @@ async def _validate_spec_linked_refs(
             return update_data[field] if update_data[field] is not None else default
         return getattr(current_spec, field, None) or default
 
-    final_frs: list[str] = list(_final("functional_requirements", []) or [])
-    final_acs: list[str] = list(_final("acceptance_criteria", []) or [])
+    def _child_text(item: Any) -> str:
+        if isinstance(item, dict):
+            return str(item.get("text") or item.get("title") or item.get("description") or "")
+        return str(item)
+
+    def _child_id(item: Any) -> str | None:
+        if isinstance(item, dict):
+            raw = item.get("id")
+            return str(raw) if raw not in (None, "") else None
+        return None
+
+    final_frs_raw: list[Any] = list(_final("functional_requirements", []) or [])
+    final_acs_raw: list[Any] = list(_final("acceptance_criteria", []) or [])
+    final_frs: list[str] = [_child_text(item) for item in final_frs_raw]
+    final_acs: list[str] = [_child_text(item) for item in final_acs_raw]
     final_brs: list[dict] = [
         b if isinstance(b, dict) else b.model_dump()
         for b in (_final("business_rules", []) or [])
@@ -2515,8 +2528,10 @@ async def _validate_spec_linked_refs(
 
     valid_fr_indices = {str(i) for i in range(len(final_frs))}
     valid_ac_indices = {str(i) for i in range(len(final_acs))}
-    valid_fr_texts = set(final_frs)
-    valid_ac_texts = set(final_acs)
+    valid_fr_texts = {text for text in final_frs if text}
+    valid_ac_texts = {text for text in final_acs if text}
+    valid_fr_ids = {child_id for item in final_frs_raw if (child_id := _child_id(item))}
+    valid_ac_ids = {child_id for item in final_acs_raw if (child_id := _child_id(item))}
     valid_br_ids = {br.get("id") for br in final_brs if br.get("id")}
     valid_contract_ids = {ct.get("id") for ct in final_contracts if ct.get("id")}
     valid_ir_ids = {ir.get("id") for ir in final_irs if ir.get("id")}
@@ -2524,28 +2539,49 @@ async def _validate_spec_linked_refs(
     errors: list[str] = []
 
     _DIM_TARGET = {"requirements": "FR", "criteria": "AC"}
-    def _check_index_or_text(refs: list[str], valid_indices: set, valid_texts: set, dim: str, owner_label: str):
+    def _check_index_text_or_id(
+        refs: list[str],
+        valid_indices: set,
+        valid_texts: set,
+        valid_ids: set,
+        dim: str,
+        owner_label: str,
+    ):
         target = _DIM_TARGET.get(dim, dim.upper()[:2])
         for ref in refs or []:
             ref_str = str(ref)
-            if ref_str in valid_indices or ref_str in valid_texts:
+            if ref_str in valid_indices or ref_str in valid_texts or ref_str in valid_ids:
                 continue
             max_idx = max(0, len(valid_indices) - 1)
             errors.append(
                 f"{owner_label}: linked_{dim} reference '{ref_str}' is not a valid 0-based index "
-                f"(0..{max_idx}) nor matches any existing {target} text."
+                f"(0..{max_idx}), existing {target} text, or structured {target} id."
             )
 
     # business_rules.linked_requirements → FR
     for br in final_brs:
         owner = f"BR '{br.get('id') or br.get('title') or '?'}'"
-        _check_index_or_text(br.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+        _check_index_text_or_id(
+            br.get("linked_requirements") or [],
+            valid_fr_indices,
+            valid_fr_texts,
+            valid_fr_ids,
+            "requirements",
+            owner,
+        )
 
     # api_contracts.linked_requirements → FR
     # api_contracts.linked_rules → BR.id
     for ct in final_contracts:
         owner = f"Contract '{ct.get('id') or (ct.get('method', '?') + ' ' + ct.get('path', '?'))}'"
-        _check_index_or_text(ct.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+        _check_index_text_or_id(
+            ct.get("linked_requirements") or [],
+            valid_fr_indices,
+            valid_fr_texts,
+            valid_fr_ids,
+            "requirements",
+            owner,
+        )
         for ref in ct.get("linked_rules") or []:
             if str(ref) not in valid_br_ids:
                 errors.append(
@@ -2557,7 +2593,14 @@ async def _validate_spec_linked_refs(
     # integration_requirements.linked_api_contracts → api_contract.id
     for ir in final_irs:
         owner = f"IR '{ir.get('id') or ir.get('title') or '?'}'"
-        _check_index_or_text(ir.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+        _check_index_text_or_id(
+            ir.get("linked_requirements") or [],
+            valid_fr_indices,
+            valid_fr_texts,
+            valid_fr_ids,
+            "requirements",
+            owner,
+        )
         for ref in ir.get("linked_api_contracts") or []:
             if str(ref) not in valid_contract_ids:
                 errors.append(
@@ -2569,7 +2612,14 @@ async def _validate_spec_linked_refs(
     # observability_requirements.linked_integration_requirements → IR.id
     for req in final_ors:
         owner = f"OR '{req.get('id') or req.get('title') or '?'}'"
-        _check_index_or_text(req.get("linked_requirements") or [], valid_fr_indices, valid_fr_texts, "requirements", owner)
+        _check_index_text_or_id(
+            req.get("linked_requirements") or [],
+            valid_fr_indices,
+            valid_fr_texts,
+            valid_fr_ids,
+            "requirements",
+            owner,
+        )
         for ref in req.get("linked_integration_requirements") or []:
             if str(ref) not in valid_ir_ids:
                 errors.append(
@@ -2580,15 +2630,22 @@ async def _validate_spec_linked_refs(
     # test_scenarios.linked_criteria → AC
     for sc in final_scenarios:
         owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
-        _check_index_or_text(sc.get("linked_criteria") or [], valid_ac_indices, valid_ac_texts, "criteria", owner)
+        _check_index_text_or_id(
+            sc.get("linked_criteria") or [],
+            valid_ac_indices,
+            valid_ac_texts,
+            valid_ac_ids,
+            "criteria",
+            owner,
+        )
 
     # decisions.linked_requirements → FR  +  supersedes_decision_id → Decision.id
     valid_decision_ids = {d.get("id") for d in final_decisions if d.get("id")}
     for dec in final_decisions:
         owner = f"Decision '{dec.get('id') or dec.get('title') or '?'}'"
-        _check_index_or_text(
+        _check_index_text_or_id(
             dec.get("linked_requirements") or [],
-            valid_fr_indices, valid_fr_texts, "requirements", owner,
+            valid_fr_indices, valid_fr_texts, valid_fr_ids, "requirements", owner,
         )
         sup = dec.get("supersedes_decision_id")
         if sup and sup not in valid_decision_ids:
