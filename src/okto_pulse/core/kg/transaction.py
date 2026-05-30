@@ -92,12 +92,25 @@ class KuzuWriteRecord:
 
 @dataclass
 class CommitCounters:
-    """Roll-up counts returned by commit for the audit row."""
+    """Roll-up counts returned by commit for the audit row.
+
+    Spec eca49df9 (FR6): counters are mutually exclusive per candidate —
+    each processed candidate increments exactly one of nodes_added (CREATE),
+    nodes_updated (in-place UPDATE), nodes_merged (NC-8 dedup-reuse),
+    nodes_superseded (SUPERSEDE) or nodes_noop (NOOP), so
+    ``processed_candidates`` closes as their sum. ``merge_audit_items`` carries
+    the per-merge audit payload surfaced in the commit response (NOT a
+    KuzuWriteRecord — the reused node belongs to a prior session and must not
+    enter compensation rollback).
+    """
 
     nodes_added: int = 0
     nodes_updated: int = 0
     nodes_superseded: int = 0
     edges_added: int = 0
+    nodes_merged: int = 0
+    nodes_noop: int = 0
+    merge_audit_items: list[dict[str, Any]] = field(default_factory=list)
 
 
 class CompensationError(Exception):
@@ -144,7 +157,15 @@ class TransactionOrchestrator:
         params["id"] = node_id
         params["source_session_id"] = self.session_id
 
-        columns = ", ".join(f"{k}: ${k}" for k in params)
+        # Kùzu can't coerce an ISO string to TIMESTAMP via plain param
+        # binding — created_at must be wrapped in timestamp() (mirrors the
+        # _apply_kuzu_node_create_with_timestamp shim used by the CREATE path).
+        # Required so supersede_node's create works once it has real call
+        # sites (spec eca49df9 / TR6).
+        columns = ", ".join(
+            f"{k}: timestamp(${k})" if k == "created_at" else f"{k}: ${k}"
+            for k in params
+        )
         stmt = f"CREATE (n:{node_type} {{{columns}}})"
         self.kuzu_conn.execute(stmt, params)
 
@@ -154,21 +175,25 @@ class TransactionOrchestrator:
         self.counters.nodes_added += 1
 
     def update_node(self, node_type: str, node_id: str, attrs: dict[str, Any]) -> None:
-        """Overwrite a node's mutable attrs. Does NOT get reverted by compensate
-        — updates are already lossy and there's nothing to compensate to. This
-        limitation is documented in the spec: compensating rollback only
-        protects against partial ADD writes, not against UPDATE overwrites."""
+        """Overwrite a node's mutable attrs in place and count it as an UPDATE.
+
+        Spec eca49df9 (TR6) wires this as the production call site for
+        op==UPDATE. It previously had NO call site, which masked the fact that
+        the node schema (see schema.py) has no ``updated_by_session_id`` /
+        ``updated_at`` columns — SETting them raised a Kùzu Binder exception.
+        Only the caller-supplied content attrs are SET (callers pass the
+        _NODE_UPDATEABLE_ATTRS subset, never ``embedding`` which is HNSW-locked).
+
+        Not reverted by compensate — updates are lossy and there's nothing to
+        compensate to (compensating rollback only protects partial ADD writes,
+        not UPDATE overwrites; documented in the spec)."""
         self._guard_fresh()
         set_clauses = ", ".join(f"n.{k} = ${k}" for k in attrs if k != "id")
-        params = dict(attrs)
+        if not set_clauses:
+            return
+        params = {k: v for k, v in attrs.items() if k != "id"}
         params["id"] = node_id
-        stmt = (
-            f"MATCH (n:{node_type} {{id: $id}}) "
-            f"SET {set_clauses}, n.updated_by_session_id = $session_id, "
-            f"n.updated_at = timestamp($ts)"
-        )
-        params["session_id"] = self.session_id
-        params["ts"] = attrs.get("ts") or _now_iso()
+        stmt = f"MATCH (n:{node_type} {{id: $id}}) SET {set_clauses}"
         self.kuzu_conn.execute(stmt, params)
         self.counters.nodes_updated += 1
 

@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from okto_pulse.core.kg.agent.extractors.source_ref import per_concept_source_ref
+
 # Pattern words (Portuguese + common English variants). Case-insensitive.
 _MARKERS = (
     r"alternativ[ao]s?",
@@ -101,7 +103,7 @@ def extract_alternatives(
                 title=_candidate_title(sentence),
                 reasoning_against=sentence,
                 source_section="analysis",
-                source_ref=source_ref,
+                source_ref=per_concept_source_ref(source_ref, "alternative", sentence),
                 raw_match=sentence,
             ))
 
@@ -114,7 +116,7 @@ def extract_alternatives(
                 title=_candidate_title(sentence),
                 reasoning_against=sentence,
                 source_section="qa",
-                source_ref=source_ref,
+                source_ref=per_concept_source_ref(source_ref, "alternative", sentence),
                 raw_match=sentence,
             ))
 

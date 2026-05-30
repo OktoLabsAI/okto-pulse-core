@@ -382,6 +382,152 @@ def _query_one(board_id: str, source_artifact_ref: str):
 
 
 # ---------------------------------------------------------------------------
+# TC-3 (spec eca49df9, AC6 + AC7) — merge contado/auditado + soma de counters
+# ---------------------------------------------------------------------------
+
+
+async def test_tc3_reconsolidation_counts_and_audits_merge(
+    dedup_tempdir, monkeypatch
+):
+    """AC6: NC-8 dedup-reuse on re-consolidation increments nodes_merged and
+    emits a merge audit item in the response (no silent drop, no KuzuWriteRecord).
+    AC7: the counters sum closes as processed_candidates. Structural Entity
+    dedup stays intact (AC8 invariant)."""
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}"
+
+    commit1 = await _drive_one_session(
+        session_factory, board_id, artifact_ref, "[TC-3] titulo original", content="v1"
+    )
+    assert commit1.nodes_added >= 1
+    assert commit1.nodes_merged == 0  # first commit is a create, not a merge
+
+    # Re-consolidate the SAME ref with changed content -> NC-8 dedup-reuse.
+    commit2 = await _drive_one_session(
+        session_factory, board_id, artifact_ref, "[TC-3] titulo atualizado", content="v2"
+    )
+
+    # AC6: merge counted + audited, not a silent nodes_updated:0/superseded:0.
+    assert commit2.nodes_merged == 1
+    assert commit2.nodes_added == 0
+    assert len(commit2.merge_audit_items) == 1
+    item = commit2.merge_audit_items[0]
+    assert item["operation"] == "MERGE"
+    assert item["source_artifact_ref"] == artifact_ref
+    assert item["node_type"] == "Entity"
+    assert item["reused_node_id"]  # the prior node's id was reused, not re-created
+
+    # AC7: the sum closes.
+    assert commit2.processed_candidates == (
+        commit2.nodes_added
+        + commit2.nodes_updated
+        + commit2.nodes_merged
+        + commit2.nodes_superseded
+        + commit2.nodes_noop
+    )
+    assert commit2.processed_candidates >= 1
+
+    # AC8 invariant: structural Entity dedup intact — still exactly 1 node.
+    assert _count_entities(board_id, artifact_ref) == 1
+
+
+# ---------------------------------------------------------------------------
+# TC-3 (spec eca49df9, FR6 + TR6) — op==UPDATE usa update_node (nodes_updated)
+# ---------------------------------------------------------------------------
+
+
+async def test_tc3_update_op_increments_nodes_updated_not_merged(
+    dedup_tempdir, monkeypatch
+):
+    """FR6/TR6 regression guard: a non-curated op==UPDATE candidate with a
+    target_node_id routes through orch.update_node, so nodes_updated == 1 and
+    nodes_merged == 0 (UPDATE is not miscounted as MERGE), and the counters sum
+    closes. Fails before IMPL-3 rework (no update_node call site)."""
+    from okto_pulse.core.kg.primitives import (
+        begin_consolidation,
+        commit_consolidation,
+        propose_reconciliation,
+    )
+    from okto_pulse.core.kg.schemas import (
+        BeginConsolidationRequest,
+        CommitConsolidationRequest,
+        KGNodeType,
+        NodeCandidate,
+        ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
+    )
+
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}"
+
+    # Session 1: create the target node.
+    commit1 = await _drive_one_session(
+        session_factory, board_id, artifact_ref, "[TC-3 UPDATE] original", content="v1"
+    )
+    assert commit1.nodes_added >= 1
+    existing_id = _query_one(board_id, artifact_ref)["id"]
+
+    # Session 2: force op==UPDATE on the candidate via agent_overrides.
+    cand_id = "nc8_update_cand"
+    cand = NodeCandidate(
+        candidate_id=cand_id,
+        node_type=KGNodeType.ENTITY,
+        title="[TC-3 UPDATE] revised",
+        content="v2",
+        source_artifact_ref=artifact_ref,
+        source_confidence=0.95,
+    )
+    begin = await begin_consolidation(
+        BeginConsolidationRequest(
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=spec_id,
+            raw_content="forced UPDATE content v2",
+            deterministic_candidates=[cand],
+        ),
+        agent_id="agent-tc3-update",
+        db=None,
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id="agent-tc3-update",
+        db=None,
+    )
+    override = ReconciliationHint(
+        candidate_id=cand_id,
+        operation=ReconciliationOperation.UPDATE,
+        target_node_id=existing_id,
+        confidence=0.9,  # < 1.0 -> not an authorship override; node is not curated
+        reason="test forces in-place UPDATE",
+    )
+    async with session_factory() as db:
+        commit2 = await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=begin.session_id,
+                summary_text="forced update",
+                agent_overrides={cand_id: override},
+            ),
+            agent_id="agent-tc3-update",
+            db=db,
+        )
+
+    assert commit2.nodes_updated == 1  # in-place UPDATE via update_node
+    assert commit2.nodes_merged == 0   # NOT miscounted as MERGE
+    assert commit2.nodes_added == 0    # NOT a CREATE
+    assert commit2.processed_candidates == (
+        commit2.nodes_added
+        + commit2.nodes_updated
+        + commit2.nodes_merged
+        + commit2.nodes_superseded
+        + commit2.nodes_noop
+    )
+    # In-place: still exactly one Entity, with the updated title.
+    assert _count_entities(board_id, artifact_ref) == 1
+    assert _query_one(board_id, artifact_ref)["title"] == "[TC-3 UPDATE] revised"
+
+
+# ---------------------------------------------------------------------------
 # TS1 — re-consolidação não duplica
 # ---------------------------------------------------------------------------
 

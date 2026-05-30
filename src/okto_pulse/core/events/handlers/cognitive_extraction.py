@@ -182,29 +182,35 @@ class CognitiveExtractionHandler:
         )
 
     def _extract_alternatives(self, spec: Spec, event: CardMoved) -> None:
-        source_ref = f"spec:{spec.id}"
-        # BR5 / D3: idempotency — skip if any Alternative with this source_ref
-        # is already in the KG.
-        if _node_with_source_ref_exists(event.board_id, "Alternative", source_ref):
-            logger.debug(
-                "cognitive.extraction.alternative.skipped reason=already_exists "
-                "spec_id=%s source_ref=%s",
-                spec.id, source_ref,
-                extra={
-                    "event": "cognitive.extraction.alternative.skipped",
-                    "reason": "already_exists",
-                    "spec_id": spec.id,
-                    "source_ref": source_ref,
-                    "board_id": event.board_id,
-                },
-            )
-            return
+        # FR1/FR3: per-concept ref. The base ref is spec:<id>; the extractor
+        # appends spec:<id>:alternative:<content_hash8> per candidate.
+        base_ref = f"spec:{spec.id}"
         results: list[AlternativeExtraction] = extract_alternatives(
             spec_context=spec.context or "",
             qa_texts=None,
-            source_ref=source_ref,
+            source_ref=base_ref,
         )
         for cand in results:
+            # FR2/AC3: per-candidate idempotency. Probe the candidate's
+            # per-concept ref and skip ONLY that concept if it already
+            # exists — never the whole type (the old any-exists probe on the
+            # global ref suppressed every distinct concept after the first).
+            if _node_with_source_ref_exists(
+                event.board_id, "Alternative", cand.source_ref
+            ):
+                logger.debug(
+                    "cognitive.extraction.alternative.skipped reason=already_exists "
+                    "spec_id=%s source_ref=%s",
+                    spec.id, cand.source_ref,
+                    extra={
+                        "event": "cognitive.extraction.alternative.skipped",
+                        "reason": "already_exists",
+                        "spec_id": spec.id,
+                        "source_ref": cand.source_ref,
+                        "board_id": event.board_id,
+                    },
+                )
+                continue
             logger.info(
                 "cognitive.extraction.alternative.candidate "
                 "spec_id=%s board=%s title=%s",
@@ -221,27 +227,32 @@ class CognitiveExtractionHandler:
             )
 
     def _extract_assumptions(self, spec: Spec, event: CardMoved) -> None:
-        source_ref = f"spec:{spec.id}"
-        if _node_with_source_ref_exists(event.board_id, "Assumption", source_ref):
-            logger.debug(
-                "cognitive.extraction.assumption.skipped reason=already_exists "
-                "spec_id=%s source_ref=%s",
-                spec.id, source_ref,
-                extra={
-                    "event": "cognitive.extraction.assumption.skipped",
-                    "reason": "already_exists",
-                    "spec_id": spec.id,
-                    "source_ref": source_ref,
-                    "board_id": event.board_id,
-                },
-            )
-            return
+        # FR1/FR3: per-concept ref (spec:<id>:assumption:<content_hash8>).
+        base_ref = f"spec:{spec.id}"
         results: list[AssumptionExtraction] = extract_assumptions(
             spec_context=spec.context or "",
             qa_texts=None,
-            source_ref=source_ref,
+            source_ref=base_ref,
         )
         for cand in results:
+            # FR2/AC3: per-candidate idempotency — skip only the existing
+            # concept, never the whole type.
+            if _node_with_source_ref_exists(
+                event.board_id, "Assumption", cand.source_ref
+            ):
+                logger.debug(
+                    "cognitive.extraction.assumption.skipped reason=already_exists "
+                    "spec_id=%s source_ref=%s",
+                    spec.id, cand.source_ref,
+                    extra={
+                        "event": "cognitive.extraction.assumption.skipped",
+                        "reason": "already_exists",
+                        "spec_id": spec.id,
+                        "source_ref": cand.source_ref,
+                        "board_id": event.board_id,
+                    },
+                )
+                continue
             logger.info(
                 "cognitive.extraction.assumption.candidate "
                 "spec_id=%s board=%s title=%s",

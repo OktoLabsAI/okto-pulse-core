@@ -17,6 +17,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from okto_pulse.core.kg.agent.extractors.source_ref import per_concept_source_ref
+
 # Marker words. Case-insensitive. Conditional patterns are intentionally
 # loose ("caso X então") to catch both "caso X então Y" and "caso X, então Y".
 _MARKERS = (
@@ -99,7 +101,7 @@ def extract_assumptions(
                 title=_candidate_title(sentence),
                 body=sentence,
                 source_section="analysis",
-                source_ref=source_ref,
+                source_ref=per_concept_source_ref(source_ref, "assumption", sentence),
                 raw_match=sentence,
             ))
 
@@ -112,7 +114,7 @@ def extract_assumptions(
                 title=_candidate_title(sentence),
                 body=sentence,
                 source_section="qa",
-                source_ref=source_ref,
+                source_ref=per_concept_source_ref(source_ref, "assumption", sentence),
                 raw_match=sentence,
             ))
 

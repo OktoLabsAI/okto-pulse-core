@@ -672,6 +672,8 @@ def _do_kuzu_commit(
                 node_type = _enum_value(cand.node_type)
 
                 if op == ReconciliationOperation.NOOP:
+                    # Spec eca49df9 (FR6): NOOP is a processed candidate too.
+                    orch.counters.nodes_noop += 1
                     existing_id = _lookup_existing_node(
                         kconn, node_type, cand.source_artifact_ref or ""
                     )
@@ -726,6 +728,89 @@ def _do_kuzu_commit(
                             },
                         )
 
+                    if not is_curated:
+                        # Spec eca49df9 (FR6/TR6): a non-curated UPDATE with a
+                        # target is an in-place semantic update — route it
+                        # through orch.update_node so nodes_updated has a real
+                        # production call site. The NC-8 dedup-reuse branch
+                        # below stays a MERGE; an UPDATE must not be miscounted
+                        # as MERGE or CREATE. (Curated+override keeps falling
+                        # through to reset-via-create.)
+                        update_attrs = {
+                            "title": cand.title,
+                            "content": cand.content or "",
+                            "context": cand.context or "",
+                            "justification": cand.justification or "",
+                            "source_confidence": cand.source_confidence,
+                            "priority_boost": getattr(cand, "priority_boost", 0.0),
+                        }
+                        orch.update_node(node_type_check, target_node_id, update_attrs)
+                        candidate_to_kuzu_id[cand_id] = target_node_id
+                        candidate_to_node_type[cand_id] = node_type_check
+                        logger.info(
+                            "kg.consolidation.updated candidate=%s target=%s "
+                            "type=%s session=%s",
+                            cand_id, target_node_id, node_type_check, session_id,
+                            extra={
+                                "event": "kg.consolidation.updated",
+                                "candidate_id": cand_id,
+                                "target_node_id": target_node_id,
+                                "node_type": node_type_check,
+                                "session_id": session_id,
+                            },
+                        )
+                        continue
+
+                # Spec eca49df9 (FR4): op==SUPERSEDE must go through
+                # supersede_node (new node + superseded_by + :supersedes edge
+                # for node types the schema supports — Decision today), never
+                # fall through to a lone CREATE. supersede_node reclassifies the
+                # counter (nodes_added-1 / nodes_superseded+1) internally.
+                if (
+                    op == ReconciliationOperation.SUPERSEDE
+                    and hint
+                    and getattr(hint, "target_node_id", None)
+                ):
+                    superseded_id = hint.target_node_id
+                    new_node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
+                    embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+                    new_attrs = {
+                        "title": cand.title,
+                        "content": cand.content or "",
+                        "context": cand.context or "",
+                        "justification": cand.justification or "",
+                        "source_artifact_ref": cand.source_artifact_ref or "",
+                        "created_at": _now_iso(),
+                        "created_by_agent": agent_id,
+                        "source_confidence": cand.source_confidence,
+                        "relevance_score": getattr(cand, "relevance_score", 0.5),
+                        "query_hits": 0,
+                        "last_queried_at": None,
+                        "priority_boost": getattr(cand, "priority_boost", 0.0),
+                        "human_curated": False,
+                        "embedding": embedding,
+                    }
+                    orch.supersede_node(
+                        node_type, new_node_id, superseded_id, new_attrs,
+                        revocation_reason="superseded by consolidation session",
+                    )
+                    candidate_to_kuzu_id[cand_id] = new_node_id
+                    candidate_to_node_type[cand_id] = node_type
+                    logger.info(
+                        "kg.consolidation.superseded candidate=%s new=%s old=%s "
+                        "type=%s session=%s",
+                        cand_id, new_node_id, superseded_id, node_type, session_id,
+                        extra={
+                            "event": "kg.consolidation.superseded",
+                            "candidate_id": cand_id,
+                            "new_node_id": new_node_id,
+                            "superseded_node_id": superseded_id,
+                            "node_type": node_type,
+                            "session_id": session_id,
+                        },
+                    )
+                    continue
+
                 # Spec 7f23535f (NC-8): natural dedup by source_artifact_ref.
                 # Before generating a fresh UUID, check whether this artifact
                 # already has a Kuzu node from a prior session. If yes, reuse
@@ -759,6 +844,18 @@ def _do_kuzu_commit(
                             )
                         candidate_to_kuzu_id[cand_id] = existing_id
                         candidate_to_node_type[cand_id] = node_type
+                        # Spec eca49df9 (FR5/AC6): count + audit the NC-8
+                        # dedup-reuse (merge). No KuzuWriteRecord — the reused
+                        # node belongs to a prior session and must not enter
+                        # compensation rollback.
+                        orch.counters.nodes_merged += 1
+                        orch.counters.merge_audit_items.append({
+                            "candidate_id": cand_id,
+                            "node_type": node_type,
+                            "source_artifact_ref": source_ref,
+                            "reused_node_id": existing_id,
+                            "operation": "MERGE",
+                        })
                         logger.info(
                             "kg.consolidation.dedup_reused candidate=%s "
                             "existing=%s type=%s ref=%s session=%s curated=%s",
@@ -995,6 +1092,16 @@ async def commit_consolidation(
             nodes_updated=counters.nodes_updated,
             nodes_superseded=counters.nodes_superseded,
             edges_added=counters.edges_added,
+            nodes_merged=counters.nodes_merged,
+            nodes_noop=counters.nodes_noop,
+            processed_candidates=(
+                counters.nodes_added
+                + counters.nodes_updated
+                + counters.nodes_merged
+                + counters.nodes_superseded
+                + counters.nodes_noop
+            ),
+            merge_audit_items=list(counters.merge_audit_items),
             committed_at=committed_at,
         )
 
