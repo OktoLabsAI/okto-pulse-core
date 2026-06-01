@@ -96,6 +96,19 @@ version: "1.0"
 
 **Safety rails:** Timeout: 5s default, 30s max. Max rows: 1000 default, 10000 max. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
 
+### Cypher Hit-Counting & RETURN Contract
+
+**Hit-counting parity with `kg_query_natural` (spec 28583299):** `kg_query_cypher` increments the per-node hit counter for every node it returns, the same way `kg_query_natural` does for its top-K. The counter feeds `relevance_score` over time and biases ranking toward nodes the agents actually consult. To get credit for a hit, **shape the RETURN so the result row carries the node's id**:
+
+- `RETURN n.id` — the column named `id` is detected directly.
+- `RETURN n.id AS node_id` — alias works too (`node_id`/`*_id`/`*.id`).
+- `RETURN n` — when the row carries a UUID-like scalar anywhere, it's recognised as a node id.
+- `RETURN labels(n) AS node_type, n.id AS id` — pair labels with the id so the counter tags the right node type instead of `unknown`.
+
+Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment the counter — there's no row-level node id to attribute to. That's intentional: aggregations are diagnostic, not consumption.
+
+**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at` and `nodes_recomputed_in_last_tick`, populated by the daily APScheduler tick (03:00 UTC). When `last_decay_tick_at` is `null` the daily worker hasn't run yet on this deployment — score freshness is bounded by the on-read `_apply_decay_reorder` until the first tick lands.
+
 ## When and How to Consolidate — Mandatory Triggers
 
 **Mandatory triggers — you MUST open a consolidation session:**
@@ -151,7 +164,7 @@ Before creating any Decision or Constraint, run:
 
 ### KG Health
 
-`okto_pulse_kg_health(board_id)` — returns 12 fields including `queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `schema_version`, `contradict_warn_count`, `last_decay_tick_at`, `nodes_recomputed_in_last_tick`.
+`okto_pulse_kg_health(board_id)` — returns a JSON health snapshot. It carries the KG-01 contract fields (`board_id`, `graph_state`, `discovery_state`, `overall_state`, `metric_status`, `correlation_id`, `checked_at`, …) alongside the legacy aggregation fields (`queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `schema_version`, `contradict_warn_count`) and the daily-tick fields `last_decay_tick_at` / `nodes_recomputed_in_last_tick`.
 
 **When to consult:** before long consolidation cycles, after flagging contradictions, when debugging stale ranking (`default_score_ratio > 0.7`).
 
@@ -163,6 +176,8 @@ Before `okto_pulse_kg_commit_consolidation`:
 - [ ] `raw_content` includes enough context for SHA256 dedup
 - [ ] Edge candidates reference existing nodes via `kg:<existing_node_id>` prefix
 - [ ] Only cognitive edges emitted (`supersedes`, `contradicts`, `depends_on`, `relates_to`, `validates`)
+
+**Concurrency:** Server serialises commits per board automatically (per-board lock in `commit_coordinator`), so you may fire `okto_pulse_kg_commit_consolidation` calls in parallel — the handler retries transient file-lock contention with exponential backoff. Distinct boards never contend with each other.
 
 After `okto_pulse_kg_commit_consolidation`:
 - [ ] `okto_pulse_kg_health` checked for new dead letters

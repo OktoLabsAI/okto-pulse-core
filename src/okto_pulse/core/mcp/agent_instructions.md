@@ -91,6 +91,8 @@ card       → okto_pulse_get_task_context(...)
 
 **Never skip card execution steps 1 and 5.**
 
+This is an operational protocol rule: the MCP server does not prove that you read context; your audit trail and artifact quality do.
+
 ### Resource Gate pre-flight — mandatory before completion
 
 Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types.

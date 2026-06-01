@@ -53,12 +53,17 @@ def test_kg_tick_reset_calls_require_write_token():
     assert "require_write_token(bid)" in src
 
 
-def test_outbox_worker_apply_event_calls_require_write_token():
+def test_outbox_worker_apply_event_calls_require_global_write_token():
+    # _apply_event writes to the GLOBAL discovery meta-graph (discovery.lbug),
+    # so it must hold the GLOBAL guard — not the per-board one. Commit 7fd84e0
+    # wired require_global_write_token() here; the old assertion pinned the
+    # per-board require_write_token(board_id) by copy-paste and went stale.
+    # (The sibling global-write tests below already use the global token.)
     from okto_pulse.core.kg.global_discovery import outbox_worker
 
     src = inspect.getsource(outbox_worker.OutboxWorker._apply_event)
-    assert "require_write_token" in src
-    assert "require_write_token(board_id)" in src
+    assert "require_global_write_token" in src
+    assert "require_global_write_token()" in src
 
 
 def test_board_delete_cascade_calls_require_write_token():

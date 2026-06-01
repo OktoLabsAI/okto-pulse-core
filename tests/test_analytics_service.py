@@ -11,6 +11,7 @@ from okto_pulse.core.services.analytics_service import (
     decisions_stats,
     filter_decisions_by_status,
     render_decisions_markdown,
+    resolve_linked_criteria_to_ids,
     resolve_linked_criteria_to_indices,
     resolve_linked_fr_indices,
     spec_coverage_summary,
@@ -36,6 +37,79 @@ class TestResolveLinkedCriteria:
 
     def test_whitespace_stripped(self):
         assert resolve_linked_criteria_to_indices([" 2 ", "  "], ["A", "B", "C", "D"]) == {2}
+
+
+class TestResolveLinkedCriteriaToIds:
+    """Write-path resolver: STRICT, fail-closed, exact-match, dedup-ordered.
+
+    Spec aafcc73f / KB 26b0e005 — mirrors the read resolver but projects to
+    canonical ac_ids and surfaces unresolved tokens instead of dropping them.
+    """
+
+    _ACS = [
+        {"id": "ac_0001", "text": "User can log in with valid token"},
+        {"id": "ac_0002", "text": "Session expires after timeout"},
+        {"id": "ac_0003", "text": "Invalid token is rejected"},
+    ]
+
+    def test_index_resolves_to_ac_id(self):
+        assert resolve_linked_criteria_to_ids(["0"], self._ACS) == (["ac_0001"], [])
+
+    def test_ac_id_resolves_to_itself(self):
+        assert resolve_linked_criteria_to_ids(["ac_0002"], self._ACS) == (["ac_0002"], [])
+
+    def test_exact_text_resolves_to_ac_id(self):
+        assert resolve_linked_criteria_to_ids(
+            ["Invalid token is rejected"], self._ACS
+        ) == (["ac_0003"], [])
+
+    def test_prefix_is_unresolved_on_write(self):
+        # read-path tolerates prefixes; write-path must NOT.
+        resolved, unresolved = resolve_linked_criteria_to_ids(["User can log"], self._ACS)
+        assert resolved == []
+        assert unresolved == ["User can log"]
+
+    def test_mixed_valid_invalid_is_fail_closed(self):
+        resolved, unresolved = resolve_linked_criteria_to_ids(["0", "ghost"], self._ACS)
+        assert resolved == ["ac_0001"]
+        assert unresolved == ["ghost"]
+
+    def test_out_of_range_index_unresolved(self):
+        resolved, unresolved = resolve_linked_criteria_to_ids(["99"], self._ACS)
+        assert resolved == []
+        assert unresolved == ["99"]
+
+    def test_dedup_preserves_order(self):
+        # index 1 and its ac_id collapse to a single id; first-seen order kept.
+        resolved, unresolved = resolve_linked_criteria_to_ids(
+            ["1", "ac_0002", "0"], self._ACS
+        )
+        assert resolved == ["ac_0002", "ac_0001"]
+        assert unresolved == []
+
+    def test_bool_rejected(self):
+        resolved, unresolved = resolve_linked_criteria_to_ids([True, False], self._ACS)
+        assert resolved == []
+        assert unresolved == ["True", "False"]
+
+    def test_legacy_string_ac_falls_back_to_text(self):
+        legacy = ["AC0 legacy text", "AC1 legacy text"]
+        assert resolve_linked_criteria_to_ids(["0"], legacy) == (["AC0 legacy text"], [])
+        assert resolve_linked_criteria_to_ids(
+            ["AC1 legacy text"], legacy
+        ) == (["AC1 legacy text"], [])
+
+    def test_never_emits_dict(self):
+        resolved, _ = resolve_linked_criteria_to_ids(["0", "ac_0002"], self._ACS)
+        assert all(isinstance(x, str) for x in resolved)
+
+    def test_empty_inputs(self):
+        assert resolve_linked_criteria_to_ids(None, self._ACS) == ([], [])
+        assert resolve_linked_criteria_to_ids([], self._ACS) == ([], [])
+
+    def test_read_resolver_unchanged_still_prefix_tolerant(self):
+        # Guard: the write helper must not have altered read-path tolerance.
+        assert resolve_linked_criteria_to_indices(["User can log"], self._ACS) == {0}
 
 
 class TestResolveLinkedFR:

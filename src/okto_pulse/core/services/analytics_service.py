@@ -14,6 +14,7 @@ preservar bisectability.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -133,6 +134,99 @@ def resolve_linked_criteria_to_indices(
                     resolved.add(i)
                     break
     return resolved
+
+
+def _resolve_one_linked_criterion_to_id(entry, ac_list: list) -> str | None:
+    """Resolve ONE ``linked_criteria`` token to a canonical ac_id (write-path, STRICT).
+
+    Accepts a 0-based index (``int`` or numeric ``str``), an exact ``ac_id``, or
+    the exact AC text. Unlike :func:`resolve_linked_criteria_to_indices`
+    (read-path), this does NO prefix matching — write resolution must be
+    deterministic. Returns the ac_id (or the AC text when the AC is legacy and
+    has no id), else ``None``.
+    """
+    # bool is a subclass of int — reject explicitly so True/False never index.
+    if isinstance(entry, bool):
+        return None
+
+    idx: int | None = None
+    if isinstance(entry, int):
+        idx = entry
+    elif isinstance(entry, str):
+        stripped = entry.strip()
+        if stripped.lstrip("-").isdigit():
+            idx = int(stripped)
+    if idx is not None:
+        if 0 <= idx < len(ac_list):
+            ac = ac_list[idx]
+            return _structured_ref_id(ac) or _structured_ref_text(ac)
+        return None
+
+    token = str(entry).strip()
+    if not token:
+        return None
+    for ac in ac_list:
+        ac_id = _structured_ref_id(ac)
+        ac_text = _structured_ref_text(ac)
+        if token == ac_id or token == ac_text:
+            return ac_id or ac_text
+    return None
+
+
+def resolve_linked_criteria_to_ids(
+    linked_list: list | None, ac_list: list
+) -> tuple[list[str], list[str]]:
+    """Write-path resolver for ``linked_criteria``. Mirrors the read resolver but
+    projects to canonical ids instead of indices.
+
+    Returns ``(resolved_ids, unresolved_tokens)``:
+
+    * ``resolved_ids`` — canonical ``ac_id`` values (or the AC text for legacy
+      ACs without an id), deduplicated while preserving first-seen order.
+    * ``unresolved_tokens`` — tokens that did not resolve. These are NEVER
+      dropped silently, so the caller can fail closed.
+
+    Never emits a dict. The tolerant read resolver
+    :func:`resolve_linked_criteria_to_indices` is intentionally left untouched —
+    its prefix/index leniency must not leak into write persistence.
+    """
+    resolved: list[str] = []
+    unresolved: list[str] = []
+    seen: set[str] = set()
+    for entry in linked_list or []:
+        rid = _resolve_one_linked_criterion_to_id(entry, ac_list)
+        if rid is None:
+            unresolved.append(str(entry))
+        elif rid not in seen:
+            seen.add(rid)
+            resolved.append(rid)
+    return resolved, unresolved
+
+
+def resolve_linked_requirements_to_ids(
+    linked_list: list | None, fr_list: list
+) -> tuple[list[str], list[str]]:
+    """Write-path resolver for ``linked_requirements`` — the FR analog of
+    :func:`resolve_linked_criteria_to_ids` (spec 9d66847f).
+
+    Returns ``(resolved_ids, unresolved_tokens)``: canonical ``fr_id`` values
+    (or the FR text for legacy FRs without an id), deduplicated in first-seen
+    order, plus the tokens that did not resolve (never dropped silently). Token
+    resolution is identical to the AC write-path — strict, exact match, no
+    prefix leniency. The tolerant read resolver
+    :func:`resolve_linked_fr_indices` is intentionally left untouched.
+    """
+    resolved: list[str] = []
+    unresolved: list[str] = []
+    seen: set[str] = set()
+    for entry in linked_list or []:
+        rid = _resolve_one_linked_criterion_to_id(entry, fr_list)
+        if rid is None:
+            unresolved.append(str(entry))
+        elif rid not in seen:
+            seen.add(rid)
+            resolved.append(rid)
+    return resolved, unresolved
 
 
 def resolve_linked_fr_indices(linked_refs: list, frs: list) -> set[int]:

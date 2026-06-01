@@ -40,8 +40,16 @@ from okto_pulse.core.services.spec_structured_entities import (
     StructuredSpecEntityErrorCode,
     StructuredSpecEntityService,
 )
+from okto_pulse.core.services.test_scenario_lifecycle import StatusNotMutableError
 
 router = APIRouter()
+
+
+class ScenarioStatusUpdate(BaseModel):
+    """Request body for the scoped test-scenario status endpoint."""
+
+    status: str
+    evidence: dict | None = None
 
 STRUCTURED_SPEC_ENTITY_DEPRECATION_WARNING = (
     "Spec child entity edits should use /api/v1/specs/{spec_id}/structured-entities/"
@@ -683,6 +691,47 @@ async def unlink_task_from_scenario(
 
     await db.commit()
     return {"success": True, "spec_id": spec_id, "scenario_id": scenario_id, "card_id": card_id}
+
+
+@router.patch(
+    "/specs/{spec_id}/scenarios/{scenario_id}/status",
+    status_code=status.HTTP_200_OK,
+)
+async def update_test_scenario_status(
+    spec_id: str,
+    scenario_id: str,
+    body: ScenarioStatusUpdate,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Scoped status mutation for a single test scenario (spec 6f1e75bf, FR6).
+
+    Applies the same leaf helpers as the MCP status tool
+    (require_test_scenario_status_mutable + validate_test_scenario_evidence via
+    SpecService.set_test_scenario_status) and mutates ONLY the target scenario —
+    it does NOT use the full-list update_spec path and does NOT trigger the
+    content-lock, so the other scenarios are preserved. Rejects gated status
+    without evidence (422) and a status change on a validated/done spec (409).
+    """
+    service = SpecService(db)
+    try:
+        result = await service.set_test_scenario_status(
+            spec_id, user_id, scenario_id, body.status, body.evidence
+        )
+    except StatusNotMutableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except ValueError as exc:
+        msg = str(exc)
+        if msg.startswith("scenario_not_found"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg
+        )
+    return {
+        "id": spec_id,
+        "scenario": {"id": result["scenario_id"], "status": result["new_status"]},
+        "result": result,
+    }
 
 
 @router.post(

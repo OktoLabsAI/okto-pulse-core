@@ -51,7 +51,9 @@ async def test_ts2_gate_rejects_automated_without_evidence():
     """TS2 — _validate_evidence(status='automated', evidence=None) →
     not ok, missing inclui test_file_path E test_function.
     """
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     ok, missing = _validate_evidence("automated", None)
     assert not ok
@@ -61,7 +63,9 @@ async def test_ts2_gate_rejects_automated_without_evidence():
 
 async def test_ts3_gate_accepts_automated_with_complete_evidence():
     """TS3 — automated com test_file_path + test_function → ok."""
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     ok, missing = _validate_evidence(
         "automated",
@@ -79,7 +83,9 @@ async def test_ts4_passed_accepts_output_snippet_or_test_run_id():
     - neither → not ok
     - both → ok
     """
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     base = {"last_run_at": "2026-04-27T20:00:00"}
 
@@ -107,7 +113,9 @@ async def test_ts4_passed_accepts_output_snippet_or_test_run_id():
 
 async def test_ts4b_failed_same_as_passed():
     """failed segue mesmas regras de passed."""
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     ok, _ = _validate_evidence(
         "failed",
@@ -121,7 +129,9 @@ async def test_ts4b_failed_same_as_passed():
 
 async def test_ts6_draft_and_ready_dont_require_evidence():
     """TS6 — status=draft ou ready não dispara o gate."""
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     ok, missing = _validate_evidence("draft", None)
     assert ok

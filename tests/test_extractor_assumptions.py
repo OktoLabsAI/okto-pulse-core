@@ -24,7 +24,10 @@ def test_pt_assumindo_que_marker_is_extracted():
     assert len(out) == 1
     assert "assumindo que" in out[0].body.lower()
     assert out[0].source_section == "analysis"
-    assert out[0].source_ref == "spec:1"
+    # Per-concept source_ref (spec eca49df9 over-dedup fix): the extractor
+    # appends ``:assumption:<content_hash8>`` so N distinct assumptions of one
+    # spec don't collapse on a single (node_type, source_ref) dedup key.
+    assert out[0].source_ref.startswith("spec:1:assumption:")
 
 
 def test_pt_presume_se_marker_is_extracted():

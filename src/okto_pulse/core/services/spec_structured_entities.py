@@ -44,6 +44,13 @@ from okto_pulse.core.services.main import (
     _validate_spec_linked_refs,
     resolve_actor_name,
 )
+# spec_child_text / spec_child_id now live in the leaf canonicalization module
+# (spec 9d66847f) so SpecService.create_spec/update_spec can import the
+# canonicalizer without an import cycle. Re-exported here for existing callers.
+from okto_pulse.core.services.spec_entity_canonicalization import (  # noqa: F401
+    spec_child_id,
+    spec_child_text,
+)
 
 
 STRUCTURED_SPEC_ENTITY_FIELDS: dict[str, str] = {
@@ -111,17 +118,8 @@ _SEMANTIC_FIELDS = {
 }
 
 
-def spec_child_text(item: Any) -> str:
-    if isinstance(item, dict):
-        return str(item.get("text") or item.get("title") or item.get("description") or "")
-    return str(item)
-
-
-def spec_child_id(item: Any) -> str | None:
-    if isinstance(item, dict):
-        raw = item.get("id")
-        return str(raw) if raw not in (None, "") else None
-    return None
+# spec_child_text and spec_child_id are imported (re-exported) from
+# spec_entity_canonicalization at the top of this module — see spec 9d66847f.
 
 
 def canonical_spec_child_ref(spec_id: str, entity_type: str, entity_id: str) -> str:

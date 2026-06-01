@@ -123,58 +123,14 @@ def _structured_ref_id(item) -> str | None:
     return None
 
 
-def _resolve_linked_criteria_to_indices(
-    linked_list: list | None, ac_list: list
-) -> set[int]:
-    """Normalize heterogeneous `linked_criteria` entries into a deduplicated set of
-    0-based AC indices.
-
-    Scenarios in the wild store entries in three shapes (historical drift across
-    code paths): `int`, numeric `str` (e.g. ``"3"``), or full AC text. Without
-    normalization, a set over raw values double-counts the same AC when multiple
-    shapes coexist in one spec — producing `covered_ac > total_ac`.
-
-    Out-of-range indices and unmatched texts are dropped silently so the invariant
-    `covered_ac <= total_ac` holds even for degenerate inputs.
-    """
-    if not linked_list or not ac_list:
-        return set()
-    valid_range = range(len(ac_list))
-    resolved: set[int] = set()
-    for entry in linked_list:
-        if isinstance(entry, bool):
-            # bool is a subclass of int in Python; reject to avoid True→1 coincidences
-            continue
-        if isinstance(entry, int):
-            if entry in valid_range:
-                resolved.add(entry)
-            continue
-        if isinstance(entry, str):
-            stripped = entry.strip()
-            if not stripped:
-                continue
-            # numeric-string index
-            try:
-                idx = int(stripped)
-            except ValueError:
-                pass
-            else:
-                if idx in valid_range:
-                    resolved.add(idx)
-                continue
-            # text match — tolerant, aligned with mcp/server.py::_spec_coverage
-            for i, ac in enumerate(ac_list):
-                ac_text = _structured_ref_text(ac)
-                ac_id = _structured_ref_id(ac)
-                if (
-                    stripped == ac_id
-                    or stripped == ac_text
-                    or (ac_text and ac_text.startswith(stripped))
-                    or (ac_text and stripped.startswith(ac_text))
-                ):
-                    resolved.add(i)
-                    break
-    return resolved
+# Consolidado (Okto Pulse 0.2.3): o resolver canônico vive em
+# services/analytics_service.py. Mantemos o alias `_resolve_linked_criteria_to_indices`
+# para preservar o call site abaixo, mas a implementação é a única fonte da verdade
+# (mesmo padrão já adotado em mcp/server.py). Elimina o drift que deixava o slice
+# `criterion[:80]` divergir entre cópias quando AC viram dict estruturado.
+from okto_pulse.core.services.analytics_service import (  # noqa: E402
+    resolve_linked_criteria_to_indices as _resolve_linked_criteria_to_indices,  # noqa: F401
+)
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ from okto_pulse.core.services.main import (
     RefinementQAService,
     RefinementService,
     SpecKnowledgeService,
+    SpecLockedError,
     SpecQAService,
     SpecService,
     StoryService,
@@ -791,7 +792,10 @@ from okto_pulse.core.services.analytics_service import (  # noqa: E402
 # preserva callers existentes em mcp/server.py + tests.
 from okto_pulse.core.services.analytics_service import (  # noqa: E402
     resolve_linked_criteria_to_indices as _resolve_linked_criteria_to_indices,  # noqa: F401
+    resolve_linked_criteria_to_ids,  # noqa: F401  (write-path strict resolver — spec aafcc73f)
+    resolve_linked_fr_indices,  # noqa: F401  (FR-link write normalization to indices)
     spec_coverage_summary as _spec_coverage,  # noqa: F401
+    _structured_ref_id,  # noqa: F401  (used to enumerate available ac_ids in errors)
 )
 
 
@@ -6831,13 +6835,22 @@ async def okto_pulse_add_test_scenario(
         when: Action (e.g. "GET /api/v1/boards with Bearer token")
         then: Expected result (e.g. "Returns 200 with board list")
         scenario_type: unit | integration | e2e | manual (default: integration)
-        linked_criteria: Pipe-separated INDICES (0-based) of acceptance criteria this scenario validates.
-            Example: "0|2|5" links to the 1st, 3rd, and 6th acceptance criteria.
-            Use okto_pulse_get_spec to see the acceptance_criteria list and their indices.
+        linked_criteria: Multi-value (pipe ``"0|2"`` or JSON-array ``'["0","2"]'``)
+            references to the acceptance criteria this scenario validates. Each
+            token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
+            or the EXACT acceptance-criterion text. ``ac_id`` is recommended — it is
+            the canonical projection persisted in ``linked_criteria`` (legacy ACs
+            without an id fall back to their text). Matching is exact: prefix
+            matching is NOT accepted on this write path. Resolution is fail-closed
+            and atomic — if ANY token is unresolved the tool returns a structured
+            error JSON (listing the failing tokens, the valid index range and the
+            available ac_ids) and appends no scenario. Use okto_pulse_get_spec to
+            see the acceptance_criteria list, their indices, and their ids.
         notes: Additional notes or edge cases (optional)
 
     Returns:
-        JSON with the created scenario including resolved criteria text
+        JSON with the created scenario; ``linked_criteria`` is always a list of
+        canonical ac_id strings (never a dict).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -6858,23 +6871,28 @@ async def okto_pulse_add_test_scenario(
         scenario_id = f"ts_{_uuid.uuid4().hex[:8]}"
         criteria = spec.acceptance_criteria or []
 
-        # Resolve indices to full acceptance criteria text
+        # Resolve linked_criteria tokens to canonical ac_id strings. Write-path is
+        # STRICT (exact index/ac_id/text), FAIL-CLOSED and ATOMIC: any unresolved
+        # token aborts before appending and persists nothing partial. The tolerant
+        # read resolver stays separate. See spec aafcc73f / KB 26b0e005.
         criteria_list = None
         if linked_criteria:
-            criteria_list = []
-            for token in parse_multi_value(linked_criteria):
-                try:
-                    idx = int(token)
-                    if 0 <= idx < len(criteria):
-                        criteria_list.append(criteria[idx])
-                    else:
-                        return json.dumps({"error": f"Criteria index {idx} out of range (0-{len(criteria)-1})"})
-                except ValueError:
-                    # Fallback: treat as full text match
-                    if token in criteria:
-                        criteria_list.append(token)
-                    else:
-                        return json.dumps({"error": f"Criteria '{token[:50]}...' not found. Use indices (0-{len(criteria)-1}) from acceptance_criteria list."})
+            resolved_ids, unresolved = resolve_linked_criteria_to_ids(
+                parse_multi_value(linked_criteria), criteria
+            )
+            if unresolved:
+                available_ids = [
+                    aid for aid in (_structured_ref_id(c) for c in criteria) if aid
+                ]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_criteria token(s): {unresolved}. "
+                        f"Valid indices: 0..{len(criteria) - 1}. "
+                        f"Available ac_ids: {available_ids}. "
+                        f"No scenario was appended."
+                    )
+                })
+            criteria_list = resolved_ids
 
         scenario = {
             "id": scenario_id,
@@ -7012,59 +7030,15 @@ async def okto_pulse_list_test_scenarios(
 # Cada rule é uma tupla de keys:
 #   - len(group) == 1 → AND-required (single key, must be present)
 #   - len(group)  > 1 → OR-required (one-of: pelo menos uma key)
-_EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
-    # automated: ambas as keys são obrigatórias (duas rules AND)
-    "automated": (
-        ("test_file_path",),
-        ("test_function",),
-    ),
-    # passed: last_run_at obrigatório + (output_snippet OR test_run_id)
-    "passed": (
-        ("last_run_at",),
-        ("output_snippet", "test_run_id"),  # one-of
-    ),
-    "failed": (
-        ("last_run_at",),
-        ("output_snippet", "test_run_id"),  # one-of
-    ),
-}
+# NC-9 evidence rule + scenario lifecycle guards live in a single leaf module
+# (services/test_scenario_lifecycle.py). This file imports from it — never the
+# reverse — so the rule is defined exactly once.
+from okto_pulse.core.services.test_scenario_lifecycle import (  # noqa: E402
+    StatusNotMutableError,
+    VALID_SCENARIO_STATUSES,
+    validate_test_scenario_evidence,
+)
 
-import logging as _nc9_logging  # noqa: E402 — local import isolated to NC-9 gate
-_evidence_logger = _nc9_logging.getLogger("okto_pulse.spec.test_scenario")
-
-
-def _validate_evidence(
-    status: str, evidence: dict | None
-) -> tuple[bool, list[str]]:
-    """Return (ok, missing_keys). Empty missing_keys means valid.
-
-    For each rule group, ALL keys in the first non-empty group must be
-    present (AND logic). When a group has multiple keys (one-of), at
-    least one must be present.
-    """
-    rules = _EVIDENCE_REQUIRED_KEYS.get(status)
-    if not rules:
-        return True, []
-    if not evidence:
-        # Flatten all required keys for the error message.
-        flat: list[str] = []
-        for group in rules:
-            if len(group) == 1:
-                flat.extend(group)
-            else:
-                flat.append(" or ".join(group))
-        return False, flat
-    missing: list[str] = []
-    for group in rules:
-        if len(group) == 1:
-            key = group[0]
-            if not evidence.get(key):
-                missing.append(key)
-        else:
-            # one-of group — at least one key must be present
-            if not any(evidence.get(k) for k in group):
-                missing.append(" or ".join(group))
-    return (len(missing) == 0, missing)
 
 
 @mcp.tool()
@@ -7119,7 +7093,7 @@ async def okto_pulse_update_test_scenario_status(
     if perm_err:
         return _perm_error(perm_err)
 
-    valid = ("draft", "ready", "automated", "passed", "failed")
+    valid = VALID_SCENARIO_STATUSES
     if status not in valid:
         return json.dumps({"error": f"Invalid status. Must be one of: {valid}"})
 
@@ -7141,124 +7115,188 @@ async def okto_pulse_update_test_scenario_status(
             })
 
     async with get_db_for_mcp() as db:
-        from sqlalchemy import update as sql_update
-        from okto_pulse.core.models.db import ActivityLog, Spec as SpecModel
-
         service = SpecService(db)
-        spec = await service.get_spec(spec_id)
-        if not spec:
-            return json.dumps({"error": "Spec not found"})
-
-        # Resolve board settings to know if gate is active.
-        from okto_pulse.core.models.db import Board
-        board_row = await db.get(Board, board_id)
-        board_settings = (board_row.settings if board_row else {}) or {}
-        skip_evidence_gate = bool(
-            board_settings.get("skip_test_evidence_global", False)
-        )
-
-        # Apply gate when skip is OFF.
-        if not skip_evidence_gate:
-            ok, missing = _validate_evidence(status, evidence_dict)
-            if not ok:
+        try:
+            result = await service.set_test_scenario_status(
+                spec_id, ctx.agent_id, scenario_id, status, evidence_dict
+            )
+        except StatusNotMutableError as exc:
+            return json.dumps({
+                "error": "status_not_mutable",
+                "spec_status": exc.spec_status,
+                "message": str(exc),
+            })
+        except ValueError as exc:
+            msg = str(exc)
+            if msg.startswith("evidence_required"):
+                _ok, missing = validate_test_scenario_evidence(status, evidence_dict)
                 return json.dumps({
                     "error": "evidence_required",
                     "required": missing,
                     "message": (
                         f"Cannot mark scenario as {status} without structured "
-                        f"evidence ({', '.join(missing)}). This prevents the "
-                        "test theater anti-pattern. To bypass, enable "
+                        f"evidence ({', '.join(missing)}). This prevents the test "
+                        "theater anti-pattern. To bypass, enable "
                         "skip_test_evidence_global on the board."
                     ),
                 })
+            if msg.startswith("scenario_not_found"):
+                if "spec not found" in msg:
+                    return json.dumps({"error": "Spec not found"})
+                return json.dumps({"error": f"Scenario '{scenario_id}' not found"})
+            return json.dumps({"error": msg})
 
-        scenarios = list(spec.test_scenarios or [])
-        old_status = None
-        found = False
-        for s in scenarios:
-            if s.get("id") == scenario_id:
-                old_status = s.get("status")
-                s["status"] = status
-                # Persist evidence inline (only if provided).
-                if evidence_dict is not None:
-                    s["evidence"] = evidence_dict
-                found = True
-                break
+    return json.dumps({
+        "success": True,
+        "scenario_id": result["scenario_id"],
+        "old_status": result["old_status"],
+        "new_status": result["new_status"],
+        "evidence_provided": result["evidence_provided"],
+        "evidence_gate_skipped": result["evidence_gate_skipped"],
+    })
 
-        if not found:
-            return json.dumps({"error": f"Scenario '{scenario_id}' not found"})
 
-        # Direct update — no version bump, just persist + log activity
-        await db.execute(
-            sql_update(SpecModel).where(SpecModel.id == spec_id).values(test_scenarios=scenarios)
-        )
+@mcp.tool()
+async def okto_pulse_update_test_scenario(
+    board_id: str,
+    spec_id: str,
+    scenario_id: str,
+    title: str = "",
+    given: str = "",
+    when: str = "",
+    then: str = "",
+    scenario_type: str = "",
+    linked_criteria: str = "",
+    notes: str = "",
+    clear: str = "",
+) -> str:
+    """Edit the BODY of a test scenario (title/given/when/then/scenario_type/
+    linked_criteria/notes). Does NOT accept status — status stays exclusive to
+    okto_pulse_update_test_scenario_status so no second NC-9 bypass is created.
 
-        # Log activity (not version change)
-        scenario_title = next((s["title"] for s in scenarios if s["id"] == scenario_id), scenario_id)
-        log = ActivityLog(
-            board_id=spec.board_id,
-            action="test_scenario_status_changed",
-            actor_type="agent",
-            actor_id=ctx.agent_id,
-            actor_name=ctx.agent_name,
-            details={
-                "spec_id": spec_id,
-                "scenario_id": scenario_id,
-                "scenario_title": scenario_title,
-                "from_status": old_status,
-                "to_status": status,
-                "evidence_provided": evidence_dict is not None,
-                "evidence_gate_skipped": skip_evidence_gate,
-            },
-        )
-        db.add(log)
-        await db.commit()
+    Empty-string params mean "leave unchanged". To intentionally CLEAR a field,
+    list it in `clear` (pipe-separated); only `notes` and `linked_criteria` are
+    clearable. `linked_criteria` is a pipe-separated list of AC index/id/text,
+    resolved to AC ids (fail-closed on unresolved tokens).
 
-        # Structured log SEMPRE emitido (NC-9 BR audit log).
-        _evidence_logger.info(
-            "test_scenario.status_changed scenario=%s board=%s from=%s to=%s "
-            "evidence=%s skip=%s",
-            scenario_id, spec.board_id, old_status, status,
-            evidence_dict is not None, skip_evidence_gate,
-            extra={
-                "event": "test_scenario.status_changed",
-                "scenario_id": scenario_id,
-                "board_id": spec.board_id,
-                "spec_id": spec_id,
-                "from_status": old_status,
-                "to_status": status,
-                "evidence_provided": evidence_dict is not None,
-                "evidence_gate_skipped": skip_evidence_gate,
-                "changed_by_agent_id": ctx.agent_id,
-            },
-        )
-        # Quando skip está ON, log dedicado para forensics.
-        if skip_evidence_gate and status in _EVIDENCE_REQUIRED_KEYS:
-            _evidence_logger.info(
-                "test_scenario.evidence_gate_skipped scenario=%s board=%s "
-                "status=%s evidence=%s",
-                scenario_id, spec.board_id, status,
-                evidence_dict is not None,
-                extra={
-                    "event": "test_scenario.evidence_gate_skipped",
-                    "scenario_id": scenario_id,
-                    "board_id": spec.board_id,
-                    "spec_id": spec_id,
-                    "status": status,
-                    "evidence_provided": evidence_dict is not None,
-                    "skip": True,
-                    "agent_id": ctx.agent_id,
-                },
+    Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
+    scenario that holds evidence invalidates it: status resets to `ready` and the
+    evidence is dropped. Cosmetic edits (title/notes) preserve status + evidence.
+    Respects the spec content-lock.
+
+    Args:
+        board_id: Board ID.
+        spec_id: Spec ID.
+        scenario_id: Test scenario ID (e.g. "ts_abc123").
+        title/given/when/then/scenario_type/notes: New value, or "" to leave as-is.
+        linked_criteria: Pipe-separated AC index/id/text (resolved to AC ids).
+        clear: Pipe-separated field names to empty (notes, linked_criteria).
+
+    Returns:
+        JSON {success, scenario_id, updated_fields, evidence_invalidated} or
+        {error: spec_locked|scenario_not_found|unresolved_criteria|invalid_update}.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    clear_fields = parse_multi_value(clear) if clear else None
+    lc = parse_multi_value(linked_criteria) if linked_criteria else None
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        try:
+            result = await service.update_test_scenario(
+                spec_id,
+                ctx.agent_id,
+                scenario_id,
+                title=title or None,
+                given=given or None,
+                when=when or None,
+                then=then or None,
+                scenario_type=scenario_type or None,
+                linked_criteria=lc,
+                notes=notes or None,
+                clear=clear_fields,
             )
+        except SpecLockedError:
+            return json.dumps({
+                "error": "spec_locked",
+                "message": (
+                    "Spec is locked by a passed validation; the scenario body "
+                    "cannot be edited. Move the spec back to draft/approved first."
+                ),
+            })
+        except ValueError as exc:
+            msg = str(exc)
+            code = "invalid_update"
+            if msg.startswith("scenario_not_found"):
+                code = "scenario_not_found"
+            elif msg.startswith("unresolved_criteria"):
+                code = "unresolved_criteria"
+            return json.dumps({"error": code, "message": msg})
 
-        return json.dumps({
-            "success": True,
-            "scenario_id": scenario_id,
-            "old_status": old_status,
-            "new_status": status,
-            "evidence_provided": evidence_dict is not None,
-            "evidence_gate_skipped": skip_evidence_gate,
-        })
+    return json.dumps({
+        "success": True,
+        "scenario_id": result["scenario_id"],
+        "updated_fields": result["updated_fields"],
+        "evidence_invalidated": result["evidence_invalidated"],
+    })
+
+
+@mcp.tool()
+async def okto_pulse_delete_test_scenario(
+    board_id: str,
+    spec_id: str,
+    scenario_id: str,
+) -> str:
+    """Delete a test scenario and clean Card.test_scenario_ids in CASCADE.
+
+    Removes the scenario from the spec AND drops its id from every card that
+    references it, atomically (all-or-nothing). Does not block on existing links.
+    Respects the spec content-lock.
+
+    Args:
+        board_id: Board ID.
+        spec_id: Spec ID.
+        scenario_id: Test scenario ID to delete.
+
+    Returns:
+        JSON {success, scenario_id, cards_unlinked} or
+        {error: spec_locked|scenario_not_found}.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = SpecService(db)
+        try:
+            result = await service.delete_test_scenario(
+                spec_id, ctx.agent_id, scenario_id
+            )
+        except SpecLockedError:
+            return json.dumps({
+                "error": "spec_locked",
+                "message": (
+                    "Spec is locked by a passed validation; scenarios cannot be "
+                    "deleted. Move the spec back to draft/approved first."
+                ),
+            })
+        except ValueError as exc:
+            return json.dumps({"error": "scenario_not_found", "message": str(exc)})
+
+    return json.dumps({
+        "success": True,
+        "scenario_id": result["scenario_id"],
+        "cards_unlinked": result["cards_unlinked"],
+    })
 
 
 _LINK_TASK_TARGET_TYPES = ("scenario", "rule", "decision", "tr", "contract", "ir", "or", "spec")
@@ -9313,21 +9351,15 @@ async def okto_pulse_add_business_rule(
         rule_id = f"br_{_uuid.uuid4().hex[:8]}"
         frs = spec.functional_requirements or []
 
-        req_list = None
-        if linked_requirements:
-            req_list = []
-            for token in parse_multi_value(linked_requirements):
-                try:
-                    idx = int(token)
-                    if 0 <= idx < len(frs):
-                        req_list.append(frs[idx])
-                    else:
-                        return json.dumps({"error": f"Requirement index {idx} out of range (0-{len(frs)-1})"})
-                except ValueError:
-                    if token in frs:
-                        req_list.append(token)
-                    else:
-                        return json.dumps({"error": f"Requirement '{token[:50]}...' not found. Use indices (0-{len(frs)-1}) from functional_requirements list."})
+        # Resolve linked_requirements via the shared helper so STRUCTURED FRs
+        # (dicts {id,text,status}) are handled. The old inline loop did
+        # req_list.append(frs[idx]) — which appended the whole FR dict and broke
+        # SpecUpdate(list[str]) once FRs became structured — and rejected text
+        # via `token in frs` (a list of dicts). _parse_linked_requirements keeps
+        # the index string and lets _validate_spec_linked_refs validate it.
+        req_list, _req_err = _parse_linked_requirements(linked_requirements, frs)
+        if _req_err:
+            return json.dumps({"error": _req_err})
 
         br = {
             "id": rule_id,
@@ -9422,19 +9454,11 @@ async def okto_pulse_update_business_rule(
         if linked_requirements == "CLEAR":
             target["linked_requirements"] = None
         elif linked_requirements:
-            req_list = []
-            for token in parse_multi_value(linked_requirements):
-                try:
-                    idx = int(token)
-                    if 0 <= idx < len(frs):
-                        req_list.append(frs[idx])
-                    else:
-                        return json.dumps({"error": f"Requirement index {idx} out of range (0-{len(frs)-1})"})
-                except ValueError:
-                    if token in frs:
-                        req_list.append(token)
-                    else:
-                        return json.dumps({"error": f"Requirement '{token[:50]}...' not found."})
+            # Shared resolver: structured-FR safe (the old inline loop stored
+            # frs[idx], a dict, which broke SpecUpdate(list[str])).
+            req_list, _req_err = _parse_linked_requirements(linked_requirements, frs)
+            if _req_err:
+                return json.dumps({"error": _req_err})
             target["linked_requirements"] = req_list
 
         from okto_pulse.core.models.schemas import SpecUpdate
@@ -9509,27 +9533,42 @@ async def okto_pulse_remove_business_rule(
 
 
 def _parse_linked_requirements(raw: str, frs: list) -> tuple[list[str] | None, str | None]:
-    """Parse a pipe-separated "0|2|5" into resolved FR references.
+    """Parse a pipe-separated "0|FR text|fr_id" into NORMALIZED FR references.
 
-    Returns (list_or_None, error_str). CLEAR empties the list explicitly.
+    Each token (0-based index, exact/substring FR text, or fr_ id) is resolved to
+    its canonical 0-based INDEX string via the structured-FR-aware resolver, so
+    persistence is HOMOGENEOUS (always indices) regardless of the input form and
+    works whether FRs are structured dicts {id,text,status} or legacy strings.
+    Previously the index path stored str(idx) but text/id passed through verbatim,
+    producing heterogeneous links. Fail-closed: tokens that do not resolve are
+    reported, never dropped. Returns (list_or_None, error_str); CLEAR empties the
+    list explicitly. (Note: FR links are positional by design across the
+    coverage/KG/display layers; normalizing to indices keeps them consistent with
+    that convention.)
     """
     if not raw:
         return None, None
     if raw.strip().upper() == "CLEAR":
         return [], None
     out: list[str] = []
+    seen: set[str] = set()
+    unresolved: list[str] = []
     for token in parse_multi_value(raw):
-        try:
-            idx = int(token)
-        except ValueError:
-            # Accept resolved text as-is
-            out.append(token)
+        idxs = resolve_linked_fr_indices([token], frs)
+        if not idxs:
+            unresolved.append(token)
             continue
-        if 0 <= idx < len(frs):
-            # Keep the index as a string — aligned with BR/TR convention
-            out.append(str(idx))
-        else:
-            return None, f"Requirement index {idx} out of range (0-{len(frs)-1})"
+        for idx in sorted(idxs):
+            key = str(idx)
+            if key not in seen:
+                seen.add(key)
+                out.append(key)
+    if unresolved:
+        max_idx = max(0, len(frs) - 1)
+        return None, (
+            f"Requirement reference(s) not found: {', '.join(unresolved)}. "
+            f"Use a 0-based index (0-{max_idx}), the exact FR text, or an fr_ id."
+        )
     return out, None
 
 
@@ -10481,22 +10520,11 @@ async def okto_pulse_add_api_contract(
             except json.JSONDecodeError as e:
                 return json.dumps({"error": f"Invalid response_errors_json: {e}"})
 
-        # Resolve linked requirements
-        req_list = None
-        if linked_requirements:
-            req_list = []
-            for token in parse_multi_value(linked_requirements):
-                try:
-                    idx = int(token)
-                    if 0 <= idx < len(frs):
-                        req_list.append(frs[idx])
-                    else:
-                        return json.dumps({"error": f"Requirement index {idx} out of range (0-{len(frs)-1})"})
-                except ValueError:
-                    if token in frs:
-                        req_list.append(token)
-                    else:
-                        return json.dumps({"error": f"Requirement '{token[:50]}...' not found."})
+        # Resolve linked_requirements via the shared helper (structured-FR safe;
+        # the old inline loop stored frs[idx], a dict, breaking SpecUpdate).
+        req_list, _req_err = _parse_linked_requirements(linked_requirements, frs)
+        if _req_err:
+            return json.dumps({"error": _req_err})
 
         # Resolve linked rules
         rules_list = None
@@ -10636,19 +10664,11 @@ async def okto_pulse_update_api_contract(
         if linked_requirements == "CLEAR":
             target["linked_requirements"] = None
         elif linked_requirements:
-            req_list = []
-            for token in parse_multi_value(linked_requirements):
-                try:
-                    idx = int(token)
-                    if 0 <= idx < len(frs):
-                        req_list.append(frs[idx])
-                    else:
-                        return json.dumps({"error": f"Requirement index {idx} out of range (0-{len(frs)-1})"})
-                except ValueError:
-                    if token in frs:
-                        req_list.append(token)
-                    else:
-                        return json.dumps({"error": f"Requirement '{token[:50]}...' not found."})
+            # Shared resolver: structured-FR safe (the old inline loop stored
+            # frs[idx], a dict, which broke SpecUpdate(list[str])).
+            req_list, _req_err = _parse_linked_requirements(linked_requirements, frs)
+            if _req_err:
+                return json.dumps({"error": _req_err})
             target["linked_requirements"] = req_list
 
         existing_rules = spec.business_rules or []
@@ -14094,7 +14114,7 @@ async def okto_pulse_list_by_board(
             items = await service.list_specs(board_id, filters.get("status"))
             if "labels" in filters and filters["labels"]:
                 label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
-                items = [s for s in items if any(l in (s.labels or []) for l in label_filter)]
+                items = [s for s in items if any(lbl in (s.labels or []) for lbl in label_filter)]
             if "assignee_id" in filters and filters["assignee_id"]:
                 items = [s for s in items if s.assignee_id == filters["assignee_id"]]
             await db.commit()
@@ -14127,7 +14147,7 @@ async def okto_pulse_list_by_board(
             items = await service.list_ideations(board_id, filters.get("status"))
             if "labels" in filters and filters["labels"]:
                 label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
-                items = [i for i in items if any(l in (i.labels or []) for l in label_filter)]
+                items = [i for i in items if any(lbl in (i.labels or []) for lbl in label_filter)]
             await db.commit()
             total = len(items)
             paginated = items[offset:offset + limit]
@@ -14170,7 +14190,7 @@ async def okto_pulse_list_by_board(
                 items = [r for r in items if r.status.value == filters["status"]]
             if "labels" in filters and filters["labels"]:
                 label_filter = filters["labels"] if isinstance(filters["labels"], list) else [filters["labels"]]
-                items = [r for r in items if any(l in (r.labels or []) for l in label_filter)]
+                items = [r for r in items if any(lbl in (r.labels or []) for lbl in label_filter)]
             await db.commit()
             total = len(items)
             paginated = items[offset:offset + limit]

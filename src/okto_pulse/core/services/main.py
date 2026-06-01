@@ -1,6 +1,7 @@
 """Service layer for business logic."""
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -102,7 +103,21 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
-from okto_pulse.core.services.analytics_service import resolve_linked_criteria_to_indices
+from okto_pulse.core.services.analytics_service import (
+    _structured_ref_text,
+    resolve_linked_criteria_to_ids,
+    resolve_linked_criteria_to_indices,
+    resolve_linked_fr_indices,
+)
+from okto_pulse.core.services.spec_entity_canonicalization import canonicalize_fr_ac
+from okto_pulse.core.services.test_scenario_lifecycle import (
+    GATED_STATUSES,
+    VALID_SCENARIO_STATUSES,
+    evidence_invalidated_by_semantic_edit,
+    require_test_scenario_status_mutable,
+    scenario_has_required_evidence,
+    validate_test_scenario_evidence,
+)
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
 from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
@@ -237,22 +252,6 @@ async def _require_spec_unlocked(db: AsyncSession, spec_id: str) -> None:
     current = next((v for v in validations if v.get("id") == current_id), None)
     if current and current.get("outcome") == "success":
         raise SpecLockedError(spec_id=spec_id, current_validation_id=current_id)
-
-
-def _test_scenario_has_required_evidence(scenario: dict[str, Any]) -> bool:
-    """Return whether a scenario carries the same evidence expected by the gate."""
-    status = scenario.get("status")
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
-    if status not in {"automated", "passed", "failed"}:
-        return True
-    if not isinstance(evidence, dict):
-        return False
-    if status == "automated":
-        return bool(evidence.get("test_file_path") and evidence.get("test_function"))
-    return bool(
-        evidence.get("last_run_at")
-        and (evidence.get("output_snippet") or evidence.get("test_run_id"))
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1399,7 +1398,7 @@ class CardService:
                 criteria,
             )
         uncovered = [
-            f"[{i}] {criterion[:80]}..."
+            f"[{i}] {_structured_ref_text(criterion)[:80]}..."
             for i, criterion in enumerate(criteria)
             if i not in covered_indices
         ]
@@ -1463,28 +1462,26 @@ class CardService:
         brs = list(spec.business_rules or [])
         if not frs:
             return
-        # Check FR → BR coverage
+        # Check FR → BR coverage. Structured-FR aware: resolve linked_requirements
+        # (0-based index, exact/substring FR text, or fr_ id) to FR indices via the
+        # shared resolver, so the gate works whether FRs are structured dicts
+        # {id,text,status} or legacy strings (the old inline loop did `ref in fr`
+        # where `fr` could be a dict -> TypeError / missed coverage).
         covered_fr_indices: set[int] = set()
         for br in brs:
             if isinstance(br, dict):
-                for ref in (br.get("linked_requirements") or []):
-                    ref_str = str(ref)
-                    try:
-                        idx_num = int(ref_str)
-                        if 0 <= idx_num < len(frs):
-                            covered_fr_indices.add(idx_num)
-                            continue
-                    except (ValueError, TypeError):
-                        pass
-                    for fi, fr_text in enumerate(frs):
-                        if ref_str in fr_text or fr_text in ref_str:
-                            covered_fr_indices.add(fi)
-                            break
-        uncovered = [(i, fr) for i, fr in enumerate(frs) if i not in covered_fr_indices]
+                covered_fr_indices |= resolve_linked_fr_indices(
+                    br.get("linked_requirements") or [], frs
+                )
+        uncovered = [
+            (i, _structured_ref_text(fr))
+            for i, fr in enumerate(frs)
+            if i not in covered_fr_indices
+        ]
         if uncovered:
             previews = ", ".join(
-                f'"[{i}] {fr[:40]}..."' if len(fr) > 40 else f'"[{i}] {fr}"'
-                for i, fr in uncovered[:3]
+                f'"[{i}] {text[:40]}..."' if len(text) > 40 else f'"[{i}] {text}"'
+                for i, text in uncovered[:3]
             )
             suffix = f" and {len(uncovered) - 3} more" if len(uncovered) > 3 else ""
             raise ValueError(
@@ -2915,9 +2912,13 @@ class SpecService:
             title=data.title,
             description=data.description,
             context=data.context,
-            functional_requirements=data.functional_requirements,
+            functional_requirements=canonicalize_fr_ac(
+                "functional_requirement", data.functional_requirements
+            ),
             technical_requirements=data.technical_requirements,
-            acceptance_criteria=data.acceptance_criteria,
+            acceptance_criteria=canonicalize_fr_ac(
+                "acceptance_criterion", data.acceptance_criteria
+            ),
             test_scenarios=[s.model_dump() for s in data.test_scenarios] if data.test_scenarios else None,
             screen_mockups=[s.model_dump() for s in data.screen_mockups] if data.screen_mockups else None,
             business_rules=[r.model_dump() for r in data.business_rules] if data.business_rules else None,
@@ -3010,6 +3011,436 @@ class SpecService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
+    async def update_test_scenario(
+        self,
+        spec_id: str,
+        user_id: str,
+        scenario_id: str,
+        *,
+        title: str | None = None,
+        given: str | None = None,
+        when: str | None = None,
+        then: str | None = None,
+        scenario_type: str | None = None,
+        linked_criteria: list[str] | None = None,
+        notes: str | None = None,
+        clear: list[str] | None = None,
+    ) -> dict:
+        """Edit the BODY of a test scenario (spec 6f1e75bf, FR2/FR5).
+
+        ``None`` means "leave unchanged"; a non-None value sets the field.
+        ``clear`` lists field names (``notes``/``linked_criteria``) to reset to
+        empty — this is how a caller distinguishes "omitted" from "cleared".
+        ``status`` is NOT accepted (that stays exclusive to the status path so no
+        second NC-9 bypass is created). Editing any SEMANTIC field
+        (given/when/then/scenario_type/linked_criteria) of a scenario that holds
+        evidence invalidates it (status→ready, evidence dropped); cosmetic edits
+        (title/notes) preserve status and evidence. Respects the content-lock.
+        """
+        await _require_spec_unlocked(self.db, spec_id)
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            raise ValueError("scenario_not_found: spec not found")
+
+        scenarios = [
+            dict(s) for s in (spec.test_scenarios or []) if isinstance(s, dict)
+        ]
+        target = next((s for s in scenarios if s.get("id") == scenario_id), None)
+        if target is None:
+            raise ValueError(f"scenario_not_found: {scenario_id}")
+
+        clearable = {"notes", "linked_criteria"}
+        clear_set = set(clear or [])
+        bad_clear = clear_set - clearable
+        if bad_clear:
+            raise ValueError(
+                f"clear only supports {sorted(clearable)}; got {sorted(bad_clear)}"
+            )
+
+        changed_fields: list[str] = []
+
+        # Resolve linked_criteria against the spec's ACs (reuse #2 resolver,
+        # fail-closed on unresolved tokens).
+        if linked_criteria is not None:
+            resolved, unresolved = resolve_linked_criteria_to_ids(
+                linked_criteria, list(spec.acceptance_criteria or [])
+            )
+            if unresolved:
+                raise ValueError(f"unresolved_criteria: {', '.join(unresolved)}")
+            if target.get("linked_criteria") != resolved:
+                target["linked_criteria"] = resolved
+                changed_fields.append("linked_criteria")
+
+        for field, value in (
+            ("title", title),
+            ("given", given),
+            ("when", when),
+            ("then", then),
+            ("scenario_type", scenario_type),
+            ("notes", notes),
+        ):
+            if value is not None and target.get(field) != value:
+                target[field] = value
+                changed_fields.append(field)
+
+        # Explicit clears (distinguish "omitted" from "emptied").
+        for field in clear_set:
+            empty: object = [] if field == "linked_criteria" else ""
+            if target.get(field) != empty:
+                target[field] = empty
+                if field not in changed_fields:
+                    changed_fields.append(field)
+
+        # Evidence invalidation on semantic edit (spec FR5/BR6): if a SEMANTIC
+        # field changed and the scenario currently holds evidence, the old
+        # evidence no longer proves the new behaviour — reset to ready + drop it.
+        evidence_invalidated = False
+        if evidence_invalidated_by_semantic_edit(changed_fields) and (
+            target.get("evidence") or target.get("latest_evidence")
+        ):
+            target["status"] = "ready"
+            target["evidence"] = None
+            target.pop("latest_evidence", None)
+            evidence_invalidated = True
+
+        if not changed_fields:
+            return {
+                "scenario_id": scenario_id,
+                "updated_fields": [],
+                "evidence_invalidated": False,
+                "scenario": target,
+            }
+
+        updated = await self.update_spec(
+            spec_id, user_id, SpecUpdate(test_scenarios=scenarios)
+        )
+        new_target = next(
+            (
+                s
+                for s in (updated.test_scenarios or [])
+                if isinstance(s, dict) and s.get("id") == scenario_id
+            ),
+            target,
+        )
+        self.db.add(
+            ActivityLog(
+                board_id=spec.board_id,
+                action="test_scenario_body_changed",
+                actor_type="agent",
+                actor_id=user_id,
+                actor_name=user_id,
+                details={
+                    "spec_id": spec_id,
+                    "scenario_id": scenario_id,
+                    "updated_fields": changed_fields,
+                    "evidence_invalidated": evidence_invalidated,
+                },
+            )
+        )
+        await self.db.commit()
+        logging.getLogger("okto_pulse.spec.test_scenario").info(
+            "test_scenario.body_changed scenario=%s spec=%s fields=%s invalidated=%s",
+            scenario_id,
+            spec_id,
+            changed_fields,
+            evidence_invalidated,
+            extra={
+                "event": "test_scenario.body_changed",
+                "scenario_id": scenario_id,
+                "spec_id": spec_id,
+                "board_id": spec.board_id,
+                "actor_id": user_id,
+                "updated_fields": changed_fields,
+                "evidence_invalidated": evidence_invalidated,
+            },
+        )
+        return {
+            "scenario_id": scenario_id,
+            "updated_fields": changed_fields,
+            "evidence_invalidated": evidence_invalidated,
+            "scenario": new_target,
+        }
+
+    async def delete_test_scenario(
+        self, spec_id: str, user_id: str, scenario_id: str
+    ) -> dict:
+        """Delete a test scenario and clean ``Card.test_scenario_ids`` in cascade
+        (spec 6f1e75bf, FR3/BR4).
+
+        Atomic: the spec's ``test_scenarios`` and every referencing card are
+        mutated in a single transaction (all-or-nothing). Does not block on
+        existing links — the cascade removes them. Respects the content-lock.
+        """
+        await _require_spec_unlocked(self.db, spec_id)
+        spec = await self.db.get(Spec, spec_id)
+        if not spec:
+            raise ValueError("scenario_not_found: spec not found")
+
+        scenarios = [s for s in (spec.test_scenarios or []) if isinstance(s, dict)]
+        remaining = [s for s in scenarios if s.get("id") != scenario_id]
+        if len(remaining) == len(scenarios):
+            raise ValueError(f"scenario_not_found: {scenario_id}")
+
+        spec.test_scenarios = remaining
+        flag_modified(spec, "test_scenarios")
+
+        # Cascade: drop the scenario id from every card that references it, in
+        # the SAME transaction → all-or-nothing, no orphan in Card.test_scenario_ids.
+        result = await self.db.execute(select(Card).where(Card.spec_id == spec_id))
+        cards_unlinked: list[str] = []
+        for card in result.scalars().all():
+            ids = list(card.test_scenario_ids or [])
+            if scenario_id in ids:
+                card.test_scenario_ids = [i for i in ids if i != scenario_id]
+                flag_modified(card, "test_scenario_ids")
+                cards_unlinked.append(card.id)
+
+        self.db.add(
+            ActivityLog(
+                board_id=spec.board_id,
+                action="test_scenario_deleted",
+                actor_type="agent",
+                actor_id=user_id,
+                actor_name=user_id,
+                details={
+                    "spec_id": spec_id,
+                    "scenario_id": scenario_id,
+                    "cards_unlinked": cards_unlinked,
+                },
+            )
+        )
+        await self.db.commit()
+
+        logging.getLogger("okto_pulse.spec.test_scenario").info(
+            "test_scenario.deleted scenario=%s spec=%s cards_unlinked=%s",
+            scenario_id,
+            spec_id,
+            len(cards_unlinked),
+            extra={
+                "event": "test_scenario.deleted",
+                "scenario_id": scenario_id,
+                "spec_id": spec_id,
+                "board_id": spec.board_id,
+                "actor_id": user_id,
+                "cards_unlinked": cards_unlinked,
+            },
+        )
+        return {"scenario_id": scenario_id, "cards_unlinked": cards_unlinked}
+
+    async def set_test_scenario_status(
+        self,
+        spec_id: str,
+        user_id: str,
+        scenario_id: str,
+        status: str,
+        evidence: dict | None = None,
+    ) -> dict:
+        """Scoped operational status mutation for ONE test scenario (spec
+        6f1e75bf, FR4/FR6) — the single helper shared by the MCP status tool and
+        the REST status endpoint.
+
+        - Guards by spec STATUS (require_test_scenario_status_mutable): blocks
+          ``validated``/``done``, permits ``in_progress``. Does NOT use the
+          content-lock (which would wrongly block in_progress).
+        - Applies the NC-9 evidence gate (validate_test_scenario_evidence) unless
+          ``skip_test_evidence_global`` is set (then allows + emits a forensic log).
+        - Mutates ONLY the target scenario (status + inline evidence) and persists
+          narrow — it does NOT go through update_spec, does NOT bump version and
+          does NOT replace the full list, so every other scenario is preserved.
+
+        Returns ``{scenario_id, old_status, new_status, evidence_provided,
+        evidence_gate_skipped}``. Raises :class:`StatusNotMutableError` and
+        ``ValueError`` (``status_not_valid`` / ``evidence_required`` /
+        ``scenario_not_found``).
+        """
+        from sqlalchemy import update as sql_update
+
+        if status not in VALID_SCENARIO_STATUSES:
+            raise ValueError(
+                f"status_not_valid: must be one of {list(VALID_SCENARIO_STATUSES)}"
+            )
+
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            raise ValueError("scenario_not_found: spec not found")
+
+        # Guard by STATUS (NOT the content-lock): blocks validated/done, allows
+        # in_progress — the execution phase where scenarios become passed.
+        require_test_scenario_status_mutable(getattr(spec, "status", None))
+
+        board = await self.db.get(Board, spec.board_id)
+        skip = (
+            bool((board.settings or {}).get("skip_test_evidence_global", False))
+            if board
+            else False
+        )
+        if not skip:
+            ok, missing = validate_test_scenario_evidence(status, evidence)
+            if not ok:
+                raise ValueError(f"evidence_required: {', '.join(missing)}")
+
+        scenarios = [
+            dict(s) for s in (spec.test_scenarios or []) if isinstance(s, dict)
+        ]
+        old_status = None
+        found = False
+        for s in scenarios:
+            if s.get("id") == scenario_id:
+                old_status = s.get("status")
+                s["status"] = status
+                if evidence is not None:
+                    s["evidence"] = evidence
+                found = True
+                break
+        if not found:
+            raise ValueError(f"scenario_not_found: {scenario_id}")
+
+        # Narrow persist: write only the test_scenarios column, no version bump,
+        # no content-lock. The other scenarios in the list are untouched.
+        await self.db.execute(
+            sql_update(Spec).where(Spec.id == spec_id).values(test_scenarios=scenarios)
+        )
+        self.db.add(
+            ActivityLog(
+                board_id=spec.board_id,
+                action="test_scenario_status_changed",
+                actor_type="agent",
+                actor_id=user_id,
+                actor_name=user_id,
+                details={
+                    "spec_id": spec_id,
+                    "scenario_id": scenario_id,
+                    "from_status": old_status,
+                    "to_status": status,
+                    "evidence_provided": evidence is not None,
+                    "evidence_gate_skipped": skip,
+                },
+            )
+        )
+        await self.db.commit()
+
+        logger = logging.getLogger("okto_pulse.spec.test_scenario")
+        logger.info(
+            "test_scenario.status_changed scenario=%s board=%s from=%s to=%s "
+            "evidence=%s skip=%s",
+            scenario_id,
+            spec.board_id,
+            old_status,
+            status,
+            evidence is not None,
+            skip,
+            extra={
+                "event": "test_scenario.status_changed",
+                "scenario_id": scenario_id,
+                "board_id": spec.board_id,
+                "spec_id": spec_id,
+                "from_status": old_status,
+                "to_status": status,
+                "evidence_provided": evidence is not None,
+                "evidence_gate_skipped": skip,
+                "changed_by_agent_id": user_id,
+            },
+        )
+        if skip and status in GATED_STATUSES:
+            logger.info(
+                "test_scenario.evidence_gate_skipped scenario=%s board=%s status=%s",
+                scenario_id,
+                spec.board_id,
+                status,
+                extra={
+                    "event": "test_scenario.evidence_gate_skipped",
+                    "scenario_id": scenario_id,
+                    "board_id": spec.board_id,
+                    "spec_id": spec_id,
+                    "status": status,
+                    "skip": True,
+                    "agent_id": user_id,
+                },
+            )
+
+        return {
+            "scenario_id": scenario_id,
+            "old_status": old_status,
+            "new_status": status,
+            "evidence_provided": evidence is not None,
+            "evidence_gate_skipped": skip,
+        }
+
+    async def _enforce_test_scenario_evidence_gate(
+        self, spec: "Spec", new_scenarios: list, user_id: str
+    ) -> None:
+        """NC-9 service gate (spec 6f1e75bf, FR1/BR2).
+
+        Reject any test scenario whose FINAL status is gated
+        (passed/automated/failed) without valid structured evidence when the
+        scenario is NEW, its status CHANGED, or its previously-valid evidence was
+        removed/invalidated. Old vs new are matched by scenario id. Respects
+        ``skip_test_evidence_global`` (allows but emits a forensic audit log so
+        reactivation analytics can flag boards that bypass the gate).
+        """
+        board = await self.db.get(Board, spec.board_id)
+        skip = (
+            bool((board.settings or {}).get("skip_test_evidence_global", False))
+            if board
+            else False
+        )
+
+        old_by_id = {
+            s.get("id"): s
+            for s in (spec.test_scenarios or [])
+            if isinstance(s, dict)
+        }
+        offenders: list[str] = []
+        for s in new_scenarios:
+            if not isinstance(s, dict):
+                continue
+            status = s.get("status")
+            if status not in GATED_STATUSES:
+                continue
+            if scenario_has_required_evidence(s):
+                continue
+            sid = s.get("id")
+            old = old_by_id.get(sid)
+            is_new = old is None
+            status_changed = (old or {}).get("status") != status
+            old_had_evidence = scenario_has_required_evidence(old) if old else False
+            # Enforce on: new scenario already gated, status transition into a
+            # gated state, or evidence removed/altered from a previously-valid
+            # scenario. A pre-existing gated scenario that was always evidenceless
+            # and is left unchanged is NOT newly rejected (legacy data, not
+            # introduced by this write).
+            if is_new or status_changed or old_had_evidence:
+                offenders.append(str(sid) if sid else "(new)")
+
+        if not offenders:
+            return
+
+        logger = logging.getLogger("okto_pulse.spec.test_scenario")
+        if not skip:
+            raise ValueError(
+                "evidence_required: test scenario(s) "
+                f"{', '.join(offenders)} marked passed/automated/failed without "
+                "structured evidence. Provide evidence via the status tool or "
+                "endpoint, or enable skip_test_evidence_global on the board."
+            )
+        # skip ON — allow but emit a forensic audit record (spec OR or_536eca62).
+        for sid in offenders:
+            logger.info(
+                "test_scenario.evidence_gate_skipped scenario=%s board=%s spec=%s",
+                sid,
+                spec.board_id,
+                spec.id,
+                extra={
+                    "event": "test_scenario.evidence_gate_skipped",
+                    "scenario_id": sid,
+                    "board_id": spec.board_id,
+                    "spec_id": spec.id,
+                    "actor_id": user_id,
+                    "source": "update_spec",
+                    "skip": True,
+                },
+            )
+
     async def update_spec(self, spec_id: str, user_id: str, data: SpecUpdate) -> Spec | None:
         """Update a spec. Bumps version on content changes. Records field-level diffs.
 
@@ -3068,11 +3499,39 @@ class SpecService:
                     for s in update_data[json_list_field]
                 ]
 
+        # Canonicalize FR/AC to structured dicts with stable ids, preserving
+        # text + existing ids (spec 9d66847f). Runs BEFORE
+        # _validate_spec_linked_refs so the validator sees canonical ids; the
+        # text is preserved, so text-based linked refs keep resolving (no
+        # breaking change).
+        if "functional_requirements" in update_data:
+            update_data["functional_requirements"] = canonicalize_fr_ac(
+                "functional_requirement",
+                update_data["functional_requirements"],
+                existing_items=spec.functional_requirements,
+            )
+        if "acceptance_criteria" in update_data:
+            update_data["acceptance_criteria"] = canonicalize_fr_ac(
+                "acceptance_criterion",
+                update_data["acceptance_criteria"],
+                existing_items=spec.acceptance_criteria,
+            )
+
         # Validate referential integrity of all `linked_*` fields BEFORE
         # mutating the spec. The validator computes the final state of each
         # collection (incoming value OR current state if untouched) and
         # rejects orphan references with a precise error message.
         await _validate_spec_linked_refs(self.db, spec, update_data)
+
+        # NC-9 (test-theater) service gate — defense in depth (spec 6f1e75bf,
+        # FR1/BR2). Closes the bypass where any caller (UI full-list, REST or
+        # MCP) could replace test_scenarios with a gated status and no evidence;
+        # the evidence rule previously ran only in the MCP status tool. Runs on
+        # the incoming list, comparing against the current persisted scenarios.
+        if update_data.get("test_scenarios") is not None:
+            await self._enforce_test_scenario_evidence_gate(
+                spec, update_data["test_scenarios"], user_id
+            )
 
         json_fields = {
             "test_scenarios",
@@ -3301,7 +3760,7 @@ class SpecService:
                         criteria,
                     )
                 uncovered = [
-                    f"[{i}] {criterion[:80]}..."
+                    f"[{i}] {_structured_ref_text(criterion)[:80]}..."
                     for i, criterion in enumerate(criteria)
                     if i not in covered_indices
                 ]
@@ -6648,7 +7107,7 @@ class SprintService:
                         sc = spec_scenarios_by_id.get(sid)
                         if not sc:
                             continue
-                        if not _test_scenario_has_required_evidence(sc):
+                        if not scenario_has_required_evidence(sc):
                             evidenceless.append(sid)
                 if evidenceless:
                     # NC-9 BR4 — sprint close gate as defense in depth.
