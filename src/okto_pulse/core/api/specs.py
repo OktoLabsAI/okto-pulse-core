@@ -381,7 +381,7 @@ async def update_spec(
         spec = await service.update_spec(spec_id, user_id, data)
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e),
         )
     if not spec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
@@ -448,7 +448,7 @@ async def operate_structured_spec_entity(
     """Run a structured operation such as revoke, supersede, restore, reorder, link_task or unlink_task."""
     if not data.operation:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="operation is required.",
         )
     return await _run_structured_spec_entity_command(
@@ -477,7 +477,7 @@ async def preview_structured_spec_entity_impact(
     """Preview impact for destructive-like structured operations without mutating."""
     if not data.operation:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="operation is required.",
         )
     return await _run_structured_spec_entity_command(
@@ -635,7 +635,7 @@ async def link_task_to_scenario(
         await spec_service.update_spec(spec_id, user_id, SpecUpdate(test_scenarios=scenarios))
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e),
         )
 
     existing = list(card.test_scenario_ids or [])
@@ -725,7 +725,7 @@ async def update_test_scenario_status(
         if msg.startswith("scenario_not_found"):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=msg
         )
     return {
         "id": spec_id,
@@ -788,7 +788,7 @@ async def link_task_to_integration_requirement(
         )
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e),
         )
 
     await db.commit()
@@ -854,7 +854,7 @@ async def link_task_to_observability_requirement(
         )
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e),
         )
 
     await db.commit()

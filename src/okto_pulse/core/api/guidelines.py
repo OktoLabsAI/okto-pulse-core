@@ -137,7 +137,7 @@ async def link_or_create_board_guideline(
 
     if not data.title or not data.content:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Provide guideline_id to link a global guideline, or title and content to create an inline guideline.",
         )
 

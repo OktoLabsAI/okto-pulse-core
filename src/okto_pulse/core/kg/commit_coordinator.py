@@ -1,6 +1,6 @@
-"""Per-board serialisation + retry for Kùzu commit operations.
+"""Per-board serialisation + retry for LadybugDB commit operations.
 
-Kùzu holds an exclusive-writer file lock on each per-board ``.kuzu`` directory.
+LadybugDB holds an exclusive-writer file lock on each per-board ``.lbug`` directory.
 When two ``kg_commit_consolidation`` calls target the same board concurrently,
 the second one races the first at the OS file-lock level and crashes with
 ``RuntimeError: IO exception: Could not set lock on file``. Field reports
@@ -16,7 +16,7 @@ This module adds two defences the tool handler wraps around
    running in parallel.
 
 2. **Bounded retry with exponential backoff + jitter** — inside the critical
-   section, a Kùzu lock error caused by *another process* (CLI, second MCP
+   section, a LadybugDB lock error caused by *another process* (CLI, second MCP
    server, IDE) is retried up to 3 times with 100 / 200 / 400 ms bases plus
    0–50 ms jitter. Other exceptions propagate immediately so real bugs are
    not masked.
@@ -38,7 +38,7 @@ from typing import Awaitable, Callable, TypeVar
 
 logger = logging.getLogger("okto_pulse.kg.commit_coordinator")
 
-_KUZU_LOCK_ERROR_SUBSTRING = "Could not set lock on file"
+_LADYBUG_LOCK_ERROR_SUBSTRING = "Could not set lock on file"
 
 # Retry policy — exposed as module constants so tests can patch them without
 # monkey-patching the function body. Changing these numbers counts as a
@@ -61,7 +61,7 @@ _commit_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 # Spec bdcda842 (TR7): kuzu_lock_retries_5m sliding-window counter
 # ---------------------------------------------------------------------------
 #
-# Every Kùzu file-lock retry adds an entry here; the /api/v1/kg/queue/health
+# Every LadybugDB file-lock retry adds an entry here; the /api/v1/kg/queue/health
 # endpoint reads ``kuzu_lock_retries_5m_count`` to expose how often
 # cross-process contention occurred in the last 5 minutes. The deque is
 # protected by a threading.Lock because retries can fire from worker pool
@@ -110,13 +110,13 @@ def acquire_commit_lock(board_id: str) -> asyncio.Lock:
 
 
 def _is_kuzu_lock_error(exc: BaseException) -> bool:
-    """Classify an exception as Kùzu's transient file-lock error.
+    """Classify an exception as LadybugDB's transient file-lock error.
 
-    Kùzu's Python binding does not expose typed error codes, so we match on
+    LadybugDB's Python binding does not expose typed error codes, so we match on
     the exception message substring. This is documented in spec TR3 as a
-    known fragility to revisit when Kùzu ships structured errors.
+    known fragility to revisit when LadybugDB ships structured errors.
     """
-    return isinstance(exc, RuntimeError) and _KUZU_LOCK_ERROR_SUBSTRING in str(exc)
+    return isinstance(exc, RuntimeError) and _LADYBUG_LOCK_ERROR_SUBSTRING in str(exc)
 
 
 async def run_with_commit_lock_and_retry(
@@ -139,7 +139,7 @@ async def run_with_commit_lock_and_retry(
 
     Returns the coroutine's value on success.
 
-    Raises the last exception if every attempt hits a Kùzu lock error, or
+    Raises the last exception if every attempt hits a LadybugDB lock error, or
     propagates immediately when the factory raises any non-lock exception.
     """
     lock = acquire_commit_lock(board_id)

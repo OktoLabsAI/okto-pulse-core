@@ -254,7 +254,7 @@ async def link_test_task_to_bug(
     # Validate same spec
     if test_task.spec_id != bug_card.spec_id:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Test task does not belong to the same spec as the bug",
         )
 
@@ -263,7 +263,7 @@ async def link_test_task_to_bug(
     if bug_card.created_at and test_task.created_at:
         if test_task.created_at.isoformat() < bug_card.created_at.isoformat():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Test task was created before the bug card — link a regression test task created after the bug",
             )
 
@@ -275,7 +275,7 @@ async def link_test_task_to_bug(
             for sid in test_task.test_scenario_ids:
                 if sid not in all_scenarios:
                     raise HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                         detail=f"Test task references scenario '{sid}' that does not exist on the bug spec",
                     )
 
@@ -385,7 +385,7 @@ async def submit_task_validation(
             data=data,
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
     await db.commit()
     return result
 
