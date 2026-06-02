@@ -255,7 +255,9 @@ class TelemetryBeaconSender:
         timestamp = str(int(datetime.now(timezone.utc).timestamp()))
         nonce = str(uuid.uuid4())
         signature = sign_payload(str(token), timestamp, nonce, batch_seq, batch)
+        body = canonical_json(batch).encode("utf-8")
         headers = {
+            "content-type": "application/json",
             "x-okto-signature": signature,
             "x-okto-timestamp": timestamp,
             "x-okto-nonce": nonce,
@@ -264,7 +266,7 @@ class TelemetryBeaconSender:
         try:
             resp = self.session.post(
                 f"{cfg.beacon_url}/v1/usage",
-                json=batch,
+                data=body,
                 headers=headers,
                 timeout=5,
             )
@@ -278,7 +280,7 @@ class TelemetryBeaconSender:
             save_state(cfg.metrics_dir, state)
             _log_beacon_outcome(reason="consent_stale")
             return {"sent": False, "reason": "schema_incompatible"}
-        if resp.status_code == 429 or resp.status_code >= 500:
+        if resp.status_code in {403, 429} or resp.status_code >= 500:
             self._open_circuit(state, cfg, f"USAGE_{resp.status_code}")
             _log_beacon_outcome(reason="transport_failed")
             return {"sent": False, "reason": "retryable"}

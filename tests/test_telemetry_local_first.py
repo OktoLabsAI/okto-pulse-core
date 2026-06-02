@@ -830,6 +830,101 @@ def test_sender_does_not_call_network_before_opt_in(tmp_path: Path, caplog) -> N
         _assert_no_payload_labels(record)
 
 
+def test_usage_sender_posts_compact_json_body_to_stay_below_waf_body_threshold(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class AcceptedResponse:
+        status_code = 202
+
+        def raise_for_status(self):
+            return None
+
+    class RecordingSession:
+        def __init__(self) -> None:
+            self.kwargs = None
+
+        def post(self, *args, **kwargs):
+            self.kwargs = kwargs
+            return AcceptedResponse()
+
+    settings = _settings(tmp_path, metrics_mode="anonymous_beacon")
+    monkeypatch.setenv("OKTO_PULSE_INSTALL_ID_PATH", str(tmp_path / "install_id"))
+    service = TelemetryService(settings)
+    service.update_settings(
+        mode="anonymous_beacon",
+        source="cli",
+        policy_version="2026-05-11",
+        schema_version=CURRENT_SCHEMA_VERSION,
+    )
+    state_path = tmp_path / "metrics" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["install_token"] = "token"
+    state["next_batch_seq"] = 7
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    service.record_event("http", {"route_template": "/api/v1/specs/{spec_id}", "duration_ms": 42})
+    session = RecordingSession()
+
+    result = TelemetryBeaconSender(settings, session=session).send_once()  # type: ignore[arg-type]
+
+    assert result == {"sent": True, "batch_seq": 7}
+    assert session.kwargs is not None
+    assert "json" not in session.kwargs
+    body = session.kwargs["data"]
+    assert isinstance(body, bytes)
+    assert b": " not in body
+    assert b", " not in body
+    decoded = json.loads(body.decode("utf-8"))
+    assert decoded["metrics"]["http_route_template_counts"] == {"/api/v1/specs/{spec_id}": 1}
+    assert len(body) == len(json.dumps(decoded, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    assert session.kwargs["headers"]["content-type"] == "application/json"
+
+
+def test_usage_sender_treats_cloudfront_waf_403_as_retryable_transport_failure(
+    tmp_path: Path,
+    monkeypatch,
+    caplog,
+) -> None:
+    class ForbiddenResponse:
+        status_code = 403
+
+        def raise_for_status(self):  # pragma: no cover - branch must not raise
+            raise AssertionError("403 must be handled before raise_for_status")
+
+    class ForbiddenSession:
+        def post(self, *args, **kwargs):
+            return ForbiddenResponse()
+
+    settings = _settings(tmp_path, metrics_mode="anonymous_beacon")
+    monkeypatch.setenv("OKTO_PULSE_INSTALL_ID_PATH", str(tmp_path / "install_id"))
+    caplog.set_level("INFO", logger="okto_pulse.telemetry.sender")
+    service = TelemetryService(settings)
+    service.update_settings(
+        mode="anonymous_beacon",
+        source="cli",
+        policy_version="2026-05-11",
+        schema_version=CURRENT_SCHEMA_VERSION,
+    )
+    state_path = tmp_path / "metrics" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["install_token"] = "token"
+    state["next_batch_seq"] = 8
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    service.record_event("cli", {"command": "serve"})
+
+    result = TelemetryBeaconSender(settings, session=ForbiddenSession()).send_once()  # type: ignore[arg-type]
+
+    assert result == {"sent": False, "reason": "retryable"}
+    next_state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert next_state["last_failure_code"] == "USAGE_403"
+    assert "circuit_open_until" in next_state
+    assert any(
+        record.__dict__.get("metric_name") == "metrics_beacon_outcome_total"
+        and record.__dict__.get("reason") == "transport_failed"
+        for record in caplog.records
+    )
+
+
 def test_disabled_hourly_batch_never_builds_payload_from_existing_events(
     tmp_path: Path,
     monkeypatch,
