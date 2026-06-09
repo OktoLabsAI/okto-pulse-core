@@ -169,6 +169,82 @@ def test_process_pre_spec_lineage_entities():
     )
 
 
+def test_process_first_line_artifacts_attach_to_board_root_when_board_id_exists():
+    worker = DeterministicWorker()
+    board_id = "board-12345678"
+    results = [
+        (
+            "story",
+            worker.process_story({
+                "id": "story-abcdef-123",
+                "board_id": board_id,
+                "title": "Capture intake",
+            }),
+            "story_story-ab_entity",
+        ),
+        (
+            "ideation",
+            worker.process_ideation({
+                "id": "idea-abcdef-123",
+                "board_id": board_id,
+                "title": "Shape intake",
+            }),
+            "ideation_idea-abc_entity",
+        ),
+        (
+            "refinement",
+            worker.process_refinement({
+                "id": "ref-abcdef-123",
+                "board_id": board_id,
+                "title": "Refine intake",
+            }),
+            "refinement_ref-abcd_entity",
+        ),
+        (
+            "spec",
+            worker.process_spec({
+                **_spec_fixture(),
+                "board_id": board_id,
+            }),
+            "spec_11111111_entity",
+        ),
+        (
+            "sprint",
+            worker.process_sprint({
+                "id": "sprint-abcdef-123",
+                "board_id": board_id,
+                "title": "Sprint",
+            }),
+            "sprint_sprint-a_entity",
+        ),
+        (
+            "card",
+            worker.process_card({
+                "id": "card-abcdef-123",
+                "board_id": board_id,
+                "title": "Card",
+                "card_type": "normal",
+            }),
+            "card_card-abc_entity",
+        ),
+    ]
+
+    for artifact_type, result, root_candidate_id in results:
+        board_roots = [
+            node for node in result.nodes
+            if node.node_type == "Entity"
+            and node.source_artifact_ref == f"board:{board_id}"
+        ]
+        assert len(board_roots) == 1, artifact_type
+        assert any(
+            edge.edge_type == "belongs_to"
+            and edge.from_candidate_id == root_candidate_id
+            and edge.to_candidate_id == board_roots[0].candidate_id
+            and edge.rule_id == f"belongs_to/{artifact_type}_to_board@v2.0"
+            for edge in result.edges
+        ), artifact_type
+
+
 def test_process_spec_child_source_refs_are_granular():
     spec = _spec_fixture()
     result = DeterministicWorker().process_spec(spec)
@@ -450,6 +526,31 @@ def test_process_sprint_emits_hierarchy_edge_via_belongs_to():
     assert hierarchy[0].to_candidate_id == "spec_spec-abc_entity"
 
 
+def test_process_sprint_serializes_lane_metadata_into_context_and_hash():
+    base = {
+        "id": "sprint-lane-1234",
+        "title": "Post-closure lane",
+        "description": "Fix a closed delivery bug",
+        "objective": "Close regression",
+        "spec_id": "spec-abcdef-1234-uuid",
+    }
+    normal = DeterministicWorker().process_sprint({**base, "lane_type": "normal"})
+    hotfix = DeterministicWorker().process_sprint({
+        **base,
+        "lane_type": "hotfix",
+        "origin_sprint_id": "closed-sprint-1",
+        "origin_bug_id": "bug-1",
+        "normal_sprint_created": False,
+    })
+
+    assert normal.content_hash != hotfix.content_hash
+    hotfix_entity = next(n for n in hotfix.nodes if n.node_type == "Entity")
+    assert "lane_type=hotfix" in hotfix_entity.context
+    assert "origin_sprint_id=closed-sprint-1" in hotfix.raw_content
+    assert "origin_bug_id=bug-1" in hotfix.raw_content
+    assert "normal_sprint_created=false" in hotfix.raw_content
+
+
 def test_process_card_bug_emits_violates_missing_link():
     bug = {
         "id": "bug-1234-5678",
@@ -638,3 +739,168 @@ def test_ts7_process_sprint_emits_zero_boost():
     }
     result = DeterministicWorker().process_sprint(sprint)
     assert all(n.priority_boost == 0.0 for n in result.nodes)
+
+
+# ---------------------------------------------------------------------------
+# IMPL-3: fr_id-aware edge resolution (spec R3b cc8e9252)
+# AC4 behavioral tests — validator reproduces each case.
+# ---------------------------------------------------------------------------
+
+
+def _spec_with_fr_ids() -> dict:
+    """Spec where functional_requirements carry canonical fr_id fields
+    (as persisted by IMPL-1).  linked_requirements on the api_contract and
+    decision reference the fr_id strings, NOT the full text, so the
+    pre-IMPL-3 text/int lookups would both fail to resolve them.
+    """
+    return {
+        "id": "aaaabbbb-1111-4444-cccc-ddddeeee0000",
+        "title": "FR-id-aware Spec",
+        "description": "Tests fr_id resolution in implements and derives_from",
+        "context": "## In Scope\n- FR-id resolution\n",
+        "functional_requirements": [
+            {
+                "id": "fr-canonical-001",
+                "text": "System shall emit a deterministic edge when fr_id is referenced",
+            },
+            {
+                "id": "fr-canonical-002",
+                "text": "System shall fall back to co-occurrence for unlinked decisions",
+            },
+        ],
+        "api_contracts": [
+            {
+                "method": "POST",
+                "path": "/edge-resolution",
+                "description": "Endpoint that implements the first FR by id",
+                # (a): linked_requirements contains the fr_id, not the FR text.
+                "linked_requirements": ["fr-canonical-001"],
+            },
+        ],
+        "decisions": [
+            {
+                "title": "Use fr_id for cross-section links",
+                "rationale": "Canonical ids are stable; text changes over time.",
+                "status": "active",
+                # (b): linked_requirements contains the fr_id, not an int index.
+                "linked_requirements": ["fr-canonical-002"],
+            },
+        ],
+    }
+
+
+def test_impl3_api_contract_implements_resolves_via_fr_id():
+    """(a) api_contract.linked_requirements = [fr_id] → deterministic
+    `implements` edge with confidence 1.0.  The edge must NOT appear in
+    missing_link_candidates.
+    """
+    worker = DeterministicWorker()
+    result = worker.process_spec(_spec_with_fr_ids())
+
+    impl_edges = [e for e in result.edges if e.edge_type == "implements"]
+    assert len(impl_edges) == 1, (
+        f"Expected exactly 1 implements edge; got {len(impl_edges)}: {impl_edges}"
+    )
+    edge = impl_edges[0]
+    assert edge.confidence == 1.0
+    # The target must resolve to the node for fr-canonical-001 (first FR, index 0).
+    assert edge.to_candidate_id.endswith("_fr_0"), (
+        f"Expected target to end with '_fr_0', got: {edge.to_candidate_id}"
+    )
+
+    # Must NOT produce a missing_link_candidate for this api_contract.
+    impl_missing = [
+        c for c in result.missing_link_candidates
+        if c.edge_type == "implements"
+    ]
+    assert impl_missing == [], (
+        f"fr_id resolution produced unexpected missing_link_candidates: {impl_missing}"
+    )
+
+
+def test_impl3_decision_derives_from_resolves_via_fr_id():
+    """(b) decision.linked_requirements = [fr_id] → deterministic
+    `derives_from` edge with confidence 1.0 (explicit_link), targeting only
+    the one referenced FR.  The other FR must NOT receive a derives_from edge
+    (no fallback co-occurrence when the explicit set is non-empty).
+    """
+    worker = DeterministicWorker()
+    result = worker.process_spec(_spec_with_fr_ids())
+
+    derives_edges = [e for e in result.edges if e.edge_type == "derives_from"]
+
+    # Exactly one derives_from edge: fr-canonical-002 (index 1).
+    assert len(derives_edges) == 1, (
+        f"Expected exactly 1 derives_from edge; got {len(derives_edges)}: {derives_edges}"
+    )
+    edge = derives_edges[0]
+    assert edge.confidence == 1.0, (
+        f"Expected confidence 1.0 (explicit_link), got {edge.confidence}"
+    )
+    assert "explicit_link" in edge.rule_id, (
+        f"Expected rule_id to contain 'explicit_link', got: {edge.rule_id}"
+    )
+    # Target must be the second FR (fr-canonical-002, index 1).
+    assert edge.to_candidate_id.endswith("_fr_1"), (
+        f"Expected target to end with '_fr_1', got: {edge.to_candidate_id}"
+    )
+
+
+def test_impl3_legacy_text_resolution_still_works():
+    """Regression: specs written before IMPL-1 (no id on FR dict, text refs)
+    must still resolve the `implements` edge via text lookup.
+    """
+    spec = {
+        "id": "legacy-spec-0000-1111-2222",
+        "title": "Legacy spec",
+        "description": "Pre-IMPL-1 spec with text-based linked_requirements",
+        "context": "",
+        "functional_requirements": [
+            "User can log in",  # plain string, no id field
+        ],
+        "api_contracts": [
+            {
+                "method": "POST",
+                "path": "/login",
+                "description": "Login endpoint",
+                "linked_requirements": ["User can log in"],  # text ref
+            },
+        ],
+    }
+    result = DeterministicWorker().process_spec(spec)
+    impl_edges = [e for e in result.edges if e.edge_type == "implements"]
+    assert len(impl_edges) == 1
+    assert impl_edges[0].confidence == 1.0
+    assert not [c for c in result.missing_link_candidates if c.edge_type == "implements"]
+
+
+def test_impl3_legacy_int_index_resolution_still_works():
+    """Regression: specs written before IMPL-1 (no id on FR dict, int index
+    refs on decisions) must still resolve `derives_from` via positional int.
+    """
+    spec = {
+        "id": "legacy-spec-int-3333-4444",
+        "title": "Legacy int-index spec",
+        "description": "Pre-IMPL-1 spec with int-index linked_requirements on decision",
+        "context": "",
+        "functional_requirements": [
+            "FR zero",
+            "FR one",
+        ],
+        "decisions": [
+            {
+                "title": "Only link to first FR by int index",
+                "rationale": "Legacy int-index reference",
+                "status": "active",
+                "linked_requirements": [0],  # positional int
+            },
+        ],
+    }
+    result = DeterministicWorker().process_spec(spec)
+    derives_edges = [e for e in result.edges if e.edge_type == "derives_from"]
+    # Only one edge (index 0 resolves to fr_0); fr_1 is skipped.
+    assert len(derives_edges) == 1
+    edge = derives_edges[0]
+    assert edge.confidence == 1.0
+    assert "explicit_link" in edge.rule_id
+    assert edge.to_candidate_id.endswith("_fr_0")

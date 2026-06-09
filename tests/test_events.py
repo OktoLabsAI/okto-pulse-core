@@ -149,25 +149,26 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
         assert execs[0].status == "pending"
 
 
-# --- AC12 (spec 4007e4a3 — Ideação #3): registry has 17 events ---
+# --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_seventeen_events():
+def test_registry_has_twenty_five_events():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
     Ideação #3 — card.conclusion_added) + 4 (spec 28583299, Ideação #4 —
     kg.hit_flushed, card.priority_changed, card.severity_changed, kg.tick.daily)
     + 3 (structured-entity canonicalization — structured_entity.{created,
-    updated,revoked}) = 24. CardMoved already existed pre-Ideação #3; that
-    cycle only extended its payload (spec_id, moved_by).
+    updated,revoked}) + 1 (bug regression reuse decision audit) = 25.
+    CardMoved already existed pre-Ideação #3; that cycle only extended its
+    payload (spec_id, moved_by).
 
     ConsolidationEnqueuer is registered for every LIFECYCLE event, but the
     operational ``kg.hit_flushed`` and the card.{priority,severity}_changed
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 24
+    assert len(EVENT_TYPES) == 25
     operational_kg_events = {
         "kg.hit_flushed",
         "card.priority_changed",

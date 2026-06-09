@@ -19,13 +19,14 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
-from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value
+from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value, parse_options_json
 from okto_pulse.core.mcp.trace_middleware import install_if_enabled as _install_trace
 from okto_pulse.core.models.db import Board
 from okto_pulse.core.services.main import (
     AgentService,
     AttachmentService,
     BoardService,
+    CardOperationError,
     CardService,
     CommentService,
     GuidelineService,
@@ -49,6 +50,7 @@ from okto_pulse.core.services.architecture import (
     ArchitectureDiagramAdapterRegistry,
     ArchitectureDiagramStore,
     ArchitecturePropagationService,
+    ArchitectureWarningAcknowledgementRequired,
     architecture_design_payload_schema,
 )
 from okto_pulse.core.services.activity_log import (
@@ -145,6 +147,7 @@ _RESOURCE_REGISTRY = [
     ("okto-pulse://workflows/cards", "workflows/cards.md", "Cards workflow — impl/bug/test execution."),
     ("okto-pulse://workflows/sprints", "workflows/sprints.md", "Sprints workflow — lifecycle e evaluation."),
     ("okto-pulse://workflows/kg", "workflows/kg.md", "KG workflow — consolidation, query, governance."),
+    ("okto-pulse://workflows/preflight", "workflows/preflight.md", "Pre-Flight Checklist — session/entity/card/resource-gate pre-flight sequences (READ FIRST)."),
     ("okto-pulse://reference/errors", "reference/errors.md", "MCP errors matrix com fixes canônicos."),
     ("okto-pulse://reference/multivalue", "reference/multivalue.md", "Multi-value parameter input shapes."),
     ("okto-pulse://reference/destructive_ops", "reference/destructive_ops.md", "Destructive operations governance."),
@@ -153,6 +156,42 @@ _RESOURCE_REGISTRY = [
     ("okto-pulse://reference/transitions", "reference/transitions.md", "Status transitions matrix — cards/sprints/specs."),
     ("okto-pulse://reference/list_tools", "reference/list_tools.md", "Consolidated polymorphic list_* tools."),
     ("okto-pulse://reference/tools_catalog", "reference/tools_catalog.md", "Full MCP tool catalog grouped by domain."),
+    ("okto-pulse://reference/projection-profiles", "reference/projection_profiles.md", "Projection profiles (summary/detail/full/legacy) + response envelope (SC1)."),
+    ("okto-pulse://reference/kg-health", "reference/kg-health.md", "Full KG health contract: payload fields, when to consult, must-not-do."),
+    # R1.1 — lazy long-form tool docs (args/returns/examples) moved off the
+    # compact tools/list surface; one resource per tool family (api_fd7c5878).
+    ("okto-pulse://reference/tool-docs/activity", "reference/tool-docs/activity.md", "Full long-form docs for activity tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/agent", "reference/tool-docs/agent.md", "Full long-form docs for agent tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/analytics", "reference/tool-docs/analytics.md", "Full long-form docs for analytics tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/api-contract", "reference/tool-docs/api-contract.md", "Full long-form docs for api-contract tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/architecture", "reference/tool-docs/architecture.md", "Full long-form docs for architecture tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/attachment", "reference/tool-docs/attachment.md", "Full long-form docs for attachment tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/board", "reference/tool-docs/board.md", "Full long-form docs for board tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/business-rule", "reference/tool-docs/business-rule.md", "Full long-form docs for business-rule tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/card", "reference/tool-docs/card.md", "Full long-form docs for card tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/comment", "reference/tool-docs/comment.md", "Full long-form docs for comment tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/decision", "reference/tool-docs/decision.md", "Full long-form docs for decision tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/guideline", "reference/tool-docs/guideline.md", "Full long-form docs for guideline tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/ideation", "reference/tool-docs/ideation.md", "Full long-form docs for ideation tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/integration-requirement", "reference/tool-docs/integration-requirement.md", "Full long-form docs for integration-requirement tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/kg", "reference/tool-docs/kg.md", "Full long-form docs for kg tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/knowledge", "reference/tool-docs/knowledge.md", "Full long-form docs for knowledge tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/misc", "reference/tool-docs/misc.md", "Full long-form docs for misc tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/mockup", "reference/tool-docs/mockup.md", "Full long-form docs for mockup tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/observability-requirement", "reference/tool-docs/observability-requirement.md", "Full long-form docs for observability-requirement tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/qa", "reference/tool-docs/qa.md", "Full long-form docs for qa tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/refinement", "reference/tool-docs/refinement.md", "Full long-form docs for refinement tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/snapshot", "reference/tool-docs/snapshot.md", "Full long-form docs for snapshot tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/spec", "reference/tool-docs/spec.md", "Full long-form docs for spec tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/story", "reference/tool-docs/story.md", "Full long-form docs for story tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/sprint", "reference/tool-docs/sprint.md", "Full long-form docs for sprint tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/test-scenario", "reference/tool-docs/test-scenario.md", "Full long-form docs for test-scenario tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/topic", "reference/tool-docs/topic.md", "Full long-form docs for topic tools (args/returns/examples)."),
+    ("okto-pulse://reference/tool-docs/traceability", "reference/tool-docs/traceability.md", "Full long-form docs for traceability tools (args/returns/examples)."),
+    # R4.2 — lazy tool-family consolidation/migration docs (fr_589a9977 / ir_a1db20f3).
+    # Compact tool descriptions point here instead of embedding migration prose.
+    ("okto-pulse://reference/tool-families/spec_entity_remove", "reference/tool-families/spec_entity_remove.md", "R4 consolidated spec-entity removal: target_types, aliases, soft-delete asymmetry."),
+    ("okto-pulse://reference/tool-families/qa_ask", "reference/tool-families/qa_ask.md", "R4 consolidated Q&A ask: target_types, aliases, sprint asymmetry."),
 ]
 
 
@@ -163,7 +202,7 @@ def _make_resource_handler(path: str) -> "Callable[[], str]":
     return handler
 
 
-# Register 12 resources dynamically
+# Register every resource in _RESOURCE_REGISTRY dynamically
 for _uri, _path, _desc in _RESOURCE_REGISTRY:
     _handler = _make_resource_handler(_path)
     _handler.__name__ = f"resource_{_path.replace('/', '_').replace('.md', '')}"
@@ -173,6 +212,64 @@ for _uri, _path, _desc in _RESOURCE_REGISTRY:
 # Pre-warm the resource cache so first-read latency is minimal
 for _, _path, _ in _RESOURCE_REGISTRY:
     _load_resource_file(_path)
+
+
+# R1.1 — canonical map from a compacted tool to its single lazy long-form doc
+# resource URI (api_fd7c5878). Family is derived by priority-ordered keyword so
+# the map stays deterministic and matches the generated tool-docs/{family}.md
+# resources. Agents/CI resolve a tool's full docs via this one stable URI.
+_TOOL_DOCS_FAMILY_RULES = [
+    ("architecture", "architecture"),
+    ("test_scenario", "test-scenario"),
+    ("business_rule", "business-rule"),
+    ("api_contract", "api-contract"),
+    ("integration_requirement", "integration-requirement"),
+    ("observability_requirement", "observability-requirement"),
+    ("screen_mockup", "mockup"),
+    ("mockup", "mockup"),
+    ("knowledge", "knowledge"),
+    ("decision", "decision"),
+    ("guideline", "guideline"),
+    ("sprint", "sprint"),
+    ("spec", "spec"),
+    ("ideation", "ideation"),
+    ("refinement", "refinement"),
+    ("story", "story"),
+    ("topic", "topic"),
+    ("blocker", "card"),
+    ("card", "card"),
+    ("comment", "comment"),
+    ("attachment", "attachment"),
+    ("question", "qa"),
+    ("choice", "qa"),
+    ("traceability", "traceability"),
+    ("activity", "activity"),
+    ("analytic", "analytics"),
+    ("agent", "agent"),
+    ("board", "board"),
+    ("profile", "agent"),
+    ("snapshot", "snapshot"),
+]
+
+
+def tool_docs_family(tool_name: str) -> str:
+    """Deterministic tool-docs family for a tool name (R1.1 / api_fd7c5878)."""
+    if "kg" in tool_name.split("_"):
+        return "kg"
+    # R4 consolidated Q&A ask — exact-match before the substring rules because the
+    # substring 'ask' collides with 'task' (link_task / get_task_context / …).
+    if tool_name == "okto_pulse_ask":
+        return "qa"
+    for key, family in _TOOL_DOCS_FAMILY_RULES:
+        if key in tool_name:
+            return family
+    return "misc"
+
+
+def tool_docs_uri(tool_name: str) -> str:
+    """Canonical lazy long-form documentation URI for a compacted tool."""
+    return f"okto-pulse://reference/tool-docs/{tool_docs_family(tool_name)}"
+
 
 # ============================================================================
 # SESSION-BASED AUTH (API key extracted from request)
@@ -386,6 +483,42 @@ async def _safe_spec_update(service, spec_id: str, agent_id: str, payload):
     except ValueError as exc:
         import json as _json
         return None, _json.dumps({"error": str(exc)})
+
+
+def _canonical_api_contract_error(exc) -> str:
+    """Render a Pydantic ValidationError as a canonical api-contract domain error.
+
+    F10: the agent gets a structured ``invalid_api_contract`` error with a clean
+    detail string and NO ``errors.pydantic.dev`` URL / raw exception surface
+    (``errors(include_url=False)`` drops the library URL). Mirrors the
+    kg_tools.py ValidationError-to-canonical precedent.
+    """
+    details = "; ".join(
+        ((".".join(str(p) for p in e.get("loc", ())) + ": ") if e.get("loc") else "")
+        + str(e.get("msg", "invalid value"))
+        for e in exc.errors(include_url=False)
+    )
+    return json.dumps({"error": "invalid_api_contract", "detail": details})
+
+
+def _validate_api_contract_write(contract: dict) -> str | None:
+    """Validate one api-contract dict as a WRITE and surface a canonical error.
+
+    http strictness applies here (``on_write`` validation context, F9 — a
+    non-verb method such as ``"CALL"`` is rejected at the boundary); a malformed
+    shape becomes the canonical ``invalid_api_contract`` error with no
+    ``errors.pydantic.dev`` leak (F10). Returns the error JSON string when
+    invalid, else ``None``. Read-back/deserialization elsewhere stays tolerant
+    (it never passes ``on_write``), so pre-existing stored contracts still load.
+    """
+    from pydantic import ValidationError
+    from okto_pulse.core.models.schemas import ApiContract
+
+    try:
+        ApiContract.model_validate(contract, context={"on_write": True})
+        return None
+    except ValidationError as exc:
+        return _canonical_api_contract_error(exc)
 
 
 def _auth_error() -> str:
@@ -626,6 +759,12 @@ def _parse_json_arg(value: Any, default: Any) -> tuple[Any, str | None]:
         return None, f"Invalid JSON argument: {exc}"
 
 
+def _mcp_architecture_error(exc: Exception) -> str:
+    if isinstance(exc, ArchitectureWarningAcknowledgementRequired):
+        return json.dumps({"success": False, **exc.to_payload()}, default=str)
+    return json.dumps({"error": str(exc)})
+
+
 async def _mcp_require_architecture_mutable(db, design_id: str) -> tuple[Any | None, str | None]:
     from okto_pulse.core.models.db import ArchitectureDesign, Spec
 
@@ -793,7 +932,8 @@ from okto_pulse.core.services.analytics_service import (  # noqa: E402
 from okto_pulse.core.services.analytics_service import (  # noqa: E402
     resolve_linked_criteria_to_indices as _resolve_linked_criteria_to_indices,  # noqa: F401
     resolve_linked_criteria_to_ids,  # noqa: F401  (write-path strict resolver — spec aafcc73f)
-    resolve_linked_fr_indices,  # noqa: F401  (FR-link write normalization to indices)
+    resolve_linked_requirements_to_ids,  # noqa: F401  (write-path strict FR resolver — spec 9d66847f)
+    resolve_linked_fr_indices,  # noqa: F401  (read-path tolerant FR resolver — FR4)
     spec_coverage_summary as _spec_coverage,  # noqa: F401
     _structured_ref_id,  # noqa: F401  (used to enumerate available ac_ids in errors)
 )
@@ -916,11 +1056,7 @@ _patch_mcp_tool_for_xml_safety()
 async def okto_pulse_get_my_profile() -> str:
     """
     Get the authenticated agent's own profile including identity, description, objective, and permissions.
-    No parameters needed — the agent is identified by the API key in the MCP connection.
-
-    Returns:
-        JSON with agent profile details
-    """
+    No parameters needed — the agent is identified by the API key in the MCP connection."""
     agent = await _get_authenticated_agent()
     if not agent:
         return json.dumps({"error": "Authentication failed"})
@@ -952,15 +1088,7 @@ async def okto_pulse_update_my_profile(
 ) -> str:
     """
     Update the authenticated agent's own description and/or objective.
-    No board_id needed — this updates the global agent profile.
-
-    Args:
-        description: New description (optional, empty = no change)
-        objective: New objective (optional, empty = no change)
-
-    Returns:
-        JSON with updated profile
-    """
+    No board_id needed — this updates the global agent profile."""
     agent = await _get_authenticated_agent()
     if not agent:
         return json.dumps({"error": "Authentication failed"})
@@ -1000,11 +1128,7 @@ async def okto_pulse_update_my_profile(
 async def okto_pulse_list_my_boards() -> str:
     """
     List all boards the authenticated agent has access to.
-    No parameters needed — the agent is identified by the API key in the MCP connection.
-
-    Returns:
-        JSON with agent identity and list of boards
-    """
+    No parameters needed — the agent is identified by the API key in the MCP connection."""
     agent = await _get_authenticated_agent()
     if not agent:
         return json.dumps({"error": "Authentication failed"})
@@ -1035,15 +1159,7 @@ async def okto_pulse_list_my_boards() -> str:
 async def okto_pulse_list_my_mentions(board_id: str, include_seen: str = "false") -> str:
     """
     List comments and Q&A items where you are mentioned via @name.
-    By default only returns UNSEEN mentions. Use include_seen="true" to get all.
-
-    Args:
-        board_id: Board ID to search within
-        include_seen: "true" to include already-seen mentions (default "false")
-
-    Returns:
-        JSON with unseen mentions, each with an item_id you can pass to mark_as_seen
-    """
+    By default only returns UNSEEN mentions. Use include_seen="true" to get all."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -1227,18 +1343,7 @@ async def okto_pulse_list_my_mentions(board_id: str, include_seen: str = "false"
 async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> str:
     """
     Mark one or more items as seen so they won't appear in list_my_mentions.
-    Use this after processing mentions to avoid seeing them again.
-
-    Args:
-        board_id: Board ID (for access verification)
-        item_ids: Multi-value item IDs to mark as seen (from list_my_mentions item_id
-            field). Preferred native list (e.g. ``["c_a", "qa_b"]``); legacy string
-            accepted as JSON array or pipe-separated. Comma-only string is REJECTED.
-            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-
-    Returns:
-        JSON with count of newly marked items
-    """
+    Use this after processing mentions to avoid seeing them again."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -1343,14 +1448,7 @@ async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> s
 async def okto_pulse_get_unseen_summary(board_id: str) -> str:
     """
     Quick summary of unseen mentions and activity for the agent on this board.
-    Use this to check if there's anything new without fetching full details.
-
-    Args:
-        board_id: Board ID
-
-    Returns:
-        JSON with counts of unseen mentions and recent activity
-    """
+    Use this to check if there's anything new without fetching full details."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -1511,17 +1609,7 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
 
     Ideação MCP-token-optimization Story 2: the default response carries id,
     name, description, owner_id, settings, counts{} and timestamps — ~200B vs
-    ~10KB on a typical board.
-
-    Args:
-        board_id: Board ID to retrieve.
-        include: Comma-separated list of collections to inline. Accepts any
-            subset of `ideations`, `specs`, `cards`, `agents`. Pass `*` to
-            inline every collection (legacy shape).
-
-    Returns:
-        JSON string with the board overview, plus any inlined collections.
-    """
+    ~10KB on a typical board."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -1618,14 +1706,7 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
 @mcp.tool()
 async def okto_pulse_list_agents(board_id: str) -> str:
     """
-    List all agents registered on the board.
-
-    Args:
-        board_id: Board ID
-
-    Returns:
-        JSON array of agents
-    """
+    List all agents registered on the board."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -1664,14 +1745,7 @@ async def okto_pulse_list_agents(board_id: str) -> str:
 @mcp.tool()
 async def okto_pulse_list_board_members(board_id: str) -> str:
     """
-    List all members of the board (owner + agents).
-
-    Args:
-        board_id: Board ID
-
-    Returns:
-        JSON with owner info and agents list
-    """
+    List all members of the board (owner + agents)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -1772,25 +1846,7 @@ async def okto_pulse_get_activity_log(
     ``next_cursor``) for O(1) keyset pagination independent of page depth.
     Pass ``envelope=true`` to receive ``{items, next_cursor}`` instead of a
     raw list (default keeps Story 3 list shape — backward compat). Legacy
-    ``offset`` is silently ignored unless ``OKTO_PULSE_LEGACY_OFFSET=1``.
-
-    Args:
-        board_id: Board ID
-        limit: Maximum number of entries to return (default 50, max 200)
-        cursor: Opaque continuation token from a previous call's ``next_cursor``.
-            Empty string = first page. Invalid cursor returns a structured error.
-        envelope: When true, response is ``{items: [...], next_cursor: str|null}``.
-            Default false returns raw list (preserves Story 3 contract).
-        offset: DEPRECATED — silently ignored unless OKTO_PULSE_LEGACY_OFFSET=1.
-        action: Filter by action type (optional) — e.g. card_created, card_moved, spec_updated
-        card_id: Filter by card ID (optional) — only activities for this card
-        include_details: When true, include the full `details` object on each row.
-            Default false returns the minimal envelope only.
-
-    Returns:
-        JSON list (default) or ``{items, next_cursor}`` dict when envelope=true.
-        Invalid cursor returns ``{error, error_code: "invalid_cursor"}``.
-    """
+    ``offset`` is silently ignored unless ``OKTO_PULSE_LEGACY_OFFSET=1``."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -1916,48 +1972,7 @@ async def okto_pulse_create_card(
     action_plan: str = "",
 ) -> str:
     """
-    Create a new card on the board. Every card MUST be linked to a spec.
-
-    Args:
-        board_id: Board ID
-        title: Card title
-        spec_id: REQUIRED — Spec ID to link this card to. Normal/bug cards
-            are allowed when the spec is approved, in_progress, or done.
-            Test cards are allowed once the spec is approved/validated or
-            later, including regression tests for a bug on a locked spec.
-            For bug cards, this is auto-resolved from the origin task if not provided.
-        description: Card description (optional). Supports Markdown and Mermaid diagrams (```mermaid code blocks).
-        details: Card details/rich text (optional). Supports Markdown and Mermaid diagrams.
-        status: Card status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
-        priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
-        assignee_id: User ID to assign (optional)
-        labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
-            legacy string accepted as JSON array ``'["bug", "frontend"]'`` or
-            pipe-separated ``"bug|frontend"``. Comma-only string is REJECTED.
-            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-        test_scenario_ids: Multi-value test scenario IDs (e.g. ``["ts_abc", "ts_def"]``)
-            — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
-            When provided, automatically creates bidirectional links between the
-            card and the scenarios. Linking to an existing scenario is a
-            traceability update and does not unlock, invalidate, or rewrite a
-            validated spec.
-        card_type: Card type - "normal" (default), "test", or "bug".
-            Test cards require test_scenario_ids and do not use
-            submit_task_validation; complete them with move_card(..., done)
-            plus conclusion/evidence. Bug regression coverage may reuse an
-            existing scenario after spec validation, but the linked test card
-            itself must be created after the bug. Bug cards require
-            origin_task_id, severity, expected_behavior, and observed_behavior.
-        origin_task_id: REQUIRED for bug cards — ID of the task that originated the bug. The spec is auto-resolved from this task.
-        severity: REQUIRED for bug cards — one of: critical, major, minor
-        expected_behavior: REQUIRED for bug cards — what should happen
-        observed_behavior: REQUIRED for bug cards — what actually happens
-        steps_to_reproduce: Steps to reproduce the bug (optional)
-        action_plan: Plan for fixing the bug (optional)
-
-    Returns:
-        JSON with created card details
-    """
+    Create a new card on the board. Every card MUST be linked to a spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2163,8 +2178,9 @@ async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
         if not card or card.board_id != board_id:
             return json.dumps({"error": "Card not found"})
 
+        from okto_pulse.core.mcp.payload_compaction import compact_and_emit
         return json.dumps(
-            {
+            compact_and_emit({
                 "id": card.id,
                 "board_id": card.board_id,
                 "spec_id": card.spec_id,
@@ -2211,9 +2227,62 @@ async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
                     }
                     for c in card.comments
                 ],
-            },
+            }, tool_name="okto_pulse_get_card"),
             default=str,
         )
+
+
+@mcp.tool()
+async def okto_pulse_resolve_bug_regression_scenarios(
+    board_id: str,
+    bug_id: str,
+    affected_task_ids: list[str] | str = "",
+    candidate_scenario_ids: list[str] | str = "",
+) -> str:
+    """
+    Preview reusable regression scenarios for a bug without mutating the spec.
+
+    Provide ``affected_task_ids`` when the incident spans additional tasks.
+    Provide ``candidate_scenario_ids`` to classify a proposed set, including
+    unrelated or cross-spec candidates. Both inputs accept a JSON array, a
+    pipe-delimited string, or a native MCP string list.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    try:
+        affected_ids = coerce_to_list_str(affected_task_ids)
+        candidate_ids = coerce_to_list_str(candidate_scenario_ids)
+    except ValueError as exc:
+        return json.dumps({
+            "error": "invalid_multivalue",
+            "message": str(exc),
+        })
+
+    from okto_pulse.core.services.bug_regression_preview import (
+        BugRegressionScenarioPreviewError,
+        BugRegressionScenarioPreviewService,
+    )
+
+    async with get_db_for_mcp() as db:
+        try:
+            payload = await BugRegressionScenarioPreviewService(db).resolve(
+                board_id=board_id,
+                bug_id=bug_id,
+                affected_task_ids=affected_ids,
+                candidate_scenario_ids=candidate_ids,
+                surface="mcp",
+            )
+            await db.commit()
+            return json.dumps(payload, default=str)
+        except BugRegressionScenarioPreviewError as exc:
+            await db.rollback()
+            return json.dumps(exc.to_dict(), default=str)
 
 
 @mcp.tool()
@@ -2226,29 +2295,18 @@ async def okto_pulse_get_task_context(
     include_comments: str = "true",
     include_architecture: str = "true",
     include_superseded: str = "false",
+    profile: str = "summary",
 ) -> str:
     """
-    Get the FULL execution context for a task card. Aggregates the card data with
-    all relevant spec information: functional requirements, technical requirements,
-    acceptance criteria, test scenarios, business rules, API contracts, integration
-    requirements, observability requirements, knowledge base entries, screen
-    mockups, Q&A, and comments.
+    Get the execution context for a task card: the card + its spec's structured
+    requirements (FRs/TRs/ACs/scenarios/BRs/contracts/decisions), the card's
+    linked test scenarios, validations, knowledge, mockups, architecture, Q&A.
 
-    **Always call this before starting work on a task** — it provides everything
-    an agent needs to understand what to build, how to test it, and what rules apply.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        include_knowledge: Include spec knowledge base entries (default "true")
-        include_mockups: Include screen mockups from card and spec (default "true")
-        include_qa: Include Q&A items from card and spec (default "true")
-        include_comments: Include card comments (default "true")
-        include_architecture: Include Architecture Designs from card and spec (default "true")
-
-    Returns:
-        JSON with complete task context: card details + spec requirements + linked artifacts
-    """
+    `profile` (R2): `summary` (default) keeps the unique content an agent needs
+    (card body + spec requirement texts + this card's scenarios + validations) and
+    deduplicates resolved references; `full`/`legacy` return the complete prior
+    payload. **Before doing card work or a status-changing move, call with
+    `profile=full`** (see okto-pulse://reference/projection-profiles)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2256,6 +2314,13 @@ async def okto_pulse_get_task_context(
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
+
+    from okto_pulse.core.mcp.projection_envelope import (
+        resolve_profile as _resolve_profile,
+        unsupported_projection_error as _unsupported_projection_error,
+    )
+    if _resolve_profile(profile) is None:
+        return json.dumps(_unsupported_projection_error(profile))
 
     _inc_kb = _flag_enabled(include_knowledge)
     _inc_mockups = _flag_enabled(include_mockups)
@@ -2447,6 +2512,17 @@ async def okto_pulse_get_task_context(
         if not _inc_architecture:
             resolved_references["architecture_designs"] = []
         result["resolved_references"] = resolved_references
+        result["resource_gate_summary"] = await ResourceGateService(db).get_summary(
+            board_id,
+            "card",
+            card_id,
+        )
+        if spec:
+            result["spec"]["resource_gate_summary"] = await ResourceGateService(db).get_summary(
+                board_id,
+                "spec",
+                spec.id,
+            )
 
         # Task validations — critical for agents picking up cards that failed validation
         result["validations"] = list(card.validations or [])
@@ -2461,7 +2537,11 @@ async def okto_pulse_get_task_context(
             card, spec_for_gate, sprint_for_gate, board_settings
         )
 
-        return json.dumps(result, default=str)
+        from okto_pulse.core.mcp.context_projection import project_task_context
+        return json.dumps(
+            project_task_context(result, card_id=card_id, profile=profile),
+            default=str,
+        )
 
 
 @mcp.tool()
@@ -2473,15 +2553,7 @@ async def okto_pulse_get_task_conclusions(board_id: str, card_id: str) -> str:
     Useful for:
     - Understanding what was done in a previous task before starting related work
     - Bug triage — understanding root cause and fix approach
-    - Knowledge transfer between agents or team members
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON with card title, status, conclusions, and bug details if applicable
-    """
+    - Knowledge transfer between agents or team members"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2703,6 +2775,14 @@ async def okto_pulse_move_card(
             updated = await service.move_card(
                 card_id, ctx.agent_id, move_data, ctx.agent_name
             )
+        except CardOperationError as e:
+            return json.dumps({
+                "error": e.code,
+                **e.to_dict(),
+                "blocked_by_dependencies": True,
+            })
+        except ResourceGateError as e:
+            return _resource_gate_error_response(e)
         except ValueError as e:
             return json.dumps({"error": str(e), "blocked_by_dependencies": True})
 
@@ -2766,16 +2846,7 @@ async def okto_pulse_add_card_dependency(
 ) -> str:
     """
     Add a dependency: card_id cannot advance until depends_on_id is done/cancelled.
-    Circular dependencies are blocked automatically.
-
-    Args:
-        board_id: Board ID
-        card_id: The card that will be blocked
-        depends_on_id: The card it depends on
-
-    Returns:
-        JSON with success or error
-    """
+    Circular dependencies are blocked automatically."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2802,16 +2873,7 @@ async def okto_pulse_remove_card_dependency(
     board_id: str, card_id: str, depends_on_id: str
 ) -> str:
     """
-    Remove a dependency between two cards.
-
-    Args:
-        board_id: Board ID
-        card_id: The card that has the dependency
-        depends_on_id: The card it depended on
-
-    Returns:
-        JSON with success status
-    """
+    Remove a dependency between two cards."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2826,15 +2888,7 @@ async def okto_pulse_remove_card_dependency(
 @mcp.tool()
 async def okto_pulse_get_card_dependencies(board_id: str, card_id: str) -> str:
     """
-    List cards that this card depends on and cards that depend on it.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON with depends_on (blockers) and dependents (blocked by this card)
-    """
+    List cards that this card depends on and cards that depend on it."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2915,8 +2969,9 @@ async def okto_pulse_list_cards_by_status(
         total_filtered = len(sorted_cards)
         paginated = sorted_cards[offset:offset + limit]
 
+        from okto_pulse.core.mcp.payload_compaction import compact_and_emit
         return json.dumps(
-            {
+            compact_and_emit({
                 "total_all": total_all,
                 "filtered_count": total_filtered,
                 "offset": offset,
@@ -2939,7 +2994,8 @@ async def okto_pulse_list_cards_by_status(
                     }
                     for c in paginated
                 ],
-            },
+            }, tool_name="okto_pulse_list_cards_by_status",
+               truncated=total_filtered > offset + len(paginated)),
             default=str,
         )
 
@@ -2952,51 +3008,168 @@ async def okto_pulse_list_cards_by_status(
 @mcp.tool()
 async def okto_pulse_ask_question(board_id: str, card_id: str, question: str) -> str:
     """
-    Add a question to a card's Q&A board.
+    Add a question to a card's Q&A board."""
+    return await _ask_question_impl(
+        board_id, "card", card_id, question,
+        alias_kind="legacy", tool_name="okto_pulse_ask_question",
+    )
 
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        question: Question text
 
-    Returns:
-        JSON with Q&A item details
-    """
+# ============================================================================
+# R4 — consolidated Q&A ASK (spec 452cb4d5, card R4.1)
+#
+# qa_ask is the second assertiveness-gate-eligible family: the five legacy ask_*
+# tools have IDENTICAL (board_id, parent_id, question) signatures — only the
+# parent-id param NAME differed, which the closed target_type enum restores. The
+# legacy tools are PRESERVED as additive aliases that delegate here (fr_af4b5c6e /
+# tr_b25890c4). DEDICATED ROUTING preserves the SPRINT asymmetry: SprintQAService
+# takes a raw string, with NO QA_CREATE permission gate and NO activity-log write.
+# ============================================================================
+
+
+async def _ask_question_impl(
+    board_id: str,
+    target_type: str,
+    parent_id: str,
+    question: str,
+    *,
+    alias_kind: str,
+    tool_name: str,
+) -> str:
+    """Shared implementation behind okto_pulse_ask and the five legacy ask_*
+    aliases. Replicates each legacy tool's exact behavior (per-type service/schema,
+    activity-log action, error message, and the sprint asymmetry) and emits safe
+    alias-usage telemetry (or_4e57890f)."""
+    from okto_pulse.core.mcp.tool_family_registry import (
+        REGISTRY,
+        VIOLATION_UNKNOWN_TARGET_TYPE,
+        emit_alias_usage,
+        emit_registry_violation,
+    )
+
+    def _telemetry(outcome: str) -> None:
+        emit_alias_usage(
+            family_id="qa_ask",
+            alias_kind=alias_kind,
+            tool_name=tool_name,
+            operation="ask",
+            target_type=str(target_type),
+            outcome=outcome,
+        )
+
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
+        _telemetry("error")
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
-    if perm_err:
-        return _perm_error(perm_err)
+    type_err = REGISTRY.validate_target_type("qa_ask", target_type)
+    if type_err:
+        emit_registry_violation(
+            family_id="qa_ask",
+            reason=VIOLATION_UNKNOWN_TARGET_TYPE,
+            tool_name=tool_name,
+            target_type=str(target_type),
+        )
+        _telemetry("error")
+        fam = REGISTRY.get("qa_ask")
+        return json.dumps({
+            "error": "unsupported_target_type",
+            "message": type_err,
+            "allowed": list(fam.target_types) if fam else [],
+        })
 
-    from okto_pulse.core.models.schemas import QACreate
+    # Sprint is asymmetric: no QA_CREATE permission gate (preserve legacy behavior).
+    if target_type != "sprint":
+        perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
+        if perm_err:
+            _telemetry("error")
+            return _perm_error(perm_err)
 
     async with get_db_for_mcp() as db:
-        service = QAService(db)
-        qa = await service.create_question(
-            card_id, ctx.agent_id, QACreate(question=question)
-        )
-        if not qa:
-            return json.dumps(
-                {"error": "Failed to create question (card not found)"}
+        if target_type == "card":
+            from okto_pulse.core.models.schemas import QACreate
+            service = QAService(db)
+            qa = await service.create_question(
+                parent_id, ctx.agent_id, QACreate(question=question)
             )
-        await _log_card_activity(
-            db, board_id, card_id, "question_added", ctx,
-            {"question": question[:100]},
-        )
-        await db.commit()
-
-        return json.dumps(
-            {
+            if not qa:
+                _telemetry("error")
+                return json.dumps({"error": "Failed to create question (card not found)"})
+            await _log_card_activity(
+                db, board_id, parent_id, "question_added", ctx,
+                {"question": question[:100]},
+            )
+            await db.commit()
+            _telemetry("ok")
+            return json.dumps({
                 "success": True,
-                "qa": {
-                    "id": qa.id,
-                    "question": qa.question,
-                    "asked_by": qa.asked_by,
-                },
-            }
-        )
+                "qa": {"id": qa.id, "question": qa.question, "asked_by": qa.asked_by},
+            })
+
+        if target_type in ("ideation", "refinement", "spec"):
+            if target_type == "ideation":
+                from okto_pulse.core.models.schemas import IdeationQACreate as _QACreate
+                service = IdeationQAService(db)
+                action, not_found, key = "ideation_question_added", "Ideation not found", "ideation_id"
+            elif target_type == "refinement":
+                from okto_pulse.core.models.schemas import RefinementQACreate as _QACreate
+                service = RefinementQAService(db)
+                action, not_found, key = "refinement_question_added", "Refinement not found", "refinement_id"
+            else:
+                from okto_pulse.core.models.schemas import SpecQACreate as _QACreate
+                service = SpecQAService(db)
+                action, not_found, key = "spec_question_added", "Spec not found", "spec_id"
+            qa = await service.create_question(parent_id, ctx.agent_id, _QACreate(question=question))
+            if not qa:
+                _telemetry("error")
+                return json.dumps({"error": not_found})
+            board_service = BoardService(db)
+            await board_service._log_activity(
+                board_id=board_id, action=action,
+                actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
+                details={key: parent_id, "question": question[:100]},
+            )
+            await db.commit()
+            _telemetry("ok")
+            return json.dumps({
+                "success": True,
+                "qa": {"id": qa.id, "question": qa.question, "asked_by": qa.asked_by},
+            })
+
+        # sprint — asymmetric: raw string, no QACreate schema, no permission, no log.
+        from okto_pulse.core.services.main import SprintQAService
+        service = SprintQAService(db)
+        qa = await service.create_question(parent_id, ctx.agent_id, question)
+        await db.commit()
+        if not qa:
+            _telemetry("error")
+            return json.dumps({"error": "Sprint not found"})
+        _telemetry("ok")
+        return json.dumps({
+            "success": True,
+            "qa": {"id": qa.id, "question": qa.question, "asked_by": qa.asked_by},
+        })
+
+
+@mcp.tool()
+async def okto_pulse_ask(
+    board_id: str,
+    target_type: str,
+    parent_id: str,
+    question: str,
+) -> str:
+    """
+    Consolidated Q&A ask (R4). `target_type` is one of: `card`, `ideation`,
+    `refinement`, `spec`, `sprint`; `parent_id` is that work item's id. Equivalent
+    to the per-type tools (`okto_pulse_ask_question`/`_ideation_question`/
+    `_refinement_question`/`_spec_question`/`_sprint_question`), which remain as
+    aliases. Use `@Name` to direct the question. An unsupported `target_type`
+    returns a structured error listing the allowed values (no mutation).
+    See `okto-pulse://reference/tool-families/qa_ask`."""
+    return await _ask_question_impl(
+        board_id, target_type, parent_id, question,
+        alias_kind="consolidated", tool_name="okto_pulse_ask",
+    )
 
 
 @mcp.tool()
@@ -3004,16 +3177,7 @@ async def okto_pulse_answer_question(
     board_id: str, qa_id: str, answer: str
 ) -> str:
     """
-    Answer a question on a card's Q&A board.
-
-    Args:
-        board_id: Board ID
-        qa_id: Q&A item ID
-        answer: Answer text
-
-    Returns:
-        JSON with updated Q&A details
-    """
+    Answer a question on a card's Q&A board."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3023,12 +3187,21 @@ async def okto_pulse_answer_question(
         return _perm_error(perm_err)
 
     from okto_pulse.core.models.schemas import QAAnswer
+    from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
     async with get_db_for_mcp() as db:
         service = QAService(db)
-        qa = await service.answer_question(
-            qa_id, ctx.agent_id, QAAnswer(answer=answer)
-        )
+        try:
+            qa = await service.answer_question(
+                qa_id,
+                ctx.agent_id,
+                QAAnswer(answer=answer),
+                actor_type="agent",
+                surface="mcp",
+            )
+        except QASelfAnsweringNotAllowedError as e:
+            await db.commit()
+            return json.dumps({"error": e.reason, "detail": str(e)})
         if not qa:
             return json.dumps(
                 {"error": "Failed to answer question (not found)"}
@@ -3055,15 +3228,7 @@ async def okto_pulse_answer_question(
 @mcp.tool()
 async def okto_pulse_delete_question(board_id: str, qa_id: str) -> str:
     """
-    Delete a Q&A item from a card.
-
-    Args:
-        board_id: Board ID
-        qa_id: Q&A item ID
-
-    Returns:
-        JSON with success status
-    """
+    Delete a Q&A item from a card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3091,16 +3256,7 @@ async def okto_pulse_delete_question(board_id: str, qa_id: str) -> str:
 @mcp.tool()
 async def okto_pulse_add_comment(board_id: str, card_id: str, content: str) -> str:
     """
-    Add a comment to a card.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        content: Comment text. Supports Markdown and Mermaid diagrams (```mermaid code blocks).
-
-    Returns:
-        JSON with comment details
-    """
+    Add a comment to a card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3144,31 +3300,16 @@ async def okto_pulse_add_choice_comment(
     board_id: str,
     card_id: str,
     question: str,
-    options: str,
+    options: list[str] | str,
     comment_type: str = "choice",
     allow_free_text: str = "false",
+    options_json: str = "",
 ) -> str:
     """
     Add a choice board (poll) to a card. Responders can select from the options.
 
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        question: The question or prompt text displayed above the options
-        options: Option labels in any of three formats:
-            - JSON array (preferred when labels contain commas):
-              ``'["Option A (with, commas)", "Option B"]'``
-            - Pipe-separated (when labels contain commas but not pipes):
-              ``"Option A|Option B|Option C"``
-            - Comma-separated (legacy, fragile if a label contains a comma):
-              ``"Option A,Option B,Option C"``
-            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
-        comment_type: "choice" for single-select (default) or "multi_choice" for multi-select
-        allow_free_text: "true" to allow a free-text response in addition to selections
-
-    Returns:
-        JSON with the created choice comment
-    """
+options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
+Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3180,16 +3321,26 @@ async def okto_pulse_add_choice_comment(
     from okto_pulse.core.models.schemas import ChoiceOption, CommentCreate
 
     try:
-        option_labels = parse_multi_value(options)
+        parsed_objects = parse_options_json(options_json or None)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options: {e}"})
-    if not option_labels:
-        return json.dumps({"error": "At least one option is required"})
+        return json.dumps({"error": f"Invalid options_json: {e}"})
 
-    choice_list = [
-        ChoiceOption(id=f"opt_{i}", label=label)
-        for i, label in enumerate(option_labels)
-    ]
+    if parsed_objects is not None:
+        choice_list = [
+            ChoiceOption(id=f"opt_{i}", label=obj["label"], recommended=obj["recommended"], tradeoff=obj["tradeoff"])
+            for i, obj in enumerate(parsed_objects)
+        ]
+    else:
+        try:
+            option_labels = coerce_to_list_str(options)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+        if not option_labels:
+            return json.dumps({"error": "At least one option is required"})
+        choice_list = [
+            ChoiceOption(id=f"opt_{i}", label=label)
+            for i, label in enumerate(option_labels)
+        ]
 
     async with get_db_for_mcp() as db:
         service = CommentService(db)
@@ -3228,32 +3379,21 @@ async def okto_pulse_add_choice_comment(
 async def okto_pulse_respond_to_choice(
     board_id: str,
     comment_id: str,
-    selected: str,
+    selected: list[str] | str,
     free_text: str = "",
 ) -> str:
     """
     Respond to a choice board comment by selecting one or more options.
 
-    Args:
-        board_id: Board ID
-        comment_id: Comment ID of the choice board
-        selected: Option IDs to select, accepted in three formats:
-            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
-            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
-            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
-        free_text: Optional free-text response (only if allow_free_text is enabled)
-
-    Returns:
-        JSON with the updated comment including all responses
-    """
+Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
     try:
-        selected_ids = parse_multi_value(selected)
+        selected_ids = coerce_to_list_str(selected)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid selected: {e}"})
+        return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if not selected_ids:
         return json.dumps({"error": "At least one selection is required"})
 
@@ -3288,15 +3428,7 @@ async def okto_pulse_respond_to_choice(
 @mcp.tool()
 async def okto_pulse_get_choice_responses(board_id: str, comment_id: str) -> str:
     """
-    Get all responses for a choice board comment.
-
-    Args:
-        board_id: Board ID
-        comment_id: Comment ID of the choice board
-
-    Returns:
-        JSON with the choice options and all responses
-    """
+    Get all responses for a choice board comment."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3326,15 +3458,7 @@ async def okto_pulse_get_choice_responses(board_id: str, comment_id: str) -> str
 @mcp.tool()
 async def okto_pulse_list_comments(board_id: str, card_id: str) -> str:
     """
-    List all comments on a card.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON array of comments
-    """
+    List all comments on a card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3366,7 +3490,11 @@ async def okto_pulse_list_comments(board_id: str, card_id: str) -> str:
                 item["responses"] = getattr(c, "responses", None) or []
                 item["allow_free_text"] = getattr(c, "allow_free_text", False)
             result.append(item)
-        return json.dumps(result, default=str)
+        from okto_pulse.core.mcp.payload_compaction import compact_and_emit
+        return json.dumps(
+            compact_and_emit(result, tool_name="okto_pulse_list_comments"),
+            default=str,
+        )
 
 
 @mcp.tool()
@@ -3374,16 +3502,7 @@ async def okto_pulse_update_comment(
     board_id: str, comment_id: str, content: str
 ) -> str:
     """
-    Update the agent's own comment.
-
-    Args:
-        board_id: Board ID
-        comment_id: Comment ID
-        content: New comment text
-
-    Returns:
-        JSON with updated comment
-    """
+    Update the agent's own comment."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3432,15 +3551,7 @@ async def okto_pulse_update_comment(
 @mcp.tool()
 async def okto_pulse_delete_comment(board_id: str, comment_id: str) -> str:
     """
-    Delete the agent's own comment.
-
-    Args:
-        board_id: Board ID
-        comment_id: Comment ID
-
-    Returns:
-        JSON with success status
-    """
+    Delete the agent's own comment."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3491,20 +3602,7 @@ async def okto_pulse_upload_attachment(
 
     Provide exactly ONE of: content_base64, file_path, or file_url. Prefer
     file_path or file_url for binary files — the bytes are loaded server-side
-    and never pass through the LLM context, saving tokens.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        filename: Original filename
-        content_base64: File content encoded as base64 (use for small files only)
-        mime_type: MIME type of the file
-        file_path: Absolute path to a local file on the MCP server host
-        file_url: HTTP(S) URL of a file to fetch
-
-    Returns:
-        JSON with attachment details
-    """
+    and never pass through the LLM context, saving tokens."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3552,15 +3650,7 @@ async def okto_pulse_upload_attachment(
 @mcp.tool()
 async def okto_pulse_list_attachments(board_id: str, card_id: str) -> str:
     """
-    List all attachments on a card.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON array of attachments
-    """
+    List all attachments on a card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3596,15 +3686,7 @@ async def okto_pulse_list_attachments(board_id: str, card_id: str) -> str:
 @mcp.tool()
 async def okto_pulse_delete_attachment(board_id: str, attachment_id: str) -> str:
     """
-    Delete an attachment.
-
-    Args:
-        board_id: Board ID
-        attachment_id: Attachment ID
-
-    Returns:
-        JSON with success status
-    """
+    Delete an attachment."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3924,17 +4006,7 @@ async def okto_pulse_get_resource_gate_summary(
     entity_id: str,
 ) -> str:
     """
-    Get the Resource Gate state for an SDLC entity.
-
-    Args:
-        board_id: Board ID
-        entity_type: One of ideation, refinement, spec, card
-        entity_id: Target entity ID
-
-    Returns:
-        JSON with Architecture, Mockup, and Knowledge Base states:
-        provided, not_applicable, or missing.
-    """
+    Get the Resource Gate state for an SDLC entity."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3972,19 +4044,7 @@ async def okto_pulse_mark_resource_not_applicable(
     justification: str = "",
 ) -> str:
     """
-    Mark a mandatory resource as not applicable through the MCP channel.
-
-    Args:
-        board_id: Board ID
-        entity_type: One of ideation, refinement, spec, card
-        entity_id: Target entity ID
-        resource_type: One of architecture, mockup, knowledge_base
-        justification: REQUIRED. Explain why the resource is not applicable.
-
-    Returns:
-        JSON with the updated Resource Gate summary and a warning that skipping
-        the resource can lead to partial or incorrect solutions if it is needed.
-    """
+    Mark a mandatory resource as not applicable through the MCP channel."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4029,18 +4089,7 @@ async def okto_pulse_clear_resource_not_applicable(
     Clear an active Resource Gate N/A mark.
 
     Use this when the resource becomes applicable after all, or when the real
-    Architecture, Mockup, or Knowledge Base has been attached.
-
-    Args:
-        board_id: Board ID
-        entity_type: One of ideation, refinement, spec, card
-        entity_id: Target entity ID
-        resource_type: One of architecture, mockup, knowledge_base
-        reason: Optional audit reason for clearing the N/A mark
-
-    Returns:
-        JSON with the updated Resource Gate summary.
-    """
+    Architecture, Mockup, or Knowledge Base has been attached."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4416,20 +4465,7 @@ async def okto_pulse_create_ideation(
 ) -> str:
     """
     Create a new ideation on the board. Ideations are the starting point — raw ideas that may be
-    evaluated, refined into refinements, and eventually derived into specs.
-
-    Args:
-        board_id: Board ID
-        title: Ideation title
-        description: High-level description of the idea (optional)
-        problem_statement: What problem does this idea solve? (optional)
-        proposed_approach: How might this be implemented? (optional)
-        assignee_id: User/agent ID to assign (optional)
-        labels: Comma-separated labels (optional)
-
-    Returns:
-        JSON with created ideation details
-    """
+    evaluated, refined into refinements, and eventually derived into specs."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4476,15 +4512,7 @@ async def okto_pulse_create_ideation(
 @mcp.tool()
 async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
     """
-    Get full details of an ideation including its refinements, specs, and Q&A items.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-
-    Returns:
-        JSON with ideation details and linked entities
-    """
+    Get full details of an ideation including its refinements, specs, and Q&A items."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4566,19 +4594,7 @@ async def okto_pulse_get_ideation_context(
     Get the FULL consolidated context of an ideation. Returns all data needed
     to evaluate, review, or derive refinements/specs from this ideation.
 
-    **Always call this before evaluating, moving, or deriving from an ideation.**
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        include_knowledge: Include knowledge base entries (default "true")
-        include_mockups: Include screen mockups (default "true")
-        include_qa: Include Q&A items (default "true")
-        include_architecture: Include Architecture Designs (default "true")
-
-    Returns:
-        JSON with complete ideation context: details + Q&A + mockups + KBs + refinements + specs + evaluation
-    """
+    **Always call this before evaluating, moving, or deriving from an ideation.**"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4686,21 +4702,7 @@ async def okto_pulse_update_ideation(
     labels: list[str] | str = "",
 ) -> str:
     """
-    Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        title: New title (optional, empty = no change)
-        description: New description (optional, empty = no change)
-        problem_statement: New problem statement (optional, empty = no change)
-        proposed_approach: New proposed approach (optional, empty = no change)
-        assignee_id: New assignee (optional, empty = no change)
-        labels: Comma-separated labels (optional, empty = no change)
-
-    Returns:
-        JSON with updated ideation details
-    """
+    Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4766,16 +4768,7 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
     - review → draft, approved, cancelled
     - approved → review, evaluating, cancelled
     - evaluating → approved, done, cancelled
-    - done → draft (new version)
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        status: New status — one of: draft, review, approved, evaluating, done, cancelled
-
-    Returns:
-        JSON with updated ideation status
-    """
+    - done → draft (new version)"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4825,15 +4818,7 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
 @mcp.tool()
 async def okto_pulse_delete_ideation(board_id: str, ideation_id: str) -> str:
     """
-    Delete an ideation. Linked refinements and Q&A are also deleted (cascade).
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-
-    Returns:
-        JSON with success status
-    """
+    Delete an ideation. Linked refinements and Q&A are also deleted (cascade)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4864,37 +4849,13 @@ async def okto_pulse_evaluate_ideation(
     dependencies: str = "",
     dependencies_justification: str = "",
 ) -> str:
-    """
-    Evaluate an ideation's scope and compute its complexity (small/medium/large).
-    Set scope assessment scores (1-5) for each dimension WITH justification, then the system computes complexity.
-    - Any score >= 3 -> large (needs refinements before spec)
-    - Any score >= 2 -> medium
-    - All scores 1 -> small (can derive spec directly)
-
-    Each score MUST include a justification explaining why that score was given.
-
-    PRE-REQUISITE — ideation status MUST be 'evaluating' before calling this tool.
-    The full transition flow is: draft → review → approved → evaluating → (this tool) → done.
-    If the ideation is in any other status this call fails with:
-        "Evaluation can only be performed in 'evaluating' status (current: '<status>'). ..."
-    Use okto_pulse_move_ideation(..., status='review'/'approved'/'evaluating') to advance through
-    the states first. The tool does NOT auto-promote because each transition is an explicit
-    gate decision (review = ready for stakeholder approval; approved = ready to score; evaluating
-    = scoring in progress).
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        domains: Number of domains/systems affected, 1-5
-        domains_justification: Why this score — which systems are impacted
-        ambiguity: Level of requirement ambiguity, 1-5
-        ambiguity_justification: Why this score — what is unclear or well-defined
-        dependencies: External dependencies/coordination needed, 1-5
-        dependencies_justification: Why this score — what dependencies exist
-
-    Returns:
-        JSON with the computed complexity and scope assessment
-    """
+    """Evaluate an ideation's scope and compute complexity (small/medium/large). Set each
+dimension's score 1-5 WITH a justification, then the system computes: any >=3 ->
+large (needs refinements first); any >=2 -> medium; all 1 -> small (derive spec
+directly). PRE-REQUISITE: ideation status MUST be 'evaluating' (flow:
+draft->review->approved->evaluating->this tool->done); other statuses fail.
+Transitions are explicit gate decisions and are not auto-promoted. Full details:
+okto-pulse://reference/tool-docs/ideation."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4971,19 +4932,7 @@ async def okto_pulse_derive_spec_from_ideation(
 
     Artifacts (mockups, KBs, Architecture Designs) from the ideation are
     automatically propagated to the spec. Use mockup_ids/kb_ids/
-    architecture_design_ids to select specific ones (default: all).
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID (must be in 'done' status)
-        mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
-        kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
-        architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
-        architecture_propagation_mode: copy/derive copies snapshots; reference_only/none keeps only parent linkage
-
-    Returns:
-        JSON with the created spec details
-    """
+    architecture_design_ids to select specific ones (default: all)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5035,16 +4984,7 @@ async def okto_pulse_get_ideation_snapshot(board_id: str, ideation_id: str, vers
     """
     Get the full immutable snapshot of an ideation at a specific version.
     Includes all fields as they were when the ideation was marked 'done',
-    plus a snapshot of all Q&A at that point.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        version: Version number to retrieve
-
-    Returns:
-        JSON with complete snapshot including Q&A history
-    """
+    plus a snapshot of all Q&A at that point."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5084,16 +5024,7 @@ async def okto_pulse_get_ideation_snapshot(board_id: str, ideation_id: str, vers
 async def okto_pulse_get_ideation_history(board_id: str, ideation_id: str, limit: str = "30") -> str:
     """
     Get the detailed change history of an ideation. Shows every modification with field-level diffs,
-    who made the change, and when.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        limit: Maximum number of history entries to return (default 30)
-
-    Returns:
-        JSON with list of history entries, newest first
-    """
+    who made the change, and when."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5253,50 +5184,11 @@ async def okto_pulse_delete_ideation_knowledge(
 @mcp.tool()
 async def okto_pulse_ask_ideation_question(board_id: str, ideation_id: str, question: str) -> str:
     """
-    Ask a question on an ideation's Q&A board. Use @Name to direct the question.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        question: Question text (use @Name to mention someone)
-
-    Returns:
-        JSON with Q&A item details
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.models.schemas import IdeationQACreate
-
-    async with get_db_for_mcp() as db:
-        service = IdeationQAService(db)
-        qa = await service.create_question(ideation_id, ctx.agent_id, IdeationQACreate(question=question))
-        if not qa:
-            return json.dumps({"error": "Ideation not found"})
-
-        board_service = BoardService(db)
-        await board_service._log_activity(
-            board_id=board_id, action="ideation_question_added",
-            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
-            details={"ideation_id": ideation_id, "question": question[:100]},
-        )
-        await db.commit()
-
-        return json.dumps(
-            {
-                "success": True,
-                "qa": {
-                    "id": qa.id,
-                    "question": qa.question,
-                    "asked_by": qa.asked_by,
-                },
-            }
-        )
+    Ask a question on an ideation's Q&A board. Use @Name to direct the question."""
+    return await _ask_question_impl(
+        board_id, "ideation", ideation_id, question,
+        alias_kind="legacy", tool_name="okto_pulse_ask_ideation_question",
+    )
 
 
 @mcp.tool()
@@ -5304,31 +5196,16 @@ async def okto_pulse_ask_ideation_choice_question(
     board_id: str,
     ideation_id: str,
     question: str,
-    options: str,
+    options: list[str] | str,
     question_type: str = "choice",
     allow_free_text: str = "false",
+    options_json: str = "",
 ) -> str:
     """
     Ask a choice question (poll/form) on an ideation's Q&A board.
 
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID
-        question: The question text
-        options: Option labels in any of three formats:
-            - JSON array (preferred when labels contain commas):
-              ``'["Mermaid (text-based, lightweight)", "ExcaliDraw (heavy)"]'``
-            - Pipe-separated (when labels contain commas but not pipes):
-              ``"Option A|Option B|Option C"``
-            - Comma-separated (legacy, fragile if a label contains a comma):
-              ``"Option A,Option B,Option C"``
-            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
-        question_type: "choice" for single-select (default) or "multi_choice" for multi-select
-        allow_free_text: "true" to also allow a free-text response alongside selections
-
-    Returns:
-        JSON with Q&A item including choices
-    """
+options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
+Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5340,16 +5217,26 @@ async def okto_pulse_ask_ideation_choice_question(
     from okto_pulse.core.models.schemas import IdeationQAChoiceOption, IdeationQACreate
 
     try:
-        option_labels = parse_multi_value(options)
+        parsed_objects = parse_options_json(options_json or None)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options: {e}"})
-    if not option_labels:
-        return json.dumps({"error": "At least one option is required"})
+        return json.dumps({"error": f"Invalid options_json: {e}"})
 
-    choice_list = [
-        IdeationQAChoiceOption(id=f"opt_{i}", label=label)
-        for i, label in enumerate(option_labels)
-    ]
+    if parsed_objects is not None:
+        choice_list = [
+            IdeationQAChoiceOption(id=f"opt_{i}", label=obj["label"], recommended=obj["recommended"], tradeoff=obj["tradeoff"])
+            for i, obj in enumerate(parsed_objects)
+        ]
+    else:
+        try:
+            option_labels = coerce_to_list_str(options)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+        if not option_labels:
+            return json.dumps({"error": "At least one option is required"})
+        choice_list = [
+            IdeationQAChoiceOption(id=f"opt_{i}", label=label)
+            for i, label in enumerate(option_labels)
+        ]
 
     async with get_db_for_mcp() as db:
         service = IdeationQAService(db)
@@ -5387,24 +5274,12 @@ async def okto_pulse_ask_ideation_choice_question(
 
 
 @mcp.tool()
-async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, qa_id: str, answer: str = "", selected: str = "") -> str:
+async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, qa_id: str, answer: str = "", selected: list[str] | str = "") -> str:
     """
     Answer a question on an ideation's Q&A board.
     For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID (for context/validation)
-        qa_id: Q&A item ID to answer
-        answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Option IDs for choice questions, accepted in three formats:
-            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
-            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
-            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
-
-    Returns:
-        JSON with updated Q&A item
-    """
+Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5414,18 +5289,26 @@ async def okto_pulse_answer_ideation_question(board_id: str, ideation_id: str, q
         return _perm_error(perm_err)
 
     from okto_pulse.core.models.schemas import IdeationQAAnswer
+    from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
     try:
-        selected_list = parse_multi_value(selected) if selected else None
+        selected_list = coerce_to_list_str(selected) if selected else None
     except ValueError as e:
-        return json.dumps({"error": f"Invalid selected: {e}"})
+        return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     async with get_db_for_mcp() as db:
         service = IdeationQAService(db)
-        qa = await service.answer_question(
-            qa_id, ctx.agent_id,
-            IdeationQAAnswer(answer=answer or None, selected=selected_list),
-        )
+        try:
+            qa = await service.answer_question(
+                qa_id,
+                ctx.agent_id,
+                IdeationQAAnswer(answer=answer or None, selected=selected_list),
+                actor_type="agent",
+                surface="mcp",
+            )
+        except QASelfAnsweringNotAllowedError as e:
+            await db.commit()
+            return json.dumps({"error": e.reason, "detail": str(e)})
         if not qa:
             return json.dumps({"error": "Q&A item not found or invalid selection"})
 
@@ -5459,10 +5342,10 @@ async def okto_pulse_create_refinement(
     ideation_id: str,
     title: str,
     description: str = "",
-    in_scope: str = "",
-    out_of_scope: str = "",
+    in_scope: list[str] | str = "",
+    out_of_scope: list[str] | str = "",
     analysis: str = "",
-    decisions: str = "",
+    decisions: list[str] | str = "",
     assignee_id: str = "",
     labels: list[str] | str = "",
     mockup_ids: str = "",
@@ -5477,27 +5360,7 @@ async def okto_pulse_create_refinement(
 
     Artifacts (mockups, KBs, Architecture Designs) from the ideation are
     automatically propagated. Use mockup_ids/kb_ids/architecture_design_ids
-    to select specific ones (default: all).
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID (must be in 'done' status)
-        title: Refinement title
-        description: Description of this refinement aspect (optional; parent ideation context is appended)
-        in_scope: Pipe-separated list of what IS in scope (e.g. "Auth flow|Token refresh|Session management")
-        out_of_scope: Pipe-separated list of what is NOT in scope (e.g. "UI changes|Email notifications")
-        analysis: Detailed analysis text (optional)
-        decisions: Pipe-separated list of decisions made (e.g. "Use REST API|Cache with Redis") (optional)
-        assignee_id: User/agent ID to assign (optional)
-        labels: Comma-separated labels (optional)
-        mockup_ids: Pipe-separated mockup IDs to propagate from ideation (optional, empty = all)
-        kb_ids: Pipe-separated KB IDs to propagate from ideation (optional, empty = all)
-        architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
-        architecture_propagation_mode: copy/derive copies snapshots; reference_only/none keeps only parent linkage
-
-    Returns:
-        JSON with created refinement details
-    """
+    to select specific ones (default: all)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5509,10 +5372,13 @@ async def okto_pulse_create_refinement(
     from okto_pulse.core.models.schemas import RefinementCreate
 
     try:
+        in_scope_list = coerce_to_list_str(in_scope) or None
+        out_of_scope_list = coerce_to_list_str(out_of_scope) or None
+        decisions_list = coerce_to_list_str(decisions) or None
         label_list = coerce_to_list_str(labels) or None
         architecture_ids = coerce_to_list_str(architecture_design_ids) or None
     except ValueError as e:
-        return json.dumps({"error": f"Invalid multi-value input: {e}"})
+        return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     async with get_db_for_mcp() as db:
         service = RefinementService(db)
@@ -5520,10 +5386,10 @@ async def okto_pulse_create_refinement(
             ideation_id=ideation_id,
             title=title,
             description=description.replace("\\n", "\n") if description else None,
-            in_scope=parse_multi_value(in_scope) or None,
-            out_of_scope=parse_multi_value(out_of_scope) or None,
+            in_scope=in_scope_list,
+            out_of_scope=out_of_scope_list,
             analysis=analysis.replace("\\n", "\n") if analysis else None,
-            decisions=parse_multi_value(decisions) or None,
+            decisions=decisions_list,
             assignee_id=assignee_id or None,
             labels=label_list,
             mockup_ids=parse_multi_value(mockup_ids) or None,
@@ -5561,15 +5427,7 @@ async def okto_pulse_create_refinement(
 @mcp.tool()
 async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
     """
-    Get full details of a refinement including its specs and Q&A items.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-
-    Returns:
-        JSON with refinement details and linked entities
-    """
+    Get full details of a refinement including its specs and Q&A items."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5643,19 +5501,7 @@ async def okto_pulse_get_refinement_context(
     Get the FULL consolidated context of a refinement. Returns all data needed
     to review, derive specs, or evaluate this refinement.
 
-    **Always call this before moving, evaluating, or deriving a spec from a refinement.**
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        include_knowledge: Include knowledge base entries (default "true")
-        include_mockups: Include screen mockups (default "true")
-        include_qa: Include Q&A items (default "true")
-        include_architecture: Include Architecture Designs (default "true")
-
-    Returns:
-        JSON with complete refinement context: details + parent ideation + scope + Q&A + mockups + KBs + derived specs
-    """
+    **Always call this before moving, evaluating, or deriving a spec from a refinement.**"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5761,31 +5607,15 @@ async def okto_pulse_update_refinement(
     refinement_id: str,
     title: str = "",
     description: str = "",
-    in_scope: str = "",
-    out_of_scope: str = "",
+    in_scope: list[str] | str = "",
+    out_of_scope: list[str] | str = "",
     analysis: str = "",
-    decisions: str = "",
+    decisions: list[str] | str = "",
     assignee_id: str = "",
     labels: list[str] | str = "",
 ) -> str:
     """
-    Update a refinement's fields. Content changes bump the version. Only non-empty fields are updated.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        title: New title (optional, empty = no change)
-        description: New description (optional, empty = no change)
-        in_scope: Pipe-separated list of in-scope items (optional, empty = no change)
-        out_of_scope: Pipe-separated list of out-of-scope items (optional, empty = no change)
-        analysis: New analysis (optional, empty = no change)
-        decisions: Pipe-separated list of decisions (optional, empty = no change)
-        assignee_id: New assignee (optional, empty = no change)
-        labels: Comma-separated labels (optional, empty = no change)
-
-    Returns:
-        JSON with updated refinement details
-    """
+    Update a refinement's fields. Content changes bump the version. Only non-empty fields are updated."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5802,20 +5632,29 @@ async def okto_pulse_update_refinement(
     if description:
         update_kwargs["description"] = description.replace("\\n", "\n")
     if in_scope:
-        update_kwargs["in_scope"] = parse_multi_value(in_scope)
+        try:
+            update_kwargs["in_scope"] = coerce_to_list_str(in_scope)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if out_of_scope:
-        update_kwargs["out_of_scope"] = parse_multi_value(out_of_scope)
+        try:
+            update_kwargs["out_of_scope"] = coerce_to_list_str(out_of_scope)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if analysis:
         update_kwargs["analysis"] = analysis.replace("\\n", "\n")
     if decisions:
-        update_kwargs["decisions"] = parse_multi_value(decisions)
+        try:
+            update_kwargs["decisions"] = coerce_to_list_str(decisions)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
         try:
             update_kwargs["labels"] = coerce_to_list_str(labels)
         except ValueError as e:
-            return json.dumps({"error": f"Invalid labels: {e}"})
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     if not update_kwargs:
         return json.dumps({"error": "No fields to update"})
@@ -5853,16 +5692,7 @@ async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: 
     - draft → review, cancelled
     - review → draft, approved, cancelled
     - approved → review, done, cancelled
-    - done → draft (new version)
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        status: New status — one of: draft, review, approved, done, cancelled
-
-    Returns:
-        JSON with updated refinement status
-    """
+    - done → draft (new version)"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5912,15 +5742,7 @@ async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: 
 @mcp.tool()
 async def okto_pulse_delete_refinement(board_id: str, refinement_id: str) -> str:
     """
-    Delete a refinement. Linked Q&A items are also deleted (cascade).
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-
-    Returns:
-        JSON with success status
-    """
+    Delete a refinement. Linked Q&A items are also deleted (cascade)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5955,19 +5777,7 @@ async def okto_pulse_derive_spec_from_refinement(
 
     Artifacts (mockups, KBs, Architecture Designs) from the refinement are
     automatically propagated to the spec. Use mockup_ids/kb_ids/
-    architecture_design_ids to select specific ones (default: all).
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID (must be in 'done' status)
-        mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
-        kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
-        architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
-        architecture_propagation_mode: copy/derive copies snapshots; reference_only/none keeps only parent linkage
-
-    Returns:
-        JSON with the created spec details
-    """
+    architecture_design_ids to select specific ones (default: all)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6018,16 +5828,7 @@ async def okto_pulse_derive_spec_from_refinement(
 async def okto_pulse_get_refinement_history(board_id: str, refinement_id: str, limit: str = "30") -> str:
     """
     Get the detailed change history of a refinement. Shows every modification with field-level diffs,
-    who made the change, and when.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        limit: Maximum number of history entries to return (default 30)
-
-    Returns:
-        JSON with list of history entries, newest first
-    """
+    who made the change, and when."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6072,50 +5873,11 @@ async def okto_pulse_get_refinement_history(board_id: str, refinement_id: str, l
 @mcp.tool()
 async def okto_pulse_ask_refinement_question(board_id: str, refinement_id: str, question: str) -> str:
     """
-    Ask a question on a refinement's Q&A board. Use @Name to direct the question.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        question: Question text (use @Name to mention someone)
-
-    Returns:
-        JSON with Q&A item details
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.models.schemas import RefinementQACreate
-
-    async with get_db_for_mcp() as db:
-        service = RefinementQAService(db)
-        qa = await service.create_question(refinement_id, ctx.agent_id, RefinementQACreate(question=question))
-        if not qa:
-            return json.dumps({"error": "Refinement not found"})
-
-        board_service = BoardService(db)
-        await board_service._log_activity(
-            board_id=board_id, action="refinement_question_added",
-            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
-            details={"refinement_id": refinement_id, "question": question[:100]},
-        )
-        await db.commit()
-
-        return json.dumps(
-            {
-                "success": True,
-                "qa": {
-                    "id": qa.id,
-                    "question": qa.question,
-                    "asked_by": qa.asked_by,
-                },
-            }
-        )
+    Ask a question on a refinement's Q&A board. Use @Name to direct the question."""
+    return await _ask_question_impl(
+        board_id, "refinement", refinement_id, question,
+        alias_kind="legacy", tool_name="okto_pulse_ask_refinement_question",
+    )
 
 
 @mcp.tool()
@@ -6123,31 +5885,16 @@ async def okto_pulse_ask_refinement_choice_question(
     board_id: str,
     refinement_id: str,
     question: str,
-    options: str,
+    options: list[str] | str,
     question_type: str = "choice",
     allow_free_text: str = "false",
+    options_json: str = "",
 ) -> str:
     """
     Ask a choice question (poll/form) on a refinement's Q&A board.
 
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        question: The question text
-        options: Option labels in any of three formats:
-            - JSON array (preferred when labels contain commas):
-              ``'["Mermaid (text-based, lightweight)", "ExcaliDraw (heavy)"]'``
-            - Pipe-separated (when labels contain commas but not pipes):
-              ``"Option A|Option B|Option C"``
-            - Comma-separated (legacy, fragile if a label contains a comma):
-              ``"Option A,Option B,Option C"``
-            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
-        question_type: "choice" for single-select (default) or "multi_choice" for multi-select
-        allow_free_text: "true" to also allow a free-text response alongside selections
-
-    Returns:
-        JSON with Q&A item including choices
-    """
+options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
+Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6159,16 +5906,26 @@ async def okto_pulse_ask_refinement_choice_question(
     from okto_pulse.core.models.schemas import RefinementQAChoiceOption, RefinementQACreate
 
     try:
-        option_labels = parse_multi_value(options)
+        parsed_objects = parse_options_json(options_json or None)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options: {e}"})
-    if not option_labels:
-        return json.dumps({"error": "At least one option is required"})
+        return json.dumps({"error": f"Invalid options_json: {e}"})
 
-    choice_list = [
-        RefinementQAChoiceOption(id=f"opt_{i}", label=label)
-        for i, label in enumerate(option_labels)
-    ]
+    if parsed_objects is not None:
+        choice_list = [
+            RefinementQAChoiceOption(id=f"opt_{i}", label=obj["label"], recommended=obj["recommended"], tradeoff=obj["tradeoff"])
+            for i, obj in enumerate(parsed_objects)
+        ]
+    else:
+        try:
+            option_labels = coerce_to_list_str(options)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+        if not option_labels:
+            return json.dumps({"error": "At least one option is required"})
+        choice_list = [
+            RefinementQAChoiceOption(id=f"opt_{i}", label=label)
+            for i, label in enumerate(option_labels)
+        ]
 
     async with get_db_for_mcp() as db:
         service = RefinementQAService(db)
@@ -6206,24 +5963,12 @@ async def okto_pulse_ask_refinement_choice_question(
 
 
 @mcp.tool()
-async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: str, qa_id: str, answer: str = "", selected: str = "") -> str:
+async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: str, qa_id: str, answer: str = "", selected: list[str] | str = "") -> str:
     """
     Answer a question on a refinement's Q&A board.
     For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID (for context/validation)
-        qa_id: Q&A item ID to answer
-        answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Option IDs for choice questions, accepted in three formats:
-            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
-            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
-            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
-
-    Returns:
-        JSON with updated Q&A item
-    """
+Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6233,18 +5978,26 @@ async def okto_pulse_answer_refinement_question(board_id: str, refinement_id: st
         return _perm_error(perm_err)
 
     from okto_pulse.core.models.schemas import RefinementQAAnswer
+    from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
     try:
-        selected_list = parse_multi_value(selected) if selected else None
+        selected_list = coerce_to_list_str(selected) if selected else None
     except ValueError as e:
-        return json.dumps({"error": f"Invalid selected: {e}"})
+        return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     async with get_db_for_mcp() as db:
         service = RefinementQAService(db)
-        qa = await service.answer_question(
-            qa_id, ctx.agent_id,
-            RefinementQAAnswer(answer=answer or None, selected=selected_list),
-        )
+        try:
+            qa = await service.answer_question(
+                qa_id,
+                ctx.agent_id,
+                RefinementQAAnswer(answer=answer or None, selected=selected_list),
+                actor_type="agent",
+                surface="mcp",
+            )
+        except QASelfAnsweringNotAllowedError as e:
+            await db.commit()
+            return json.dumps({"error": e.reason, "detail": str(e)})
         if not qa:
             return json.dumps({"error": "Q&A item not found or invalid selection"})
 
@@ -6278,9 +6031,9 @@ async def okto_pulse_create_spec(
     title: str,
     description: str = "",
     context: str = "",
-    functional_requirements: str = "",
-    technical_requirements: str = "",
-    acceptance_criteria: str = "",
+    functional_requirements: list[str] | str = "",
+    technical_requirements: list[str] | str = "",
+    acceptance_criteria: list[str] | str = "",
     status: str = "draft",
     assignee_id: str = "",
     labels: list[str] | str = "",
@@ -6289,27 +6042,7 @@ async def okto_pulse_create_spec(
 ) -> str:
     """
     Create a new spec (specification) on the board. Specs define requirements that drive card/task creation.
-    AI agents can create specs to propose work, which can then be reviewed, approved, and derived into cards.
-
-    Args:
-        board_id: Board ID
-        title: Spec title
-        description: High-level summary of what needs to be built (optional). Supports Markdown and Mermaid diagrams.
-        context: Business context — why this spec exists, how it connects to the bigger picture (optional). Supports Markdown and Mermaid diagrams.
-        functional_requirements: Pipe-separated list of functional requirements (e.g. "User can login|User can reset password")
-        technical_requirements: Pipe-separated list of technical constraints (e.g. "Must use OAuth2|Response time < 200ms")
-        acceptance_criteria: Pipe-separated list of acceptance criteria (e.g. "All tests pass|No console errors")
-        status: Spec status — one of: draft, review, approved, in_progress, done, cancelled (default: draft)
-        assignee_id: User/agent ID to assign (optional)
-        labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-            legacy string accepted as JSON array or pipe-separated. Comma-only string
-            is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-        ideation_id: Optional parent ideation ID for traceability when creating a spec manually
-        refinement_id: Optional parent refinement ID for traceability when creating a spec manually
-
-    Returns:
-        JSON with created spec details
-    """
+    AI agents can create specs to propose work, which can then be reviewed, approved, and derived into cards."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6329,9 +6062,12 @@ async def okto_pulse_create_spec(
         )
 
     try:
+        frs_list = coerce_to_list_str(functional_requirements) or None
+        trs_list = coerce_to_list_str(technical_requirements) or None
+        acs_list = coerce_to_list_str(acceptance_criteria) or None
         label_list = coerce_to_list_str(labels) or None
     except ValueError as e:
-        return json.dumps({"error": f"Invalid labels: {e}"})
+        return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     async with get_db_for_mcp() as db:
         service = SpecService(db)
@@ -6339,9 +6075,9 @@ async def okto_pulse_create_spec(
             title=title,
             description=description.replace("\\n", "\n") if description else None,
             context=context.replace("\\n", "\n") if context else None,
-            functional_requirements=parse_multi_value(functional_requirements) or None,
-            technical_requirements=_trs_to_objects(parse_multi_value(technical_requirements) or None),
-            acceptance_criteria=parse_multi_value(acceptance_criteria) or None,
+            functional_requirements=frs_list,
+            technical_requirements=_trs_to_objects(trs_list),
+            acceptance_criteria=acs_list,
             status=spec_status,
             assignee_id=assignee_id or None,
             labels=label_list,
@@ -6379,15 +6115,7 @@ async def okto_pulse_create_spec(
 @mcp.tool()
 async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
     """
-    Get full details of a spec including its derived cards.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with spec details and linked cards
-    """
+    Get full details of a spec including its derived cards."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6459,32 +6187,17 @@ async def okto_pulse_get_spec_context(
     include_qa: str = "true",
     include_architecture: str = "true",
     include_superseded: str = "false",
+    profile: str = "summary",
 ) -> str:
     """
-    Get the FULL consolidated context of a spec. Returns ALL structured data
-    needed to evaluate, validate, or review this spec before advancing it.
+    Get the consolidated context of a spec: requirements, test scenarios, business
+    rules, API contracts, IRs, ORs, decisions, mockups, knowledge, Q&A,
+    evaluations, cards, and sprints.
 
-    Includes: requirements, test scenarios, business rules, API contracts, IRs,
-    ORs, screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
-
-    **Always call this before evaluating, moving, or creating cards from a spec.**
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        include_knowledge: Include knowledge base entries (default "true")
-        include_mockups: Include screen mockups (default "true")
-        include_qa: Include Q&A items (default "true")
-        include_architecture: Include Architecture Designs (default "true")
-        include_superseded: When "false" (default), the `decisions` array
-            returns only entries with status="active" — noise reduction for
-            the common "what rules today?" path. Set to "true" to get the
-            full history (active + superseded + revoked). A `decisions_stats`
-            summary is always included so you can see what was filtered.
-
-    Returns:
-        JSON with complete spec context: all requirements + structured sections + artifacts + cards + sprints
-    """
+    `profile` (R2): `summary` (default) keeps the structured requirement content
+    and omits semantically-empty fields; `full`/`legacy` return the complete prior
+    payload. **Before evaluating, moving, or deriving cards from a spec, call with
+    `profile=full`** (see okto-pulse://reference/projection-profiles)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6492,6 +6205,13 @@ async def okto_pulse_get_spec_context(
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
+
+    from okto_pulse.core.mcp.projection_envelope import (
+        resolve_profile as _resolve_profile,
+        unsupported_projection_error as _unsupported_projection_error,
+    )
+    if _resolve_profile(profile) is None:
+        return json.dumps(_unsupported_projection_error(profile))
 
     _inc_kb = _flag_enabled(include_knowledge)
     _inc_mockups = _flag_enabled(include_mockups)
@@ -6625,6 +6345,11 @@ async def okto_pulse_get_spec_context(
         if not _inc_architecture:
             resolved_references["architecture_designs"] = []
         result["resolved_references"] = resolved_references
+        result["resource_gate_summary"] = await ResourceGateService(db).get_summary(
+            board_id,
+            "spec",
+            spec_id,
+        )
 
         result["coverage_summary"] = _mcp_spec_coverage_summary(spec)
 
@@ -6642,13 +6367,21 @@ async def okto_pulse_get_spec_context(
                     "description": s.description,
                     "objective": getattr(s, "objective", None),
                     "expected_outcome": getattr(s, "expected_outcome", None),
+                    "lane_type": s.lane_type.value if getattr(s, "lane_type", None) else "normal",
+                    "origin_sprint_id": getattr(s, "origin_sprint_id", None),
+                    "origin_bug_id": getattr(s, "origin_bug_id", None),
+                    "normal_sprint_created": getattr(s, "normal_sprint_created", True),
                 }
                 for s in sprints
             ]
         except Exception:
             pass
 
-        return json.dumps(result, default=str)
+        from okto_pulse.core.mcp.context_projection import project_spec_context
+        return json.dumps(
+            project_spec_context(result, profile=profile),
+            default=str,
+        )
 
 
 @mcp.tool()
@@ -6658,31 +6391,15 @@ async def okto_pulse_update_spec(
     title: str = "",
     description: str = "",
     context: str = "",
-    functional_requirements: str = "",
-    technical_requirements: str = "",
-    acceptance_criteria: str = "",
+    functional_requirements: list[str] | str = "",
+    technical_requirements: list[str] | str = "",
+    acceptance_criteria: list[str] | str = "",
     assignee_id: str = "",
     labels: list[str] | str = "",
 ) -> str:
     """
     Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
-    Only non-empty fields are updated.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        title: New title (optional, empty = no change)
-        description: New description (optional, empty = no change)
-        context: New context (optional, empty = no change)
-        functional_requirements: Pipe-separated list of functional requirements (optional, empty = no change)
-        technical_requirements: Pipe-separated list of technical constraints (optional, empty = no change)
-        acceptance_criteria: Pipe-separated list of acceptance criteria (optional, empty = no change)
-        assignee_id: New assignee (optional, empty = no change)
-        labels: Comma-separated labels (optional, empty = no change)
-
-    Returns:
-        JSON with updated spec details
-    """
+    Only non-empty fields are updated."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6702,18 +6419,27 @@ async def okto_pulse_update_spec(
     if context:
         update_kwargs["context"] = context.replace("\\n", "\n")
     if functional_requirements:
-        update_kwargs["functional_requirements"] = parse_multi_value(functional_requirements)
+        try:
+            update_kwargs["functional_requirements"] = coerce_to_list_str(functional_requirements)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if technical_requirements:
-        update_kwargs["technical_requirements"] = _trs_to_objects(parse_multi_value(technical_requirements))
+        try:
+            update_kwargs["technical_requirements"] = _trs_to_objects(coerce_to_list_str(technical_requirements))
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if acceptance_criteria:
-        update_kwargs["acceptance_criteria"] = parse_multi_value(acceptance_criteria)
+        try:
+            update_kwargs["acceptance_criteria"] = coerce_to_list_str(acceptance_criteria)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if assignee_id:
         update_kwargs["assignee_id"] = assignee_id
     if labels:
         try:
             update_kwargs["labels"] = coerce_to_list_str(labels)
         except ValueError as e:
-            return json.dumps({"error": f"Invalid labels: {e}"})
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     if not update_kwargs:
         return json.dumps({"error": "No fields to update"})
@@ -6750,16 +6476,7 @@ async def okto_pulse_update_spec(
 @mcp.tool()
 async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
     """
-    Change a spec's status (e.g. draft → review → approved → validated → in_progress → done).
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        status: New status — one of: draft, review, approved, validated, in_progress, done, cancelled
-
-    Returns:
-        JSON with updated spec status
-    """
+    Change a spec's status (e.g. draft → review → approved → validated → in_progress → done)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6825,33 +6542,7 @@ async def okto_pulse_add_test_scenario(
 ) -> str:
     """
     Add a test scenario to a spec. Test scenarios translate acceptance criteria into
-    concrete Given/When/Then test plans.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        title: Scenario title (e.g. "Valid OAuth2 token grants access")
-        given: Precondition (e.g. "User has a valid JWT token")
-        when: Action (e.g. "GET /api/v1/boards with Bearer token")
-        then: Expected result (e.g. "Returns 200 with board list")
-        scenario_type: unit | integration | e2e | manual (default: integration)
-        linked_criteria: Multi-value (pipe ``"0|2"`` or JSON-array ``'["0","2"]'``)
-            references to the acceptance criteria this scenario validates. Each
-            token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
-            or the EXACT acceptance-criterion text. ``ac_id`` is recommended — it is
-            the canonical projection persisted in ``linked_criteria`` (legacy ACs
-            without an id fall back to their text). Matching is exact: prefix
-            matching is NOT accepted on this write path. Resolution is fail-closed
-            and atomic — if ANY token is unresolved the tool returns a structured
-            error JSON (listing the failing tokens, the valid index range and the
-            available ac_ids) and appends no scenario. Use okto_pulse_get_spec to
-            see the acceptance_criteria list, their indices, and their ids.
-        notes: Additional notes or edge cases (optional)
-
-    Returns:
-        JSON with the created scenario; ``linked_criteria`` is always a list of
-        canonical ac_id strings (never a dict).
-    """
+    concrete Given/When/Then test plans."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6931,20 +6622,7 @@ async def okto_pulse_list_test_scenarios(
     limit: int = 50,
 ) -> str:
     """
-    List test scenarios for a spec with coverage information. Supports filtering and pagination.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        status: Filter by scenario status (optional) — one of: draft, ready, automated, passed, failed
-        scenario_type: Filter by type (optional) — one of: unit, integration, e2e, manual
-        linked: Filter by task linkage (optional) — "linked" = only scenarios with tasks, "unlinked" = only scenarios without tasks
-        offset: Skip first N scenarios (default 0)
-        limit: Max scenarios to return (default 50, max 200)
-
-    Returns:
-        JSON with filtered/paginated scenarios and acceptance criteria coverage status
-    """
+    List test scenarios for a spec with coverage information. Supports filtering and pagination."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7049,42 +6727,14 @@ async def okto_pulse_update_test_scenario_status(
     status: str,
     evidence: str = "",
 ) -> str:
-    """
-    Update the status of a test scenario, optionally attaching structured
-    evidence that the test really exists/ran.
-
-    **Test theater prevention gate (NC-9, spec 873e98cc):**
-
-    When the board's `skip_test_evidence_global` setting is False (default),
-    setting status to one of `automated`, `passed`, or `failed` REQUIRES
-    structured evidence:
-      - `automated`: evidence.test_file_path AND evidence.test_function
-      - `passed`/`failed`: evidence.last_run_at AND
-        (evidence.output_snippet OR evidence.test_run_id)
-      - `draft`/`ready`: evidence opcional (intent declarado)
-
-    When `skip_test_evidence_global=True`, the gate is bypassed — every
-    status update is accepted without evidence, but a structured audit log
-    `test_scenario.evidence_gate_skipped` is emitted for forensics.
-
-    Evidence is persisted inline within the scenario dict (no DB migration).
-    Audit log `test_scenario.status_changed` is emitted on every successful
-    update with `evidence_provided`, `evidence_gate_skipped`, and
-    `changed_by_agent_id`.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        scenario_id: Test scenario ID (e.g. "ts_abc123")
-        status: New status — one of: draft, ready, automated, passed, failed
-        evidence: Optional JSON string with keys test_file_path, test_function,
-            last_run_at, test_run_id, output_snippet. Empty string = no evidence.
-
-    Returns:
-        JSON. On success: {success, scenario_id, old_status, new_status,
-        evidence_provided, evidence_gate_skipped}. On gate failure:
-        {error: "evidence_required", required: [...], message: "..."}.
-    """
+    """Update a test scenario's status, optionally attaching structured evidence that the
+test exists/ran. Test-theater prevention gate (NC-9): when skip_test_evidence_global
+is False (default), status=automated requires evidence.test_file_path+test_function;
+passed/failed require evidence.last_run_at AND (output_snippet OR test_run_id);
+draft/ready optional. When skip is True the gate is bypassed but a
+test_scenario.evidence_gate_skipped audit log is emitted. Evidence persists inline;
+test_scenario.status_changed audit emitted on success. Full details:
+okto-pulse://reference/tool-docs/test-scenario."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7182,20 +6832,7 @@ async def okto_pulse_update_test_scenario(
     Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
     scenario that holds evidence invalidates it: status resets to `ready` and the
     evidence is dropped. Cosmetic edits (title/notes) preserve status + evidence.
-    Respects the spec content-lock.
-
-    Args:
-        board_id: Board ID.
-        spec_id: Spec ID.
-        scenario_id: Test scenario ID (e.g. "ts_abc123").
-        title/given/when/then/scenario_type/notes: New value, or "" to leave as-is.
-        linked_criteria: Pipe-separated AC index/id/text (resolved to AC ids).
-        clear: Pipe-separated field names to empty (notes, linked_criteria).
-
-    Returns:
-        JSON {success, scenario_id, updated_fields, evidence_invalidated} or
-        {error: spec_locked|scenario_not_found|unresolved_criteria|invalid_update}.
-    """
+    Respects the spec content-lock."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7257,17 +6894,7 @@ async def okto_pulse_delete_test_scenario(
 
     Removes the scenario from the spec AND drops its id from every card that
     references it, atomically (all-or-nothing). Does not block on existing links.
-    Respects the spec content-lock.
-
-    Args:
-        board_id: Board ID.
-        spec_id: Spec ID.
-        scenario_id: Test scenario ID to delete.
-
-    Returns:
-        JSON {success, scenario_id, cards_unlinked} or
-        {error: spec_locked|scenario_not_found}.
-    """
+    Respects the spec content-lock."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7318,22 +6945,7 @@ async def okto_pulse_link_task(
     exposes a single entry point so agents don't have to pre-load eight near-
     identical tool schemas.
 
-    Ideação MCP-token-optimization Story 5.
-
-    Args:
-        board_id: Board ID.
-        target_type: One of: rule, decision, tr, ir, or, scenario, contract, spec.
-            Keywords link rule decision tr ir or scenario contract spec.
-        target_id: ID of the target artifact (rule_id, decision_id, tr_id,
-            ir_id/requirement_id, or_id/requirement_id, scenario_id,
-            contract_id, or spec_id when target_type=='spec').
-        card_id: ID of the card to link.
-        spec_id: Required for every target_type except 'spec'.
-
-    Returns:
-        JSON identical to the corresponding per-type tool (success + ids +
-        saturation envelope).
-    """
+    Ideação MCP-token-optimization Story 5."""
     target_type = (target_type or "").strip().lower()
     if target_type not in _LINK_TASK_TARGET_TYPES:
         return json.dumps({
@@ -7590,16 +7202,7 @@ async def okto_pulse_archive_tree(
 ) -> str:
     """
     Archive an entity and all its descendants in cascade.
-    Saves pre_archive_status before setting archived=true.
-
-    Args:
-        board_id: Board ID
-        entity_type: Type of entity — one of: ideation, refinement, spec
-        entity_id: Entity ID to archive
-
-    Returns:
-        JSON with archived_count per entity type
-    """
+    Saves pre_archive_status before setting archived=true."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7634,16 +7237,7 @@ async def okto_pulse_restore_tree(
 ) -> str:
     """
     Restore an archived entity and all its descendants.
-    Returns each entity to its pre_archive_status.
-
-    Args:
-        board_id: Board ID
-        entity_type: Type of entity — one of: ideation, refinement, spec
-        entity_id: Entity ID to restore
-
-    Returns:
-        JSON with restored_count per entity type
-    """
+    Returns each entity to its pre_archive_status."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7683,17 +7277,7 @@ async def okto_pulse_list_architecture_designs(
     include_payloads: str = "false",
 ) -> str:
     """
-    List Architecture Designs for an ideation, refinement, spec, or card.
-
-    Args:
-        board_id: Board ID
-        parent_type: One of ideation, refinement, spec, card
-        parent_id: Parent entity ID
-        include_payloads: Include heavy diagram adapter payloads (default false)
-
-    Returns:
-        JSON with architecture designs. Payloads are omitted by default.
-    """
+    List Architecture Designs for an ideation, refinement, spec, or card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7728,16 +7312,7 @@ async def okto_pulse_get_architecture_design(
     include_payloads: str = "false",
 ) -> str:
     """
-    Get one Architecture Design by ID.
-
-    Args:
-        board_id: Board ID
-        design_id: Architecture Design ID
-        include_payloads: Include heavy diagram adapter payloads (default false)
-
-    Returns:
-        JSON with the architecture design envelope.
-    """
+    Get one Architecture Design by ID."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7758,37 +7333,14 @@ async def okto_pulse_get_architecture_design(
 
 @mcp.tool()
 async def okto_pulse_get_architecture_design_schema(board_id: str) -> str:
-    """
-    Return the machine-readable Architecture Design payload schema.
-
-    Call this before authoring a non-trivial Architecture Design payload. The
-    schema includes allowed enums, entity/interface contracts, Excalidraw
-    adapter payload rules, bad examples, good examples, the complete minimal
-    payload example AND a `semantic_node_registry` section (spec cc497a0d) that
-    defines the canonical mapping from entity_type to
-    {displayType, architectureKind, iconName} plus the icon allowlist.
-
-    MANDATORY validation flow for MCP agents:
-        1. okto_pulse_get_architecture_design_schema(board_id) — read the registry.
-        2. Build payload: prefer letting the registry normalize linked nodes by setting
-           entity.entity_type + diagram element.linkedEntityId only (text/displayType/
-           architectureKind/iconName auto-filled at persist time).
-        3. okto_pulse_validate_architecture_design_payload(...) — confirm valid=true and
-           surface warnings (semantic_metadata_normalized) to the human.
-        4. okto_pulse_add_architecture_design / update_architecture_design — backend
-           re-applies normalization + rejects ambiguous payloads (FR3 of spec cc497a0d).
-
-    Do NOT invent iconName/displayType/architectureKind outside the registry. Linked
-    nodes (linkedEntityId set) must either provide all four metadata fields explicitly
-    or rely on the registry to fill them deterministically; otherwise the payload is
-    rejected with suggested_fixes.
-
-    Args:
-        board_id: Board ID
-
-    Returns:
-        JSON with success=true and schema (includes semantic_node_registry).
-    """
+    """Return the machine-readable Architecture Design payload schema: allowed enums,
+entity/interface contracts, Excalidraw adapter rules, good/bad/minimal examples,
+and the semantic_node_registry mapping entity_type ->
+{displayType, architectureKind, iconName} plus the icon allowlist. MANDATORY flow:
+read schema -> build payload (prefer entity_type + linkedEntityId; metadata
+auto-filled) -> okto_pulse_validate_architecture_design_payload -> add/update. Do
+NOT invent iconName/displayType/architectureKind outside the registry. Full guide:
+okto-pulse://reference/tool-docs/architecture."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7811,49 +7363,17 @@ async def okto_pulse_validate_architecture_design_payload(
     entities: list[dict] | str = "",
     interfaces: list[dict] | str = "",
     diagrams: list[dict] | str = "",
+    architecture_warning_acknowledgement: dict | str = "",
     commit: bool = False,
     include_design: bool = False,
 ) -> str:
-    """
-    Dry-run critique for an Architecture Design payload without persisting it.
-
-    Use this before okto_pulse_add_architecture_design or
-    okto_pulse_update_architecture_design. For creates, pass parent_type and
-    parent_id. For updates, pass design_id and only the fields you intend to
-    change; omitted fields are merged from the existing design before critique.
-
-    The response includes:
-    - valid: false when the payload would be rejected by create/update.
-    - issues: blocking contextual errors with JSON paths.
-    - warnings: non-blocking gaps that reduce implementation clarity.
-    - suggested_fixes: concrete corrections for common architecture mistakes.
-    - summary: counts of entities, interfaces, diagrams, elements, and links.
-
-    Typical catches:
-    - entities where name duplicates entity_type after normalization.
-    - interfaces with invalid legacy participants, invalid direction, or missing
-      protocol/contract metadata for schema payloads.
-    - diagrams with any format other than excalidraw_json. Mermaid, PlantUML,
-      C4, SVG, and raw snippets are allowed only as descriptive text in entity
-      responsibility, boundaries, notes, or global_description.
-    - diagrams with invalid linkedEntityId, linkedInterfaceIds, endpoint/entity
-      connection mismatches, or unsupported connectionType. Excalidraw
-      connectionType accepts only "direct" or "elbow".
-
-    Args:
-        board_id: Board ID
-        parent_type: Create mode parent type: ideation, refinement, spec, card
-        parent_id: Create mode parent ID
-        design_id: Update mode Architecture Design ID
-        title: Candidate title
-        global_description: Candidate global description
-        entities: Candidate JSON array/native list, or omitted to keep existing in update mode
-        interfaces: Candidate JSON array/native list, or omitted to keep existing in update mode
-        diagrams: Candidate JSON array/native list, or omitted to keep existing in update mode
-
-    Returns:
-        JSON dry-run critique; this tool does not write anything.
-    """
+    """Dry-run critique for an Architecture Design payload without persisting. Use before
+okto_pulse_add_architecture_design / update — for creates pass parent_type+parent_id;
+for updates pass design_id + only changed fields (omitted merged from existing).
+Response: valid, issues (blocking, with JSON paths), warnings, suggested_fixes, and
+summary counts. Catches duplicate name/entity_type, invalid participants/direction,
+non-excalidraw diagram formats, and bad linkedEntityId/linkedInterfaceIds/
+connectionType. Full catalog: okto-pulse://reference/tool-docs/architecture."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7865,6 +7385,9 @@ async def okto_pulse_validate_architecture_design_payload(
             return json.dumps({"error": f"Invalid {field_name}: {err}"})
         if parsed is not None:
             parsed_fields[field_name] = parsed
+    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    if err:
+        return json.dumps({"error": f"Invalid architecture_warning_acknowledgement: {err}"})
 
     async with get_db_for_mcp() as db:
         repo = ArchitectureDesignRepository(db)
@@ -7929,6 +7452,7 @@ async def okto_pulse_validate_architecture_design_payload(
                     entities=candidate.get("entities") or [],
                     interfaces=candidate.get("interfaces") or [],
                     diagrams=candidate.get("diagrams") or [],
+                    architecture_warning_acknowledgement=acknowledgement,
                 )
                 design = await repo.create(parent_type, parent_id, payload, ctx.agent_id)
             else:
@@ -7937,10 +7461,11 @@ async def okto_pulse_validate_architecture_design_payload(
                     for k in ("title", "global_description", "entities", "interfaces", "diagrams")
                     if candidate.get(k) is not None
                 })
+                patch_payload.architecture_warning_acknowledgement = acknowledgement
                 design = await repo.update(design_id, patch_payload, ctx.agent_id)
             await db.commit()
         except ValueError as exc:
-            return json.dumps({"error": str(exc)})
+            return _mcp_architecture_error(exc)
 
         warnings = list(critique.get("warnings") or [])
         structured_warnings = list(critique.get("structured_warnings") or [])
@@ -7971,105 +7496,16 @@ async def okto_pulse_add_architecture_design(
     entities: list[dict] | str = "",
     interfaces: list[dict] | str = "",
     diagrams: list[dict] | str = "",
+    architecture_warning_acknowledgement: dict | str = "",
 ) -> str:
-    """
-    Create an Architecture Design on an ideation, refinement, spec, or card.
-
-    Use this whenever the artifact benefits from explicit architecture: services,
-    modules, applications, databases, queues, topics, events, external integrations,
-    runtime boundaries, API contracts, data flows, or task ownership boundaries.
-
-    For non-trivial payloads, call okto_pulse_get_architecture_design_schema
-    first, then okto_pulse_validate_architecture_design_payload. Persist only
-    after the dry-run returns valid=true and you have reviewed warnings. Warnings
-    are not blockers, but they usually mark details a downstream implementer or
-    validator would otherwise have to guess.
-
-    The server critiques the full payload before accepting it. Rejections include
-    contextual paths such as entities[0].name, interfaces[1].participants[0] when legacy participants are supplied, or
-    diagrams[0].adapter_payload.elements[2].linkedEntityId. Fix the cited field
-    and retry; do not move invalid architecture into prose fields to bypass the
-    structured artifact.
-
-    Args:
-        board_id: Board ID
-        parent_type: One of ideation, refinement, spec, card
-        parent_id: Parent entity ID
-        title: Design title
-        global_description: Required global architecture description
-        entities: JSON array or native list of entity descriptions. Use concrete
-            names and categorical types, for example:
-            [
-              {
-                "id": "entity-web-app",
-                "name": "Customer Portal",
-                "entity_type": "web_app",
-                "responsibility": "Collects checkout input and displays order status.",
-                "technologies": ["React", "Vite"]
-              },
-              {
-                "id": "entity-checkout-api",
-                "name": "Checkout API",
-                "entity_type": "api",
-                "responsibility": "Validates checkout commands and orchestrates payment authorization.",
-                "technologies": ["FastAPI", "SQLAlchemy"]
-              },
-              {
-                "id": "entity-orders-db",
-                "name": "Orders DB",
-                "entity_type": "database",
-                "responsibility": "Persists orders, payment state, and idempotency keys.",
-                "technologies": ["PostgreSQL"]
-              }
-            ]
-            Do not use entity name == entity_type, such as name="API" and
-            entity_type="api"; the API rejects that because ownership and task
-            boundaries become ambiguous.
-        interfaces: JSON array or native list of interface/contract descriptions.
-            endpoint is optional but recommended for API paths, RPC methods,
-            event names, queue names, or operations. Interfaces do not own
-            source/target; diagram connections define endpoint entities through
-            sourceElementId and targetElementId. direction must be one of
-            source_to_target, target_to_source, bidirectional, none. Example:
-            [
-              {
-                "id": "interface-create-order",
-                "name": "Create order",
-                "endpoint": "POST /orders",
-                "description": "Customer Portal sends a checkout request to Checkout API.",
-                "direction": "source_to_target",
-                "protocol": "REST",
-                "contract_type": "OpenAPI",
-                "request_schema": {"type": "object", "required": ["cart_id"]},
-                "response_schema": {"type": "object", "required": ["order_id"]}
-              }
-            ]
-        diagrams: JSON array or native list of diagrams; adapter_payload is stored
-            separately. Only format="excalidraw_json" is accepted. Mermaid,
-            PlantUML, C4, SVG, and raw snippets may be included only as
-            descriptive text in entity responsibility, boundaries, notes, or
-            global_description, not as diagrams[].format. Excalidraw payloads should link elements using
-            linkedEntityId and linkedInterfaceIds when possible. For Excalidraw
-            edges, use sourceElementId, targetElementId, linkedInterfaceIds,
-            and connectionType. One connector can carry several interface
-            contracts/endpoints, for example
-            linkedInterfaceIds=["interface-create-order", "interface-get-order"].
-            linkedInterfaceId remains accepted for legacy single-contract
-            edges. connectionType accepts only "direct" and "elbow"; do not
-            send "curved". Example:
-            [
-              {
-                "id": "diagram-runtime-context",
-                "title": "Runtime context",
-                "diagram_type": "context",
-                "format": "excalidraw_json",
-                "adapter_payload": {"type": "excalidraw", "version": 2, "elements": [], "appState": {}, "files": {}}
-              }
-            ]
-
-    Returns:
-        JSON with the created Architecture Design.
-    """
+    """Create an Architecture Design on an ideation, refinement, spec, or card. Use whenever
+the artifact benefits from explicit architecture (services, modules, databases,
+queues, events, integrations, runtime boundaries, API contracts, data flows,
+ownership). For non-trivial payloads call okto_pulse_get_architecture_design_schema
+then okto_pulse_validate_architecture_design_payload, and persist only after
+valid=true + reviewed warnings. The server critiques the full payload before
+accepting; fix cited fields and retry rather than hiding architecture in prose. Full
+guide: okto-pulse://reference/tool-docs/architecture."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8087,6 +7523,9 @@ async def okto_pulse_add_architecture_design(
     diags, err = _parse_json_arg(diagrams, [])
     if err:
         return json.dumps({"error": f"Invalid diagrams: {err}"})
+    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    if err:
+        return json.dumps({"error": f"Invalid architecture_warning_acknowledgement: {err}"})
 
     async with get_db_for_mcp() as db:
         repo = ArchitectureDesignRepository(db)
@@ -8112,6 +7551,7 @@ async def okto_pulse_add_architecture_design(
                     entities=ents,
                     interfaces=ifaces,
                     diagrams=diags,
+                    architecture_warning_acknowledgement=acknowledgement,
                 ),
                 ctx.agent_id,
             )
@@ -8119,7 +7559,7 @@ async def okto_pulse_add_architecture_design(
             await db.commit()
             return json.dumps({"success": True, "architecture_design": payload}, default=str)
         except Exception as exc:
-            return json.dumps({"error": str(exc)})
+            return _mcp_architecture_error(exc)
 
 
 @mcp.tool()
@@ -8132,48 +7572,15 @@ async def okto_pulse_update_architecture_design(
     interfaces: list[dict] | str = "",
     diagrams: list[dict] | str = "",
     change_summary: str = "",
+    architecture_warning_acknowledgement: dict | str = "",
 ) -> str:
-    """
-    Update an Architecture Design. Omitted fields are left unchanged.
-
-    For large or generated updates, call okto_pulse_get_architecture_design_schema
-    once per session and okto_pulse_validate_architecture_design_payload before
-    this tool. The validator merges omitted update fields from the existing
-    design and reports blocking issues plus warnings without creating a new
-    Architecture Design version.
-
-    The update is critiqued against the complete resulting design before it is
-    saved. Use this to keep architecture current as an ideation, refinement, or
-    spec changes. Prefer replacing entities/interfaces/diagrams with the complete
-    intended arrays so links remain deterministic.
-
-    Contextual validation examples:
-    - entities[0].name duplicates entity_type "api" -> use a concrete name such
-      as "Checkout API" and keep entity_type as "api".
-    - interfaces[0].participants[1] references an unknown entity -> remove
-      legacy participants or correct the participant id/name.
-    - interfaces[0].direction must be one of source_to_target,
-      target_to_source, bidirectional, none.
-    - diagrams[0].adapter_payload.elements[2].linkedInterfaceIds must reference
-      one or more interface ids/names in interfaces.
-    - diagrams[0].adapter_payload.elements[2] links an interface but the
-      connected nodes do not expose linkedEntityId endpoint entities.
-    - diagrams[0].adapter_payload.elements[2].connectionType must be "direct"
-      or "elbow"; use "elbow" for routed/orthogonal connections.
-
-    Args:
-        board_id: Board ID
-        design_id: Architecture Design ID
-        title: Optional new title
-        global_description: Optional new global description
-        entities: Optional JSON array/native list
-        interfaces: Optional JSON array/native list
-        diagrams: Optional JSON array/native list
-        change_summary: Optional version summary
-
-    Returns:
-        JSON with the updated Architecture Design.
-    """
+    """Update an Architecture Design; omitted fields are left unchanged. For large or
+generated updates, call okto_pulse_get_architecture_design_schema once per session
+then okto_pulse_validate_architecture_design_payload first. The update is critiqued
+against the full resulting design before saving — prefer replacing
+entities/interfaces/diagrams with the complete intended arrays so links stay
+deterministic. Full args + contextual validation examples:
+okto-pulse://reference/tool-docs/architecture."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8191,6 +7598,11 @@ async def okto_pulse_update_architecture_design(
             patch[field_name] = parsed
     if change_summary:
         patch["change_summary"] = change_summary
+    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    if err:
+        return json.dumps({"error": f"Invalid architecture_warning_acknowledgement: {err}"})
+    if acknowledgement is not None:
+        patch["architecture_warning_acknowledgement"] = acknowledgement
     if not patch:
         return json.dumps({"error": "No fields provided for update"})
 
@@ -8210,21 +7622,13 @@ async def okto_pulse_update_architecture_design(
             await db.commit()
             return json.dumps({"success": True, "architecture_design": payload}, default=str)
         except Exception as exc:
-            return json.dumps({"error": str(exc)})
+            return _mcp_architecture_error(exc)
 
 
 @mcp.tool()
 async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -> str:
     """
-    Delete an Architecture Design.
-
-    Args:
-        board_id: Board ID
-        design_id: Architecture Design ID
-
-    Returns:
-        JSON with success true when deleted.
-    """
+    Delete an Architecture Design."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8257,22 +7661,7 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
     change_summary: str = "",
 ) -> str:
     """
-    Import an Excalidraw JSON scene into an Architecture Design.
-
-    Args:
-        board_id: Board ID
-        design_id: Architecture Design ID
-        title: Diagram title
-        payload_json: Excalidraw JSON object or JSON string
-        diagram_type: context/container/component/sequence/deployment/data_flow/other
-        replace_diagram_id: Existing diagram ID to replace; empty appends a new diagram
-        description: Optional diagram description
-        order_index: Diagram order
-        change_summary: Optional version summary
-
-    Returns:
-        JSON with the updated Architecture Design.
-    """
+    Import an Excalidraw JSON scene into an Architecture Design."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8330,16 +7719,7 @@ async def okto_pulse_dump_architecture_diagram(
     diagram_id: str,
 ) -> str:
     """
-    Load and dump a diagram payload through its ArchitectureDiagramAdapter.
-
-    Args:
-        board_id: Board ID
-        design_id: Architecture Design ID
-        diagram_id: Diagram ID inside the design
-
-    Returns:
-        JSON with raw payload and adapter dump string.
-    """
+    Load and dump a diagram payload through its ArchitectureDiagramAdapter."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8381,19 +7761,18 @@ async def okto_pulse_copy_architecture_to_card(
     spec_id: str,
     card_id: str,
     design_ids: list[str] | str = "",
+    architecture_warning_acknowledgement: dict | str = "",
+    profile: str = "summary",
 ) -> str:
     """
     Copy Architecture Designs from a spec to a card/task as deep-copy snapshots.
 
-    Args:
-        board_id: Board ID
-        spec_id: Source spec ID
-        card_id: Target card ID
-        design_ids: Optional multi-value design IDs to copy; empty copies all
-
-    Returns:
-        JSON with copied Architecture Designs.
-    """
+    `profile` (R2): `summary` (default) returns the copy metadata only —
+    `copied`, `design_ids`, `total_on_card` and the R5 `projection` envelope, NOT
+    the full architecture bodies. `full`/`legacy` return the prior payload with the
+    complete copied `architecture_designs`. The bodies are persisted on the card
+    regardless of profile; read them with `okto_pulse_get_task_context(profile=full)`
+    or re-call here with `profile=full`."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8402,21 +7781,47 @@ async def okto_pulse_copy_architecture_to_card(
     if perm_err:
         return _perm_error(perm_err)
 
+    from okto_pulse.core.mcp.copy_projection import (
+        project_copy_architecture_response,
+        resolve_copy_profile,
+        unsupported_copy_profile_error,
+    )
+    # Validate the profile BEFORE the copy — a bad profile must not mutate state.
+    if resolve_copy_profile(profile) is None:
+        return json.dumps(unsupported_copy_profile_error(profile))
+
     try:
         ids = coerce_to_list_str(design_ids) if design_ids else None
     except ValueError as exc:
         return json.dumps({"error": f"Invalid design_ids: {exc}"})
+    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    if err:
+        return json.dumps({"error": f"Invalid architecture_warning_acknowledgement: {err}"})
 
     async with get_db_for_mcp() as db:
         service = ArchitecturePropagationService(db)
         try:
-            designs = await service.copy_spec_to_card(spec_id, card_id, ctx.agent_id, design_ids=ids)
+            designs = await service.copy_spec_to_card(
+                spec_id,
+                card_id,
+                ctx.agent_id,
+                design_ids=ids,
+                architecture_warning_acknowledgement=acknowledgement,
+            )
             repo = ArchitectureDesignRepository(db)
             payload = [_dump_model(repo.to_response(design)) for design in designs]
+            # Total Architecture Designs on the card after the copy (no payloads —
+            # we only need the count for the summary metadata).
+            total_on_card = len(await repo.list("card", card_id, include_payloads=False))
             await db.commit()
-            return json.dumps({"success": True, "copied": len(payload), "architecture_designs": payload}, default=str)
+            return json.dumps(
+                project_copy_architecture_response(
+                    payload, total_on_card=total_on_card, profile=profile
+                ),
+                default=str,
+            )
         except Exception as exc:
-            return json.dumps({"error": str(exc)})
+            return _mcp_architecture_error(exc)
 
 
 @mcp.tool()
@@ -8425,20 +7830,7 @@ async def okto_pulse_copy_mockups_to_card(
 ) -> str:
     """
     Copy screen mockups from a spec to a card. Use this when creating implementation
-    cards to carry the relevant mockups into the card for the implementer's context.
-
-    Args:
-        board_id: Board ID
-        spec_id: Source spec ID
-        card_id: Target card ID
-        screen_ids: Multi-value screen IDs to copy (empty = copy ALL mockups from the
-            spec). Preferred native list (e.g. ``["scr_a", "scr_b"]``); legacy string
-            accepted as JSON array or pipe-separated. Comma-only string is REJECTED.
-            See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-
-    Returns:
-        JSON with count of mockups copied
-    """
+    cards to carry the relevant mockups into the card for the implementer's context."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8486,20 +7878,7 @@ async def okto_pulse_copy_knowledge_to_card(
 ) -> str:
     """
     Copy knowledge base entries from a spec to a card as inline card KEs.
-    Each copied entry is stored in Card.knowledge_bases with stable provenance.
-
-    Args:
-        board_id: Board ID
-        spec_id: Source spec ID
-        card_id: Target card ID
-        knowledge_ids: Multi-value knowledge base IDs to copy (empty = copy ALL).
-            Preferred native list (e.g. ``["kb_a", "kb_b"]``); legacy string accepted
-            as JSON array or pipe-separated. Comma-only string is REJECTED. See
-            ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-
-    Returns:
-        JSON with count of knowledge entries copied and total card KEs
-    """
+    Each copied entry is stored in Card.knowledge_bases with stable provenance."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8586,20 +7965,7 @@ async def okto_pulse_add_card_knowledge(
     """
     Attach a knowledge base entry directly to a card. Stored inline on
     `Card.knowledge_bases` (JSONB). Symmetric to spec_knowledge but scoped
-    to a single task.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        title: KE title
-        content: KE content (Markdown by default)
-        description: Short summary (optional)
-        mime_type: Content MIME type (default text/markdown)
-        source: Free-form provenance hint (e.g. "manual", "copied_from_spec:<spec_id>:<kb_id>")
-
-    Returns:
-        JSON with the created KE including its generated id
-    """
+    to a single task."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8739,16 +8105,7 @@ async def okto_pulse_copy_qa_to_card(
 ) -> str:
     """
     Copy answered Q&A items from a spec to a card as a consolidated comment.
-    Only copies Q&As that have been answered — unanswered questions are skipped.
-
-    Args:
-        board_id: Board ID
-        spec_id: Source spec ID
-        card_id: Target card ID
-
-    Returns:
-        JSON with count of Q&A entries copied
-    """
+    Only copies Q&As that have been answered — unanswered questions are skipped."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8796,17 +8153,7 @@ async def okto_pulse_get_analytics(
     to_date: str = "",
 ) -> str:
     """
-    Get analytics data for a board. Supports multiple metric types.
-
-    Args:
-        board_id: Board ID
-        metric_type: Type of analytics — one of: overview, funnel, quality, velocity, coverage, agents
-        from_date: Start date filter (ISO format, optional)
-        to_date: End date filter (ISO format, optional)
-
-    Returns:
-        JSON with analytics data for the requested metric type
-    """
+    Get analytics data for a board. Supports multiple metric types."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9115,17 +8462,7 @@ async def okto_pulse_list_blockers(
     - `spec_no_cards` — spec is validated/in_progress but has zero linked
       cards (implementation hasn't started).
     - `uncovered_scenario` — test scenario has no linked test card, so the
-      test-coverage gate will fail.
-
-    Args:
-        board_id: Board ID
-        stale_hours: Cards unchanged longer than this while active are flagged
-            as stale (default 72, ≥1).
-        filter_type: Optional — return only blockers of this type. Empty returns all.
-
-    Returns:
-        JSON ``{summary: {<type>: count}, total: int, blockers: [...]}``
-    """
+      test-coverage gate will fail."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9188,7 +8525,7 @@ async def _mcp_apply_structured_spec_entity(
     entity_type: str,
     operation: str,
     entity_id: str = "",
-    payload_json: str = "",
+    payload_json: dict | str = "",
     expected_spec_version: str = "",
     task_id: str = "",
     ack_token: str = "",
@@ -9205,10 +8542,15 @@ async def _mcp_apply_structured_spec_entity(
     if entity_type != "api_contract" and entity_type not in _STRUCTURED_SPEC_ENTITY_MCP_TYPES:
         return json.dumps({"error": f"Unsupported structured spec entity type: {entity_type}"})
 
-    try:
-        payload = json.loads(payload_json) if payload_json else {}
-    except json.JSONDecodeError as exc:
-        return json.dumps({"error": f"Invalid payload_json: {exc}"})
+    if isinstance(payload_json, dict):
+        payload = payload_json
+    elif payload_json:
+        try:
+            payload = json.loads(payload_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps({"error": f"Invalid payload_json: {exc}"})
+    else:
+        payload = {}
     if not isinstance(payload, dict):
         return json.dumps({"error": "payload_json must decode to an object."})
     try:
@@ -9247,7 +8589,7 @@ async def okto_pulse_update_spec_entity(
     entity_type: str,
     operation: str,
     entity_id: str = "",
-    payload_json: str = "",
+    payload_json: dict | str = "",
     expected_spec_version: str = "",
     task_id: str = "",
     ack_token: str = "",
@@ -9278,7 +8620,7 @@ async def okto_pulse_update_spec_api_contract(
     spec_id: str,
     contract_id: str,
     operation: str = "update",
-    payload_json: str = "",
+    payload_json: dict | str = "",
     expected_spec_version: str = "",
     task_id: str = "",
     ack_token: str = "",
@@ -9316,22 +8658,7 @@ async def okto_pulse_add_business_rule(
 ) -> str:
     """
     Add a business rule to a spec. Business rules define system behavior constraints
-    using When/Then format.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        title: Rule title (e.g. "Discount cap for non-premium users")
-        rule: The business rule statement
-        when: Condition that triggers the rule
-        then: Expected behavior / outcome
-        linked_requirements: Pipe-separated INDICES (0-based) of functional requirements this rule relates to.
-            Example: "0|2|5" links to the 1st, 3rd, and 6th functional requirement.
-        notes: Additional notes (optional)
-
-    Returns:
-        JSON with the created business rule including resolved requirement text
-    """
+    using When/Then format."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9351,15 +8678,26 @@ async def okto_pulse_add_business_rule(
         rule_id = f"br_{_uuid.uuid4().hex[:8]}"
         frs = spec.functional_requirements or []
 
-        # Resolve linked_requirements via the shared helper so STRUCTURED FRs
-        # (dicts {id,text,status}) are handled. The old inline loop did
-        # req_list.append(frs[idx]) — which appended the whole FR dict and broke
-        # SpecUpdate(list[str]) once FRs became structured — and rejected text
-        # via `token in frs` (a list of dicts). _parse_linked_requirements keeps
-        # the index string and lets _validate_spec_linked_refs validate it.
-        req_list, _req_err = _parse_linked_requirements(linked_requirements, frs)
-        if _req_err:
-            return json.dumps({"error": _req_err})
+        # Resolve linked_requirements to canonical fr_ids (write-path, STRICT,
+        # FAIL-CLOSED). Mirrors add_test_scenario's AC resolver pattern: any
+        # unresolved token aborts before persistence (no partial write).
+        # Accepts index, fr_id, or exact text — all stored as fr_id. spec 9d66847f.
+        req_list = None
+        if linked_requirements:
+            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
+                parse_multi_value(linked_requirements), frs
+            )
+            if _unresolved_frs:
+                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
+                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"No business rule was appended."
+                    )
+                })
+            req_list = _resolved_fr_ids or None
 
         br = {
             "id": rule_id,
@@ -9397,23 +8735,7 @@ async def okto_pulse_update_business_rule(
     notes: str = "",
 ) -> str:
     """
-    Update an existing business rule on a spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        rule_id: Business rule ID (e.g. "br_abc12345")
-        title: New title (optional, empty = no change)
-        rule: New rule statement (optional)
-        when: New condition (optional)
-        then: New outcome (optional)
-        linked_requirements: Pipe-separated INDICES (0-based) of functional requirements.
-            Pass "CLEAR" to remove all links. Empty = no change.
-        notes: New notes (optional, "CLEAR" to remove)
-
-    Returns:
-        JSON with the updated business rule
-    """
+    Update an existing business rule on a spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9454,12 +8776,21 @@ async def okto_pulse_update_business_rule(
         if linked_requirements == "CLEAR":
             target["linked_requirements"] = None
         elif linked_requirements:
-            # Shared resolver: structured-FR safe (the old inline loop stored
-            # frs[idx], a dict, which broke SpecUpdate(list[str])).
-            req_list, _req_err = _parse_linked_requirements(linked_requirements, frs)
-            if _req_err:
-                return json.dumps({"error": _req_err})
-            target["linked_requirements"] = req_list
+            # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
+                parse_multi_value(linked_requirements), frs
+            )
+            if _unresolved_frs:
+                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
+                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"No business rule was updated."
+                    )
+                })
+            target["linked_requirements"] = _resolved_fr_ids or None
 
         from okto_pulse.core.models.schemas import SpecUpdate
         _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(business_rules=rules))
@@ -9483,93 +8814,21 @@ async def okto_pulse_remove_business_rule(
     rule_id: str,
 ) -> str:
     """
-    Remove a business rule from a spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        rule_id: Business rule ID to remove
-
-    Returns:
-        JSON confirmation
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecService(db)
-        spec = await service.get_spec(spec_id)
-        if not spec:
-            return json.dumps({"error": "Spec not found"})
-
-        rules = list(spec.business_rules or [])
-        new_rules = [r for r in rules if r.get("id") != rule_id]
-        if len(new_rules) == len(rules):
-            return json.dumps({"error": f"Business rule '{rule_id}' not found"})
-
-        from okto_pulse.core.models.schemas import SpecUpdate
-        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(business_rules=new_rules))
-        if _err:
-            return _err
-        await db.commit()
-
-        cov = _spec_coverage(spec, rules=new_rules)
-        return json.dumps({"success": True, "removed": rule_id, "remaining": len(new_rules), **_saturation_or_coverage(cov)})
+    Remove a business rule from a spec."""
+    return await _remove_spec_entity_impl(
+        board_id, spec_id, "business_rule", rule_id,
+        alias_kind="legacy", tool_name="okto_pulse_remove_business_rule",
+    )
 
 
 # ============================================================================
 # Decisions — formalized design choices on a spec (spec b66d2562)
 #
 # Decision vs BusinessRule: a Decision records *why* a choice was made
-# ("We chose Kùzu over Neo4j because..."); a BusinessRule is a prescriptive
+# ("We chose LadybugDB over Neo4j because..."); a BusinessRule is a prescriptive
 # norm ("The system MUST clamp scores at 1.5"). They're distinct entities
 # with distinct semantics — don't mix them.
 # ============================================================================
-
-
-def _parse_linked_requirements(raw: str, frs: list) -> tuple[list[str] | None, str | None]:
-    """Parse a pipe-separated "0|FR text|fr_id" into NORMALIZED FR references.
-
-    Each token (0-based index, exact/substring FR text, or fr_ id) is resolved to
-    its canonical 0-based INDEX string via the structured-FR-aware resolver, so
-    persistence is HOMOGENEOUS (always indices) regardless of the input form and
-    works whether FRs are structured dicts {id,text,status} or legacy strings.
-    Previously the index path stored str(idx) but text/id passed through verbatim,
-    producing heterogeneous links. Fail-closed: tokens that do not resolve are
-    reported, never dropped. Returns (list_or_None, error_str); CLEAR empties the
-    list explicitly. (Note: FR links are positional by design across the
-    coverage/KG/display layers; normalizing to indices keeps them consistent with
-    that convention.)
-    """
-    if not raw:
-        return None, None
-    if raw.strip().upper() == "CLEAR":
-        return [], None
-    out: list[str] = []
-    seen: set[str] = set()
-    unresolved: list[str] = []
-    for token in parse_multi_value(raw):
-        idxs = resolve_linked_fr_indices([token], frs)
-        if not idxs:
-            unresolved.append(token)
-            continue
-        for idx in sorted(idxs):
-            key = str(idx)
-            if key not in seen:
-                seen.add(key)
-                out.append(key)
-    if unresolved:
-        max_idx = max(0, len(frs) - 1)
-        return None, (
-            f"Requirement reference(s) not found: {', '.join(unresolved)}. "
-            f"Use a 0-based index (0-{max_idx}), the exact FR text, or an fr_ id."
-        )
-    return out, None
 
 
 @mcp.tool()
@@ -9620,9 +8879,9 @@ async def okto_pulse_add_integration_requirement(
     contract_ref: str = "",
     endpoint: str = "",
     method: str = "",
-    data_contract_json: str = "",
+    data_contract_json: dict | str = "",
     linked_requirements: str = "",
-    linked_api_contracts: str = "",
+    linked_api_contracts: list[str] | str = "",
     notes: str = "",
 ) -> str:
     """
@@ -9654,15 +8913,37 @@ async def okto_pulse_add_integration_requirement(
         if not spec or spec.board_id != board_id:
             return json.dumps({"error": "Spec not found"})
 
-        req_list, err = _parse_linked_requirements(linked_requirements, spec.functional_requirements or [])
-        if err:
-            return json.dumps({"error": err})
+        # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+        _frs_ir = spec.functional_requirements or []
+        req_list = None
+        if linked_requirements:
+            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
+                parse_multi_value(linked_requirements), _frs_ir
+            )
+            if _unresolved_frs:
+                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in _frs_ir) if fid]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
+                        f"Valid indices: 0..{max(0, len(_frs_ir) - 1)}. "
+                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"No integration requirement was appended."
+                    )
+                })
+            req_list = _resolved_fr_ids or None
 
         data_contract = None
         if data_contract_json:
             data_contract, json_err = _parse_json_arg(data_contract_json, None)
             if json_err:
                 return json.dumps({"error": json_err})
+
+        linked_api_contracts_list = None
+        if linked_api_contracts:
+            try:
+                linked_api_contracts_list = coerce_to_list_str(linked_api_contracts) or None
+            except ValueError as e:
+                return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
         requirement = {
             "id": f"ir_{_uuid.uuid4().hex[:8]}",
@@ -9676,7 +8957,7 @@ async def okto_pulse_add_integration_requirement(
             "method": method or None,
             "data_contract": data_contract,
             "linked_requirements": req_list,
-            "linked_api_contracts": parse_multi_value(linked_api_contracts) or None,
+            "linked_api_contracts": linked_api_contracts_list,
             "linked_task_ids": None,
             "status": "active",
             "notes": notes.replace("\\n", "\n") if notes else None,
@@ -9821,7 +9102,7 @@ async def okto_pulse_add_observability_requirement(
     severity: str = "",
     owner: str = "",
     linked_requirements: str = "",
-    linked_integration_requirements: str = "",
+    linked_integration_requirements: list[str] | str = "",
     notes: str = "",
 ) -> str:
     """Add an Observability Requirement (OR) to a spec."""
@@ -9848,9 +9129,31 @@ async def okto_pulse_add_observability_requirement(
         if not spec or spec.board_id != board_id:
             return json.dumps({"error": "Spec not found"})
 
-        req_list, err = _parse_linked_requirements(linked_requirements, spec.functional_requirements or [])
-        if err:
-            return json.dumps({"error": err})
+        # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+        _frs_or = spec.functional_requirements or []
+        req_list = None
+        if linked_requirements:
+            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
+                parse_multi_value(linked_requirements), _frs_or
+            )
+            if _unresolved_frs:
+                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in _frs_or) if fid]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
+                        f"Valid indices: 0..{max(0, len(_frs_or) - 1)}. "
+                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"No observability requirement was appended."
+                    )
+                })
+            req_list = _resolved_fr_ids or None
+
+        linked_irs_list = None
+        if linked_integration_requirements:
+            try:
+                linked_irs_list = coerce_to_list_str(linked_integration_requirements) or None
+            except ValueError as e:
+                return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
         requirement = {
             "id": f"or_{_uuid.uuid4().hex[:8]}",
@@ -9863,7 +9166,7 @@ async def okto_pulse_add_observability_requirement(
             "severity": severity or None,
             "owner": owner or None,
             "linked_requirements": req_list,
-            "linked_integration_requirements": parse_multi_value(linked_integration_requirements) or None,
+            "linked_integration_requirements": linked_irs_list,
             "linked_task_ids": None,
             "status": "active",
             "notes": notes.replace("\\n", "\n") if notes else None,
@@ -9966,7 +9269,7 @@ async def okto_pulse_add_decision(
     title: str,
     rationale: str,
     context: str = "",
-    alternatives_considered: str = "",
+    alternatives_considered: list[str] | str = "",
     supersedes_decision_id: str = "",
     linked_requirements: str = "",
     notes: str = "",
@@ -9979,28 +9282,20 @@ async def okto_pulse_add_decision(
     prescriptive "DEVE" statement): use a Decision to capture design
     intent, tradeoffs, or team consensus. The KG extracts Decisions into
     queryable nodes, and the optional coverage gate (opt-in) can require each
-    Decision to have ≥1 linked task.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        title: Decision title (e.g. "Use Kùzu embedded over Neo4j")
-        rationale: Why this choice was made
-        context: When/where this applies (optional)
-        alternatives_considered: Pipe-separated list of alternatives (e.g. "Neo4j|DuckDB")
-        supersedes_decision_id: id of another Decision this one replaces; it auto-moves to status=superseded
-        linked_requirements: Pipe-separated FR indices (e.g. "0|2")
-        notes: Additional notes
-
-    Returns:
-        JSON with created decision and spec coverage snapshot
-    """
+    Decision to have ≥1 linked task."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
+
+    alts = None
+    if alternatives_considered:
+        try:
+            alts = coerce_to_list_str(alternatives_considered) or None
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     import uuid as _uuid
 
@@ -10011,13 +9306,24 @@ async def okto_pulse_add_decision(
             return json.dumps({"error": "Spec not found"})
 
         frs = spec.functional_requirements or []
-        req_list, err = _parse_linked_requirements(linked_requirements, frs)
-        if err:
-            return json.dumps({"error": err})
 
-        alts = None
-        if alternatives_considered:
-            alts = parse_multi_value(alternatives_considered)
+        # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+        req_list = None
+        if linked_requirements:
+            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
+                parse_multi_value(linked_requirements), frs
+            )
+            if _unresolved_frs:
+                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
+                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"No decision was appended."
+                    )
+                })
+            req_list = _resolved_fr_ids or None
 
         decisions = list(spec.decisions or [])
 
@@ -10074,7 +9380,7 @@ async def okto_pulse_update_decision(
     title: str = "",
     rationale: str = "",
     context: str = "",
-    alternatives_considered: str = "",
+    alternatives_considered: list[str] | str = "",
     supersedes_decision_id: str = "",
     linked_requirements: str = "",
     notes: str = "",
@@ -10082,24 +9388,7 @@ async def okto_pulse_update_decision(
 ) -> str:
     """
     Update an existing Decision. Only non-empty fields are changed; pass "CLEAR"
-    to wipe optional string/list fields.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        decision_id: Decision ID ("dec_...")
-        title: New title (optional)
-        rationale: New rationale (optional)
-        context: New context (optional, "CLEAR" to remove)
-        alternatives_considered: Pipe-separated list (optional, "CLEAR" to remove)
-        supersedes_decision_id: New target Decision id, or "CLEAR" to unset
-        linked_requirements: Pipe-separated FR indices ("CLEAR" to empty)
-        notes: Notes (optional, "CLEAR" to remove)
-        status: One of "active", "superseded", "revoked" (optional)
-
-    Returns:
-        JSON with updated decision
-    """
+    to wipe optional string/list fields."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10125,12 +9414,15 @@ async def okto_pulse_update_decision(
         if context:
             target["context"] = None if context.strip().upper() == "CLEAR" else context.replace("\\n", "\n")
         if alternatives_considered:
-            if alternatives_considered.strip().upper() == "CLEAR":
+            # When the Union delivers a list, .strip() is not applicable; check
+            # for the CLEAR sentinel only when it is a plain string.
+            if isinstance(alternatives_considered, str) and alternatives_considered.strip().upper() == "CLEAR":
                 target["alternatives_considered"] = None
             else:
-                target["alternatives_considered"] = parse_multi_value(
-                    alternatives_considered
-                )
+                try:
+                    target["alternatives_considered"] = coerce_to_list_str(alternatives_considered) or None
+                except ValueError as e:
+                    return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
         if supersedes_decision_id:
             if supersedes_decision_id.strip().upper() == "CLEAR":
                 target["supersedes_decision_id"] = None
@@ -10143,10 +9435,21 @@ async def okto_pulse_update_decision(
                         break
         if linked_requirements:
             frs = spec.functional_requirements or []
-            req_list, err = _parse_linked_requirements(linked_requirements, frs)
-            if err:
-                return json.dumps({"error": err})
-            target["linked_requirements"] = req_list or None
+            # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
+                parse_multi_value(linked_requirements), frs
+            )
+            if _unresolved_frs:
+                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
+                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"No decision was updated."
+                    )
+                })
+            target["linked_requirements"] = _resolved_fr_ids or None
         if notes:
             target["notes"] = None if notes.strip().upper() == "CLEAR" else notes.replace("\\n", "\n")
         if status:
@@ -10181,46 +9484,11 @@ async def okto_pulse_remove_decision(
 
     Preserves history so the KG still surfaces the decision with its
     revocation reason. Use okto_pulse_update_decision with status=active to
-    restore.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        decision_id: Decision ID ("dec_...")
-
-    Returns:
-        JSON confirmation
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    async with get_db_for_mcp() as db:
-        service = SpecService(db)
-        spec = await service.get_spec(spec_id)
-        if not spec:
-            return json.dumps({"error": "Spec not found"})
-
-        decisions = list(spec.decisions or [])
-        target = next((d for d in decisions if d.get("id") == decision_id), None)
-        if target is None:
-            return json.dumps({"error": f"Decision '{decision_id}' not found"})
-
-        target["status"] = "revoked"
-
-        from okto_pulse.core.models.schemas import SpecUpdate
-        _, _err = await _safe_spec_update(
-            service, spec_id, ctx.agent_id,
-            SpecUpdate(decisions=decisions),
-        )
-        if _err:
-            return _err
-        await db.commit()
-
-        return json.dumps({"success": True, "revoked": decision_id, "decision": target})
+    restore."""
+    return await _remove_spec_entity_impl(
+        board_id, spec_id, "decision", decision_id,
+        alias_kind="legacy", tool_name="okto_pulse_remove_decision",
+    )
 
 
 async def _link_task_to_decision_internal(
@@ -10292,15 +9560,7 @@ async def okto_pulse_migrate_spec_decisions(
 
     Idempotent — running twice on a migrated spec is a no-op. Existing
     decisions are preserved; only the markdown-sourced ones are added, and
-    duplicates (same title) are skipped.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with migration summary (decisions_added, context_modified)
-    """
+    duplicates (same title) are skipped."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10389,15 +9649,7 @@ async def okto_pulse_list_business_rules(
     include_inactive: str = "false",
 ) -> str:
     """
-    List all business rules for a spec with linked functional requirements resolved as text.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON array of business rules with resolved linked requirements
-    """
+    List all business rules for a spec with linked functional requirements resolved as text."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10417,20 +9669,51 @@ async def okto_pulse_list_business_rules(
             ]
         frs = spec.functional_requirements or []
 
+        from okto_pulse.core.mcp.payload_compaction import emit_compaction_metric
+        from okto_pulse.core.services.analytics_service import (
+            _structured_ref_text,
+            resolve_linked_fr_indices,
+        )
+
         result = []
+        deduped_count = 0
         for r in rules:
             entry = dict(r)
             linked = r.get("linked_requirements") or []
-            resolved = []
-            for req_text in linked:
-                if req_text in frs:
-                    idx = frs.index(req_text)
-                    resolved.append(f"[FR-{idx}] {req_text}")
-                else:
-                    resolved.append(req_text)
-            entry["resolved_requirements"] = resolved
+            # FR7 dedup: previously the full FR text was emitted twice — under
+            # the raw ``linked_requirements`` AND under ``resolved_requirements``.
+            # Resolve once (structured-FR aware): emit canonical fr_id under
+            # ``linked_requirements`` (IMPL-2: projection now emits fr_id, not
+            # re-derived index); carry the human ``[FR-n] <text>`` only under
+            # ``resolved_requirements``. Legacy FRs without an id fall back to
+            # str(index) so output is never empty.
+            idxs = sorted(resolve_linked_fr_indices(linked, frs))
+            entry["linked_requirements"] = [
+                _structured_ref_id(frs[i]) or str(i)
+                for i in idxs
+                if 0 <= i < len(frs)
+            ]
+            entry["resolved_requirements"] = [
+                f"[FR-{i}] {_structured_ref_text(frs[i])}"
+                for i in idxs
+                if 0 <= i < len(frs)
+            ]
+            # Robustness: preserve legacy refs that don't resolve to any FR so
+            # old data does not silently lose context.
+            unresolved = [
+                ref for ref in linked if not resolve_linked_fr_indices([ref], frs)
+            ]
+            if unresolved:
+                entry["unresolved_requirements"] = unresolved
+            deduped_count += len(entry["resolved_requirements"])
             result.append(entry)
 
+        # FR8 / or_f4159e58: this list dedups full FR text — emit the safe
+        # metric (counts only, no FR text / body).
+        emit_compaction_metric(
+            tool_name="okto_pulse_list_business_rules",
+            deduped_count=deduped_count,
+        )
         return json.dumps({
             "spec_id": spec_id,
             "total": len(result),
@@ -10450,34 +9733,16 @@ async def okto_pulse_add_api_contract(
     method: str,
     path: str,
     description: str = "",
-    request_body_json: str = "",
-    response_success_json: str = "",
-    response_errors_json: str = "",
+    request_body_json: dict | str = "",
+    response_success_json: dict | str = "",
+    response_errors_json: list[dict] | str = "",
     linked_requirements: str = "",
-    linked_rules: str = "",
+    linked_rules: list[str] | str = "",
     notes: str = "",
 ) -> str:
     """
     Add an API contract to a spec. API contracts define endpoints, request/response
-    shapes, and link to requirements and business rules.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        method: HTTP method or interaction type (GET, POST, PUT, DELETE, PATCH, TOOL, COMPONENT, EVENT)
-        path: Endpoint path or identifier (e.g. "/api/v1/users", "UserProfile component")
-        description: What this endpoint does (optional)
-        request_body_json: JSON string for request body schema (optional). Example: '{"name": "string", "email": "string"}'
-        response_success_json: JSON string for success response schema (optional)
-        response_errors_json: JSON string for error responses array (optional). Example: '[{"status": 400, "detail": "..."}]'
-        linked_requirements: Pipe-separated INDICES (0-based) of functional requirements.
-            Example: "0|2|5"
-        linked_rules: Pipe-separated business rule IDs. Example: "br_abc123|br_def456"
-        notes: Additional notes (optional)
-
-    Returns:
-        JSON with the created API contract
-    """
+    shapes, and link to requirements and business rules."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10498,40 +9763,66 @@ async def okto_pulse_add_api_contract(
         frs = spec.functional_requirements or []
         existing_rules = spec.business_rules or []
 
-        # Parse JSON strings
+        # Parse JSON strings (or accept native dict/list directly)
         request_body = None
         if request_body_json:
-            try:
-                request_body = json.loads(request_body_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid request_body_json: {e}"})
+            if isinstance(request_body_json, dict):
+                request_body = request_body_json
+            else:
+                try:
+                    request_body = json.loads(request_body_json)
+                except json.JSONDecodeError as e:
+                    return json.dumps({"error": f"Invalid request_body_json: {e}"})
 
         response_success = None
         if response_success_json:
-            try:
-                response_success = json.loads(response_success_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid response_success_json: {e}"})
+            if isinstance(response_success_json, dict):
+                response_success = response_success_json
+            else:
+                try:
+                    response_success = json.loads(response_success_json)
+                except json.JSONDecodeError as e:
+                    return json.dumps({"error": f"Invalid response_success_json: {e}"})
 
         response_errors = None
         if response_errors_json:
-            try:
-                response_errors = json.loads(response_errors_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid response_errors_json: {e}"})
+            if isinstance(response_errors_json, list):
+                response_errors = response_errors_json
+            else:
+                try:
+                    response_errors = json.loads(response_errors_json)
+                except json.JSONDecodeError as e:
+                    return json.dumps({"error": f"Invalid response_errors_json: {e}"})
 
-        # Resolve linked_requirements via the shared helper (structured-FR safe;
-        # the old inline loop stored frs[idx], a dict, breaking SpecUpdate).
-        req_list, _req_err = _parse_linked_requirements(linked_requirements, frs)
-        if _req_err:
-            return json.dumps({"error": _req_err})
+        # Resolve linked_requirements to canonical fr_ids (write-path, STRICT,
+        # FAIL-CLOSED — mirrors add_test_scenario AC pattern). spec 9d66847f.
+        req_list = None
+        if linked_requirements:
+            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
+                parse_multi_value(linked_requirements), frs
+            )
+            if _unresolved_frs:
+                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
+                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"No API contract was appended."
+                    )
+                })
+            req_list = _resolved_fr_ids or None
 
         # Resolve linked rules
         rules_list = None
         if linked_rules:
+            try:
+                linked_rules_tokens = coerce_to_list_str(linked_rules)
+            except ValueError as e:
+                return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
             rule_ids = {r.get("id") for r in existing_rules}
             rules_list = []
-            for token in parse_multi_value(linked_rules):
+            for token in linked_rules_tokens:
                 if token in rule_ids:
                     rules_list.append(token)
                 else:
@@ -10550,11 +9841,26 @@ async def okto_pulse_add_api_contract(
             "notes": notes.replace("\\n", "\n") if notes else None,
         }
 
+        # Validate the NEW contract as a write (http strictness via on_write,
+        # F9) and surface a canonical error with no errors.pydantic.dev URL (F10).
+        _cerr = _validate_api_contract_write(contract)
+        if _cerr:
+            return _cerr
+
         contracts = list(spec.api_contracts or [])
         contracts.append(contract)
 
+        from pydantic import ValidationError
         from okto_pulse.core.models.schemas import SpecUpdate
-        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        # Build the bulk SpecUpdate INSIDE a try (it was the inline argument
+        # outside _safe_spec_update's try, so a ValidationError leaked raw). The
+        # existing contracts re-validate tolerantly (read-back, no on_write); the
+        # new one was already checked on_write above.
+        try:
+            _contract_update = SpecUpdate(api_contracts=contracts)
+        except ValidationError as exc:
+            return _canonical_api_contract_error(exc)
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, _contract_update)
         if _err:
             return _err
         await db.commit()
@@ -10571,33 +9877,15 @@ async def okto_pulse_update_api_contract(
     method: str = "",
     path: str = "",
     description: str = "",
-    request_body_json: str = "",
-    response_success_json: str = "",
-    response_errors_json: str = "",
+    request_body_json: dict | str = "",
+    response_success_json: dict | str = "",
+    response_errors_json: list[dict] | str = "",
     linked_requirements: str = "",
-    linked_rules: str = "",
+    linked_rules: list[str] | str = "",
     notes: str = "",
 ) -> str:
     """
-    Update an existing API contract on a spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        contract_id: API contract ID (e.g. "api_abc12345")
-        method: New HTTP method (optional, empty = no change)
-        path: New path (optional)
-        description: New description (optional, "CLEAR" to remove)
-        request_body_json: New request body JSON (optional, "CLEAR" to remove)
-        response_success_json: New success response JSON (optional, "CLEAR" to remove)
-        response_errors_json: New error responses JSON (optional, "CLEAR" to remove)
-        linked_requirements: Pipe-separated INDICES. "CLEAR" to remove all. Empty = no change.
-        linked_rules: Pipe-separated rule IDs. "CLEAR" to remove all. Empty = no change.
-        notes: New notes (optional, "CLEAR" to remove)
-
-    Returns:
-        JSON with the updated API contract
-    """
+    Update an existing API contract on a spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10631,7 +9919,9 @@ async def okto_pulse_update_api_contract(
         elif description:
             target["description"] = description.replace("\\n", "\n")
 
-        if request_body_json == "CLEAR":
+        if isinstance(request_body_json, dict):
+            target["request_body"] = request_body_json
+        elif request_body_json == "CLEAR":
             target["request_body"] = None
         elif request_body_json:
             try:
@@ -10639,7 +9929,9 @@ async def okto_pulse_update_api_contract(
             except json.JSONDecodeError as e:
                 return json.dumps({"error": f"Invalid request_body_json: {e}"})
 
-        if response_success_json == "CLEAR":
+        if isinstance(response_success_json, dict):
+            target["response_success"] = response_success_json
+        elif response_success_json == "CLEAR":
             target["response_success"] = None
         elif response_success_json:
             try:
@@ -10647,7 +9939,9 @@ async def okto_pulse_update_api_contract(
             except json.JSONDecodeError as e:
                 return json.dumps({"error": f"Invalid response_success_json: {e}"})
 
-        if response_errors_json == "CLEAR":
+        if isinstance(response_errors_json, list):
+            target["response_errors"] = response_errors_json
+        elif response_errors_json == "CLEAR":
             target["response_errors"] = None
         elif response_errors_json:
             try:
@@ -10664,28 +9958,54 @@ async def okto_pulse_update_api_contract(
         if linked_requirements == "CLEAR":
             target["linked_requirements"] = None
         elif linked_requirements:
-            # Shared resolver: structured-FR safe (the old inline loop stored
-            # frs[idx], a dict, which broke SpecUpdate(list[str])).
-            req_list, _req_err = _parse_linked_requirements(linked_requirements, frs)
-            if _req_err:
-                return json.dumps({"error": _req_err})
-            target["linked_requirements"] = req_list
+            # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
+                parse_multi_value(linked_requirements), frs
+            )
+            if _unresolved_frs:
+                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+                return json.dumps({
+                    "error": (
+                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
+                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"No API contract was updated."
+                    )
+                })
+            target["linked_requirements"] = _resolved_fr_ids or None
 
         existing_rules = spec.business_rules or []
-        if linked_rules == "CLEAR":
+        if isinstance(linked_rules, str) and linked_rules == "CLEAR":
             target["linked_rules"] = None
         elif linked_rules:
+            try:
+                linked_rules_tokens = coerce_to_list_str(linked_rules)
+            except ValueError as e:
+                return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
             rule_ids = {r.get("id") for r in existing_rules}
             rules_list = []
-            for token in parse_multi_value(linked_rules):
+            for token in linked_rules_tokens:
                 if token in rule_ids:
                     rules_list.append(token)
                 else:
                     return json.dumps({"error": f"Business rule '{token}' not found in spec"})
             target["linked_rules"] = rules_list
 
+        # Validate the MODIFIED contract as a write (http strictness via
+        # on_write, F9) and surface a canonical error with no URL leak (F10).
+        _cerr = _validate_api_contract_write(target)
+        if _cerr:
+            return _cerr
+
+        from pydantic import ValidationError
         from okto_pulse.core.models.schemas import SpecUpdate
-        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=contracts))
+        # Build the bulk SpecUpdate inside a try (was the inline arg outside the
+        # _safe_spec_update try); existing contracts re-validate tolerantly.
+        try:
+            _contract_update = SpecUpdate(api_contracts=contracts)
+        except ValidationError as exc:
+            return _canonical_api_contract_error(exc)
+        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, _contract_update)
         if _err:
             return _err
         await db.commit()
@@ -10704,43 +10024,170 @@ async def okto_pulse_remove_api_contract(
     contract_id: str,
 ) -> str:
     """
-    Remove an API contract from a spec.
+    Remove an API contract from a spec."""
+    return await _remove_spec_entity_impl(
+        board_id, spec_id, "api_contract", contract_id,
+        alias_kind="legacy", tool_name="okto_pulse_remove_api_contract",
+    )
 
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        contract_id: API contract ID to remove
 
-    Returns:
-        JSON confirmation
-    """
+# ============================================================================
+# R4 — consolidated spec-entity REMOVE (spec 452cb4d5, card R4.1)
+#
+# spec_entity_remove is one of the two assertiveness-gate-eligible families
+# (owner decision after the R4 audit): the three legacy remove_* tools have
+# IDENTICAL (board_id, spec_id, <id>) signatures, so consolidation loses ZERO
+# per-type field schema. The legacy tools are PRESERVED as additive aliases that
+# delegate here (fr_af4b5c6e / tr_b25890c4 — one shared impl, no duplicated
+# logic). DEDICATED ROUTING preserves the per-type behavioral asymmetry: decision
+# is a SOFT-delete (status=revoked, restorable) while business_rule/api_contract
+# are hard removals.
+# ============================================================================
+
+
+async def _remove_spec_entity_impl(
+    board_id: str,
+    spec_id: str,
+    target_type: str,
+    entity_id: str,
+    *,
+    alias_kind: str,
+    tool_name: str,
+) -> str:
+    """Shared implementation behind okto_pulse_remove_spec_entity and the three
+    legacy remove_* aliases. Replicates each legacy tool's exact behavior and
+    response shape (parity), and emits safe alias-usage telemetry (or_4e57890f)."""
+    from okto_pulse.core.mcp.tool_family_registry import (
+        REGISTRY,
+        VIOLATION_UNKNOWN_TARGET_TYPE,
+        emit_alias_usage,
+        emit_registry_violation,
+    )
+
+    def _telemetry(outcome: str) -> None:
+        emit_alias_usage(
+            family_id="spec_entity_remove",
+            alias_kind=alias_kind,
+            tool_name=tool_name,
+            operation="remove",
+            target_type=str(target_type),
+            outcome=outcome,
+        )
+
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
+        _telemetry("error")
         return _auth_error()
 
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
+        _telemetry("error")
         return _perm_error(perm_err)
+
+    # fr_452f7d7f / ac_c0c8f0f3: unsupported target_type -> structured error, no mutation.
+    type_err = REGISTRY.validate_target_type("spec_entity_remove", target_type)
+    if type_err:
+        emit_registry_violation(
+            family_id="spec_entity_remove",
+            reason=VIOLATION_UNKNOWN_TARGET_TYPE,
+            tool_name=tool_name,
+            target_type=str(target_type),
+        )
+        _telemetry("error")
+        fam = REGISTRY.get("spec_entity_remove")
+        return json.dumps({
+            "error": "unsupported_target_type",
+            "message": type_err,
+            "allowed": list(fam.target_types) if fam else [],
+        })
+
+    from okto_pulse.core.models.schemas import SpecUpdate
 
     async with get_db_for_mcp() as db:
         service = SpecService(db)
         spec = await service.get_spec(spec_id)
         if not spec:
+            _telemetry("error")
             return json.dumps({"error": "Spec not found"})
 
-        contracts = list(spec.api_contracts or [])
-        new_contracts = [c for c in contracts if c.get("id") != contract_id]
-        if len(new_contracts) == len(contracts):
-            return json.dumps({"error": f"API contract '{contract_id}' not found"})
+        if target_type == "business_rule":
+            rules = list(spec.business_rules or [])
+            new_rules = [r for r in rules if r.get("id") != entity_id]
+            if len(new_rules) == len(rules):
+                _telemetry("error")
+                return json.dumps({"error": f"Business rule '{entity_id}' not found"})
+            _, _err = await _safe_spec_update(
+                service, spec_id, ctx.agent_id, SpecUpdate(business_rules=new_rules)
+            )
+            if _err:
+                _telemetry("error")
+                return _err
+            await db.commit()
+            cov = _spec_coverage(spec, rules=new_rules)
+            _telemetry("ok")
+            return json.dumps({
+                "success": True, "removed": entity_id, "remaining": len(new_rules),
+                **_saturation_or_coverage(cov),
+            })
 
-        from okto_pulse.core.models.schemas import SpecUpdate
-        _, _err = await _safe_spec_update(service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=new_contracts))
+        if target_type == "api_contract":
+            contracts = list(spec.api_contracts or [])
+            new_contracts = [c for c in contracts if c.get("id") != entity_id]
+            if len(new_contracts) == len(contracts):
+                _telemetry("error")
+                return json.dumps({"error": f"API contract '{entity_id}' not found"})
+            _, _err = await _safe_spec_update(
+                service, spec_id, ctx.agent_id, SpecUpdate(api_contracts=new_contracts)
+            )
+            if _err:
+                _telemetry("error")
+                return _err
+            await db.commit()
+            cov = _spec_coverage(spec, contracts=new_contracts)
+            _telemetry("ok")
+            return json.dumps({
+                "success": True, "removed": entity_id, "remaining": len(new_contracts),
+                **_saturation_or_coverage(cov),
+            })
+
+        # decision — SOFT-delete (status=revoked, restorable via update_decision).
+        decisions = list(spec.decisions or [])
+        target = next((d for d in decisions if d.get("id") == entity_id), None)
+        if target is None:
+            _telemetry("error")
+            return json.dumps({"error": f"Decision '{entity_id}' not found"})
+        target["status"] = "revoked"
+        _, _err = await _safe_spec_update(
+            service, spec_id, ctx.agent_id, SpecUpdate(decisions=decisions)
+        )
         if _err:
+            _telemetry("error")
             return _err
         await db.commit()
+        _telemetry("ok")
+        return json.dumps({"success": True, "revoked": entity_id, "decision": target})
 
-        cov = _spec_coverage(spec, contracts=new_contracts)
-        return json.dumps({"success": True, "removed": contract_id, "remaining": len(new_contracts), **_saturation_or_coverage(cov)})
+
+@mcp.tool()
+async def okto_pulse_remove_spec_entity(
+    board_id: str,
+    spec_id: str,
+    target_type: str,
+    entity_id: str,
+) -> str:
+    """
+    Consolidated spec-entity removal (R4). `target_type` is one of: `business_rule`,
+    `api_contract`, `decision`. Equivalent to the per-type tools
+    (`okto_pulse_remove_business_rule`/`_api_contract`/`_decision`), which remain as
+    aliases. Note the asymmetry: `decision` is a SOFT-delete (status becomes
+    `revoked`, restorable via `okto_pulse_update_decision`), while `business_rule`
+    and `api_contract` are hard removals. An unsupported `target_type` returns a
+    structured error listing the allowed values (no mutation).
+    See `okto-pulse://reference/tool-families/spec_entity_remove`."""
+    return await _remove_spec_entity_impl(
+        board_id, spec_id, target_type, entity_id,
+        alias_kind="consolidated", tool_name="okto_pulse_remove_spec_entity",
+    )
 
 
 @mcp.tool()
@@ -10750,15 +10197,7 @@ async def okto_pulse_list_api_contracts(
     include_inactive: str = "false",
 ) -> str:
     """
-    List all API contracts for a spec with linked business rules resolved.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON array of API contracts with resolved linked rules and requirements
-    """
+    List all API contracts for a spec with linked business rules resolved."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10779,7 +10218,14 @@ async def okto_pulse_list_api_contracts(
         existing_rules = {r.get("id"): r for r in (spec.business_rules or [])}
         frs = spec.functional_requirements or []
 
+        from okto_pulse.core.mcp.payload_compaction import emit_compaction_metric
+        from okto_pulse.core.services.analytics_service import (
+            _structured_ref_text,
+            resolve_linked_fr_indices,
+        )
+
         result = []
+        deduped_count = 0
         for c in contracts:
             entry = dict(c)
 
@@ -10794,19 +10240,39 @@ async def okto_pulse_list_api_contracts(
                     resolved_rules.append(rid)
             entry["resolved_rules"] = resolved_rules
 
-            # Resolve linked requirements
+            # FR7 dedup: same as list_business_rules — emit canonical fr_id
+            # under ``linked_requirements`` (IMPL-2: projection now emits fr_id,
+            # not re-derived index; legacy FRs without id fall back to str(idx))
+            # and carry the human ``[FR-n] <text>`` only under
+            # ``resolved_requirements`` so the full FR text is not serialized twice.
             linked_reqs = c.get("linked_requirements") or []
-            resolved_reqs = []
-            for req_text in linked_reqs:
-                if req_text in frs:
-                    idx = frs.index(req_text)
-                    resolved_reqs.append(f"[FR-{idx}] {req_text}")
-                else:
-                    resolved_reqs.append(req_text)
-            entry["resolved_requirements"] = resolved_reqs
+            idxs = sorted(resolve_linked_fr_indices(linked_reqs, frs))
+            entry["linked_requirements"] = [
+                _structured_ref_id(frs[i]) or str(i)
+                for i in idxs
+                if 0 <= i < len(frs)
+            ]
+            entry["resolved_requirements"] = [
+                f"[FR-{i}] {_structured_ref_text(frs[i])}"
+                for i in idxs
+                if 0 <= i < len(frs)
+            ]
+            # Robustness: preserve legacy refs that don't resolve to any FR.
+            unresolved = [
+                ref for ref in linked_reqs if not resolve_linked_fr_indices([ref], frs)
+            ]
+            if unresolved:
+                entry["unresolved_requirements"] = unresolved
+            deduped_count += len(entry["resolved_requirements"])
 
             result.append(entry)
 
+        # FR8 / or_f4159e58: this list dedups full FR text — emit the safe
+        # metric (counts only, no FR text / body).
+        emit_compaction_metric(
+            tool_name="okto_pulse_list_api_contracts",
+            deduped_count=deduped_count,
+        )
         return json.dumps({
             "spec_id": spec_id,
             "total": len(result),
@@ -10893,20 +10359,7 @@ async def okto_pulse_add_screen_mockup(
 ) -> str:
     """
     Add a screen mockup to any entity (spec, ideation, refinement, card, or story).
-    Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard.
-
-    Args:
-        board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, card, or story)
-        title: Screen title (e.g. "Login Page", "Dashboard", "Settings Modal")
-        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
-        description: What this screen does and when it appears (optional). Supports Markdown.
-        screen_type: Type of screen — one of: page, modal, drawer, popover, panel (default: page)
-        html_content: HTML+Tailwind markup for the screen mockup. Script tags and on* event attributes are stripped for safety.
-
-    Returns:
-        JSON with created screen including its generated ID
-    """
+    Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10960,21 +10413,7 @@ async def okto_pulse_update_screen_mockup(
     screen_type: str = "",
 ) -> str:
     """
-    Update an existing screen mockup's fields on any entity.
-
-    Args:
-        board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, card, or story)
-        screen_id: Screen mockup ID to update
-        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
-        title: New title (empty = no change)
-        description: New description (empty = no change)
-        html_content: New HTML+Tailwind content (empty = no change). Script tags and on* event attributes are stripped.
-        screen_type: New screen type (empty = no change) — one of: page, modal, drawer, popover, panel
-
-    Returns:
-        JSON with updated screen
-    """
+    Update an existing screen mockup's fields on any entity."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11020,18 +10459,7 @@ async def okto_pulse_annotate_mockup(
     entity_type: str = "spec",
 ) -> str:
     """
-    Add a design annotation/note to a screen mockup on any entity.
-
-    Args:
-        board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, card, or story)
-        screen_id: Screen mockup ID
-        text: Annotation text (design note, requirement, constraint)
-        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
-
-    Returns:
-        JSON with created annotation
-    """
+    Add a design annotation/note to a screen mockup on any entity."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11080,19 +10508,7 @@ async def okto_pulse_list_screen_mockups(
     screen_type: str = "", offset: int = 0, limit: int = 50
 ) -> str:
     """
-    List screen mockups for any entity with optional filtering and pagination.
-
-    Args:
-        board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, card, or story)
-        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
-        screen_type: Filter by screen type (optional) — one of: page, modal, drawer, popover, panel
-        offset: Skip first N screens (default 0)
-        limit: Max screens to return (default 50, max 200)
-
-    Returns:
-        JSON with filtered/paginated screens
-    """
+    List screen mockups for any entity with optional filtering and pagination."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11130,17 +10546,7 @@ async def okto_pulse_delete_screen_mockup(
     board_id: str, entity_id: str, screen_id: str, entity_type: str = "spec"
 ) -> str:
     """
-    Delete a screen mockup from any entity.
-
-    Args:
-        board_id: Board ID
-        entity_id: Entity ID (spec, ideation, refinement, card, or story)
-        screen_id: Screen mockup ID to delete
-        entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
-
-    Returns:
-        JSON with success status
-    """
+    Delete a screen mockup from any entity."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11180,14 +10586,7 @@ async def okto_pulse_get_board_guidelines(board_id: str) -> str:
     Get all guidelines for a board, ordered by priority. This is the PRIMARY tool
     for reading board guidelines — call it BEFORE doing any work on a board.
 
-    Returns linked global guidelines and inline board guidelines merged and sorted.
-
-    Args:
-        board_id: Board ID
-
-    Returns:
-        JSON with list of guidelines sorted by priority (highest first)
-    """
+    Returns linked global guidelines and inline board guidelines merged and sorted."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11198,7 +10597,7 @@ async def okto_pulse_get_board_guidelines(board_id: str) -> str:
 
     async with get_db_for_mcp() as db:
         service = GuidelineService(db)
-        items = await service.get_board_guidelines(board_id)
+        items = await service.get_board_guidelines(board_id, surface="mcp")
         await db.commit()
 
         return json.dumps({"board_id": board_id, "count": len(items), "guidelines": items}, default=str)
@@ -11210,17 +10609,7 @@ async def okto_pulse_list_guidelines(
 ) -> str:
     """
     List global guidelines from the catalog. Use this to browse available guidelines
-    that can be linked to boards.
-
-    Args:
-        board_id: Board ID (used for authentication)
-        offset: Pagination offset (default 0)
-        limit: Max results (default 50)
-        tag: Optional tag filter (empty = all)
-
-    Returns:
-        JSON with list of global guidelines
-    """
+    that can be linked to boards."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11265,22 +10654,11 @@ async def okto_pulse_list_guidelines(
 
 @mcp.tool()
 async def okto_pulse_create_guideline(
-    board_id: str, title: str, content: str, tags: str = "", scope: str = "global",
+    board_id: str, title: str, content: str, tags: list[str] | str = "", scope: str = "global",
 ) -> str:
     """
     Create a new guideline. If scope is "global", it goes into the catalog and can be
-    linked to any board. If scope is "inline", set a board_id to make it board-specific.
-
-    Args:
-        board_id: Board ID (used for authentication; also used as guideline board_id if scope is "inline")
-        title: Guideline title
-        content: Guideline content (Markdown supported)
-        tags: Pipe-separated tags (e.g. "coding|architecture") — empty = no tags
-        scope: "global" (catalog) or "inline" (board-specific)
-
-    Returns:
-        JSON with created guideline
-    """
+    linked to any board. If scope is "inline", set a board_id to make it board-specific."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11289,13 +10667,17 @@ async def okto_pulse_create_guideline(
     if perm_err:
         return _perm_error(perm_err)
 
+    try:
+        tag_list = coerce_to_list_str(tags) or None
+    except ValueError as e:
+        return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+
     async with get_db_for_mcp() as db:
         board = await db.get(Board, board_id)
         if not board:
             return json.dumps({"error": "Board not found"})
 
         from okto_pulse.core.models.schemas import GuidelineCreate
-        tag_list = parse_multi_value(tags) or None
         data = GuidelineCreate(
             title=title,
             content=content,
@@ -11323,21 +10705,10 @@ async def okto_pulse_create_guideline(
 
 @mcp.tool()
 async def okto_pulse_update_guideline(
-    board_id: str, guideline_id: str, title: str = "", content: str = "", tags: str = "",
+    board_id: str, guideline_id: str, title: str = "", content: str = "", tags: list[str] | str = "",
 ) -> str:
     """
-    Update a guideline's title, content, or tags.
-
-    Args:
-        board_id: Board ID (used for authentication)
-        guideline_id: Guideline ID to update
-        title: New title (empty = no change)
-        content: New content (empty = no change)
-        tags: New pipe-separated tags (empty = no change)
-
-    Returns:
-        JSON with updated guideline
-    """
+    Update a guideline's title, content, or tags."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11345,6 +10716,14 @@ async def okto_pulse_update_guideline(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE if hasattr(Permissions, 'BOARD_UPDATE') else Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
+
+    if tags:
+        try:
+            tags_list = coerce_to_list_str(tags) or None
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+    else:
+        tags_list = None
 
     async with get_db_for_mcp() as db:
         board = await db.get(Board, board_id)
@@ -11355,7 +10734,7 @@ async def okto_pulse_update_guideline(
         data = GuidelineUpdate(
             title=title or None,
             content=content or None,
-            tags=parse_multi_value(tags) or None,
+            tags=tags_list,
         )
 
         service = GuidelineService(db)
@@ -11379,15 +10758,7 @@ async def okto_pulse_update_guideline(
 @mcp.tool()
 async def okto_pulse_delete_guideline(board_id: str, guideline_id: str) -> str:
     """
-    Delete a guideline. Also removes all board links.
-
-    Args:
-        board_id: Board ID (used for authentication)
-        guideline_id: Guideline ID to delete
-
-    Returns:
-        JSON with success status
-    """
+    Delete a guideline. Also removes all board links."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11415,16 +10786,7 @@ async def okto_pulse_link_guideline_to_board(
     board_id: str, guideline_id: str, priority: str = "0",
 ) -> str:
     """
-    Link a global guideline to a board so agents see it when loading board guidelines.
-
-    Args:
-        board_id: Board ID
-        guideline_id: Guideline ID to link
-        priority: Priority order (higher = more important, default 0)
-
-    Returns:
-        JSON with link details
-    """
+    Link a global guideline to a board so agents see it when loading board guidelines."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11456,15 +10818,7 @@ async def okto_pulse_link_guideline_to_board(
 @mcp.tool()
 async def okto_pulse_unlink_guideline_from_board(board_id: str, guideline_id: str) -> str:
     """
-    Unlink a guideline from a board. The guideline itself is not deleted.
-
-    Args:
-        board_id: Board ID
-        guideline_id: Guideline ID to unlink
-
-    Returns:
-        JSON with success status
-    """
+    Unlink a guideline from a board. The guideline itself is not deleted."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11486,15 +10840,7 @@ async def okto_pulse_unlink_guideline_from_board(board_id: str, guideline_id: st
 @mcp.tool()
 async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
     """
-    Delete a spec. Derived cards are unlinked but not deleted.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with success status
-    """
+    Delete a spec. Derived cards are unlinked but not deleted."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11560,26 +10906,7 @@ async def okto_pulse_submit_spec_evaluation(
 ) -> str:
     """
     Submit a qualitative evaluation for a spec in 'validated' status.
-    Multiple evaluators can submit independent evaluations.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID (must be in 'validated' status)
-        breakdown_completeness: Score 0-100 — do tasks cover the spec scope?
-        breakdown_justification: Why this score
-        granularity: Score 0-100 — are tasks properly sized?
-        granularity_justification: Why this score
-        dependency_coherence: Score 0-100 — do task dependencies make sense?
-        dependency_justification: Why this score
-        test_coverage_quality: Score 0-100 — do tests cover happy path and edge cases?
-        test_coverage_justification: Why this score
-        overall_score: Overall score 0-100
-        overall_justification: Overall assessment summary
-        recommendation: approve | request_changes | reject
-
-    Returns:
-        JSON with created evaluation details
-    """
+    Multiple evaluators can submit independent evaluations."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11617,6 +10944,32 @@ async def okto_pulse_submit_spec_evaluation(
                          f"(currently '{spec.status.value}')"
             })
 
+        from okto_pulse.core.services.critical_context_guard import (
+            CriticalAction,
+            FullContextGuardError,
+        )
+        from okto_pulse.core.services.main import _authorize_critical_context_or_raise
+
+        try:
+            await _authorize_critical_context_or_raise(
+                db,
+                board_id=board_id,
+                actor_id=ctx.agent_id,
+                entity_type="spec",
+                entity_id=spec.id,
+                critical_action=CriticalAction.SPEC_SUBMIT_EVALUATION,
+                surface="mcp",
+                actor_type="agent",
+                actor_name=ctx.agent_name,
+            )
+        except FullContextGuardError as exc:
+            await db.commit()
+            return json.dumps({
+                "error": str(exc),
+                "reason": exc.reason,
+                "decision": exc.decision.audit_details(),
+            })
+
         import uuid as _uuid
         evaluation = {
             "id": f"eval_{_uuid.uuid4().hex[:8]}",
@@ -11650,15 +11003,7 @@ async def okto_pulse_submit_spec_evaluation(
 @mcp.tool()
 async def okto_pulse_list_spec_evaluations(board_id: str, spec_id: str) -> str:
     """
-    List all qualitative evaluations for a spec, with stale indication.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with evaluations list and summary
-    """
+    List all qualitative evaluations for a spec, with stale indication."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11714,16 +11059,7 @@ async def okto_pulse_get_spec_evaluation(
     board_id: str, spec_id: str, evaluation_id: str
 ) -> str:
     """
-    Get full details of a specific evaluation including all dimensions and justifications.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        evaluation_id: Evaluation ID (e.g. eval_abc12345)
-
-    Returns:
-        JSON with full evaluation details
-    """
+    Get full details of a specific evaluation including all dimensions and justifications."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11751,16 +11087,7 @@ async def okto_pulse_delete_spec_evaluation(
     board_id: str, spec_id: str, evaluation_id: str
 ) -> str:
     """
-    Delete your own evaluation. Only the author can delete their evaluation.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        evaluation_id: Evaluation ID to delete
-
-    Returns:
-        JSON with success or error
-    """
+    Delete your own evaluation. Only the author can delete their evaluation."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11809,22 +11136,7 @@ async def okto_pulse_get_spec_history(board_id: str, spec_id: str, limit: str = 
     """
     Get the detailed change history of a spec. Shows every modification with field-level diffs
     (old value vs new value), who made the change, and when. Use this to understand how a spec
-    evolved over time and what exactly was modified at each step.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        limit: Maximum number of history entries to return (default 30)
-
-    Returns:
-        JSON with list of history entries, newest first. Each entry includes:
-        - action: what happened (created, updated, status_changed, cards_derived, etc.)
-        - actor_name: who did it
-        - changes: list of {field, old, new} diffs
-        - summary: human-readable summary
-        - version: spec version at that point
-        - created_at: when it happened
-    """
+    evolved over time and what exactly was modified at each step."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11871,50 +11183,11 @@ async def okto_pulse_ask_spec_question(board_id: str, spec_id: str, question: st
     """
     Ask a question on a spec's Q&A board. Use @Name to direct the question.
     Both humans and agents can ask questions — this is for clarifying spec requirements
-    BEFORE work begins on tasks.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        question: Question text (use @Name to mention someone)
-
-    Returns:
-        JSON with Q&A item details
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    perm_err = check_permission(ctx.permissions, Permissions.QA_CREATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.models.schemas import SpecQACreate
-
-    async with get_db_for_mcp() as db:
-        service = SpecQAService(db)
-        qa = await service.create_question(spec_id, ctx.agent_id, SpecQACreate(question=question))
-        if not qa:
-            return json.dumps({"error": "Spec not found"})
-
-        board_service = BoardService(db)
-        await board_service._log_activity(
-            board_id=board_id, action="spec_question_added",
-            actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
-            details={"spec_id": spec_id, "question": question[:100]},
-        )
-        await db.commit()
-
-        return json.dumps(
-            {
-                "success": True,
-                "qa": {
-                    "id": qa.id,
-                    "question": qa.question,
-                    "asked_by": qa.asked_by,
-                },
-            }
-        )
+    BEFORE work begins on tasks."""
+    return await _ask_question_impl(
+        board_id, "spec", spec_id, question,
+        alias_kind="legacy", tool_name="okto_pulse_ask_spec_question",
+    )
 
 
 @mcp.tool()
@@ -11922,32 +11195,17 @@ async def okto_pulse_ask_spec_choice_question(
     board_id: str,
     spec_id: str,
     question: str,
-    options: str,
+    options: list[str] | str,
     question_type: str = "choice",
     allow_free_text: str = "false",
+    options_json: str = "",
 ) -> str:
     """
     Ask a choice question (poll/form) on a spec's Q&A board. The respondent picks from predefined options.
     Use this when you need a structured answer — e.g. "Which auth approach?" with options.
 
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        question: The question text
-        options: Option labels in any of three formats:
-            - JSON array (preferred when labels contain commas):
-              ``'["OAuth2 (RFC 6749, recommended)", "API Keys", "Both"]'``
-            - Pipe-separated (when labels contain commas but not pipes):
-              ``"OAuth2|API Keys|Both"``
-            - Comma-separated (legacy, fragile if a label contains a comma):
-              ``"OAuth2,API Keys,Both"``
-            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
-        question_type: "choice" for single-select (default) or "multi_choice" for multi-select
-        allow_free_text: "true" to also allow a free-text response alongside selections
-
-    Returns:
-        JSON with Q&A item including choices
-    """
+options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
+Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11959,16 +11217,26 @@ async def okto_pulse_ask_spec_choice_question(
     from okto_pulse.core.models.schemas import SpecQAChoiceOption, SpecQACreate
 
     try:
-        option_labels = parse_multi_value(options)
+        parsed_objects = parse_options_json(options_json or None)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options: {e}"})
-    if not option_labels:
-        return json.dumps({"error": "At least one option is required"})
+        return json.dumps({"error": f"Invalid options_json: {e}"})
 
-    choice_list = [
-        SpecQAChoiceOption(id=f"opt_{i}", label=label)
-        for i, label in enumerate(option_labels)
-    ]
+    if parsed_objects is not None:
+        choice_list = [
+            SpecQAChoiceOption(id=f"opt_{i}", label=obj["label"], recommended=obj["recommended"], tradeoff=obj["tradeoff"])
+            for i, obj in enumerate(parsed_objects)
+        ]
+    else:
+        try:
+            option_labels = coerce_to_list_str(options)
+        except ValueError as e:
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+        if not option_labels:
+            return json.dumps({"error": "At least one option is required"})
+        choice_list = [
+            SpecQAChoiceOption(id=f"opt_{i}", label=label)
+            for i, label in enumerate(option_labels)
+        ]
 
     async with get_db_for_mcp() as db:
         service = SpecQAService(db)
@@ -12006,24 +11274,12 @@ async def okto_pulse_ask_spec_choice_question(
 
 
 @mcp.tool()
-async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: str, answer: str = "", selected: str = "") -> str:
+async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: str, answer: str = "", selected: list[str] | str = "") -> str:
     """
     Answer a question on a spec's Q&A board.
     For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID (for context/validation)
-        qa_id: Q&A item ID to answer
-        answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-        selected: Option IDs for choice questions, accepted in three formats:
-            ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
-            (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
-            See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
-
-    Returns:
-        JSON with updated Q&A item
-    """
+Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12033,18 +11289,26 @@ async def okto_pulse_answer_spec_question(board_id: str, spec_id: str, qa_id: st
         return _perm_error(perm_err)
 
     from okto_pulse.core.models.schemas import SpecQAAnswer
+    from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
     try:
-        selected_list = parse_multi_value(selected) if selected else None
+        selected_list = coerce_to_list_str(selected) if selected else None
     except ValueError as e:
-        return json.dumps({"error": f"Invalid selected: {e}"})
+        return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     async with get_db_for_mcp() as db:
         service = SpecQAService(db)
-        qa = await service.answer_question(
-            qa_id, ctx.agent_id,
-            SpecQAAnswer(answer=answer or None, selected=selected_list),
-        )
+        try:
+            qa = await service.answer_question(
+                qa_id,
+                ctx.agent_id,
+                SpecQAAnswer(answer=answer or None, selected=selected_list),
+                actor_type="agent",
+                surface="mcp",
+            )
+        except QASelfAnsweringNotAllowedError as e:
+            await db.commit()
+            return json.dumps({"error": e.reason, "detail": str(e)})
         if not qa:
             return json.dumps({"error": "Q&A item not found or invalid selection"})
 
@@ -12077,7 +11341,7 @@ async def okto_pulse_get_traceability_report(
     board_id: str,
     ideation_id: str = "",
     spec_id: str = "",
-    include_artifacts: str = "true",
+    include_artifacts: str = "false",
 ) -> str:
     """
     okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
@@ -12085,22 +11349,7 @@ async def okto_pulse_get_traceability_report(
 
     Use this at the end of an E2E flow to verify whether the agent can answer
     what was implemented in each flow and whether KBs, mockups, architecture,
-    tests, bugs, cards, and parent references stayed queryable.
-
-    Args:
-        board_id: Board ID.
-        ideation_id: Optional ideation filter. When provided, returns only
-            lineage below that ideation.
-        spec_id: Optional spec filter. When provided, returns the spec and its
-            parent ideation/refinement lineage when available.
-        include_artifacts: "true" to include KB/mockup/architecture references;
-            "false" for compact artifact counts.
-
-    Returns:
-        JSON with consolidated lineage, card/test/bug counts, artifacts, and
-        orphan_specs that are linked to the selected board but not attached to
-        the selected ideation/refinement chain.
-    """
+    tests, bugs, cards, and parent references stayed queryable."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12128,6 +11377,39 @@ async def okto_pulse_get_traceability_report(
         except TraceabilityReadError as exc:
             return json.dumps({"error": exc.message, "code": exc.code})
         await db.commit()
+
+        # FR8 / or_f4159e58: this response is deduped (bug cards → slim index)
+        # and, by default, compacted (artifact bodies → counts/ids/drilldown).
+        # Emit the safe metric with counts only — no bodies.
+        def _count_traceability_compaction(node: object) -> tuple[int, int]:
+            omitted = 0
+            deduped = 0
+            if isinstance(node, dict):
+                if "artifact_summary" in node:
+                    omitted += 1  # one entity whose artifact bodies were omitted
+                bugs = node.get("bugs")
+                if isinstance(bugs, list):
+                    deduped += len(bugs)  # each bug deduped from full → slim
+                for value in node.values():
+                    sub_o, sub_d = _count_traceability_compaction(value)
+                    omitted += sub_o
+                    deduped += sub_d
+            elif isinstance(node, list):
+                for item in node:
+                    sub_o, sub_d = _count_traceability_compaction(item)
+                    omitted += sub_o
+                    deduped += sub_d
+            return omitted, deduped
+
+        from okto_pulse.core.mcp.payload_compaction import emit_compaction_metric
+
+        omitted_count, deduped_count = _count_traceability_compaction(report)
+        emit_compaction_metric(
+            tool_name="okto_pulse_get_traceability_report",
+            profile="full" if _include_artifacts else "compact",
+            omitted_count=omitted_count,
+            deduped_count=deduped_count,
+        )
         return json.dumps(report, default=str)
 
 
@@ -12139,16 +11421,7 @@ async def okto_pulse_get_traceability_report(
 @mcp.tool()
 async def okto_pulse_get_spec_knowledge(board_id: str, spec_id: str, knowledge_id: str) -> str:
     """
-    Get the full content of a knowledge base item.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        knowledge_id: Knowledge base item ID
-
-    Returns:
-        JSON with full knowledge base content
-    """
+    Get the full content of a knowledge base item."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12195,21 +11468,7 @@ async def okto_pulse_add_spec_knowledge(
 
     Provide exactly ONE of: content, file_path, or file_url. Prefer file_path or
     file_url for large documents — the content is loaded server-side and never
-    passes through the LLM context, saving tokens.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        title: Title of the knowledge base item
-        content: Inline text content (use for small snippets)
-        description: Short description of what this document contains (optional)
-        mime_type: Content type, default "text/markdown"
-        file_path: Absolute path to a local UTF-8 text file on the MCP server host
-        file_url: HTTP(S) URL of a UTF-8 text document to fetch
-
-    Returns:
-        JSON with created knowledge base item
-    """
+    passes through the LLM context, saving tokens."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12256,16 +11515,7 @@ async def okto_pulse_add_spec_knowledge(
 @mcp.tool()
 async def okto_pulse_delete_spec_knowledge(board_id: str, spec_id: str, knowledge_id: str) -> str:
     """
-    Delete a knowledge base item from a spec.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        knowledge_id: Knowledge base item ID
-
-    Returns:
-        JSON with success status
-    """
+    Delete a knowledge base item from a spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12295,16 +11545,7 @@ async def okto_pulse_get_refinement_snapshot(board_id: str, refinement_id: str, 
     """
     Get the full immutable snapshot of a refinement at a specific version.
     Includes all fields as they were when the refinement was marked 'done',
-    plus a snapshot of all Q&A at that point.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        version: Version number to retrieve
-
-    Returns:
-        JSON with complete snapshot including Q&A history
-    """
+    plus a snapshot of all Q&A at that point."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12348,16 +11589,7 @@ async def okto_pulse_get_refinement_snapshot(board_id: str, refinement_id: str, 
 @mcp.tool()
 async def okto_pulse_get_refinement_knowledge(board_id: str, refinement_id: str, knowledge_id: str) -> str:
     """
-    Get the full content of a refinement knowledge base item.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        knowledge_id: Knowledge base item ID
-
-    Returns:
-        JSON with full knowledge base content
-    """
+    Get the full content of a refinement knowledge base item."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12404,21 +11636,7 @@ async def okto_pulse_add_refinement_knowledge(
 
     Provide exactly ONE of: content, file_path, or file_url. Prefer file_path or
     file_url for large documents — the content is loaded server-side and never
-    passes through the LLM context, saving tokens.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        title: Title of the knowledge base item
-        content: Inline text content (use for small snippets)
-        description: Short description of what this document contains (optional)
-        mime_type: Content type, default "text/markdown"
-        file_path: Absolute path to a local UTF-8 text file on the MCP server host
-        file_url: HTTP(S) URL of a UTF-8 text document to fetch
-
-    Returns:
-        JSON with created knowledge base item
-    """
+    passes through the LLM context, saving tokens."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12465,16 +11683,7 @@ async def okto_pulse_add_refinement_knowledge(
 @mcp.tool()
 async def okto_pulse_delete_refinement_knowledge(board_id: str, refinement_id: str, knowledge_id: str) -> str:
     """
-    Delete a knowledge base item from a refinement.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID
-        knowledge_id: Knowledge base item ID
-
-    Returns:
-        JSON with success status
-    """
+    Delete a knowledge base item from a refinement."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12507,6 +11716,9 @@ async def okto_pulse_create_sprint(
     description: str = "",
     objective: str = "",
     expected_outcome: str = "",
+    lane_type: str = "normal",
+    origin_sprint_id: str = "",
+    origin_bug_id: str = "",
     test_scenario_ids: list[str] | str = "",
     business_rule_ids: list[str] | str = "",
     start_date: str = "",
@@ -12514,24 +11726,7 @@ async def okto_pulse_create_sprint(
     labels: list[str] | str = "",
 ) -> str:
     """
-    Create a new sprint for a spec. Sprints break specs into incremental deliverables.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID this sprint belongs to
-        title: Sprint title
-        description: Sprint description with scope and deliverables (optional)
-        objective: What this sprint aims to achieve (optional but recommended)
-        expected_outcome: What success looks like when this sprint is done (optional but recommended)
-        test_scenario_ids: Comma-separated spec test scenario IDs scoped to this sprint (optional)
-        business_rule_ids: Comma-separated spec business rule IDs scoped to this sprint (optional)
-        start_date: ISO date string (optional)
-        end_date: ISO date string (optional)
-        labels: Comma-separated labels (optional)
-
-    Returns:
-        JSON with created sprint details
-    """
+    Create a new sprint for a spec. Sprints break specs into incremental deliverables."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12548,13 +11743,16 @@ async def okto_pulse_create_sprint(
     from okto_pulse.core.models.schemas import SprintCreate
 
     async with get_db_for_mcp() as db:
-        from okto_pulse.core.services.main import SprintService
+        from okto_pulse.core.services.main import SprintOperationError, SprintService
         service = SprintService(db)
         try:
             data = SprintCreate(
                 title=title, description=description or None, spec_id=spec_id,
                 objective=objective or None,
                 expected_outcome=expected_outcome or None,
+                lane_type=lane_type or "normal",
+                origin_sprint_id=origin_sprint_id or None,
+                origin_bug_id=origin_bug_id or None,
                 test_scenario_ids=coerce_to_list_str(test_scenario_ids) or None,
                 business_rule_ids=coerce_to_list_str(business_rule_ids) or None,
                 start_date=start_date or None, end_date=end_date or None,
@@ -12566,8 +11764,19 @@ async def okto_pulse_create_sprint(
                 return json.dumps({"error": "Failed to create sprint (spec not found or wrong board)"})
             return json.dumps({
                 "success": True,
-                "sprint": {"id": sprint.id, "title": sprint.title, "status": sprint.status.value, "spec_id": sprint.spec_id},
+                "sprint": {
+                    "id": sprint.id,
+                    "title": sprint.title,
+                    "status": sprint.status.value,
+                    "spec_id": sprint.spec_id,
+                    "lane_type": sprint.lane_type.value if sprint.lane_type else "normal",
+                    "origin_sprint_id": sprint.origin_sprint_id,
+                    "origin_bug_id": sprint.origin_bug_id,
+                    "normal_sprint_created": sprint.normal_sprint_created,
+                },
             })
+        except SprintOperationError as e:
+            return json.dumps({"error": e.code, **e.to_dict()})
         except ValueError as e:
             return json.dumps({"error": str(e)})
 
@@ -12581,28 +11790,15 @@ async def okto_pulse_update_sprint(
     test_scenario_ids: list[str] | str = "",
     business_rule_ids: list[str] | str = "",
     labels: list[str] | str = "",
+    lane_type: str = "",
+    origin_sprint_id: str = "",
+    origin_bug_id: str = "",
     skip_test_coverage: str = "",
     skip_rules_coverage: str = "",
     skip_qualitative_validation: str = "",
 ) -> str:
     """
-    Update sprint fields.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-        title: New title (optional, empty = no change)
-        description: New description (optional)
-        test_scenario_ids: Comma-separated scoped test scenario IDs (optional)
-        business_rule_ids: Comma-separated scoped business rule IDs (optional)
-        labels: Comma-separated labels (optional)
-        skip_test_coverage: "true" or "false" (optional)
-        skip_rules_coverage: "true" or "false" (optional)
-        skip_qualitative_validation: "true" or "false" (optional)
-
-    Returns:
-        JSON with updated sprint details
-    """
+    Update sprint fields."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12632,6 +11828,12 @@ async def okto_pulse_update_sprint(
                 kwargs["labels"] = coerce_to_list_str(labels)
             except ValueError as e:
                 return json.dumps({"error": f"Invalid labels: {e}"})
+        if lane_type:
+            kwargs["lane_type"] = lane_type
+        if origin_sprint_id:
+            kwargs["origin_sprint_id"] = origin_sprint_id
+        if origin_bug_id:
+            kwargs["origin_bug_id"] = origin_bug_id
         if skip_test_coverage:
             kwargs["skip_test_coverage"] = skip_test_coverage.lower() == "true"
         if skip_rules_coverage:
@@ -12647,7 +11849,15 @@ async def okto_pulse_update_sprint(
                 return json.dumps({"error": "Sprint not found"})
             return json.dumps({
                 "success": True,
-                "sprint": {"id": sprint.id, "title": sprint.title, "version": sprint.version},
+                "sprint": {
+                    "id": sprint.id,
+                    "title": sprint.title,
+                    "version": sprint.version,
+                    "lane_type": sprint.lane_type.value if sprint.lane_type else "normal",
+                    "origin_sprint_id": sprint.origin_sprint_id,
+                    "origin_bug_id": sprint.origin_bug_id,
+                    "normal_sprint_created": sprint.normal_sprint_created,
+                },
             })
         except ValueError as e:
             return json.dumps({"error": str(e)})
@@ -12661,16 +11871,7 @@ async def okto_pulse_move_sprint(
 ) -> str:
     """
     Move a sprint to a new status. State machine: draft→active→review→closed.
-    Gates: draft→active requires cards, active→review requires scoped test coverage, review→closed requires evaluation.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-        status: New status — one of: draft, active, review, closed, cancelled
-
-    Returns:
-        JSON with updated sprint details
-    """
+    Gates: draft→active requires cards, active→review requires scoped test coverage, review→closed requires evaluation."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12702,15 +11903,7 @@ async def okto_pulse_move_sprint(
 @mcp.tool()
 async def okto_pulse_get_sprint(board_id: str, sprint_id: str) -> str:
     """
-    Get full sprint details including cards, evaluations, and Q&A.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-
-    Returns:
-        JSON with full sprint details
-    """
+    Get full sprint details including cards, evaluations, and Q&A."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12725,6 +11918,10 @@ async def okto_pulse_get_sprint(board_id: str, sprint_id: str) -> str:
             "id": sprint.id, "spec_id": sprint.spec_id, "board_id": sprint.board_id,
             "title": sprint.title, "description": sprint.description,
             "status": sprint.status.value, "spec_version": sprint.spec_version,
+            "lane_type": sprint.lane_type.value if sprint.lane_type else "normal",
+            "origin_sprint_id": sprint.origin_sprint_id,
+            "origin_bug_id": sprint.origin_bug_id,
+            "normal_sprint_created": sprint.normal_sprint_created,
             "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
             "end_date": sprint.end_date.isoformat() if sprint.end_date else None,
             "test_scenario_ids": sprint.test_scenario_ids,
@@ -12758,16 +11955,7 @@ async def okto_pulse_get_sprint_context(
     the parent spec's structured sections (requirements, test scenarios, BRs,
     contracts) for scope resolution and evaluation.
 
-    **Always call this before evaluating, moving, or reviewing a sprint.**
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-        include_spec: Include parent spec context with all structured data (default "true")
-
-    Returns:
-        JSON with complete sprint context: details + cards + evaluations + Q&A + parent spec + scope
-    """
+    **Always call this before evaluating, moving, or reviewing a sprint.**"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12796,6 +11984,10 @@ async def okto_pulse_get_sprint_context(
             "objective": getattr(sprint, "objective", None),
             "expected_outcome": getattr(sprint, "expected_outcome", None),
             "status": sprint.status.value,
+            "lane_type": sprint.lane_type.value if sprint.lane_type else "normal",
+            "origin_sprint_id": sprint.origin_sprint_id,
+            "origin_bug_id": sprint.origin_bug_id,
+            "normal_sprint_created": sprint.normal_sprint_created,
             "spec_version": sprint.spec_version,
             "version": sprint.version,
             "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
@@ -12890,19 +12082,7 @@ async def okto_pulse_assign_tasks_to_sprint(
     card_ids: list[str] | str,
 ) -> str:
     """
-    Assign cards to a sprint. Cards must belong to the same spec as the sprint.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-        card_ids: Multi-value card IDs to assign. Preferred native list (e.g.
-            ``["uuid_a", "uuid_b"]``); legacy string accepted as JSON array or
-            pipe-separated. Comma-only string is REJECTED. See
-            ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
-
-    Returns:
-        JSON with number of cards assigned
-    """
+    Assign cards to a sprint. Cards must belong to the same spec as the sprint."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12915,12 +12095,27 @@ async def okto_pulse_assign_tasks_to_sprint(
         return json.dumps({"error": "No card IDs provided"})
 
     async with get_db_for_mcp() as db:
-        from okto_pulse.core.services.main import SprintService
+        from okto_pulse.core.services.main import SprintOperationError, SprintService
         service = SprintService(db)
         try:
             count = await service.assign_tasks(sprint_id, ids, ctx.agent_id)
             await db.commit()
-            return json.dumps({"success": True, "assigned": count})
+            sprint = await service.get_sprint(sprint_id)
+            lane_type = sprint.lane_type.value if sprint else None
+            accepted_card_types = (
+                ["bug", "test"]
+                if lane_type == "hotfix"
+                else ["normal", "test", "bug"]
+            )
+            return json.dumps({
+                "success": True,
+                "assigned": count,
+                "assigned_count": count,
+                "lane_type": lane_type,
+                "accepted_card_types": accepted_card_types,
+            })
+        except SprintOperationError as e:
+            return json.dumps({"error": e.code, **e.to_dict()})
         except ValueError as e:
             return json.dumps({"error": str(e)})
 
@@ -12942,26 +12137,7 @@ async def okto_pulse_submit_sprint_evaluation(
     recommendation: str,
 ) -> str:
     """
-    Submit a qualitative evaluation for a sprint in 'review' status.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID (must be in 'review' status)
-        breakdown_completeness: Score 0-100 — do tasks cover the sprint scope?
-        breakdown_justification: Why this score
-        granularity: Score 0-100 — are tasks properly sized?
-        granularity_justification: Why this score
-        dependency_coherence: Score 0-100 — do task dependencies make sense?
-        dependency_justification: Why this score
-        test_coverage_quality: Score 0-100 — do tests cover happy path and edge cases?
-        test_coverage_justification: Why this score
-        overall_score: Overall score 0-100
-        overall_justification: Overall assessment
-        recommendation: One of: approve, request_changes, reject
-
-    Returns:
-        JSON with evaluation ID and sprint summary
-    """
+    Submit a qualitative evaluation for a sprint in 'review' status."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13003,15 +12179,7 @@ async def okto_pulse_submit_sprint_evaluation(
 @mcp.tool()
 async def okto_pulse_list_sprint_evaluations(board_id: str, sprint_id: str) -> str:
     """
-    List all evaluations for a sprint.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-
-    Returns:
-        JSON with evaluations list and summary
-    """
+    List all evaluations for a sprint."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13037,16 +12205,7 @@ async def okto_pulse_get_sprint_evaluation(
     board_id: str, sprint_id: str, evaluation_id: str,
 ) -> str:
     """
-    Get full details of a specific sprint evaluation.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-        evaluation_id: Evaluation ID
-
-    Returns:
-        JSON with full evaluation details
-    """
+    Get full details of a specific sprint evaluation."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13067,16 +12226,7 @@ async def okto_pulse_delete_sprint_evaluation(
     board_id: str, sprint_id: str, evaluation_id: str,
 ) -> str:
     """
-    Delete your own sprint evaluation.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-        evaluation_id: Evaluation ID to delete
-
-    Returns:
-        JSON with success or error
-    """
+    Delete your own sprint evaluation."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13111,31 +12261,11 @@ async def okto_pulse_ask_sprint_question(
     question: str,
 ) -> str:
     """
-    Ask a question on a sprint.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-        question: Question text
-
-    Returns:
-        JSON with created Q&A item
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    async with get_db_for_mcp() as db:
-        from okto_pulse.core.services.main import SprintQAService
-        service = SprintQAService(db)
-        qa = await service.create_question(sprint_id, ctx.agent_id, question)
-        await db.commit()
-        if not qa:
-            return json.dumps({"error": "Sprint not found"})
-        return json.dumps({
-            "success": True,
-            "qa": {"id": qa.id, "question": qa.question, "asked_by": qa.asked_by},
-        })
+    Ask a question on a sprint."""
+    return await _ask_question_impl(
+        board_id, "sprint", sprint_id, question,
+        alias_kind="legacy", tool_name="okto_pulse_ask_sprint_question",
+    )
 
 
 @mcp.tool()
@@ -13146,25 +12276,22 @@ async def okto_pulse_answer_sprint_question(
     answer: str,
 ) -> str:
     """
-    Answer a question on a sprint.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID
-        qa_id: Q&A item ID
-        answer: Answer text
-
-    Returns:
-        JSON with updated Q&A item
-    """
+    Answer a question on a sprint."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
     async with get_db_for_mcp() as db:
         from okto_pulse.core.services.main import SprintQAService
+        from okto_pulse.core.services import QASelfAnsweringNotAllowedError
         service = SprintQAService(db)
-        qa = await service.answer_question(qa_id, ctx.agent_id, answer)
+        try:
+            qa = await service.answer_question(
+                qa_id, ctx.agent_id, answer, actor_type="agent", surface="mcp"
+            )
+        except QASelfAnsweringNotAllowedError as e:
+            await db.commit()
+            return json.dumps({"error": e.reason, "detail": str(e)})
         await db.commit()
         if not qa:
             return json.dumps({"error": "Q&A item not found"})
@@ -13178,16 +12305,7 @@ async def okto_pulse_answer_sprint_question(
 async def okto_pulse_delete_spec_question(board_id: str, spec_id: str, qa_id: str) -> str:
     """
     Delete a Q&A item from a spec. Use this to invalidate outdated questions
-    or remove resolved clarifications that no longer apply.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID (for context/logging)
-        qa_id: Q&A item ID to delete
-
-    Returns:
-        JSON with success status
-    """
+    or remove resolved clarifications that no longer apply."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13216,16 +12334,7 @@ async def okto_pulse_delete_spec_question(board_id: str, spec_id: str, qa_id: st
 async def okto_pulse_delete_ideation_question(board_id: str, ideation_id: str, qa_id: str) -> str:
     """
     Delete a Q&A item from an ideation. Use this to invalidate outdated questions
-    or remove resolved clarifications that no longer apply.
-
-    Args:
-        board_id: Board ID
-        ideation_id: Ideation ID (for context/logging)
-        qa_id: Q&A item ID to delete
-
-    Returns:
-        JSON with success status
-    """
+    or remove resolved clarifications that no longer apply."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13255,16 +12364,7 @@ async def okto_pulse_delete_ideation_question(board_id: str, ideation_id: str, q
 async def okto_pulse_delete_refinement_question(board_id: str, refinement_id: str, qa_id: str) -> str:
     """
     Delete a Q&A item from a refinement. Use this to invalidate outdated questions
-    or remove resolved clarifications that no longer apply.
-
-    Args:
-        board_id: Board ID
-        refinement_id: Refinement ID (for context/logging)
-        qa_id: Q&A item ID to delete
-
-    Returns:
-        JSON with success status
-    """
+    or remove resolved clarifications that no longer apply."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13294,16 +12394,7 @@ async def okto_pulse_delete_refinement_question(board_id: str, refinement_id: st
 async def okto_pulse_delete_sprint_question(board_id: str, sprint_id: str, qa_id: str) -> str:
     """
     Delete a Q&A item from a sprint. Use this to invalidate outdated questions
-    or remove resolved clarifications that no longer apply.
-
-    Args:
-        board_id: Board ID
-        sprint_id: Sprint ID (for context/logging)
-        qa_id: Q&A item ID to delete
-
-    Returns:
-        JSON with success status
-    """
+    or remove resolved clarifications that no longer apply."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13337,16 +12428,7 @@ async def okto_pulse_suggest_sprints(
 ) -> str:
     """
     Suggest a sprint breakdown for a spec based on tasks, FRs, and dependencies.
-    Does NOT create sprints — returns suggestions for review.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-        threshold: Max tasks per sprint (default 8)
-
-    Returns:
-        JSON with list of suggested sprints (title, card_ids, test_scenario_ids, business_rule_ids)
-    """
+    Does NOT create sprints — returns suggestions for review."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13387,23 +12469,7 @@ async def okto_pulse_submit_task_validation(
     threshold checks (resolved from sprint → spec → board hierarchy) and
     automatically routes the card: success → done; failed remains in
     validation so the validator feedback stays visible and the executor can
-    decide whether to move the card back for rework.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID (must be in 'validation' status)
-        confidence: Score 0-100 — how confident is the reviewer that the task was implemented correctly?
-        confidence_justification: Why this confidence score
-        estimated_completeness: Score 0-100 — how complete is the implementation relative to the spec?
-        completeness_justification: Why this completeness score
-        estimated_drift: Score 0-100 — how much did the implementation deviate from the spec? (lower is better)
-        drift_justification: Why this drift score
-        general_justification: Overall assessment of the task implementation
-        recommendation: One of: approve, reject
-
-    Returns:
-        JSON with validation result, outcome, threshold violations, and card routing
-    """
+    decide whether to move the card back for rework."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13443,6 +12509,8 @@ async def okto_pulse_submit_task_validation(
             )
             await db.commit()
             return json.dumps(result, default=str)
+        except ResourceGateError as e:
+            return _resource_gate_error_response(e)
         except ValueError as e:
             return json.dumps({"error": str(e)})
 
@@ -13453,15 +12521,7 @@ async def okto_pulse_list_task_validations(board_id: str, card_id: str) -> str:
     List all validations for a task card in reverse chronological order.
 
     Useful for understanding the validation history of a card, especially
-    cards that have been through multiple validation cycles (failed → reworked → resubmitted).
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-
-    Returns:
-        JSON with list of validation entries
-    """
+    cards that have been through multiple validation cycles (failed → reworked → resubmitted)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13489,16 +12549,7 @@ async def okto_pulse_get_task_validation(
     board_id: str, card_id: str, validation_id: str,
 ) -> str:
     """
-    Get full details of a specific task validation entry.
-
-    Args:
-        board_id: Board ID
-        card_id: Card ID
-        validation_id: Validation ID (e.g. "val_abc12345")
-
-    Returns:
-        JSON with full validation details including scores, justifications, outcome, and threshold violations
-    """
+    Get full details of a specific task validation entry."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13537,45 +12588,15 @@ async def okto_pulse_submit_spec_validation(
     general_justification: str,
     recommendation: str,
 ) -> str:
-    """
-    Submit a Spec Validation Gate record for a spec in 'approved' status.
-
-    This is the entry point for the Spec Validation Gate — a semantic quality
-    gate that runs AFTER the existing deterministic coverage gates (AC/FR/TR/Contract).
-    Use this AFTER you have confidence the spec is saturated on detail (see
-    agent_instructions.md section 2.3a "Detail Saturation").
-
-    The system runs coverage gates first; if any fails the submit is rejected
-    with the specific coverage violation. If coverage passes, it computes outcome:
-    - FAILED if any threshold violated OR recommendation=reject
-    - SUCCESS only if ALL thresholds pass AND recommendation=approve
-
-    On SUCCESS, the spec is atomically promoted from 'approved' to 'validated'
-    and enters the content lock (update_spec and related tools will raise
-    SpecLockedError). To edit after a success, move the spec back to draft or
-    approved — the validation will be cleared but the full history is preserved.
-
-    ANTI-PATTERN WARNING: inflating scores to make the gate pass is a grave
-    violation of the detail saturation principle. If outcome=failed, iterate
-    on content (add scenarios, refine BRs, specify TRs) rather than just
-    raising the numbers.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID (must be in 'approved' status)
-        completeness: Score 0-100 — how complete is the spec detail (ACs, BRs, TRs, scenarios, contracts)?
-        completeness_justification: Why this completeness score (min 10 chars)
-        assertiveness: Score 0-100 — how measurable/testable is the text (no weasel words)?
-        assertiveness_justification: Why this assertiveness score (min 10 chars)
-        ambiguity: Score 0-100 — how many sentences admit multiple interpretations? (LOWER IS BETTER)
-        ambiguity_justification: Why this ambiguity score (min 10 chars)
-        general_justification: Overall assessment (min 20 chars)
-        recommendation: One of: approve, reject
-
-    Returns:
-        JSON with validation result, outcome, threshold violations, and resolved thresholds.
-        On success, spec_status becomes "validated".
-    """
+    """Submit a Spec Validation Gate record for a spec in 'approved' status — a semantic
+quality gate that runs AFTER the deterministic coverage gates (AC/FR/TR/Contract).
+Coverage runs first; if any fails the submit is rejected with the violation. Outcome
+is FAILED if any threshold is violated or recommendation=reject, SUCCESS only if all
+thresholds pass AND recommendation=approve. On SUCCESS the spec is atomically
+promoted approved->validated and content-locked. ANTI-PATTERN WARNING: inflating
+scores to pass the gate is a grave violation — if outcome=failed, iterate on content
+(scenarios, BRs, TRs) rather than just raising numbers. Full details:
+okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13636,15 +12657,7 @@ async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
     Useful for understanding why a spec was validated (or failed). Each record
     includes the 3 scores, justifications, outcome, threshold violations, and
     a resolved_thresholds snapshot of what was in effect when the submit happened.
-    The record currently pointed to by current_validation_id has active=true.
-
-    Args:
-        board_id: Board ID
-        spec_id: Spec ID
-
-    Returns:
-        JSON with current_validation_id and validations list (reverse chronological)
-    """
+    The record currently pointed to by current_validation_id has active=true."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13686,26 +12699,17 @@ _register_kg_power_tools(mcp, get_agent=_get_authenticated_agent, get_db=get_db_
 
 
 @mcp.tool()
-async def okto_pulse_kg_health(board_id: str) -> str:
-    """
-    Snapshot of the KG health for one board — gemelar do REST GET /api/v1/kg/health.
-
-    Returns 10 fields aggregating consolidation queue depth, dead-letter
-    backlog, total nodes, default-score skew, average relevance, top
-    most-disconnected nodes, schema version, and the running count of
-    contradict_penalty cap events. Computed in-process; cheap to poll.
-
-    Use it before kicking off long consolidations (high queue_depth means
-    your enqueue may sit pending), after flagging contradictions (spike
-    in contradict_warn_count = curator should reconcile), or to debug
-    flat ranking (default_score_ratio > 0.7 = scoring not differentiating).
-
-    Args:
-        board_id: Board ID (uuid)
-
-    Returns:
-        JSON with the 10-field KG health snapshot, or {"error": "..."} on auth/not-found.
-    """
+async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
+    """Snapshot of a board's KG health (gemelar do REST GET /api/v1/kg/health). Default
+profile=summary returns the slim stop-rule fields an agent needs before a KG
+mutation — graph_state, discovery_state, overall_state, metric_status,
+classification_reason, correlation_id, memory_pressure_status, recent_events — plus
+operational scalars (queue_depth, dead_letter_count, total_nodes, default_score_ratio,
+avg_relevance, contradict_warn_count, last_tick_status), decay_scheduler_diagnostics,
+and storage_footprint_proxy. Scheduler debt is operational debt and does not by
+itself require graph recovery. Verbose diagnostics omitted; pass profile=full
+(or legacy) for the complete dashboard payload. Full guide:
+okto-pulse://reference/tool-docs/kg."""
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -13714,13 +12718,171 @@ async def okto_pulse_kg_health(board_id: str) -> str:
         BoardNotFoundError,
         get_kg_health,
     )
+    from okto_pulse.core.mcp.kg_query_safety import KGHealthMCPProjection
 
     try:
         async with get_db_for_mcp() as db:
             data = await get_kg_health(board_id, db)
     except BoardNotFoundError as exc:
         return json.dumps({"error": str(exc)})
+    # FR4: slim default projection — keep the stop-rule fields, omit verbose
+    # diagnostics until profile=full/legacy is requested.
+    data = KGHealthMCPProjection().project(data, profile=profile)
     return json.dumps(data, default=str)
+
+
+# ============================================================================
+# KG ORPHAN INTEGRITY (spec KG-ZO-02 — FR6/TR4)
+# ============================================================================
+
+
+def _kg_orphan_graph_unavailable_payload(board_id: str, exc: Exception) -> dict[str, Any]:
+    return {
+        "error": "kg_orphan_graph_unavailable",
+        "board_id": board_id,
+        "error_type": type(exc).__name__,
+        "operator_action": "inspect_kg_health",
+    }
+
+
+async def _kg_orphan_backfill_health_refusal(board_id: str) -> dict[str, Any] | None:
+    from okto_pulse.core.services.kg_health_service import get_kg_health
+
+    async with get_db_for_mcp() as db:
+        health = await get_kg_health(board_id, db)
+    state = str(health.get("overall_state") or health.get("graph_state") or "")
+    if state in {"recovery_needed", "quarantined"}:
+        return {
+            "error": "kg_orphan_backfill_refused_by_health",
+            "board_id": board_id,
+            "overall_state": health.get("overall_state"),
+            "graph_state": health.get("graph_state"),
+            "operator_action": "inspect_kg_health_recovery_flow",
+        }
+    return None
+
+
+@mcp.tool()
+async def okto_pulse_kg_orphan_report(
+    board_id: str,
+    generation_id: str | None = None,
+    limit: int = 25,
+) -> str:
+    """
+    Return a bounded safe orphan-node report for a board KG.
+
+    The payload intentionally contains only safe identifiers and aggregate
+    counts: board_id, generation_id, orphan_count_by_type, safe samples,
+    unresolved_reasons, backfill_summary and correlation_id. Raw node text,
+    embeddings, prompts and payload bodies are never returned.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.kg.orphan_integrity import (
+        DEFAULT_ORPHAN_SAMPLE_LIMIT,
+        MAX_ORPHAN_SAMPLE_LIMIT,
+        OrphanNodeScanner,
+    )
+
+    bounded_limit = max(
+        0,
+        min(
+            int(limit or DEFAULT_ORPHAN_SAMPLE_LIMIT),
+            MAX_ORPHAN_SAMPLE_LIMIT,
+        ),
+    )
+    try:
+        report = OrphanNodeScanner().scan(
+            board_id=board_id,
+            generation_id=generation_id,
+            limit=bounded_limit,
+        )
+    except Exception as exc:
+        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
+
+    payload = report.to_safe_dict()
+    payload["backfill_summary"] = {
+        "status": "not_run",
+        "dry_run": None,
+        "detected": None,
+        "connected": None,
+        "noop": None,
+        "unresolved": None,
+        "ambiguous": None,
+        "semantic_pending": None,
+    }
+    return json.dumps(payload, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_orphan_backfill(
+    board_id: str,
+    generation_id: str | None = None,
+    dry_run: bool = True,
+    node_ids: list[str] | str = "",
+    limit: int = 25,
+) -> str:
+    """
+    Run explicit orphan backfill for structurally resolvable nodes.
+
+    Defaults to dry_run=True. node_ids accepts the standard MCP multi-value
+    format: JSON array, native list, or pipe-separated string. Backfill is
+    refused when KG Health is recovery_needed/quarantined so operators use the
+    recovery flow instead of mutating a degraded graph.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    try:
+        parsed_node_ids = coerce_to_list_str(node_ids) or None
+    except ValueError as exc:
+        return json.dumps({
+            "error": "invalid_node_ids",
+            "reason": str(exc),
+            "expected_format": "JSON array, native list, or pipe-separated string",
+        })
+
+    try:
+        refusal = await _kg_orphan_backfill_health_refusal(board_id)
+    except Exception as exc:
+        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
+    if refusal is not None:
+        return json.dumps(refusal, default=str)
+
+    from okto_pulse.core.kg.orphan_integrity import (
+        DEFAULT_ORPHAN_SAMPLE_LIMIT,
+        MAX_ORPHAN_SAMPLE_LIMIT,
+        OrphanBackfillReconciler,
+    )
+
+    bounded_limit = max(
+        0,
+        min(
+            int(limit or DEFAULT_ORPHAN_SAMPLE_LIMIT),
+            MAX_ORPHAN_SAMPLE_LIMIT,
+        ),
+    )
+    try:
+        result = OrphanBackfillReconciler().run(
+            board_id=board_id,
+            generation_id=generation_id,
+            dry_run=dry_run,
+            node_ids=parsed_node_ids,
+            limit=bounded_limit,
+        )
+    except Exception as exc:
+        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
+
+    return json.dumps({
+        "board_id": board_id,
+        "generation_id": generation_id,
+        "dry_run": dry_run,
+        "backfill_summary": result.to_safe_dict(),
+        "correlation_id": result.correlation_id,
+    }, default=str)
 
 
 # ============================================================================
@@ -13745,17 +12907,7 @@ async def okto_pulse_kg_dead_letter_list(
 
     After fixing the root cause (schema migration, WAL recovery, code fix, or
     transient lock contention), call `okto_pulse_kg_dead_letter_reprocess` to
-    move selected rows back to the consolidation queue.
-
-    Args:
-        board_id: Board UUID
-        limit: Max rows to return (1-200, default 50)
-        offset: Skip first N rows (>=0, default 0)
-
-    Returns:
-        JSON `{rows, total, limit, offset}` on success. `{error: "..."}`
-        on auth or permission failure.
-    """
+    move selected rows back to the consolidation queue."""
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -13785,21 +12937,7 @@ async def okto_pulse_kg_dead_letter_reprocess(
     Use this after `okto_pulse_kg_migrate_schema`, WAL recovery, or a code fix
     when DLQ rows should be retried. The tool is idempotent: if a matching
     pending queue row already exists for the same board/artifact, it resets that
-    row and removes the DLQ entry instead of creating duplicates.
-
-    Args:
-        board_id: Board UUID.
-        dead_letter_ids: Optional multi-value DLQ row IDs. Use a native list,
-            JSON array string, or pipe-separated string. Empty means "oldest
-            rows for this board up to limit".
-        limit: Max DLQ rows to requeue (1-200, default 50).
-        process_now: "true" to immediately run one consolidation worker batch
-            after requeueing; "false" to only mark rows pending.
-
-    Returns:
-        JSON with selected/requeued/already_queued counts and, when
-        process_now is true, the worker batch processed count.
-    """
+    row and removes the DLQ entry instead of creating duplicates."""
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -13869,19 +13007,8 @@ async def okto_pulse_kg_migrate_schema(
     Idempotente: re-rodar em board já migrado retorna `migrated=true`
     com `columns_added` vazio (no-op).
 
-    NUNCA delete `graph.kuzu` para "consertar" — destruiria todo o KG
-    do board. Use esta tool em vez disso.
-
-    Args:
-        board_id: Board UUID específico (mutuamente exclusivo com all_boards)
-        all_boards: Se True, migra todos os boards conhecidos do server.
-            Default False — exige board_id.
-
-    Returns:
-        Single board: JSON `{board_id, migrated, columns_added, errors,
-        duration_ms}`. All-boards: `{results: [<single>, ...]}`.
-        Erro de input: `{error: "missing_board_or_all_boards"}`.
-    """
+    NUNCA delete `graph.lbug` para "consertar" — destruiria todo o KG
+    do board. Use esta tool em vez disso."""
     if not board_id and not all_boards:
         return json.dumps({"error": "missing_board_or_all_boards"})
 
@@ -13946,18 +13073,7 @@ async def okto_pulse_kg_tick_run_now(
     NUNCA é setting persistido para evitar full-rebuild noturno acidental.
 
     Concurrent calls (cron + manual OU duas chamadas manuais) recebem
-    erro `tick_already_running` — primeiro a chegar ganha o advisory lock.
-
-    Args:
-        board_id: Optional board UUID. Empty string = global tick (all boards).
-        force_full_rebuild: When true, resets last_recomputed_at to NULL
-            for all nodes in scope before the tick — ignores staleness.
-
-    Returns:
-        JSON with `{tick_id, status: "running", scheduled_at}` on 202 success.
-        On 409 (lock held), `{error: "tick_already_running", message: "..."}`.
-        On auth failure, `{error: "..."}`.
-    """
+    erro `tick_already_running` — primeiro a chegar ganha o advisory lock."""
     # Per-board scope auth: when board_id provided, validate access.
     if board_id:
         ctx = await _get_agent_ctx(board_id)
@@ -13976,6 +13092,20 @@ async def okto_pulse_kg_tick_run_now(
             "error": "tick_already_running",
             "message": "Tick already running, retry shortly",
         })
+
+    # F17 admission gate (gemelar): refuse a degraded concrete board with the
+    # SAME structured graph_recovery_needed refusal as the REST endpoint, via the
+    # SAME shared _refuse_tick_if_degraded gate (one predicate, no MCP-side
+    # duplication). The MCP path owns no request session, so probe under a
+    # short-lived one. Runs after the lock check, before tick_id allocation.
+    if board_id:
+        from okto_pulse.core.api.kg_tick import _refuse_tick_if_degraded
+        from okto_pulse.core.infra.database import get_session_factory
+
+        async with get_session_factory()() as _health_session:
+            refusal = await _refuse_tick_if_degraded(board_id, _health_session)
+        if refusal is not None:
+            return json.dumps(refusal)
 
     import uuid as _uuid
     from datetime import datetime, timezone
@@ -14034,6 +13164,412 @@ async def okto_pulse_kg_tick_run_now(
 
 
 # ============================================================================
+# KG REBUILD FAMILY (spec R2a 959115c0 — IMPL-3)
+#
+# Three MCP twins for the REST /kg/rebuild/{preflight,confirm,run} lane.
+# Each tool:
+#   * authenticates + scopes to the board via _get_agent_ctx (same as tick)
+#   * calls the rebuild-scoped admission predicate from kg_rebuild.py
+#     (_refuse_rebuild_if_quarantined) — quarantined → refuse, recovery_needed → pass
+#   * delegates 100 % of business logic to the shared REST service objects
+#     (RebuildPreflightService / RebuildConfirmationStore / KGRebuildService)
+#   * resolves base_dir via default_rebuild_base_dir() (same constant as REST)
+#   * serialises all results to JSON strings (MCP transport contract)
+#
+# Pattern: okto_pulse_kg_tick_run_now (lines 12457-12564) — twin structure,
+# _get_agent_ctx auth, run_in_threadpool for sync service calls.
+# ============================================================================
+
+_rebuild_logger = logging.getLogger("okto_pulse.mcp.rebuild")
+
+
+@mcp.tool()
+async def okto_pulse_kg_rebuild_preflight(
+    board_id: str,
+) -> str:
+    """
+    Run the KG rebuild preflight for a board — gemelar do REST POST /api/v1/kg/rebuild/preflight.
+
+    Executa a checagem pré-rebuild (read-only, TR13): enumera sources reais via
+    BoardSourceStore (SQLite), classifica o estado de saúde do KG e persiste
+    o manifesto imutável necessário para /confirm.
+
+    Admission gate (FR8): recusa com rebuild_refused_quarantined quando
+    graph_state == 'quarantined'. recovery_needed É ADMITIDO — rebuild é a
+    saída prescrita desse estado.
+
+    Retorna o mesmo payload do REST: outcome, action_required, base_state,
+    eligible_source_count, preflight_hash, manifest_ref, source_set_hash.
+    Passe manifest_ref + preflight_hash para okto_pulse_kg_rebuild_confirm.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from starlette.concurrency import run_in_threadpool
+
+    from okto_pulse.core.api.kg_rebuild import (
+        _REBUILD_BASE_DIR,
+        _build_source_store,
+        _refuse_rebuild_if_quarantined,
+    )
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.kg.rebuild_preflight import (
+        RebuildHealthSummary,
+        RebuildPreflightService,
+        RebuildSourceSummary,
+    )
+    from okto_pulse.core.kg.rebuild_sources import (
+        KGRebuildSourceManifest,
+        RebuildSourceEnumerator,
+    )
+    from okto_pulse.core.services.kg_health_service import get_kg_health
+
+    # Admission gate — async probe under a short-lived session.
+    async with get_session_factory()() as _health_session:
+        refusal = await _refuse_rebuild_if_quarantined(board_id, _health_session)
+        if refusal is not None:
+            return json.dumps(refusal)
+
+        # FR9 — real health probe (same session, no extra round-trip).
+        _raw_health = await get_kg_health(board_id, _health_session)
+
+    def health_probe(_bid: str) -> RebuildHealthSummary:
+        return RebuildHealthSummary(
+            base_state=_raw_health.get("graph_state", "healthy"),
+            metric_status=_raw_health.get("metric_status", "unavailable"),
+            current_kg_generation_id=_raw_health.get("current_kg_generation_id"),
+        )
+
+    try:
+        enumerator = RebuildSourceEnumerator(source_store=_build_source_store())
+        source_set = await run_in_threadpool(enumerator.enumerate, board_id=board_id)
+    except Exception as exc:
+        _rebuild_logger.error("kg.rebuild.preflight.enumerate_failed board=%s err=%s", board_id, exc)
+        return json.dumps({"error": "preflight_enumerate_failed", "detail": str(exc)})
+
+    def source_probe(_bid: str) -> RebuildSourceSummary:
+        return RebuildSourceSummary(
+            eligible_count=source_set.eligible_count,
+            skipped_cancelled_count=source_set.skipped_cancelled_count,
+            has_non_deterministic_inputs=source_set.has_non_deterministic_inputs,
+        )
+
+    service = RebuildPreflightService(
+        source_probe=source_probe,
+        health_probe=health_probe,
+    )
+    try:
+        result = await run_in_threadpool(service.run, board_id=board_id)
+    except Exception as exc:
+        _rebuild_logger.error("kg.rebuild.preflight.service_failed board=%s err=%s", board_id, exc)
+        return json.dumps({"error": "preflight_service_failed", "detail": str(exc)})
+
+    try:
+        manifest_store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+        manifest = await run_in_threadpool(
+            manifest_store.build,
+            source_set=source_set,
+            preflight_hash=result.preflight_hash,
+        )
+    except Exception as exc:
+        _rebuild_logger.error("kg.rebuild.preflight.manifest_failed board=%s err=%s", board_id, exc)
+        return json.dumps({"error": "preflight_manifest_failed", "detail": str(exc)})
+
+    payload = result.to_dict()
+    payload["manifest_ref"] = manifest.manifest_ref
+    payload["source_set_hash"] = manifest.source_set_hash
+
+    _rebuild_logger.info(
+        "kg.rebuild.preflight.done board=%s outcome=%s manifest_ref=%s",
+        board_id, result.outcome, manifest.manifest_ref,
+    )
+    return json.dumps(payload, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_rebuild_confirm(
+    board_id: str,
+    operation: str,
+    preflight_hash: str,
+    manifest_ref: str,
+) -> str:
+    """
+    Emite o token de confirmação single-use para um rebuild — gemelar do REST POST /api/v1/kg/rebuild/confirm.
+
+    Carrega o manifesto persistido em /preflight via manifest_ref (NUNCA
+    re-enumera), verifica que preflight_hash bate, e emite o token de
+    confirmação. Passe o token para okto_pulse_kg_rebuild_run.
+
+    Parâmetros:
+        board_id       — UUID do board (mesmo usado em /preflight)
+        operation      — operação canônica (ex: 'rebuild_full')
+        preflight_hash — SHA-256 hex recebido de /preflight (64 chars)
+        manifest_ref   — identificador do manifesto recebido de /preflight
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    actor_id = ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
+
+    from starlette.concurrency import run_in_threadpool
+
+    from okto_pulse.core.api.kg_rebuild import _REBUILD_BASE_DIR
+    from okto_pulse.core.kg.rebuild_confirmation import (
+        CANONICAL_OPERATIONS,
+        RebuildConfirmationStore,
+    )
+    from okto_pulse.core.kg.rebuild_service import SUPPORTED_REBUILD_OPERATIONS
+    from okto_pulse.core.kg.rebuild_sources import (
+        KGRebuildSourceManifest,
+        validate_preflight_hash,
+    )
+
+    if operation not in CANONICAL_OPERATIONS:
+        return json.dumps({
+            "error": "unsupported_operation",
+            "reason": "operation not in canonical set",
+        })
+
+    if operation not in SUPPORTED_REBUILD_OPERATIONS:
+        return json.dumps({
+            "error": "operation_pending_implementation",
+            "reason": (
+                f"operation={operation!r} not implemented yet; "
+                f"only {sorted(SUPPORTED_REBUILD_OPERATIONS)} supported"
+            ),
+        })
+
+    try:
+        validate_preflight_hash(preflight_hash)
+    except ValueError as exc:
+        return json.dumps({"error": "invalid_preflight_hash", "reason": str(exc)})
+
+    def _load_and_issue():
+        manifest_store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+        manifest = manifest_store.load(manifest_ref)
+        if manifest is None:
+            return {"error": "manifest_not_found", "reason": "manifest_ref does not exist"}
+        if manifest.board_id != board_id:
+            return {"error": "manifest_board_mismatch", "reason": "manifest_ref belongs to a different board"}
+        if manifest.preflight_hash != preflight_hash:
+            return {"error": "preflight_hash_mismatch", "reason": "preflight_hash does not match manifest binding"}
+
+        store = RebuildConfirmationStore(base_dir=_REBUILD_BASE_DIR)
+        token = store.issue(
+            board_id=board_id,
+            actor_id=actor_id,
+            operation=operation,
+            preflight_hash=preflight_hash,
+            manifest_ref=manifest.manifest_ref,
+        )
+        return {
+            "confirmation_id": token.confirmation_id,
+            "manifest_ref": manifest.manifest_ref,
+            "source_set_hash": manifest.source_set_hash,
+            "expires_at": token.expires_at,
+        }
+
+    try:
+        result = await run_in_threadpool(_load_and_issue)
+    except Exception as exc:
+        _rebuild_logger.error("kg.rebuild.confirm.failed board=%s err=%s", board_id, exc)
+        return json.dumps({"error": "confirm_failed", "detail": str(exc)})
+
+    _rebuild_logger.info(
+        "kg.rebuild.confirm.done board=%s confirmation_id=%s",
+        board_id, result.get("confirmation_id"),
+    )
+    return json.dumps(result, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_rebuild_run(
+    board_id: str,
+    confirmation_id: str,
+    operation: str,
+    preflight_hash: str,
+    manifest_ref: str,
+    reason: str,
+) -> str:
+    """
+    Executa o rebuild do KG — gemelar do REST POST /api/v1/kg/rebuild/run.
+
+    Consome o token single-use emitido por okto_pulse_kg_rebuild_confirm e
+    executa o rebuild completo sob o admin lane KG-01. NUNCA muta o grafo se
+    o token for inválido, o manifesto tiver mudado ou o lock exclusivo não
+    puder ser adquirido.
+
+    Admission gate (FR8): recusa com rebuild_refused_quarantined quando
+    graph_state == 'quarantined' mesmo antes de consumir o token.
+    recovery_needed É ADMITIDO (rebuild é a saída prescrita desse estado).
+
+    Parâmetros:
+        board_id        — UUID do board
+        confirmation_id — token emitido por /confirm
+        operation       — operação canônica (deve bater com /confirm)
+        preflight_hash  — SHA-256 hex (deve bater com /confirm)
+        manifest_ref    — identificador do manifesto (deve bater com /confirm)
+        reason          — descrição textual (auditoria), máx 512 chars
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    actor_id = ctx.agent.id if hasattr(ctx, "agent") else "agent-mcp"
+
+    from starlette.concurrency import run_in_threadpool
+
+    from okto_pulse.core.api.kg_rebuild import (
+        _REBUILD_BASE_DIR,
+        _build_source_store,
+        _refuse_rebuild_if_quarantined,
+        _resolve_pulse_db_path,
+    )
+    from okto_pulse.core.infra.database import get_session_factory
+
+    # FR8 — admission gate before consuming the token.
+    async with get_session_factory()() as _gate_session:
+        refusal = await _refuse_rebuild_if_quarantined(board_id, _gate_session)
+    if refusal is not None:
+        return json.dumps(refusal)
+
+    from okto_pulse.core.kg.board_rebuild_adapter import BoardRebuildIngestionAdapter
+    from okto_pulse.core.kg.rebuild_audit import (
+        CognitivePendingMarker,
+        ConfirmationConsumptionAuditRecorder,
+        KGRebuiltEventPublisher,
+        build_kg_rebuilt_event_handler,
+    )
+    from okto_pulse.core.kg.rebuild_confirmation import RebuildConfirmationStore
+    from okto_pulse.core.kg.rebuild_generation import (
+        KGGenerationPromotionGuard,
+        KGGenerationRepository,
+    )
+    from okto_pulse.core.kg.rebuild_report import (
+        RebuildReportStore,
+        RebuildReportTerminalStateGuard,
+    )
+    from okto_pulse.core.kg.rebuild_service import KGRebuildService
+    from okto_pulse.core.kg.rebuild_sources import (
+        KGRebuildSourceManifest,
+        RebuildSourceEnumerator,
+    )
+    from okto_pulse.core.kg.safe_write_lifecycle import (
+        HealthProbe,
+        KGSafeWriteLifecycle,
+        LockOwnerProbe,
+    )
+    from okto_pulse.core.kg.schema import apply_ladybug_lifecycle_step
+    from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
+
+    lock = KGSingleWriterLock(base_dir=_REBUILD_BASE_DIR / "locks")
+
+    def _always_owner(bid: str, owner_token: str) -> bool:
+        m = lock.inspect(board_id=bid)
+        return m is not None and m.owner_token == owner_token
+
+    safe_lifecycle = KGSafeWriteLifecycle(
+        step_adapter=apply_ladybug_lifecycle_step,
+        owner_probe=LockOwnerProbe(is_active_owner=_always_owner),
+        health_probe=HealthProbe(classify=lambda b, g, status, step: "at_risk"),
+    )
+
+    source_store_fetch = _build_source_store()
+    enumerator = RebuildSourceEnumerator(source_store=source_store_fetch)
+    manifest_store_obj = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+    ingestion = BoardRebuildIngestionAdapter(db_path=_resolve_pulse_db_path())
+
+    def _step_source_resolver(req):
+        m = manifest_store_obj.load(req.manifest_ref)
+        if m is None:
+            return ()
+        return tuple(row.to_dict() for row in m.sources)
+
+    _step_adapter_with_sources = ingestion.build_step_adapter(
+        source_resolver=_step_source_resolver,
+    )
+
+    audit_recorder = ConfirmationConsumptionAuditRecorder(base_dir=_REBUILD_BASE_DIR)
+    event_publisher = KGRebuiltEventPublisher(base_dir=_REBUILD_BASE_DIR)
+    cognitive_marker = CognitivePendingMarker(base_dir=_REBUILD_BASE_DIR)
+
+    def _source_resolver(event_payload):
+        m = manifest_store_obj.load(event_payload.get("manifest_ref", ""))
+        if m is None:
+            return ()
+        return tuple(row.to_dict() for row in m.sources)
+
+    event_handler = build_kg_rebuilt_event_handler(
+        publisher=event_publisher,
+        cognitive_marker=cognitive_marker,
+        source_resolver=_source_resolver,
+    )
+    from okto_pulse.core.kg.orphan_integrity import OrphanNodeScanner
+    orphan_scanner = OrphanNodeScanner()
+
+    service = KGRebuildService(
+        base_dir=_REBUILD_BASE_DIR,
+        single_writer_lock=lock,
+        safe_write_lifecycle=safe_lifecycle,
+        quarantine_service=None,
+        confirmation_store=RebuildConfirmationStore(
+            base_dir=_REBUILD_BASE_DIR, audit_recorder=audit_recorder,
+        ),
+        manifest_store=manifest_store_obj,
+        source_enumerator=enumerator,
+        rebuild_step_adapter=_step_adapter_with_sources,
+        generation_repository=KGGenerationRepository(base_dir=_REBUILD_BASE_DIR),
+        promotion_guard=KGGenerationPromotionGuard,
+        report_store=RebuildReportStore(base_dir=_REBUILD_BASE_DIR),
+        terminal_state_guard=RebuildReportTerminalStateGuard,
+        event_emitter=event_handler,
+        orphan_scan_provider=lambda board_id, generation_id: orphan_scanner.scan(
+            board_id=board_id,
+            generation_id=generation_id,
+        ),
+    )
+
+    try:
+        result = await run_in_threadpool(
+            service.run,
+            confirmation_id=confirmation_id,
+            board_id=board_id,
+            actor_id=actor_id,
+            operation=operation,
+            preflight_hash=preflight_hash,
+            manifest_ref=manifest_ref,
+            reason=reason,
+        )
+    except Exception as exc:
+        _rebuild_logger.error("kg.rebuild.run.failed board=%s err=%s", board_id, exc)
+        return json.dumps({"error": "rebuild_run_failed", "detail": str(exc)})
+
+    _rebuild_logger.info(
+        "kg.rebuild.run.done board=%s outcome=%s run_id=%s",
+        board_id, result.outcome, result.run_id,
+    )
+    return json.dumps({
+        "run_id": result.run_id,
+        "outcome": result.outcome,
+        "reason": result.reason,
+        "audit_ref": result.audit_ref,
+        "previous_kg_generation_id": result.previous_kg_generation_id,
+        "current_kg_generation_id": result.current_kg_generation_id,
+        "started_at": result.started_at,
+        "finished_at": result.finished_at,
+        "affected_files": list(result.affected_files),
+        "report_ref": result.report_ref,
+        "report_id": result.report_id,
+        "publishable_status": result.publishable_status,
+        "promotion_outcome": result.promotion_outcome,
+        "operator_action": result.operator_action,
+        "event_emitted": result.event_emitted,
+    }, default=str)
+
+
+# ============================================================================
 # CONSOLIDATED POLYMORPHIC LIST HANDLERS (spec P0.B — TR-B1)
 #
 # These 4 tools are the supported list surface. The 15 entity-specific
@@ -14054,24 +13590,7 @@ async def okto_pulse_list_by_board(
     Consolidates: list_specs, list_ideations, list_refinements,
     list_sprints, list_stories, list_topics.
 
-    Use this single tool instead of the individual list_* tools.
-
-    Args:
-        board_id: Board ID
-        entity_type: One of: spec, ideation, refinement, sprint, story, topic
-        filters: Optional filter dict OR JSON string; validated server-side per entity_type.
-            spec: status, labels, assignee_id
-            ideation: status, labels
-            refinement: status, labels, ideation_id
-            sprint: status (requires filters.spec_id to identify parent spec)
-            story: status, topic_id, linked, converted, include_archived
-            topic: include_archived
-        limit: Max results (default 100, max 200)
-        offset: Skip first N results (default 0)
-
-    Returns:
-        JSON {items: [...], total: int, entity_type: str} or structured error
-    """
+    Use this single tool instead of the individual list_* tools."""
     from okto_pulse.core.mcp.filters import validate_filters
 
     # Auto-deserialize string JSON (MCP transport convention — other tools use coerce_to_list_str)
@@ -14247,6 +13766,10 @@ async def okto_pulse_list_by_board(
                         "id": s.id,
                         "title": s.title,
                         "status": s.status.value,
+                        "lane_type": s.lane_type.value if s.lane_type else "normal",
+                        "origin_sprint_id": s.origin_sprint_id,
+                        "origin_bug_id": s.origin_bug_id,
+                        "normal_sprint_created": s.normal_sprint_created,
                         "spec_version": s.spec_version,
                         "test_scenario_ids": s.test_scenario_ids,
                         "business_rule_ids": s.business_rule_ids,
@@ -14313,19 +13836,7 @@ async def okto_pulse_list_qa(
 ) -> str:
     """List Q&A items for a spec, ideation, or refinement.
 
-    Consolidates: list_spec_qa, list_ideation_qa, list_refinement_qa.
-
-    Args:
-        board_id: Board ID
-        entity_type: One of: spec, ideation, refinement
-        entity_id: ID of the entity (spec_id, ideation_id, or refinement_id)
-        filters: Optional filter dict OR JSON string.
-            status: filter by answer status
-            asked_by: filter by agent/user who asked
-
-    Returns:
-        JSON {qa_items: [...], count: int, entity_type: str} or structured error
-    """
+    Consolidates: list_spec_qa, list_ideation_qa, list_refinement_qa."""
     from okto_pulse.core.mcp.filters import validate_filters
 
     # Auto-deserialize string JSON (MCP transport convention)
@@ -14411,18 +13922,7 @@ async def okto_pulse_list_knowledge(
     """List knowledge base items for a spec, ideation, refinement, or card.
 
     Consolidates: list_spec_knowledge, list_ideation_knowledge,
-    list_refinement_knowledge, list_card_knowledge.
-
-    Args:
-        board_id: Board ID
-        entity_type: One of: spec, ideation, refinement, card
-        entity_id: ID of the entity
-        filters: Optional filter dict OR JSON string.
-            mime_type: filter by MIME type
-
-    Returns:
-        JSON {knowledge_bases: [...], count: int, entity_type: str} or structured error
-    """
+    list_refinement_knowledge, list_card_knowledge."""
     from okto_pulse.core.mcp.filters import validate_filters
 
     # Auto-deserialize string JSON (MCP transport convention)
@@ -14550,16 +14050,7 @@ async def okto_pulse_list_snapshots(
     Consolidates: list_ideation_snapshots, list_refinement_snapshots.
 
     Each snapshot is an immutable copy of the entity's state at the moment
-    it was marked as 'done'.
-
-    Args:
-        board_id: Board ID
-        entity_type: One of: ideation, refinement
-        entity_id: ID of the entity
-
-    Returns:
-        JSON {snapshots: [...], count: int, entity_type: str} or structured error
-    """
+    it was marked as 'done'."""
     SUPPORTED = ["ideation", "refinement"]
     if entity_type not in SUPPORTED:
         return _structured_error(
@@ -14629,7 +14120,7 @@ def build_mcp_asgi_app():
     Returns the ASGI app that should be served by uvicorn (or mounted
     elsewhere). Single-process callers (``okto_pulse.community.main.serve``)
     use this to bind the MCP transport to its own port while sharing the
-    same Python process as the API server, so the Kùzu lock is held by a
+    same Python process as the API server, so the LadybugDB lock is held by a
     single process. The caller is responsible for invoking
     ``register_session_factory`` once before the first MCP request lands.
 

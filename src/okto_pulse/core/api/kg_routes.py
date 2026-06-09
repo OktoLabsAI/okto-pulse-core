@@ -206,7 +206,7 @@ async def get_subgraph(
 
     Pagination contract:
 
-    * ``limit`` in [1, 500]; out-of-range values yield **400** (not 422) per
+    * ``limit`` in [1, 1000]; out-of-range values yield **400** (not 422) per
       AC-11 so clients get a human-readable reason instead of Pydantic's
       validation schema.
     * ``cursor`` is an opaque base64 token emitted by a prior call. A
@@ -216,11 +216,11 @@ async def get_subgraph(
       returned page is the last one so clients can stop paging without a
       second round trip.
     """
-    if limit < 1 or limit > 500:
+    if limit < 1 or limit > 1000:
         return _problem(
             400,
             "Bad Request",
-            f"limit must be in range [1, 500], got {limit}",
+            f"limit must be in range [1, 1000], got {limit}",
             "invalid_limit",
         )
 
@@ -513,12 +513,20 @@ async def get_stats(
             min_relevance=min_relevance,
             max_rows=1000,
         )
-        node_counts: dict[str, int] = {}
+        from okto_pulse.core.kg.schema import NODE_TYPES
+
+        node_counts: dict[str, int] = {
+            node_type: svc.count_all_nodes(
+                board_id,
+                min_confidence=0.0,
+                min_relevance=min_relevance,
+                node_type=node_type,
+            )
+            for node_type in NODE_TYPES
+        }
         total_conf = 0.0
         total_relevance = 0.0
         for n in all_nodes:
-            t = n.get("node_type", "Unknown")
-            node_counts[t] = node_counts.get(t, 0) + 1
             total_conf += float(n.get("source_confidence") or 0.0)
             total_relevance += float(n.get("relevance_score") or 0.0)
         edge_counts, edge_metadata = _count_edges_by_type(board_id)

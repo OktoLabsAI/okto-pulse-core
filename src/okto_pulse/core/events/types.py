@@ -303,12 +303,26 @@ class CardSeverityChanged(DomainEvent):
     changed_by: Optional[str] = None
 
 
-class KGDailyTick(DomainEvent):
-    """Fired by the APScheduler cron at 03:00 UTC to drive global decay.
+class BugRegressionScenarioReuseDecision(DomainEvent):
+    """Bounded audit event for bug regression scenario reuse decisions."""
 
-    Uses ``board_id="*"`` as a global sentinel because the handler iterates
-    every active board. Only the leader replica emits the event (advisory
-    lock); other replicas log a skip — see dec_bc0eaeec.
+    event_type: ClassVar[str] = "bug_regression_scenario_reuse_decision"
+    bug_id: str
+    spec_id: str
+    decision: Literal["eligible", "rejected", "semantic_gap"]
+    reason_code: str
+    scenario_count: int = 0
+    test_task_count: int = 0
+
+
+class KGDailyTick(DomainEvent):
+    """Fired by the APScheduler ``IntervalTrigger`` to drive global decay.
+
+    The trigger interval is ``kg_decay_tick_interval_minutes`` (configured in
+    ``config.py``; wired in ``app.py``). Uses ``board_id="*"`` as a global
+    sentinel because the handler iterates every active board. Only the leader
+    replica emits the event (advisory lock); other replicas log a skip — see
+    dec_bc0eaeec.
     """
 
     event_type: ClassVar[str] = "kg.tick.daily"
@@ -342,6 +356,7 @@ EVENT_TYPES: list[str] = [
     KGHitFlushed.event_type,
     CardPriorityChanged.event_type,
     CardSeverityChanged.event_type,
+    BugRegressionScenarioReuseDecision.event_type,
     KGDailyTick.event_type,
 ]
 
@@ -370,6 +385,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     KGHitFlushed.event_type: KGHitFlushed,
     CardPriorityChanged.event_type: CardPriorityChanged,
     CardSeverityChanged.event_type: CardSeverityChanged,
+    BugRegressionScenarioReuseDecision.event_type: BugRegressionScenarioReuseDecision,
     KGDailyTick.event_type: KGDailyTick,
 }
 

@@ -17,20 +17,124 @@ same manifest_ref the operator saw on screen.
 TR13 invariant still holds: /preflight is READ-ONLY against KG storage
 — writing the manifest JSON to the rebuild dir is the only side effect,
 and it never touches graph.lbug or discovery.lbug.
+
+FR10 — per-board scope (community edition):
+    Access control is OWNERSHIP + MEMBERSHIP (shared boards).  realm_id is
+    the SaaS multi-tenancy layer and is a no-op in community; it is NOT
+    used here.  The canonical helper is _require_board_access() below,
+    which delegates to ShareService.get_user_permission() — the same
+    mechanism that guards all other board-scoped endpoints.
 """
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.kg.rebuild_audit import default_rebuild_base_dir
+from okto_pulse.core.services.kg_health_service import get_kg_health
+
+logger = logging.getLogger("okto_pulse.api.kg_rebuild")
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# FR10 — per-board scope helper (community: ownership + membership)
+#
+# Raises HTTPException 404 when the board does not exist.
+# Raises HTTPException 403 when the board exists but the user has no access.
+#
+# Uses ShareService.get_user_permission() — the single source of truth for
+# user→board access across all board-scoped endpoints (owner_id match OR
+# board shared with the user via board_shares).  realm_id is the SaaS
+# multi-tenancy layer; it is NOT wired here (community no-op).
+# ---------------------------------------------------------------------------
+
+
+async def _require_board_access(board_id: str, user_id: str, db: AsyncSession) -> None:
+    """Verify *user_id* has ownership or membership access to *board_id*.
+
+    Raises:
+        HTTPException(404) — board does not exist.
+        HTTPException(403) — board exists but user has no access.
+    """
+    from okto_pulse.core.services.main import ShareService
+
+    service = ShareService(db)
+    # get_user_permission returns:
+    #   None  → board not found OR user has no access to an existing board.
+    # Distinguish the two by checking board existence explicitly.
+    from okto_pulse.core.models.db import Board as _Board
+    board_obj = await db.get(_Board, board_id)
+    if board_obj is None:
+        raise HTTPException(status_code=404, detail="Board not found")
+
+    perm = await service.get_user_permission(board_id, user_id)
+    if perm is None:
+        raise HTTPException(status_code=403, detail="Access denied: user does not have access to this board")
+
+
+# ---------------------------------------------------------------------------
+# IMPL-1 — Rebuild-scoped admission predicate (FR8 / AC14)
+#
+# This gate is purposely NARROWER than the tick gate
+# (_refuse_tick_if_degraded in kg_tick.py, which uses _RISK_STATE_HARD_REJECT
+# = {quarantined, recovery_needed}).
+#
+# For rebuild the ONLY forbidden state is "quarantined" — the graph has been
+# actively quarantined and the operator MUST reset it before a new rebuild
+# can land.  "recovery_needed" MUST be ADMITTED because a rebuild *IS* the
+# prescribed exit from recovery_needed.  Blocking rebuild on recovery_needed
+# would recreate the NC-2 catch-22.
+#
+# Design constraints (AC14):
+#   * Does NOT import _RISK_STATE_HARD_REJECT (avoids inheriting
+#     the tick-gate semantics by accident).
+#   * Lives in this module so both the REST lane and the MCP twin can import
+#     it from one place (defence-in-depth: single predicate, zero duplication).
+# ---------------------------------------------------------------------------
+
+#: The only graph_state that blocks a rebuild.  Intentionally a frozenset
+#: so callers can extend it in tests without mutating the production set.
+_REBUILD_REJECT_STATES: frozenset[str] = frozenset({"quarantined"})
+
+
+async def _refuse_rebuild_if_quarantined(
+    board_id: str,
+    db: AsyncSession,
+) -> dict | None:
+    """Rebuild-scoped admission gate (FR8).
+
+    Returns a structured refusal payload when the board's KG is
+    ``quarantined``.  Returns ``None`` when the rebuild may proceed
+    (including when ``graph_state == 'recovery_needed'`` — rebuild IS the
+    exit from that state and must NOT be refused).
+
+    Both the REST lane and the MCP twin MUST call this gate.  Duplication
+    of the admission logic outside this function is forbidden.
+    """
+    health = await get_kg_health(board_id, db)
+    graph_state = health.get("graph_state")
+    if graph_state in _REBUILD_REJECT_STATES:
+        return {
+            "error": "rebuild_refused_quarantined",
+            "graph_state": graph_state,
+            "board_id": board_id,
+            "message": (
+                f"KG for board {board_id} is {graph_state}. "
+                "A rebuild cannot proceed while the graph is quarantined. "
+                "Use the KG reset flow to exit quarantine first."
+            ),
+        }
+    return None
 
 
 # Shared storage root for rebuild manifests + confirmations.
@@ -116,13 +220,22 @@ class RebuildPreflightResponse(BaseModel):
 @router.post("/kg/rebuild/preflight", response_model=RebuildPreflightResponse)
 async def post_rebuild_preflight(
     board_id: str = Query(..., description="Board ID (uuid)"),
-    _: str = Depends(require_user),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
 ) -> RebuildPreflightResponse:
     """Run preflight + persist the immutable source manifest. READ-ONLY (TR13).
 
     The manifest_ref returned here is the same one /confirm consumes —
     /confirm NEVER recomputes a manifest, so the operator's preflight
     view is the source of truth bound to the confirmation token.
+
+    FR10 — scope per-board: verifies the authenticated user has access
+    to the requested board before running the preflight.  Returns HTTP 403
+    when access is denied.
+
+    FR8 — admission gate: refuses with HTTP 409 when the board's KG is
+    ``quarantined``.  ``recovery_needed`` is deliberately ADMITTED here
+    because a rebuild is the prescribed exit from that state.
     """
     from okto_pulse.core.kg.rebuild_preflight import (
         RebuildPreflightService,
@@ -137,13 +250,30 @@ async def post_rebuild_preflight(
     if not board_id:
         raise HTTPException(status_code=400, detail="board_id is required")
 
-    # 1. Read base health from KG-01.1. Stub stays healthy until
-    # KG-01 wiring lands at the runtime layer.
+    # FR10 — per-board scope: 404 if board missing, 403 if user has no access.
+    await _require_board_access(board_id, user_id, db)
+
+    # FR8 — rebuild-scoped admission gate: quarantined → 409, recovery_needed → pass.
+    refusal = await _refuse_rebuild_if_quarantined(board_id, db)
+    if refusal is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=refusal,
+        )
+
+    # 1. Read real health from KG-01.1 (FR9 — real health probe).
+    # get_kg_health is async; prefetch here and capture in the closure.
+    # Note: the admission gate above already probed health — reusing its
+    # result would require threading health through two layers.  Instead
+    # we make a second call so the preflight service gets a consistent view
+    # independent of the gate's internal copy.
+    _raw_health = await get_kg_health(board_id, db)
+
     def health_probe(_board_id: str) -> RebuildHealthSummary:
         return RebuildHealthSummary(
-            base_state="healthy",
-            metric_status="available",
-            current_kg_generation_id=None,
+            base_state=_raw_health.get("graph_state", "healthy"),
+            metric_status=_raw_health.get("metric_status", "unavailable"),
+            current_kg_generation_id=_raw_health.get("current_kg_generation_id"),
         )
 
     # 2. Enumerate real sources via the injected source store. /preflight
@@ -209,13 +339,20 @@ class RebuildConfirmResponse(BaseModel):
 async def post_rebuild_confirm(
     body: RebuildConfirmRequest,
     user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
 ) -> RebuildConfirmResponse:
     """Bind the operator's confirmation to an existing manifest.
 
     val_d0da4a75 rework: loads the manifest by ref (never re-enumerates),
     verifies the preflight_hash matches, then issues the single-use
     token bound to the original manifest. Mismatch → HTTP 400.
+
+    FR10 — scope per-board: returns HTTP 404 when the board does not exist,
+    HTTP 403 when the user does not have access.
     """
+    # FR10 — per-board scope: 404 if board missing, 403 if user has no access.
+    await _require_board_access(body.board_id, user_id, db)
+
     from okto_pulse.core.kg.rebuild_confirmation import (
         CANONICAL_OPERATIONS,
         RebuildConfirmationStore,
@@ -347,6 +484,7 @@ class RebuildRunResponse(BaseModel):
 async def post_rebuild_run(
     body: RebuildRunRequest,
     user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
 ) -> RebuildRunResponse:
     """Execute the KG rebuild under the KG-01 admin lane.
 
@@ -354,8 +492,13 @@ async def post_rebuild_run(
     if confirmation is invalid, manifest drifted, or the admin lane
     can't take the lock exclusively. Returns the run audit ref and
     outcome.
+
+    FR10 — scope per-board: returns HTTP 404 when the board does not exist,
+    HTTP 403 when the user does not have access.
     """
-    from okto_pulse.core.kg.quarantine import KGQuarantineService
+    # FR10 — per-board scope: 404 if board missing, 403 if user has no access.
+    await _require_board_access(body.board_id, user_id, db)
+
     from okto_pulse.core.kg.rebuild_confirmation import (
         RebuildConfirmationStore,
     )
@@ -369,7 +512,6 @@ async def post_rebuild_run(
     )
     from okto_pulse.core.kg.rebuild_service import (
         KGRebuildService,
-        RebuildOutcome,
     )
     from okto_pulse.core.kg.rebuild_sources import (
         KGRebuildSourceManifest,
@@ -450,6 +592,8 @@ async def post_rebuild_run(
         cognitive_marker=cognitive_marker,
         source_resolver=_source_resolver,
     )
+    from okto_pulse.core.kg.orphan_integrity import OrphanNodeScanner
+    orphan_scanner = OrphanNodeScanner()
 
     service = KGRebuildService(
         base_dir=_REBUILD_BASE_DIR,
@@ -470,6 +614,10 @@ async def post_rebuild_run(
         terminal_state_guard=RebuildReportTerminalStateGuard,
         # bug b4c6920c: real event handler (was no-op default).
         event_emitter=event_handler,
+        orphan_scan_provider=lambda board_id, generation_id: orphan_scanner.scan(
+            board_id=board_id,
+            generation_id=generation_id,
+        ),
     )
 
     # `KGRebuildService.run()` is synchronous and the rebuild step now waits

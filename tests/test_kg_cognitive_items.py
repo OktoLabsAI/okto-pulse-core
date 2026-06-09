@@ -27,13 +27,11 @@ import pytest
 
 from okto_pulse.core.kg.rebuild_audit import (
     ACTIVE_ITEM_STATUSES,
-    CognitiveConsolidationItem,
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     CognitiveMaterializeOutcome,
     CognitivePendingMarker,
     CognitivePendingStatus,
-    CONSOLIDABLE_ARTIFACT_TYPES,
     MaterializeFromMarkerResult,
     compute_cognitive_item_id,
     get_materialized_count,

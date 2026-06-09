@@ -149,6 +149,62 @@ async def test_modern_and_legacy_spec_detail_include_ir_or_arrays_and_summary(db
         assert coverage["ors_uncovered_ids"] == ["or_cancelled"]
 
 
+@pytest.mark.asyncio
+async def test_legacy_spec_detail_normalizes_structured_fr_ac_text(db_factory):
+    board_id = "analytics-structured-fr-ac-board"
+    spec_id = "analytics-structured-fr-ac-spec"
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Analytics structured FR AC", owner_id=OWNER_ID))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Structured FR AC Spec",
+                status=SpecStatus.IN_PROGRESS,
+                archived=False,
+                acceptance_criteria=[
+                    {"id": "ac_one", "text": "Structured AC", "status": "active"}
+                ],
+                functional_requirements=[
+                    {"id": "fr_one", "text": "Structured FR", "status": "active"}
+                ],
+                test_scenarios=[
+                    {
+                        "id": "ts1",
+                        "title": "Scenario",
+                        "status": "passed",
+                        "linked_criteria": ["ac_one"],
+                    }
+                ],
+                business_rules=[
+                    {"id": "br1", "linked_requirements": ["fr_one"], "linked_task_ids": []}
+                ],
+                api_contracts=[],
+                technical_requirements=[],
+                decisions=[],
+                integration_requirements=[],
+                observability_requirements=[],
+                created_by=OWNER_ID,
+            )
+        )
+        await db.commit()
+
+        payload = await _spec_detail(db, board_id, spec_id)
+
+    assert payload["ac_details"] == [
+        {"index": 0, "id": "ac_one", "text": "Structured AC", "covered": True}
+    ]
+    assert payload["fr_details"] == [
+        {
+            "index": 0,
+            "id": "fr_one",
+            "text": "Structured FR",
+            "has_rule": True,
+            "has_contract": False,
+        }
+    ]
+
+
 def test_mcp_spec_coverage_summary_exposes_same_ir_or_fields_as_rest_summary():
     spec = SimpleNamespace(
         id="spec-mcp",

@@ -52,9 +52,6 @@ from okto_pulse.core.kg.rebuild_audit import (
     project_item_for_update_api,
 )
 
-_VALID_OUTCOME_TYPES: frozenset[str] = frozenset(
-    o.value for o in CognitivePendingOutcomeType
-)
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
     AddEdgeCandidateRequest,
@@ -63,6 +60,10 @@ from okto_pulse.core.kg.schemas import (
     CommitConsolidationRequest,
     GetSimilarNodesRequest,
     ProposeReconciliationRequest,
+)
+
+_VALID_OUTCOME_TYPES: frozenset[str] = frozenset(
+    o.value for o in CognitivePendingOutcomeType
 )
 
 _VALID_LIST_STATUS_FILTERS: frozenset[str] = frozenset(
@@ -178,7 +179,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         Add an edge candidate to an open session.
 
         Endpoints (from_candidate_id / to_candidate_id) must reference either
-        another in-session node candidate OR an existing Kùzu node via the
+        another in-session node candidate OR an existing LadybugDB node via the
         'kg:' prefix (kg:decision_abc123).
 
         Cognitive agents may only propose judgement edges: supersedes,
@@ -217,7 +218,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         min_similarity: float = 0.3,
     ) -> str:
         """
-        Fetch existing Kùzu nodes similar to an in-session candidate.
+        Fetch existing LadybugDB nodes similar to an in-session candidate.
 
         MVP uses title-prefix match as a deterministic fallback; production
         replaces with HNSW k-NN via vector index (card 00dae72a).
@@ -290,7 +291,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         agent_overrides: dict[str, dict] | None = None,
     ) -> str:
         """
-        Atomically commit the session: Kùzu writes + audit row + outbox event.
+        Atomically commit the session: LadybugDB writes + audit row + outbox event.
 
         agent_overrides map candidate_id → ReconciliationHint for cases where
         the agent's semantic reasoning produces a different op than the
@@ -328,7 +329,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
             try:
                 # Wrap the actual commit in the per-board lock + retry
                 # coordinator. This serialises concurrent commits on the
-                # same board (Kùzu holds an exclusive writer lock at the
+                # same board (LadybugDB holds an exclusive writer lock at the
                 # OS file level) and absorbs transient inter-process
                 # lock contention — see core/kg/commit_coordinator.py.
                 resp = await run_with_commit_lock_and_retry(
@@ -349,37 +350,12 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         offset: int = 0,
         status_filter: str | None = None,
     ) -> str:
-        """
-        KG-03.2 — List cognitive pending items by board + generation.
-
-        Implements api_ae3a932a:
-
-            request: board_id, kg_generation_id?, status?, limit?, offset?
-            response (success): board_id, selected_kg_generation_id,
-                                legacy_mode, counts, items
-            errors: unauthorized | invalid_status | generation_not_found
-
-        Resolves to the latest recorded generation when ``kg_generation_id``
-        is omitted. When ``kg_generation_id`` is explicitly provided and
-        the record does not exist, returns a typed ``generation_not_found``
-        error (Codex audit val_ead80fbd).
-
-        Items use a strict API projection (``project_item_for_api``) that
-        exposes only the contract-defined fields. Storage-only fields
-        (board_id, kg_generation_id, event_ref, free-text ``reason``) are
-        never echoed.
-
-        Args:
-            board_id: Target board id (required, non-empty).
-            kg_generation_id: Optional KG generation UUID v4. When omitted
-                the store's ``latest_generation(board_id)`` is used.
-            status: Optional status filter from the bounded enum
-                {pending, in_progress, consolidated, skipped, failed}.
-            limit: Page size, 1..200, default 100.
-            offset: Page offset, ≥ 0, default 0.
-            status_filter: Deprecated compatibility alias for ``status``;
-                ``status`` takes precedence when both are provided.
-        """
+        """KG-03.2 — List cognitive pending items by board + generation (api_ae3a932a).
+Resolves to the latest generation when kg_generation_id is omitted; an explicit
+missing generation returns generation_not_found. Items use a strict API projection
+(contract fields only; storage-only fields never echoed). Filters: status from
+{pending,in_progress,consolidated,skipped,failed}; limit 1..200 (default 100);
+offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
@@ -531,42 +507,13 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         generated_candidate_decision_ids: list[str] | None = None,
         promoted_formal_decision_ids: list[str] | None = None,
     ) -> str:
-        """
-        KG-03.3 — Mutate exactly one cognitive consolidation item.
-
-        Implements api_525a25f1:
-
-            request: board_id, kg_generation_id, item_id, status,
-                     consolidation_session_id?, reason?, summary_text?
-            response (success): board_id, kg_generation_id, item,
-                                counts, updated
-            errors: unauthorized | item_not_found |
-                    consolidation_session_required | reason_required |
-                    invalid_status | unsafe_payload
-
-        Invariants enforced BEFORE the storage write:
-
-        * br_689bdf14 — ``status=consolidated`` requires a non-empty
-          ``consolidation_session_id`` that references a prior
-          ``commit_consolidation`` workflow session (ir_d52c3279). The
-          MCP write tool only records the reference; the actual cognitive
-          KG nodes still flow through the existing seven consolidation
-          primitives (``begin_consolidation`` … ``commit_consolidation``).
-        * br_f9823bad — ``status=skipped`` or ``status=failed`` require a
-          non-empty ``reason`` (human-readable, bounded length).
-        * br_858a0859 — Reject token shapes and oversized narrative
-          fields as ``unsafe_payload`` so raw artifact bodies never
-          land in the ledger.
-        * br_d544da65 — Single-item atomic update via
-          ``CognitiveConsolidationItemStore.update_item``. Other items in
-          the generation remain unchanged and aggregate counts are
-          recomputed by the store.
-
-        Counter ``kg_cognitive_item_update_total`` (or_174f18d5) emits
-        exactly one bounded sample per call with labels
-        ``(board_id, target_status, outcome, reason_code)``. Free-text
-        ``reason`` is NEVER labelled; ``reason_code`` is bounded.
-        """
+        """KG-03.3 — Mutate exactly one cognitive consolidation item (api_525a25f1).
+Invariants: status=consolidated needs a consolidation_session_id from a prior
+commit_consolidation; status=skipped/failed need a reason; token shapes and
+oversized narrative are rejected as unsafe_payload so raw bodies never enter the
+ledger. Atomic single-item update; aggregate counts recomputed. Emits
+kg_cognitive_item_update_total with bounded labels (free-text reason never
+labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg."""
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
@@ -797,7 +744,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         """
         Drop an in-flight session without committing.
 
-        No compensating delete is applied — commit was never called, so Kùzu
+        No compensating delete is applied — commit was never called, so LadybugDB
         has no partial writes. The session is marked aborted and removed from
         the in-memory registry.
 

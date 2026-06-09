@@ -8,7 +8,8 @@ Covers the 7 TC cards / 10 scenarios:
   evidence invalidation on semantic edit (cosmetic preserves).
 - TC-4 (ts_3b602216): content-lock on update + delete.
 - TC-5 (ts_9de4528d): delete cascade — no orphan in Card.test_scenario_ids.
-- TC-6 (ts_29836555): status guard — in_progress allowed, validated/done blocked.
+- TC-6 (ts_29836555): status guard — in_progress allowed, validated/done blocked
+  unless a linked executable test card is carrying post-lock evidence.
 - TC-7 (ts_144b47eb): scoped status path (no update_spec, no content-lock,
   preserves non-target scenarios) + REST endpoint.
 """
@@ -27,9 +28,10 @@ from fastapi.testclient import TestClient
 
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import Board, Card, CardType, Spec, SpecStatus
-from okto_pulse.core.models.schemas import SpecUpdate
-from okto_pulse.core.services.main import SpecLockedError, SpecService
+from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
+from okto_pulse.core.models.schemas import CardMove, SpecUpdate
+from okto_pulse.core.services.main import CardService, SpecLockedError, SpecService
+from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.test_scenario_lifecycle import StatusNotMutableError
 
 USER = "tsl-user"
@@ -45,6 +47,7 @@ async def _seed_spec(
     skip_evidence: bool = False,
     locked: bool = False,
     card_scenarios: list | None = None,
+    card_status: CardStatus = CardStatus.NOT_STARTED,
 ) -> tuple[str, str, str]:
     """Seed a board + spec (and optionally one card linking ``card_scenarios``)."""
     board_id = f"board-{uuid.uuid4()}"
@@ -76,6 +79,7 @@ async def _seed_spec(
                     board_id=board_id,
                     spec_id=spec_id,
                     title="T",
+                    status=card_status,
                     card_type=CardType.TEST,
                     created_by=USER,
                     test_scenario_ids=card_scenarios,
@@ -83,6 +87,20 @@ async def _seed_spec(
             )
         await db.commit()
     return board_id, spec_id, card_id
+
+
+async def _mark_card_resources_na(db, board_id: str, card_id: str) -> None:
+    service = ResourceGateService(db)
+    for resource_type in ("architecture", "mockup", "knowledge_base"):
+        await service.mark_not_applicable(
+            board_id,
+            "card",
+            card_id,
+            resource_type,
+            USER,
+            justification=f"{resource_type} is intentionally not applicable in this lifecycle test.",
+            source_channel="ui",
+        )
 
 
 # ====================================================================
@@ -328,7 +346,7 @@ async def test_update_and_delete_respect_content_lock(db_factory):
 
 async def test_delete_test_scenario_cascade_no_orphan(db_factory):
     # ts_9de4528d
-    _b, spec_id, card_id = await _seed_spec(
+    board_id, spec_id, card_id = await _seed_spec(
         db_factory,
         scenarios=[
             {"id": "ts_a", "title": "A", "status": "ready"},
@@ -359,7 +377,7 @@ async def test_delete_test_scenario_not_found(db_factory):
 
 
 # ====================================================================
-# TC-6 — status guard (in_progress allowed, validated/done blocked)
+# TC-6 — status guard (in_progress allowed, locked specs need executable test card)
 # ====================================================================
 
 
@@ -385,6 +403,99 @@ async def test_status_allowed_in_progress_blocked_validated_done(db_factory):
             svc = SpecService(db)
             with pytest.raises(StatusNotMutableError):
                 await svc.set_test_scenario_status(sid, USER, "ts_a", "passed", _VALID_EVIDENCE)
+
+
+@pytest.mark.parametrize("locked_status", [SpecStatus.VALIDATED, SpecStatus.DONE])
+async def test_status_allowed_on_locked_spec_when_scenario_has_executable_test_card(
+    db_factory,
+    locked_status: SpecStatus,
+):
+    # Regression for post-lock / post-done regression evidence: status changes
+    # are operational evidence, not semantic spec edits, but only after a real
+    # test card is linked and has entered execution/review.
+    board_id, spec_id, card_id = await _seed_spec(
+        db_factory,
+        status=locked_status,
+        locked=locked_status == SpecStatus.VALIDATED,
+        scenarios=[{"id": "ts_a", "title": "A", "status": "ready"}],
+        card_scenarios=["ts_a"],
+        card_status=CardStatus.VALIDATION,
+    )
+    async with db_factory() as db:
+        svc = SpecService(db)
+        res = await svc.set_test_scenario_status(
+            spec_id, USER, "ts_a", "passed", _VALID_EVIDENCE
+        )
+        assert res["new_status"] == "passed"
+
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        card = await db.get(Card, card_id)
+        scenario = next(sc for sc in spec.test_scenarios if sc["id"] == "ts_a")
+        assert scenario["status"] == "passed"
+        assert scenario["evidence"] == _VALID_EVIDENCE
+        assert spec.status == locked_status
+        if locked_status == SpecStatus.VALIDATED:
+            assert spec.current_validation_id == "val_x"
+        assert card.test_scenario_ids == ["ts_a"]
+
+
+async def test_status_still_blocked_on_done_spec_when_test_card_not_executable(db_factory):
+    _b, spec_id, _card_id = await _seed_spec(
+        db_factory,
+        status=SpecStatus.DONE,
+        scenarios=[{"id": "ts_a", "title": "A", "status": "ready"}],
+        card_scenarios=["ts_a"],
+        card_status=CardStatus.NOT_STARTED,
+    )
+    async with db_factory() as db:
+        svc = SpecService(db)
+        with pytest.raises(StatusNotMutableError):
+            await svc.set_test_scenario_status(
+                spec_id, USER, "ts_a", "passed", _VALID_EVIDENCE
+            )
+
+
+async def test_done_spec_test_card_can_record_evidence_then_move_done(db_factory):
+    # Regression for the observed catch-22: a done spec's residual/regression
+    # test card must be closable without reopening the spec when the scenario is
+    # already linked to that executable test card.
+    board_id, spec_id, card_id = await _seed_spec(
+        db_factory,
+        status=SpecStatus.DONE,
+        scenarios=[{"id": "ts_a", "title": "A", "status": "ready"}],
+        card_scenarios=["ts_a"],
+        card_status=CardStatus.VALIDATION,
+    )
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await SpecService(db).set_test_scenario_status(
+            spec_id,
+            USER,
+            "ts_a",
+            "passed",
+            _VALID_EVIDENCE,
+        )
+        moved = await CardService(db).move_card(
+            card_id,
+            USER,
+            CardMove(
+                status=CardStatus.DONE,
+                conclusion="Residual test evidence was recorded against the locked spec scenario.",
+                completeness=100,
+                completeness_justification="Scenario status and evidence are complete.",
+                drift=0,
+                drift_justification="No deviation from the original test reconciliation scope.",
+            ),
+        )
+        assert moved.status == CardStatus.DONE
+
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        scenario = next(sc for sc in spec.test_scenarios if sc["id"] == "ts_a")
+        assert scenario["status"] == "passed"
+        assert scenario["evidence"] == _VALID_EVIDENCE
+        assert spec.status == SpecStatus.DONE
 
 
 async def test_status_rejects_gated_without_evidence(db_factory):
@@ -482,7 +593,8 @@ def test_rest_status_endpoint_gate_and_scoped(rest_client):
 
 
 def test_rest_status_endpoint_blocks_validated(rest_client):
-    # ts_29836555 / ts_144b47eb — status change on a validated spec → 409.
+    # ts_29836555 / ts_144b47eb — arbitrary status change on a validated spec
+    # with no executable linked test card → 409.
     client, _approved, validated_id = rest_client
     resp = client.patch(
         f"/api/v1/specs/{validated_id}/scenarios/ts_a/status",

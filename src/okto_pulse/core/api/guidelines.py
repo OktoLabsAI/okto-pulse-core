@@ -109,7 +109,7 @@ async def get_board_guidelines(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
 
     service = GuidelineService(db)
-    return await service.get_board_guidelines(board_id)
+    return await service.get_board_guidelines(board_id, surface="menu_board")
 
 
 @router.post("/boards/{board_id}/guidelines", status_code=status.HTTP_201_CREATED)

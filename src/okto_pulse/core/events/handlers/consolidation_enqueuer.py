@@ -42,6 +42,7 @@ _DERIVED_EVENTS = {
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
 }
+_BUG_REGRESSION_DECISION_EVENT = "bug_regression_scenario_reuse_decision"
 
 # Spec eaf78891 (Ideação #2): card.linked_to_spec / card.unlinked_from_spec
 # re-enqueue the SPEC, not the card. The card extractor in
@@ -80,6 +81,7 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "sprint.closed",
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
+    "bug_regression_scenario_reuse_decision",
 )
 class ConsolidationEnqueuer:
     """Maps domain events to ConsolidationQueue rows with dedup + priority."""
@@ -299,6 +301,14 @@ class ConsolidationEnqueuer:
             sid = getattr(event, "spec_id", None)
             if sid:
                 targets.append(("spec", sid))
+            return targets
+        if et == _BUG_REGRESSION_DECISION_EVENT:
+            bug_id = getattr(event, "bug_id", None)
+            if bug_id:
+                targets.append(("card", bug_id))
+            spec_id = getattr(event, "spec_id", None)
+            if spec_id:
+                targets.append(("spec", spec_id))
             return targets
         if et.startswith(_SPEC_EVENT_PREFIX):
             sid = getattr(event, "spec_id", None)

@@ -1,0 +1,14 @@
+{
+  "id": "card-2",
+  "outcome": "ok",
+  "profile": "full",
+  "items": [
+    {"id": "a", "title": "Item A", "body": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+    {"id": "b", "title": "Item B", "body": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"},
+    {"id": "c", "title": "Item C", "body": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"},
+    {"id": "d", "title": "Item D", "body": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"},
+    {"id": "e", "title": "Item E", "body": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"},
+    {"id": "f", "title": "Item F", "body": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"},
+    {"id": "g", "title": "Item G", "body": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"}
+  ]
+}

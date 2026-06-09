@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_report")
 
@@ -51,6 +51,7 @@ TERMINAL_STATUSES_REQUIRING_REPORT: frozenset[str] = frozenset({
     "completed",
     "partially_rebuilt",
     "rolled_back",
+    "failed_orphan_validation",
     "rebuild_failed",
     "recovery_failed",
 })

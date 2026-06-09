@@ -32,8 +32,8 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 
 | Source | Tools / actions | When it applies |
 |---|---|---|
-| **Project files** | Use the host agent's local file-read and file-search capabilities on the working directory; surface relevant configs, manifests, package files, IaC, env templates. | Always — the refinement must reflect the real shape of the codebase, not a generic mental model. |
-| **Source code** | Open the modules, classes, functions, endpoints, schemas, migrations directly impacted. Read enough to know existing contracts, naming, patterns, error handling, and edge cases already covered. | Always — anything the refinement claims about behaviour must be verifiable against current code. |
+| **Project files** | Use the host agent's local file-read and file-search capabilities on the working directory; surface relevant configs, manifests, package files, IaC, env templates. | Always when a codebase is accessible — the refinement must reflect the real shape of the codebase, not a generic mental model. **When the board is not coupled to a codebase (decoupled mode — frontend out-of-repo, conceptual/doc-only board), declare this source N/A with an explicit justification** (same pattern already used for Mockups/Architecture when they do not apply). |
+| **Source code** | Open the modules, classes, functions, endpoints, schemas, migrations directly impacted. Read enough to know existing contracts, naming, patterns, error handling, and edge cases already covered. | Always when a codebase is accessible — anything the refinement claims about behaviour must be verifiable against current code. **In decoupled mode (no repository), declare this source N/A with an explicit justification** instead of fabricating code mappings. |
 | **Knowledge bases (KE)** | `okto_pulse_list_knowledge(entity_type="spec")` on related specs; `okto_pulse_add_spec_knowledge` once the knowledge is formalized in a spec. | Whenever there is documented domain knowledge — never paraphrase a KE; cite it and attach at spec/card level if missing. |
 | **Knowledge Graph** | The Stage 2 query set (`okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_find_contradictions`, `okto_pulse_kg_list_alternatives`, plus `okto_pulse_kg_get_related_context` only for existing formalized KG artifacts) — see "Query Timing — MANDATORY at every stage". | Always — institutional memory MUST be checked for prior decisions on the same topic. |
 | **Mockups & visual artifacts** | `okto_pulse_list_screen_mockups` on the parent ideation; create new mockups via `okto_pulse_add_screen_mockup` when the refinement implies a UI surface; ask Q&A first when screen, state, workflow, or visual behavior is ambiguous. | Whenever a user-facing behaviour is in scope. |
@@ -44,7 +44,7 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 
 **Mandatory deliverables in the refinement body** — once the investigation is done, the refinement MUST cite the evidence:
 
-1. **`analysis`** — written narrative of what you found in each applicable source above. Cite file paths with `path:line`, KE titles, KG node ids, URLs, mockup titles. Quote the relevant snippet for each citation. If a source did not apply, state that explicitly.
+1. **`analysis`** — written narrative of what you found in each applicable source above. Cite file paths with `path:line`, KE titles, KG node ids, URLs, mockup titles. Quote the relevant snippet for each citation. If a source did not apply, state that explicitly — this includes **Project files** and **Source code**, which are eligible for an N/A-with-justification when the board has no accessible codebase (decoupled mode); a silent omission is never acceptable.
 2. **`in_scope`** / **`out_of_scope`** — the boundary MUST be derived from the investigation, not from intuition. Each scope item should be traceable back to a source or decision.
 3. **`decisions`** — every architectural choice the refinement locks in. Each decision must reference (a) the alternatives considered, (b) the source that informed the pick, (c) the prior art it extends or supersedes (KG node id when applicable).
 4. **Attached KEs / mockups / Architecture Designs** — when the investigation produced new reference material, UI decisions, or structural design, attach it via `okto_pulse_add_refinement_knowledge`, `okto_pulse_add_screen_mockup`, or the architecture tools. Do not leave findings in chat — make them addressable for the downstream spec.
@@ -53,14 +53,14 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 
 | Anti-pattern | Why it's wrong | What to do instead |
 |---|---|---|
-| Writing the refinement from the ideation text alone, without opening any source file | The refinement claims behaviour the code may not implement | Open the modules in scope; cite `path:line` for every claim. |
+| Writing the refinement from the ideation text alone, without opening any source file | The refinement claims behaviour the code may not implement | Open the modules in scope; cite `path:line` for every claim about code behaviour when a codebase is accessible. **In a decoupled board (no repository), anchor every claim to the applicable sources (KG node_id, KE, Q&A, URL) — never fabricate a `path:line` for code that does not exist.** |
 | "I think the library handles this" | Speculation that becomes a bug at impl time | Read the library's official docs or its source; cite the page or commit. |
 | Skipping `okto_pulse_kg_find_contradictions` because the topic "feels new" | Silent contradiction with prior decisions in the KG | Always run the Stage 2 query set. |
 | Marking the refinement `approved` while open Q&A items exist | Pushes ambiguity downstream | Resolve every Q&A item first; ambiguity at refinement = exponentially worse at spec/impl. |
 | Drawing mockups or architecture from unresolved assumptions | The visual or structural artifact becomes a false source of truth | Ask Q&A first, then create or update the first-class artifact. |
 
 **Stop condition — the refinement is genuinely ready when:**
-- A reviewer reading the `analysis` field alone (without opening the codebase) can verify every claim against the cited sources.
+- A reviewer reading the `analysis` field alone (without opening the codebase) can verify every claim against the cited sources. In decoupled mode (no repository), verifiability rests on the sources that DO apply (KG, KEs, Q&A, stakeholder, web); a justified N/A of Project files / Source code satisfies this condition.
 - Every decision in the refinement traces to either a source, a KG node, a Q&A answer, or an explicit user instruction.
 - There are zero unresolved Q&A items on the refinement.
 - New evidence discovered during investigation has been attached as a KE, mockup, or Architecture Design, not buried in prose.

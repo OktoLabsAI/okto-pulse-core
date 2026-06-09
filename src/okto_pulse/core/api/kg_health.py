@@ -16,7 +16,7 @@ unavailable is not zero").
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
@@ -58,6 +58,67 @@ class HealthIssue(BaseModel):
     reason: str
     description: str
     operator_action: str
+
+
+class DecaySchedulerDiagnostics(BaseModel):
+    """Operational decay scheduler state, separate from graph recovery."""
+
+    status: str
+    severity: str
+    last_success_at: str | None = None
+    last_failure_at: str | None = None
+    last_error: str | None = None
+    next_scheduled_at: str | None = None
+    stale_tolerance_seconds: int | None = None
+    recommended_action: str
+    operational_debt: bool
+    graph_recovery_required: bool = False
+    reason: str | None = None
+    running_started_at: str | None = None
+    source: str = "kg_tick_runs"
+
+
+class StorageFootprintProxy(BaseModel):
+    """On-disk file-size proxy; not direct memory/buffer telemetry."""
+
+    source: str = "file_size_proxy"
+    status: str = "unavailable"
+    percentage: float | None = None
+    high_water_mark_pct: float | None = None
+    graph_lbug_bytes: int | None = None
+    sidecar_bytes: int | None = None
+    total_bytes: int | None = None
+    configured_max_db_size_bytes: int | None = None
+    configured_max_db_size_gb: int | None = None
+    is_direct_memory_telemetry: bool = False
+    description: str
+    tooltip: str
+    unavailable_reason: str | None = None
+
+
+class OrphanIntegritySample(BaseModel):
+    node_id: str
+    node_type: str
+    writer_path: str
+    source_artifact_ref: str | None = None
+    source_resolution_status: str
+    generation_id: str | None = None
+    reason: str
+    correlation_id: str
+
+
+class OrphanIntegrityProjection(BaseModel):
+    classification_delta: str = "none"
+    integrity_warning: bool = False
+    orphan_count: int = 0
+    orphan_count_by_type: dict[str, int] = Field(default_factory=dict)
+    samples: list[OrphanIntegritySample] = Field(default_factory=list)
+    unresolved_reasons: dict[str, int] = Field(default_factory=dict)
+    allowlisted_root_count: int = 0
+    generation_id: str | None = None
+    correlation_id: str | None = None
+    zero_orphan_validation: str = "not_evaluated"
+    reason: str = "orphan_scan_not_evaluated"
 
 
 class KGHealthResponse(BaseModel):
@@ -115,6 +176,14 @@ class KGHealthResponse(BaseModel):
     # acquired (cron OU run-now). Frontend usa para desabilitar o botão
     # "Run tick now" através de remount do componente.
     tick_in_progress: bool = False
+    # FR5/FR6 (spec R2b TR5, IMPL-3): board counters from last tick run.
+    # Allows callers to distinguish "tick failed before processing any board"
+    # (boards_processed_in_last_tick==0) from "processed N boards but M
+    # failed" (boards_failed_in_last_tick>0). Defaults to 0 per BR5 when no
+    # completed tick_run exists. Aditivo: nenhum campo existente é alterado
+    # (br_2a8cdfdc).
+    boards_processed_in_last_tick: int = 0
+    boards_failed_in_last_tick: int = 0
 
     # KG-01 internal/debug surface — kept in addition to the contract
     # `graph_state`/`overall_state` so dashboards built against the
@@ -126,6 +195,20 @@ class KGHealthResponse(BaseModel):
     state: str = "at_risk"
     memory_pressure_status: str = "unconfirmed"
     classification_reasons: list[str] = []
+
+    # FR6 (spec R2c): DLQ auto-drain telemetry (additive, default null/0 per
+    # BR5 — never 500s when the worker is not running or has no stats yet).
+    dlq_auto_drain_last_run_at: str | None = None
+    dlq_auto_drain_requeued_count: int = 0
+
+    # KG-HS.1 additive clarity fields. These are explicit objects so REST
+    # clients no longer infer scheduler debt or memory pressure from legacy
+    # scalar fields.
+    decay_scheduler_diagnostics: DecaySchedulerDiagnostics
+    storage_footprint_proxy: StorageFootprintProxy
+    orphan_integrity: OrphanIntegrityProjection = Field(
+        default_factory=OrphanIntegrityProjection
+    )
 
     # Additive UI diagnosis: separates "board graph is actually unreadable or
     # empty after prior materialization" from conservative at_risk states caused

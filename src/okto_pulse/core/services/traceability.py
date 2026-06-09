@@ -92,13 +92,44 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = False) -> dict
     return data
 
 
-def _artifact_summary(entity: Any) -> dict[str, int]:
+def _artifact_id(item: Any) -> Any:
+    """Best-effort id for an artifact that may be a dict or an ORM row."""
+    if isinstance(item, dict):
+        return item.get("id")
+    return getattr(item, "id", None)
+
+
+def _artifact_summary(entity: Any, *, entity_type: str) -> dict[str, Any]:
+    """Compact artifact view for the default (no-artifact-bodies) traceability
+    path: counts + compact IDs + explicit drilldown metadata.
+
+    Per FR5 / tr_451cb4cc / AC ac_c59937d3 the compact response must carry
+    counts AND ids AND an explicit next-step hint for fetching the full bodies —
+    but NEVER the bodies/content themselves.
+    """
+    mockups = getattr(entity, "screen_mockups", None) or []
+    kbs = getattr(entity, "knowledge_bases", None) or []
+    archs = getattr(entity, "architecture_designs", None) or []
+    total = len(mockups) + len(kbs) + len(archs)
     return {
-        "mockups_count": len(getattr(entity, "screen_mockups", None) or []),
-        "knowledge_bases_count": len(getattr(entity, "knowledge_bases", None) or []),
-        "architecture_designs_count": len(
-            getattr(entity, "architecture_designs", None) or []
-        ),
+        "mockups_count": len(mockups),
+        "knowledge_bases_count": len(kbs),
+        "architecture_designs_count": len(archs),
+        # Compact IDs only — no titles, descriptions, or content bodies.
+        "artifact_ids": {
+            "mockups": [_artifact_id(m) for m in mockups],
+            "knowledge_bases": [_artifact_id(kb) for kb in kbs],
+            "architecture_designs": [_artifact_id(a) for a in archs],
+        },
+        # Explicit next-step metadata so an agent can fetch the full bodies on
+        # demand without guessing the tool/flag.
+        "artifact_drilldown": {
+            "available": total > 0,
+            "tool_name": "okto_pulse_get_traceability_report",
+            "include_artifacts": "true",
+            "entity_type": entity_type,
+            "entity_id": getattr(entity, "id", None),
+        },
     }
 
 
@@ -148,6 +179,18 @@ def _spec_coverage(spec: Spec) -> dict[str, Any]:
     }
 
 
+def _bug_block(card: Card) -> dict[str, Any]:
+    """The bug-specific fields of a bug card (severity + expected/observed +
+    linked test tasks). Shared by ``_card_summary`` (full body) and the slim
+    ``bugs`` index so the two never drift."""
+    return {
+        "severity": _enum_value(card.severity) if card.severity else None,
+        "expected_behavior": card.expected_behavior,
+        "observed_behavior": card.observed_behavior,
+        "linked_test_task_ids": card.linked_test_task_ids or [],
+    }
+
+
 def _card_summary(card: Card, *, include_artifacts: bool, spec: Spec | None = None) -> dict[str, Any]:
     payload = {
         "id": card.id,
@@ -161,12 +204,7 @@ def _card_summary(card: Card, *, include_artifacts: bool, spec: Spec | None = No
         "validations_count": len(card.validations or []),
     }
     if _enum_value(card.card_type) == "bug":
-        payload["bug"] = {
-            "severity": _enum_value(card.severity) if card.severity else None,
-            "expected_behavior": card.expected_behavior,
-            "observed_behavior": card.observed_behavior,
-            "linked_test_task_ids": card.linked_test_task_ids or [],
-        }
+        payload["bug"] = _bug_block(card)
     if include_artifacts:
         payload["artifacts"] = _artifact_refs(card)
         resolved = resolve_task_context_references(
@@ -179,7 +217,7 @@ def _card_summary(card: Card, *, include_artifacts: bool, spec: Spec | None = No
             for key in ("knowledge_bases", "screen_mockups", "architecture_designs")
         }
     else:
-        payload["artifact_summary"] = _artifact_summary(card)
+        payload["artifact_summary"] = _artifact_summary(card, entity_type="card")
     return payload
 
 
@@ -188,6 +226,9 @@ def _sprint_summary(sprint: Sprint) -> dict[str, Any]:
         "id": sprint.id,
         "title": sprint.title,
         "status": _enum_value(sprint.status),
+        "lane_type": _enum_value(getattr(sprint, "lane_type", None)) or "normal",
+        "origin_sprint_id": getattr(sprint, "origin_sprint_id", None),
+        "origin_bug_id": getattr(sprint, "origin_bug_id", None),
     }
 
 
@@ -226,8 +267,20 @@ def _spec_summary(spec: Spec, *, include_artifacts: bool) -> dict[str, Any]:
             for scenario in (spec.test_scenarios or [])
             if isinstance(scenario, dict)
         ],
+        # FR5/FR7 dedup: bug cards already appear as FULL bodies under ``cards``
+        # (artifacts, resolved_artifacts, counts). Here we keep only a focused
+        # bug index — identity + lineage keys (sprint_id/origin_task_id, still
+        # consumed by build_lineage_graph) + the bug-specific block — so the
+        # heavy artifact bodies are not serialized a second time.
         "bugs": [
-            _card_summary(card, include_artifacts=include_artifacts, spec=spec)
+            {
+                "id": card.id,
+                "title": card.title,
+                "status": _enum_value(card.status),
+                "sprint_id": card.sprint_id,
+                "origin_task_id": card.origin_task_id,
+                "bug": _bug_block(card),
+            }
             for card in cards
             if _enum_value(card.card_type) == "bug"
         ],
@@ -242,7 +295,7 @@ def _spec_summary(spec: Spec, *, include_artifacts: bool) -> dict[str, Any]:
     if include_artifacts:
         payload["artifacts"] = _artifact_refs(spec)
     else:
-        payload["artifact_summary"] = _artifact_summary(spec)
+        payload["artifact_summary"] = _artifact_summary(spec, entity_type="spec")
     return payload
 
 
@@ -382,7 +435,9 @@ async def build_traceability_report(
             if include_artifacts:
                 ref_payload["artifacts"] = _artifact_refs(refinement)
             else:
-                ref_payload["artifact_summary"] = _artifact_summary(refinement)
+                ref_payload["artifact_summary"] = _artifact_summary(
+                    refinement, entity_type="refinement"
+                )
             refinement_payloads.append(ref_payload)
 
         ideation_payload = {
@@ -402,7 +457,9 @@ async def build_traceability_report(
         if include_artifacts:
             ideation_payload["artifacts"] = _artifact_refs(ideation)
         else:
-            ideation_payload["artifact_summary"] = _artifact_summary(ideation)
+            ideation_payload["artifact_summary"] = _artifact_summary(
+                ideation, entity_type="ideation"
+            )
         report_ideations.append(ideation_payload)
 
     orphan_specs = [
@@ -618,6 +675,9 @@ async def build_lineage_graph(
                 "title": sprint["title"],
                 "label": sprint["title"],
                 "status": sprint.get("status"),
+                "lane_type": sprint.get("lane_type") or "normal",
+                "origin_sprint_id": sprint.get("origin_sprint_id"),
+                "origin_bug_id": sprint.get("origin_bug_id"),
                 "stage": 3,
             })
             add_edge(spec_node_id, sprint_node_id, "has_sprint")

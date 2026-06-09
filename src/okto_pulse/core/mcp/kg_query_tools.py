@@ -44,6 +44,17 @@ def _err(code: str, message: str, **extra: Any) -> str:
     return json.dumps(payload, default=str)
 
 
+def _err_from(e: KGToolError) -> str:
+    """Build the MCP error envelope from a KGToolError, forwarding the degraded
+    ``graph_state`` (FR7) into the ``error`` object when the typed error carries
+    it (the ``graph_unavailable`` case). Errors without a ``graph_state`` detail
+    are emitted unchanged so existing envelopes are unaffected."""
+    details = e.details or {}
+    if "graph_state" in details:
+        return _err(e.code, e.message, graph_state=details["graph_state"])
+    return _err(e.code, e.message)
+
+
 async def _get_auth_context():
     """Get AuthContext from registry or return None."""
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
@@ -94,28 +105,13 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         use_semantic: bool = True,
         min_similarity: float = 0.3,
     ) -> str:
-        """
-        Trace decisions about a topic/module over time. Returns decisions
-        matching the topic with their supersedence chain.
-
-        Args:
-            board_id: Board ID
-            topic: Topic or keyword to search for. Accepts natural-language
-                phrases when ``use_semantic=True`` (paraphrases like
-                "cache strategy" vs "caching approach" surface related hits).
-            min_confidence: Minimum confidence threshold (default 0.5)
-            max_rows: Maximum results (default 100)
-            use_semantic: When True (default), embed the topic and query the
-                Decision HNSW index first, then backfill with title-CONTAINS
-                matches. Set False for deterministic string-only search.
-            min_similarity: Cosine similarity floor for semantic hits
-                (default 0.3; range 0.0–1.0).
-
-        Returns:
-            JSON with decisions list. Semantic hits are ordered by similarity
-            (best first); title-CONTAINS fallbacks retain relevance_score
-            ordering.
-        """
+        """Trace decisions about a topic/module over time, with their supersedence chain. topic
+accepts natural-language phrases when use_semantic=True (default): embeds the topic
+and queries the Decision HNSW index, then backfills with title-CONTAINS. Set
+use_semantic=False for deterministic string-only search. Tunables: min_confidence
+(default 0.5), max_rows (default 100), min_similarity (default 0.3). Returns decisions
+ordered by similarity (semantic) or relevance_score (fallback). Full args:
+okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
             return _err("unauthorized", "authentication required")
@@ -137,7 +133,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             )
             return resp.model_dump_json()
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)
 
     @mcp.tool()
     async def okto_pulse_kg_get_related_context(
@@ -198,7 +194,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
         except ValueError as e:
             return _err("invalid_argument", str(e))
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)
 
     @mcp.tool()
     async def okto_pulse_kg_get_supersedence_chain(
@@ -233,7 +229,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             )
             return resp.model_dump_json()
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)
 
     @mcp.tool()
     async def okto_pulse_kg_find_contradictions(
@@ -273,7 +269,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             )
             return resp.model_dump_json()
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)
 
     @mcp.tool()
     async def okto_pulse_kg_find_similar_decisions(
@@ -314,7 +310,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             )
             return resp.model_dump_json()
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)
 
     @mcp.tool()
     async def okto_pulse_kg_explain_constraint(
@@ -347,7 +343,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             )
             return resp.model_dump_json()
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)
 
     @mcp.tool()
     async def okto_pulse_kg_list_alternatives(
@@ -386,7 +382,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             )
             return resp.model_dump_json()
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)
 
     @mcp.tool()
     async def okto_pulse_kg_get_learning_from_bugs(
@@ -427,7 +423,7 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             )
             return resp.model_dump_json()
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)
 
     @mcp.tool()
     async def okto_pulse_kg_query_global(
@@ -464,4 +460,4 @@ def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
             )
             return resp.model_dump_json()
         except KGToolError as e:
-            return _err(e.code, e.message)
+            return _err_from(e)

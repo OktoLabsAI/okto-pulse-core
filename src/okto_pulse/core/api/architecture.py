@@ -20,14 +20,16 @@ from okto_pulse.core.models.schemas import (
     ArchitectureDiagramPayloadResponse,
     ArchitectureDiagramType,
     ArchitectureDiffResponse,
+    ArchitectureWarningAcknowledgementRequest,
 )
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitectureDiagramStore,
     ArchitecturePayloadValidationError,
     ArchitecturePropagationService,
+    ArchitectureWarningAcknowledgementRequired,
+    stable_architecture_finding_key,
 )
-from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 router = APIRouter()
 
@@ -45,6 +47,7 @@ class DiagramPayloadUpdate(BaseModel):
     payload: dict[str, Any] | list[Any] | str
     format: ArchitectureDiagramFormat | None = None
     change_summary: str | None = None
+    architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | None = None
 
 
 class ExcalidrawImportRequest(BaseModel):
@@ -57,12 +60,14 @@ class ExcalidrawImportRequest(BaseModel):
     order_index: int = 0
     replace_diagram_id: str | None = None
     change_summary: str | None = None
+    architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | None = None
 
 
 class CopyArchitectureRequest(BaseModel):
     """Optional filter for copy architecture operations."""
 
     design_ids: list[str] | None = None
+    architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | None = None
 
 
 class ArchitecturePayloadValidationRequest(BaseModel):
@@ -73,6 +78,7 @@ class ArchitecturePayloadValidationRequest(BaseModel):
     entities: list[dict[str, Any]] | None = None
     interfaces: list[dict[str, Any]] | None = None
     diagrams: list[dict[str, Any]] | None = None
+    design_id: str | None = None
 
 
 class ArchitecturePayloadValidationResponse(BaseModel):
@@ -123,6 +129,8 @@ async def _ensure_design_mutable(db: AsyncSession, design_id: str) -> Any:
 
 
 def _http_error_from_value(error: ValueError) -> HTTPException:
+    if isinstance(error, ArchitectureWarningAcknowledgementRequired):
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error.to_payload())
     message = str(error)
     status_code = (
         status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -265,7 +273,18 @@ async def validate_architecture_payload(
 ):
     """Return the same Architecture Design critique exposed to MCP agents."""
     repo = ArchitectureDesignRepository(db)
-    return repo.critique_payload(data.model_dump(mode="json"))
+    request_payload = data.model_dump(mode="json", exclude_none=True)
+    design_id = request_payload.pop("design_id", None)
+    critique = repo.critique_payload(request_payload)
+    if design_id:
+        critique["structured_warnings"] = [
+            {
+                **warning,
+                "finding_key": stable_architecture_finding_key(design_id, warning),
+            }
+            for warning in (critique.get("structured_warnings") or [])
+        ]
+    return critique
 
 
 @router.get("/architecture/{design_id}", response_model=ArchitectureDesignResponse)
@@ -369,6 +388,7 @@ async def update_architecture_diagram_payload(
             ArchitectureDesignUpdate(
                 diagrams=diagrams,
                 change_summary=data.change_summary or f"Updated diagram payload {diagram_id}",
+                architecture_warning_acknowledgement=data.architecture_warning_acknowledgement,
             ),
             user_id,
         )
@@ -412,6 +432,7 @@ async def import_excalidraw_architecture_diagram(
             ArchitectureDesignUpdate(
                 diagrams=diagrams,
                 change_summary=data.change_summary or "Imported Excalidraw diagram",
+                architecture_warning_acknowledgement=data.architecture_warning_acknowledgement,
             ),
             user_id,
         )
@@ -447,7 +468,15 @@ async def copy_architecture_from_spec_to_card(
 ):
     service = ArchitecturePropagationService(db)
     try:
-        designs = await service.copy_spec_to_card(spec_id, card_id, user_id, design_ids=(data.design_ids if data else None))
+        designs = await service.copy_spec_to_card(
+            spec_id,
+            card_id,
+            user_id,
+            design_ids=(data.design_ids if data else None),
+            architecture_warning_acknowledgement=(
+                data.architecture_warning_acknowledgement if data else None
+            ),
+        )
     except ValueError as error:
         raise _http_error_from_value(error)
     repo = ArchitectureDesignRepository(db)

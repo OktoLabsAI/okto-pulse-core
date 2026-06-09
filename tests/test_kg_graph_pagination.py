@@ -3,7 +3,7 @@
 Covers Spec 8 cards S1.6 and S1.7:
 
 - S1.6 / AC-10: limit=50 returns at most 50 nodes + next_cursor.
-- S1.6 / AC-11: limit>500, limit<1 return 400 Bad Request.
+- S1.6 / AC-11: limit>1000, limit<1 return 400 Bad Request.
 - S1.7 / AC-12: identical cursor returns identical page (stability).
 - S1.7 / AC-12: corrupted cursor returns 410 Gone.
 - S1.7 / AC-12: walking all pages visits every seeded node exactly once.
@@ -187,8 +187,8 @@ class TestLimitContract:
         )
         assert body.get("next_cursor"), "next_cursor must be non-empty mid-pagination"
 
-    def test_limit_500_hard_cap_accepted(self, client):
-        code, _body = _get_graph(client, limit=500)
+    def test_limit_1000_hard_cap_accepted(self, client):
+        code, _body = _get_graph(client, limit=1000)
         assert code == 200
 
     def test_limit_default_is_100_when_omitted(self, client):
@@ -217,13 +217,13 @@ class TestLimitContract:
 
 
 class TestLimitValidation:
-    def test_limit_1000_rejected_with_400(self, client):
-        code, body = _get_graph(client, limit=1000)
-        # FastAPI Query(..., le=500) yields 422 by default; the spec wants a
+    def test_limit_above_1000_rejected_with_400(self, client):
+        code, body = _get_graph(client, limit=1001)
+        # FastAPI Query(..., le=1000) yields 422 by default; the spec wants a
         # 400 with a specific detail. S1.1 must translate the validation error.
         assert code == 400, (code, body)
         detail = (body.get("detail") or "").lower() if isinstance(body, dict) else ""
-        assert "limit" in detail and ("500" in detail or "range" in detail), body
+        assert "limit" in detail and ("1000" in detail or "range" in detail), body
 
     def test_limit_zero_rejected_with_400(self, client):
         code, _body = _get_graph(client, limit=0)
@@ -295,8 +295,8 @@ class TestCursorStability:
 
 class TestResponseShape:
     def test_last_page_has_null_next_cursor(self, client):
-        # limit=500 >= SEED_COUNT → single page → next_cursor must be None
-        code, body = _get_graph(client, limit=500)
+        # limit=1000 >= SEED_COUNT → single page → next_cursor must be None
+        code, body = _get_graph(client, limit=1000)
         assert code == 200
         assert body.get("next_cursor") in (None, "")
 
@@ -369,8 +369,47 @@ class TestNodesAndStats:
         assert body["schema_version"] == "0.3.5"
         assert body["graph_schema_version"] == "0.3.5"
         assert body["node_counts_by_type"]["Decision"] == SEED_COUNT
+        assert body["node_counts_by_type"]["Learning"] == 0
         assert body["edge_counts_by_type"] == {"belongs_to": 3}
         assert body["edge_count_status"] == "ok"
+
+    def test_stats_counts_learning_nodes_beyond_first_thousand(self, monkeypatch):
+        many_decisions = _seed_rows(1005)
+        learning = {
+            "id": "learning-old-001",
+            "node_type": "Learning",
+            "title": "Late-page Learning",
+            "content": "A learning node older than the first 1000 rows.",
+            "created_at": "2020-01-01T00:00:00",
+            "source_confidence": 0.9,
+            "relevance_score": 0.75,
+            "source_artifact_ref": "bug-1",
+        }
+        fake = _FakeKGService([*many_decisions, learning])
+        monkeypatch.setattr(kg_routes, "get_kg_service", lambda: fake)
+        monkeypatch.setattr(
+            kg_routes,
+            "_count_edges_by_type",
+            lambda _board: (
+                {},
+                {
+                    "edge_count_status": "ok",
+                    "edge_count_tables_scanned": 0,
+                    "edge_count_tables_failed": 0,
+                    "edge_count_errors": [],
+                },
+            ),
+        )
+        app = FastAPI()
+        app.include_router(kg_router, prefix="/api/v1")
+        local_client = TestClient(app)
+
+        resp = local_client.get(f"/api/v1/kg/boards/{SEED_BOARD}/stats")
+        body = resp.json()
+
+        assert resp.status_code == 200, body
+        assert body["node_counts_by_type"]["Decision"] == 1005
+        assert body["node_counts_by_type"]["Learning"] == 1
 
     def test_board_routes_do_not_use_global_discovery_fallback(self, client):
         graph_code, graph_body = _get_graph(client, limit=1)

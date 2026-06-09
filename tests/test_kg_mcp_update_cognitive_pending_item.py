@@ -591,7 +591,7 @@ def test_response_item_uses_reason_code_not_free_text_reason(
     # reason_code is present; raw reason is NOT echoed.
     assert "reason_code" in item
     assert "reason" not in item
-    raw_json = asyncio.run(update_tool(
+    asyncio.run(update_tool(
         board_id=BOARD,
         kg_generation_id=gen,
         item_id=items[0].item_id,

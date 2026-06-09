@@ -32,11 +32,13 @@ EXPECTED_FILES = [
     "workflows/cards.md",
     "workflows/sprints.md",
     "workflows/kg.md",
+    "workflows/preflight.md",
     "reference/errors.md",
     "reference/multivalue.md",
     "reference/destructive_ops.md",
     "reference/card_types.md",
     "reference/spec_gates.md",
+    "reference/projection_profiles.md",
 ]
 
 EXPECTED_URIS = [
@@ -47,11 +49,13 @@ EXPECTED_URIS = [
     "okto-pulse://workflows/cards",
     "okto-pulse://workflows/sprints",
     "okto-pulse://workflows/kg",
+    "okto-pulse://workflows/preflight",
     "okto-pulse://reference/errors",
     "okto-pulse://reference/multivalue",
     "okto-pulse://reference/destructive_ops",
     "okto-pulse://reference/card_types",
     "okto-pulse://reference/spec_gates",
+    "okto-pulse://reference/projection-profiles",
 ]
 
 

@@ -19,6 +19,7 @@ from okto_pulse.core.kg.schema import (
     VECTOR_INDEX_TYPES,
     bootstrap_board_graph,
     open_board_connection,
+    stable_rel_type_entries,
     vector_index_name,
 )
 from okto_pulse.core.kg import cypher_templates as tpl
@@ -441,9 +442,7 @@ class KuzuGraphStore:
         result: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "stable_node_types": [{"name": nt, "stable": True} for nt in NODE_TYPES],
-            "stable_rel_types": [
-                {"name": rt[0], "from": rt[1], "to": rt[2]} for rt in REL_TYPES
-            ],
+            "stable_rel_types": stable_rel_type_entries(),
             "vector_indexes": [
                 {
                     "node_type": nt,

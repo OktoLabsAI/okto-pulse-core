@@ -252,6 +252,15 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
         published.append(event)
 
     monkeypatch.setattr(kg_tick, "event_publish", _fake_publish)
+
+    # F17: run_tick_now now probes board health before allocating a tick. Stub
+    # it healthy so this 202 path proceeds (a concrete board that is NOT degraded
+    # is admitted); the advisory-lock 409 path below short-circuits before the
+    # probe is reached.
+    async def _healthy_health(board_id, db):
+        return {"graph_state": "healthy"}
+
+    monkeypatch.setattr(kg_tick, "get_kg_health", _healthy_health)
     fake_db = _FakeSession()
 
     # First call: 202 success.

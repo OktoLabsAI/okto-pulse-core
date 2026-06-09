@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import time
 from pathlib import Path
 
 import pytest
@@ -16,7 +15,6 @@ import pytest
 from okto_pulse.core.kg.rebuild_confirmation import (
     CANONICAL_OPERATIONS,
     ConfirmationOutcome,
-    ConfirmationToken,
     RebuildConfirmationStore,
     get_confirmation_count,
     get_confirmation_counter_labels,
@@ -28,12 +26,61 @@ from okto_pulse.core.kg.rebuild_sources import (
     EnumerationOutcome,
     KGRebuildSourceManifest,
     RebuildSourceEnumerator,
-    RebuildSourceRow,
     get_enumeration_count,
     get_enumeration_counter_labels,
     reset_enumeration_counter,
 )
 from okto_pulse.core.kg.board_source_store import BoardSourceStore
+
+
+# ---------------------------------------------------------------------------
+# IMPL-2 compatibility helper — see test_kg_rebuild_service.py for details.
+# ---------------------------------------------------------------------------
+
+def _make_rebuild_test_app(board_id: str = "b-test"):
+    """Return a FastAPI app with get_db overridden to satisfy FR10/FR9 gates."""
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+
+    from okto_pulse.core.api.router import api_router
+    from okto_pulse.core.infra.database import get_db
+
+    _fake_board = SimpleNamespace(id=board_id, owner_id="user-lifecycle-test")
+
+    class _FakeResult:
+        def scalar_one_or_none(self):
+            # ShareService.get_user_permission calls execute() for BoardShare rows;
+            # return a fake share with "owner" permission so the 403 gate passes.
+            return SimpleNamespace(permission="owner")
+
+    class _FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, stmt):
+            return _FakeResult()
+
+        async def get(self, model_class, pk):
+            # _require_board_access + ShareService._get_board call db.get(Board, id).
+            return _fake_board
+
+        async def commit(self):
+            pass
+
+        async def rollback(self):
+            pass
+
+    async def _fake_db():
+        yield _FakeSession()
+
+    app = FastAPI()
+    app.include_router(api_router)
+    app.dependency_overrides[get_db] = _fake_db
+    return app
 
 
 @pytest.fixture(autouse=True)
@@ -564,22 +611,46 @@ def test_canonical_operations_includes_rebuild_and_reset():
 # --- POST endpoints lifecycle integration (val_d0da4a75 rework) -------------
 
 
-def _client_with_router():
-    """Helper: live api_router app with auth override."""
-    from fastapi import FastAPI
+def _client_with_router(board_id: str = "b-life"):
+    """Helper: live api_router app with auth + FR10/FR9 overrides.
+
+    IMPL-2 added board scope (FR10) + real health probe (FR9).
+    Both gates need a DB session.  We override get_db to return a fake
+    session whose Board SELECT always succeeds and also patch get_kg_health
+    to return a healthy state so the admission gate never blocks.
+    """
+    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.router import api_router
     from okto_pulse.core.infra.auth import require_user
 
-    app = FastAPI()
-    app.include_router(api_router)
+    async def _fake_health(_board_id, _db):
+        return {"graph_state": "healthy", "metric_status": "available",
+                "current_kg_generation_id": None}
+
+    # Monkeypatch at module level (safe: tests run in same process, sequential).
+    _original_health = kg_rebuild_mod.get_kg_health
+    kg_rebuild_mod.get_kg_health = _fake_health  # type: ignore[assignment]
+
+    app = _make_rebuild_test_app(board_id=board_id)
 
     async def _fake_user():
         return "user-lifecycle-test"
 
     app.dependency_overrides[require_user] = _fake_user
-    return TestClient(app)
+    client = TestClient(app)
+
+    # Restore after context exit.
+    class _CtxClient:
+        def __enter__(self):
+            return client.__enter__()
+
+        def __exit__(self, *args):
+            result = client.__exit__(*args)
+            kg_rebuild_mod.get_kg_health = _original_health  # type: ignore[assignment]
+            return result
+
+    return _CtxClient()
 
 
 def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
@@ -790,14 +861,11 @@ def test_validate_manifest_ref_rejects_traversal_and_alias():
 
 
 def test_post_rebuild_confirm_rejects_unsupported_operation():
-    from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.router import api_router
     from okto_pulse.core.infra.auth import require_user
 
-    app = FastAPI()
-    app.include_router(api_router)
+    app = _make_rebuild_test_app(board_id="b1")
 
     async def _fake_user():
         return "u"

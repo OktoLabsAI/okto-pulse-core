@@ -325,6 +325,10 @@ def _coverage_row_for_spec(spec: Spec, cards: list | None = None) -> dict:
         "fr_coverage_pct": cov["fr_coverage_pct"],
         "decisions_coverage_pct": cov["decisions_coverage_pct"],
         "decisions_total": cov["decisions_total"],
+        # Bug 42e78332: decisions parity with IR/OR (linked + uncovered_ids + skip).
+        "decisions_linked": cov["decisions_linked"],
+        "decisions_uncovered_ids": cov["decisions_uncovered_ids"],
+        "skip_decisions_coverage": cov["skip_decisions_coverage"],
         "tr_task_linkage_pct": cov["tr_task_linkage_pct"],
         "trs_total": cov["trs_total"],
         "irs_linked": cov["irs_linked"],
@@ -795,9 +799,15 @@ def spec_coverage_summary(
         if (set(br.get("linked_task_ids") or []) - cancelled_card_ids)
     )
 
-    c_total = len(_contracts)
+    # F13: exclude not_applicable (and superseded/revoked) contracts from coverage,
+    # mirroring active_irs/active_ors. A not_applicable contract is a justified waiver.
+    active_contracts = [
+        c for c in _contracts
+        if isinstance(c, dict) and c.get("status", "active") == "active"
+    ]
+    c_total = len(active_contracts)
     c_linked = sum(
-        1 for c in _contracts
+        1 for c in active_contracts
         if (set(c.get("linked_task_ids") or []) - cancelled_card_ids)
     )
 

@@ -83,6 +83,7 @@ class RebuildOutcome(str, Enum):
     # KG-02.4: report persistence is the terminal-state gate. If it
     # fails the safe previous generation is preserved (br_82deef11).
     REPORT_PERSIST_FAILED = "report_persist_failed"
+    FAILED_ORPHAN_VALIDATION = "failed_orphan_validation"
 
 
 class RebuildBlockReason(str, Enum):
@@ -100,6 +101,7 @@ class RebuildBlockReason(str, Enum):
     REPORT_PERSIST_STORE_FAILED = "report_persist_store_failed"
     REPORT_PERSIST_SENSITIVE_REJECTED = "report_persist_sensitive_rejected"
     GENERATION_PROMOTION_BLOCKED = "generation_promotion_blocked"
+    ORPHAN_VALIDATION_FAILED = "orphan_validation_failed"
     OK = "ok"
 
 
@@ -237,6 +239,7 @@ def _default_step_adapter(req: RebuildStepInput) -> RebuildStepResult:
 # KG-02.4 — kg.rebuilt event emitter (TR8). Default is no-op; production
 # wires the audit pipeline (KG-02.7).
 KGRebuiltEventEmitter = Callable[[dict[str, Any]], None]
+OrphanScanProvider = Callable[[str, str | None], Any]
 
 
 def _default_event_emitter(_event: dict[str, Any]) -> None:
@@ -272,6 +275,7 @@ class KGRebuildService:
     report_store: Any | None = None  # RebuildReportStore
     terminal_state_guard: Any | None = None  # RebuildReportTerminalStateGuard
     event_emitter: KGRebuiltEventEmitter = _default_event_emitter
+    orphan_scan_provider: OrphanScanProvider | None = None
     # Lock TTL while the rebuild runs. Default 1h — enough for the
     # 1000-iter stress at KG-01.6 plus headroom.
     lock_ttl_seconds: int = 3600
@@ -758,6 +762,18 @@ class KGRebuildService:
         if candidate_terminal is None:
             return default
 
+        zero_orphan_validation: dict[str, Any] | None = None
+        if outcome is RebuildOutcome.COMPLETED:
+            zero_orphan_validation = self._build_zero_orphan_validation(
+                board_id=board_id,
+                generation_id=candidate_kg_generation_id,
+            )
+            if zero_orphan_validation.get("integrity_warning") or (
+                zero_orphan_validation.get("zero_orphan_validation")
+                == "unavailable"
+            ):
+                candidate_terminal = RebuildOutcome.FAILED_ORPHAN_VALIDATION.value
+
         # Build the canonical payload. step_result may be None for the
         # paths where the step never ran (e.g. exception inside the
         # admin guard before the adapter call). In that case we surface
@@ -770,13 +786,18 @@ class KGRebuildService:
             ReportPersistOutcome,
         )
 
+        summary_counts = dict(step_result.counts) if step_result else {}
+        if zero_orphan_validation is not None:
+            summary_counts["orphan_count"] = int(
+                zero_orphan_validation.get("orphan_count") or 0
+            )
         summary = RebuildReportSummary(
             board_id=board_id,
             run_id=run_id,
             status=candidate_terminal,
             started_at=started_at.isoformat(),
             finished_at=finished_for_summary,
-            counts=dict(step_result.counts) if step_result else {},
+            counts=summary_counts,
             triggered_by=triggered_by,
             previous_kg_generation_id=previous_kg_generation_id,
             kg_generation_id=candidate_kg_generation_id
@@ -788,6 +809,9 @@ class KGRebuildService:
             hashes["structural_hash"] = step_result.structural_hash
         if step_result and step_result.source_hash:
             hashes["source_hash"] = step_result.source_hash
+        drilldown = dict(step_result.drilldown) if step_result else {}
+        if zero_orphan_validation is not None:
+            drilldown["zero_orphan_validation"] = zero_orphan_validation
         payload = RebuildReportPayload(
             summary=summary,
             hashes=hashes,
@@ -795,7 +819,7 @@ class KGRebuildService:
             reconciliation_decisions=tuple(
                 step_result.reconciliation_decisions if step_result else ()
             ),
-            drilldown=dict(step_result.drilldown) if step_result else {},
+            drilldown=drilldown,
             operator_notes=user_reason or None,
         )
 
@@ -825,8 +849,13 @@ class KGRebuildService:
                 final_reason = RebuildBlockReason.REPORT_PERSIST_STORE_FAILED
             final_outcome = RebuildOutcome.REPORT_PERSIST_FAILED
         else:
-            final_outcome = outcome
-            final_reason = reason
+            if candidate_terminal == RebuildOutcome.FAILED_ORPHAN_VALIDATION.value:
+                final_outcome = RebuildOutcome.FAILED_ORPHAN_VALIDATION
+                final_reason = RebuildBlockReason.ORPHAN_VALIDATION_FAILED
+                operator_action = operator_action or "run_orphan_backfill"
+            else:
+                final_outcome = outcome
+                final_reason = reason
 
             # Promotion only when the original outcome was COMPLETED.
             # Other terminal statuses (FAILED, REBUILD_FAILED) MUST
@@ -946,6 +975,31 @@ class KGRebuildService:
             "detail": persist_result.detail or detail,
         }
 
+    def _build_zero_orphan_validation(
+        self, *, board_id: str, generation_id: str | None
+    ) -> dict[str, Any]:
+        from okto_pulse.core.kg.orphan_integrity import (
+            build_orphan_integrity_projection,
+        )
+
+        if self.orphan_scan_provider is None:
+            return build_orphan_integrity_projection(
+                None,
+                not_evaluated_reason="orphan_scan_provider_not_configured",
+            ).to_safe_dict()
+        try:
+            report = self.orphan_scan_provider(board_id, generation_id)
+            return build_orphan_integrity_projection(report).to_safe_dict()
+        except Exception as exc:
+            logger.warning(
+                "kg.rebuild.orphan_validation_failed board=%s err=%s",
+                board_id, exc,
+            )
+            return build_orphan_integrity_projection(
+                None,
+                scan_error=type(exc).__name__,
+            ).to_safe_dict()
+
     def _emit_audit_and_counter(
         self,
         *,
@@ -1058,6 +1112,8 @@ def _candidate_terminal_status_for(outcome: RebuildOutcome) -> str | None:
         return "rebuild_failed"
     if outcome is RebuildOutcome.REBUILD_FAILED:
         return "rebuild_failed"
+    if outcome is RebuildOutcome.FAILED_ORPHAN_VALIDATION:
+        return "failed_orphan_validation"
     return None
 
 
@@ -1065,6 +1121,7 @@ __all__ = [
     "AUDIT_DIRNAME",
     "KGRebuildService",
     "KGRebuiltEventEmitter",
+    "OrphanScanProvider",
     "REBUILD_DIRNAME",
     "RebuildBlockReason",
     "RebuildOutcome",

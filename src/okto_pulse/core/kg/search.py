@@ -16,6 +16,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from okto_pulse.core.kg.graph_availability import (
+    graph_unavailable_error,
+    is_graph_unavailable_error,
+)
 from okto_pulse.core.kg.reconciliation import ExistingNodeSummary
 from okto_pulse.core.kg.schema import (
     VECTOR_INDEX_TYPES,
@@ -137,6 +141,11 @@ def _fallback_manual_similarity_search(
                             distance=1.0 - similarity,
                         ))
     except Exception as exc:
+        # A fail-closed graph-open failure must surface as a typed
+        # graph_unavailable error, not be hidden as an empty result (FR5).
+        # Non-open failures still degrade to [] as before.
+        if is_graph_unavailable_error(exc):
+            raise graph_unavailable_error(board_id) from exc
         logger.warning(
             "kg.search.fallback_failed board=%s type=%s err=%s",
             board_id, node_type, exc,
@@ -221,6 +230,12 @@ def find_similar_nodes_by_type(
                 if raw.similarity >= min_similarity:
                     results.append(raw)
     except Exception as exc:
+        # A fail-closed graph-open failure must surface as a typed
+        # graph_unavailable error, not be hidden as an empty result (FR5).
+        # Non-open failures (missing vector index, malformed query) still
+        # degrade to [] as before.
+        if is_graph_unavailable_error(exc):
+            raise graph_unavailable_error(board_id) from exc
         logger.debug(
             "kg.search.vector_query_failed board=%s type=%s err=%s",
             board_id, node_type, exc,

@@ -13,6 +13,8 @@ This table is the **single source of truth** for MCP-level errors. Before any ad
 | `resource_gate_missing_resources` | Architecture, Mockup, or Knowledge Base is missing and not marked N/A for the entity being validated, started, or completed | Call `okto_pulse_get_resource_gate_summary`, then attach the missing artifact. For cards/tasks/tests/bugs, copy inherited artifacts with `okto_pulse_copy_architecture_to_card`, `okto_pulse_copy_mockups_to_card`, or `okto_pulse_copy_knowledge_to_card`, or add direct card KEs with `okto_pulse_add_card_knowledge`. Use N/A only with a real `justification`. |
 | `invalid_entity_type` | Resource Gate was called with a non-canonical entity type such as `task`, `test`, or `bug` | Retry with the matrix above: `ideation`, `refinement`, `spec`, or `card`. Tasks, tests, and bugs must use `entity_type=card`. |
 
+**`auto_derive_spec_resources_enabled` is Spec→Card-only — it does NOT auto-fill the ideation/refinement gate.** This board setting governs ONLY the Spec→Card resource copy (`SpecResourcePropagationService.propagate_for_card`, for `knowledge_base`/`architecture`/`mockup`) into tasks/tests/bugs. It is a separate mechanism from the gate's parent→child inheritance. The Resource Gate already inherits a parent's provided artifacts AND its N/A marks compulsorily down the chain ideation→refinement→spec→card: a single `okto_pulse_mark_resource_not_applicable` at the ideation resolves the same resource to `not_applicable` at the child levels (the summary marks it `na_mark.inherited=true` with the source entity) — no re-mark needed. So do NOT expect the setting to auto-attach resources at the ideation/refinement gate; attach or mark N/A once at the nearest level and let it inherit.
+
 ## Stories / Topics
 
 | Error message | Cause | Fix |
@@ -27,7 +29,7 @@ This table is the **single source of truth** for MCP-level errors. Before any ad
 |---|---|---|
 | `"A conclusion is required when moving a card to Validation"` / `"A conclusion is required when moving a card to Done"` | Missing executor report: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification` | Add all 5 parameters to `okto_pulse_move_card`. |
 | `"Card type 'test' is not subject to validation gate"` | Called `okto_pulse_submit_task_validation` on a test card | Test cards skip the validation gate — move directly to `done` after scenarios are `passed`. |
-| `"N test scenario(s) still have status 'draft'"` | Test card's linked scenarios not updated | Call `okto_pulse_update_test_scenario_status(status="passed")` for each linked scenario, then retry `okto_pulse_move_card`. |
+| `"N test scenario(s) still have status 'draft'"` / `"ready"` | Test card's linked scenarios not updated | Call `okto_pulse_update_test_scenario_status(status="passed")` for each linked scenario, then retry `okto_pulse_move_card`. If the spec is `validated` or `done`, make sure the scenario is already linked to this executable test card (`started`, `in_progress`, `validation`, or `done`); otherwise the scenario status call remains blocked by `status_not_mutable`. |
 | `"Cannot move card forward: spec must be at least 'in_progress'"` | Spec is in `approved` or `validated` | Move the spec to `in_progress` first via `okto_pulse_move_spec` (requires `okto_pulse_submit_spec_evaluation` with `recommendation=approve` on a `validated` spec). |
 | `"Validation gate is active. Move card to 'validation' first"` | Tried to move a normal card directly to `done` | Move to `validation` with the executor report, then `okto_pulse_submit_task_validation`. |
 
@@ -45,11 +47,16 @@ This table is the **single source of truth** for MCP-level errors. Before any ad
 |---|---|---|
 | `"origin_task_id is required for bug cards"` | Missing `origin_task_id` | Pass the id of the task where the bug was found. |
 | `"Bug cards can only be created with status not_started or started"` | Tried to create in a later status | Create as `not_started`, then advance via `okto_pulse_move_card`. |
-| `"Bug card requires at least 1 new test task linked"` | Moving a bug to `in_progress` without test coverage | Create a new `card_type="test"` regression card and link it to the bug via `okto_pulse_update_card(linked_test_task_ids=...)`, then move. |
+| `"Bug card requires at least 1 new test task linked"` / `reason=missing_regression_test_task` | Moving a bug to `in_progress` without a linked regression test card | First run `okto_pulse_resolve_bug_regression_scenarios` or the REST candidate preview. If an eligible existing scenario exists, use Path A: create a fresh post-bug `card_type="test"` card that references that scenario and link it to the bug. If none exists, use Path B. |
 | `"Linked test task has no test_scenario_ids"` | The linked card is not a proper test task | Link it to a scenario via `okto_pulse_link_task_to_scenario`, or recreate with `card_type="test"` + `test_scenario_ids`. |
 | `"Test task belongs to a different spec"` | The linked test task is on another spec | Create the test task on the same spec as the bug. |
 | `"Linked test task must be created after this bug card"` | The linked regression task predates the bug | Create a new `card_type="test"` card after the bug. |
-| `"Test scenario does not exist in spec"` | Scenario was deleted or the id is wrong | Create a new scenario with `okto_pulse_add_test_scenario`. |
+| `"Test scenario does not exist in spec"` / `reason=scenario_not_found` | The scenario id is wrong, was deleted, or the bug reveals missing canonical coverage | First list/preview candidates with `okto_pulse_resolve_bug_regression_scenarios`. If an eligible existing scenario exists, create a fresh post-bug test card referencing it. If no eligible scenario exists, treat this as Path B: create amendment, refinement, spec revision, or hotfix spec. Leave the current validated spec content unchanged for simple Path A reuse. |
+| `reason=unrelated_scenario` | The linked scenario exists on the bug spec but is not linked to the bug origin task or affected tasks | Do not use the unrelated scenario to satisfy the gate. Run `okto_pulse_resolve_bug_regression_scenarios` to find eligible candidates; if none exist, escalate Path B as semantic gap remediation with `semantic_gap_required=true` and `next_action=escalate_semantic_gap`. |
+| `reason=cross_spec_scenario` | The linked test card references a scenario from another spec | Use a scenario on the bug spec that is eligible by origin/affected-task lineage. If the other spec is the real source of truth, create a bug or hotfix/amendment path there rather than cross-linking this bug. |
+| `SpecLockedError` / `"spec is locked"` | Tried to edit a `validated`/`in_progress` spec to add regression coverage for a post-lock bug | For Path A, leave validated spec content unchanged. Reuse an existing scenario only when it is eligible by lineage: same spec and linked to the bug `origin_task_id` or an explicitly supplied affected task. Then create a post-bug `card_type="test"` task that references it. If no eligible scenario exists or expected behavior changed, route to amendment, refinement, spec revision, or hotfix spec. The "after the bug" temporal applies to the test TASK (card), not the scenario. |
+| `status_not_mutable` while updating a test scenario on a `validated`/`done` spec | The scenario is not linked to an executable test card, so the platform treats the update as arbitrary locked-spec mutation | For Path A/reconciliation, create or use a `card_type="test"` card on the same spec, link the scenario, move that card into `started`, `in_progress`, or `validation`, then call `okto_pulse_update_test_scenario_status` with structured evidence. Do not unlock the spec just to record operational test evidence. If there is no eligible existing scenario, use Path B/C instead. |
+| `reason=sprint_required` / `reason=sprint_not_active` with `next_action=assign_hotfix_lane` or `activate_hotfix_lane` | Post-closure bug lacks an executable sprint lane | Use Path C: create or choose a `lane_type="hotfix"` sprint, assign the bug and regression test card to it, activate it, then retry. Keep the original closed sprint unchanged. |
 
 ## Spec Coverage / Validation
 
@@ -65,8 +72,22 @@ This table is the **single source of truth** for MCP-level errors. Before any ad
 
 ## Multi-Value Parameters (`parse_multi_value`)
 
-| Error message | Cause | Fix |
+Since spec d41c7209 (R3a), the migrated multi-value cluster returns a **uniform JSON envelope** `{"error": "invalid_multi_value_input", "detail": "<message>"}` instead of leaking a raw `ValueError` to the MCP transport (this closes the NC-3/G-2 leak). The `detail` field carries the messages below. Prefer a **native `list[str]`** to avoid all of these; the tool schema declares `anyOf [array-of-string, string]`.
+
+| `detail` message | Cause | Fix |
 |---|---|---|
+| `"multi-value input must be a JSON array ... or pipe-separated ... — comma-separated input is rejected by REJECT policy"` | A comma-only string (e.g. multi-line prose with commas) was sent to a strict multi-value field | Send a **native list** `["a", "b"]`, a JSON-array string `'["a", "b"]'`, or pipe-separated `"a|b"`. Comma-only is ambiguous and rejected. |
 | `"malformed JSON for multi-value param: ... (at pos N)"` | Input started with `[` so the JSON path was taken, but the JSON was invalid | Fix the JSON syntax (quoting, brackets). |
 | `"malformed multi-value: expected list, got <type>"` | JSON decoded to a non-list (e.g. an object) | Send an array, not an object. |
 | `"malformed multi-value: expected string items, got <type> at index N"` | JSON array had a non-string item | Every item must be a string. |
+
+**Structured JSON fields** (`request_body_json`/`response_success_json`/`data_contract_json`/`payload_json` = `dict | str`; `response_errors_json` = `list[dict] | str`) accept a native `dict`/`list` or a legacy JSON-string and keep the `{"error": "Invalid <param>: <exc>"}` shape on a parse failure — see `okto-pulse://reference/multivalue`.
+
+## KG Graph Availability Errors
+
+These structured error keys appear in KG query responses when the embedded graph is in a degraded state. See the **Degraded-KG Fallback Rule** in `okto-pulse://workflows/kg` for the full protocol.
+
+| Error key | Cause | Fix |
+|---|---|---|
+| `graph_unavailable` | The embedded LadybugDB graph is in a hard-reject state (`graph_state` is `recovery_needed` or `quarantined`). Returned by KG query tools (e.g. `okto_pulse_kg_get_learning_from_bugs`) when queries cannot be served. On a degraded board, `graph_unavailable` is the **expected** signal — do not retry in a loop. | Call `okto_pulse_kg_health(board_id)` to confirm `graph_state`. If degraded, follow the KG Health recovery flow (`okto-pulse://reference/kg-health`). This is an operator-driven path; the Degraded-KG Fallback Rule lets you proceed past the Stage 1 triad while the graph recovers. |
+| `cognitive_status_unavailable` | The cognitive closeout gate could not confirm the cognitive consolidation status for a `done` transition because `graph_state` is `None` and no generation exists (the unconfirmed shape). This is a fail-closed signal: the gate cannot read the ledger and will not silently allow the transition. | Confirm board health via `okto_pulse_kg_health`. If the board's cognitive consolidation setting needs to be bypassed temporarily, enable `skip_cognitive_consolidation` in board settings. For full recovery, follow the KG Health recovery flow (`okto-pulse://reference/kg-health`). |

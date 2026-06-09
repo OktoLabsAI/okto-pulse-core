@@ -25,6 +25,7 @@ from okto_pulse.core.models.db import (
     Spec,
     SpecStatus,
     Sprint,
+    SprintLaneType,
     SprintStatus,
 )
 
@@ -112,7 +113,10 @@ def _is_bug_card(card) -> bool:
 
 def _structured_ref_text(item) -> str:
     if isinstance(item, dict):
-        return str(item.get("text") or item.get("title") or item.get("description") or "")
+        raw = item.get("text") or item.get("title") or item.get("description") or ""
+        if isinstance(raw, dict):
+            return _structured_ref_text(raw)
+        return str(raw)
     return str(item)
 
 
@@ -1013,7 +1017,21 @@ async def board_sprints_analytics(
     all_cards = list((await db.execute(card_q)).scalars().all())
 
     per_sprint: list[dict] = []
+    normal_sprints_total = 0
+    hotfix_lanes_total = 0
+    active_hotfix_lanes = 0
     for sp in sprints:
+        lane_type = (
+            sp.lane_type.value
+            if getattr(sp.lane_type, "value", None)
+            else str(sp.lane_type or SprintLaneType.NORMAL.value)
+        )
+        if lane_type == SprintLaneType.HOTFIX.value:
+            hotfix_lanes_total += 1
+            if sp.status == SprintStatus.ACTIVE:
+                active_hotfix_lanes += 1
+        else:
+            normal_sprints_total += 1
         sp_cards = [c for c in all_cards if c.sprint_id == sp.id]
         done_cards = [c for c in sp_cards if c.status == CardStatus.DONE]
         total = len(sp_cards)
@@ -1054,6 +1072,10 @@ async def board_sprints_analytics(
             "title": sp.title,
             "status": sp.status.value if hasattr(sp.status, "value") else str(sp.status),
             "spec_id": sp.spec_id,
+            "lane_type": lane_type,
+            "origin_sprint_id": getattr(sp, "origin_sprint_id", None),
+            "origin_bug_id": getattr(sp, "origin_bug_id", None),
+            "normal_sprint_created": getattr(sp, "normal_sprint_created", lane_type == "normal"),
             "total_cards": total,
             "done_cards": done,
             "completion_rate": completion_rate,
@@ -1075,6 +1097,9 @@ async def board_sprints_analytics(
     return {
         "summary": {
             "total_sprints": len(sprints),
+            "normal_sprints_total": normal_sprints_total,
+            "hotfix_lanes_total": hotfix_lanes_total,
+            "active_hotfix_lanes": active_hotfix_lanes,
             "status_breakdown": _sprint_status_breakdown(sprints),
             "avg_completion_rate": round(
                 sum(p["completion_rate"] for p in per_sprint) / len(per_sprint), 1
@@ -1157,6 +1182,13 @@ async def board_spec_analytics(
         "coverage_summary": coverage_summary,
         "integration_requirements": getattr(spec, "integration_requirements", None) or [],
         "observability_requirements": getattr(spec, "observability_requirements", None) or [],
+        # Bug 42e78332: surface decisions for the entity-detail drilldown (parity with
+        # _spec_detail + the IR/OR pattern). EntityDetail.tsx reads data.decisions /
+        # data.decisions_coverage / data.decisions_uncovered_ids; sourced from the
+        # already-computed coverage_summary (SSOT spec_coverage_summary).
+        "decisions": getattr(spec, "decisions", None) or [],
+        "decisions_coverage": coverage_summary["decisions_coverage_pct"],
+        "decisions_uncovered_ids": coverage_summary["decisions_uncovered_ids"],
         "cards_summary": {
             "total": len(cards),
             "by_status": _card_status_breakdown(cards),
@@ -1999,19 +2031,21 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
 
     # AC details with names and coverage status
     ac_details = []
-    for idx, ac_text in enumerate(ac_list):
+    for idx, ac in enumerate(ac_list):
         ac_details.append({
             "index": idx,
-            "text": ac_text,
+            "id": _structured_ref_id(ac),
+            "text": _structured_ref_text(ac),
             "covered": idx in covered_ac_indices,
         })
 
     # FR details with coverage status (rules + contracts)
     fr_details = []
-    for idx, fr_text in enumerate(frs):
+    for idx, fr in enumerate(frs):
         fr_details.append({
             "index": idx,
-            "text": fr_text,
+            "id": _structured_ref_id(fr),
+            "text": _structured_ref_text(fr),
             "has_rule": idx in fr_indices_with_rules,
             "has_contract": idx in fr_indices_with_contracts,
         })
@@ -2064,6 +2098,13 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         "coverage_summary": coverage_summary,
         "integration_requirements": getattr(spec, "integration_requirements", None) or [],
         "observability_requirements": getattr(spec, "observability_requirements", None) or [],
+        # Bug 42e78332: surface decisions for the entity-detail drilldown. EntityDetail.tsx
+        # reads top-level data.decisions / data.decisions_coverage / data.decisions_uncovered_ids
+        # (KPI + "Decisions Coverage" panel). Sourced from spec.decisions + the already-computed
+        # coverage_summary (SSOT spec_coverage_summary) — additive, mirrors IR/OR (spec 233eaad3).
+        "decisions": getattr(spec, "decisions", None) or [],
+        "decisions_coverage": coverage_summary["decisions_coverage_pct"],
+        "decisions_uncovered_ids": coverage_summary["decisions_uncovered_ids"],
         "bugs_count": len(bug_cards),
         "sprints": sprint_summaries,
     }

@@ -15,7 +15,6 @@ from okto_pulse.core.kg.rebuild_preflight import (
     RebuildPreflightResult,
     RebuildPreflightService,
     RebuildSourceSummary,
-    get_preflight_count,
     get_preflight_counter_labels,
     get_preflight_samples,
     reset_preflight_counter,
@@ -247,14 +246,72 @@ def test_kg_rebuild_router_is_registered_in_api_router():
     )
 
 
-def test_post_preflight_endpoint_returns_safe_payload_via_test_client():
+def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatch):
     """ASGI integration: POST /api/v1/kg/rebuild/preflight returns the
-    contract-shaped payload via the live router with auth override."""
+    contract-shaped payload via the live router with auth override.
+
+    IMPL-2 added FR10 (board scope) and FR9 (real health probe) — both
+    gated by a DB session.  This test overrides get_db and get_kg_health so
+    the in-memory test board passes both gates without hitting real storage.
+    """
+    from types import SimpleNamespace
+
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     from okto_pulse.core.api.router import api_router
     from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.core.infra.database import get_db
+
+    # FR10 gate: a fake Board row so the scope check passes.
+    _fake_board = SimpleNamespace(id="b-test", owner_id="user-rebuild-test")
+
+    class _FakeResult:
+        def scalar_one_or_none(self):
+            return _fake_board
+
+    class _FakeShare:
+        """Simulates a BoardShare row — permission "owner" via get_user_permission."""
+        permission = "owner"
+
+    class _FakeShareResult:
+        def scalar_one_or_none(self):
+            return _FakeShare()
+
+    class _FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, stmt):
+            # Called by ShareService.get_user_permission for the BoardShare query.
+            return _FakeShareResult()
+
+        async def get(self, model_class, pk):
+            # Called by _require_board_access to check board existence.
+            # Also called by ShareService._get_board for owner check.
+            return _fake_board
+
+        async def commit(self):
+            pass
+
+        async def rollback(self):
+            pass
+
+    async def _fake_db():
+        session = _FakeSession()
+        yield session
+
+    # FR9 gate: healthy response so the admission gate passes.
+    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
+
+    async def _fake_health(board_id, db):
+        return {"graph_state": "healthy", "metric_status": "available",
+                "current_kg_generation_id": None}
+
+    monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
 
     app = FastAPI()
     app.include_router(api_router)
@@ -263,6 +320,7 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client():
         return "user-rebuild-test"
 
     app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
 
     with TestClient(app) as client:
         response = client.post(

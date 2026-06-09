@@ -4,7 +4,14 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from okto_pulse.core.discovery_params_schema import (
     DiscoveryParamsSchema,
@@ -18,6 +25,7 @@ from okto_pulse.core.models.db import (
     RefinementStatus,
     SpecStatus,
     StoryStatus,
+    SprintLaneType,
     SprintStatus,
 )
 
@@ -192,6 +200,8 @@ class ChoiceOption(BaseModel):
 
     id: str
     label: str
+    recommended: bool = False
+    tradeoff: str | None = None
 
 
 class ChoiceResponse(BaseModel):
@@ -487,24 +497,99 @@ class BusinessRule(BaseModel):
     notes: str | None = None
 
 
+# Real HTTP verbs accepted when contract_type == "http" (RFC 7231 + PATCH).
+_HTTP_METHODS = frozenset(
+    {"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
+)
+# Legacy non-HTTP method tokens that historically encoded the contract kind in
+# the `method` slot. They migrate to the contract_type discriminator on read so
+# the http verb enum can stay verb-only.
+_LEGACY_METHOD_TO_CONTRACT_TYPE = {
+    "TOOL": "in_process",
+    "COMPONENT": "in_process",
+    "EVENT": "event",
+}
+
+
 class ApiContract(BaseModel):
-    """An API contract describing an endpoint or interaction."""
+    """An API contract describing an endpoint or interaction.
+
+    The ``contract_type`` discriminator (default ``"http"``) lets a contract
+    model a non-HTTP interaction (in-process call, gRPC, event) without inventing
+    a fake HTTP method/path. For ``contract_type == "http"`` the ``method`` is
+    constrained to a real HTTP verb and ``path`` is required — but that
+    strictness is enforced only on WRITE (the four api-contract entry points pass
+    ``context={"on_write": True}``). Read-back/deserialization stays tolerant so a
+    pre-existing stored contract with an invalid method (e.g. "CALL") still loads
+    and ``list``/``get`` never crash. JSON-field shapes are asymmetric by design:
+    ``response_errors`` is a LIST while ``request_body``/``response_success`` are
+    OBJECTs.
+    """
 
     id: str
-    method: str  # GET, POST, PUT, DELETE, PATCH, TOOL, COMPONENT, EVENT
-    path: str
+    contract_type: Literal["http", "in_process", "grpc", "event"] = "http"
+    method: str | None = None  # HTTP verb when contract_type=="http"; optional otherwise
+    path: str | None = None  # required for http; optional for non-http
     description: str = ""
-    request_body: dict[str, Any] | None = None
-    response_success: dict[str, Any] | None = None
-    response_errors: list[dict[str, Any]] | None = None
+    request_body: dict[str, Any] | None = None  # OBJECT
+    response_success: dict[str, Any] | None = None  # OBJECT
+    response_errors: list[dict[str, Any]] | None = None  # LIST (asymmetry, by design)
     linked_requirements: list[str] | None = None
     linked_rules: list[str] | None = None
     linked_task_ids: list[str] | None = None  # Card IDs linked to this contract
-    status: Literal["active", "superseded", "revoked"] = "active"
+    status: Literal["active", "superseded", "revoked", "not_applicable"] = "active"
     notes: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _infer_contract_type_from_legacy_method(cls, data: Any) -> Any:
+        """Migrate a legacy non-HTTP method token to the contract_type discriminator.
 
-IntegrationRequirementStatus = Literal["active", "superseded", "revoked"]
+        Runs on every construction (read + write) and is idempotent. Fires only
+        when ``contract_type`` is absent from the input, so an explicit value
+        always wins; the legacy ``method`` value is preserved (being non-http it
+        escapes the verb enum).
+        """
+        if isinstance(data, dict) and not data.get("contract_type"):
+            method = data.get("method")
+            if isinstance(method, str):
+                inferred = _LEGACY_METHOD_TO_CONTRACT_TYPE.get(method.strip().upper())
+                if inferred is not None:
+                    data["contract_type"] = inferred
+        return data
+
+    @model_validator(mode="after")
+    def _validate_http_shape(self, info: ValidationInfo) -> "ApiContract":
+        """Enforce real-verb method + required path for http contracts ON WRITE only.
+
+        Gated on the ``on_write`` validation-context flag (the four api-contract
+        write entry points pass it). Read-back/deserialization constructs without
+        the flag and stays tolerant of pre-existing invalid contracts so list/get
+        never crash; a legacy-invalid contract is corrected on its next write.
+        """
+        if self.contract_type == "http" and (info.context or {}).get("on_write"):
+            if not self.method:
+                raise ValueError(
+                    f"contract_type='http' requires a method (one of {sorted(_HTTP_METHODS)})"
+                )
+            if self.method.strip().upper() not in _HTTP_METHODS:
+                raise ValueError(
+                    f"invalid http method {self.method!r}; expected one of {sorted(_HTTP_METHODS)}"
+                )
+            if not self.path:
+                raise ValueError("contract_type='http' requires a path")
+        return self
+
+    @model_validator(mode="after")
+    def _require_na_justification(self) -> "ApiContract":
+        if self.status == "not_applicable" and not (self.notes or "").strip():
+            raise ValueError(
+                "status='not_applicable' requires a justification in notes"
+            )
+        return self
+
+
+IntegrationRequirementStatus = Literal["active", "superseded", "revoked", "not_applicable"]
 IntegrationRequirementType = Literal[
     "api",
     "queue",
@@ -535,8 +620,16 @@ class IntegrationRequirement(BaseModel):
     status: IntegrationRequirementStatus = "active"
     notes: str | None = None
 
+    @model_validator(mode="after")
+    def _require_na_justification(self) -> "IntegrationRequirement":
+        if self.status == "not_applicable" and not (self.notes or "").strip():
+            raise ValueError(
+                "status='not_applicable' requires a justification in notes"
+            )
+        return self
 
-ObservabilityRequirementStatus = Literal["active", "superseded", "revoked"]
+
+ObservabilityRequirementStatus = Literal["active", "superseded", "revoked", "not_applicable"]
 ObservabilitySignalType = Literal[
     "metric",
     "log",
@@ -565,6 +658,14 @@ class ObservabilityRequirement(BaseModel):
     linked_task_ids: list[str] | None = None  # Card IDs linked to this OR
     status: ObservabilityRequirementStatus = "active"
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def _require_na_justification(self) -> "ObservabilityRequirement":
+        if self.status == "not_applicable" and not (self.notes or "").strip():
+            raise ValueError(
+                "status='not_applicable' requires a justification in notes"
+            )
+        return self
 
 
 DecisionStatus = Literal["active", "superseded", "revoked"]
@@ -665,6 +766,8 @@ class ArchitectureDiagram(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     diagram_type: ArchitectureDiagramType = "other"
     format: ArchitectureDiagramFormat = "excalidraw_json"
+    is_conceptual: bool = False
+    connectivity_justifications: dict[str, str] | None = None
     adapter_payload_ref: str | None = None
     adapter_payload: dict[str, Any] | list[Any] | str | None = None
     description: str | None = None
@@ -700,10 +803,18 @@ class ArchitectureDesignBase(BaseSchema):
         return value
 
 
+class ArchitectureWarningAcknowledgementRequest(BaseModel):
+    """Explicit authoring acknowledgement for warning-bearing architecture saves."""
+
+    accepted: bool = False
+    warning_keys: list[str] = Field(default_factory=list)
+    statement: str | None = None
+
+
 class ArchitectureDesignCreate(ArchitectureDesignBase):
     """Request body for creating an Architecture Design on a parent."""
 
-    pass
+    architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | None = None
 
 
 class ArchitectureDesignUpdate(BaseModel):
@@ -721,6 +832,7 @@ class ArchitectureDesignUpdate(BaseModel):
     source_version: int | None = None
     source_design_id: str | None = None
     change_summary: str | None = None
+    architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | None = None
 
     @field_validator("global_description")
     @classmethod
@@ -829,6 +941,12 @@ class IdeationMove(BaseModel):
 class IdeationSummary(BaseSchema):
     """Schema for ideation summary."""
 
+    # Evaluation scores {domains, ambiguity, dependencies} (1-5 each), present after
+    # evaluate_ideation runs — surfaced on the list card as score badges. Rides
+    # from_attributes off the ORM column (no service change needed).
+    scope_assessment: dict | None = None
+    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
+    open_qa_count: int = 0
     id: str
     board_id: str
     title: str
@@ -919,6 +1037,8 @@ class IdeationQAChoiceOption(BaseModel):
 
     id: str
     label: str
+    recommended: bool = False
+    tradeoff: str | None = None
 
 
 class IdeationQACreate(BaseModel):
@@ -1098,6 +1218,8 @@ class RefinementMove(BaseModel):
 class RefinementSummary(BaseSchema):
     """Schema for refinement summary."""
 
+    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
+    open_qa_count: int = 0
     id: str
     ideation_id: str
     board_id: str
@@ -1152,6 +1274,8 @@ class RefinementQAChoiceOption(BaseModel):
 
     id: str
     label: str
+    recommended: bool = False
+    tradeoff: str | None = None
 
 
 class RefinementQACreate(BaseModel):
@@ -1335,6 +1459,8 @@ class SpecMove(BaseModel):
 class SpecSummary(BaseSchema):
     """Schema for spec summary (without nested cards)."""
 
+    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
+    open_qa_count: int = 0
     id: str
     board_id: str
     title: str
@@ -1448,6 +1574,8 @@ class SpecQAChoiceOption(BaseModel):
 
     id: str
     label: str
+    recommended: bool = False
+    tradeoff: str | None = None
 
 
 class SpecQACreate(BaseModel):
@@ -1557,6 +1685,7 @@ class CardSummaryForSpec(BaseSchema):
     status: CardStatus
     priority: CardPriority
     assignee_id: str | None
+    card_type: str = "normal"
     sprint_id: str | None = None
 
 
@@ -1760,6 +1889,8 @@ class CardResponse(BaseSchema):
 class CardSummary(BaseSchema):
     """Schema for card summary (without nested items)."""
 
+    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
+    open_qa_count: int = 0
     id: str
     board_id: str
     spec_id: str | None = None
@@ -1973,6 +2104,9 @@ class BoardSettings(BaseModel):
     skip_or_coverage_global: bool = False  # if True, all specs bypass OR→Task coverage checks
     skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
     skip_cognitive_consolidation: bool = False  # if True, done closeout bypasses active cognitive pending blockers
+    allow_agent_self_answering: bool = False  # explicit opt-in that permits same-principal Q&A answers
+    require_full_context_for_critical_actions: bool = True  # if True, critical mutations must resolve full entity context
+    qa_require_role_separation: bool = False  # if True, a Q&A question cannot be answered by the same principal who asked it
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = True  # if True, cards must pass validation before moving to done
     min_confidence: int = 70  # min reviewer confidence score
@@ -2117,6 +2251,9 @@ class SprintCreate(BaseModel):
     objective: str | None = None
     expected_outcome: str | None = None
     spec_id: str
+    lane_type: SprintLaneType = SprintLaneType.NORMAL
+    origin_sprint_id: str | None = None
+    origin_bug_id: str | None = None
     test_scenario_ids: list[str] | None = None
     business_rule_ids: list[str] | None = None
     start_date: datetime | None = None
@@ -2131,6 +2268,9 @@ class SprintUpdate(BaseModel):
     description: str | None = None
     objective: str | None = None
     expected_outcome: str | None = None
+    lane_type: SprintLaneType | None = None
+    origin_sprint_id: str | None = None
+    origin_bug_id: str | None = None
     test_scenario_ids: list[str] | None = None
     business_rule_ids: list[str] | None = None
     start_date: datetime | None = None
@@ -2215,6 +2355,8 @@ class SprintHistoryResponse(BaseSchema):
 class SprintSummary(BaseSchema):
     """Schema for sprint summary (used in lists and spec responses)."""
 
+    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
+    open_qa_count: int = 0
     id: str
     spec_id: str
     board_id: str
@@ -2223,6 +2365,10 @@ class SprintSummary(BaseSchema):
     objective: str | None = None
     expected_outcome: str | None = None
     status: SprintStatus
+    lane_type: SprintLaneType = SprintLaneType.NORMAL
+    origin_sprint_id: str | None = None
+    origin_bug_id: str | None = None
+    normal_sprint_created: bool = False
     spec_version: int
     start_date: datetime | None = None
     end_date: datetime | None = None
@@ -2247,6 +2393,10 @@ class SprintResponse(BaseSchema):
     objective: str | None = None
     expected_outcome: str | None = None
     status: SprintStatus
+    lane_type: SprintLaneType = SprintLaneType.NORMAL
+    origin_sprint_id: str | None = None
+    origin_bug_id: str | None = None
+    normal_sprint_created: bool = False
     spec_version: int
     start_date: datetime | None = None
     end_date: datetime | None = None

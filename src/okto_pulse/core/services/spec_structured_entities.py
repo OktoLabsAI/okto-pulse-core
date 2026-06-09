@@ -84,6 +84,26 @@ _STRUCTURED_MODEL_BY_TYPE = {
     "integration_requirement": IntegrationRequirement,
     "observability_requirement": ObservabilityRequirement,
 }
+# api_contract is validated with a write context so its http strictness (the
+# real-verb method enum + required path) fires on create/update through this
+# service (F9). Every read-back path constructs WITHOUT it and stays tolerant of
+# pre-existing legacy contracts.
+_API_CONTRACT_WRITE_CONTEXT = {"on_write": True}
+
+
+def _api_contract_validation_message(exc: ValidationError) -> str:
+    """Canonical api-contract error string with NO errors.pydantic.dev URL (F10).
+
+    ``errors(include_url=False)`` drops the Pydantic library URL surface so the
+    agent receives an actionable, vocabulary-aligned message rather than a raw
+    library dump.
+    """
+    parts = []
+    for err in exc.errors(include_url=False):
+        loc = ".".join(str(p) for p in err.get("loc", ()))
+        msg = err.get("msg", "invalid value")
+        parts.append(f"{loc}: {msg}" if loc else str(msg))
+    return "invalid_api_contract: " + "; ".join(parts)
 _ID_PREFIX_BY_TYPE = {
     "functional_requirement": "fr",
     "business_rule": "br",
@@ -145,6 +165,142 @@ def _utcnow() -> datetime:
 
 class UnsupportedSpecEntityOperation(ValueError):
     """Raised when an operation is invalid for a specific entity type."""
+
+
+# ---------------------------------------------------------------------------
+# FR5 — lazy ref migration helpers (spec c61569b2, IMPL-4)
+#
+# Called by SpecService.update_spec whenever FR/AC lists are touched (i.e.
+# any call to update_spec that includes functional_requirements or
+# acceptance_criteria). When those lists contain legacy string items (or
+# dict items without an id), canonicalize_fr_ac assigns fresh fr_/ac_ ids.
+# These helpers then rewrite index/text refs in linked_requirements /
+# linked_criteria fields so that downstream analytics and the referential-
+# integrity gate find canonical ids instead of positional indices.
+#
+# Guard: the existing READ resolvers (resolve_linked_fr_indices,
+# resolve_linked_criteria_to_ids) remain untouched — specs not touched by
+# update_spec keep resolving correctly via index/text tolerance.  No batch
+# migration; no one-shot tool; only lazy on-touch.
+# ---------------------------------------------------------------------------
+
+
+def _build_materialization_mappings(
+    old_items: list[Any],
+    new_items: list[Any],
+) -> list[dict[str, str]]:
+    """Build index→fr_id/ac_id mappings for items materialized by canonicalize_fr_ac.
+
+    An item is considered *newly materialized* when the old item at the same
+    position lacked a structured id (was a legacy string or an id-less dict)
+    and the new item carries one.  Only those positions produce mapping
+    entries; items that already had ids are skipped (no migration needed).
+
+    Returns a list of ``{"index": str, "text": str, "id": str}`` dicts, the
+    same shape consumed by ``_legacy_replacement_map`` inside
+    ``StructuredSpecEntityService``.
+    """
+    mappings: list[dict[str, str]] = []
+    for idx, (old, new) in enumerate(zip(old_items, new_items)):
+        old_id = spec_child_id(old)
+        new_id = spec_child_id(new)
+        if old_id is not None or new_id is None:
+            # old already had an id → no migration needed for this slot
+            continue
+        text = spec_child_text(new)
+        mappings.append({"index": str(idx), "text": text, "id": new_id})
+    return mappings
+
+
+def _apply_ref_replacement(
+    collection: list[Any],
+    replacements: dict[str, str],
+    ref_field: str,
+) -> tuple[list[Any], bool]:
+    """Replace legacy refs in *ref_field* of each dict in *collection*.
+
+    Returns the (possibly mutated) collection and a boolean indicating
+    whether any replacement was made.  The input list is deep-copied
+    internally so the caller's original is never mutated.
+    """
+    result = copy.deepcopy(collection)
+    changed = False
+    for item in result:
+        if not isinstance(item, dict):
+            continue
+        refs = item.get(ref_field) or []
+        next_refs: list[str] = []
+        item_changed = False
+        for ref in refs:
+            ref_str = str(ref)
+            replacement = replacements.get(ref_str, ref_str)
+            if replacement != ref_str:
+                item_changed = True
+            if replacement not in next_refs:
+                next_refs.append(replacement)
+        if item_changed:
+            item[ref_field] = next_refs
+            changed = True
+    return result, changed
+
+
+def migrate_legacy_fr_refs(
+    old_frs: list[Any],
+    new_frs: list[Any],
+    collections: dict[str, list[Any]],
+) -> dict[str, list[Any]]:
+    """Rewrite index/text-based linked_requirements refs to canonical fr_ids.
+
+    Called by ``SpecService.update_spec`` after ``canonicalize_fr_ac`` runs on
+    ``functional_requirements``.  Only items that transitioned from legacy
+    (string/id-less dict) to structured (dict-with-fr_id) produce mapping
+    entries; already-structured items are skipped.
+
+    ``collections`` maps field_name → current list for each dependent field
+    (business_rules, api_contracts, integration_requirements,
+    observability_requirements, decisions).  The caller is responsible for
+    merging the returned updates back into update_data.
+
+    Returns a dict of ``{field_name: updated_list}`` for fields that changed.
+    An empty dict means no migration was needed.
+    """
+    mappings = _build_materialization_mappings(old_frs, new_frs)
+    if not mappings:
+        return {}
+    replacements: dict[str, str] = {}
+    for m in mappings:
+        replacements[m["index"]] = m["id"]
+        if m["text"]:
+            replacements[m["text"]] = m["id"]
+    updates: dict[str, list[Any]] = {}
+    for field_name, collection in collections.items():
+        updated, changed = _apply_ref_replacement(collection, replacements, "linked_requirements")
+        if changed:
+            updates[field_name] = updated
+    return updates
+
+
+def migrate_legacy_ac_refs(
+    old_acs: list[Any],
+    new_acs: list[Any],
+    scenarios: list[Any],
+) -> list[Any] | None:
+    """Rewrite index/text-based linked_criteria refs in test_scenarios to canonical ac_ids.
+
+    Called by ``SpecService.update_spec`` after ``canonicalize_fr_ac`` runs on
+    ``acceptance_criteria``.  Returns the updated scenarios list if any refs
+    were rewritten, or ``None`` if no migration was needed.
+    """
+    mappings = _build_materialization_mappings(old_acs, new_acs)
+    if not mappings:
+        return None
+    replacements: dict[str, str] = {}
+    for m in mappings:
+        replacements[m["index"]] = m["id"]
+        if m["text"]:
+            replacements[m["text"]] = m["id"]
+    updated, changed = _apply_ref_replacement(scenarios, replacements, "linked_criteria")
+    return updated if changed else None
 
 
 class StructuredSpecEntityNotFound(ValueError):
@@ -886,9 +1042,14 @@ class StructuredSpecEntityService:
         model = _STRUCTURED_MODEL_BY_TYPE[entity_type]
         payload.setdefault("id", self._new_id(entity_type))
         self._ensure_only_keys(payload, set(model.model_fields))
+        # api_contract validates with the on_write context (F9 http strictness)
+        # and returns a canonical message with no errors.pydantic.dev URL (F10).
+        _ctx = _API_CONTRACT_WRITE_CONTEXT if entity_type == "api_contract" else None
         try:
-            return model.model_validate(payload).model_dump()
+            return model.model_validate(payload, context=_ctx).model_dump()
         except ValidationError as exc:
+            if entity_type == "api_contract":
+                raise ValueError(_api_contract_validation_message(exc)) from exc
             raise ValueError(str(exc)) from exc
 
     def _validate_payload_for_update(self, entity_type: str, item: Any, payload: dict[str, Any]) -> Any:
@@ -924,9 +1085,14 @@ class StructuredSpecEntityService:
         payload.pop("id", None)
         self._ensure_only_keys(payload, set(model.model_fields) - {"id"})
         merged.update(payload)
+        # api_contract validates with the on_write context (F9 http strictness)
+        # and returns a canonical message with no errors.pydantic.dev URL (F10).
+        _ctx = _API_CONTRACT_WRITE_CONTEXT if entity_type == "api_contract" else None
         try:
-            return model.model_validate(merged).model_dump()
+            return model.model_validate(merged, context=_ctx).model_dump()
         except ValidationError as exc:
+            if entity_type == "api_contract":
+                raise ValueError(_api_contract_validation_message(exc)) from exc
             raise ValueError(str(exc)) from exc
 
     def _apply_task_link(self, command: StructuredSpecEntityCommand, item: Any) -> Any:

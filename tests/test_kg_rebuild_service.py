@@ -7,6 +7,7 @@ or_37cebd03.
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,69 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     LockOwnerProbe,
 )
 from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
+
+
+# ---------------------------------------------------------------------------
+# IMPL-2 compatibility helper
+#
+# kg_rebuild.py added FR10 (board scope check) + FR9 (real health probe) in
+# IMPL-2.  Both gates use a DB session.  TestClient-based tests that bypass
+# require_user MUST also override get_db (so the Board SELECT passes) and
+# monkeypatch get_kg_health so the health probe returns a healthy state.
+#
+# Usage:
+#   app = _make_rebuild_test_app()
+#   app.dependency_overrides[require_user] = _fake_user
+# ---------------------------------------------------------------------------
+
+def _make_rebuild_test_app(board_id: str = "b-test"):
+    """Return a FastAPI app with get_db overridden to satisfy FR10/FR9 gates.
+
+    The fake DB session returns a mock Board row for the given board_id,
+    bypassing the SQLite SELECT without touching real storage.
+    """
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+
+    from okto_pulse.core.api.router import api_router
+    from okto_pulse.core.infra.database import get_db
+
+    _fake_board = SimpleNamespace(id=board_id, owner_id="user-test")
+
+    class _FakeResult:
+        def scalar_one_or_none(self):
+            # ShareService.get_user_permission queries BoardShare rows;
+            # return a fake share with "owner" permission so the 403 gate passes.
+            return SimpleNamespace(permission="owner")
+
+    class _FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, stmt):
+            return _FakeResult()
+
+        async def get(self, model_class, pk):
+            # _require_board_access + ShareService._get_board call db.get(Board, id).
+            return _fake_board
+
+        async def commit(self):
+            pass
+
+        async def rollback(self):
+            pass
+
+    async def _fake_db():
+        yield _FakeSession()
+
+    app = FastAPI()
+    app.include_router(api_router)
+    app.dependency_overrides[get_db] = _fake_db
+    return app
 
 
 @pytest.fixture(autouse=True)
@@ -398,7 +462,6 @@ def test_run_acquires_lock_with_admin_lane_true(tmp_path: Path):
     observed = {}
 
     def step(req: RebuildStepInput) -> RebuildStepResult:
-        manifest = req  # closure captures
         # Snapshot lock state during the step.
         from okto_pulse.core.kg.rebuild_service import logger  # noqa
         observed["manifest_during_step"] = service.single_writer_lock.inspect(
@@ -529,19 +592,23 @@ def test_run_unsupported_operation_does_not_consume_confirmation(tmp_path: Path)
     ["reset", "quarantine", "promote", "rollback", "reindex_discovery"],
 )
 def test_confirm_endpoint_rejects_non_rebuild_operations(
-    tmp_path: Path, operation: str
+    tmp_path: Path, operation: str, monkeypatch
 ):
     """val_dfdff0b8: /confirm refuses to issue a token for any
     canonical operation other than 'rebuild' until KG-02.4 wires the
     full reset/quarantine/promote/rollback/reindex paths."""
-    from fastapi import FastAPI
+    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.router import api_router
     from okto_pulse.core.infra.auth import require_user
 
-    app = FastAPI()
-    app.include_router(api_router)
+    async def _fake_health(board_id, db):
+        return {"graph_state": "healthy", "metric_status": "available",
+                "current_kg_generation_id": None}
+
+    monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
+
+    app = _make_rebuild_test_app(board_id="b-reset")
 
     async def _fake_user():
         return "u"
@@ -572,8 +639,8 @@ def test_confirm_endpoint_rejects_non_rebuild_operations(
     assert operation in detail["reason"]
 
 
-def test_post_rebuild_run_endpoint_is_registered_and_callable(tmp_path: Path):
-    from fastapi import FastAPI
+def test_post_rebuild_run_endpoint_is_registered_and_callable(tmp_path: Path, monkeypatch):
+    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
     from fastapi.testclient import TestClient
 
     from okto_pulse.core.api.router import api_router
@@ -582,8 +649,13 @@ def test_post_rebuild_run_endpoint_is_registered_and_callable(tmp_path: Path):
     paths = {route.path for route in api_router.routes}
     assert "/api/v1/kg/rebuild/run" in paths
 
-    app = FastAPI()
-    app.include_router(api_router)
+    async def _fake_health(board_id, db):
+        return {"graph_state": "healthy", "metric_status": "available",
+                "current_kg_generation_id": None}
+
+    monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
+
+    app = _make_rebuild_test_app(board_id="b-endpoint")
 
     async def _fake_user():
         return "user-run-test"
@@ -652,6 +724,7 @@ def _build_service_with_kg024(
     step_adapter=None,
     report_store=None,
     event_sink=None,
+    orphan_scan_provider=None,
 ):
     from okto_pulse.core.kg.rebuild_generation import (
         KGGenerationPromotionGuard,
@@ -682,6 +755,7 @@ def _build_service_with_kg024(
         report_store=rep_store,
         terminal_state_guard=RebuildReportTerminalStateGuard,
         event_emitter=_emit,
+        orphan_scan_provider=orphan_scan_provider,
     )
     return enriched, manifest_store, confirmation_store, lock, generation_repo, rep_store, event_log
 
@@ -771,6 +845,274 @@ def test_completed_run_persists_report_and_promotes_generation(tmp_path: Path):
     assert event["triggered_by"] == "user-1"
 
 
+def test_completed_run_with_remaining_orphans_blocks_clean_success(tmp_path: Path):
+    """KG-ZO-02.3: clean rebuild success requires zero non-allowlisted orphans."""
+
+    from okto_pulse.core.kg.orphan_integrity import (
+        OrphanNodeSample,
+        OrphanScanReport,
+    )
+    from okto_pulse.core.kg.rebuild_report import get_terminal_count
+
+    def _step(req):
+        return RebuildStepResult(
+            ok=True,
+            current_kg_generation_id=req.candidate_kg_generation_id,
+            structural_hash="c" * 64,
+            source_hash="d" * 64,
+            counts={"nodes": 7, "edges": 3},
+        )
+
+    def _orphan_scan(board_id: str, generation_id: str | None):
+        return OrphanScanReport(
+            board_id=board_id,
+            generation_id=generation_id,
+            orphan_count=1,
+            orphan_count_by_type={"Learning": 1},
+            orphan_count_by_writer_path={"cognitive_consolidation": 1},
+            samples=(
+                OrphanNodeSample(
+                    node_id="learning_orphan_1",
+                    node_type="Learning",
+                    writer_path="cognitive_consolidation",
+                    source_artifact_ref="bug:bug-1",
+                    source_resolution_status="unresolved_source_ref",
+                    generation_id=generation_id,
+                    reason="zero_graph_degree",
+                    correlation_id="corr-orphan-rebuild",
+                ),
+            ),
+            unresolved_reasons={"unresolved_source_ref": 1},
+            allowlisted_root_count=0,
+            correlation_id="corr-orphan-rebuild",
+        )
+
+    (
+        service,
+        manifest_store,
+        confirmation_store,
+        _lock,
+        gen_repo,
+        rep_store,
+        events,
+    ) = _build_service_with_kg024(
+        tmp_path,
+        step_adapter=_step,
+        orphan_scan_provider=_orphan_scan,
+    )
+
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store, manifest_store, service.source_enumerator
+    )
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="orphan validation path",
+    )
+
+    assert result.outcome == RebuildOutcome.FAILED_ORPHAN_VALIDATION.value
+    assert result.reason == RebuildBlockReason.ORPHAN_VALIDATION_FAILED.value
+    assert result.publishable_status == "failed_orphan_validation"
+    assert result.operator_action == "run_orphan_backfill"
+    assert result.current_kg_generation_id is None
+    assert gen_repo.get_current("b1") is None
+    assert events and events[0]["status"] == "failed_orphan_validation"
+    assert (
+        get_terminal_count(
+            "b1",
+            candidate_terminal_status="failed_orphan_validation",
+            publishable_status="failed_orphan_validation",
+            with_report_ref=True,
+        )
+        == 1
+    )
+    report = rep_store.load(result.report_ref or "")
+    assert report is not None
+    validation = report["drilldown"]["zero_orphan_validation"]
+    assert validation["zero_orphan_validation"] == "pending_backfill"
+    assert validation["orphan_count"] == 1
+    assert set(validation["samples"][0]) == {
+        "node_id",
+        "node_type",
+        "writer_path",
+        "source_artifact_ref",
+        "source_resolution_status",
+        "generation_id",
+        "reason",
+        "correlation_id",
+    }
+
+
+def test_completed_run_after_backfill_publishes_zero_orphan_validation(
+    tmp_path: Path,
+):
+    """TC-KG-ZO-02.6: rebuild report is clean only after real orphan backfill."""
+
+    from okto_pulse.core.kg.orphan_integrity import (
+        OrphanBackfillReconciler,
+        OrphanNodeScanner,
+    )
+    from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+    from okto_pulse.core.kg.rebuild_report import get_terminal_count
+    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.transaction import TransactionOrchestrator
+
+    board_id = f"zo02e2e{uuid.uuid4().hex[:12]}"
+    source_root = f"spec:{board_id}"
+    board_root_id = "entity_board_root_zero_orphan"
+    entity_id = "entity_spec_zero_orphan"
+    requirement_id = "requirement_zero_orphan"
+    bug_id = "bug_zero_orphan"
+    learning_id = "learning_zero_orphan"
+
+    def _seed_node(kconn, orch, node_type: str, node_id: str, source_ref: str) -> None:
+        _apply_kuzu_node_create_with_timestamp(
+            orch,
+            node_type,
+            node_id,
+            {
+                "title": f"Sensitive title must not leak {node_id}",
+                "content": "Sensitive content must not leak user@example.com",
+                "context": "",
+                "justification": "",
+                "source_artifact_ref": source_ref,
+                "created_at": "2026-06-08T00:00:00+00:00",
+                "created_by_agent": "agent:e2e",
+                "source_confidence": 1.0,
+                "relevance_score": 0.5,
+                "query_hits": 0,
+                "last_queried_at": None,
+                "last_recomputed_at": None,
+                "priority_boost": 0.0,
+                "superseded_by": None,
+                "superseded_at": None,
+                "revocation_reason": "",
+                "human_curated": False,
+                "embedding": [0.0] * 384,
+            },
+        )
+
+    with open_board_connection(board_id) as (_db, kconn):
+        orch = TransactionOrchestrator(
+            kuzu_conn=kconn,
+            sqlite_session=None,
+            session_id="seed_zero_orphan_e2e",
+            board_id=board_id,
+        )
+        _seed_node(kconn, orch, "Entity", board_root_id, f"board:{board_id}")
+        _seed_node(kconn, orch, "Entity", entity_id, source_root)
+        orch.create_edge(
+            "belongs_to",
+            entity_id,
+            board_root_id,
+            attrs={"confidence": 1.0},
+            from_type="Entity",
+            to_type="Entity",
+        )
+        _seed_node(kconn, orch, "Requirement", requirement_id, f"{source_root}:fr:0")
+        _seed_node(kconn, orch, "Bug", bug_id, f"bug:{bug_id}")
+        orch.create_edge(
+            "belongs_to",
+            bug_id,
+            board_root_id,
+            attrs={"confidence": 1.0},
+            from_type="Bug",
+            to_type="Entity",
+        )
+        _seed_node(
+            kconn,
+            orch,
+            "Learning",
+            learning_id,
+            f"card:bug:{bug_id}:learning:0",
+        )
+
+    before = OrphanNodeScanner().scan(board_id=board_id, generation_id="gen-before")
+    assert before.orphan_count == 2
+
+    backfill = OrphanBackfillReconciler().run(
+        board_id=board_id,
+        generation_id="gen-backfill",
+    )
+    assert backfill.connected == 2
+
+    after = OrphanNodeScanner().scan(board_id=board_id, generation_id="gen-after")
+    assert after.orphan_count == 0
+
+    def _step(req):
+        return RebuildStepResult(
+            ok=True,
+            current_kg_generation_id=req.candidate_kg_generation_id,
+            structural_hash="e" * 64,
+            source_hash="f" * 64,
+            counts={"nodes": 4, "edges": 2},
+            drilldown={"fixture": "zero-orphan-e2e"},
+        )
+
+    def _orphan_scan(scan_board_id: str, generation_id: str | None):
+        assert scan_board_id == board_id
+        return OrphanNodeScanner().scan(
+            board_id=scan_board_id,
+            generation_id=generation_id,
+        )
+
+    (
+        service,
+        manifest_store,
+        confirmation_store,
+        _lock,
+        gen_repo,
+        rep_store,
+        events,
+    ) = _build_service_with_kg024(
+        tmp_path,
+        step_adapter=_step,
+        orphan_scan_provider=_orphan_scan,
+    )
+
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+        board_id=board_id,
+    )
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id=board_id,
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="zero-orphan validation e2e",
+    )
+
+    assert result.outcome == RebuildOutcome.COMPLETED.value
+    assert result.publishable_status == "completed"
+    assert result.current_kg_generation_id is not None
+    assert gen_repo.get_current(board_id) == result.current_kg_generation_id
+    assert events and events[0]["status"] == "completed"
+    assert (
+        get_terminal_count(
+            board_id,
+            candidate_terminal_status="completed",
+            publishable_status="completed",
+            with_report_ref=True,
+        )
+        == 1
+    )
+    report = rep_store.load(result.report_ref or "")
+    assert report is not None
+    validation = report["drilldown"]["zero_orphan_validation"]
+    assert validation["zero_orphan_validation"] == "passed"
+    assert validation["orphan_count"] == 0
+    assert validation["samples"] == []
+    assert validation["reason"] == "zero_non_allowlisted_orphans"
+
+
 def test_report_persist_failure_blocks_promotion_and_preserves_previous(
     tmp_path: Path,
 ):
@@ -781,12 +1123,10 @@ def test_report_persist_failure_blocks_promotion_and_preserves_previous(
         RebuildReportStore,
         ReportPersistOutcome,
         ReportPersistResult,
-        TerminalGuardDecision,
     )
 
     class _BrokenStore(RebuildReportStore):
         def persist(self, *, payload):  # type: ignore[override]
-            from okto_pulse.core.kg.rebuild_report import ReportPersistResult
             return ReportPersistResult(
                 outcome=ReportPersistOutcome.STORE_FAILED.value,
                 report_ref=None,

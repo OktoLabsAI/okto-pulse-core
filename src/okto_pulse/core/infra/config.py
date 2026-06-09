@@ -126,6 +126,16 @@ class CoreSettings(BaseSettings):
     # production values below 30s start to compete with normal traffic.
     kg_queue_recovery_scan_interval_s: int = Field(60, ge=10, le=600)
 
+    # Spec R2c (FR5/TR5/TR6/TR7) — DLQ auto-drain opt-in defaults.
+    # The feature is disabled by default (board-level flag controls opt-in).
+    # kg_queue_dlq_auto_drain_backoff_s: minimum seconds between auto-drain
+    #   runs for the same board (in-process per-board cooldown dict).
+    # kg_queue_dlq_auto_drain_max_requeue_attempts: DLQ rows that have been
+    #   requeued this many times without success are considered poison pills
+    #   and are permanently deleted with a WARN log.
+    kg_queue_dlq_auto_drain_backoff_s: int = Field(300, ge=30, le=86400)
+    kg_queue_dlq_auto_drain_max_requeue_attempts: int = Field(3, ge=1, le=20)
+
     # Spec 54399628 (NC-Wave2 — KG decay tick controllability) — 3 settings
     # persistidos com hot-reload via APScheduler.reschedule_job. Defaults
     # preservam comportamento atual (cron 24h staleness 7d, no max-age cap).

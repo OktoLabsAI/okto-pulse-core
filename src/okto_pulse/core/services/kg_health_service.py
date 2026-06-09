@@ -22,6 +22,7 @@ still ships. The endpoint must never 500 on a healthy app DB.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -37,8 +38,25 @@ from okto_pulse.core.kg.health_state import (
     MetricStatus,
 )
 from okto_pulse.core.kg.memory_pressure import (
+    HighWaterMarkSample,
     MemoryPressureCorrelator,
     MemoryPressureStatus,
+)
+from okto_pulse.core.kg.memory_pressure_collector import (
+    get_failures,
+    get_samples,
+    record_sample,
+)
+from okto_pulse.core.kg.schema import board_kuzu_path
+from okto_pulse.core.kg.scoring import get_contradict_warn_count
+from okto_pulse.core.infra.config import get_settings
+from okto_pulse.core.models.db import (
+    Board,
+    ConsolidationAudit,
+    ConsolidationDeadLetter,
+    ConsolidationQueue,
+    KGTickRun,
+    KuzuNodeRef,
 )
 
 # KG-01 contract api_3ed9037f: REST surface restricts metric_status to
@@ -61,15 +79,6 @@ _STATE_SEVERITY = {
     HealthState.RECOVERY_NEEDED: 3,
     HealthState.QUARANTINED: 4,
 }
-from okto_pulse.core.kg.scoring import get_contradict_warn_count
-from okto_pulse.core.models.db import (
-    Board,
-    ConsolidationAudit,
-    ConsolidationDeadLetter,
-    ConsolidationQueue,
-    KGTickRun,
-    KuzuNodeRef,
-)
 
 logger = logging.getLogger("okto_pulse.services.kg_health")
 
@@ -89,9 +98,248 @@ DEFAULT_SCORE_RATIO_ALARM_THRESHOLD = 0.7
 # How many "most disconnected" nodes the response surfaces.
 TOP_DISCONNECTED_NODES_LIMIT = 10
 
+_SENSITIVE_ERROR_RE = re.compile(
+    r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.lbug|\.py\b)",
+    re.IGNORECASE,
+)
+_KG_DAILY_TICK_JOB_ID = "kg_daily_tick"
+
 
 class BoardNotFoundError(Exception):
     """Raised when the requested board does not exist."""
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _iso(value: datetime | None) -> str | None:
+    normalized = _as_utc(value)
+    return normalized.isoformat() if normalized is not None else None
+
+
+def _safe_scheduler_error(value: Any) -> str | None:
+    """Return a bounded, UI-safe scheduler error summary.
+
+    The KG Health surface is user/agent facing. It must not expose local graph
+    paths, Python file paths, stack frames, or payload bodies. When those appear,
+    keep only a bounded reason code.
+    """
+
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    first_line = text.splitlines()[0].strip()
+    if _SENSITIVE_ERROR_RE.search(text):
+        return "scheduler_tick_failed"
+    return first_line[:180]
+
+
+def _read_decay_settings() -> tuple[int | None, str | None]:
+    try:
+        settings = get_settings()
+        return int(settings.kg_decay_tick_interval_minutes) * 60, None
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "kg.health.decay_scheduler_settings_unavailable err=%s",
+            exc,
+            extra={"event": "kg.health.decay_scheduler_settings_unavailable"},
+        )
+        return None, "settings_unavailable"
+
+
+def _read_next_scheduled_at() -> tuple[str | None, str | None]:
+    try:
+        from okto_pulse.core.kg.scheduler_singleton import get_scheduler
+
+        scheduler = get_scheduler()
+        if scheduler is None:
+            return None, "scheduler_unavailable"
+        job = scheduler.get_job(_KG_DAILY_TICK_JOB_ID)
+        if job is None:
+            return None, "scheduler_job_unavailable"
+        return _iso(getattr(job, "next_run_time", None)), None
+    except Exception as exc:
+        logger.info(
+            "kg.health.scheduler_next_run_unavailable reason=%s",
+            exc.__class__.__name__,
+            extra={
+                "event": "kg.health.scheduler_next_run_unavailable",
+                "reason": "scheduler_next_run_unavailable",
+            },
+        )
+        return None, "scheduler_next_run_unavailable"
+
+
+def _is_after(left: datetime | None, right: datetime | None) -> bool:
+    left = _as_utc(left)
+    right = _as_utc(right)
+    if left is None:
+        return False
+    if right is None:
+        return True
+    return left > right
+
+
+async def _load_tick_evidence(db: AsyncSession) -> dict[str, Any]:
+    """Load independent tick facts from KGTickRun.
+
+    This keeps success, failure, terminal legacy state, and in-progress rows as
+    separate facts. A failed tick after a success must not erase the last
+    successful scoring checkpoint.
+    """
+
+    try:
+        latest_success = await db.scalar(
+            select(KGTickRun)
+            .where(KGTickRun.completed_at.is_not(None), KGTickRun.error.is_(None))
+            .order_by(KGTickRun.completed_at.desc())
+            .limit(1)
+        )
+        latest_failure = await db.scalar(
+            select(KGTickRun)
+            .where(KGTickRun.error.is_not(None))
+            .order_by(KGTickRun.completed_at.desc(), KGTickRun.started_at.desc())
+            .limit(1)
+        )
+        latest_terminal = await db.scalar(
+            select(KGTickRun)
+            .where(KGTickRun.completed_at.is_not(None))
+            .order_by(KGTickRun.completed_at.desc())
+            .limit(1)
+        )
+        running_row = await db.scalar(
+            select(KGTickRun)
+            .where(KGTickRun.completed_at.is_(None))
+            .order_by(KGTickRun.started_at.desc())
+            .limit(1)
+        )
+    except Exception as exc:
+        return {
+            "query_failed": True,
+            "query_error": _safe_scheduler_error(exc) or "tick_run_query_failed",
+            "latest_success": None,
+            "latest_failure": None,
+            "latest_terminal": None,
+            "running_row": None,
+        }
+
+    return {
+        "query_failed": False,
+        "query_error": None,
+        "latest_success": latest_success,
+        "latest_failure": latest_failure,
+        "latest_terminal": latest_terminal,
+        "running_row": running_row,
+    }
+
+
+def _build_decay_scheduler_diagnostics(
+    *,
+    tick_evidence: dict[str, Any],
+    tick_in_progress: bool,
+    now: datetime,
+) -> dict[str, Any]:
+    tolerance_seconds, settings_reason = _read_decay_settings()
+    next_scheduled_at, next_reason = _read_next_scheduled_at()
+    latest_success = tick_evidence.get("latest_success")
+    latest_failure = tick_evidence.get("latest_failure")
+    running_row = tick_evidence.get("running_row")
+
+    last_success_at = _as_utc(getattr(latest_success, "completed_at", None))
+    failure_completed_at = _as_utc(getattr(latest_failure, "completed_at", None))
+    failure_started_at = _as_utc(getattr(latest_failure, "started_at", None))
+    last_failure_at = failure_completed_at or failure_started_at
+    running_started_at = _as_utc(getattr(running_row, "started_at", None))
+
+    reason = next_reason or "ok"
+    status = "ok"
+    severity = "info"
+    recommended_action = "none"
+    operational_debt = False
+    last_error = _safe_scheduler_error(getattr(latest_failure, "error", None))
+
+    if tick_evidence.get("query_failed"):
+        status = "unknown"
+        severity = "warning"
+        reason = "tick_run_query_failed"
+        recommended_action = "inspect_scheduler_storage"
+        operational_debt = True
+        last_error = tick_evidence.get("query_error") or "tick_run_query_failed"
+    elif settings_reason is not None:
+        status = "unknown"
+        severity = "warning"
+        reason = settings_reason
+        recommended_action = "inspect_runtime_settings"
+        operational_debt = True
+    elif tick_in_progress or running_row is not None:
+        status = "running"
+        severity = "info"
+        reason = "tick_in_progress"
+        recommended_action = "wait_for_tick_completion"
+        operational_debt = False
+    elif last_success_at is None and last_failure_at is None:
+        status = "never_run"
+        severity = "warning"
+        reason = "no_tick_run"
+        recommended_action = "run_tick_now"
+        operational_debt = True
+    elif _is_after(last_failure_at, last_success_at):
+        status = "failed"
+        severity = "warning"
+        reason = "latest_tick_failed"
+        recommended_action = "inspect_last_failure"
+        operational_debt = True
+    elif (
+        last_success_at is not None
+        and tolerance_seconds is not None
+        and (now - last_success_at).total_seconds() > tolerance_seconds
+    ):
+        status = "stale"
+        severity = "warning"
+        reason = "last_success_stale"
+        recommended_action = "run_tick_now"
+        operational_debt = True
+
+    diagnostics = {
+        "status": status,
+        "severity": severity,
+        "last_success_at": _iso(last_success_at),
+        "last_failure_at": _iso(last_failure_at),
+        "last_error": last_error if status in {"failed", "unknown"} else None,
+        "next_scheduled_at": next_scheduled_at,
+        "stale_tolerance_seconds": tolerance_seconds,
+        "recommended_action": recommended_action,
+        "operational_debt": operational_debt,
+        "graph_recovery_required": False,
+        "reason": reason,
+        "running_started_at": _iso(running_started_at),
+        "source": "kg_tick_runs",
+    }
+    logger.info(
+        "kg.health.decay_scheduler_diagnostic status=%s severity=%s reason=%s "
+        "operational_debt=%s graph_recovery_required=%s",
+        diagnostics["status"],
+        diagnostics["severity"],
+        diagnostics["reason"],
+        diagnostics["operational_debt"],
+        diagnostics["graph_recovery_required"],
+        extra={
+            "event": "kg.health.decay_scheduler_diagnostic",
+            "status": diagnostics["status"],
+            "severity": diagnostics["severity"],
+            "reason": diagnostics["reason"],
+            "operational_debt": diagnostics["operational_debt"],
+            "graph_recovery_required": diagnostics["graph_recovery_required"],
+        },
+    )
+    return diagnostics
 
 
 def _build_health_diagnostics(
@@ -236,6 +484,42 @@ def _build_health_diagnostics(
     }
 
 
+def _build_orphan_integrity_for_health(
+    *, board_id: str, generation_id: str | None
+) -> dict[str, Any]:
+    """Return the KG-ZO-02 orphan integrity projection for Health.
+
+    This is read-only. A scan failure is surfaced as an unavailable additive
+    projection and must not mask hard graph recovery signals computed by the
+    KG-01 health state machine.
+    """
+
+    try:
+        from okto_pulse.core.kg.orphan_integrity import (
+            OrphanNodeScanner,
+            build_orphan_integrity_projection,
+        )
+
+        report = OrphanNodeScanner().scan(
+            board_id=board_id,
+            generation_id=generation_id,
+        )
+        return build_orphan_integrity_projection(report).to_safe_dict()
+    except Exception as exc:
+        logger.debug(
+            "kg.health.orphan_integrity_scan_unavailable board=%s err=%s",
+            board_id, exc,
+        )
+        from okto_pulse.core.kg.orphan_integrity import (
+            build_orphan_integrity_projection,
+        )
+
+        return build_orphan_integrity_projection(
+            None,
+            scan_error=type(exc).__name__,
+        ).to_safe_dict()
+
+
 def _telemetry_ok(graph_type: str) -> GraphTelemetry:
     return GraphTelemetry(
         graph_type=graph_type,
@@ -269,6 +553,151 @@ def _telemetry_wal_or_open_error(graph_type: str) -> GraphTelemetry:
     )
 
 
+def _compute_board_graph_high_water_mark_pct(board_id: str) -> float | None:
+    """Compute the real high-water-mark percentage for the board's LadybugDB files.
+
+    Sums the on-disk sizes of graph.lbug and all its siblings (e.g.
+    graph.lbug.wal, graph.lbug.shm) using the same glob pattern as
+    ``_fsync_board_graph_files`` in schema.py (lines 567-571), then
+    divides by ``kg_kuzu_max_db_size_gb * 1024**3`` and clamps to [0, 100].
+
+    Returns ``None`` (not 0.0) when:
+    - graph.lbug does not exist (AC4: absent graph, not even 0.0).
+    - any ``OSError`` is raised during ``Path.stat()`` (AC5: IO errors must
+      not propagate to the health endpoint — TR2).
+
+    This is the proxy for FR2 (spec R2c): real on-disk usage drives the
+    HighWaterMarkSample fed to the correlator, so the correlator sees real
+    pressure rather than the synthetic 0.0 placeholder that was previously
+    hardcoded in ``_telemetry_ok``.
+    """
+    try:
+        path = board_kuzu_path(board_id)
+    except Exception as exc:
+        logger.debug(
+            "kg.health.hwm.path_resolution_failed board=%s err=%s",
+            board_id, exc,
+        )
+        return None
+
+    # AC4: absent graph.lbug → None, not 0.0
+    if not path.exists():
+        return None
+
+    try:
+        total_bytes = path.stat().st_size
+    except OSError as exc:
+        logger.debug(
+            "kg.health.hwm.stat_failed board=%s path=%s err=%s",
+            board_id, path, exc,
+        )
+        return None
+
+    # Include siblings (e.g. .wal, .shm) — same glob as _fsync_board_graph_files
+    for sibling in sorted(path.parent.glob(path.name + ".*")):
+        try:
+            total_bytes += sibling.stat().st_size
+        except OSError as exc:
+            logger.debug(
+                "kg.health.hwm.sibling_stat_failed board=%s sibling=%s err=%s",
+                board_id, sibling, exc,
+            )
+            # Partial read: still return None to avoid misleading partial sums
+            return None
+
+    try:
+        settings = get_settings()
+        max_bytes = settings.kg_kuzu_max_db_size_gb * 1024 ** 3
+    except Exception as exc:
+        logger.debug(
+            "kg.health.hwm.config_failed board=%s err=%s",
+            board_id, exc,
+        )
+        return None
+
+    if max_bytes <= 0:
+        return None
+
+    pct = (total_bytes / max_bytes) * 100.0
+    # Clamp to [0, 100]
+    return max(0.0, min(100.0, pct))
+
+
+def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
+    """Build an explanatory file-size proxy payload for REST/MCP/UI.
+
+    The underlying high-water calculation remains the existing on-disk size
+    proxy. This object makes that explicit and intentionally does not expose
+    filesystem paths.
+    """
+
+    base: dict[str, Any] = {
+        "source": "file_size_proxy",
+        "status": "unavailable",
+        "percentage": None,
+        "high_water_mark_pct": None,
+        "graph_lbug_bytes": None,
+        "sidecar_bytes": None,
+        "total_bytes": None,
+        "configured_max_db_size_bytes": None,
+        "configured_max_db_size_gb": None,
+        "is_direct_memory_telemetry": False,
+        "description": (
+            "On-disk storage footprint proxy derived from graph.lbug file sizes."
+        ),
+        "tooltip": (
+            "This is not live Ladybug memory telemetry. It is a file-size proxy "
+            "used as an early warning signal."
+        ),
+        "unavailable_reason": None,
+    }
+
+    try:
+        settings = get_settings()
+        max_bytes = int(settings.kg_kuzu_max_db_size_gb * 1024 ** 3)
+        base["configured_max_db_size_gb"] = int(settings.kg_kuzu_max_db_size_gb)
+        base["configured_max_db_size_bytes"] = max_bytes
+    except Exception:
+        base["unavailable_reason"] = "settings_unavailable"
+        return base
+
+    if max_bytes <= 0:
+        base["unavailable_reason"] = "invalid_max_db_size"
+        return base
+
+    try:
+        path = board_kuzu_path(board_id)
+    except Exception:
+        base["unavailable_reason"] = "path_resolution_failed"
+        return base
+
+    if not path.exists():
+        base["unavailable_reason"] = "graph_lbug_absent"
+        return base
+
+    try:
+        graph_bytes = int(path.stat().st_size)
+        sidecar_bytes = 0
+        for sibling in sorted(path.parent.glob(path.name + ".*")):
+            sidecar_bytes += int(sibling.stat().st_size)
+    except OSError:
+        base["unavailable_reason"] = "stat_failed"
+        return base
+
+    total_bytes = graph_bytes + sidecar_bytes
+    pct = max(0.0, min(100.0, (total_bytes / max_bytes) * 100.0))
+    base.update({
+        "status": "available",
+        "percentage": pct,
+        "high_water_mark_pct": pct,
+        "graph_lbug_bytes": graph_bytes,
+        "sidecar_bytes": sidecar_bytes,
+        "total_bytes": total_bytes,
+        "unavailable_reason": None,
+    })
+    return base
+
+
 def _probe_board_graph_telemetry(
     *,
     board_id: str,
@@ -278,25 +707,63 @@ def _probe_board_graph_telemetry(
 ) -> GraphTelemetry:
     """Return current board graph liveness telemetry for KG Health.
 
-    Ladybug does not expose buffer high-water metrics through the current
-    Python API, but Health can still distinguish a successful open/read probe
-    from an existing graph that cannot expose schema/content. Missing graphs
-    with no materialized history remain `metric.unavailable`; existing graphs
-    that fail schema/readability are surfaced as a concrete WAL/open error.
+    FR2 (spec R2c): when the graph exists (schema version known or nodes
+    present), this probe now computes the REAL high-water-mark percentage
+    from on-disk file sizes (graph.lbug + siblings) and records a
+    HighWaterMarkSample via the collector so the MemoryPressureCorrelator
+    receives real observations.  IO errors are swallowed with a DEBUG log
+    and degrade to ``high_water_mark_pct=None`` (TR2: health never 500s).
+
+    Missing graphs with no materialized history remain
+    ``metric_status.unavailable``; existing unreadable graphs are surfaced
+    as a concrete WAL/open error.
     """
 
     if empty_after_materialized_history:
         return _telemetry_wal_or_open_error("board")
     if graph_schema_version or total_nodes > 0:
-        return _telemetry_ok("board")
+        # FR2: compute real high_water_mark_pct from on-disk sizes and feed
+        # the collector ring-buffer for the correlator.
+        hwm_pct = _compute_board_graph_high_water_mark_pct(board_id)
+        _record_board_hwm_sample(board_id, hwm_pct)
+        return GraphTelemetry(
+            graph_type="board",
+            buffer_utilization_pct=0.0,
+            high_water_mark_pct=hwm_pct,
+            recent_buffer_errors=0,
+            recent_wal_errors=0,
+            recent_commit_errors=0,
+        )
     try:
-        from okto_pulse.core.kg.schema import board_kuzu_path
-
         if board_kuzu_path(board_id).exists():
             return _telemetry_wal_or_open_error("board")
     except Exception:
         return _telemetry_unavailable("board")
     return _telemetry_unavailable("board")
+
+
+def _record_board_hwm_sample(board_id: str, hwm_pct: float | None) -> None:
+    """Record a HighWaterMarkSample in the collector ring-buffer.
+
+    Only records when ``hwm_pct`` is not None.  Non-blocking and non-raising
+    (TR2: swallow any unexpected error so the health endpoint never 500s).
+    """
+    if hwm_pct is None:
+        return
+    try:
+        record_sample(
+            board_id,
+            HighWaterMarkSample(
+                timestamp=datetime.now(timezone.utc),
+                high_water_mark_pct=hwm_pct,
+                graph_type="board",
+            ),
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug(
+            "kg.health.hwm.record_sample_failed board=%s err=%s",
+            board_id, exc,
+        )
 
 
 def _probe_global_discovery_telemetry() -> GraphTelemetry:
@@ -391,26 +858,27 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         )
     ) or 0
 
-    last_tick_run = await db.scalar(
-        select(KGTickRun)
-        .where(KGTickRun.completed_at.is_not(None))
-        .order_by(KGTickRun.completed_at.desc())
-        .limit(1)
-    )
-    if last_tick_run is not None:
-        last_completed = last_tick_run.completed_at
-        if last_completed is not None and last_completed.tzinfo is None:
-            last_completed = last_completed.replace(tzinfo=timezone.utc)
-        last_decay_tick_at = (
-            last_completed.isoformat() if last_completed is not None else None
+    tick_evidence = await _load_tick_evidence(db)
+    last_terminal_tick = tick_evidence.get("latest_terminal")
+    if last_terminal_tick is not None:
+        last_decay_tick_at = _iso(last_terminal_tick.completed_at)
+        nodes_recomputed_in_last_tick = int(last_terminal_tick.nodes_recomputed or 0)
+        # FR5 (spec R2b, IMPL-3): expose boards_processed / boards_failed from
+        # the last tick run so callers can distinguish "tick failed before any
+        # board ran" (boards_processed==0) from "processed N but M failed"
+        # (boards_failed>0). KGTickRun.boards_failed exists since IMPL-2.
+        boards_processed_in_last_tick: int = int(
+            last_terminal_tick.boards_processed or 0
         )
-        nodes_recomputed_in_last_tick = int(last_tick_run.nodes_recomputed or 0)
+        boards_failed_in_last_tick: int = int(last_terminal_tick.boards_failed or 0)
     else:
         last_decay_tick_at = None
         nodes_recomputed_in_last_tick = 0
-    if last_tick_run is not None:
-        last_tick_status = "failed" if last_tick_run.error else "completed"
-        last_tick_error = last_tick_run.error
+        boards_processed_in_last_tick = 0  # BR5: default 0 when no tick_run
+        boards_failed_in_last_tick = 0     # BR5: default 0 when no tick_run
+    if last_terminal_tick is not None:
+        last_tick_status = "failed" if last_terminal_tick.error else "completed"
+        last_tick_error = _safe_scheduler_error(last_terminal_tick.error)
     else:
         last_tick_status = None
         last_tick_error = None
@@ -449,8 +917,13 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
     tick_lock = get_async_lock("kg_daily_tick", "global")
     tick_in_progress = tick_lock.locked()
-    if tick_in_progress:
+    if tick_in_progress or tick_evidence.get("running_row") is not None:
         last_tick_status = "running"
+    decay_scheduler_diagnostics = _build_decay_scheduler_diagnostics(
+        tick_evidence=tick_evidence,
+        tick_in_progress=tick_in_progress,
+        now=now,
+    )
 
     # KG-01 FR1+FR2+FR3 (contract api_3ed9037f): per-graph classification
     # for board_graph and global_discovery, deterministic memory-pressure
@@ -529,12 +1002,17 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             rest_metric_status = "unavailable"
             break
 
+    # FR1/TR1 (spec R2c): feed real ring-buffer observations to the
+    # correlator instead of empty-list stubs.  The collector module keeps
+    # per-board deques (maxlen 200 / 50) that telemetry writers populate
+    # via record_sample/record_failure; get_samples/get_failures return
+    # thread-safe snapshot lists so iteration here is race-free.
     memory_pressure = MemoryPressureCorrelator().evaluate(
-        samples=[],
-        failures=[],
+        samples=get_samples(board_id),
+        failures=get_failures(board_id),
     )
 
-    diagnostics = _build_health_diagnostics(
+    health_diagnostics = _build_health_diagnostics(
         total_nodes=total_nodes,
         graph_schema_version=graph_schema_version,
         empty_after_materialized_history=empty_after_materialized_history,
@@ -545,6 +1023,23 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         rest_metric_status=rest_metric_status,
         dead_letter_count=int(dead_letter_count),
     )
+    if decay_scheduler_diagnostics["operational_debt"]:
+        health_diagnostics["health_issues"].append({
+            "code": f"decay_scheduler_{decay_scheduler_diagnostics['status']}",
+            "component": "decay_scheduler",
+            "severity": decay_scheduler_diagnostics["severity"],
+            "reason": f"decay_scheduler:{decay_scheduler_diagnostics['reason']}",
+            "description": (
+                "Decay scheduler has operational debt. This does not imply "
+                "board graph corruption or require KG rebuild by itself."
+            ),
+            "operator_action": decay_scheduler_diagnostics["recommended_action"],
+        })
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = "decay_scheduler_debt"
+            health_diagnostics["operator_action"] = decay_scheduler_diagnostics[
+                "recommended_action"
+            ]
 
     # bug b4c6920c follow-up: wire `current_kg_generation_id` to the
     # KG-02.4 `KGGenerationRepository` file-backed pointer. Previously
@@ -573,8 +1068,75 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             board_id, exc,
         )
 
+    # FR4 (spec R2c): populate recent_events with the FailureEvent that the
+    # correlator used when memory_pressure is confirmed_primary_cause.  The
+    # correlation_id in the payload is the join-key between the health
+    # snapshot and the underlying failure event in observability storage
+    # (contract api_3ed9037f / memory_pressure.py:17-19).
     recent_events: list[dict[str, Any]] = []
+    if (
+        memory_pressure.status is MemoryPressureStatus.CONFIRMED_PRIMARY_CAUSE
+        and memory_pressure.failure_event is not None
+    ):
+        fe = memory_pressure.failure_event
+        recent_events.append({
+            "occurred_at": fe.timestamp.isoformat(),
+            "event_type": fe.event_kind,
+            "reason": memory_pressure.reason,
+            "correlation_id": fe.correlation_id,
+        })
+        # When memory pressure is the confirmed primary cause we surface
+        # the correlator's correlation_id (== FailureEvent.correlation_id)
+        # as the canonical correlation_id for the entire health snapshot so
+        # callers can join health rows directly to failure events.
+        correlation_id = fe.correlation_id
+
+    # FR6 (spec R2c): pull DLQ auto-drain stats from the in-process worker
+    # singleton. Defensive: if the worker is not running (e.g. tests that
+    # don't start the worker) the stats default to null/0 per BR5.
+    dlq_auto_drain_last_run_at: str | None = None
+    dlq_auto_drain_requeued_count: int = 0
+    try:
+        from okto_pulse.core.kg.workers.consolidation import get_consolidation_worker
+        worker = get_consolidation_worker()
+        drain_stats = worker.get_dlq_drain_stats(board_id)
+        dlq_auto_drain_last_run_at = drain_stats["last_run_at"]
+        dlq_auto_drain_requeued_count = drain_stats["requeued_count"]
+    except Exception:
+        pass  # defensive: health endpoint must never 500 on telemetry failure
+
     checked_at = now.isoformat()
+    storage_footprint_proxy = _build_storage_footprint_proxy(board_id)
+    orphan_integrity = _build_orphan_integrity_for_health(
+        board_id=board_id,
+        generation_id=current_kg_generation_id,
+    )
+    if orphan_integrity.get("integrity_warning"):
+        if _STATE_SEVERITY[graph_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
+            graph_state = HealthState.AT_RISK
+        overall_state = max(
+            graph_state,
+            discovery_classification.state,
+            key=lambda s: _STATE_SEVERITY[s],
+        )
+        if "graph:orphan_integrity_warning" not in combined_reasons:
+            combined_reasons.append("graph:orphan_integrity_warning")
+        classification_reason = ";".join(combined_reasons)
+        health_diagnostics["health_issues"].append({
+            "code": "orphan_integrity_warning",
+            "component": "board_graph",
+            "severity": "warning",
+            "reason": "orphan_count_gt_zero",
+            "description": (
+                f"{int(orphan_integrity.get('orphan_count') or 0)} "
+                "non-allowlisted orphan KG node(s) remain. This is graph "
+                "integrity debt, not by itself a LadybugDB recovery signal."
+            ),
+            "operator_action": "inspect_orphan_integrity_report",
+        })
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = "orphan_integrity_warning"
+            health_diagnostics["operator_action"] = "inspect_orphan_integrity_report"
 
     return {
         # --- KG-01 REST contract api_3ed9037f ---
@@ -606,12 +1168,24 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         "last_tick_error": last_tick_error,
         "nodes_recomputed_in_last_tick": nodes_recomputed_in_last_tick,
         "tick_in_progress": tick_in_progress,
+        # FR5/FR6 (spec R2b, IMPL-3): tick board counters — distinguishes
+        # "tick global falhou" (boards_processed==0) from "processou N mas M
+        # falharam" (boards_failed>0). Default 0 per BR5 when no tick_run.
+        "boards_processed_in_last_tick": boards_processed_in_last_tick,
+        "boards_failed_in_last_tick": boards_failed_in_last_tick,
         # --- KG-01 internal/debug surface (alias to contract overall_state) ---
         "state": overall_state.value,
         "memory_pressure_status": memory_pressure.status.value,
         "classification_reasons": combined_reasons,
+        # FR6 (spec R2c): DLQ auto-drain telemetry (additive, null/0 default).
+        "dlq_auto_drain_last_run_at": dlq_auto_drain_last_run_at,
+        "dlq_auto_drain_requeued_count": dlq_auto_drain_requeued_count,
+        # --- KG-HS.1 additive scheduler/footprint clarity surface ---
+        "decay_scheduler_diagnostics": decay_scheduler_diagnostics,
+        "storage_footprint_proxy": storage_footprint_proxy,
+        "orphan_integrity": orphan_integrity,
         # --- UI diagnosis surface (additive, does not weaken canonical state) ---
-        **diagnostics,
+        **health_diagnostics,
     }
 
 

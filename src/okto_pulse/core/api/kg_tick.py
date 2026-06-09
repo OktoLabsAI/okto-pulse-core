@@ -27,7 +27,9 @@ from okto_pulse.core.events import publish as event_publish
 from okto_pulse.core.events.types import KGDailyTick
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
+from okto_pulse.core.services.kg_health_service import get_kg_health
 
 logger = logging.getLogger("okto_pulse.api.kg_tick")
 router = APIRouter()
@@ -42,6 +44,37 @@ class TickRunNowResponse(BaseModel):
     tick_id: str
     status: str  # "running"
     scheduled_at: str  # ISO
+
+
+async def _refuse_tick_if_degraded(
+    board_id: str | None, db: AsyncSession
+) -> dict | None:
+    """Shared tick-admission gate (F17). Returns a structured refusal payload
+    when a CONCRETE board's KG is degraded (``graph_state`` in the shared
+    ``_RISK_STATE_HARD_REJECT`` set), else ``None``.
+
+    A global tick (``board_id is None``) is NOT health-gated — there is no single
+    board to probe and a global tick must not be blocked by one board's health
+    (FR9). Both the REST endpoint and the MCP twin call this ONE gate, so the
+    refusal originates from a single place and the degraded predicate is never
+    duplicated (FR10/FR11).
+    """
+    if board_id is None:
+        return None
+    health = await get_kg_health(board_id, db)
+    graph_state = health.get("graph_state")
+    if graph_state in _RISK_STATE_HARD_REJECT:
+        return {
+            "error": "graph_recovery_needed",
+            "graph_state": graph_state,
+            "board_id": board_id,
+            "message": (
+                f"KG for board {board_id} is {graph_state}; a manual tick is "
+                "refused until recovery completes. Use the explicit KG Health "
+                "recovery flow."
+            ),
+        }
+    return None
 
 
 @router.post(
@@ -78,6 +111,17 @@ async def run_tick_now(
                 "error": "tick_already_running",
                 "message": "Tick already running, retry shortly",
             },
+        )
+
+    # F17 admission gate: refuse a manual tick on a degraded CONCRETE board with
+    # a structured 409 — AFTER the lock check (so tick_already_running keeps
+    # priority, TR7) and BEFORE any tick_id is allocated (no doomed tick). The
+    # global tick (board_id is None) is not health-gated (FR9).
+    refusal = await _refuse_tick_if_degraded(payload.board_id, db)
+    if refusal is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=refusal,
         )
 
     tick_id = str(uuid.uuid4())

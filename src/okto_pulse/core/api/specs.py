@@ -30,6 +30,7 @@ from okto_pulse.core.models.schemas import (
 from okto_pulse.core.models.schemas import SpecHistoryResponse, SpecQAAnswer, SpecQACreate, SpecQAResponse
 from okto_pulse.core.services import (
     BoardService,
+    QASelfAnsweringNotAllowedError,
     ResourceGateError,
     SpecKnowledgeService,
     SpecQAService,
@@ -711,7 +712,10 @@ async def update_test_scenario_status(
     SpecService.set_test_scenario_status) and mutates ONLY the target scenario —
     it does NOT use the full-list update_spec path and does NOT trigger the
     content-lock, so the other scenarios are preserved. Rejects gated status
-    without evidence (422) and a status change on a validated/done spec (409).
+    without evidence (422) and arbitrary status changes on validated/done specs
+    (409). Post-lock regression evidence remains allowed when the target
+    scenario is already linked to an executable test card; this is operational
+    evidence, not a semantic spec edit.
     """
     service = SpecService(db)
     try:
@@ -967,7 +971,16 @@ async def answer_spec_question(
 ):
     """Answer a spec Q&A question."""
     service = SpecQAService(db)
-    qa = await service.answer_question(qa_id, user_id, data)
+    try:
+        qa = await service.answer_question(
+            qa_id, user_id, data, actor_type="user", surface="rest"
+        )
+    except QASelfAnsweringNotAllowedError as exc:
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"reason": exc.reason, "message": str(exc)},
+        ) from exc
     if not qa:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Q&A item not found")
     await db.commit()

@@ -24,6 +24,9 @@ from okto_pulse.core.api.settings import router as settings_router
 from okto_pulse.core.api.queue_health import router as queue_health_router
 from okto_pulse.core.api.kg_health import router as kg_health_router
 from okto_pulse.core.api.kg_rebuild import router as kg_rebuild_router
+from okto_pulse.core.api.kg_orphan_integrity import (
+    router as kg_orphan_integrity_router,
+)
 from okto_pulse.core.api.kg_cognitive_pending import (
     router as kg_cognitive_pending_router,
 )
@@ -66,6 +69,9 @@ api_router.include_router(settings_router, tags=["settings"])
 api_router.include_router(queue_health_router, tags=["queue-health"])
 api_router.include_router(kg_health_router, tags=["kg-health"])
 api_router.include_router(kg_rebuild_router, tags=["kg-rebuild"])
+api_router.include_router(
+    kg_orphan_integrity_router, tags=["kg-orphan-integrity"]
+)
 api_router.include_router(
     kg_cognitive_pending_router, tags=["kg-cognitive-pending"]
 )

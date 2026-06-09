@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.models.db import (
+    ActivityLog,
     Board,
     Card,
     CardStatus,
@@ -29,9 +30,17 @@ from okto_pulse.core.models.db import (
     Spec,
     SpecStatus,
     Sprint,
+    SprintLaneType,
     SprintStatus,
 )
-from okto_pulse.core.models.schemas import SprintCreate, SprintMove, SprintUpdate
+from okto_pulse.core.models.schemas import (
+    SprintCreate,
+    SprintMove,
+    SprintResponse,
+    SprintSummary,
+    SprintUpdate,
+)
+from okto_pulse.core.services.main import SprintOperationError
 
 
 BOARD_ID = "sprint-crud-board-001"
@@ -40,6 +49,11 @@ SPEC_ID = "sprint-crud-spec-001"
 CARD_1_ID = "sprint-crud-card-1"
 CARD_2_ID = "sprint-crud-card-2"
 CARD_3_ID = "sprint-crud-card-3"  # Different spec
+HOTFIX_BUG_CARD_ID = "sprint-crud-hotfix-bug-card"
+HOTFIX_TEST_CARD_ID = "sprint-crud-hotfix-test-card"
+HOTFIX_NORMAL_CARD_ID = "sprint-crud-hotfix-normal-card"
+HOTFIX_CROSS_SPEC_BUG_CARD_ID = "sprint-crud-hotfix-cross-spec-bug-card"
+HOTFIX_ORIGIN_TASK_CARD_ID = "sprint-crud-hotfix-origin-task-card"
 TS_1_ID = "sprint-crud-ts-1"
 TS_2_ID = "sprint-crud-ts-2"
 BR_1_ID = "sprint-crud-br-1"
@@ -144,6 +158,39 @@ async def _seed_different_spec(db_factory) -> None:
         await db.commit()
 
 
+async def _put_card(
+    db,
+    *,
+    card_id: str,
+    spec_id: str,
+    title: str,
+    card_type: CardType,
+) -> Card:
+    """Create or reset a card row for assignment-focused tests."""
+    existing = await db.get(Card, card_id)
+    if existing is not None:
+        existing.spec_id = spec_id
+        existing.title = title
+        existing.status = CardStatus.NOT_STARTED
+        existing.card_type = card_type
+        existing.sprint_id = None
+        existing.archived = False
+        return existing
+
+    card = Card(
+        id=card_id,
+        board_id=BOARD_ID,
+        spec_id=spec_id,
+        title=title,
+        status=CardStatus.NOT_STARTED,
+        card_type=card_type,
+        archived=False,
+        created_by=AGENT_ID,
+    )
+    db.add(card)
+    return card
+
+
 async def _clean_sprints(db_factory, board_id: str) -> None:
     """Delete all existing sprints for a board to ensure test isolation."""
     async with db_factory() as db:
@@ -178,6 +225,10 @@ class TestSprintCreation:
         assert sprint.title == "Minimal Sprint"
         assert sprint.status == SprintStatus.DRAFT
         assert sprint.description is None
+        assert sprint.lane_type == SprintLaneType.NORMAL
+        assert sprint.origin_sprint_id is None
+        assert sprint.origin_bug_id is None
+        assert sprint.normal_sprint_created is True
         assert sprint.objective is None
         assert sprint.expected_outcome is None
         assert sprint.labels is None
@@ -266,7 +317,203 @@ class TestSprintCreation:
         assert sprint.title == "Schema Sprint"
         assert sprint.spec_id == SPEC_ID
         assert sprint.status == SprintStatus.DRAFT
+        assert sprint.lane_type == SprintLaneType.NORMAL
+        assert sprint.origin_sprint_id is None
+        assert sprint.origin_bug_id is None
+        assert sprint.normal_sprint_created is True
         assert sprint.board_id == BOARD_ID
+
+    async def test_existing_sprint_row_serializes_default_normal_lane_metadata(self, db_factory):
+        """Legacy-style sprint rows serialize as normal lanes on public schemas."""
+        await _seed_board(db_factory)
+        sprint_id = "legacy-normal-lane-sprint"
+
+        async with db_factory() as db:
+            sprint = Sprint(
+                id=sprint_id,
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Legacy Normal Lane Sprint",
+                created_by=AGENT_ID,
+            )
+            db.add(sprint)
+            await db.commit()
+
+        from okto_pulse.core.services.main import SprintService
+
+        async with db_factory() as db:
+            service = SprintService(db)
+            loaded = await service.get_sprint(sprint_id)
+            assert loaded is not None
+
+            summary_payload = SprintSummary.model_validate(loaded)
+            response_payload = SprintResponse.model_validate(loaded)
+
+        for payload in (summary_payload, response_payload):
+            assert payload.lane_type == SprintLaneType.NORMAL
+            assert payload.origin_sprint_id is None
+            assert payload.origin_bug_id is None
+            assert payload.normal_sprint_created is True
+
+    async def test_hotfix_creation_for_closed_origin_sprint(self, db_factory):
+        """Eligible closed-origin bug creates a hotfix lane without reopening origin sprint."""
+        await _seed_board(db_factory)
+        from okto_pulse.core.services.main import SprintService
+        async with db_factory() as db:
+            base = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Origin Sprint",
+                status=SprintStatus.CLOSED,
+                created_by=AGENT_ID,
+            )
+            bug = Card(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Hotfix bug",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.BUG,
+                origin_task_id=CARD_1_ID,
+                created_by=AGENT_ID,
+            )
+            db.add(base)
+            db.add(bug)
+            await db.flush()
+            service = SprintService(db)
+            data = SprintCreate(
+                title="Hotfix Lane Sprint",
+                spec_id=SPEC_ID,
+                lane_type=SprintLaneType.HOTFIX,
+                origin_sprint_id=base.id,
+                origin_bug_id=bug.id,
+            )
+            sprint = await service.create_sprint(BOARD_ID, AGENT_ID, data)
+            await db.flush()
+            origin_after = await db.get(Sprint, base.id)
+
+        assert sprint is not None
+        assert sprint.status == SprintStatus.DRAFT
+        assert sprint.lane_type == SprintLaneType.HOTFIX
+        assert sprint.origin_sprint_id == base.id
+        assert sprint.origin_bug_id == bug.id
+        assert sprint.normal_sprint_created is False
+        assert origin_after.status == SprintStatus.CLOSED
+
+    async def test_hotfix_creation_rejects_active_origin_when_spec_not_done(self, db_factory):
+        """Ineligible hotfix creation returns a deterministic typed error."""
+        await _seed_board(db_factory)
+        from okto_pulse.core.services.main import SprintService
+        async with db_factory() as db:
+            origin = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Active Origin Sprint",
+                status=SprintStatus.ACTIVE,
+                created_by=AGENT_ID,
+            )
+            db.add(origin)
+            await db.flush()
+            service = SprintService(db)
+            data = SprintCreate(
+                title="Ineligible Hotfix Lane",
+                spec_id=SPEC_ID,
+                lane_type=SprintLaneType.HOTFIX,
+                origin_sprint_id=origin.id,
+            )
+            with pytest.raises(SprintOperationError) as exc:
+                await service.create_sprint(BOARD_ID, AGENT_ID, data)
+            created = (
+                await db.execute(
+                    select(Sprint).where(Sprint.title == "Ineligible Hotfix Lane")
+                )
+            ).scalar_one_or_none()
+
+        assert exc.value.code == "hotfix_lane_not_eligible"
+        assert exc.value.remediation == "assign_hotfix_lane_after_done_spec_or_closed_origin_sprint"
+        assert exc.value.facts["spec_status"] == SpecStatus.IN_PROGRESS.value
+        assert exc.value.facts["origin_sprint_status"] == SprintStatus.ACTIVE.value
+        assert created is None
+
+    async def test_hotfix_creation_rejects_cross_spec_origin_sprint(self, db_factory):
+        """origin_sprint_id must reference a sprint in the same board/spec."""
+        await _seed_board(db_factory)
+        await _seed_different_spec(db_factory)
+        from okto_pulse.core.services.main import SprintService
+        async with db_factory() as db:
+            origin = Sprint(
+                board_id=BOARD_ID,
+                spec_id="sprint-crud-spec-diff",
+                title="Wrong Spec Origin Sprint",
+                status=SprintStatus.CLOSED,
+                created_by=AGENT_ID,
+            )
+            db.add(origin)
+            await db.flush()
+            service = SprintService(db)
+            data = SprintCreate(
+                title="Cross Spec Hotfix Lane",
+                spec_id=SPEC_ID,
+                lane_type=SprintLaneType.HOTFIX,
+                origin_sprint_id=origin.id,
+            )
+            with pytest.raises(SprintOperationError) as exc:
+                await service.create_sprint(BOARD_ID, AGENT_ID, data)
+
+        assert exc.value.code == "origin_sprint_not_found"
+
+    async def test_hotfix_creation_rejects_non_bug_origin_card(self, db_factory):
+        """origin_bug_id must reference a bug card in the same board/spec."""
+        await _seed_board(db_factory)
+        from okto_pulse.core.services.main import SprintService
+        async with db_factory() as db:
+            origin = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Closed Origin Sprint",
+                status=SprintStatus.CLOSED,
+                created_by=AGENT_ID,
+            )
+            db.add(origin)
+            await db.flush()
+            service = SprintService(db)
+            data = SprintCreate(
+                title="Hotfix With Non Bug Origin",
+                spec_id=SPEC_ID,
+                lane_type=SprintLaneType.HOTFIX,
+                origin_sprint_id=origin.id,
+                origin_bug_id=CARD_1_ID,
+            )
+            with pytest.raises(SprintOperationError) as exc:
+                await service.create_sprint(BOARD_ID, AGENT_ID, data)
+
+        assert exc.value.code == "origin_bug_not_found"
+
+    async def test_sprint_response_serializes_lane_metadata(self, db_factory):
+        """SprintResponse includes lane metadata in the public API contract."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            sprint = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Serializable Hotfix Sprint",
+                lane_type=SprintLaneType.HOTFIX,
+                origin_bug_id=CARD_1_ID,
+                created_by=AGENT_ID,
+            )
+            db.add(sprint)
+            await db.commit()
+            await db.refresh(sprint)
+            sprint_id = sprint.id
+
+        from okto_pulse.core.services.main import SprintService
+        async with db_factory() as db:
+            service = SprintService(db)
+            sprint = await service.get_sprint(sprint_id)
+            payload = SprintResponse.model_validate(sprint)
+        assert payload.lane_type == SprintLaneType.HOTFIX
+        assert payload.origin_sprint_id is None
+        assert payload.origin_bug_id == CARD_1_ID
+        assert payload.normal_sprint_created is False
 
     async def test_creation_via_schema_full(self, db_factory):
         """Sprint creation using SprintCreate schema — all fields."""
@@ -1202,6 +1449,129 @@ class TestSprintCardAssignment:
             card = await db.get(Card, CARD_1_ID)
             assert card.sprint_id == sprint_id
 
+    async def test_hotfix_lane_assigns_same_spec_bug_and_test_cards(self, db_factory):
+        """Hotfix lanes accept same-spec bug and regression test cards."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            bug = await _put_card(
+                db,
+                card_id=HOTFIX_BUG_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Hotfix bug",
+                card_type=CardType.BUG,
+            )
+            test = await _put_card(
+                db,
+                card_id=HOTFIX_TEST_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Hotfix regression test",
+                card_type=CardType.TEST,
+            )
+            sprint = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Hotfix Assignment Lane",
+                lane_type=SprintLaneType.HOTFIX,
+                created_by=AGENT_ID,
+            )
+            db.add(sprint)
+            await db.commit()
+            await db.refresh(sprint)
+            sprint_id = sprint.id
+
+            from okto_pulse.core.services.main import SprintService
+            service = SprintService(db)
+            count = await service.assign_tasks(
+                sprint_id,
+                [bug.id, test.id],
+                AGENT_ID,
+            )
+
+            assert count == 2
+            await db.refresh(bug)
+            await db.refresh(test)
+            assert bug.sprint_id == sprint_id
+            assert test.sprint_id == sprint_id
+
+    async def test_hotfix_lane_rejects_normal_cards_without_partial_assignment(self, db_factory):
+        """Normal implementation cards are forbidden in hotfix lanes."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            bug = await _put_card(
+                db,
+                card_id=HOTFIX_BUG_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Hotfix bug",
+                card_type=CardType.BUG,
+            )
+            normal = await _put_card(
+                db,
+                card_id=HOTFIX_NORMAL_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Normal implementation card",
+                card_type=CardType.NORMAL,
+            )
+            sprint = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Hotfix Rejects Normal Lane",
+                lane_type=SprintLaneType.HOTFIX,
+                created_by=AGENT_ID,
+            )
+            db.add(sprint)
+            await db.commit()
+            await db.refresh(sprint)
+
+            from okto_pulse.core.services.main import SprintService
+            service = SprintService(db)
+            with pytest.raises(SprintOperationError) as exc:
+                await service.assign_tasks(
+                    sprint.id,
+                    [bug.id, normal.id],
+                    AGENT_ID,
+                )
+
+            assert exc.value.code == "hotfix_lane_card_type_forbidden"
+            assert exc.value.facts["lane_type"] == "hotfix"
+            assert exc.value.facts["card_id"] == normal.id
+            assert exc.value.facts["card_type"] == "normal"
+            assert exc.value.facts["allowed_card_types"] == ["bug", "test"]
+            await db.refresh(bug)
+            await db.refresh(normal)
+            assert bug.sprint_id is None
+            assert normal.sprint_id is None
+
+    async def test_hotfix_lane_keeps_cross_spec_assignment_forbidden(self, db_factory):
+        """Cross-spec bug/test cards still fail before hotfix type checks."""
+        await _seed_board(db_factory)
+        await _seed_different_spec(db_factory)
+        async with db_factory() as db:
+            cross_spec_bug = await _put_card(
+                db,
+                card_id=HOTFIX_CROSS_SPEC_BUG_CARD_ID,
+                spec_id="sprint-crud-spec-diff",
+                title="Cross-spec hotfix bug",
+                card_type=CardType.BUG,
+            )
+            sprint = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Hotfix Cross-Spec Lane",
+                lane_type=SprintLaneType.HOTFIX,
+                created_by=AGENT_ID,
+            )
+            db.add(sprint)
+            await db.commit()
+            await db.refresh(sprint)
+
+            from okto_pulse.core.services.main import SprintService
+            service = SprintService(db)
+            with pytest.raises(ValueError, match="different spec"):
+                await service.assign_tasks(sprint.id, [cross_spec_bug.id], AGENT_ID)
+
+            await db.refresh(cross_spec_bug)
+            assert cross_spec_bug.sprint_id is None
+
 
 # ============================================================================
 # Sprint Listing Tests
@@ -1373,6 +1743,56 @@ class TestSprintRetrieval:
         assert sprint.spec_id == SPEC_ID
         assert sprint.board_id == BOARD_ID
 
+    async def test_sprint_response_cards_include_card_type(self, db_factory):
+        """Sprint details must expose card_type so UI can count tasks/tests/bugs."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            sprint = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Typed Cards Sprint",
+                created_by=AGENT_ID,
+            )
+            db.add(sprint)
+            await db.flush()
+
+            normal = await _put_card(
+                db,
+                card_id="sprint-crud-typed-normal",
+                spec_id=SPEC_ID,
+                title="Normal task",
+                card_type=CardType.NORMAL,
+            )
+            test = await _put_card(
+                db,
+                card_id="sprint-crud-typed-test",
+                spec_id=SPEC_ID,
+                title="Test task",
+                card_type=CardType.TEST,
+            )
+            bug = await _put_card(
+                db,
+                card_id="sprint-crud-typed-bug",
+                spec_id=SPEC_ID,
+                title="Bug task",
+                card_type=CardType.BUG,
+            )
+            for card in (normal, test, bug):
+                card.sprint_id = sprint.id
+            await db.commit()
+            sprint_id = sprint.id
+
+        from okto_pulse.core.services.main import SprintService
+        async with db_factory() as db:
+            service = SprintService(db)
+            sprint = await service.get_sprint(sprint_id)
+            payload = SprintResponse.model_validate(sprint).model_dump(mode="json")
+
+        cards_by_id = {card["id"]: card for card in payload["cards"]}
+        assert cards_by_id["sprint-crud-typed-normal"]["card_type"] == "normal"
+        assert cards_by_id["sprint-crud-typed-test"]["card_type"] == "test"
+        assert cards_by_id["sprint-crud-typed-bug"]["card_type"] == "bug"
+
     async def test_get_nonexistent_sprint(self, db_factory):
         """Test 25: Retrieve non-existent sprint should return None."""
         from okto_pulse.core.services.main import SprintService
@@ -1468,6 +1888,29 @@ class TestSprintHistory:
             assert update_entry.summary is not None
             assert "Updated" in update_entry.summary
 
+    async def test_lane_metadata_update_requires_draft_sprint(self, db_factory):
+        """Lane metadata cannot be mutated after sprint execution starts."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            sprint = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Active Lane Sprint",
+                status=SprintStatus.ACTIVE,
+                created_by=AGENT_ID,
+            )
+            db.add(sprint)
+            await db.commit()
+            await db.refresh(sprint)
+        sprint_id = sprint.id
+
+        from okto_pulse.core.services.main import SprintService
+        async with db_factory() as db:
+            service = SprintService(db)
+            data = SprintUpdate(lane_type=SprintLaneType.HOTFIX)
+            with pytest.raises(ValueError, match="lane metadata"):
+                await service.update_sprint(sprint_id, AGENT_ID, data)
+
     async def test_history_logged_on_creation(self, db_factory):
         """History should be logged on sprint creation."""
         await _seed_board(db_factory)
@@ -1480,6 +1923,228 @@ class TestSprintHistory:
             history = await service.list_history(sprint.id)
             action_types = [h.action for h in history]
             assert "created" in action_types
+
+    async def test_hotfix_history_and_activity_carry_lane_lineage(self, db_factory):
+        """Hotfix history/activity can reconstruct origin sprint, bug and lifecycle."""
+        await _seed_board(db_factory)
+        await _clean_sprints(db_factory, BOARD_ID)
+        from okto_pulse.core.services.main import SprintService
+
+        async with db_factory() as db:
+            origin = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Closed origin sprint",
+                status=SprintStatus.CLOSED,
+                created_by=AGENT_ID,
+            )
+            db.add(origin)
+            await db.flush()
+            origin_task = await _put_card(
+                db,
+                card_id=HOTFIX_ORIGIN_TASK_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Original delivered implementation",
+                card_type=CardType.NORMAL,
+            )
+            origin_task.status = CardStatus.DONE
+            origin_task.sprint_id = origin.id
+            bug = await _put_card(
+                db,
+                card_id=HOTFIX_BUG_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Post-closure bug",
+                card_type=CardType.BUG,
+            )
+            regression = await _put_card(
+                db,
+                card_id=HOTFIX_TEST_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Post-closure regression",
+                card_type=CardType.TEST,
+            )
+            await db.flush()
+            original_cards_before = set((await db.execute(
+                select(Card.id).where(Card.sprint_id == origin.id)
+            )).scalars().all())
+
+            service = SprintService(db)
+            sprint = await service.create_sprint(
+                BOARD_ID,
+                AGENT_ID,
+                SprintCreate(
+                    title="Post-closure hotfix lane",
+                    spec_id=SPEC_ID,
+                    lane_type=SprintLaneType.HOTFIX,
+                    origin_sprint_id=origin.id,
+                    origin_bug_id=bug.id,
+                ),
+            )
+            await service.assign_tasks(sprint.id, [bug.id, regression.id], AGENT_ID)
+            await db.refresh(bug)
+            await db.refresh(regression)
+            bug.status = CardStatus.DONE
+            regression.status = CardStatus.DONE
+            await db.flush()
+            await service.move_sprint(
+                sprint.id,
+                AGENT_ID,
+                SprintMove(status=SprintStatus.ACTIVE),
+            )
+            await service.move_sprint(
+                sprint.id,
+                AGENT_ID,
+                SprintMove(status=SprintStatus.REVIEW),
+            )
+            await service.submit_evaluation(
+                sprint.id,
+                AGENT_ID,
+                {"overall_score": 98, "recommendation": "approve"},
+            )
+            await service.move_sprint(
+                sprint.id,
+                AGENT_ID,
+                SprintMove(status=SprintStatus.CLOSED),
+            )
+
+            history = await service.list_history(sprint.id)
+            activity = list((await db.execute(
+                select(ActivityLog).where(
+                    ActivityLog.board_id == BOARD_ID,
+                    ActivityLog.action.in_([
+                        "sprint_created",
+                        "sprint_tasks_assigned",
+                        "sprint_moved",
+                        "sprint_evaluation_submitted",
+                    ]),
+                )
+            )).scalars().all())
+            activity = [
+                log
+                for log in activity
+                if isinstance(log.details, dict)
+                and log.details.get("sprint_id") == sprint.id
+            ]
+            origin_after = await db.get(Sprint, origin.id)
+            hotfix_after = await db.get(Sprint, sprint.id)
+            original_cards_after = set((await db.execute(
+                select(Card.id).where(Card.sprint_id == origin.id)
+            )).scalars().all())
+            bug_after = await db.get(Card, bug.id)
+            regression_after = await db.get(Card, regression.id)
+
+        assert origin_after.status == SprintStatus.CLOSED
+        assert hotfix_after.status == SprintStatus.CLOSED
+        assert original_cards_before == {origin_task.id}
+        assert original_cards_after == original_cards_before
+        assert bug_after.status == CardStatus.DONE
+        assert bug_after.sprint_id == sprint.id
+        assert regression_after.status == CardStatus.DONE
+        assert regression_after.sprint_id == sprint.id
+        assert {h.action for h in history} >= {
+            "created",
+            "tasks_assigned",
+            "status_changed",
+            "evaluation_submitted",
+        }
+        for entry in history:
+            if entry.action not in {
+                "created",
+                "tasks_assigned",
+                "status_changed",
+                "evaluation_submitted",
+            }:
+                continue
+            change_payload = entry.changes[0]
+            assert change_payload["lane_type"] == "hotfix"
+            assert change_payload["origin_sprint_id"] == origin.id
+            assert change_payload["origin_bug_id"] == bug.id
+            assert change_payload["normal_sprint_created"] is False
+
+        assert activity
+        for log in activity:
+            assert log.details["lane_type"] == "hotfix"
+            assert log.details["origin_sprint_id"] == origin.id
+            assert log.details["origin_bug_id"] == bug.id
+            assert log.details["normal_sprint_created"] is False
+
+
+class TestSprintAnalyticsLaneBreakdown:
+    """Tests for `/boards/{board_id}/analytics/sprints` lane separation."""
+
+    async def test_sprint_analytics_separates_normal_and_hotfix_lanes(self, db_factory):
+        await _seed_board(db_factory)
+        await _clean_sprints(db_factory, BOARD_ID)
+        async with db_factory() as db:
+            spec = await db.get(Spec, SPEC_ID)
+            spec.status = SpecStatus.DONE
+            normal_one = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Normal delivery sprint 1",
+                status=SprintStatus.CLOSED,
+                lane_type=SprintLaneType.NORMAL,
+                created_by=AGENT_ID,
+            )
+            normal_two = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Normal delivery sprint 2",
+                status=SprintStatus.ACTIVE,
+                lane_type=SprintLaneType.NORMAL,
+                created_by=AGENT_ID,
+            )
+            hotfix = Sprint(
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Hotfix lane",
+                status=SprintStatus.ACTIVE,
+                lane_type=SprintLaneType.HOTFIX,
+                origin_sprint_id="closed-origin",
+                origin_bug_id=HOTFIX_BUG_CARD_ID,
+                created_by=AGENT_ID,
+            )
+            db.add_all([normal_one, normal_two, hotfix])
+            await db.flush()
+            normal_card_one = await db.get(Card, CARD_1_ID)
+            normal_card_one.sprint_id = normal_one.id
+            normal_card_two = await db.get(Card, CARD_2_ID)
+            normal_card_two.sprint_id = normal_two.id
+            bug = await _put_card(
+                db,
+                card_id=HOTFIX_BUG_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Bug in hotfix lane",
+                card_type=CardType.BUG,
+            )
+            bug.sprint_id = hotfix.id
+            await db.commit()
+
+            from okto_pulse.core.api.analytics import board_sprints_analytics
+
+            payload = await board_sprints_analytics(
+                BOARD_ID,
+                user_id=AGENT_ID,
+                db=db,
+            )
+
+        summary = payload["summary"]
+        assert summary["total_sprints"] == 3
+        assert summary["normal_sprints_total"] == 2
+        assert summary["hotfix_lanes_total"] == 1
+        assert summary["active_hotfix_lanes"] == 1
+
+        by_id = {row["sprint_id"]: row for row in payload["sprints"]}
+        normal_rows = [row for row in payload["sprints"] if row["lane_type"] == "normal"]
+        hotfix_rows = [row for row in payload["sprints"] if row["lane_type"] == "hotfix"]
+        assert {row["sprint_id"] for row in normal_rows} == {normal_one.id, normal_two.id}
+        assert {row["sprint_id"] for row in hotfix_rows} == {hotfix.id}
+        assert by_id[normal_one.id]["normal_sprint_created"] is True
+        assert by_id[normal_two.id]["normal_sprint_created"] is True
+        assert by_id[hotfix.id]["lane_type"] == "hotfix"
+        assert by_id[hotfix.id]["origin_sprint_id"] == "closed-origin"
+        assert by_id[hotfix.id]["origin_bug_id"] == HOTFIX_BUG_CARD_ID
+        assert by_id[hotfix.id]["normal_sprint_created"] is False
 
 
 # ============================================================================

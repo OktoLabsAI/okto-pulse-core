@@ -129,6 +129,37 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     )),
 )
 
+
+def stable_rel_type_entries() -> list[dict[str, Any]]:
+    """Return one schema-catalog entry per stable relationship name.
+
+    ``REL_TYPES`` contains single endpoint-pair relationships, while
+    ``MULTI_REL_TYPES`` contains relationship names that support multiple
+    endpoint pairs under one table. Schema introspection is consumed as a
+    catalog of available edge *names*, so multi-pair relationships must appear
+    once with their endpoint pairs attached instead of being omitted.
+    """
+
+    entries: list[dict[str, Any]] = [
+        {"name": rel_name, "from": from_type, "to": to_type}
+        for rel_name, from_type, to_type in REL_TYPES
+    ]
+    entries.extend(
+        {
+            "name": rel_name,
+            "from": "multiple",
+            "to": "multiple",
+            "multi": True,
+            "pairs": [
+                {"from": from_type, "to": to_type}
+                for from_type, to_type in pairs
+            ],
+        }
+        for rel_name, pairs in MULTI_REL_TYPES
+    )
+    return entries
+
+
 # Common attributes shared across every node type — written once in the DDL
 # template below. Embedding is always declared even on types without a vector
 # index so nothing breaks if a future tool queries similarity on them.

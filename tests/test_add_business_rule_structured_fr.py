@@ -9,9 +9,13 @@ index resolver in add/update_business_rule and add/update_api_contract did
 and crashed with ``Input should be a valid string ... input_type=dict``. The
 text path (``token in frs``) also always failed (a list of dicts never contains
 the bare text). FR->BR/contract linkage was therefore impossible, which blocked
-fr_coverage and the spec validation gate. Fix: resolve via the shared
-``_parse_linked_requirements`` helper (structured-FR safe), matching how
-decisions/IR/OR already resolve.
+fr_coverage and the spec validation gate.
+
+IMPL-1 (spec 9d66847f): write-path now resolves to canonical fr_id strings
+(not indices) via ``resolve_linked_requirements_to_ids``. Fail-closed: any
+unresolved token aborts before persistence. The tolerant read resolver
+(``resolve_linked_fr_indices``) is unchanged — it still handles both fr_ids
+and indices on read.
 """
 
 from __future__ import annotations
@@ -123,8 +127,9 @@ async def test_add_business_rule_index_structured_fr(db_factory):
     spec = await _read_spec(spec_id)
     assert len(spec.business_rules) == 1
     linked = spec.business_rules[0]["linked_requirements"]
-    # Persisted as list[str], NOT a dict — normalized to the canonical FR index.
-    assert linked == ["0"], linked
+    # IMPL-1: persisted as canonical fr_id, not index. Index "0" resolves to
+    # fr_1111aaaa. The tolerant read resolver still maps fr_ids back to indices.
+    assert linked == ["fr_1111aaaa"], linked
     assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {0}
 
 
@@ -143,8 +148,9 @@ async def test_add_business_rule_text_structured_fr(db_factory):
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
     linked = spec.business_rules[0]["linked_requirements"]
-    # text token normalized to the canonical FR index "0"
-    assert linked == ["0"], linked
+    # IMPL-1: text token resolves to canonical fr_id "fr_1111aaaa".
+    # The tolerant read resolver maps fr_ids back to indices.
+    assert linked == ["fr_1111aaaa"], linked
     assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {0}
 
 
@@ -163,8 +169,9 @@ async def test_add_business_rule_fr_id_structured_fr(db_factory):
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
     linked = spec.business_rules[0]["linked_requirements"]
-    # fr_id token normalized to the canonical FR index "1"
-    assert linked == ["1"], linked
+    # IMPL-1: fr_id token persisted as canonical fr_id directly.
+    # The tolerant read resolver maps fr_ids back to indices.
+    assert linked == ["fr_2222bbbb"], linked
     assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {1}
 
 
@@ -180,7 +187,16 @@ async def test_add_business_rule_index_out_of_range(db_factory):
         then="t",
         linked_requirements="9",
     )
-    assert "error" in payload and "not found" in payload["error"], payload
+    # IMPL-1: fail-closed; unresolved token aborts before persistence.
+    assert "error" in payload and "Unresolved" in payload["error"], payload
+    # ...AND the write is ATOMIC: re-read the spec and prove the business_rule
+    # was NOT persisted (a bug that returns the error but still appends the BR
+    # would be caught here — the atomicity clause of the `then`).
+    spec = await _read_spec(spec_id)
+    assert (spec.business_rules or []) == [], (
+        "fail-closed must be atomic: nothing persisted on an unresolved FR ref, "
+        f"got {spec.business_rules!r}"
+    )
 
 
 # ====================================================================
@@ -202,5 +218,7 @@ async def test_add_api_contract_index_structured_fr(db_factory):
     spec = await _read_spec(spec_id)
     assert len(spec.api_contracts) == 1
     linked = spec.api_contracts[0]["linked_requirements"]
-    assert linked == ["1"], linked  # normalized to canonical FR index
+    # IMPL-1: index "1" resolves to canonical fr_id "fr_2222bbbb".
+    # The tolerant read resolver maps fr_ids back to indices.
+    assert linked == ["fr_2222bbbb"], linked
     assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {1}

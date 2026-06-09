@@ -46,6 +46,17 @@ version: "1.0"
 
 ## Query Timing — MANDATORY at Every Stage
 
+> ### Degraded-KG Fallback Rule — `kg_health`-first (single source of truth)
+>
+> Before running ANY mandatory KG query set below — and in particular the Stage 1 ideation triad — call `okto_pulse_kg_health(board_id)` **first** and read its `graph_state` field. The graph is **degraded** when `graph_state` is one of exactly `recovery_needed` or `quarantined` (these two values are the `_RISK_STATE_HARD_REJECT` predicate; no other `graph_state` value is a degraded trigger). When the graph is degraded, follow these steps in order:
+>
+> 1. **Call `okto_pulse_kg_health(board_id)` first** and read `graph_state`.
+> 2. **Branch on the degraded `graph_state`** (`recovery_needed` or `quarantined`): the mandatory KG queries are EXPECTED to be unavailable. `okto_pulse_kg_get_learning_from_bugs` in particular returns a structured `graph_unavailable` whose message carries the hint `Use the explicit KG Health recovery flow`; on a degraded board this `graph_unavailable` is the EXPECTED signal — do not retry it in a loop.
+> 3. **Record the degraded `graph_state` in the ideation** — a one-line note such as `KG degraded: graph_state=<recovery_needed|quarantined>; Stage 1 triad skipped under the Degraded-KG Fallback Rule.`
+> 4. **Proceed past `okto_pulse_evaluate_ideation` with a warning** — do not block on the unavailable triad. Skipping the Stage 1 triad on a degraded graph is expected-and-logged and is **not a protocol violation**.
+>
+> This rule keys ONLY on the existing `graph_state` field and the existing structured `graph_unavailable`. Recovering a degraded graph is the separate KG Health recovery flow (an operator-driven path, out of scope for this rule), and this rule does **not** define any new error code or response envelope for the degraded case. When `graph_state` is not one of the two degraded values, run the mandatory query sets normally.
+
 **Stage 1 — Ideation (before moving to `evaluating` or answering any Q&A)**
 
 | Query | Why it's required |
@@ -107,7 +118,7 @@ version: "1.0"
 
 Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment the counter — there's no row-level node id to attribute to. That's intentional: aggregations are diagnostic, not consumption.
 
-**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at` and `nodes_recomputed_in_last_tick`, populated by the daily APScheduler tick (03:00 UTC). When `last_decay_tick_at` is `null` the daily worker hasn't run yet on this deployment — score freshness is bounded by the on-read `_apply_decay_reorder` until the first tick lands.
+**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, and `decay_scheduler_diagnostics`, populated from the daily APScheduler tick ledger (03:00 UTC). When the diagnostics report `operational_debt=true` but `graph_recovery_required=false`, treat it as scheduler/operations debt, not as a rebuild trigger. Score freshness is still bounded by the on-read `_apply_decay_reorder` until the scheduled tick lands.
 
 ## When and How to Consolidate — Mandatory Triggers
 
@@ -164,7 +175,7 @@ Before creating any Decision or Constraint, run:
 
 ### KG Health
 
-`okto_pulse_kg_health(board_id)` — returns a JSON health snapshot. It carries the KG-01 contract fields (`board_id`, `graph_state`, `discovery_state`, `overall_state`, `metric_status`, `correlation_id`, `checked_at`, …) alongside the legacy aggregation fields (`queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `schema_version`, `contradict_warn_count`) and the daily-tick fields `last_decay_tick_at` / `nodes_recomputed_in_last_tick`.
+`okto_pulse_kg_health(board_id)` — returns a JSON health snapshot. It carries the KG-01 contract fields (`board_id`, `graph_state`, `discovery_state`, `overall_state`, `metric_status`, `correlation_id`, `checked_at`, …) alongside the legacy aggregation fields (`queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `schema_version`, `contradict_warn_count`), the daily-tick fields `last_decay_tick_at` / `nodes_recomputed_in_last_tick`, `decay_scheduler_diagnostics`, and `storage_footprint_proxy`.
 
 **When to consult:** before long consolidation cycles, after flagging contradictions, when debugging stale ranking (`default_score_ratio > 0.7`).
 

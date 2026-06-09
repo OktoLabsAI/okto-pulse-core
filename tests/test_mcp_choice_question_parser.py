@@ -95,10 +95,13 @@ def test_no_legacy_options_split_on_comma_in_choice_tools(server_source: str):
 
 @pytest.mark.parametrize("tool_name", CHOICE_TOOL_NAMES)
 def test_each_tool_routes_through_parse_multi_value(server_source: str, tool_name: str):
-    """Every choice/answer tool must contain `parse_multi_value(`."""
+    """Every choice/answer tool must contain ``parse_multi_value(`` or
+    ``coerce_to_list_str(`` — the latter routes through parse_multi_value
+    internally and is the preferred call site for Union-typed parameters
+    (spec R3a IMPL-1, FR1/FR2)."""
     body = _slice_tool(server_source, tool_name)
-    assert "parse_multi_value(" in body, (
-        f"{tool_name} must call parse_multi_value (see helpers.py)"
+    assert "parse_multi_value(" in body or "coerce_to_list_str(" in body, (
+        f"{tool_name} must call parse_multi_value or coerce_to_list_str (see helpers.py)"
     )
 
 
@@ -127,8 +130,12 @@ def test_docstrings_document_json_and_pipe_formats(
     assert "JSON array" in docstring, (
         f"{tool_name} docstring must mention 'JSON array' as preferred input"
     )
-    assert "parse_multi_value" in docstring, (
-        f"{tool_name} docstring must reference parse_multi_value helper"
+    # R1.1: after docstring compaction the inline note keeps the JSON-array
+    # guidance and points to the multivalue resource for the full format rules
+    # (the parse_multi_value routing itself is verified at the body level by
+    # test_routes_through_parse_multi_value, not via the user-facing docstring).
+    assert "okto-pulse://reference/multivalue" in docstring, (
+        f"{tool_name} docstring must point to the multivalue resource"
     )
 
 

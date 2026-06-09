@@ -1,0 +1,132 @@
+"""In-process ring-buffer collector for memory-pressure samples and WAL/commit
+failure events (Spec R2c, FR1/FR4, TR1).
+
+The ``MemoryPressureCorrelator`` (memory_pressure.py) is intentionally pure —
+it operates on pre-collected iterables. This module is its stateful companion:
+it keeps per-board ``deque`` buffers (thread-safe, module-level singletons) so
+that ``kg_health_service.get_kg_health`` can feed *real* observations to the
+correlator instead of the empty-list stubs that always returned ``unconfirmed``.
+
+Design constraints (from the spec):
+* Buffers are **module-level** singletons (dict keyed by board_id). Process
+  restart clears them — the ring-buffer is an in-process observability aid, not
+  durable storage.
+* maxlen=200 for ``HighWaterMarkSample`` (AC14: push 201 → len==200).
+* maxlen=50 for ``FailureEvent`` (one per WAL/commit failure, rate is low).
+* All mutations are guarded by a single ``threading.Lock`` so background
+  telemetry threads can call ``record_*`` safely without holding the asyncio
+  event loop.
+* Reads (``get_samples`` / ``get_failures``) return a **snapshot list** (not the
+  deque itself) so the correlator's for-loop sees a stable sequence even if
+  another thread appends during iteration.
+"""
+
+from __future__ import annotations
+
+import threading
+from collections import deque
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from okto_pulse.core.kg.memory_pressure import FailureEvent, HighWaterMarkSample
+
+# ---------------------------------------------------------------------------
+# Module-level state (singletons)
+# ---------------------------------------------------------------------------
+
+_lock = threading.Lock()
+
+# board_id -> deque[HighWaterMarkSample] (maxlen 200)
+_samples: dict[str, deque["HighWaterMarkSample"]] = {}
+
+# board_id -> deque[FailureEvent] (maxlen 50)
+_failures: dict[str, deque["FailureEvent"]] = {}
+
+_SAMPLES_MAXLEN = 200
+_FAILURES_MAXLEN = 50
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def record_sample(board_id: str, sample: "HighWaterMarkSample") -> None:
+    """Append a ``HighWaterMarkSample`` to the per-board ring buffer.
+
+    Thread-safe. When the buffer is full the oldest sample is silently
+    dropped (deque maxlen semantics) so the newest observations are always
+    accessible to the correlator.
+    """
+    with _lock:
+        if board_id not in _samples:
+            _samples[board_id] = deque(maxlen=_SAMPLES_MAXLEN)
+        _samples[board_id].append(sample)
+
+
+def record_failure(board_id: str, event: "FailureEvent") -> None:
+    """Append a ``FailureEvent`` to the per-board ring buffer.
+
+    Thread-safe.  maxlen=50 because WAL/commit failures are rare; keeping
+    the 50 most recent is more than sufficient for the 10-minute correlation
+    window.
+    """
+    with _lock:
+        if board_id not in _failures:
+            _failures[board_id] = deque(maxlen=_FAILURES_MAXLEN)
+        _failures[board_id].append(event)
+
+
+def get_samples(board_id: str) -> list["HighWaterMarkSample"]:
+    """Return a snapshot list of all buffered samples for ``board_id``.
+
+    Returns an empty list (not None) when no samples have been recorded yet.
+    The list is a copy — callers may iterate it freely without holding the
+    module lock.
+    """
+    with _lock:
+        buf = _samples.get(board_id)
+        return list(buf) if buf is not None else []
+
+
+def get_failures(board_id: str) -> list["FailureEvent"]:
+    """Return a snapshot list of all buffered failure events for ``board_id``.
+
+    Returns an empty list when no failures have been recorded.
+    """
+    with _lock:
+        buf = _failures.get(board_id)
+        return list(buf) if buf is not None else []
+
+
+def clear_board(board_id: str) -> None:
+    """Remove all buffered data for ``board_id``.
+
+    Intended for tests that need per-test isolation.  Production code
+    should not call this; the ring buffers are meant to accumulate until
+    process restart.
+    """
+    with _lock:
+        _samples.pop(board_id, None)
+        _failures.pop(board_id, None)
+
+
+def clear_all() -> None:
+    """Clear all board buffers.
+
+    Test helper — resets the entire module-level state so tests that share a
+    process don't bleed samples into each other.
+    """
+    with _lock:
+        _samples.clear()
+        _failures.clear()
+
+
+__all__ = [
+    "clear_all",
+    "clear_board",
+    "get_failures",
+    "get_samples",
+    "record_failure",
+    "record_sample",
+]

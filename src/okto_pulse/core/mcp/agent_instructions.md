@@ -8,7 +8,7 @@ Use `resources/read` on the URIs below to fetch the full workflow when you need 
 
 | If you are about to… | Resource URI |
 |---|---|
-| Start any session | **Pre-Flight Checklist** (this file) |
+| Start any session | `okto-pulse://workflows/preflight` |
 | Capture user stories / manage topics before ideation | `okto-pulse://workflows/stories` |
 | Reduce ambiguity at ideation (ASK before advancing) | `okto-pulse://workflows/ideations` |
 | Run a deep investigation at refinement | `okto-pulse://workflows/refinements` |
@@ -24,87 +24,27 @@ Use `resources/read` on the URIs below to fetch the full workflow when you need 
 | Move/transition any work item | `okto-pulse://reference/transitions` |
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |
+| Choose a response projection profile (summary/detail/full/legacy) | `okto-pulse://reference/projection-profiles` |
 
-**Single sources of truth:**
-- Session/card pre-flight sequence → **Pre-Flight Checklist** (this file)
-- `get_*_context` before every move → **Consolidated Context Retrieval** (this file)
-- KG query timing per stage → `okto-pulse://workflows/kg`
-- KG consolidation triggers → `okto-pulse://workflows/kg`
-- Spec/bug cognitive closeout → `okto-pulse://workflows/kg`
-- UI layouts as first-class artifacts → `okto-pulse://workflows/cards` (2.7a)
-- Architecture as a first-class structural artifact → `okto-pulse://workflows/cards` (2.7b)
-- Error messages → `okto-pulse://reference/errors`
-
----
+**Single sources of truth:** Session/card pre-flight sequence → `okto-pulse://workflows/preflight`; `get_*_context` before every move → Consolidated Context Retrieval (below); KG query/consolidation timing + cognitive closeout → `okto-pulse://workflows/kg`; error messages → `okto-pulse://reference/errors`.
 
 ## Resource Fetching Protocol — MANDATORY
 
-You MUST call `resources/read` on the matching URI BEFORE operating on:
+Before operating on an entity you MUST `resources/read` its matching URI from the Quick Navigation table above — this is not optional. In particular:
 
-| Action | Resource to fetch first |
-|---|---|
-| Move ideation status | `okto-pulse://workflows/ideations` |
-| Move refinement status | `okto-pulse://workflows/refinements` |
-| Saturate or validate spec | `okto-pulse://workflows/specs` |
-| Execute card (any move past `not_started`) | `okto-pulse://workflows/cards` |
-| Operate sprint (any move) | `okto-pulse://workflows/sprints` |
-| KG consolidation or query | `okto-pulse://workflows/kg` |
-| Move any entity (transition matrix) | `okto-pulse://reference/transitions` |
+- **Move ideation/refinement/spec status, saturate or validate a spec** → the matching `okto-pulse://workflows/*` file.
+- **Execute a card (any move past `not_started`)** → `okto-pulse://workflows/cards`.
+- **Operate a sprint (any move)** → `okto-pulse://workflows/sprints`.
+- **KG consolidation or query** → `okto-pulse://workflows/kg`.
+- **Any status transition** → `okto-pulse://reference/transitions`.
 
-Cache the resource within the session — re-fetch only if you switch domains or the workflow file changes.
+Cache the resource within the session; re-fetch only when you switch domains or the workflow file changes. The MCP server does not prove that you read context — your audit trail and artifact quality do.
 
 ---
 
 ## Pre-Flight Checklist (READ FIRST)
 
-Every time you start a session or pick up a new task, follow the matching sequence below.
-
-### Session pre-flight — before any board work
-
-```
-1. okto_pulse_get_my_profile()             → know who you are
-2. okto_pulse_list_my_boards()             → know what you have access to
-3. okto_pulse_get_unseen_summary(board_id) → check mentions + recent activity
-4. okto_pulse_get_board_guidelines(board_id) → read rules set by the board owner
-```
-
-### Entity context pre-flight — before moving or validating anything
-
-```
-ideation   → okto_pulse_get_ideation_context(...)
-refinement → okto_pulse_get_refinement_context(...)
-spec       → okto_pulse_get_spec_context(...)
-sprint     → okto_pulse_get_sprint_context(...)
-card       → okto_pulse_get_task_context(...)
-```
-
-### Card execution pre-flight — before implementation work
-
-```
-1. okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)
-2. okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id)
-3. okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id)
-4. okto_pulse_copy_architecture_to_card(board_id, spec_id, card_id)
-5. okto_pulse_move_card(status="in_progress")
-6. BEGIN WORK
-```
-
-**Never skip card execution steps 1 and 5.**
-
-This is an operational protocol rule: the MCP server does not prove that you read context; your audit trail and artifact quality do.
-
-### Resource Gate pre-flight — mandatory before completion
-
-Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types.
-
-| Work item | Resource Gate `entity_type` |
-|---|---|
-| Ideation | `ideation` |
-| Refinement | `refinement` |
-| Spec | `spec` |
-| Card, task, test, bug | `card` |
-
-Before finalization, call `okto_pulse_get_resource_gate_summary(board_id, entity_type, entity_id)` and resolve every `missing` resource by attaching the artifact or marking N/A with `justification`.
+**Before any board work, `resources/read okto-pulse://workflows/preflight`.** It carries the four mandatory sequences: **session pre-flight** (profile → boards → unseen → guidelines), **entity-context pre-flight** (`get_*_context` with `profile="full"` before any move/validation), **card-execution pre-flight** (`okto_pulse_get_task_context` → copy mockups/knowledge/architecture → `okto_pulse_move_card("in_progress")` → BEGIN WORK; never skip steps 1 and 5), and **Resource Gate pre-flight** (resolve every `missing` Architecture/Mockup/Knowledge before completion). The full step-by-step lives in that resource; this pointer stays inline so the bootstrap survives even if the instructions blob is truncated.
 
 ---
 
@@ -130,80 +70,37 @@ Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_decision`). Be
 
 ## Available Tools — Critical Categories
 
-Tool schemas are delivered via the MCP `tools/list` protocol (lazy). Below are the categories you MUST know upfront; the full catalog is at `okto-pulse://reference/tools_catalog`.
+Tool schemas are delivered via the MCP `tools/list` protocol (lazy). Full catalog grouped by domain: `okto-pulse://reference/tools_catalog`. Per-tool long-form docs (args/returns/examples): `okto-pulse://reference/tool-docs/{family}`.
 
-### Identity & Context (session pre-flight)
-`okto_pulse_get_my_profile`, `okto_pulse_list_my_boards`, `okto_pulse_get_unseen_summary`, `okto_pulse_get_board_guidelines`
+- **Session pre-flight**: `okto_pulse_get_my_profile`, `okto_pulse_list_my_boards`, `okto_pulse_get_unseen_summary`, `okto_pulse_get_board_guidelines`.
+- **Context (MANDATORY before any validation/move)**: `okto_pulse_get_{task,ideation,refinement,spec,sprint}_context`, `okto_pulse_get_traceability_report`.
+- **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec,sprint}`, `submit_{task_validation,spec_validation,spec_evaluation,sprint_evaluation}`.
+- **KG query (before planning at every stage)**: `okto_pulse_kg_{get_decision_history,get_related_context,find_contradictions,find_similar_decisions,query_global}`.
 
-### Consolidated Context Retrieval (MANDATORY before any validation/move)
-`okto_pulse_get_task_context`, `okto_pulse_get_ideation_context`, `okto_pulse_get_refinement_context`, `okto_pulse_get_spec_context`, `okto_pulse_get_sprint_context`, `okto_pulse_get_traceability_report`
-
-### Validation & Move Gates
-`okto_pulse_move_card`, `okto_pulse_move_ideation`, `okto_pulse_move_refinement`, `okto_pulse_move_spec`, `okto_pulse_move_sprint`, `okto_pulse_submit_task_validation`, `okto_pulse_submit_spec_validation`, `okto_pulse_submit_spec_evaluation`, `okto_pulse_submit_sprint_evaluation`
-
-### KG — Query (call before planning at every stage)
-`okto_pulse_kg_get_decision_history`, `okto_pulse_kg_get_related_context`, `okto_pulse_kg_find_contradictions`, `okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_query_global`
+### Response projection profiles — summary-first reads
+High-volume reads can be returned under a projection profile — see `okto-pulse://reference/projection-profiles`. Use `summary` (the default/slim profile) for cheap exploration; `detail`/`full` to read an item's body; `legacy` for compatibility. **Summary-first is for exploration ONLY.** It never replaces the mandatory full `get_*_context` read required before any status-changing move (moving a card/spec/sprint, submitting a gate). Always read full context before you mutate.
 
 ---
 
-## KG health and operational signals
+## KG health and operational signals (stop-rule)
 
-Spec KG-01 (a7659ba3) ships an explicit KG Health surface so agents stop relying on heuristics like "graph feels stale" or "let me just rebuild". Read this **before** you ask a user to run a tick, force a rebuild, or escalate "KG looks broken".
-
-### When to consult
-
-Consult KG health proactively when:
-
-1. You're about to call a KG mutation path (`okto_pulse_kg_commit_consolidation`, `okto_pulse_kg_tick_run_now`, anything in the rebuild/reset family). If `overall_state ∈ {recovery_needed, quarantined}` you MUST stop and surface the state to the user — do not write.
-2. A KG query returned empty/stale results and you're tempted to "fix it" by running a tick. Check `metric_status` first; an `unavailable` status means telemetry is the problem, not the data.
-3. `contradict_penalty` looked off in a recent decision history result, or you're investigating why `decay` (relevance score recomputation) seems to have skipped a node. Health surfaces `last_decay_tick_at`, `nodes_recomputed_in_last_tick` and the `contradict_warn_count` (alias of CONTRADICT_PENALTY warnings) so you can answer those questions without poking the storage.
-
-### How to consult
-
-Prefer the MCP tool over the REST endpoint — it is the agent-facing surface and uses your session context automatically:
-
-- **MCP**: `okto_pulse_kg_health(board_id=...)` — same payload, no auth dance.
-- **REST**: `GET /api/v1/kg/health?board_id=...` exists for the dashboard SPA and for ad-hoc curl. Use it only when MCP is unavailable.
-
-### Reading the payload
-
-Contract fields you must understand (`api_3ed9037f`):
-
-| Field | Meaning |
-|---|---|
-| `graph_state` / `discovery_state` | Per-graph state from the 5-state machine (`healthy`, `at_risk`, `backpressure`, `recovery_needed`, `quarantined`). |
-| `overall_state` | Worst-case fold of the two above. This is what gates your decision to write/rebuild. |
-| `metric_status` | `available` or `unavailable`. **`unavailable` never means "graph is fine, sensor is just off"** — BR br_2a8cdfdc forbids degrading to healthy when telemetry can't be read. Treat the graph as `at_risk` until telemetry recovers. |
-| `classification_reason` | Single-string explanation of why the state was assigned (e.g. `graph:metric.unavailable`). |
-| `correlation_id` | Join key against `recent_events` and against observability logs. Quote this when reporting an issue. |
-| `current_kg_generation_id` | Identifies the active graph generation. Changes after a clean rebuild; same generation across health calls means storage hasn't been replaced. |
-| `recent_events` | Recent state transitions, WAL/commit failures and memory-pressure samples. Empty when the safe observability path (KG-01.5) hasn't shipped yet. |
-| `memory_pressure_status` | `unconfirmed` or `confirmed_primary_cause`. **Only** `confirmed_primary_cause` justifies recommending a memory-pressure mitigation — anything else means the deterministic criterion (>90% in ≥3 samples within 10 min before WAL/commit failure) did NOT match. |
-| Legacy fields (`contradict_warn_count`, `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, `default_score_ratio`, …) | Preserved for backward compat with the existing dashboard. Use them to answer questions about `contradict_penalty` warnings and `decay` runs without inspecting storage directly. |
-
-### What you MUST NOT do
-
-- Never call `okto_pulse_kg_health` thinking it will fix anything — it is **read-only** by contract. It does not mutate graph or discovery storage, run a tick, or clear quarantine.
-- Never advise the user to "just rebuild" when `overall_state ∈ {at_risk, backpressure}`. The KG-01 hardening flow is: surface state → wait for backpressure to drain / sensors to recover → only then consider rebuild via KG-02 paths.
-- Never override `metric_status=unavailable` with your own interpretation. The conservative default is the BR. Surface the unknown.
+Before any KG mutation (`okto_pulse_kg_commit_consolidation`, `okto_pulse_kg_tick_run_now`, `okto_pulse_kg_rebuild_preflight` / `okto_pulse_kg_rebuild_confirm` / `okto_pulse_kg_rebuild_run`) call `okto_pulse_kg_health(board_id=...)` — it is **read-only**. **Stop-rule:** if `overall_state == quarantined` you MUST stop and surface the state to the user — do not write. **Exception: `recovery_needed` is NOT a stop condition for the rebuild family** — `okto_pulse_kg_rebuild_preflight` → `_confirm` → `_run` is the prescribed exit from `recovery_needed`; those three tools admit `recovery_needed` explicitly. `metric_status=unavailable` never means healthy — treat the graph as `at_risk`. Never advise "just rebuild" on `at_risk`/`backpressure`; surface state and wait for drain/recovery first. Full payload contract (field meanings, when-to-consult, must-not-do): **`okto-pulse://reference/kg-health`**.
 
 ---
 
 ## Rules (canonical summary)
 
-1. **Follow board guidelines** — before any work, call `okto_pulse_get_board_guidelines(board_id)`.
-2. **Process mentions first** — `okto_pulse_list_my_mentions` → act → `okto_pulse_mark_as_seen`.
-3. **Honor the card execution pre-flight sequence before ANY card work**.
-4. **Never move an entity without its full context** — call the matching `get_*_context` before every status change.
-5. **Query the KG at every planning stage** — ideation, refinement AND spec each have a required query set. See `okto-pulse://workflows/kg`.
-6. **Consolidate on every mandatory trigger** — see `okto-pulse://workflows/kg`.
-7. **Comment as you work** — at starting, key decisions, obstacles, and completion.
-8. **Use @Name in comments and Q&A** — directed items become unseen mentions for the target.
-9. **Respect dependencies** — don't force-move blocked cards; resolve blockers first.
-10. **Create sub-tasks instead of over-scoping** — one card does one thing.
-11. **Keep your profile current** — update `objective` via `okto_pulse_update_my_profile` as your focus evolves.
-12. **Never ASCII-draw UI in text fields** — use `okto_pulse_add_screen_mockup` with HTML + Tailwind.
-13. **Multi-field tool calls** — avoid literal protocol tags (`<parameter>`, `</parameter>`) inside string content. See MCP XML tags bug pattern.
+1. **Board guidelines first** — `okto_pulse_get_board_guidelines(board_id)` before any work.
+2. **Mentions first** — `okto_pulse_list_my_mentions` → act → `okto_pulse_mark_as_seen`.
+3. **Card execution pre-flight before ANY card work** (sequence above).
+4. **Never move an entity without its full `get_*_context`** before the status change.
+5. **Query the KG at every planning stage** (ideation/refinement/spec) and **consolidate on every mandatory trigger** — `okto-pulse://workflows/kg`.
+6. **Comment as you work** — start, key decisions, obstacles, completion. Use `@Name` to direct items (they become unseen mentions).
+7. **Respect dependencies** — resolve blockers before moving blocked cards.
+8. **One card does one thing** — create sub-tasks instead of over-scoping.
+9. **Keep `objective` current** via `okto_pulse_update_my_profile`.
+10. **Never ASCII-draw UI** — use `okto_pulse_add_screen_mockup` (HTML + Tailwind).
+11. **Avoid literal protocol tags** (`<parameter>`) inside string content — see MCP XML tags bug pattern.
 
 ---
 

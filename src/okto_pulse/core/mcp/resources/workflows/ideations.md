@@ -9,6 +9,8 @@ version: "1.0"
 Ideations are the starting point for solution definition. Stories may exist before them as optional intake context. When asked to evaluate or create an ideation:
 
 > **MANDATORY — Query the KG before evaluating.** Before calling `okto_pulse_evaluate_ideation`, you MUST run the Stage 1 query set from the "Query Timing" section of the Knowledge Graph chapter: `okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_query_global`, `okto_pulse_kg_get_learning_from_bugs`. Cite any hit explicitly in the ideation (decision_id + one-line summary). Failing to do this is a protocol violation — duplicate ideations and cross-board conflicts are traced back to this skip.
+>
+> **Degraded-KG exception (`kg_health`-first):** if `okto_pulse_kg_health` reports a degraded `graph_state` (`recovery_needed` or `quarantined`), the mandatory triad above is EXPECTED to be unavailable — follow the **Degraded-KG Fallback Rule** in the "Query Timing" section of the Knowledge Graph chapter: record the degraded `graph_state` in the ideation and proceed. The triad skip on a degraded graph is not treated as a violation.
 
 1. **Evaluate scope**: Use `okto_pulse_evaluate_ideation` with scores 1-5 for each dimension:
 

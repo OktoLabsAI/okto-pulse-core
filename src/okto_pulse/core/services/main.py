@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import secrets
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -52,6 +53,7 @@ from okto_pulse.core.models.db import (
     StoryStatus,
     Sprint,
     SprintHistory,
+    SprintLaneType,
     SprintQAItem,
     SprintStatus,
     Topic,
@@ -103,6 +105,38 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
+from okto_pulse.core.services.bug_regression_scenarios import (
+    BugRegressionGateValidator,
+)
+from okto_pulse.core.services.bug_workflow_remediation import (
+    BugWorkflowRemediationMessage,
+    BugWorkflowRemediationMessageBuilder,
+    serialize_bug_workflow_remediation,
+)
+from okto_pulse.core.services.bug_regression_observability import (
+    emit_no_unlock_invariant,
+    observe_bug_regression_resolution,
+    record_bug_regression_decision,
+)
+from okto_pulse.core.services.board_governance import (
+    BoardGovernanceService,
+    QA_SELF_ANSWER_DENIED_ACTION,
+    QASelfAnsweringNotAllowedError,
+    build_qa_self_answer_denied_details,
+)
+from okto_pulse.core.services.critical_context_guard import (
+    CRITICAL_CONTEXT_DECISION_ACTION,
+    CriticalAction,
+    CriticalContextDecision,
+    FullContextCriticalActionGuard,
+    FullContextGuardError,
+    build_default_full_context_resolvers,
+)
+from okto_pulse.core.services.governance_observability import (
+    build_board_governance_setting_changed_details,
+    build_board_missing_context_warning_details,
+    emit_governance_metric,
+)
 from okto_pulse.core.services.analytics_service import (
     _structured_ref_text,
     resolve_linked_criteria_to_ids,
@@ -112,6 +146,7 @@ from okto_pulse.core.services.analytics_service import (
 from okto_pulse.core.services.spec_entity_canonicalization import canonicalize_fr_ac
 from okto_pulse.core.services.test_scenario_lifecycle import (
     GATED_STATUSES,
+    StatusNotMutableError,
     VALID_SCENARIO_STATUSES,
     evidence_invalidated_by_semantic_edit,
     require_test_scenario_status_mutable,
@@ -144,6 +179,217 @@ def _board_skip_cognitive_consolidation(board: Board | None) -> bool:
     return bool(settings.get("skip_cognitive_consolidation", False))
 
 
+def _board_qa_require_role_separation(board: Board | None) -> bool:
+    """Return True if the board requires that Q&A answers come from a different
+    principal than the one who asked the question (qa_require_role_separation)."""
+    settings = (board.settings or {}) if board else {}
+    return BoardGovernanceService.from_settings(settings).qa_require_role_separation
+
+
+async def _attach_open_qa_counts(
+    db: AsyncSession,
+    rows: list[Any],
+    qa_model: Any,
+    fk_name: str,
+) -> None:
+    """Attach an ``open_qa_count`` attribute to each ORM row for summary projection.
+
+    A Q&A item is OPEN (unanswered) when ``answered_at IS NULL`` — the only reliable
+    predicate, because choice/multi_choice answers leave ``answer`` NULL and persist
+    ``selected`` instead, yet every answer path sets ``answered_at`` once something is
+    saved. The list queries don't eager-load qa_items, so a single grouped COUNT keyed
+    by the foreign key avoids both N+1 and an async lazy-load during serialization.
+    """
+    if not rows:
+        return
+    ids = [r.id for r in rows]
+    fk_col = getattr(qa_model, fk_name)
+    result = await db.execute(
+        select(fk_col, func.count())
+        .where(fk_col.in_(ids), qa_model.answered_at.is_(None))
+        .group_by(fk_col)
+    )
+    counts = dict(result.all())
+    for r in rows:
+        r.open_qa_count = counts.get(r.id, 0)
+
+
+async def _authorize_qa_answer_or_raise(
+    db: AsyncSession,
+    *,
+    board: Board | None,
+    qa: Any,
+    user_id: str,
+    entity_type: str,
+    question_id: str,
+    card_id: str | None = None,
+    actor_type: str = "user",
+    surface: str = "service",
+) -> None:
+    """Authorize a Q&A answer and emit a safe denial event before failing closed."""
+    try:
+        BoardGovernanceService.authorize_qa_answer(
+            (board.settings if board else None),
+            asked_by=getattr(qa, "asked_by", None),
+            answered_by=user_id,
+        )
+    except QASelfAnsweringNotAllowedError:
+        if board is not None:
+            actor_name = await resolve_actor_name(db, user_id, board.id)
+            details = build_qa_self_answer_denied_details(
+                board_id=board.id,
+                actor_id=user_id,
+                entity_type=entity_type,
+                question_id=question_id,
+                surface=surface,
+            )
+            db.add(
+                ActivityLog(
+                    board_id=board.id,
+                    card_id=card_id,
+                    action=QA_SELF_ANSWER_DENIED_ACTION,
+                    actor_type=actor_type,
+                    actor_id=user_id,
+                    actor_name=actor_name,
+                    details=details,
+                )
+            )
+            emit_governance_metric(details, raise_on_violation=False)
+            await db.flush()
+        raise
+
+
+async def _record_critical_context_decision(
+    db: AsyncSession,
+    *,
+    decision: CriticalContextDecision,
+    actor_name: str | None = None,
+    actor_type: str = "user",
+    card_id: str | None = None,
+) -> None:
+    resolved_name = actor_name or await resolve_actor_name(
+        db, decision.actor_id, decision.board_id
+    )
+    db.add(
+        ActivityLog(
+            board_id=decision.board_id,
+            card_id=card_id if decision.entity_type != "card" else decision.entity_id,
+            action=CRITICAL_CONTEXT_DECISION_ACTION,
+            actor_type=actor_type,
+            actor_id=decision.actor_id,
+            actor_name=resolved_name,
+            details=decision.audit_details(),
+        )
+    )
+    emit_governance_metric(decision.metric_labels(), raise_on_violation=False)
+    emit_governance_metric(
+        decision.latency_metric_labels(),
+        value=round(float(decision.latency_ms), 3),
+        raise_on_violation=False,
+    )
+    if decision.outcome == "deny" and decision.reason in {
+        "full_context_required",
+        "full_context_unavailable",
+    }:
+        emit_governance_metric(
+            decision.resolution_failure_metric_labels(),
+            raise_on_violation=False,
+        )
+    await db.flush()
+
+
+async def _authorize_critical_context_or_raise(
+    db: AsyncSession,
+    *,
+    board_id: str,
+    actor_id: str,
+    entity_type: str,
+    entity_id: str,
+    critical_action: CriticalAction,
+    surface: str = "service",
+    actor_type: str = "user",
+    actor_name: str | None = None,
+    card_id: str | None = None,
+) -> CriticalContextDecision:
+    """Resolve full context for a critical action and persist a safe audit event."""
+
+    guard = FullContextCriticalActionGuard(
+        db,
+        resolvers=build_default_full_context_resolvers(db),
+    )
+    try:
+        decision = await guard.authorize_and_resolve(
+            board_id=board_id,
+            actor_id=actor_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            critical_action=critical_action,
+            surface=surface,
+        )
+    except FullContextGuardError as exc:
+        await _record_critical_context_decision(
+            db,
+            decision=exc.decision,
+            actor_name=actor_name,
+            actor_type=actor_type,
+            card_id=card_id,
+        )
+        raise
+
+    await _record_critical_context_decision(
+        db,
+        decision=decision,
+        actor_name=actor_name,
+        actor_type=actor_type,
+        card_id=card_id,
+    )
+    return decision
+
+
+def _critical_card_move_action(target_status: CardStatus) -> CriticalAction:
+    if target_status == CardStatus.IN_PROGRESS:
+        return CriticalAction.CARD_START_IMPLEMENTATION
+    if target_status == CardStatus.DONE:
+        return CriticalAction.CARD_CLOSEOUT
+    if target_status == CardStatus.CANCELLED:
+        return CriticalAction.CARD_CANCEL
+    return CriticalAction.CARD_MOVE_STATUS
+
+
+def _critical_spec_move_action(target_status: SpecStatus) -> CriticalAction:
+    if target_status == SpecStatus.APPROVED:
+        return CriticalAction.SPEC_APPROVE
+    if target_status == SpecStatus.DONE:
+        return CriticalAction.SPEC_CLOSEOUT
+    if target_status == SpecStatus.CANCELLED:
+        return CriticalAction.SPEC_CANCEL
+    return CriticalAction.SPEC_MOVE_STATUS
+
+
+def _critical_sprint_move_action(target_status: SprintStatus) -> CriticalAction:
+    if target_status == SprintStatus.CLOSED:
+        return CriticalAction.SPRINT_CLOSEOUT
+    if target_status == SprintStatus.CANCELLED:
+        return CriticalAction.SPRINT_CANCEL
+    return CriticalAction.SPRINT_MOVE_STATUS
+
+
+def _critical_ideation_move_action(target_status: IdeationStatus) -> CriticalAction:
+    if target_status == IdeationStatus.DONE:
+        return CriticalAction.IDEATION_CLOSEOUT
+    if target_status == IdeationStatus.CANCELLED:
+        return CriticalAction.IDEATION_CANCEL
+    return CriticalAction.IDEATION_MOVE_STATUS
+
+
+def _critical_refinement_move_action(target_status: RefinementStatus) -> CriticalAction:
+    if target_status == RefinementStatus.DONE:
+        return CriticalAction.REFINEMENT_CLOSEOUT
+    if target_status == RefinementStatus.CANCELLED:
+        return CriticalAction.REFINEMENT_CANCEL
+    return CriticalAction.REFINEMENT_MOVE_STATUS
+
+
 def _card_cognitive_entity_type(card: Card) -> str:
     card_type = getattr(card, "card_type", CardType.NORMAL)
     card_type_value = getattr(card_type, "value", str(card_type)).lower()
@@ -171,6 +417,7 @@ def _evaluate_cognitive_closeout_or_raise(
     entity_id: str,
     entity: Any,
     target_label: str,
+    graph_state: str | None = None,
 ) -> None:
     """Evaluate the shared closeout gate and raise a stable service error.
 
@@ -189,6 +436,7 @@ def _evaluate_cognitive_closeout_or_raise(
             entity=entity,
             target_status="done",
             board_skip_enabled=skip_enabled,
+            graph_state=graph_state,
         )
     except Exception as exc:
         raise ValueError(
@@ -202,13 +450,46 @@ def _evaluate_cognitive_closeout_or_raise(
     reason = str(getattr(result, "reason", "cognitive_consolidation_pending"))
     blocking_count = _cognitive_blocking_count(result)
     if reason == "cognitive_status_unavailable":
-        detail = "because cognitive status could not be read"
+        detail = (
+            "because cognitive status could not be read. "
+            "The KG graph may be in a degraded state (recovery_needed / quarantined). "
+            "Per the Degraded-KG Fallback Rule, if the board is confirmed degraded "
+            "you may enable the board setting `skip_cognitive_consolidation` to allow "
+            "done transitions while the graph is unavailable. "
+            "To restore full cognitive closeout, follow the KG Health recovery flow: "
+            "call `okto_pulse_kg_health` to confirm the graph_state, then consult "
+            "the resource `okto-pulse://reference/kg-health` for the operator-driven "
+            "recovery steps."
+        )
     else:
         detail = "by active cognitive consolidation items"
     raise ValueError(
         f"{reason}: {target_label} done transition blocked {detail} "
         f"({blocking_count})"
     )
+
+
+async def _resolve_closeout_graph_state(
+    board_id: str, db: AsyncSession
+) -> str | None:
+    """Resolve the board's current ``graph_state`` for the cognitive closeout
+    gate (F16). Runs in the ASYNC caller where an ``AsyncSession`` is in scope
+    and threads the result into the SYNC ``gate.evaluate(...)`` so the gate stays
+    pure (no I/O).
+
+    Fail-safe (FR6): on ANY failure (e.g. ``BoardNotFoundError``) or a missing
+    ``graph_state`` key, return ``None`` — so the gate's ``resolved_generation``-
+    is-None liveness check still governs and a degraded signal is never swallowed
+    into ALLOWED. Reuses ``get_kg_health`` as-is (no new health-composition logic).
+    """
+    try:
+        from okto_pulse.core.services.kg_health_service import get_kg_health
+
+        health = await get_kg_health(board_id, db)
+        state = health.get("graph_state")
+    except Exception:
+        return None
+    return str(state) if state is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -570,10 +851,9 @@ class BoardService:
         update_data = data.model_dump(exclude_unset=True)
         # Serialize settings if present
         if "settings" in update_data and update_data["settings"] is not None:
-            update_data["settings"] = (
-                update_data["settings"].model_dump(mode="json")
-                if hasattr(update_data["settings"], "model_dump")
-                else update_data["settings"]
+            update_data["settings"] = BoardGovernanceService.merge_settings_patch(
+                previous_settings,
+                update_data["settings"],
             )
         for key, value in update_data.items():
             setattr(board, key, value)
@@ -600,6 +880,37 @@ class BoardService:
                 )
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        if settings_changed:
+            for setting_key, old_value, new_value in (
+                BoardGovernanceService.changed_governance_settings(
+                    previous_settings,
+                    board.settings,
+                )
+            ):
+                details = build_board_governance_setting_changed_details(
+                    board_id=board_id,
+                    actor_id=user_id,
+                    setting_key=setting_key,
+                    old_effective_value=old_value,
+                    new_effective_value=new_value,
+                    surface="board_patch",
+                )
+                await self._log_activity(
+                    board_id=board_id,
+                    action="board_governance_setting_changed",
+                    actor_type="user",
+                    actor_id=user_id,
+                    actor_name=actor_name,
+                    details=details,
+                )
+                emit_governance_metric(details, raise_on_violation=False)
+        if "description" in update_data and not (board.description or "").strip():
+            details = build_board_missing_context_warning_details(
+                board_id=board_id,
+                warning_code="board_summary_missing",
+                surface="board_patch",
+            )
+            emit_governance_metric(details, raise_on_violation=False)
         await self._log_activity(
             board_id=board_id,
             action="board_updated",
@@ -640,6 +951,51 @@ class BoardService:
             details=details,
         )
         self.db.add(log)
+
+
+class CardOperationError(ValueError):
+    """Typed card workflow error for API/MCP callers."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        remediation: str | None = None,
+        facts: dict[str, Any] | None = None,
+        workflow_remediation: BugWorkflowRemediationMessage | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.remediation = remediation
+        self.facts = facts or {}
+        self.workflow_remediation = workflow_remediation
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "code": self.code,
+            "message": self.message,
+        }
+        if self.remediation:
+            payload["remediation"] = self.remediation
+        if self.facts:
+            payload["facts"] = self.facts
+        if self.workflow_remediation:
+            serialized = serialize_bug_workflow_remediation(self.workflow_remediation)
+            if serialized:
+                payload["remediation_message"] = serialized
+                for key in (
+                    "reason_code",
+                    "remediation_path",
+                    "next_action",
+                    "semantic_gap_required",
+                    "eligible_scenarios_count",
+                    "hotfix_lane_status",
+                    "actions",
+                ):
+                    payload[key] = serialized[key]
+        return payload
 
 
 class CardService:
@@ -749,6 +1105,17 @@ class CardService:
                     f"Test scenario(s) not found in spec '{spec.title}': {invalid_ids}. "
                     f"Available scenarios: {sorted(spec_scenario_ids)}"
                 )
+
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=board_id,
+            actor_id=user_id,
+            entity_type="spec",
+            entity_id=spec.id,
+            critical_action=CriticalAction.CARD_CREATE,
+            surface="service",
+            actor_type="user",
+        )
 
         # Get max position for the status column
         pos_query = (
@@ -906,6 +1273,18 @@ class CardService:
             )
 
         update_data = data.model_dump(exclude_unset=True)
+
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=card.board_id,
+            actor_id=user_id,
+            entity_type="card",
+            entity_id=card.id,
+            critical_action=CriticalAction.CARD_UPDATE,
+            surface="service",
+            actor_type="user",
+            card_id=card.id,
+        )
 
         # spec 28583299 (Ideação #4, IMPL-C): snapshot priority/severity BEFORE
         # mutation so the DomainEvent payload carries the actual transition.
@@ -1172,6 +1551,19 @@ class CardService:
         sprint = await self.db.get(Sprint, card.sprint_id) if card.sprint_id else None
         config = self._resolve_validation_config(card, spec, sprint, board_settings)
 
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=card.board_id,
+            actor_id=reviewer_id,
+            entity_type="card",
+            entity_id=card.id,
+            critical_action=CriticalAction.CARD_SUBMIT_VALIDATION,
+            surface="service",
+            actor_type="agent",
+            actor_name=reviewer_name,
+            card_id=card.id,
+        )
+
         # Extract scores
         confidence = data["confidence"]
         completeness = data["estimated_completeness"]
@@ -1194,6 +1586,7 @@ class CardService:
             outcome = "success"
 
         if outcome == "success":
+            graph_state = await _resolve_closeout_graph_state(card.board_id, self.db)
             _evaluate_cognitive_closeout_or_raise(
                 gate_factory=self._cognitive_closeout_gate_factory,
                 board=board,
@@ -1202,6 +1595,7 @@ class CardService:
                 entity_id=card.id,
                 entity=card,
                 target_label="card",
+                graph_state=graph_state,
             )
 
         # Build validation entry.
@@ -1708,17 +2102,102 @@ class CardService:
                 )
                 sprint_count = (await self.db.execute(sprint_count_q)).scalar() or 0
                 if sprint_count > 0:
+                    hotfix_count_q = select(func.count()).select_from(Sprint).where(
+                        Sprint.spec_id == card.spec_id,
+                        Sprint.lane_type == SprintLaneType.HOTFIX,
+                        Sprint.archived.is_(False),
+                    )
+                    hotfix_count = (await self.db.execute(hotfix_count_q)).scalar() or 0
+                    post_closure_bug = (
+                        getattr(card, "card_type", CardType.NORMAL) == CardType.BUG
+                        and (
+                            spec_for_sprint.status == SpecStatus.DONE
+                            or hotfix_count > 0
+                        )
+                    )
                     if not card.sprint_id:
-                        raise ValueError(
+                        remediation = "assign_hotfix_lane" if post_closure_bug else "assign_sprint"
+                        facts = {
+                            "card_id": card.id,
+                            "spec_id": card.spec_id,
+                            "spec_status": spec_for_sprint.status.value,
+                            "lane_type": "hotfix" if post_closure_bug else None,
+                            "next_action": remediation,
+                        }
+                        raise CardOperationError(
+                            "sprint_required",
                             "This spec uses sprints. Card must be assigned to a sprint before advancing. "
-                            "Use okto_pulse_update_card or assign_tasks_to_sprint to assign it."
+                            "Use okto_pulse_update_card or assign_tasks_to_sprint to assign it.",
+                            remediation=remediation,
+                            facts=facts,
+                            workflow_remediation=(
+                                BugWorkflowRemediationMessageBuilder()
+                                .build_from_sprint_lane_block(
+                                    code="sprint_required",
+                                    remediation=remediation,
+                                    facts=facts,
+                                )
+                            ),
                         )
                     sprint_obj = await self.db.get(Sprint, card.sprint_id)
-                    if sprint_obj and sprint_obj.status != SprintStatus.ACTIVE:
-                        raise ValueError(
+                    if not sprint_obj:
+                        remediation = "assign_hotfix_lane" if post_closure_bug else "assign_sprint"
+                        facts = {
+                            "card_id": card.id,
+                            "spec_id": card.spec_id,
+                            "sprint_id": card.sprint_id,
+                            "spec_status": spec_for_sprint.status.value,
+                            "lane_type": "hotfix" if post_closure_bug else None,
+                            "next_action": remediation,
+                        }
+                        raise CardOperationError(
+                            "sprint_not_found",
+                            "Card's assigned sprint no longer exists. Assign it to an active sprint before advancing.",
+                            remediation=remediation,
+                            facts=facts,
+                            workflow_remediation=(
+                                BugWorkflowRemediationMessageBuilder()
+                                .build_from_sprint_lane_block(
+                                    code="sprint_not_found",
+                                    remediation=remediation,
+                                    facts=facts,
+                                )
+                            ),
+                        )
+                    if sprint_obj.status != SprintStatus.ACTIVE:
+                        inactive_hotfix = sprint_obj.lane_type == SprintLaneType.HOTFIX
+                        remediation = (
+                            "activate_hotfix_lane"
+                            if inactive_hotfix
+                            else ("assign_hotfix_lane" if post_closure_bug else "activate_sprint")
+                        )
+                        facts = {
+                            "card_id": card.id,
+                            "spec_id": card.spec_id,
+                            "sprint_id": sprint_obj.id,
+                            "sprint_status": sprint_obj.status.value,
+                            "lane_type": sprint_obj.lane_type.value,
+                            "next_action": remediation,
+                        }
+                        raise CardOperationError(
+                            "sprint_not_active",
                             f"Card's sprint '{sprint_obj.title}' is not active "
                             f"(status: '{sprint_obj.status.value}'). "
-                            f"Only cards in active sprints can advance."
+                            f"Only cards in active sprints can advance.",
+                            remediation=remediation,
+                            facts=facts,
+                            workflow_remediation=(
+                                BugWorkflowRemediationMessageBuilder()
+                                .build_from_sprint_lane_block(
+                                    code="sprint_not_active",
+                                    remediation=remediation,
+                                    facts=facts,
+                                    message=(
+                                        f"Card's sprint '{sprint_obj.title}' is not active "
+                                        f"(status: '{sprint_obj.status.value}')."
+                                    ),
+                                )
+                            ),
                         )
 
         # --- Task Validation Gate: block in_progress→done when gate active ---
@@ -1790,24 +2269,43 @@ class CardService:
             and old_level < self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
             and getattr(card, "card_type", CardType.NORMAL) == CardType.BUG
         ):
+            bug_gate_started = time.perf_counter()
             linked_tests = card.linked_test_task_ids or []
             if not linked_tests:
-                raise ValueError(
+                workflow_remediation = (
+                    BugWorkflowRemediationMessageBuilder()
+                    .build_missing_regression_test_task()
+                )
+                raise CardOperationError(
+                    "missing_regression_test_task",
                     "Bug card requires at least 1 new test task linked before moving to in_progress. "
                     "REQUIRED STEPS: "
                     "(1) Create a regression test card with card_type='test', spec_id, and test_scenario_ids "
                     "using okto_pulse_create_card. The referenced scenario may be an existing scenario on a "
-                    "validated/locked spec; do not unlock the spec just to add a regression task. "
+                    "validated/locked spec; leave spec content unchanged for Path A regression evidence. "
                     "(2) Link the test task to this bug using okto_pulse_update_card with linked_test_task_ids, "
                     "(3) Then retry moving this bug card to in_progress. "
                     "TO BYPASS: set require_test_task_for_bug=false on the board, or raise "
-                    "bug_test_gate_min_severity above this bug's severity."
+                    "bug_test_gate_min_severity above this bug's severity.",
+                    remediation="create_regression_test_card",
+                    facts={
+                        "card_id": card.id,
+                        "spec_id": card.spec_id,
+                        "next_action": workflow_remediation.next_action.value,
+                    },
+                    workflow_remediation=workflow_remediation,
                 )
 
             # Validate each linked test task
             bug_created = card.created_at
             spec_for_bug = await self.db.get(Spec, card.spec_id) if card.spec_id else None
-            all_scenarios = {s["id"]: s for s in (spec_for_bug.test_scenarios or [])} if spec_for_bug else {}
+            all_scenarios = {
+                str(s["id"]): s
+                for s in (spec_for_bug.test_scenarios or [])
+                if isinstance(s, dict) and s.get("id") is not None
+            } if spec_for_bug else {}
+            validated_test_tasks: list[Card] = []
+            candidate_scenario_ids: list[str] = []
 
             for test_task_id in linked_tests:
                 test_task = await self.db.get(Card, test_task_id)
@@ -1854,19 +2352,245 @@ class CardService:
                         "fresh validation coverage without editing a locked spec."
                     )
 
+                validated_test_tasks.append(test_task)
+                candidate_scenario_ids.extend(str(sid) for sid in (test_task.test_scenario_ids or []))
+
+            missing_scenario_ids = {
+                sid for sid in candidate_scenario_ids if sid not in all_scenarios
+            }
+            candidate_spec_ids_by_scenario_id: dict[str, str] = {}
+            if missing_scenario_ids:
+                other_specs_result = await self.db.execute(
+                    select(Spec).where(
+                        Spec.board_id == card.board_id,
+                        Spec.id != card.spec_id,
+                    )
+                )
+                for other_spec in other_specs_result.scalars():
+                    for scenario in other_spec.test_scenarios or []:
+                        if not isinstance(scenario, dict) or scenario.get("id") is None:
+                            continue
+                        scenario_id = str(scenario["id"])
+                        if scenario_id in missing_scenario_ids:
+                            candidate_spec_ids_by_scenario_id.setdefault(
+                                scenario_id,
+                                other_spec.id,
+                            )
+
+            for test_task in validated_test_tasks:
                 # Validate scenarios exist in spec. Regression test cards may
                 # reference existing scenarios even when the spec is locked.
                 for sid in test_task.test_scenario_ids:
-                    sc = all_scenarios.get(sid)
+                    scenario_id = str(sid)
+                    sc = all_scenarios.get(scenario_id)
                     if not sc:
-                        raise ValueError(
-                            f"Test scenario '{sid}' referenced by test task '{test_task.title}' "
+                        other_spec_id = candidate_spec_ids_by_scenario_id.get(scenario_id)
+                        if other_spec_id:
+                            observe_bug_regression_resolution(
+                                board_id=card.board_id,
+                                result=None,
+                                duration_ms=(time.perf_counter() - bug_gate_started) * 1000,
+                                spec_id=card.spec_id,
+                                error_code="cross_spec_scenario",
+                            )
+                            await record_bug_regression_decision(
+                                board_id=card.board_id,
+                                bug_id=card.id,
+                                spec_id=card.spec_id,
+                                decision="semantic_gap",
+                                reason_code="cross_spec_scenario",
+                                scenario_count=len(candidate_scenario_ids),
+                                test_task_count=len(validated_test_tasks),
+                                actor_id=user_id,
+                                session=self.db,
+                            )
+                            workflow_remediation = (
+                                BugWorkflowRemediationMessageBuilder()
+                                .build_semantic_gap(reason_code="cross_spec_scenario")
+                            )
+                            raise CardOperationError(
+                                "cross_spec_scenario",
+                                f"Test scenario '{scenario_id}' referenced by test task "
+                                f"'{test_task.title}' belongs to spec '{other_spec_id}' "
+                                f"but this bug belongs to spec '{card.spec_id}'. "
+                                "reason=cross_spec_scenario; semantic_gap_required=true; "
+                                "spec_mutation_required=true; next_action=escalate_semantic_gap."
+                                ,
+                                remediation="escalate_semantic_gap",
+                                facts={
+                                    "card_id": card.id,
+                                    "spec_id": card.spec_id,
+                                    "next_action": workflow_remediation.next_action.value,
+                                },
+                                workflow_remediation=workflow_remediation,
+                            )
+                        observe_bug_regression_resolution(
+                            board_id=card.board_id,
+                            result=None,
+                            duration_ms=(time.perf_counter() - bug_gate_started) * 1000,
+                            spec_id=card.spec_id,
+                            error_code="scenario_not_found",
+                        )
+                        await record_bug_regression_decision(
+                            board_id=card.board_id,
+                            bug_id=card.id,
+                            spec_id=card.spec_id,
+                            decision="semantic_gap",
+                            reason_code="scenario_not_found",
+                            scenario_count=len(candidate_scenario_ids),
+                            test_task_count=len(validated_test_tasks),
+                            actor_id=user_id,
+                            session=self.db,
+                        )
+                        workflow_remediation = (
+                            BugWorkflowRemediationMessageBuilder()
+                            .build_semantic_gap(reason_code="scenario_not_found")
+                        )
+                        raise CardOperationError(
+                            "scenario_not_found",
+                            f"Test scenario '{scenario_id}' referenced by test task '{test_task.title}' "
                             f"does not exist in spec '{spec_for_bug.title if spec_for_bug else card.spec_id}'. "
                             f"The scenario may have been deleted. Link the test task to an existing scenario, "
-                            f"or move the spec back to an editable status if a new scenario is truly required."
+                            "or create an amendment/refinement/spec revision/hotfix spec if new canonical "
+                            "coverage is truly required. reason=scenario_not_found; "
+                            "next_action=escalate_semantic_gap."
+                            ,
+                            remediation="escalate_semantic_gap",
+                            facts={
+                                "card_id": card.id,
+                                "spec_id": card.spec_id,
+                                "next_action": workflow_remediation.next_action.value,
+                            },
+                            workflow_remediation=workflow_remediation,
                         )
 
+            origin_task = await self.db.get(Card, card.origin_task_id) if card.origin_task_id else None
+            if not origin_task:
+                observe_bug_regression_resolution(
+                    board_id=card.board_id,
+                    result=None,
+                    duration_ms=(time.perf_counter() - bug_gate_started) * 1000,
+                    spec_id=card.spec_id,
+                    error_code="origin_task_missing",
+                )
+                await record_bug_regression_decision(
+                    board_id=card.board_id,
+                    bug_id=card.id,
+                    spec_id=card.spec_id,
+                    decision="semantic_gap",
+                    reason_code="origin_task_missing",
+                    scenario_count=len(candidate_scenario_ids),
+                    test_task_count=len(validated_test_tasks),
+                    actor_id=user_id,
+                    session=self.db,
+                )
+                workflow_remediation = (
+                    BugWorkflowRemediationMessageBuilder()
+                    .build_semantic_gap(reason_code="origin_task_missing")
+                )
+                raise CardOperationError(
+                    "origin_task_missing",
+                    "Bug card requires a valid origin_task_id before regression scenario eligibility "
+                    "can be evaluated. reason=origin_task_missing; next_action=escalate_semantic_gap.",
+                    remediation="escalate_semantic_gap",
+                    facts={
+                        "card_id": card.id,
+                        "spec_id": card.spec_id,
+                        "next_action": workflow_remediation.next_action.value,
+                    },
+                    workflow_remediation=workflow_remediation,
+                )
+
+            gate_result = BugRegressionGateValidator().validate_linked_test_tasks(
+                bug_card=card,
+                linked_test_tasks=validated_test_tasks,
+                spec=spec_for_bug,
+                origin_task=origin_task,
+                candidate_spec_ids_by_scenario_id=candidate_spec_ids_by_scenario_id,
+            )
+            eligibility = gate_result.eligibility
+            observe_bug_regression_resolution(
+                board_id=card.board_id,
+                result=eligibility,
+                duration_ms=(time.perf_counter() - bug_gate_started) * 1000,
+            )
+            if eligibility.rejected_scenarios:
+                primary_reason = eligibility.rejected_scenarios[0].reason.value
+            elif eligibility.eligible_scenarios:
+                primary_reason = eligibility.eligible_scenarios[0].reason.value
+            else:
+                primary_reason = "no_eligible_scenarios"
+
+            await record_bug_regression_decision(
+                board_id=card.board_id,
+                bug_id=card.id,
+                spec_id=card.spec_id,
+                decision=(
+                    "eligible"
+                    if gate_result.allowed
+                    else ("semantic_gap" if eligibility.semantic_gap_required else "rejected")
+                ),
+                reason_code=primary_reason,
+                scenario_count=len(candidate_scenario_ids),
+                test_task_count=len(validated_test_tasks),
+                actor_id=user_id,
+                session=self.db,
+            )
+            if not gate_result.allowed:
+                rejected = ", ".join(
+                    f"{item.scenario_id}:{item.reason.value}"
+                    for item in eligibility.rejected_scenarios
+                ) or "none"
+                eligible_ids = ", ".join(
+                    item.scenario_id for item in eligibility.eligible_scenarios
+                ) or "none"
+                workflow_remediation = (
+                    BugWorkflowRemediationMessageBuilder()
+                    .build_from_eligibility(eligibility)
+                )
+                raise CardOperationError(
+                    gate_result.decision.value,
+                    "Bug linked test task scenarios do not satisfy regression eligibility. "
+                    f"decision={gate_result.decision.value}; "
+                    f"eligible_scenario_ids=[{eligible_ids}]; "
+                    f"rejected_scenarios=[{rejected}]; "
+                    f"semantic_gap_required={str(eligibility.semantic_gap_required).lower()}; "
+                    f"spec_mutation_required={str(eligibility.spec_mutation_required).lower()}; "
+                    f"next_action={eligibility.next_action.value}. "
+                    "Reuse only scenarios linked to the bug origin task or explicit affected tasks. "
+                    "If expected behavior changed or no eligible scenario exists, create an "
+                    "amendment/refinement/spec revision/hotfix spec instead of editing the current spec."
+                    ,
+                    remediation=workflow_remediation.next_action.value,
+                    facts={
+                        "card_id": card.id,
+                        "spec_id": card.spec_id,
+                        "decision": gate_result.decision.value,
+                        "next_action": workflow_remediation.next_action.value,
+                        "eligible_scenarios_count": len(eligibility.eligible_scenarios),
+                    },
+                    workflow_remediation=workflow_remediation,
+                )
+            emit_no_unlock_invariant(
+                board_id=card.board_id,
+                spec_id=card.spec_id,
+            )
+
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=card.board_id,
+            actor_id=user_id,
+            entity_type="card",
+            entity_id=card.id,
+            critical_action=_critical_card_move_action(data.status),
+            surface="service",
+            actor_type="user",
+            actor_name=actor_name,
+            card_id=card.id,
+        )
+
         if data.status == CardStatus.DONE:
+            graph_state = await _resolve_closeout_graph_state(card.board_id, self.db)
             _evaluate_cognitive_closeout_or_raise(
                 gate_factory=self._cognitive_closeout_gate_factory,
                 board=board,
@@ -1875,6 +2599,7 @@ class CardService:
                 entity_id=card.id,
                 entity=card,
                 target_label="card",
+                graph_state=graph_state,
             )
 
         report_target = None
@@ -2445,12 +3170,32 @@ class QAService:
         return qa
 
     async def answer_question(
-        self, qa_id: str, user_id: str, data: QAAnswer
+        self,
+        qa_id: str,
+        user_id: str,
+        data: QAAnswer,
+        *,
+        actor_type: str = "user",
+        surface: str = "service",
     ) -> QAItem | None:
         """Answer a Q&A question."""
         qa = await self.db.get(QAItem, qa_id)
         if not qa:
             return None
+
+        card = await self.db.get(Card, qa.card_id)
+        board = await self.db.get(Board, card.board_id) if card else None
+        await _authorize_qa_answer_or_raise(
+            self.db,
+            board=board,
+            qa=qa,
+            user_id=user_id,
+            entity_type="card",
+            question_id=qa_id,
+            card_id=card.id if card else None,
+            actor_type=actor_type,
+            surface=surface,
+        )
 
         qa.answer = data.answer
         qa.answered_by = user_id
@@ -3009,7 +3754,9 @@ class SpecService:
             query = query.where(Spec.archived.is_(False))
         query = query.order_by(Spec.updated_at.desc())
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        rows = list(result.scalars().all())
+        await _attach_open_qa_counts(self.db, rows, SpecQAItem, "spec_id")
+        return rows
 
     async def update_test_scenario(
         self,
@@ -3240,8 +3987,11 @@ class SpecService:
         the REST status endpoint.
 
         - Guards by spec STATUS (require_test_scenario_status_mutable): blocks
-          ``validated``/``done``, permits ``in_progress``. Does NOT use the
-          content-lock (which would wrongly block in_progress).
+          arbitrary ``validated``/``done`` status edits, permits
+          ``in_progress``. Does NOT use the content-lock (which would wrongly
+          block in_progress). Narrow exception: a ``validated``/``done`` spec
+          may receive operational evidence/status for a scenario that is already
+          linked to an executable test card.
         - Applies the NC-9 evidence gate (validate_test_scenario_evidence) unless
           ``skip_test_evidence_global`` is set (then allows + emits a forensic log).
         - Mutates ONLY the target scenario (status + inline evidence) and persists
@@ -3266,7 +4016,16 @@ class SpecService:
 
         # Guard by STATUS (NOT the content-lock): blocks validated/done, allows
         # in_progress — the execution phase where scenarios become passed.
-        require_test_scenario_status_mutable(getattr(spec, "status", None))
+        # Post-lock exception: a done/validated spec may still receive
+        # operational test evidence when the target scenario is already tied to
+        # a real test card in an execution state. This preserves content lock
+        # semantics while making the documented "fresh post-bug/regression test
+        # card on a locked spec" flow reachable.
+        try:
+            require_test_scenario_status_mutable(getattr(spec, "status", None))
+        except StatusNotMutableError:
+            if not await self._has_executable_test_card_for_scenario(spec, scenario_id):
+                raise
 
         board = await self.db.get(Board, spec.board_id)
         skip = (
@@ -3365,6 +4124,37 @@ class SpecService:
             "evidence_provided": evidence is not None,
             "evidence_gate_skipped": skip,
         }
+
+    async def _has_executable_test_card_for_scenario(
+        self, spec: Spec, scenario_id: str
+    ) -> bool:
+        """Return True when a locked/done spec scenario has a concrete test card
+        that can legitimately carry post-lock evidence.
+
+        This is intentionally narrower than "scenario exists": the status path
+        remains blocked for arbitrary scenario mutation on locked specs. The
+        exception only applies after a fresh/existing test card is linked and has
+        entered the execution/review lifecycle.
+        """
+
+        rows = await self.db.execute(
+            select(Card).where(
+                Card.spec_id == spec.id,
+                Card.card_type == CardType.TEST,
+                Card.status.in_(
+                    [
+                        CardStatus.STARTED,
+                        CardStatus.IN_PROGRESS,
+                        CardStatus.VALIDATION,
+                        CardStatus.DONE,
+                    ]
+                ),
+            )
+        )
+        for card in rows.scalars().all():
+            if scenario_id in (card.test_scenario_ids or []):
+                return True
+        return False
 
     async def _enforce_test_scenario_evidence_gate(
         self, spec: "Spec", new_scenarios: list, user_id: str
@@ -3516,6 +4306,64 @@ class SpecService:
                 update_data["acceptance_criteria"],
                 existing_items=spec.acceptance_criteria,
             )
+
+        # FR5 — lazy ref migration (spec c61569b2, IMPL-4).
+        # When FR/AC lists are materialised by canonicalize_fr_ac above,
+        # rewrite any index/text refs in downstream fields to the newly
+        # assigned fr_/ac_ ids.  This runs on-touch only: specs not passed
+        # through update_spec keep resolving via the permanent read-tolerant
+        # resolvers (resolve_linked_fr_indices / resolve_linked_criteria_*).
+        # No batch sweep; no one-shot migration tool.
+        if "functional_requirements" in update_data and update_data["functional_requirements"]:
+            from okto_pulse.core.services.spec_structured_entities import (  # noqa: PLC0415
+                migrate_legacy_fr_refs,
+            )
+            old_frs = list(spec.functional_requirements or [])
+            new_frs = list(update_data["functional_requirements"] or [])
+            _fr_dep_collections = {
+                field: list(
+                    update_data[field]
+                    if field in update_data and update_data[field] is not None
+                    else getattr(spec, field, None) or []
+                )
+                for field in (
+                    "business_rules",
+                    "api_contracts",
+                    "integration_requirements",
+                    "observability_requirements",
+                    "decisions",
+                )
+            }
+            _fr_migration_updates = migrate_legacy_fr_refs(old_frs, new_frs, _fr_dep_collections)
+            # Apply migration results unconditionally: the collections dict was
+            # already built from update_data (if present) or spec, so _updated
+            # already reflects the caller's new data with refs rewritten.
+            for _field, _updated in _fr_migration_updates.items():
+                update_data[_field] = _updated
+
+        if "acceptance_criteria" in update_data and update_data["acceptance_criteria"]:
+            from okto_pulse.core.services.spec_structured_entities import (  # noqa: PLC0415
+                migrate_legacy_ac_refs,
+            )
+            old_acs = list(spec.acceptance_criteria or [])
+            new_acs = list(update_data["acceptance_criteria"] or [])
+            _current_scenarios = list(
+                update_data["test_scenarios"]
+                if "test_scenarios" in update_data and update_data["test_scenarios"] is not None
+                else getattr(spec, "test_scenarios", None) or []
+            )
+            _migrated_scenarios = migrate_legacy_ac_refs(old_acs, new_acs, _current_scenarios)
+            if _migrated_scenarios is not None:
+                update_data["test_scenarios"] = _migrated_scenarios
+
+        # Re-evaluate bumps_semantic after FR5 migration may have added
+        # semantic fields (e.g. business_rules) to update_data.
+        bumps_semantic = bool(semantic_fields & update_data.keys())
+        # Capture old values for any fields added to update_data by FR5 migration
+        # (these were absent from the original update_data so old_data missed them).
+        for _migrated_field in update_data:
+            if _migrated_field not in old_data:
+                old_data[_migrated_field] = getattr(spec, _migrated_field, None)
 
         # Validate referential integrity of all `linked_*` fields BEFORE
         # mutating the spec. The validator computes the final state of each
@@ -3673,6 +4521,18 @@ class SpecService:
         # Load board for settings
         board = await self.db.get(Board, spec.board_id)
 
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=spec.board_id,
+            actor_id=user_id,
+            entity_type="spec",
+            entity_id=spec.id,
+            critical_action=_critical_spec_move_action(data.status),
+            surface="service",
+            actor_type="user",
+            actor_name=actor_name,
+        )
+
         # Enforce coverage gates when moving to validated
         if data.status == SpecStatus.VALIDATED:
             card_service = CardService(self.db)
@@ -3820,6 +4680,7 @@ class SpecService:
                     f"Complete or cancel all linked tasks before finalizing the spec."
                 )
 
+            graph_state = await _resolve_closeout_graph_state(spec.board_id, self.db)
             _evaluate_cognitive_closeout_or_raise(
                 gate_factory=self._cognitive_closeout_gate_factory,
                 board=board,
@@ -3828,6 +4689,7 @@ class SpecService:
                 entity_id=spec.id,
                 entity=spec,
                 target_label="spec",
+                graph_state=graph_state,
             )
 
             resource_gate = ResourceGateService(self.db)
@@ -4040,6 +4902,18 @@ class SpecService:
                 "in board settings, then re-submit."
             )
 
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=spec.board_id,
+            actor_id=reviewer_id,
+            entity_type="spec",
+            entity_id=spec.id,
+            critical_action=CriticalAction.SPEC_SUBMIT_VALIDATION,
+            surface="service",
+            actor_type="agent" if reviewer_name and "agent" in reviewer_name.lower() else "user",
+            actor_name=reviewer_name,
+        )
+
         # Run coverage gates as pre-requisite — reuses existing CardService checks.
         # AC→Scenario coverage must run FIRST so uncovered ACs are caught before
         # the spec gets locked by a successful validation (the move→done gate
@@ -4212,7 +5086,15 @@ class SpecQAService:
         await self.db.flush()
         return qa
 
-    async def answer_question(self, qa_id: str, user_id: str, data: SpecQAAnswer) -> SpecQAItem | None:
+    async def answer_question(
+        self,
+        qa_id: str,
+        user_id: str,
+        data: SpecQAAnswer,
+        *,
+        actor_type: str = "user",
+        surface: str = "service",
+    ) -> SpecQAItem | None:
         """Answer a spec Q&A question (text or choice selection).
         Mirrors IdeationQAService.answer_question — accepts `single_choice`
         as alias of `choice`, and only commits when something was persisted.
@@ -4220,6 +5102,19 @@ class SpecQAService:
         qa = await self.db.get(SpecQAItem, qa_id)
         if not qa:
             return None
+
+        spec = await self.db.get(Spec, qa.spec_id)
+        board = await self.db.get(Board, spec.board_id) if spec else None
+        await _authorize_qa_answer_or_raise(
+            self.db,
+            board=board,
+            qa=qa,
+            user_id=user_id,
+            entity_type="spec",
+            question_id=qa_id,
+            actor_type=actor_type,
+            surface=surface,
+        )
 
         saved_something = False
         choice_types = ("choice", "single_choice", "multi_choice")
@@ -5279,7 +6174,9 @@ class IdeationService:
             query = query.where(Ideation.archived.is_(False))
         query = query.order_by(Ideation.updated_at.desc())
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        rows = list(result.scalars().all())
+        await _attach_open_qa_counts(self.db, rows, IdeationQAItem, "ideation_id")
+        return rows
 
     async def update_ideation(self, ideation_id: str, user_id: str, data: IdeationUpdate) -> Ideation | None:
         """Update an ideation. Bumps version on content changes. Records field-level diffs.
@@ -5391,6 +6288,18 @@ class IdeationService:
             )
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, ideation.board_id)
+
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=ideation.board_id,
+            actor_id=user_id,
+            entity_type="ideation",
+            entity_id=ideation.id,
+            critical_action=_critical_ideation_move_action(data.status),
+            surface="service",
+            actor_type="user",
+            actor_name=resolved_name,
+        )
 
         # Snapshot on done
         if data.status == IdeationStatus.DONE:
@@ -5700,7 +6609,15 @@ class IdeationQAService:
         await self.db.flush()
         return qa
 
-    async def answer_question(self, qa_id: str, user_id: str, data: IdeationQAAnswer) -> IdeationQAItem | None:
+    async def answer_question(
+        self,
+        qa_id: str,
+        user_id: str,
+        data: IdeationQAAnswer,
+        *,
+        actor_type: str = "user",
+        surface: str = "service",
+    ) -> IdeationQAItem | None:
         """Answer an ideation Q&A question (text or choice selection).
 
         Accepts `question_type in {"choice","single_choice","multi_choice"}`
@@ -5713,6 +6630,19 @@ class IdeationQAService:
         qa = await self.db.get(IdeationQAItem, qa_id)
         if not qa:
             return None
+
+        ideation = await self.db.get(Ideation, qa.ideation_id)
+        board = await self.db.get(Board, ideation.board_id) if ideation else None
+        await _authorize_qa_answer_or_raise(
+            self.db,
+            board=board,
+            qa=qa,
+            user_id=user_id,
+            entity_type="ideation",
+            question_id=qa_id,
+            actor_type=actor_type,
+            surface=surface,
+        )
 
         saved_something = False
         choice_types = ("choice", "single_choice", "multi_choice")
@@ -5976,7 +6906,9 @@ class RefinementService:
             query = query.where(Refinement.archived.is_(False))
         query = query.order_by(Refinement.updated_at.desc())
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        rows = list(result.scalars().all())
+        await _attach_open_qa_counts(self.db, rows, RefinementQAItem, "refinement_id")
+        return rows
 
     async def update_refinement(self, refinement_id: str, user_id: str, data: RefinementUpdate) -> Refinement | None:
         """Update a refinement. Bumps version on content changes. Records field-level diffs.
@@ -6113,12 +7045,27 @@ class RefinementService:
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, refinement.board_id)
 
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=refinement.board_id,
+            actor_id=user_id,
+            entity_type="refinement",
+            entity_id=refinement.id,
+            critical_action=_critical_refinement_move_action(data.status),
+            surface="service",
+            actor_type="user",
+            actor_name=resolved_name,
+        )
+
         # Fail-closed cognitive closeout gate. This MUST run BEFORE
         # ResourceGateService, snapshot creation, activity logging, or status
         # mutation. A blocked response preserves the refinement in its current
         # status with no snapshot/history/activity changes.
         if data.status == RefinementStatus.DONE:
             board = await self.db.get(Board, refinement.board_id)
+            graph_state = await _resolve_closeout_graph_state(
+                refinement.board_id, self.db
+            )
             _evaluate_cognitive_closeout_or_raise(
                 gate_factory=self._cognitive_done_guard_factory,
                 board=board,
@@ -6127,6 +7074,7 @@ class RefinementService:
                 entity_id=refinement.id,
                 entity=refinement,
                 target_label="refinement",
+                graph_state=graph_state,
             )
 
         # Snapshot on done
@@ -6394,7 +7342,15 @@ class RefinementQAService:
         await self.db.flush()
         return qa
 
-    async def answer_question(self, qa_id: str, user_id: str, data: RefinementQAAnswer) -> RefinementQAItem | None:
+    async def answer_question(
+        self,
+        qa_id: str,
+        user_id: str,
+        data: RefinementQAAnswer,
+        *,
+        actor_type: str = "user",
+        surface: str = "service",
+    ) -> RefinementQAItem | None:
         """Answer a refinement Q&A question (text or choice selection).
         Mirrors IdeationQAService.answer_question — accepts `single_choice`
         as alias of `choice`, and only commits when something was persisted.
@@ -6402,6 +7358,19 @@ class RefinementQAService:
         qa = await self.db.get(RefinementQAItem, qa_id)
         if not qa:
             return None
+
+        refinement = await self.db.get(Refinement, qa.refinement_id)
+        board = await self.db.get(Board, refinement.board_id) if refinement else None
+        await _authorize_qa_answer_or_raise(
+            self.db,
+            board=board,
+            qa=qa,
+            user_id=user_id,
+            entity_type="refinement",
+            question_id=qa_id,
+            actor_type=actor_type,
+            surface=surface,
+        )
 
         saved_something = False
         choice_types = ("choice", "single_choice", "multi_choice")
@@ -6561,7 +7530,7 @@ class GuidelineService:
         await self.db.delete(guideline)
         return True
 
-    async def get_board_guidelines(self, board_id: str) -> list[dict]:
+    async def get_board_guidelines(self, board_id: str, *, surface: str = "service") -> list[dict]:
         """Get all guidelines for a board — linked globals + inline, sorted by priority."""
         # Linked global guidelines
         linked_query = (
@@ -6619,6 +7588,13 @@ class GuidelineService:
             })
 
         items.sort(key=lambda x: x["priority"])
+        if not items:
+            details = build_board_missing_context_warning_details(
+                board_id=board_id,
+                warning_code="board_rules_missing",
+                surface=surface,
+            )
+            emit_governance_metric(details, raise_on_violation=False)
         return items
 
     async def link_guideline_to_board(
@@ -6836,6 +7812,35 @@ class ArchiveService:
 # ============================================================================
 
 
+class SprintOperationError(ValueError):
+    """Typed sprint workflow error for API/MCP callers."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        remediation: str | None = None,
+        facts: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.remediation = remediation
+        self.facts = facts or {}
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "code": self.code,
+            "message": self.message,
+        }
+        if self.remediation:
+            payload["remediation"] = self.remediation
+        if self.facts:
+            payload["facts"] = self.facts
+        return payload
+
+
 class SprintService:
     """Service for sprint operations."""
 
@@ -6866,6 +7871,88 @@ class SprintService:
         log = ActivityLog(**kwargs)
         self.db.add(log)
 
+    @staticmethod
+    def _lane_activity_details(sprint: Sprint) -> dict[str, Any]:
+        lane_type = (
+            sprint.lane_type.value
+            if getattr(sprint.lane_type, "value", None)
+            else str(sprint.lane_type or SprintLaneType.NORMAL.value)
+        )
+        return {
+            "lane_type": lane_type,
+            "origin_sprint_id": sprint.origin_sprint_id,
+            "origin_bug_id": sprint.origin_bug_id,
+            "normal_sprint_created": sprint.normal_sprint_created,
+        }
+
+    async def _validate_hotfix_lane_create(
+        self,
+        board_id: str,
+        spec: Spec,
+        data: SprintCreate,
+    ) -> tuple[Sprint | None, Card | None]:
+        """Validate hotfix lane creation inputs without mutating source artifacts."""
+        if data.lane_type != SprintLaneType.HOTFIX:
+            return None, None
+
+        origin_sprint: Sprint | None = None
+        if data.origin_sprint_id:
+            origin_sprint = await self.db.get(Sprint, data.origin_sprint_id)
+            if (
+                not origin_sprint
+                or origin_sprint.board_id != board_id
+                or origin_sprint.spec_id != data.spec_id
+            ):
+                raise SprintOperationError(
+                    "origin_sprint_not_found",
+                    "origin_sprint_id does not reference a sprint in this board/spec.",
+                    remediation="provide_same_spec_origin_sprint",
+                    facts={
+                        "origin_sprint_id": data.origin_sprint_id,
+                        "spec_id": data.spec_id,
+                        "board_id": board_id,
+                    },
+                )
+
+        origin_bug: Card | None = None
+        if data.origin_bug_id:
+            origin_bug = await self.db.get(Card, data.origin_bug_id)
+            if (
+                not origin_bug
+                or origin_bug.board_id != board_id
+                or origin_bug.spec_id != data.spec_id
+                or origin_bug.card_type != CardType.BUG
+            ):
+                raise SprintOperationError(
+                    "origin_bug_not_found",
+                    "origin_bug_id does not reference a bug in this board/spec.",
+                    remediation="provide_same_spec_bug_card",
+                    facts={
+                        "origin_bug_id": data.origin_bug_id,
+                        "spec_id": data.spec_id,
+                        "board_id": board_id,
+                    },
+                )
+
+        spec_done = spec.status == SpecStatus.DONE
+        origin_sprint_closed = bool(origin_sprint and origin_sprint.status == SprintStatus.CLOSED)
+        if not spec_done and not origin_sprint_closed:
+            raise SprintOperationError(
+                "hotfix_lane_not_eligible",
+                "Hotfix lane requires a done spec or a closed same-spec origin sprint.",
+                remediation="assign_hotfix_lane_after_done_spec_or_closed_origin_sprint",
+                facts={
+                    "spec_id": spec.id,
+                    "spec_status": spec.status.value,
+                    "origin_sprint_id": data.origin_sprint_id,
+                    "origin_sprint_status": (
+                        origin_sprint.status.value if origin_sprint else None
+                    ),
+                },
+            )
+
+        return origin_sprint, origin_bug
+
     async def create_sprint(
         self, board_id: str, user_id: str, data: SprintCreate,
         skip_ownership_check: bool = False,
@@ -6878,6 +7965,8 @@ class SprintService:
             board = await self.db.get(Board, board_id)
             if not board or board.owner_id != user_id:
                 return None
+
+        await self._validate_hotfix_lane_create(board_id, spec, data)
 
         # Validate scoped IDs exist in spec
         if data.test_scenario_ids:
@@ -6897,6 +7986,9 @@ class SprintService:
             objective=data.objective,
             expected_outcome=data.expected_outcome,
             spec_version=spec.version,
+            lane_type=data.lane_type or SprintLaneType.NORMAL,
+            origin_sprint_id=data.origin_sprint_id,
+            origin_bug_id=data.origin_bug_id,
             test_scenario_ids=data.test_scenario_ids,
             business_rule_ids=data.business_rule_ids,
             start_date=data.start_date, end_date=data.end_date,
@@ -6922,11 +8014,28 @@ class SprintService:
         await self._log_activity(
             board_id=board_id, action="sprint_created",
             actor_type="user", actor_id=user_id, actor_name=actor_name,
-            details={"title": data.title, "sprint_id": sprint.id, "spec_id": data.spec_id},
+            details={
+                "title": data.title,
+                "sprint_id": sprint.id,
+                "spec_id": data.spec_id,
+                "lane_type": sprint.lane_type.value if sprint.lane_type else "normal",
+                "origin_sprint_id": sprint.origin_sprint_id,
+                "origin_bug_id": sprint.origin_bug_id,
+                "normal_sprint_created": sprint.normal_sprint_created,
+            },
         )
         await self._record_history(
             sprint_id=sprint.id, action="created", actor_id=user_id, actor_name=actor_name,
-            summary=f"Sprint created: {data.title}", version=1,
+            changes=[{
+                "field": "lane",
+                **self._lane_activity_details(sprint),
+            }],
+            summary=(
+                f"Hotfix lane created: {data.title}"
+                if sprint.lane_type == SprintLaneType.HOTFIX
+                else f"Sprint created: {data.title}"
+            ),
+            version=1,
         )
         return sprint
 
@@ -6951,7 +8060,9 @@ class SprintService:
             query = query.where(Sprint.archived.is_(False))
         query = query.order_by(Sprint.created_at.asc())
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        rows = list(result.scalars().all())
+        await _attach_open_qa_counts(self.db, rows, SprintQAItem, "sprint_id")
+        return rows
 
     async def list_board_sprints(
         self, board_id: str, status_filter: str | None = None,
@@ -6970,7 +8081,9 @@ class SprintService:
         query = query.options(selectinload(Sprint.spec))
         query = query.order_by(Sprint.updated_at.desc())
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        rows = list(result.scalars().all())
+        await _attach_open_qa_counts(self.db, rows, SprintQAItem, "sprint_id")
+        return rows
 
     async def update_sprint(
         self, sprint_id: str, user_id: str, data: SprintUpdate,
@@ -6984,6 +8097,10 @@ class SprintService:
 
         update_data = data.model_dump(exclude_unset=True)
         old_data = {k: getattr(sprint, k) for k in update_data.keys()}
+
+        lane_fields = {"lane_type", "origin_sprint_id", "origin_bug_id"}
+        if lane_fields & update_data.keys() and sprint.status != SprintStatus.DRAFT:
+            raise ValueError("Sprint lane metadata can only be updated while the sprint is draft")
 
         # Validate scoped IDs if changed
         if "test_scenario_ids" in update_data and update_data["test_scenario_ids"] is not None:
@@ -7001,7 +8118,15 @@ class SprintService:
                 if invalid:
                     raise ValueError(f"Business rule IDs not found in spec: {invalid}")
 
-        content_fields = {"title", "description", "test_scenario_ids", "business_rule_ids"}
+        content_fields = {
+            "title",
+            "description",
+            "test_scenario_ids",
+            "business_rule_ids",
+            "lane_type",
+            "origin_sprint_id",
+            "origin_bug_id",
+        }
         bumps_version = bool(content_fields & update_data.keys())
 
         json_fields = {"test_scenario_ids", "business_rule_ids", "labels"}
@@ -7050,6 +8175,18 @@ class SprintService:
 
         spec = await self.db.get(Spec, sprint.spec_id)
         board = await self.db.get(Board, sprint.board_id) if spec else None
+
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=sprint.board_id,
+            actor_id=user_id,
+            entity_type="sprint",
+            entity_id=sprint.id,
+            critical_action=_critical_sprint_move_action(data.status),
+            surface="service",
+            actor_type="user",
+            actor_name=actor_name,
+        )
 
         # Gate: draft → active requires at least 1 card assigned
         if data.status == SprintStatus.ACTIVE:
@@ -7201,12 +8338,18 @@ class SprintService:
             details={
                 "sprint_id": sprint_id, "spec_id": sprint.spec_id,
                 "from_status": old_status.value, "to_status": data.status.value,
+                **self._lane_activity_details(sprint),
             },
         )
         await self._record_history(
             sprint_id=sprint_id, action="status_changed",
             actor_id=user_id, actor_name=resolved_name,
-            changes=[{"field": "status", "old": old_status.value, "new": data.status.value}],
+            changes=[{
+                "field": "status",
+                "old": old_status.value,
+                "new": data.status.value,
+                **self._lane_activity_details(sprint),
+            }],
             summary=f"Status: {old_status.value} → {data.status.value}",
             version=sprint.version,
         )
@@ -7238,8 +8381,13 @@ class SprintService:
         """Assign cards to a sprint. Cards must belong to the same spec."""
         sprint = await self.db.get(Sprint, sprint_id)
         if not sprint:
-            raise ValueError("Sprint not found")
-        assigned = 0
+            raise SprintOperationError(
+                "sprint_not_found",
+                "Sprint not found.",
+                remediation="Refresh the sprint list and retry assignment with an existing sprint.",
+                facts={"sprint_id": sprint_id},
+            )
+        cards_to_assign: list[Card] = []
         for card_id in card_ids:
             card = await self.db.get(Card, card_id)
             if not card:
@@ -7249,6 +8397,29 @@ class SprintService:
                     f"Card '{card.title}' belongs to a different spec. "
                     f"Sprint spec: {sprint.spec_id}, card spec: {card.spec_id}"
                 )
+            if sprint.lane_type == SprintLaneType.HOTFIX and card.card_type not in {
+                CardType.BUG,
+                CardType.TEST,
+            }:
+                raise SprintOperationError(
+                    "hotfix_lane_card_type_forbidden",
+                    "Hotfix lanes accept only bug and test cards.",
+                    remediation=(
+                        "Assign only bug cards and regression test cards to the hotfix lane. "
+                        "Use a normal sprint for implementation cards."
+                    ),
+                    facts={
+                        "sprint_id": sprint_id,
+                        "lane_type": sprint.lane_type.value,
+                        "card_id": card.id,
+                        "card_type": card.card_type.value,
+                        "allowed_card_types": [CardType.BUG.value, CardType.TEST.value],
+                    },
+                )
+            cards_to_assign.append(card)
+
+        assigned = 0
+        for card in cards_to_assign:
             card.sprint_id = sprint_id
             assigned += 1
         if assigned:
@@ -7256,13 +8427,32 @@ class SprintService:
             await self._log_activity(
                 board_id=sprint.board_id, action="sprint_tasks_assigned",
                 actor_type="user", actor_id=user_id, actor_name=actor_name,
-                details={"sprint_id": sprint_id, "card_ids": card_ids, "count": assigned},
+                details={
+                    "sprint_id": sprint_id,
+                    "card_ids": [card.id for card in cards_to_assign],
+                    "count": assigned,
+                    **self._lane_activity_details(sprint),
+                    "accepted_card_types": (
+                        [CardType.BUG.value, CardType.TEST.value]
+                        if sprint.lane_type == SprintLaneType.HOTFIX
+                        else [CardType.NORMAL.value, CardType.TEST.value, CardType.BUG.value]
+                    ),
+                },
             )
             await self._record_history(
                 sprint_id=sprint_id, action="tasks_assigned",
                 actor_id=user_id, actor_name=actor_name,
-                changes=[{"field": "cards", "added": card_ids, "count": assigned}],
-                summary=f"Assigned {assigned} card(s) to sprint",
+                changes=[{
+                    "field": "cards",
+                    "added": [card.id for card in cards_to_assign],
+                    "count": assigned,
+                    **self._lane_activity_details(sprint),
+                }],
+                summary=(
+                    f"Assigned {assigned} card(s) to hotfix lane"
+                    if sprint.lane_type == SprintLaneType.HOTFIX
+                    else f"Assigned {assigned} card(s) to sprint"
+                ),
                 version=sprint.version,
             )
         await self.db.commit()
@@ -7280,11 +8470,23 @@ class SprintService:
                 f"Evaluations can only be submitted for sprints in 'review' status "
                 f"(current: '{sprint.status.value}')"
             )
+        evaluator_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=sprint.board_id,
+            actor_id=user_id,
+            entity_type="sprint",
+            entity_id=sprint.id,
+            critical_action=CriticalAction.SPRINT_SUBMIT_EVALUATION,
+            surface="service",
+            actor_type="user",
+            actor_name=evaluator_name,
+        )
         import uuid as _uuid
         eval_entry = {
             "id": f"eval_{_uuid.uuid4().hex[:8]}",
             "evaluator_id": user_id,
-            "evaluator_name": await resolve_actor_name(self.db, user_id, sprint.board_id),
+            "evaluator_name": evaluator_name,
             "evaluator_type": "user",
             **evaluation,
             "stale": False,
@@ -7298,7 +8500,12 @@ class SprintService:
         await self._log_activity(
             board_id=sprint.board_id, action="sprint_evaluation_submitted",
             actor_type="user", actor_id=user_id, actor_name=eval_entry["evaluator_name"],
-            details={"sprint_id": sprint_id, "evaluation_id": eval_entry["id"], "score": evaluation.get("overall_score")},
+            details={
+                "sprint_id": sprint_id,
+                "evaluation_id": eval_entry["id"],
+                "score": evaluation.get("overall_score"),
+                **self._lane_activity_details(sprint),
+            },
         )
         await self._record_history(
             sprint_id=sprint_id, action="evaluation_submitted",
@@ -7308,6 +8515,7 @@ class SprintService:
                 "evaluation_id": eval_entry["id"],
                 "recommendation": evaluation.get("recommendation"),
                 "overall_score": evaluation.get("overall_score"),
+                **self._lane_activity_details(sprint),
             }],
             summary=f"Evaluation submitted: {evaluation.get('recommendation')} (score: {evaluation.get('overall_score')})",
             version=sprint.version,
@@ -7485,10 +8693,27 @@ class SprintQAService:
     async def answer_question(
         self, qa_id: str, user_id: str, answer: str | None = None,
         selected: list[str] | None = None,
+        *,
+        actor_type: str = "user",
+        surface: str = "service",
     ) -> SprintQAItem | None:
         qa = await self.db.get(SprintQAItem, qa_id)
         if not qa:
             return None
+
+        sprint = await self.db.get(Sprint, qa.sprint_id)
+        board = await self.db.get(Board, sprint.board_id) if sprint else None
+        await _authorize_qa_answer_or_raise(
+            self.db,
+            board=board,
+            qa=qa,
+            user_id=user_id,
+            entity_type="sprint",
+            question_id=qa_id,
+            actor_type=actor_type,
+            surface=surface,
+        )
+
         qa.answer = answer
         qa.selected = selected
         qa.answered_by = user_id

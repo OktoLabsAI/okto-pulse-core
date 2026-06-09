@@ -15,6 +15,7 @@ import re
 import uuid
 from collections import Counter
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy import select
@@ -25,6 +26,9 @@ from okto_pulse.core.models.db import (
     ArchitectureDesign,
     ArchitectureDesignVersion,
     ArchitectureDiagramPayload,
+    ArchitectureFinding,
+    ArchitectureFindingRun,
+    ArchitectureWarningAcknowledgement,
     Card,
     Ideation,
     Refinement,
@@ -36,6 +40,13 @@ from okto_pulse.core.models.schemas import (
     ArchitectureDesignSummary,
     ArchitectureDesignUpdate,
     ArchitectureDiffResponse,
+    ArchitectureWarningAcknowledgementRequest,
+)
+from okto_pulse.core.services.architecture_observability import (
+    observe_architecture_finding_run_persist,
+    observe_architecture_gate_eval,
+    observe_architecture_projection,
+    observe_architecture_warning_ack,
 )
 
 PARENT_MODELS = {
@@ -927,6 +938,37 @@ class ArchitecturePayloadValidationError(ValueError):
         super().__init__(f"Architecture payload rejected: {issue_count} issue(s): " + "; ".join(issues))
 
 
+class ArchitectureWarningAcknowledgementRequired(ValueError):
+    """Raised when a valid architecture payload has active warnings without explicit acknowledgement."""
+
+    def __init__(
+        self,
+        *,
+        design_id: str,
+        warning_keys: list[str],
+        warnings: list[dict[str, Any]],
+        reason: str = "architecture_warning_acknowledgement_required",
+    ):
+        self.reason = reason
+        self.design_id = design_id
+        self.warning_keys = warning_keys
+        self.warnings = warnings
+        super().__init__(reason)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "error": self.reason,
+            "code": "architecture_warning_acknowledgement_required",
+            "design_id": self.design_id,
+            "warning_keys": self.warning_keys,
+            "structured_warnings": self.warnings,
+            "message": (
+                "Architecture design has active warnings. Explicitly acknowledge the warning keys "
+                "to save; acknowledgement is audit-only and does not clear the warnings."
+            ),
+        }
+
+
 def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -1383,6 +1425,454 @@ class ArchitectureDiagramStore:
         return result.scalar_one_or_none()
 
 
+ARCHITECTURE_FINDING_ACTIVE = "active"
+ARCHITECTURE_FINDING_RESOLVED = "resolved"
+ARCHITECTURE_FINDING_SUPERSEDED = "superseded"
+
+
+class ArchitectureFindingRunError(ValueError):
+    """Base error for architecture finding run persistence."""
+
+
+class ArchitectureInvalidDesignNotPersisted(ArchitectureFindingRunError):
+    """Raised when a caller attempts to persist findings for an invalid design."""
+
+
+class ArchitectureFindingKeyCollision(ArchitectureFindingRunError):
+    """Raised when one critic run produces conflicting payloads for one key."""
+
+
+def _warning_as_dict(warning: ArchitectureWarningRecord | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(warning, ArchitectureWarningRecord):
+        return warning.to_dict()
+    if isinstance(warning, dict):
+        return dict(warning)
+    raise TypeError(f"unsupported architecture warning type: {type(warning).__name__}")
+
+
+def architecture_warning_target(warning: ArchitectureWarningRecord | dict[str, Any]) -> tuple[str, str, str]:
+    """Return normalized target kind, target ref, and path for a warning.
+
+    Priority is intentionally identical to TR3: element_id, then entity_id,
+    then node_ref, then path. Path is required by ArchitectureWarningRecord and
+    by the persisted finding contract.
+    """
+
+    data = _warning_as_dict(warning)
+    path = str(data.get("path") or "").strip()
+    if not path:
+        raise ValueError("architecture warning path is required")
+    for field_name, kind in (
+        ("element_id", "element"),
+        ("entity_id", "entity"),
+        ("node_ref", "node"),
+    ):
+        value = data.get(field_name)
+        if value not in (None, ""):
+            return kind, str(value), path
+    return "path", path, path
+
+
+def stable_architecture_finding_key(
+    design_id: str,
+    warning: ArchitectureWarningRecord | dict[str, Any],
+) -> str:
+    """Compute the stable key that drives finding lifecycle transitions."""
+
+    data = _warning_as_dict(warning)
+    kind, target_ref, _path = architecture_warning_target(data)
+    payload = {
+        "design_id": design_id,
+        "warning_code": str(data.get("code") or ""),
+        "diagram_id": str(data.get("diagram_id") or ""),
+        "target_ref": target_ref,
+        "normalized_target_kind": kind,
+    }
+    return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+class ArchitectureFindingRunStore:
+    """Persistence boundary for Architecture Design finding runs.
+
+    The store consumes existing backend critic output. It never calls
+    ``TopologyWarningEngine`` and never creates persisted error findings for
+    invalid payloads.
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def upsert_latest_run(
+        self,
+        *,
+        board_id: str,
+        design_id: str,
+        design_version: int,
+        critic_run_id: str,
+        actor: dict[str, Any],
+        validator_summary: dict[str, Any] | None,
+        structured_warnings: list[ArchitectureWarningRecord | dict[str, Any]],
+    ) -> dict[str, Any]:
+        design = await self.db.get(ArchitectureDesign, design_id)
+        if design is None:
+            raise ValueError(f"architecture design not found: {design_id}")
+        if design.board_id != board_id:
+            raise ValueError("architecture design does not belong to board")
+
+        summary = dict(validator_summary or {})
+        if summary.get("valid") is False or summary.get("issues"):
+            raise ArchitectureInvalidDesignNotPersisted("invalid_design_not_persisted")
+
+        await self._delete_existing_run(design_id, critic_run_id)
+
+        previous_runs = await self.db.execute(
+            select(ArchitectureFindingRun).where(
+                ArchitectureFindingRun.design_id == design_id,
+                ArchitectureFindingRun.is_current == True,  # noqa: E712
+            )
+        )
+        for run in previous_runs.scalars().all():
+            run.is_current = False
+
+        previous_active = await self.db.execute(
+            select(ArchitectureFinding).where(
+                ArchitectureFinding.design_id == design_id,
+                ArchitectureFinding.lifecycle == ARCHITECTURE_FINDING_ACTIVE,
+            )
+        )
+        previous_by_key = {
+            finding.finding_key: finding
+            for finding in previous_active.scalars().all()
+        }
+
+        warning_rows = self._dedupe_warnings(design_id, structured_warnings)
+        new_keys = set(warning_rows)
+        resolved_count = 0
+        superseded_count = 0
+        for key, finding in previous_by_key.items():
+            if key in new_keys:
+                finding.lifecycle = ARCHITECTURE_FINDING_SUPERSEDED
+                superseded_count += 1
+            else:
+                finding.lifecycle = ARCHITECTURE_FINDING_RESOLVED
+                resolved_count += 1
+
+        run = ArchitectureFindingRun(
+            board_id=board_id,
+            design_id=design_id,
+            design_version=design_version,
+            critic_run_id=critic_run_id,
+            is_current=True,
+            active_count=len(warning_rows),
+            resolved_count=resolved_count,
+            superseded_count=superseded_count,
+            validator_summary=summary,
+            actor_type=str(actor.get("actor_type") or "user"),
+            actor_id=str(actor.get("actor_id") or "system"),
+            actor_name=actor.get("actor_name"),
+        )
+        self.db.add(run)
+        await self.db.flush()
+
+        findings: list[ArchitectureFinding] = []
+        for key, warning in warning_rows.items():
+            kind, target_ref, path = architecture_warning_target(warning)
+            finding = ArchitectureFinding(
+                run_id=run.id,
+                board_id=board_id,
+                design_id=design_id,
+                design_version=design_version,
+                critic_run_id=critic_run_id,
+                finding_key=key,
+                warning_code=str(warning.get("code") or "unknown"),
+                severity=str(warning.get("severity") or "warning"),
+                message=str(warning.get("message") or ""),
+                suggested_fix=warning.get("suggested_fix"),
+                path=path,
+                target_ref=target_ref,
+                normalized_target_kind=kind,
+                diagram_id=warning.get("diagram_id"),
+                diagram_type=warning.get("diagram_type"),
+                lifecycle=ARCHITECTURE_FINDING_ACTIVE,
+                raw_warning=warning,
+            )
+            self.db.add(finding)
+            findings.append(finding)
+        await self.db.flush()
+
+        return {
+            "design_id": design_id,
+            "critic_run_id": critic_run_id,
+            "active_count": len(findings),
+            "resolved_count": resolved_count,
+            "superseded_count": superseded_count,
+            "findings": [self._finding_to_dict(finding) for finding in findings],
+        }
+
+    async def list_findings(
+        self,
+        *,
+        design_id: str,
+        lifecycle: str | None = None,
+    ) -> list[ArchitectureFinding]:
+        stmt = select(ArchitectureFinding).where(ArchitectureFinding.design_id == design_id)
+        if lifecycle is not None:
+            stmt = stmt.where(ArchitectureFinding.lifecycle == lifecycle)
+        stmt = stmt.order_by(ArchitectureFinding.created_at.asc(), ArchitectureFinding.finding_key.asc())
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_current_run(self, design_id: str) -> ArchitectureFindingRun | None:
+        result = await self.db.execute(
+            select(ArchitectureFindingRun)
+            .where(
+                ArchitectureFindingRun.design_id == design_id,
+                ArchitectureFindingRun.is_current == True,  # noqa: E712
+            )
+            .order_by(ArchitectureFindingRun.created_at.desc())
+        )
+        return result.scalars().first()
+
+    async def record_acknowledgements(
+        self,
+        *,
+        board_id: str,
+        design_id: str,
+        critic_run_id: str,
+        finding_keys: list[str],
+        actor: dict[str, Any],
+        statement: str | None = None,
+    ) -> list[ArchitectureWarningAcknowledgement]:
+        run = await self._get_run(design_id, critic_run_id)
+        if run is None:
+            raise ValueError(f"architecture finding run not found: {critic_run_id}")
+        active = await self.list_findings(design_id=design_id, lifecycle=ARCHITECTURE_FINDING_ACTIVE)
+        active_keys = {finding.finding_key for finding in active if finding.critic_run_id == critic_run_id}
+        missing = sorted(set(finding_keys) - active_keys)
+        if missing:
+            raise ValueError(f"warning acknowledgement references unknown active findings: {missing}")
+
+        acknowledgements: list[ArchitectureWarningAcknowledgement] = []
+        for finding_key in finding_keys:
+            result = await self.db.execute(
+                select(ArchitectureWarningAcknowledgement).where(
+                    ArchitectureWarningAcknowledgement.design_id == design_id,
+                    ArchitectureWarningAcknowledgement.critic_run_id == critic_run_id,
+                    ArchitectureWarningAcknowledgement.finding_key == finding_key,
+                    ArchitectureWarningAcknowledgement.actor_id == str(actor.get("actor_id") or "system"),
+                )
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                row = ArchitectureWarningAcknowledgement(
+                    board_id=board_id,
+                    design_id=design_id,
+                    design_version=run.design_version,
+                    critic_run_id=critic_run_id,
+                    finding_key=finding_key,
+                    actor_type=str(actor.get("actor_type") or "user"),
+                    actor_id=str(actor.get("actor_id") or "system"),
+                    actor_name=actor.get("actor_name"),
+                    statement=statement,
+                )
+                self.db.add(row)
+            else:
+                row.actor_type = str(actor.get("actor_type") or row.actor_type)
+                row.actor_name = actor.get("actor_name")
+                row.statement = statement
+            acknowledgements.append(row)
+        await self.db.flush()
+        return acknowledgements
+
+    async def _delete_existing_run(self, design_id: str, critic_run_id: str) -> None:
+        existing = await self._get_run(design_id, critic_run_id)
+        if existing is not None:
+            await self.db.delete(existing)
+            await self.db.flush()
+
+    async def _get_run(self, design_id: str, critic_run_id: str) -> ArchitectureFindingRun | None:
+        result = await self.db.execute(
+            select(ArchitectureFindingRun).where(
+                ArchitectureFindingRun.design_id == design_id,
+                ArchitectureFindingRun.critic_run_id == critic_run_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    def _dedupe_warnings(
+        self,
+        design_id: str,
+        structured_warnings: list[ArchitectureWarningRecord | dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        by_key: dict[str, dict[str, Any]] = {}
+        fingerprints: dict[str, str] = {}
+        for warning in structured_warnings:
+            data = _warning_as_dict(warning)
+            key = stable_architecture_finding_key(design_id, data)
+            fingerprint = _hash_payload(data)
+            if key in by_key:
+                if fingerprints[key] != fingerprint:
+                    raise ArchitectureFindingKeyCollision("finding_key_collision")
+                continue
+            by_key[key] = data
+            fingerprints[key] = fingerprint
+        return by_key
+
+    def _finding_to_dict(self, finding: ArchitectureFinding) -> dict[str, Any]:
+        return {
+            "finding_key": finding.finding_key,
+            "code": finding.warning_code,
+            "severity": finding.severity,
+            "lifecycle": finding.lifecycle,
+            "normalized_target_kind": finding.normalized_target_kind,
+            "target_ref": finding.target_ref,
+            "path": finding.path,
+            "message": finding.message,
+            "suggested_fix": finding.suggested_fix,
+            "diagram_id": finding.diagram_id,
+            "diagram_type": finding.diagram_type,
+        }
+
+
+@dataclass(frozen=True)
+class ArchitectureFindingGate:
+    """Evaluate persisted architecture findings for SDLC completion gates.
+
+    The gate consumes Resource Gate-resolved Architecture Design references and
+    the persisted finding lifecycle. It intentionally never re-runs topology
+    analysis; the backend architecture critic remains the source of truth.
+    """
+
+    db: AsyncSession
+
+    async def evaluate(
+        self,
+        *,
+        board_id: str,
+        owner_type: str,
+        owner_id: str,
+        architecture_refs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        started = perf_counter()
+        store = ArchitectureFindingRunStore(self.db)
+        active: list[dict[str, Any]] = []
+        resolved_count = 0
+        superseded_count = 0
+        by_design: list[dict[str, Any]] = []
+        seen_design_ids: set[str] = set()
+
+        for ref in architecture_refs:
+            design_id = str(ref.get("id") or "").strip()
+            if not design_id or design_id in seen_design_ids:
+                continue
+            seen_design_ids.add(design_id)
+
+            findings = await store.list_findings(design_id=design_id)
+            active_findings = [
+                finding for finding in findings
+                if finding.lifecycle == ARCHITECTURE_FINDING_ACTIVE
+            ]
+            resolved_findings = [
+                finding for finding in findings
+                if finding.lifecycle == ARCHITECTURE_FINDING_RESOLVED
+            ]
+            superseded_findings = [
+                finding for finding in findings
+                if finding.lifecycle == ARCHITECTURE_FINDING_SUPERSEDED
+            ]
+            resolved_count += len(resolved_findings)
+            superseded_count += len(superseded_findings)
+
+            by_design.append({
+                "design_id": design_id,
+                "title": ref.get("title"),
+                "source_entity_type": ref.get("source_entity_type"),
+                "source_entity_id": ref.get("source_entity_id"),
+                "source_entity_title": ref.get("source_entity_title"),
+                "active_count": len(active_findings),
+                "resolved_count": len(resolved_findings),
+                "superseded_count": len(superseded_findings),
+            })
+            active.extend(
+                self._finding_to_remediation(finding, ref)
+                for finding in active_findings
+            )
+
+        by_code = dict(Counter(item["code"] for item in active))
+        projection = {
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "design_count": len(seen_design_ids),
+            "active_count": len(active),
+            "resolved_count": resolved_count,
+            "superseded_count": superseded_count,
+            "by_code": by_code,
+            "by_design": by_design,
+            "top_remediation": active[:10],
+            "blocking": bool(active),
+            "remediation": (
+                "Resolve active Architecture Design findings by updating the "
+                "diagram/design until the backend architecture critic no longer "
+                "emits those warning keys. Save acknowledgement is audit-only "
+                "and does not bypass Done."
+                if active else None
+            ),
+        }
+        outcome = "active" if active else "clear"
+        duration_ms = (perf_counter() - started) * 1000
+        observe_architecture_gate_eval(
+            board_id=board_id,
+            owner_type=owner_type,
+            duration_ms=duration_ms,
+            active_count=len(active),
+            design_count=len(seen_design_ids),
+            outcome=outcome,
+        )
+        observe_architecture_projection(
+            board_id=board_id,
+            owner_type=owner_type,
+            active_count=len(active),
+            design_count=len(seen_design_ids),
+            outcome=outcome,
+        )
+        return {
+            "allowed": not active,
+            "board_id": board_id,
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "architecture_findings": projection,
+        }
+
+    @staticmethod
+    def _finding_to_remediation(
+        finding: ArchitectureFinding,
+        ref: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "design_id": finding.design_id,
+            "design_title": ref.get("title"),
+            "source_entity_type": ref.get("source_entity_type"),
+            "source_entity_id": ref.get("source_entity_id"),
+            "source_entity_title": ref.get("source_entity_title"),
+            "finding_key": finding.finding_key,
+            "critic_run_id": finding.critic_run_id,
+            "design_version": finding.design_version,
+            "code": finding.warning_code,
+            "severity": finding.severity,
+            "message": finding.message,
+            "normalized_target_kind": finding.normalized_target_kind,
+            "target_ref": finding.target_ref,
+            "path": finding.path,
+            "suggested_fix": finding.suggested_fix,
+            "diagram_id": finding.diagram_id,
+            "diagram_type": finding.diagram_type,
+            "remediation": (
+                "Update the Architecture Design so the backend critic resolves "
+                "this warning; acknowledgement records are audit-only."
+            ),
+        }
+
+
 class ArchitectureDesignRepository:
     """Repository for Architecture Design envelopes and versions."""
 
@@ -1422,9 +1912,18 @@ class ArchitectureDesignRepository:
         if parent is None:
             raise ValueError(f"{parent_type} parent not found: {parent_id}")
         payload = _dump_model_or_dict(data)
-        self._validate_payload(payload)
+        acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
+        design_id = str(uuid.uuid4())
         board_id = getattr(parent, "board_id")
+        critique = self._critique_for_save(
+            design_id=design_id,
+            board_id=board_id,
+            entity_type=parent_type,
+            payload=payload,
+            acknowledgement=acknowledgement,
+        )
         design = ArchitectureDesign(
+            id=design_id,
             board_id=board_id,
             parent_type=parent_type,
             **{parent_field: parent_id},
@@ -1451,6 +1950,12 @@ class ArchitectureDesignRepository:
         )
         flag_modified(design, "diagrams")
         await self.snapshot(design.id, actor_id, "Initial architecture design")
+        await self._persist_finding_run(
+            design=design,
+            critique=critique,
+            actor_id=actor_id,
+            acknowledgement=acknowledgement,
+        )
         await self._publish_parent_semantic_change(design, actor_id)
         await self.db.flush()
         await self.db.refresh(design)
@@ -1468,15 +1973,27 @@ class ArchitectureDesignRepository:
             raise ValueError(f"architecture design not found: {design_id}")
         payload = _dump_model_or_dict(patch, exclude_unset=True)
         change_summary = payload.pop("change_summary", None)
+        acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
         semantic_change = bool(SEMANTIC_PATCH_FIELDS & payload.keys())
+        candidate_diagrams = (
+            payload["diagrams"]
+            if "diagrams" in payload
+            else await self._diagrams_for_validation(design.diagrams or [])
+        )
         candidate_payload = {
             "title": payload.get("title", design.title),
             "global_description": payload.get("global_description", design.global_description),
             "entities": payload.get("entities", design.entities or []),
             "interfaces": payload.get("interfaces", design.interfaces or []),
-            "diagrams": payload.get("diagrams", design.diagrams or []),
+            "diagrams": candidate_diagrams,
         }
-        self._validate_payload(candidate_payload)
+        critique = self._critique_for_save(
+            design_id=design.id,
+            board_id=design.board_id,
+            entity_type=design.parent_type,
+            payload=candidate_payload,
+            acknowledgement=acknowledgement,
+        )
         if "title" in payload:
             design.title = payload["title"]
         if "global_description" in payload:
@@ -1501,6 +2018,12 @@ class ArchitectureDesignRepository:
         design.requires_arch_review = False
         design.version += 1
         await self.snapshot(design.id, actor_id, change_summary or "Architecture design updated")
+        await self._persist_finding_run(
+            design=design,
+            critique=critique,
+            actor_id=actor_id,
+            acknowledgement=acknowledgement,
+        )
         if semantic_change:
             await self._publish_parent_semantic_change(design, actor_id)
         await self.db.flush()
@@ -1512,6 +2035,173 @@ class ArchitectureDesignRepository:
                 trigger="spec_architecture_updated",
             )
         return design
+
+    def _critique_for_save(
+        self,
+        *,
+        design_id: str,
+        board_id: str | None,
+        entity_type: str | None,
+        payload: dict[str, Any],
+        acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        critique = self.critique_payload(payload)
+        issues = list(critique.get("issues") or [])
+        if issues:
+            raise ArchitecturePayloadValidationError(issues)
+
+        warnings = self._structured_warnings_with_keys(
+            design_id,
+            list(critique.get("structured_warnings") or []),
+        )
+        critique["structured_warnings"] = warnings
+        if warnings:
+            self._require_warning_acknowledgement(
+                design_id=design_id,
+                board_id=board_id,
+                entity_type=entity_type,
+                warnings=warnings,
+                acknowledgement=acknowledgement,
+            )
+        return critique
+
+    def _structured_warnings_with_keys(
+        self,
+        design_id: str,
+        structured_warnings: list[ArchitectureWarningRecord | dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        keyed: list[dict[str, Any]] = []
+        for warning in structured_warnings:
+            data = _warning_as_dict(warning)
+            data["finding_key"] = stable_architecture_finding_key(design_id, data)
+            keyed.append(data)
+        return keyed
+
+    async def _diagrams_for_validation(self, diagrams: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        enriched: list[dict[str, Any]] = []
+        for diagram in diagrams:
+            item = dict(diagram)
+            ref = item.get("adapter_payload_ref")
+            if ref and "adapter_payload" not in item:
+                try:
+                    item["adapter_payload"] = await self.diagram_store.load_payload(ref)
+                except KeyError:
+                    pass
+            enriched.append(item)
+        return enriched
+
+    def _require_warning_acknowledgement(
+        self,
+        *,
+        design_id: str,
+        board_id: str | None,
+        entity_type: str | None,
+        warnings: list[dict[str, Any]],
+        acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None,
+    ) -> None:
+        data = _dump_model_or_dict(acknowledgement) if acknowledgement is not None else {}
+        warning_keys = sorted(str(warning["finding_key"]) for warning in warnings)
+        code_count = len({str(warning.get("code") or "unknown") for warning in warnings})
+        metric_labels = {
+            "board_id": board_id or "unknown",
+            "entity_type": entity_type or "unknown",
+            "warning_count": len(warnings),
+            "code_count": code_count,
+        }
+        if not data.get("accepted"):
+            observe_architecture_warning_ack(
+                **metric_labels,
+                outcome="required_without_ack",
+            )
+            raise ArchitectureWarningAcknowledgementRequired(
+                design_id=design_id,
+                warning_keys=warning_keys,
+                warnings=warnings,
+            )
+        acknowledged_keys = sorted(
+            str(key)
+            for key in (data.get("warning_keys") or [])
+            if str(key).strip()
+        )
+        if acknowledged_keys and acknowledged_keys != warning_keys:
+            observe_architecture_warning_ack(
+                **metric_labels,
+                outcome="failed_ack_mismatch",
+            )
+            raise ArchitectureWarningAcknowledgementRequired(
+                design_id=design_id,
+                warning_keys=warning_keys,
+                warnings=warnings,
+                reason="architecture_warning_acknowledgement_keys_mismatch",
+            )
+        observe_architecture_warning_ack(
+            **metric_labels,
+            outcome="accepted_with_ack",
+        )
+
+    async def _persist_finding_run(
+        self,
+        *,
+        design: ArchitectureDesign,
+        critique: dict[str, Any],
+        actor_id: str,
+        acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None,
+    ) -> None:
+        structured_warnings = list(critique.get("structured_warnings") or [])
+        critic_run_id = f"archcrit:{design.id}:v{design.version}:{uuid.uuid4().hex[:8]}"
+        actor = {
+            "actor_type": "user",
+            "actor_id": actor_id,
+            "actor_name": actor_id,
+        }
+        store = ArchitectureFindingRunStore(self.db)
+        try:
+            await store.upsert_latest_run(
+                board_id=design.board_id,
+                design_id=design.id,
+                design_version=design.version,
+                critic_run_id=critic_run_id,
+                actor=actor,
+                validator_summary={
+                    "valid": True,
+                    "issues": [],
+                    "warnings_count": len(critique.get("warnings") or []),
+                    "structured_warnings_count": len(structured_warnings),
+                    "suppressed_warnings_count": len(critique.get("suppressed_warnings") or []),
+                    "summary": critique.get("summary") or {},
+                },
+                structured_warnings=structured_warnings,
+            )
+        except Exception:
+            observe_architecture_finding_run_persist(
+                board_id=design.board_id,
+                entity_type=design.parent_type,
+                warning_count=len(structured_warnings),
+                outcome="failed",
+            )
+            raise
+        observe_architecture_finding_run_persist(
+            board_id=design.board_id,
+            entity_type=design.parent_type,
+            warning_count=len(structured_warnings),
+            outcome="persisted",
+        )
+        if structured_warnings and acknowledgement is not None:
+            data = _dump_model_or_dict(acknowledgement)
+            if data.get("accepted"):
+                warning_keys = [
+                    str(warning["finding_key"])
+                    for warning in structured_warnings
+                    if warning.get("finding_key")
+                ]
+                await store.record_acknowledgements(
+                    board_id=design.board_id,
+                    design_id=design.id,
+                    critic_run_id=critic_run_id,
+                    finding_keys=warning_keys,
+                    actor=actor,
+                    statement=data.get("statement"),
+                )
 
     async def delete(self, design_id: str, actor_id: str | None = None) -> bool:
         design = await self.get(design_id)
@@ -2357,6 +3047,7 @@ class ArchitecturePropagationService:
         target_parent_id: str,
         actor_id: str,
         design_ids: list[str] | None = None,
+        architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None = None,
     ) -> list[ArchitectureDesign]:
         source_parent = await self._get_parent(source_parent_type, source_parent_id)
         target_parent = await self._get_parent(target_parent_type, target_parent_id)
@@ -2377,6 +3068,8 @@ class ArchitecturePropagationService:
             source_ref = self.repository.source_ref_for(source_design)
             existing = await self._find_existing_copy(target_parent_type, target_parent_id, source_ref)
             payload = self._payload_from_source(source_design, source_ref)
+            if architecture_warning_acknowledgement is not None:
+                payload["architecture_warning_acknowledgement"] = architecture_warning_acknowledgement
             if existing is None:
                 copied_design = await self.repository.create(
                     target_parent_type,
@@ -2399,6 +3092,7 @@ class ArchitecturePropagationService:
                         stale=False,
                         breaking_change_flag=False,
                         requires_arch_review=False,
+                        architecture_warning_acknowledgement=architecture_warning_acknowledgement,
                         change_summary=f"Re-synced from {source_parent_type} architecture",
                     ),
                     actor_id,
@@ -2413,8 +3107,17 @@ class ArchitecturePropagationService:
         card_id: str,
         actor_id: str,
         design_ids: list[str] | None = None,
+        architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None = None,
     ) -> list[ArchitectureDesign]:
-        return await self.copy_from_parent("spec", spec_id, "card", card_id, actor_id, design_ids)
+        return await self.copy_from_parent(
+            "spec",
+            spec_id,
+            "card",
+            card_id,
+            actor_id,
+            design_ids,
+            architecture_warning_acknowledgement=architecture_warning_acknowledgement,
+        )
 
     async def _get_parent(self, parent_type: str, parent_id: str) -> Any | None:
         parent_model, _ = self.repository._parent_config(parent_type)
@@ -2440,9 +3143,11 @@ class ArchitecturePropagationService:
         diagrams = []
         for diagram in design.diagrams or []:
             copied = copy.deepcopy(diagram)
+            source_diagram_id = copied.get("id")
             source_payload_ref = copied.pop("adapter_payload_ref", None)
-            copied["source_diagram_id"] = copied.get("id")
+            copied["source_diagram_id"] = source_diagram_id
             copied["source_payload_ref"] = source_payload_ref
+            copied["id"] = _new_scoped_id("diag")
             copied.pop("content_hash", None)
             copied.pop("size_bytes", None)
             diagrams.append(copied)

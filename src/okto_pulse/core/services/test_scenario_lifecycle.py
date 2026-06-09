@@ -32,10 +32,12 @@ VALID_SCENARIO_STATUSES: tuple[str, ...] = (
     "failed",
 )
 
-#: Spec statuses in which a scenario's operational status may NOT change.
-#: Status mutation stays allowed in draft/review/approved/in_progress — notably
-#: in_progress, the execution phase where scenarios are legitimately marked
-#: passed/automated/failed.
+#: Spec statuses in which a scenario's operational status may NOT change by
+#: default. Status mutation stays allowed in draft/review/approved/in_progress
+#: — notably in_progress, the execution phase where scenarios are legitimately
+#: marked passed/automated/failed. ``SpecService`` applies a narrow service-level
+#: exception for post-lock regression evidence when the scenario is already
+#: linked to an executable test card.
 _STATUS_IMMUTABLE_SPEC_STATUSES: frozenset[str] = frozenset({"validated", "done"})
 
 #: Editing any of these fields invalidates a scenario's existing evidence.
@@ -72,18 +74,22 @@ EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
 
 class StatusNotMutableError(ValueError):
     """Raised when a scenario status mutation is attempted while the spec is in a
-    status that forbids it (``validated`` or ``done``).
+    status that forbids it by default (``validated`` or ``done``).
 
     Intentionally distinct from ``SpecService._require_spec_unlocked`` (the
     content-lock), which triggers on an active *passed validation* rather than on
-    status and would therefore wrongly block ``in_progress``.
+    status and would therefore wrongly block ``in_progress``. The service layer
+    may allow post-lock regression evidence after a linked test card is already
+    executable; arbitrary scenario status edits still fail with this error.
     """
 
     def __init__(self, spec_status: str) -> None:
         self.spec_status = spec_status
         super().__init__(
             f"Cannot change test scenario status while spec is '{spec_status}'. "
-            "Scenario status is mutable only in draft/review/approved/in_progress."
+            "Scenario status is mutable only in draft/review/approved/in_progress, "
+            "unless the target scenario is already linked to an executable test card "
+            "for post-lock regression evidence."
         )
 
 

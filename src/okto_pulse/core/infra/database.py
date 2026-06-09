@@ -799,6 +799,48 @@ async def _migrate_add_sprint_scope_fields() -> None:
                     pass
 
 
+async def _migrate_add_sprint_lane_fields() -> None:
+    """Add sprint lane metadata for normal and post-closure hotfix lanes."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE sprints ADD COLUMN IF NOT EXISTS "
+                    "lane_type VARCHAR(50) NOT NULL DEFAULT 'normal'"
+                ))
+            except Exception:
+                pass
+            for col in ["origin_sprint_id", "origin_bug_id"]:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE sprints ADD COLUMN IF NOT EXISTS {col} VARCHAR(36)"
+                    ))
+                except Exception:
+                    pass
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE sprints ADD COLUMN lane_type VARCHAR(50) NOT NULL DEFAULT 'normal'"
+                ))
+            except Exception:
+                pass
+            for col in ["origin_sprint_id", "origin_bug_id"]:
+                try:
+                    await conn.execute(sa_text(f"ALTER TABLE sprints ADD COLUMN {col} VARCHAR(36)"))
+                except Exception:
+                    pass
+
+        try:
+            await conn.execute(sa_text(
+                "UPDATE sprints SET lane_type = 'normal' WHERE lane_type IS NULL"
+            ))
+        except Exception:
+            pass
+
+
 async def _migrate_add_card_knowledge_bases() -> None:
     """Add knowledge_bases JSON column to cards table."""
     from sqlalchemy import text as sa_text
@@ -858,6 +900,37 @@ async def _migrate_add_knowledge_source_columns() -> None:
                         ))
                     except Exception:
                         pass
+
+
+async def _migrate_add_kg_tick_boards_failed() -> None:
+    """Add boards_failed column to kg_tick_runs table (spec R2b, IMPL-2/TR4).
+
+    Tracks how many boards failed (graph corrupt/locked) during a tick without
+    aborting the rest of the fleet (FR1/TR2). Idempotent.
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'kg_tick_runs')"
+            ))
+            if not table_check.scalar():
+                return
+            await conn.execute(sa_text(
+                "ALTER TABLE kg_tick_runs "
+                "ADD COLUMN IF NOT EXISTS boards_failed INTEGER NOT NULL DEFAULT 0"
+            ))
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE kg_tick_runs "
+                    "ADD COLUMN boards_failed INTEGER NOT NULL DEFAULT 0"
+                ))
+            except Exception:
+                pass
 
 
 async def _migrate_drop_spec_skills() -> None:
@@ -1001,9 +1074,11 @@ async def init_db() -> None:
     await _migrate_add_card_knowledge_bases()
     await _migrate_add_knowledge_source_columns()
     await _migrate_add_sprint_scope_fields()
+    await _migrate_add_sprint_lane_fields()
     await _migrate_agent_boards()
     await _migrate_add_task_validation_columns()
     await _migrate_add_consolidation_resilience_columns()
+    await _migrate_add_kg_tick_boards_failed()
     await _migrate_drop_spec_skills()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()
