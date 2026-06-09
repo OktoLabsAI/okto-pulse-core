@@ -21,6 +21,58 @@ from okto_pulse.core.telemetry.service import TelemetryService
 logger = logging.getLogger(__name__)
 
 
+class _TelemetryASGIMiddleware:
+    """Telemetria HTTP como ASGI puro (sem BaseHTTPMiddleware).
+
+    Intercepta ``http.response.start`` para capturar o status e registra o
+    evento quando o downstream conclui (para streams, ao fim do stream —
+    mesma semântica da versão BaseHTTPMiddleware). Não cria task group nem
+    cancel scope em volta da resposta, o que mantém o caminho de
+    cancelamento de SSE/streaming idêntico ao do servidor puro.
+    """
+
+    def __init__(self, app, settings: CoreSettings) -> None:
+        self.app = app
+        self.settings = settings
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http" or not scope.get("path", "").startswith("/api/"):
+            await self.app(scope, receive, send)
+            return
+
+        started = time.perf_counter()
+        status_holder = {"status": 500}
+        error_class = None
+
+        async def send_wrapper(message) -> None:
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception as exc:
+            error_class = exc.__class__.__name__
+            raise
+        finally:
+            # O router popula scope["route"] durante o dispatch — disponível
+            # aqui depois que o downstream rodou.
+            route = scope.get("route")
+            route_template = getattr(route, "path", scope.get("path", ""))
+            payload = {
+                "method": scope.get("method", ""),
+                "route_template": route_template,
+                "status_code": status_holder["status"],
+                "duration_ms": int((time.perf_counter() - started) * 1000),
+            }
+            if error_class:
+                payload["error_class"] = error_class
+            try:
+                TelemetryService(self.settings).record_event("http", payload)
+            except Exception:
+                logger.debug("telemetry.record_failed", exc_info=True)
+
+
 def create_app(
     settings: CoreSettings,
     auth_provider: AuthProvider,
@@ -239,6 +291,14 @@ def create_app(
                     scheduler.shutdown(wait=False)
                 except Exception:
                     pass
+            # Para os pollers SSE antes do DB fechar — eles abrem sessões
+            # próprias fora do escopo de qualquer request.
+            try:
+                from okto_pulse.core.api.kg_events_hub import shutdown_kg_events_hub
+
+                await shutdown_kg_events_hub()
+            except Exception:
+                pass
             await event_dispatcher.stop(timeout=5.0)
             set_dispatcher(None)
             if consolidation_worker is not None:
@@ -282,32 +342,15 @@ def create_app(
             allow_headers=["*"],
         )
 
-    @app.middleware("http")
-    async def telemetry_http_middleware(request, call_next):
-        started = time.perf_counter()
-        status_code = 500
-        error_class = None
-        try:
-            response = await call_next(request)
-            status_code = response.status_code
-            return response
-        except Exception as exc:
-            error_class = exc.__class__.__name__
-            raise
-        finally:
-            path = request.url.path
-            if path.startswith("/api/"):
-                route = request.scope.get("route")
-                route_template = getattr(route, "path", path)
-                payload = {
-                    "method": request.method,
-                    "route_template": route_template,
-                    "status_code": status_code,
-                    "duration_ms": int((time.perf_counter() - started) * 1000),
-                }
-                if error_class:
-                    payload["error_class"] = error_class
-                TelemetryService(settings).record_event("http", payload)
+    # Root-cause fix (2026-06-09): este middleware era um
+    # ``@app.middleware("http")`` (= BaseHTTPMiddleware). BaseHTTPMiddleware
+    # consome respostas de streaming dentro de um task group do anyio; quando
+    # o cliente de um SSE desconectava, o cancel scope cancelava o generator
+    # com hard-cancel no meio de awaits de DB — vazando conexões do pool
+    # (exaustão → "travamento"). Como ASGI puro, a desconexão fecha o
+    # generator pelo caminho normal (aclose), sem cancel scope atravessando
+    # o cleanup.
+    app.add_middleware(_TelemetryASGIMiddleware, settings=settings)
 
     # Health check
     @app.get("/health")

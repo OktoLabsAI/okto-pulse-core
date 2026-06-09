@@ -375,6 +375,19 @@ class BoardConnection:
             return
         logger.debug("[KG] BoardConnection.close board_id=%s", self._board_id)
         self._closed = True
+        # File-handle leak fix (test_kg_file_handles::test_close_releases_handles):
+        # `del self.conn` confiava no refcount para destruir o handle C++ —
+        # qualquer QueryResult vivo segurava a Connection (e os handles de
+        # graph.lbug + WAL) indefinidamente. `Connection.close()` libera o
+        # handle nativo deterministicamente, independente de referências
+        # Python remanescentes.
+        try:
+            self.conn.close()
+        except Exception as exc:
+            logger.debug(
+                "[KG] BoardConnection.close conn_close_failed board_id=%s err=%s",
+                self._board_id, exc,
+            )
         try:
             del self.conn
         except Exception:
@@ -711,6 +724,30 @@ def apply_ladybug_lifecycle_step(
     path = board_kuzu_path(board_id)
     try:
         if step in (STEP_CHECKPOINT, STEP_FLUSH):
+            # Barreira de durabilidade real (fix corrupção 2026-06-09): emite
+            # um CHECKPOINT explícito para o Ladybug dobrar o WAL no arquivo
+            # principal ANTES do close. O close sozinho dependia do teardown
+            # implícito; um kill do processo entre o commit e o teardown
+            # deixava as escritas só no WAL — a hipótese de "flush parcial
+            # sob pressão" da corrupção observada em campo. Best-effort:
+            # CHECKPOINT falha com transações ativas, e nesse caso o
+            # close_all_connections abaixo continua sendo a barreira.
+            if step == STEP_CHECKPOINT and path.exists():
+                try:
+                    bc = BoardConnection(board_id)
+                    try:
+                        bc.conn.execute("CHECKPOINT")
+                    finally:
+                        bc.close()
+                except Exception as exc:
+                    logger.warning(
+                        "kg.lifecycle.checkpoint_statement_failed board=%s err=%s",
+                        board_id, exc,
+                        extra={
+                            "event": "kg.lifecycle.checkpoint_statement_failed",
+                            "board_id": board_id,
+                        },
+                    )
             close_all_connections(board_id)
             if not path.exists():
                 return LifecycleStepResult(

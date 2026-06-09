@@ -2,12 +2,16 @@
 
 import asyncio
 import contextlib
+import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Awaitable
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
+
+logger = logging.getLogger(__name__)
 
 # Base class for models — always available at import time
 Base = declarative_base()
@@ -79,6 +83,104 @@ def create_database(url: str, *, echo: bool = False) -> None:
         class_=AsyncSession,
         expire_on_commit=False,
     )
+
+    _install_pool_observability(_engine)
+
+
+# ---------------------------------------------------------------------------
+# Pool observability — leak detection (corruption/freeze root-cause hardening)
+# ---------------------------------------------------------------------------
+#
+# Conexões "vazadas" (checked-out e nunca devolvidas) eram invisíveis até o
+# GC emitir SAWarnings espalhados — quando o pool já estava exausto e o
+# servidor parecia travado. Estes listeners mantêm o timestamp de checkout
+# por _ConnectionRecord e logam um warning agregado quando algum checkout
+# ultrapassa o threshold, ANTES da exaustão.
+
+_POOL_STALE_CHECKOUT_WARN_SECONDS = 30.0
+_POOL_STALE_WARN_INTERVAL_SECONDS = 60.0
+_checked_out_since: dict[int, float] = {}
+_last_stale_warn_at: float = 0.0
+
+
+def _install_pool_observability(engine) -> None:
+    sync_engine = engine.sync_engine
+
+    @event.listens_for(sync_engine, "checkout")
+    def _on_checkout(_dbapi_conn, conn_record, _conn_proxy):  # noqa: ANN001
+        global _last_stale_warn_at
+        now = time.monotonic()
+        _checked_out_since[id(conn_record)] = now
+        stale_ages = [
+            now - ts for ts in _checked_out_since.values()
+            if now - ts > _POOL_STALE_CHECKOUT_WARN_SECONDS
+        ]
+        if stale_ages and now - _last_stale_warn_at > _POOL_STALE_WARN_INTERVAL_SECONDS:
+            _last_stale_warn_at = now
+            logger.warning(
+                "db.pool.stale_checkouts count=%d oldest_s=%.0f pool=%s",
+                len(stale_ages), max(stale_ages), sync_engine.pool.status(),
+                extra={
+                    "event": "db.pool.stale_checkouts",
+                    "count": len(stale_ages),
+                    "oldest_s": round(max(stale_ages)),
+                    "pool_status": sync_engine.pool.status(),
+                },
+            )
+
+    @event.listens_for(sync_engine, "checkin")
+    def _on_checkin(_dbapi_conn, conn_record):  # noqa: ANN001
+        _checked_out_since.pop(id(conn_record), None)
+
+    @event.listens_for(sync_engine, "close")
+    def _on_close(_dbapi_conn, conn_record):  # noqa: ANN001
+        _checked_out_since.pop(id(conn_record), None)
+
+
+def get_pool_status() -> str:
+    """Snapshot legível do pool (size/checked-out/overflow) para diagnóstico."""
+    return get_engine().sync_engine.pool.status()
+
+
+# ---------------------------------------------------------------------------
+# Cancel-safe session — para endpoints de streaming (SSE/exports)
+# ---------------------------------------------------------------------------
+#
+# Quando o cliente de um StreamingResponse desconecta, o servidor cancela a
+# task da request com hard-cancel; o CancelledError aterrissa em QUALQUER
+# await — inclusive no ``session.close()`` do ``async with``. O close
+# interrompido nunca devolve a conexão ao pool (vazamento → exaustão →
+# "travamento"). Este context manager roda o close numa task própria,
+# referenciada em módulo (não morre com a request), e faz shield para que o
+# fechamento SEMPRE complete mesmo com a request já cancelada.
+
+_pending_session_closes: set[asyncio.Task] = set()
+
+
+@asynccontextmanager
+async def cancel_safe_session() -> AsyncGenerator[AsyncSession, None]:
+    """AsyncSession cujo fechamento sobrevive a um hard-cancel da request.
+
+    Use em generators de streaming (SSE, exports) onde a desconexão do
+    cliente cancela a task no meio de awaits. Fora de streaming, o
+    ``async with session_factory() as s`` normal continua sendo o padrão.
+    """
+    session = get_session_factory()()
+    try:
+        yield session
+    finally:
+        loop = asyncio.get_running_loop()
+        close_task = loop.create_task(session.close())
+        _pending_session_closes.add(close_task)
+        close_task.add_done_callback(_pending_session_closes.discard)
+        try:
+            await asyncio.shield(close_task)
+        except asyncio.CancelledError:
+            # Request cancelada — o close continua em background na task
+            # referenciada acima e a conexão volta ao pool de qualquer forma.
+            raise
+        except Exception:
+            logger.exception("db.session.cancel_safe_close_failed")
 
 
 def get_engine():
