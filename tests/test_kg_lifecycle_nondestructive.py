@@ -252,15 +252,37 @@ def test_default_steps_keep_destructive_probe(nd_board, monkeypatch):
         STEP_CHECKPOINT, STEP_FLUSH, STEP_FSYNC, STEP_CLOSE_REOPEN_PROBE,
     ), "DEFAULT_REQUIRED_STEPS mudou — rebuild/recovery perderiam o probe"
 
-    close_calls: list[str] = []
-    orig_cac = schema.close_all_connections
-    monkeypatch.setattr(
-        schema, "close_all_connections",
-        lambda *a, **k: (close_calls.append("close_all_connections"), orig_cac(*a, **k)),
-    )
+    close_calls: list[bool] = []
+    _spy_try_close(monkeypatch, close_calls)
     result = apply_ladybug_lifecycle_step(nd_board, "board_graph", STEP_CLOSE_REOPEN_PROBE)
     assert result.ok is True, f"probe falhou: {result.detail}"
-    assert close_calls, "close_reopen_probe deixou de fechar handles — lane destrutiva quebrada"
+    assert close_calls == [True], (
+        "close_reopen_probe deixou de fechar handles — lane destrutiva quebrada"
+    )
+
+
+def test_destructive_probe_fails_closed_under_stuck_reader(nd_board, monkeypatch):
+    """Review dcea02d (F4): o probe NÃO pode fechar o Database em fail-open
+    com leitor ativo (use-after-close nativo → SIGSEGV). Com um leitor que
+    não sai dentro do dreno, o probe falha explicitamente, sem fechar."""
+    # Encurta o dreno do probe para o teste não esperar 30s.
+    orig = schema.try_close_board_db
+
+    def fast_probe_close(board_id, *, drain_timeout=None, fast_path=True):
+        return orig(board_id, drain_timeout=0.05, fast_path=fast_path)
+
+    monkeypatch.setattr(schema, "try_close_board_db", fast_probe_close)
+
+    with open_board_connection(nd_board) as (_db, conn):
+        before = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
+        result = apply_ladybug_lifecycle_step(
+            nd_board, "board_graph", STEP_CLOSE_REOPEN_PROBE
+        )
+        assert result.ok is False
+        assert "active_readers" in (result.detail or "")
+        # O leitor sobrevive — nada foi fechado por baixo dele.
+        after = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
+        assert after == before
 
 
 def test_worker_subset_constant_excludes_probe():
@@ -278,8 +300,8 @@ def test_worker_subset_constant_excludes_probe():
 def _spy_try_close(monkeypatch, calls: list[bool]):
     orig = schema.try_close_board_db
 
-    def spy(board_id: str) -> bool:
-        result = orig(board_id)
+    def spy(board_id: str, **kwargs) -> bool:
+        result = orig(board_id, **kwargs)
         calls.append(result)
         return result
 

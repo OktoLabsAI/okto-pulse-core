@@ -450,7 +450,12 @@ def _evict_board_db(key: str) -> bool:
 _HYGIENE_CLOSE_DRAIN_TIMEOUT_S = 2.0
 
 
-def try_close_board_db(board_id: str) -> bool:
+def try_close_board_db(
+    board_id: str,
+    *,
+    drain_timeout: float | None = None,
+    fast_path: bool = True,
+) -> bool:
     """Close DISCRICIONÁRIO do Database do board (higiene de buffer).
 
     Diferente do close legítimo (``close_board_db_cache``, fail-open no
@@ -482,7 +487,30 @@ def try_close_board_db(board_id: str) -> bool:
 
     key = str(board_kuzu_path(board_id))
     guard = _get_close_guard(board_id)
-    with guard.closing(timeout=_HYGIENE_CLOSE_DRAIN_TIMEOUT_S) as (drained, stuck):
+    # Fast-path (review dcea02d): com leitor ativo AGORA, nem abre a janela
+    # de closing — abrir custaria o dreno inteiro (2s) E bloquearia leitores
+    # novos durante a janela, a cada commit re-armado enquanto um scan longo
+    # estiver vivo. O skip custa ~0 e a higiene re-tenta no próximo commit.
+    # Callers que preferem ESPERAR o dreno (ex.: close_reopen_probe do
+    # rebuild) desligam o fast-path e passam um drain_timeout generoso.
+    if fast_path:
+        active = guard.readers
+        if active > 0:
+            logger.info(
+                "kg.hygiene.close_skipped_active_readers board=%s "
+                "stuck_readers=%d — higiene adiada para o próximo commit",
+                board_id, active,
+                extra={
+                    "event": "kg.hygiene.close_skipped_active_readers",
+                    "board_id": board_id,
+                    "stuck_readers": active,
+                },
+            )
+            return False
+    effective_timeout = (
+        _HYGIENE_CLOSE_DRAIN_TIMEOUT_S if drain_timeout is None else drain_timeout
+    )
+    with guard.closing(timeout=effective_timeout) as (drained, stuck):
         if not drained:
             logger.warning(
                 "kg.hygiene.close_skipped_active_readers board=%s "
@@ -918,7 +946,14 @@ def _close_reopen_probe_existing_board_graph(board_id: str) -> tuple[bool, str |
     if not path.exists():
         return False, f"{GRAPH_DB_FILENAME} missing at {path}"
 
-    close_all_connections(board_id)
+    # Review dcea02d (F4): o close fail-open fechava o Database com leitores
+    # ativos plausíveis (health scan, projeção da UI) → use-after-close
+    # nativo → SIGSEGV do processo. O probe PRECISA fechar de verdade (é a
+    # prova de durabilidade do rebuild), então espera um dreno generoso; se
+    # um leitor não sair, o probe FALHA explicitamente — rebuild reporta a
+    # causa em vez de arriscar derrubar o servidor inteiro.
+    if not try_close_board_db(board_id, drain_timeout=30.0, fast_path=False):
+        return False, "close_reopen_probe_blocked_by_active_readers"
     try:
         db = _open_kuzu_db_path_cached(path)
         conn = kuzu.Connection(db)

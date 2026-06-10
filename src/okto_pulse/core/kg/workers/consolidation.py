@@ -208,7 +208,13 @@ async def _commit_consolidation_with_board_graph_lifecycle(
             agent_id=AGENT_ID,
             db=db,
         )
-        _apply_board_graph_lifecycle_after_commit(
+        # Em thread (review dcea02d, blocker): o lifecycle é síncrono —
+        # CHECKPOINT, fsync e o dreno da higiene (até 2s sob leitor ativo)
+        # bloqueavam o event loop INTEIRO a cada commit durante janelas de
+        # scan. asyncio.to_thread copia contextvars, então o write barrier
+        # de under_safe_write continua visível para o owner probe.
+        await asyncio.to_thread(
+            _apply_board_graph_lifecycle_after_commit,
             board_id=entry.board_id,
             owner_token=owner_token,
             mutation_ref=mutation_ref,

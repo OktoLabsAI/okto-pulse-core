@@ -555,7 +555,12 @@ def _build_orphan_integrity_for_health(
             generation_id=generation_id,
         )
         projection = build_orphan_integrity_projection(report).to_safe_dict()
-        _ORPHAN_PROJECTION_CACHE[board_id] = (now, projection)
+        # Timestamp de CONCLUSÃO, não de início (review dcea02d): o scan
+        # leva minutos; carimbar o início encurtava o TTL efetivo para
+        # 300s − duração e, com scan ≥ TTL, gerava scans costas-com-costas
+        # — um leitor quase perpétuo no board que starvava a higiene de
+        # buffer. Com o carimbo no fim, há sempre 300s de janela sem scan.
+        _ORPHAN_PROJECTION_CACHE[board_id] = (time.monotonic(), projection)
         return projection
     except Exception as exc:
         logger.debug(
