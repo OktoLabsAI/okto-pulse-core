@@ -21,8 +21,10 @@ still ships. The endpoint must never 500 on a healthy app DB.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -484,6 +486,22 @@ def _build_health_diagnostics(
     }
 
 
+# Cache TTL do orphan scan: o scan conta o grau de CADA node por tipo de
+# relação (O(nodes × rel_types) queries Kùzu) — em campo (3927 nodes) uma
+# única execução leva minutos e rodava NO EVENT LOOP a cada GET /kg/health
+# (py-spy 2026-06-10: 28/30 dumps presos em _node_degree). A projeção é
+# aditiva/observacional: 60s de defasagem é inofensivo.
+_ORPHAN_PROJECTION_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_ORPHAN_PROJECTION_TTL_S = 60.0
+
+
+def reset_orphan_projection_cache_for_tests(board_id: str | None = None) -> None:
+    if board_id is None:
+        _ORPHAN_PROJECTION_CACHE.clear()
+    else:
+        _ORPHAN_PROJECTION_CACHE.pop(board_id, None)
+
+
 def _build_orphan_integrity_for_health(
     *, board_id: str, generation_id: str | None
 ) -> dict[str, Any]:
@@ -493,6 +511,11 @@ def _build_orphan_integrity_for_health(
     projection and must not mask hard graph recovery signals computed by the
     KG-01 health state machine.
     """
+
+    now = time.monotonic()
+    cached = _ORPHAN_PROJECTION_CACHE.get(board_id)
+    if cached is not None and now - cached[0] < _ORPHAN_PROJECTION_TTL_S:
+        return cached[1]
 
     try:
         from okto_pulse.core.kg.orphan_integrity import (
@@ -504,7 +527,9 @@ def _build_orphan_integrity_for_health(
             board_id=board_id,
             generation_id=generation_id,
         )
-        return build_orphan_integrity_projection(report).to_safe_dict()
+        projection = build_orphan_integrity_projection(report).to_safe_dict()
+        _ORPHAN_PROJECTION_CACHE[board_id] = (now, projection)
+        return projection
     except Exception as exc:
         logger.debug(
             "kg.health.orphan_integrity_scan_unavailable board=%s err=%s",
@@ -514,6 +539,7 @@ def _build_orphan_integrity_for_health(
             build_orphan_integrity_projection,
         )
 
+        # Falhas NÃO são cacheadas — a próxima chamada re-tenta o scan.
         return build_orphan_integrity_projection(
             None,
             scan_error=type(exc).__name__,
@@ -883,8 +909,13 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         last_tick_status = None
         last_tick_error = None
 
-    kuzu_metrics = _aggregate_kuzu_metrics(board_id)
-    graph_schema_version = _get_graph_schema_version(board_id)
+    # to_thread: ambos abrem conexões Kùzu e executam queries SÍNCRONAS —
+    # rodando no event loop, qualquer board grande/lento congela o servidor
+    # inteiro (py-spy 2026-06-10).
+    kuzu_metrics = await asyncio.to_thread(_aggregate_kuzu_metrics, board_id)
+    graph_schema_version = await asyncio.to_thread(
+        _get_graph_schema_version, board_id
+    )
 
     default_score_count = kuzu_metrics["default_score_count"]
     total_nodes = kuzu_metrics["total_nodes"]
@@ -1107,7 +1138,10 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
 
     checked_at = now.isoformat()
     storage_footprint_proxy = _build_storage_footprint_proxy(board_id)
-    orphan_integrity = _build_orphan_integrity_for_health(
+    # to_thread + cache TTL: o scan de órfãos é O(nodes × rel_types) em
+    # queries Kùzu síncronas — era o bloqueador dominante do event loop.
+    orphan_integrity = await asyncio.to_thread(
+        _build_orphan_integrity_for_health,
         board_id=board_id,
         generation_id=current_kg_generation_id,
     )

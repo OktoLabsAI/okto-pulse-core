@@ -202,12 +202,17 @@ def _isolation_reset(request: pytest.FixtureRequest):
 
 
 def _reset_commit_health_cache() -> None:
-    """O resolver de health do write-path cacheia por board (TTL 5s); o
-    board_id das fixtures é compartilhado entre testes, então o cache
-    vazaria estado degraded de um teste para o seguinte."""
+    """O resolver de health do write-path cacheia por board (TTL 5s) e o
+    health cacheia a projeção de órfãos (TTL 60s); o board_id das fixtures
+    é compartilhado entre testes, então os caches vazariam estado de um
+    teste para o seguinte."""
     from okto_pulse.core.kg.primitives import reset_commit_health_cache_for_tests
+    from okto_pulse.core.services.kg_health_service import (
+        reset_orphan_projection_cache_for_tests,
+    )
 
     reset_commit_health_cache_for_tests()
+    reset_orphan_projection_cache_for_tests()
 
 
 # ============================================================================
