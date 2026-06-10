@@ -23,6 +23,7 @@ import asyncio
 import gc
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +43,64 @@ logger = logging.getLogger(__name__)
 
 KG_DECAY_TICK_BATCH_SIZE = int(os.getenv("KG_DECAY_TICK_BATCH_SIZE", "200"))
 KG_DECAY_TICK_STALENESS_DAYS = int(os.getenv("KG_DECAY_TICK_STALENESS_DAYS", "7"))
+
+
+async def publish_tick_events(
+    session: AsyncSession,
+    *,
+    board_id: str | None = None,
+    actor_id: str | None = None,
+    actor_type: str | None = None,
+    scheduled_at: str | None = None,
+) -> list[str]:
+    """Publica ``KGDailyTick`` com FAN-OUT por board real. Retorna os tick_ids.
+
+    Campo 2026-06-10: ``domain_events.board_id`` é NOT NULL com FK para
+    ``boards.id``, e o runtime de produção (community ``serve``) liga
+    ``PRAGMA foreign_keys=ON`` desde sempre — o sentinel global ``'*'``
+    violava a constraint no INSERT do evento, então NENHUM tick (cron OU
+    manual) chegava a ser agendado em produção (IntegrityError →
+    ``tick_schedule_failed``). Os testes do core não ligam o PRAGMA, por
+    isso o bug nunca apareceu na suíte.
+
+    O fan-out publica um evento POR board existente: a FK passa, o
+    isolamento por board vira total (falha de um board não toca os outros
+    nem na enumeração) e eventos de boards deletados são limpos pelo
+    ON DELETE CASCADE. O handler já suportava ``board_id`` concreto.
+    """
+    from sqlalchemy import select
+
+    from okto_pulse.core.events import publish as event_publish
+    from okto_pulse.core.models.db import Board
+
+    if board_id and board_id != "*":
+        board_ids = [board_id]
+    else:
+        board_ids = list(
+            (await session.execute(select(Board.id))).scalars().all()
+        )
+
+    when = scheduled_at or datetime.now(timezone.utc).isoformat()
+    extra_kwargs: dict[str, str] = {}
+    if actor_id is not None:
+        extra_kwargs["actor_id"] = actor_id
+    if actor_type is not None:
+        extra_kwargs["actor_type"] = actor_type
+
+    tick_ids: list[str] = []
+    for bid in board_ids:
+        tid = str(uuid.uuid4())
+        await event_publish(
+            KGDailyTick(
+                board_id=bid,
+                tick_id=tid,
+                scheduled_at=when,
+                **extra_kwargs,
+            ),
+            session=session,
+        )
+        tick_ids.append(tid)
+    return tick_ids
 
 
 def _fetch_stale_nodes(

@@ -23,8 +23,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.events import publish as event_publish
-from okto_pulse.core.events.types import KGDailyTick
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
@@ -189,32 +187,48 @@ async def _dispatch_manual_tick(
     force_full_rebuild: bool,
     session: AsyncSession | None = None,
 ) -> None:
-    """Persist a KGDailyTick event through the same path as the cron.
+    """Persist KGDailyTick event(s) through the same path as the cron.
+
+    Fan-out por board real (campo 2026-06-10): o sentinel global ``'*'``
+    violava a FK de ``domain_events.board_id`` com PRAGMA foreign_keys=ON
+    (runtime community) — o agendamento falhava com IntegrityError. O
+    ``tick_id`` do response vira correlação de log; cada evento do fan-out
+    tem o próprio uuid.
 
     When ``session`` is provided, the caller owns commit/rollback. MCP and
     other non-request callers may omit it; this helper then opens and commits
     a short-lived session.
     """
+    from okto_pulse.core.events.handlers.kg_decay_tick import (
+        publish_tick_events,
+    )
+
     if force_full_rebuild:
         await _reset_last_recomputed_at(board_id)
 
-    event = KGDailyTick(
-        tick_id=tick_id,
-        scheduled_at=datetime.now(timezone.utc).isoformat(),
-        board_id=board_id or "*",
-        actor_id="manual-trigger",
-        actor_type="user",
-    )
+    scheduled_at = datetime.now(timezone.utc).isoformat()
 
     if session is not None:
-        await event_publish(event, session=session)
+        await publish_tick_events(
+            session,
+            board_id=board_id,
+            actor_id="manual-trigger",
+            actor_type="user",
+            scheduled_at=scheduled_at,
+        )
         return
 
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
     async with factory() as owned_session:
-        await event_publish(event, session=owned_session)
+        await publish_tick_events(
+            owned_session,
+            board_id=board_id,
+            actor_id="manual-trigger",
+            actor_type="user",
+            scheduled_at=scheduled_at,
+        )
         await owned_session.commit()
 
 

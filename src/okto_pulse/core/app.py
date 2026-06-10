@@ -4,9 +4,8 @@ import asyncio
 import logging
 import os
 import time
-import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator, Callable, Optional
 
 from fastapi import FastAPI
@@ -261,6 +260,24 @@ def create_app(
 
                 _interval_minutes = _get_settings().kg_decay_tick_interval_minutes
                 scheduler = AsyncIOScheduler(timezone=timezone.utc)
+                # Catch-up no boot (campo 2026-06-10): IntervalTrigger só
+                # dispara o PRIMEIRO tick um intervalo COMPLETO após o
+                # start — com interval de 24h e um processo que reinicia
+                # (deploys/crashes), o tick nunca rodava. O next_run_time
+                # explícito honra o último tick persistido: vencido →
+                # dispara em ~2min; senão → no vencimento real.
+                _job_kwargs: dict = {}
+                try:
+                    _next_run = await _compute_tick_catch_up_next_run(
+                        _interval_minutes
+                    )
+                    if _next_run is not None:
+                        _job_kwargs["next_run_time"] = _next_run
+                except Exception as _exc:
+                    logger.warning(
+                        "kg.tick.catch_up_compute_failed err=%s", _exc,
+                        extra={"event": "kg.tick.catch_up_compute_failed"},
+                    )
                 scheduler.add_job(
                     _emit_daily_tick,
                     # Spec 54399628 (Wave 2 NC f9732afc): IntervalTrigger
@@ -275,6 +292,7 @@ def create_app(
                     replace_existing=True,
                     max_instances=1,
                     coalesce=True,
+                    **_job_kwargs,
                 )
                 scheduler.start()
                 set_scheduler(scheduler)  # expose for hot-reload
@@ -378,6 +396,46 @@ def create_app(
     return app
 
 
+def _tick_next_run_from_last(
+    last_completed_at: datetime | None,
+    interval_minutes: int,
+    now: datetime,
+) -> datetime:
+    """Próximo disparo do tick honrando o histórico (função pura).
+
+    Sem histórico ou com último tick vencido → ~2min após o boot (dá tempo
+    do app estabilizar); senão → no vencimento real (last + interval)."""
+    floor = now + timedelta(seconds=120)
+    if last_completed_at is None:
+        return floor
+    if last_completed_at.tzinfo is None:
+        last_completed_at = last_completed_at.replace(tzinfo=timezone.utc)
+    due = last_completed_at + timedelta(minutes=interval_minutes)
+    return max(due, floor)
+
+
+async def _compute_tick_catch_up_next_run(
+    interval_minutes: int,
+) -> datetime | None:
+    """Lê o último tick persistido e devolve o next_run_time do job."""
+    from sqlalchemy import select
+
+    from okto_pulse.core.models.db import KGTickRun
+
+    factory = get_session_factory()
+    async with factory() as session:
+        last = (
+            await session.execute(
+                select(KGTickRun.completed_at)
+                .order_by(KGTickRun.completed_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+    return _tick_next_run_from_last(
+        last, interval_minutes, datetime.now(timezone.utc)
+    )
+
+
 async def _emit_daily_tick() -> None:
     """APScheduler callback — emits KGDailyTick if this replica owns the lock.
 
@@ -385,8 +443,6 @@ async def _emit_daily_tick() -> None:
     if another emitter already holds it on this loop, returns silently. The
     handler picks up the event and runs the actual tick body.
     """
-    from okto_pulse.core.events import publish as event_publish
-    from okto_pulse.core.events.types import KGDailyTick
     from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
 
     lock = get_async_lock("kg_daily_tick", "global")
@@ -405,24 +461,26 @@ async def _emit_daily_tick() -> None:
                 extra={"event": "kg.tick.no_session_factory"},
             )
             return
-        tick_id = str(uuid.uuid4())
         scheduled_at = datetime.now(timezone.utc).isoformat()
         try:
+            # Fan-out por board real (campo 2026-06-10): o evento global
+            # board_id='*' violava a FK de domain_events com
+            # PRAGMA foreign_keys=ON (runtime community) — nenhum tick
+            # chegava a ser agendado em produção.
+            from okto_pulse.core.events.handlers.kg_decay_tick import (
+                publish_tick_events,
+            )
+
             async with factory() as session:
-                await event_publish(
-                    KGDailyTick(
-                        board_id="*",
-                        tick_id=tick_id,
-                        scheduled_at=scheduled_at,
-                    ),
-                    session=session,
+                tick_ids = await publish_tick_events(
+                    session, scheduled_at=scheduled_at,
                 )
                 await session.commit()
             logger.info(
                 "kg.tick.emitted",
                 extra={
                     "event": "kg.tick.emitted",
-                    "tick_id": tick_id,
+                    "tick_count": len(tick_ids),
                     "scheduled_at": scheduled_at,
                 },
             )

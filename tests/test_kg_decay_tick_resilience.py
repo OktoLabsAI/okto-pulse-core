@@ -465,3 +465,93 @@ async def test_ac8_global_tick_not_health_gated():
     mock_health.assert_not_called(), (
         "get_kg_health must NOT be called for a global tick (board_id=None)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Campo 2026-06-10 — FK regression: tick global com board_id='*' violava a
+# FK de domain_events sob PRAGMA foreign_keys=ON (runtime community) e
+# NENHUM tick era agendado em produção. O fan-out publica por board real.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tick_fanout_publishes_per_real_board_never_star(db_session):
+    """publish_tick_events global → 1 evento por board EXISTENTE, com
+    board_id real (FK-safe), nunca o sentinel '*'."""
+    import uuid as _uuid
+
+    from sqlalchemy import select
+
+    from okto_pulse.core.events.handlers.kg_decay_tick import (
+        publish_tick_events,
+    )
+    from okto_pulse.core.models.db import Board, DomainEventRow
+
+    bids = [f"board-tickfk-{_uuid.uuid4().hex[:8]}" for _ in range(2)]
+    for bid in bids:
+        db_session.add(Board(id=bid, name=bid, owner_id="user-tickfk"))
+    await db_session.flush()
+
+    # PRAGMA per-connection: reproduz a condição do runtime community na
+    # MESMA conexão que fará os INSERTs dos eventos.
+    await db_session.execute(sa_text("PRAGMA foreign_keys=ON"))
+
+    tick_ids = await publish_tick_events(db_session)
+    assert len(tick_ids) >= 2, "fan-out deve emitir >= 1 evento por board"
+
+    rows = (
+        await db_session.execute(
+            select(DomainEventRow.board_id).where(
+                DomainEventRow.event_type == "kg.tick.daily"
+            )
+        )
+    ).scalars().all()
+    assert rows, "nenhum evento kg.tick.daily persistido"
+    assert "*" not in rows, "sentinel global '*' viola a FK de domain_events"
+    for bid in bids:
+        assert bid in rows, f"board {bid} ficou fora do fan-out"
+
+
+@pytest.mark.asyncio
+async def test_tick_fanout_scoped_to_single_board(db_session):
+    """board_id concreto → exatamente 1 evento para aquele board."""
+    import uuid as _uuid
+
+    from okto_pulse.core.events.handlers.kg_decay_tick import (
+        publish_tick_events,
+    )
+    from okto_pulse.core.models.db import Board
+
+    bid = f"board-tickfk-{_uuid.uuid4().hex[:8]}"
+    db_session.add(Board(id=bid, name=bid, owner_id="user-tickfk"))
+    await db_session.flush()
+
+    tick_ids = await publish_tick_events(db_session, board_id=bid)
+    assert len(tick_ids) == 1
+
+
+def test_tick_next_run_catch_up_semantics():
+    """IntervalTrigger de 24h nunca dispara num processo que reinicia —
+    o next_run_time explícito honra o último tick persistido."""
+    from datetime import timedelta
+
+    from okto_pulse.core.app import _tick_next_run_from_last
+
+    now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=timezone.utc)
+    floor = now + timedelta(seconds=120)
+
+    # Sem histórico → dispara logo após o boot.
+    assert _tick_next_run_from_last(None, 1440, now) == floor
+    # Último tick vencido (3 dias atrás, interval 24h) → dispara logo.
+    stale = now - timedelta(days=3)
+    assert _tick_next_run_from_last(stale, 1440, now) == floor
+    # Último tick recente → respeita o vencimento real.
+    fresh = now - timedelta(hours=2)
+    assert _tick_next_run_from_last(fresh, 1440, now) == fresh + timedelta(
+        minutes=1440
+    )
+    # Naive datetime (SQLite) é tratado como UTC.
+    naive_fresh = (now - timedelta(hours=2)).replace(tzinfo=None)
+    assert _tick_next_run_from_last(naive_fresh, 1440, now) == fresh + timedelta(
+        minutes=1440
+    )
