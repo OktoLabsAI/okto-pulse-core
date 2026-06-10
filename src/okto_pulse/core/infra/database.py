@@ -1286,6 +1286,20 @@ async def _bootstrap_default_discovery_intents() -> None:
             "min_permission": "kg.query.global",
         },
         {
+            "name": "key_decisions",
+            "label": "Key Decisions",
+            "description": (
+                "The most relevant decisions on this board, ranked by a "
+                "blend of relevance score and graph connectivity (number "
+                "of connections) — highest first."
+            ),
+            "category": "decisions_history",
+            "tool_binding": "okto_pulse_kg_list_key_decisions",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
             "name": "decisions_by_topic",
             "label": "Find decisions about a topic",
             "description": (

@@ -172,6 +172,9 @@ async def execute_intent(
     if binding == "okto_pulse_kg_list_learnings_by_relevance":
         return await _exec_learnings_by_relevance(board_id)
 
+    if binding == "okto_pulse_kg_list_key_decisions":
+        return await _exec_key_decisions(board_id)
+
     raise ValueError(f"Unsupported tool_binding: {binding}")
 
 
@@ -1860,5 +1863,105 @@ async def _exec_learnings_by_relevance(board_id: str) -> dict:
         rows,
         columns=["Learning", "Relevance"],
         tool_binding="okto_pulse_kg_list_learnings_by_relevance",
+        params_echo={},
+    )
+
+
+async def _exec_key_decisions(board_id: str) -> dict:
+    """key_decisions — Decision nodes ranqueadas por relevância E conexões.
+
+    combined = 0.6 * relevance_norm + 0.4 * degree_norm (min-max no board),
+    ecoando os pesos do ranking híbrido de find_similar_decisions. Query em
+    asyncio.to_thread (nunca Kùzu síncrono no event loop)."""
+    import asyncio
+
+    from okto_pulse.core.kg.schema import open_board_connection
+
+    def _query() -> list[tuple]:
+        out: list[tuple] = []
+        with open_board_connection(board_id) as (_db, conn):
+            res = conn.execute(
+                "MATCH (d:Decision) "
+                "OPTIONAL MATCH (d)-[r]-() "
+                "RETURN d.id, d.title, d.content, d.relevance_score, "
+                "d.source_artifact_ref, count(r) "
+                "LIMIT 500"
+            )
+            try:
+                while res.has_next():
+                    out.append(tuple(res.get_next()))
+            finally:
+                if hasattr(res, "close"):
+                    res.close()
+        return out
+
+    try:
+        rows_raw = await asyncio.to_thread(_query)
+    except Exception as e:  # noqa: BLE001
+        return {
+            "rows": [],
+            "columns": ["Decision", "Relevance", "Connections", "Score"],
+            "total": 0,
+            "tool_binding": "okto_pulse_kg_list_key_decisions",
+            "params_echo": {},
+            "execution": "real_tool",
+            "warning": f"KG unavailable: {type(e).__name__}: {str(e)[:140]}",
+        }
+
+    if not rows_raw:
+        return _ok(
+            [],
+            columns=["Decision", "Relevance", "Connections", "Score"],
+            tool_binding="okto_pulse_kg_list_key_decisions",
+            params_echo={},
+        )
+
+    relevances = [float(r[3] or 0.0) for r in rows_raw]
+    degrees = [int(r[5] or 0) for r in rows_raw]
+    rel_min, rel_max = min(relevances), max(relevances)
+    deg_min, deg_max = min(degrees), max(degrees)
+
+    def _norm(value: float, lo: float, hi: float) -> float:
+        return (value - lo) / (hi - lo) if hi > lo else 1.0
+
+    ranked = []
+    for (node_id, title, content, relevance, source_ref, degree), rel, deg in zip(
+        rows_raw, relevances, degrees
+    ):
+        combined = round(
+            0.6 * _norm(rel, rel_min, rel_max) + 0.4 * _norm(deg, deg_min, deg_max),
+            4,
+        )
+        ranked.append((combined, rel, deg, node_id, title, content, source_ref))
+    ranked.sort(key=lambda t: (t[0], t[1], t[2]), reverse=True)
+
+    rows = []
+    for combined, rel, deg, node_id, title, content, source_ref in ranked[:100]:
+        rows.append(
+            {
+                "id": node_id,
+                "type": "Decision",
+                "title": title or "(untitled)",
+                "summary": (
+                    f"score {combined} · relevance {round(rel, 3)} · "
+                    f"{deg} connection{'s' if deg != 1 else ''}"
+                ),
+                "meta": {
+                    "entity_type": "kg_node",
+                    "entity_id": node_id,
+                    "entity_title": title,
+                    "node_type": "Decision",
+                    "combined_score": combined,
+                    "relevance_score": round(rel, 3),
+                    "connections": deg,
+                    "content": (content or "")[:400],
+                    "source_artifact_ref": source_ref,
+                },
+            }
+        )
+    return _ok(
+        rows,
+        columns=["Decision", "Relevance", "Connections", "Score"],
+        tool_binding="okto_pulse_kg_list_key_decisions",
         params_echo={},
     )
