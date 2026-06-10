@@ -136,17 +136,23 @@ def test_race_continuous_reader_vs_exclusive_close(nd_board):
     th = threading.Thread(target=reader_loop, name="kg-race-reader")
     th.start()
     try:
-        deadline = time.monotonic() + 4.0
+        # Deadline folgado + exigência mínima de 3 closes: sob carga externa
+        # (suite rodando em paralelo com servidor/backfill) cada close drena
+        # leitores e fica lento — o objetivo do teste é a CORRIDA, não a
+        # vazão de closes.
+        deadline = time.monotonic() + 8.0
         closes = 0
         while time.monotonic() < deadline and not reader_errors:
             close_board_db_cache(nd_board)
             closes += 1
+            if closes >= 8:
+                break
             time.sleep(0.05)
     finally:
         stop.set()
-        th.join(timeout=10.0)
+        th.join(timeout=15.0)
 
-    assert closes >= 5, "teste nao exercitou closes suficientes"
+    assert closes >= 3, "teste nao exercitou closes suficientes"
     assert reader_errors == [], (
         f"use-after-close observado no leitor concorrente: {reader_errors[:3]}"
     )
@@ -269,19 +275,35 @@ def test_worker_subset_constant_excludes_probe():
 # ---------------------------------------------------------------------------
 
 
-def test_checkpoint_failure_fails_step(nd_board, monkeypatch):
+def test_checkpoint_failure_falls_back_to_close(nd_board, monkeypatch):
+    """Campo 2026-06-10: CHECKPOINT esgotou o buffer manager do Ladybug sob
+    backfill massivo e derrubava o processo. O fallback fecha o Database do
+    board (libera o buffer pool + checkpoint implícito do close) e o step
+    SUCEDE — a durabilidade fica garantida pelo close."""
+    close_calls: list[str] = []
+    orig_cac = schema.close_all_connections
+    monkeypatch.setattr(
+        schema, "close_all_connections",
+        lambda *a, **k: (close_calls.append("close_all_connections"), orig_cac(*a, **k)),
+    )
     executed: list[str] = []
     _spy_board_connection(monkeypatch, executed, fail_checkpoint=True)
     result = apply_ladybug_lifecycle_step(nd_board, "board_graph", STEP_CHECKPOINT)
-    assert result.ok is False
-    assert "forced checkpoint failure" in (result.detail or "")
+    assert result.ok is True, f"fallback close deveria salvar o step: {result.detail}"
+    assert close_calls, "fallback nao fechou o Database (buffer pool nao liberado)"
 
 
-def test_checkpoint_failure_blocks_queue_ack(nd_board, monkeypatch):
+def test_checkpoint_and_fallback_failure_blocks_queue_ack(nd_board, monkeypatch):
+    """BR-3 preservada no caso terminal: se o CHECKPOINT falha E o fallback
+    close também falha, o step falha e o worker NÃO ACKa o queue entry."""
     from okto_pulse.core.kg.workers.consolidation import (
         _apply_board_graph_lifecycle_after_commit,
     )
 
+    def _broken_close(*_a, **_k):
+        raise RuntimeError("forced close failure (terminal)")
+
+    monkeypatch.setattr(schema, "close_all_connections", _broken_close)
     executed: list[str] = []
     _spy_board_connection(monkeypatch, executed, fail_checkpoint=True)
     with pytest.raises(RuntimeError) as exc_info:

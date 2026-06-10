@@ -99,6 +99,38 @@ def get_failures(board_id: str) -> list["FailureEvent"]:
         return list(buf) if buf is not None else []
 
 
+# Event kinds que indicam falha do WRITE-PATH (WAL/commit). Um commit bem-
+# sucedido posterior prova que o write-path está saudável — manter essas
+# falhas no buffer (que não tem TTL) realimentava o estado recovery_needed
+# para sempre dentro do mesmo processo (feedback loop do gate de degraded).
+WRITE_FAILURE_EVENT_KINDS: frozenset[str] = frozenset(
+    {"kg.commit.failed", "kg.wal.flush.failed"}
+)
+
+
+def record_write_success(board_id: str) -> None:
+    """Drop buffered WRITE-path failures after a successful graph commit.
+
+    Self-heal (catch-22 fix 2026-06-10): o ring buffer não tem TTL; sem esta
+    limpeza, falhas antigas de commit mantinham ``wal_or_commit_errors`` no
+    health até o restart do processo, mesmo com o write-path comprovadamente
+    saudável de novo. Eventos de outras naturezas (memory pressure samples,
+    falhas não-write) são preservados.
+    """
+    with _lock:
+        buf = _failures.get(board_id)
+        if not buf:
+            return
+        survivors = [
+            e for e in buf
+            if getattr(e, "event_kind", None) not in WRITE_FAILURE_EVENT_KINDS
+        ]
+        if len(survivors) == len(buf):
+            return
+        buf.clear()
+        buf.extend(survivors)
+
+
 def clear_board(board_id: str) -> None:
     """Remove all buffered data for ``board_id``.
 
@@ -123,10 +155,12 @@ def clear_all() -> None:
 
 
 __all__ = [
+    "WRITE_FAILURE_EVENT_KINDS",
     "clear_all",
     "clear_board",
     "get_failures",
     "get_samples",
     "record_failure",
     "record_sample",
+    "record_write_success",
 ]

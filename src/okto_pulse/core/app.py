@@ -1,5 +1,6 @@
 """Core application factory."""
 
+import asyncio
 import logging
 import os
 import time
@@ -178,13 +179,25 @@ def create_app(
                 board_ids = (
                     await _session.execute(_select(_Board.id))
                 ).scalars().all()
+
+            def _sweep_one(_bid: str) -> bool:
+                """Abre/fecha a BoardConnection (migração idempotente).
+
+                Roda via asyncio.to_thread — abrir um Kùzu DB é I/O pesado
+                (até 6.2s de retry em lock contention) e este loop rodava
+                SÍNCRONO no event loop, congelando o servidor inteiro no
+                startup quando havia boards lentos/em recuperação.
+                """
+                bc = _open_board_connection(_bid)
+                bc.close()
+                return True
+
             migrated = 0
             for _bid in board_ids:
                 if not _board_kuzu_path(_bid).exists():
                     continue
                 try:
-                    bc = _open_board_connection(_bid)
-                    bc.close()
+                    await asyncio.to_thread(_sweep_one, _bid)
                     migrated += 1
                 except Exception as _exc:
                     logger.warning(
@@ -314,7 +327,9 @@ def create_app(
             try:
                 from okto_pulse.core.kg.schema import close_all_connections
 
-                close_all_connections()
+                # to_thread: o close drena leitores (até 5s por board via o
+                # close guard) — síncrono no loop, congelava o shutdown.
+                await asyncio.to_thread(close_all_connections)
             except Exception as exc:
                 logger.warning(
                     "kg.shutdown.close_connections_failed err=%s",

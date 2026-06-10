@@ -856,21 +856,34 @@ def apply_ladybug_lifecycle_step(
                     ok=False,
                     detail=f"{GRAPH_DB_FILENAME} missing at {path}",
                 )
-            # FR-1: falha de CHECKPOINT é falha do step (ok=False via o
-            # except externo) — o worker então NÃO ACKa o queue entry (BR-3).
             bc = BoardConnection(board_id)
             try:
                 bc.conn.execute("CHECKPOINT")
             except Exception as exc:
+                # Válvula de escape (campo 2026-06-10): sob backfill massivo o
+                # CHECKPOINT com o Database sempre-aberto esgota o buffer
+                # manager do Ladybug ("No more frame groups can be added to
+                # the allocator") — e a exaustão derrubou o processo. Fechar o
+                # Database do board libera o buffer pool inteiro E executa o
+                # checkpoint implícito do close (a barreira de durabilidade
+                # pré-KGDL.01). Só se o close TAMBÉM falhar o step falha.
                 logger.warning(
-                    "kg.lifecycle.checkpoint_statement_failed board=%s err=%s",
+                    "kg.lifecycle.checkpoint_statement_failed board=%s err=%s "
+                    "— fallback: close_all_connections (flush via close)",
                     board_id, exc,
                     extra={
                         "event": "kg.lifecycle.checkpoint_statement_failed",
                         "board_id": board_id,
                     },
                 )
-                raise
+                bc.close()
+                close_all_connections(board_id)
+                if not path.exists():
+                    return LifecycleStepResult(
+                        ok=False,
+                        detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                    )
+                return LifecycleStepResult(ok=True)
             finally:
                 bc.close()
             return LifecycleStepResult(ok=True)
@@ -2161,6 +2174,24 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
         ) from exc
 
     path = board_kuzu_path(board_id)
+    # Sinalização forense (2026-06-10): criar um grafo NOVO para um board é
+    # normal no primeiro uso, mas quando o arquivo anterior foi removido por
+    # fora (deleção manual durante troubleshooting, por exemplo) este
+    # bootstrap recriava um grafo VAZIO silenciosamente — o health então via
+    # "empty_after_materialized_history" e o board entrava em
+    # recovery_needed sem nenhuma pista no log de QUANDO o conteúdo sumiu.
+    # O warning abaixo é a pista.
+    if not path.exists():
+        logger.warning(
+            "kg.bootstrap.fresh_graph_created board=%s path=%s "
+            "(se um grafo anterior existia e foi removido manualmente, "
+            "re-materialize via historical consolidation/rebuild)",
+            board_id, path,
+            extra={
+                "event": "kg.bootstrap.fresh_graph_created",
+                "board_id": board_id,
+            },
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
 
     db = _open_kuzu_db_path_cached(path)

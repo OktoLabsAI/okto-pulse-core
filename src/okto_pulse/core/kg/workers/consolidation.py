@@ -1246,6 +1246,10 @@ class ConsolidationWorker:
         # Step 2: Process each entry with its own session (short-lived tx).
         max_attempts = settings.kg_queue_max_attempts
         for entry in entries:
+            # Cede o event loop entre entries — flagrado por py-spy
+            # (2026-06-10) ocupando o loop em rajadas durante batches
+            # grandes, deixando a UI sem resposta (nem static files saíam).
+            await asyncio.sleep(0)
             try:
                 async with self.session_factory() as db:
                     success = await _process_queue_entry_serialized(db, entry)

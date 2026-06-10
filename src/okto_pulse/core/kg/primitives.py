@@ -1140,10 +1140,60 @@ def _kg_node_types() -> tuple[str, ...]:
     return tuple(NODE_TYPES)
 
 
+# Estado efetivo de health por board para o write-path, com TTL curto.
+# `get_kg_health` é caro (dezenas de queries + probes de arquivo); sem cache,
+# um batch de N entries do mesmo board recomputa N healths idênticos — parte
+# do bloqueio de event loop observado em campo (py-spy 2026-06-10).
+_COMMIT_HEALTH_CACHE: dict[str, tuple[float, str]] = {}
+_COMMIT_HEALTH_CACHE_TTL_S = 5.0
+
+# Estado sintético devolvido quando o board está recovery_needed mas o grafo
+# é LEGÍVEL (o health acabou de contar os nodes): NÃO pertence a
+# DEGRADED_KG_STATES, então o gate deixa a mutação passar.
+RECOVERY_WRITABLE_STATE = "recovery_needed_graph_readable"
+# Alias mantido para os primeiros consumidores do fix (mesma semântica).
+RECOVERY_EMPTY_REMATERIALIZATION_STATE = RECOVERY_WRITABLE_STATE
+
+
+def reset_commit_health_cache_for_tests(board_id: str | None = None) -> None:
+    """Test helper — drop the write-path health cache (all boards or one)."""
+    if board_id is None:
+        _COMMIT_HEALTH_CACHE.clear()
+    else:
+        _COMMIT_HEALTH_CACHE.pop(board_id, None)
+
+
 async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
-    """Read the write-path KG health state without making tests DB-coupled."""
+    """Read the write-path KG health state without making tests DB-coupled.
+
+    Catch-22 fix (2026-06-10): ``recovery_needed`` bloqueava TODA mutação —
+    inclusive a re-materialização de um grafo vazio (única cura de
+    ``empty_after_materialized_history``; 994 entries foram para a DLQ em
+    campo) e os retries após falha TRANSITÓRIA de escrita (ex.: buffer
+    manager exausto), que re-registrava ``kg.commit.failed`` e realimentava o
+    próprio estado. Falha recente de escrita não implica grafo corrompido.
+
+    Regra efetiva para o WRITE-PATH:
+    - ``quarantined`` → bloqueia sempre.
+    - ``recovery_needed`` com grafo LEGÍVEL (o health acabou de contar os
+      nodes — ``total_nodes`` presente, 0 ou N) → permite a mutação: a
+      conectividade real é validada contra o grafo aberto, e um commit
+      bem-sucedido limpa as falhas de write do ring buffer (self-heal).
+    - ``recovery_needed`` SEM contagem (telemetria indisponível = grafo
+      ilegível) → mantém o bloqueio/deferral (contrato Zero-Orphan); e
+      corrupção real continua fail-closed na própria abertura
+      (``throw_on_wal_replay_failure=True``), sem mutação.
+    """
     if db is None:
         return "healthy"
+
+    import time as _time
+
+    now = _time.monotonic()
+    cached = _COMMIT_HEALTH_CACHE.get(board_id)
+    if cached is not None and now - cached[0] < _COMMIT_HEALTH_CACHE_TTL_S:
+        return cached[1]
+
     try:
         from okto_pulse.core.services.kg_health_service import get_kg_health
 
@@ -1159,8 +1209,33 @@ async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
             },
         )
         return "healthy"
-    state = health.get("overall_state") or health.get("graph_state")
-    return str(state or "healthy")
+    state = str(health.get("overall_state") or health.get("graph_state") or "healthy")
+
+    raw_total_nodes = health.get("total_nodes")
+    if state == "recovery_needed" and raw_total_nodes is not None:
+        # total_nodes AUSENTE = payload sem telemetria de contagem (grafo
+        # ilegível) → mantém o bloqueio (conservador, contrato Zero-Orphan).
+        try:
+            total_nodes = int(raw_total_nodes)
+        except (TypeError, ValueError):
+            total_nodes = -1
+        if total_nodes >= 0:
+            logger.info(
+                "kg.connectivity.recovery_writable_graph board=%s "
+                "total_nodes=%d reason=%s",
+                board_id,
+                total_nodes,
+                health.get("classification_reason"),
+                extra={
+                    "event": "kg.connectivity.recovery_writable_graph",
+                    "board_id": board_id,
+                    "total_nodes": total_nodes,
+                },
+            )
+            state = RECOVERY_WRITABLE_STATE
+
+    _COMMIT_HEALTH_CACHE[board_id] = (now, state)
+    return state
 
 
 def _do_kuzu_commit(
@@ -1646,6 +1721,21 @@ async def commit_consolidation(
         await registry.session_store.remove(req.session_id)
 
         registry.cache_backend.invalidate_board(session.board_id)
+
+        # Commit bem-sucedido prova que o write-path está saudável:
+        # (a) limpa falhas de WAL/commit do ring buffer (sem isso, o health
+        #     manteria wal_or_commit_errors até o restart — feedback loop);
+        # (b) invalida o cache de health do write-path para a transição
+        #     vazio→populado refletir já no próximo commit.
+        try:
+            from okto_pulse.core.kg.memory_pressure_collector import (
+                record_write_success,
+            )
+
+            record_write_success(session.board_id)
+        except Exception:  # pragma: no cover — defensivo, nunca quebra commit
+            pass
+        _COMMIT_HEALTH_CACHE.pop(session.board_id, None)
 
         return CommitConsolidationResponse(
             session_id=req.session_id,
