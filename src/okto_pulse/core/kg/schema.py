@@ -1045,6 +1045,27 @@ def _open_kuzu_db(path: Path):
                     e = retry_exc
             last_exc = e
             msg = str(e)
+            # Auto-recovery (campo 2026-06-10): crash no MEIO de um checkpoint
+            # deixa sidecars órfãos (graph.lbug.shadow vazio +
+            # graph.lbug.wal.checkpoint) que fazem o replay do Ladybug abortar
+            # com UNREACHABLE_CODE em wal_record.cpp — com o main file 100%
+            # íntegro (confirmado em campo: 3926 nodes recuperados ao remover
+            # os sidecars). Quarentena os sidecars (preserva evidência; NUNCA
+            # toca o main file nem um .wal principal) e re-tenta uma vez.
+            if (
+                attempt < 5
+                and _is_ladybug_corruption_error(e)
+                and _quarantine_interrupted_checkpoint_sidecars(path)
+            ):
+                logger.warning(
+                    "kg.db_open.interrupted_checkpoint_recovered path=%s err=%s",
+                    path, e,
+                    extra={
+                        "event": "kg.db_open.interrupted_checkpoint_recovered",
+                        "path": str(path),
+                    },
+                )
+                continue
             is_lock_contention = "Could not set lock" in msg or "lock contention" in msg.lower()
             if is_lock_contention and attempt < 5:
                 sleep_s = 0.2 * (2 ** (attempt - 1))
@@ -1080,6 +1101,65 @@ def _open_kuzu_db(path: Path):
         "or call MCP tool `okto_pulse_kg_migrate_schema`; "
         "(3) corrupted db file."
     ) from e
+
+
+def _quarantine_interrupted_checkpoint_sidecars(path: Path) -> bool:
+    """Move órfãos de checkpoint interrompido para a quarentena.
+
+    Critério ESTRITO (fail-closed em ambiguidade):
+    - ``<graph>.shadow`` só é movido quando tem 0 bytes (checkpoint nem
+      chegou a escrever — com bytes, o estado é ambíguo e preservamos tudo
+      no lugar para análise);
+    - ``<graph>.wal.checkpoint`` é movido junto;
+    - o main file e um eventual ``<graph>.wal`` principal NUNCA são tocados
+      (o .wal pode conter commits legítimos não-checkpointed).
+
+    Retorna True quando moveu algo (o caller re-tenta a abertura).
+    """
+    shadow = path.parent / (path.name + ".shadow")
+    wal_checkpoint = path.parent / (path.name + ".wal.checkpoint")
+    movable: list[Path] = []
+    if shadow.exists():
+        try:
+            if shadow.stat().st_size == 0:
+                movable.append(shadow)
+            else:
+                # shadow com conteúdo = checkpoint adiantado demais para
+                # decidir automaticamente. Preserva tudo, sem retry.
+                return False
+        except OSError:
+            return False
+    if wal_checkpoint.exists():
+        movable.append(wal_checkpoint)
+    if not movable:
+        return False
+
+    quarantine_dir = (
+        path.parents[2]
+        / "quarantine"
+        / f"interrupted-checkpoint-{path.parent.name}-{_now_iso().replace(':', '').replace('.', '')}"
+    )
+    try:
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        for f in movable:
+            f.rename(quarantine_dir / f.name)
+        (quarantine_dir / "manifest.txt").write_text(
+            "Sidecars orfaos de checkpoint interrompido movidos automaticamente "
+            f"para destravar a abertura de {path}. Main file preservado no lugar. "
+            f"Arquivos: {', '.join(f.name for f in movable)}.",
+            encoding="utf-8",
+        )
+        return True
+    except OSError as exc:
+        logger.warning(
+            "kg.db_open.sidecar_quarantine_failed path=%s err=%s",
+            path, exc,
+            extra={
+                "event": "kg.db_open.sidecar_quarantine_failed",
+                "path": str(path),
+            },
+        )
+        return False
 
 
 def verify_kuzu_db_health(board_id: str) -> dict[str, Any]:
