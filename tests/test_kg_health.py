@@ -1163,3 +1163,63 @@ def test_default_score_band_bounds():
     assert DEFAULT_SCORE_BAND_HIGH == 0.55
     assert DEFAULT_SCORE_BAND_LOW <= 0.5 <= DEFAULT_SCORE_BAND_HIGH
     assert 0.0 < DEFAULT_SCORE_RATIO_ALARM_THRESHOLD < 1.0
+
+
+# --- Single-flight do orphan scan (campo 2026-06-10, 4º crash) ---
+
+
+def test_orphan_scan_single_flight_serves_stale_while_revalidating(monkeypatch):
+    """Health requests concorrentes não podem empilhar scans de minutos em
+    paralelo (cada um segura um leitor do board → bloqueia a higiene do
+    buffer). Com um scan em andamento: quem chega recebe o cache stale (ou
+    a projeção indisponível) SEM disparar um segundo scan."""
+    import threading as _threading
+
+    from okto_pulse.core.kg import orphan_integrity as oi
+    from okto_pulse.core.services.kg_health_service import (
+        _build_orphan_integrity_for_health,
+        reset_orphan_projection_cache_for_tests,
+    )
+
+    board_id = "board-orphan-singleflight"
+    reset_orphan_projection_cache_for_tests(board_id)
+
+    scan_started = _threading.Event()
+    release_scan = _threading.Event()
+    scan_calls: list[str] = []
+
+    class SlowScanner:
+        def scan(self, *, board_id, generation_id=None):
+            scan_calls.append(board_id)
+            scan_started.set()
+            assert release_scan.wait(10), "teste destravou o scan tarde demais"
+            return None  # projection de report None = unavailable, ok p/ teste
+
+    monkeypatch.setattr(oi, "OrphanNodeScanner", SlowScanner)
+
+    results: dict[str, dict] = {}
+
+    def first_caller():
+        results["first"] = _build_orphan_integrity_for_health(
+            board_id=board_id, generation_id=None
+        )
+
+    t = _threading.Thread(target=first_caller)
+    t.start()
+    try:
+        assert scan_started.wait(10), "primeiro scan nao comecou"
+        # Segundo caller chega DURANTE o scan: não pode rodar outro scan.
+        second = _build_orphan_integrity_for_health(
+            board_id=board_id, generation_id=None
+        )
+        # Sem cache prévio, o segundo caller recebe a projeção indisponível
+        # (scan_error vira reason=orphan_scan_unavailable no safe dict).
+        assert second["reason"] == "orphan_scan_unavailable"
+        assert scan_calls == [board_id], (
+            f"single-flight violado: {len(scan_calls)} scans concorrentes"
+        )
+    finally:
+        release_scan.set()
+        t.join(timeout=10)
+
+    reset_orphan_projection_cache_for_tests(board_id)

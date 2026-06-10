@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -490,16 +491,30 @@ def _build_health_diagnostics(
 # relação (O(nodes × rel_types) queries Kùzu) — em campo (3927 nodes) uma
 # única execução leva minutos e rodava NO EVENT LOOP a cada GET /kg/health
 # (py-spy 2026-06-10: 28/30 dumps presos em _node_degree). A projeção é
-# aditiva/observacional: 60s de defasagem é inofensivo.
+# aditiva/observacional: minutos de defasagem são inofensivos.
+#
+# Single-flight (4º crash em campo, 2026-06-10): sem ele, health requests
+# concorrentes (monitores + frontend) empilhavam scans de minutos em
+# paralelo, mantendo SEMPRE um leitor ativo no board — o que (a) bloqueava
+# a higiene periódica do buffer e (b) colidia com o caminho de close
+# fail-open. Agora: 1 scan por board por vez; quem chega durante um scan
+# recebe o último resultado cacheado mesmo expirado (stale-while-
+# revalidate) ou a projeção indisponível quando nunca houve scan.
 _ORPHAN_PROJECTION_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
-_ORPHAN_PROJECTION_TTL_S = 60.0
+_ORPHAN_PROJECTION_TTL_S = 300.0
+_ORPHAN_SCAN_INFLIGHT: set[str] = set()
+_ORPHAN_SCAN_INFLIGHT_LOCK = threading.Lock()
 
 
 def reset_orphan_projection_cache_for_tests(board_id: str | None = None) -> None:
     if board_id is None:
         _ORPHAN_PROJECTION_CACHE.clear()
+        with _ORPHAN_SCAN_INFLIGHT_LOCK:
+            _ORPHAN_SCAN_INFLIGHT.clear()
     else:
         _ORPHAN_PROJECTION_CACHE.pop(board_id, None)
+        with _ORPHAN_SCAN_INFLIGHT_LOCK:
+            _ORPHAN_SCAN_INFLIGHT.discard(board_id)
 
 
 def _build_orphan_integrity_for_health(
@@ -512,17 +527,29 @@ def _build_orphan_integrity_for_health(
     KG-01 health state machine.
     """
 
+    from okto_pulse.core.kg.orphan_integrity import (
+        OrphanNodeScanner,
+        build_orphan_integrity_projection,
+    )
+
     now = time.monotonic()
     cached = _ORPHAN_PROJECTION_CACHE.get(board_id)
     if cached is not None and now - cached[0] < _ORPHAN_PROJECTION_TTL_S:
         return cached[1]
 
-    try:
-        from okto_pulse.core.kg.orphan_integrity import (
-            OrphanNodeScanner,
-            build_orphan_integrity_projection,
-        )
+    with _ORPHAN_SCAN_INFLIGHT_LOCK:
+        if board_id in _ORPHAN_SCAN_INFLIGHT:
+            # Outro scan deste board está em andamento: serve o stale (ou a
+            # projeção indisponível) em vez de empilhar mais um leitor.
+            if cached is not None:
+                return cached[1]
+            return build_orphan_integrity_projection(
+                None,
+                scan_error="ScanAlreadyInProgress",
+            ).to_safe_dict()
+        _ORPHAN_SCAN_INFLIGHT.add(board_id)
 
+    try:
         report = OrphanNodeScanner().scan(
             board_id=board_id,
             generation_id=generation_id,
@@ -535,15 +562,14 @@ def _build_orphan_integrity_for_health(
             "kg.health.orphan_integrity_scan_unavailable board=%s err=%s",
             board_id, exc,
         )
-        from okto_pulse.core.kg.orphan_integrity import (
-            build_orphan_integrity_projection,
-        )
-
         # Falhas NÃO são cacheadas — a próxima chamada re-tenta o scan.
         return build_orphan_integrity_projection(
             None,
             scan_error=type(exc).__name__,
         ).to_safe_dict()
+    finally:
+        with _ORPHAN_SCAN_INFLIGHT_LOCK:
+            _ORPHAN_SCAN_INFLIGHT.discard(board_id)
 
 
 def _telemetry_ok(graph_type: str) -> GraphTelemetry:

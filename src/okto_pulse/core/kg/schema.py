@@ -444,6 +444,71 @@ def _evict_board_db(key: str) -> bool:
     return True
 
 
+# Dreno curto do close discricionário da higiene: longo o suficiente para
+# leitores rápidos (queries pontuais) saírem, curto o suficiente para não
+# atrasar o worker quando um scan longo (health/orphan) segura o board.
+_HYGIENE_CLOSE_DRAIN_TIMEOUT_S = 2.0
+
+
+def try_close_board_db(board_id: str) -> bool:
+    """Close DISCRICIONÁRIO do Database do board (higiene de buffer).
+
+    Diferente do close legítimo (``close_board_db_cache``, fail-open no
+    timeout — aceitável só em shutdown/rmtree, quando o handle PRECISA
+    morrer): fechar o Database com um leitor ativo é use-after-close em
+    handle C++ → abort nativo do processo inteiro (campo 2026-06-10, 4º
+    crash: ``kg.close_guard.timeout`` fail-open disparado pela higiene
+    periódica enquanto um health scan lia o board → exit 5). Se o dreno
+    não completa, NADA é fechado e o caller adia a higiene para o próximo
+    commit. Fecha as conexões pooled primeiro (idle no pool = reader no
+    guard). Retorna True quando o Database foi liberado (ou já não estava
+    aberto).
+    """
+    try:
+        from okto_pulse.core.kg.connection_pool import close_board_connection
+    except ImportError:
+        close_board_connection = None  # type: ignore[assignment]
+    if close_board_connection is not None:
+        try:
+            close_board_connection(board_id)
+        except Exception as exc:
+            logger.warning(
+                "kg.hygiene.pool_close_failed board=%s err=%s", board_id, exc,
+                extra={
+                    "event": "kg.hygiene.pool_close_failed",
+                    "board_id": board_id,
+                },
+            )
+
+    key = str(board_kuzu_path(board_id))
+    guard = _get_close_guard(board_id)
+    with guard.closing(timeout=_HYGIENE_CLOSE_DRAIN_TIMEOUT_S) as (drained, stuck):
+        if not drained:
+            logger.warning(
+                "kg.hygiene.close_skipped_active_readers board=%s "
+                "stuck_readers=%d — higiene adiada para o próximo commit",
+                board_id, stuck,
+                extra={
+                    "event": "kg.hygiene.close_skipped_active_readers",
+                    "board_id": board_id,
+                    "stuck_readers": stuck,
+                },
+            )
+            return False
+        with _board_db_cache_lock:
+            db = _board_db_cache.pop(key, None)
+        if db is None:
+            return True
+        # Falha REAL do close propaga (≠ skip por leitor): o caller do
+        # lifecycle converte em step failure → a queue entry não é ACKada
+        # (BR-3 terminal preservada). Estado pós-falha é suspeito demais
+        # para fingir durabilidade.
+        db.close()
+        del db
+    gc.collect()  # Windows: libera handles C++ antes do próximo open
+    return True
+
+
 def _open_kuzu_db_cached(board_id: str, path: Path) -> Any:
     """Backwards-compat shim — delegates to ``_open_kuzu_db_path_cached``."""
     return _open_kuzu_db_path_cached(path)
@@ -954,23 +1019,33 @@ def apply_ladybug_lifecycle_step(
             # close em 1/K e ficando ordens de magnitude abaixo do limiar de
             # crash observado (~250-500 checkpoints).
             if _bump_checkpoint_counter_and_check_close(board_id):
-                close_all_connections(board_id)
-                if not path.exists():
-                    return LifecycleStepResult(
-                        ok=False,
-                        detail=f"{GRAPH_DB_FILENAME} missing at {path}",
-                    )
-                return LifecycleStepResult(ok=True)
+                # Close DISCRICIONÁRIO (4º crash em campo): o caminho
+                # fail-open de close_all_connections fechava o Database com
+                # um health scan lendo o board → use-after-close nativo →
+                # abort do processo. Com leitor ativo a higiene é ADIADA
+                # (contador re-armado: o próximo commit tenta de novo) e
+                # este commit faz o CHECKPOINT normal para durabilidade.
+                if try_close_board_db(board_id):
+                    if not path.exists():
+                        return LifecycleStepResult(
+                            ok=False,
+                            detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                        )
+                    return LifecycleStepResult(ok=True)
+                _rearm_checkpoint_counter(board_id)
             bc = BoardConnection(board_id)
             try:
                 bc.conn.execute("CHECKPOINT")
             except Exception as exc:
                 # Válvula de escape: CHECKPOINT falhou (ex.: buffer exausto)
                 # → fecha o Database (libera o buffer pool inteiro + flush
-                # via close). Só se o close TAMBÉM falhar o step falha.
+                # via close). O close aqui também é discricionário: com
+                # leitor ativo, NÃO fecha (abort nativo) — o commit já está
+                # durável no WAL e o STEP_FSYNC seguinte sincroniza os
+                # arquivos; o replay na próxima abertura cobre o gap.
                 logger.warning(
                     "kg.lifecycle.checkpoint_statement_failed board=%s err=%s "
-                    "— fallback: close_all_connections (flush via close)",
+                    "— fallback: close do Database (flush via close)",
                     board_id, exc,
                     extra={
                         "event": "kg.lifecycle.checkpoint_statement_failed",
@@ -978,8 +1053,10 @@ def apply_ladybug_lifecycle_step(
                     },
                 )
                 bc.close()
-                _reset_checkpoint_counter(board_id)
-                close_all_connections(board_id)
+                if try_close_board_db(board_id):
+                    _reset_checkpoint_counter(board_id)
+                else:
+                    _rearm_checkpoint_counter(board_id)
                 if not path.exists():
                     return LifecycleStepResult(
                         ok=False,
@@ -1237,6 +1314,13 @@ def _bump_checkpoint_counter_and_check_close(board_id: str) -> bool:
 def _reset_checkpoint_counter(board_id: str) -> None:
     with _checkpoint_counters_lock:
         _checkpoint_counters[board_id] = 0
+
+
+def _rearm_checkpoint_counter(board_id: str) -> None:
+    """Deixa o contador a 1 bump do close — higiene adiada por leitor ativo
+    re-tenta no commit seguinte em vez de esperar mais K commits."""
+    with _checkpoint_counters_lock:
+        _checkpoint_counters[board_id] = _checkpoint_close_interval() - 1
 
 
 def _quarantine_interrupted_checkpoint_sidecars(path: Path) -> bool:

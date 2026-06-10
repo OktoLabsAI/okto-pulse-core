@@ -275,18 +275,25 @@ def test_worker_subset_constant_excludes_probe():
 # ---------------------------------------------------------------------------
 
 
+def _spy_try_close(monkeypatch, calls: list[bool]):
+    orig = schema.try_close_board_db
+
+    def spy(board_id: str) -> bool:
+        result = orig(board_id)
+        calls.append(result)
+        return result
+
+    monkeypatch.setattr(schema, "try_close_board_db", spy)
+
+
 def test_periodic_buffer_hygiene_closes_every_kth_commit(nd_board, monkeypatch):
     """Campo 2026-06-10 (3 crashes): CHECKPOINTs sucessivos no mesmo Database
     aberto degradam o buffer do Ladybug até abort nativo. A cada K commits o
     step troca o CHECKPOINT pelo CLOSE (higiene do buffer pool)."""
     monkeypatch.setenv("KG_CHECKPOINT_CLOSE_INTERVAL", "3")
     schema._reset_checkpoint_counter(nd_board)
-    close_calls: list[str] = []
-    orig_cac = schema.close_all_connections
-    monkeypatch.setattr(
-        schema, "close_all_connections",
-        lambda *a, **k: (close_calls.append("close"), orig_cac(*a, **k)),
-    )
+    close_calls: list[bool] = []
+    _spy_try_close(monkeypatch, close_calls)
     executed: list[str] = []
     _spy_board_connection(monkeypatch, executed)
 
@@ -295,9 +302,52 @@ def test_periodic_buffer_hygiene_closes_every_kth_commit(nd_board, monkeypatch):
         assert result.ok is True
 
     # K=3: commits 3 e 6 viram CLOSE; os demais (1,2,4,5) usam CHECKPOINT.
-    assert len(close_calls) == 2, f"esperava 2 closes em 6 commits, veio {len(close_calls)}"
+    assert close_calls == [True, True], (
+        f"esperava 2 closes efetivos em 6 commits, veio {close_calls}"
+    )
     checkpoints = [q for q in executed if "CHECKPOINT" in q.upper()]
     assert len(checkpoints) == 4, f"esperava 4 CHECKPOINTs, veio {len(checkpoints)}"
+
+
+def test_hygiene_close_skipped_under_active_reader(nd_board, monkeypatch):
+    """Campo 2026-06-10 (4º crash): a higiene fechava o Database em fail-open
+    com um health scan lendo o board → use-after-close nativo → exit 5.
+    Com leitor ativo o close é PULADO (commit faz CHECKPOINT normal) e o
+    contador fica re-armado: cada commit seguinte re-tenta até o leitor
+    sair — só então o close acontece."""
+    monkeypatch.setenv("KG_CHECKPOINT_CLOSE_INTERVAL", "3")
+    monkeypatch.setattr(schema, "_HYGIENE_CLOSE_DRAIN_TIMEOUT_S", 0.05)
+    schema._reset_checkpoint_counter(nd_board)
+    close_calls: list[bool] = []
+    _spy_try_close(monkeypatch, close_calls)
+    executed: list[str] = []
+    _spy_board_connection(monkeypatch, executed)
+
+    with open_board_connection(nd_board) as (_db, conn):
+        before = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
+        # K=3: commits 1-2 = CHECKPOINT; 3 = tentativa de close (PULADA,
+        # leitor ativo) + CHECKPOINT; 4 = re-tentativa via re-arme (PULADA)
+        # + CHECKPOINT. Sem o re-arme, o commit 4 seria CHECKPOINT puro.
+        for _ in range(4):
+            result = apply_ladybug_lifecycle_step(
+                nd_board, "board_graph", STEP_CHECKPOINT
+            )
+            assert result.ok is True, result.detail
+        assert close_calls == [False, False], (
+            f"close deveria ser pulado 2x sob leitor ativo, veio {close_calls}"
+        )
+        checkpoints = [q for q in executed if "CHECKPOINT" in q.upper()]
+        assert len(checkpoints) == 4, "todo commit com close pulado faz CHECKPOINT"
+        # O leitor sobrevive intacto — prova de que nada foi fechado.
+        after = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
+        assert after == before
+
+    # Leitor saiu: o próximo commit (contador re-armado) fecha de verdade.
+    result = apply_ladybug_lifecycle_step(nd_board, "board_graph", STEP_CHECKPOINT)
+    assert result.ok is True, result.detail
+    assert close_calls == [False, False, True], (
+        f"close deveria acontecer apos o leitor sair, veio {close_calls}"
+    )
 
 
 def test_checkpoint_failure_falls_back_to_close(nd_board, monkeypatch):
@@ -305,22 +355,41 @@ def test_checkpoint_failure_falls_back_to_close(nd_board, monkeypatch):
     backfill massivo e derrubava o processo. O fallback fecha o Database do
     board (libera o buffer pool + checkpoint implícito do close) e o step
     SUCEDE — a durabilidade fica garantida pelo close."""
-    close_calls: list[str] = []
-    orig_cac = schema.close_all_connections
-    monkeypatch.setattr(
-        schema, "close_all_connections",
-        lambda *a, **k: (close_calls.append("close_all_connections"), orig_cac(*a, **k)),
-    )
+    close_calls: list[bool] = []
+    _spy_try_close(monkeypatch, close_calls)
     executed: list[str] = []
     _spy_board_connection(monkeypatch, executed, fail_checkpoint=True)
     result = apply_ladybug_lifecycle_step(nd_board, "board_graph", STEP_CHECKPOINT)
     assert result.ok is True, f"fallback close deveria salvar o step: {result.detail}"
-    assert close_calls, "fallback nao fechou o Database (buffer pool nao liberado)"
+    assert close_calls == [True], "fallback nao fechou o Database (buffer pool nao liberado)"
+
+
+def test_checkpoint_fallback_skips_close_under_active_reader(nd_board, monkeypatch):
+    """CHECKPOINT falhou E há leitor ativo: o fallback NÃO pode fechar
+    (use-after-close nativo). O step sucede mesmo assim — o commit já está
+    no WAL e o STEP_FSYNC sincroniza os arquivos; a higiene fica adiada."""
+    monkeypatch.setattr(schema, "_HYGIENE_CLOSE_DRAIN_TIMEOUT_S", 0.05)
+    schema._reset_checkpoint_counter(nd_board)
+    close_calls: list[bool] = []
+    _spy_try_close(monkeypatch, close_calls)
+    executed: list[str] = []
+    _spy_board_connection(monkeypatch, executed, fail_checkpoint=True)
+
+    with open_board_connection(nd_board) as (_db, conn):
+        before = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
+        result = apply_ladybug_lifecycle_step(
+            nd_board, "board_graph", STEP_CHECKPOINT
+        )
+        assert result.ok is True, f"step deveria suceder via WAL: {result.detail}"
+        assert close_calls == [False], "fallback nao pode fechar sob leitor ativo"
+        after = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
+        assert after == before
 
 
 def test_checkpoint_and_fallback_failure_blocks_queue_ack(nd_board, monkeypatch):
     """BR-3 preservada no caso terminal: se o CHECKPOINT falha E o fallback
-    close também falha, o step falha e o worker NÃO ACKa o queue entry."""
+    close também falha (falha REAL de close, não skip por leitor), o step
+    falha e o worker NÃO ACKa o queue entry."""
     from okto_pulse.core.kg.workers.consolidation import (
         _apply_board_graph_lifecycle_after_commit,
     )
@@ -328,7 +397,7 @@ def test_checkpoint_and_fallback_failure_blocks_queue_ack(nd_board, monkeypatch)
     def _broken_close(*_a, **_k):
         raise RuntimeError("forced close failure (terminal)")
 
-    monkeypatch.setattr(schema, "close_all_connections", _broken_close)
+    monkeypatch.setattr(schema, "try_close_board_db", _broken_close)
     executed: list[str] = []
     _spy_board_connection(monkeypatch, executed, fail_checkpoint=True)
     with pytest.raises(RuntimeError) as exc_info:
