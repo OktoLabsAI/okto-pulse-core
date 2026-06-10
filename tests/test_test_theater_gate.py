@@ -27,16 +27,33 @@ async def test_ts1_boardsettings_persists_skip_flag():
     assert s_default.require_spec_validation is True
     assert s_default.require_spec_resource_task_coverage is True
     assert s_default.require_task_validation is True
+    assert s_default.skip_cognitive_consolidation is False
     # JSON dump preserves
     dumped = s.model_dump()
     assert dumped["skip_test_evidence_global"] is True
+
+
+async def test_boardsettings_persists_cognitive_closeout_skip_flag():
+    """CCG.1 — BoardSettings.skip_cognitive_consolidation defaults false
+    and survives JSON serialization for existing PATCH settings flow.
+    """
+    from okto_pulse.core.models.schemas import BoardSettings
+
+    settings = BoardSettings(skip_cognitive_consolidation=True)
+    dumped = settings.model_dump()
+
+    assert settings.skip_cognitive_consolidation is True
+    assert dumped["skip_cognitive_consolidation"] is True
+    assert BoardSettings().skip_cognitive_consolidation is False
 
 
 async def test_ts2_gate_rejects_automated_without_evidence():
     """TS2 — _validate_evidence(status='automated', evidence=None) →
     not ok, missing inclui test_file_path E test_function.
     """
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     ok, missing = _validate_evidence("automated", None)
     assert not ok
@@ -46,7 +63,9 @@ async def test_ts2_gate_rejects_automated_without_evidence():
 
 async def test_ts3_gate_accepts_automated_with_complete_evidence():
     """TS3 — automated com test_file_path + test_function → ok."""
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     ok, missing = _validate_evidence(
         "automated",
@@ -64,7 +83,9 @@ async def test_ts4_passed_accepts_output_snippet_or_test_run_id():
     - neither → not ok
     - both → ok
     """
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     base = {"last_run_at": "2026-04-27T20:00:00"}
 
@@ -92,7 +113,9 @@ async def test_ts4_passed_accepts_output_snippet_or_test_run_id():
 
 async def test_ts4b_failed_same_as_passed():
     """failed segue mesmas regras de passed."""
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     ok, _ = _validate_evidence(
         "failed",
@@ -106,7 +129,9 @@ async def test_ts4b_failed_same_as_passed():
 
 async def test_ts6_draft_and_ready_dont_require_evidence():
     """TS6 — status=draft ou ready não dispara o gate."""
-    from okto_pulse.core.mcp.server import _validate_evidence
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        validate_test_scenario_evidence as _validate_evidence,
+    )
 
     ok, missing = _validate_evidence("draft", None)
     assert ok

@@ -13,7 +13,7 @@ from okto_pulse.core.models.schemas import (
     SprintSummary,
     SprintUpdate,
 )
-from okto_pulse.core.services.main import SprintService
+from okto_pulse.core.services.main import SprintOperationError, SprintService
 
 router = APIRouter()
 
@@ -48,6 +48,8 @@ async def create_sprint(
     service = SprintService(db)
     try:
         sprint = await service.create_sprint(board_id, user_id, data)
+    except SprintOperationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.to_dict())
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not sprint:
@@ -170,10 +172,25 @@ async def assign_tasks(
     service = SprintService(db)
     try:
         count = await service.assign_tasks(sprint_id, card_ids, user_id)
+    except SprintOperationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.to_dict())
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     await db.commit()
-    return {"success": True, "assigned": count}
+    sprint = await service.get_sprint(sprint_id)
+    lane_type = sprint.lane_type.value if sprint else None
+    accepted_card_types = (
+        ["bug", "test"]
+        if lane_type == "hotfix"
+        else ["normal", "test", "bug"]
+    )
+    return {
+        "success": True,
+        "assigned": count,
+        "assigned_count": count,
+        "lane_type": lane_type,
+        "accepted_card_types": accepted_card_types,
+    }
 
 
 @router.post("/sprints/{sprint_id}/unassign-tasks")

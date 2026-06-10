@@ -6,7 +6,7 @@ import tempfile
 import types
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gdt_"))
@@ -31,6 +31,7 @@ from okto_pulse.core.kg.global_discovery.outbox_worker import (
     DEAD_LETTER_SENTINEL,
     MAX_RETRIES,
     OutboxWorker,
+    _is_retryable_board_read_error,
     _is_retryable_global_open_error,
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
@@ -61,7 +62,7 @@ class TestGlobalSchema:
     def test_schema_version(self):
         assert GLOBAL_SCHEMA_VERSION == "0.1.0"
 
-    def test_corrupt_global_discovery_wal_is_purged_before_rebootstrap(self, monkeypatch, tmp_path):
+    def test_corrupt_global_discovery_wal_is_preserved_and_blocks_rebootstrap(self, monkeypatch, tmp_path):
         from okto_pulse.core.kg import schema as kg_schema
         from okto_pulse.core.kg.global_discovery import schema as global_schema
 
@@ -103,10 +104,12 @@ class TestGlobalSchema:
             types.SimpleNamespace(Connection=lambda _db: FakeConn()),
         )
 
-        bootstrap_global_discovery()
+        with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
+            bootstrap_global_discovery()
 
-        assert calls["open"] == 2
-        assert not wal.exists()
+        assert calls["open"] == 1
+        assert path.exists()
+        assert wal.exists()
 
     def test_board_insert_and_query(self):
         db, conn = open_global_connection()
@@ -209,6 +212,14 @@ class TestOutboxWorker:
             "the WAL file is corrupted."
         )
 
+    def test_board_read_failure_is_retryable(self):
+        assert _is_retryable_board_read_error(
+            "outbox.read_board_failed: could not read source graph nodes"
+        )
+        assert _is_retryable_board_read_error(
+            "Existing LadybugDB graph could not be opened during bootstrap_probe"
+        )
+
     @pytest.mark.asyncio
     async def test_dead_lettered_global_open_failure_is_requeued_and_processed(
         self,
@@ -278,6 +289,120 @@ class TestOutboxWorker:
             await db.commit()
 
     @pytest.mark.asyncio
+    async def test_dead_lettered_board_read_failure_is_requeued_when_board_recovers(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        import uuid
+        import okto_pulse.core.kg.global_discovery.outbox_worker as worker_mod
+
+        board_id = f"board-outbox-board-recover-{uuid.uuid4().hex[:8]}"
+        event_id = str(uuid.uuid4())
+        session_id = f"kgses_{uuid.uuid4().hex[:16]}"
+        async with db_factory() as db:
+            await db.execute(delete(GlobalUpdateOutbox))
+            db.add(GlobalUpdateOutbox(
+                event_id=event_id,
+                board_id=board_id,
+                session_id=session_id,
+                event_type="consolidation_committed",
+                payload={"session_id": session_id, "nodes_added": 1},
+                retry_count=DEAD_LETTER_SENTINEL,
+                last_error=(
+                    "outbox.read_board_failed: could not read source graph nodes"
+                ),
+            ))
+            await db.commit()
+
+        calls = {"probe": 0, "apply": 0}
+
+        def fake_probe(_board_id: str) -> bool:
+            calls["probe"] += 1
+            return True
+
+        async def fake_apply_event(self, event, db):
+            calls["apply"] += 1
+
+        monkeypatch.setattr(
+            OutboxWorker,
+            "_board_graph_is_queryable",
+            staticmethod(fake_probe),
+        )
+        monkeypatch.setattr(OutboxWorker, "_apply_event", fake_apply_event)
+
+        worker = OutboxWorker(db_factory, interval_seconds=5)
+        processed = await worker.process_once()
+
+        assert processed == 1
+        assert calls == {"probe": 1, "apply": 1}
+
+        async with db_factory() as db:
+            row = (
+                await db.execute(
+                    worker_mod.select(GlobalUpdateOutbox)
+                    .where(GlobalUpdateOutbox.event_id == event_id)
+                )
+            ).scalar_one()
+            assert row.processed_at is not None
+            assert row.retry_count == 0
+            assert row.last_error is None
+            await db.execute(delete(GlobalUpdateOutbox))
+            await db.commit()
+
+    @pytest.mark.asyncio
+    async def test_dead_lettered_board_read_failure_waits_if_board_unavailable(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        import uuid
+
+        event_id = str(uuid.uuid4())
+        async with db_factory() as db:
+            await db.execute(delete(GlobalUpdateOutbox))
+            db.add(GlobalUpdateOutbox(
+                event_id=event_id,
+                board_id=f"board-outbox-board-still-down-{uuid.uuid4().hex[:8]}",
+                session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                event_type="consolidation_committed",
+                payload={"session_id": "ignored"},
+                retry_count=DEAD_LETTER_SENTINEL,
+                last_error=(
+                    "outbox.read_board_failed: could not read source graph nodes"
+                ),
+            ))
+            await db.commit()
+
+        monkeypatch.setattr(
+            OutboxWorker,
+            "_board_graph_is_queryable",
+            staticmethod(lambda _board_id: False),
+        )
+
+        async def fail_if_called(self, event, db):
+            raise AssertionError("event should stay dead-lettered")
+
+        monkeypatch.setattr(OutboxWorker, "_apply_event", fail_if_called)
+
+        worker = OutboxWorker(db_factory, interval_seconds=5)
+        processed = await worker.process_once()
+
+        assert processed == 0
+        async with db_factory() as db:
+            row = (
+                await db.execute(
+                    select(GlobalUpdateOutbox)
+                    .where(GlobalUpdateOutbox.event_id == event_id)
+                )
+            ).scalar_one()
+            assert row.processed_at is None
+            assert row.retry_count == DEAD_LETTER_SENTINEL
+            assert "outbox.read_board_failed" in (row.last_error or "")
+            await db.execute(delete(GlobalUpdateOutbox))
+            await db.commit()
+
+    @pytest.mark.asyncio
     async def test_non_global_dead_letter_is_not_requeued(
         self,
         db_factory,
@@ -322,6 +447,64 @@ class TestOutboxWorker:
             assert row.processed_at is None
             assert row.retry_count == DEAD_LETTER_SENTINEL
             assert row.last_error == "invalid payload shape"
+
+    @pytest.mark.asyncio
+    async def test_process_once_uses_global_guard_and_flushes_after_batch(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        """Global discovery writes must run under the global guard and the
+        worker must run the post-batch flush/probe before marking success
+        durable.
+        """
+        import uuid
+        from okto_pulse.core.kg.write_barrier import require_global_write_token
+
+        event_id = str(uuid.uuid4())
+        async with db_factory() as db:
+            await db.execute(delete(GlobalUpdateOutbox))
+            db.add(GlobalUpdateOutbox(
+                event_id=event_id,
+                board_id=f"board-outbox-guard-{uuid.uuid4().hex[:8]}",
+                session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                event_type="consolidation_committed",
+                payload={"session_id": "ignored", "nodes_added": 0},
+            ))
+            await db.commit()
+
+        calls = {"apply": 0, "flush": 0}
+
+        async def fake_apply_event(self, event, db):
+            require_global_write_token()
+            calls["apply"] += 1
+
+        def fake_flush(self):
+            calls["flush"] += 1
+
+        monkeypatch.setattr(OutboxWorker, "_apply_event", fake_apply_event)
+        monkeypatch.setattr(
+            OutboxWorker,
+            "_flush_global_discovery_storage_after_batch",
+            fake_flush,
+        )
+
+        worker = OutboxWorker(db_factory, interval_seconds=5)
+        processed = await worker.process_once()
+
+        assert processed == 1
+        assert calls == {"apply": 1, "flush": 1}
+
+        async with db_factory() as db:
+            row = (
+                await db.execute(
+                    select(GlobalUpdateOutbox)
+                    .where(GlobalUpdateOutbox.event_id == event_id)
+                )
+            ).scalar_one()
+            assert row.processed_at is not None
+            await db.execute(delete(GlobalUpdateOutbox))
+            await db.commit()
 
     @pytest.mark.asyncio
     async def test_board_read_failure_keeps_event_retryable(

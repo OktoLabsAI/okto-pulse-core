@@ -19,9 +19,26 @@ from okto_pulse.core.models import (
     CardUpdate,
 )
 from okto_pulse.core.models.db import ActivityLog, Agent, AgentSeenItem
-from okto_pulse.core.services import CardService
+from okto_pulse.core.services import CardOperationError, CardService, ResourceGateError
+from okto_pulse.core.services.activity_log import (
+    activity_log_summary,
+    activity_log_trigger,
+    sanitize_activity_details,
+)
+from okto_pulse.core.services.bug_regression_preview import (
+    BugRegressionScenarioPreviewError,
+    BugRegressionScenarioPreviewService,
+)
 
 router = APIRouter()
+
+
+def _resource_gate_detail(exc: ResourceGateError) -> dict:
+    return {
+        "error": exc.code,
+        "message": str(exc),
+        "details": exc.details,
+    }
 
 
 @router.get("/{card_id}", response_model=CardResponse)
@@ -36,6 +53,29 @@ async def get_card(
     if not card:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
     return card
+
+
+@router.get("/{card_id}/regression-scenario-candidates")
+async def get_bug_regression_scenario_candidates(
+    card_id: str,
+    board_id: str = Query(...),
+    affected_task_ids: list[str] | None = Query(None),
+    candidate_scenario_ids: list[str] | None = Query(None),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Preview reusable regression scenarios for a bug without mutating spec/card state."""
+
+    try:
+        return await BugRegressionScenarioPreviewService(db).resolve(
+            board_id=board_id,
+            bug_id=card_id,
+            affected_task_ids=affected_task_ids,
+            candidate_scenario_ids=candidate_scenario_ids,
+            surface="rest",
+        )
+    except BugRegressionScenarioPreviewError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.to_dict())
 
 
 @router.patch("/{card_id}", response_model=CardResponse)
@@ -67,6 +107,13 @@ async def move_card(
     service = CardService(db)
     try:
         card = await service.move_card(card_id, user_id, data)
+    except CardOperationError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
+    except ResourceGateError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_resource_gate_detail(e),
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     if not card:
@@ -157,7 +204,22 @@ async def get_card_activity(
         .limit(limit)
     )
     result = await db.execute(query)
-    return list(result.scalars().all())
+    return [
+        ActivityLogResponse(
+            id=log.id,
+            board_id=log.board_id,
+            card_id=log.card_id,
+            action=log.action,
+            actor_type=log.actor_type,
+            actor_id=log.actor_id,
+            actor_name=log.actor_name,
+            trigger=activity_log_trigger(log.details),
+            summary=activity_log_summary(log.action, log.details),
+            details=sanitize_activity_details(log.details),
+            created_at=log.created_at,
+        )
+        for log in result.scalars().all()
+    ]
 
 
 @router.get("/{card_id}/seen")
@@ -234,7 +296,7 @@ async def link_test_task_to_bug(
     # Validate same spec
     if test_task.spec_id != bug_card.spec_id:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Test task does not belong to the same spec as the bug",
         )
 
@@ -243,7 +305,7 @@ async def link_test_task_to_bug(
     if bug_card.created_at and test_task.created_at:
         if test_task.created_at.isoformat() < bug_card.created_at.isoformat():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Test task was created before the bug card — link a regression test task created after the bug",
             )
 
@@ -255,7 +317,7 @@ async def link_test_task_to_bug(
             for sid in test_task.test_scenario_ids:
                 if sid not in all_scenarios:
                     raise HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                         detail=f"Test task references scenario '{sid}' that does not exist on the bug spec",
                     )
 
@@ -364,8 +426,13 @@ async def submit_task_validation(
             reviewer_name=reviewer_name,
             data=data,
         )
+    except ResourceGateError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_resource_gate_detail(e),
+        )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
     await db.commit()
     return result
 

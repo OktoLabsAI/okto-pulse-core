@@ -80,7 +80,7 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 
 ## 2.9 Bug Cards — Post-Delivery Bug Tracking
 
-Bug cards track defects discovered after tasks are completed. They enforce a test-first workflow: you MUST create test scenarios and test tasks BEFORE you can start fixing the bug.
+Bug cards track defects discovered after tasks are completed. They enforce a test-first workflow: you MUST create a fresh regression test card before you can start fixing the bug. The test card may reuse an existing scenario only when that scenario is eligible by lineage.
 
 **Creating a bug card:**
 ```
@@ -100,11 +100,16 @@ okto_pulse_create_card(
 **Bug card workflow (enforced by the system):**
 
 1. Create bug card (status: not_started)
-2. Triage & create test scenarios (status: started) — create NEW test scenario(s) on the spec
-3. Create test task & link to bug (still started) — create test card, link: `okto_pulse_update_card(card_id=bug_id, linked_test_task_ids="<test_task_id>")`
-4. Move to in_progress (BLOCKED until step 3 is done) — system validates linked test tasks, scenario existence, temporal order
-5. Fix the bug (in_progress) — implement the fix, run tests, update scenario statuses
+2. Triage the regression path (status: started):
+   - **Path A — reuse eligible existing scenario:** use `okto_pulse_resolve_bug_regression_scenarios` or the REST candidate preview to find scenarios on the bug spec that are linked to the bug `origin_task_id` or explicitly supplied `affected_task_ids`. Reuse only those eligible scenarios. Linking an existing eligible scenario is a traceability-only update: leave validated spec content unchanged and create a fresh post-bug test card that references the eligible scenario.
+   - **Path B — semantic gap:** if no eligible scenario exists, the scenario is unrelated or cross-spec, or expected behavior changed, route to amendment, refinement, spec revision, or hotfix spec. Do not satisfy the gate by linking a same-spec scenario that is not linked to the origin or affected tasks.
+   - **Path C — hotfix lane:** if the spec is `done` or the origin sprint is closed, assign the bug and its regression test card to an active `lane_type="hotfix"` sprint. Keep the original closed delivery sprint unchanged.
+3. Create test task & link to bug (still started) — create a new post-bug `card_type="test"` card with the eligible `test_scenario_ids`, then link: `okto_pulse_update_card(card_id=bug_id, linked_test_task_ids="<test_task_id>")`.
+4. Move to in_progress (BLOCKED until step 3 is done) — system validates linked test tasks, scenario existence, same-spec ownership, eligibility by origin/affected-task lineage, and that the test TASK (card) was created after the bug. The "after the bug" temporal applies to the test TASK, not the scenario — a pre-existing eligible scenario is valid regression coverage.
+5. Fix the bug (in_progress) — implement the fix, run tests, update scenario statuses. On a `validated`/`done` spec, `okto_pulse_update_test_scenario_status` is still allowed for a scenario already linked to an executable test card, because this records operational evidence instead of editing semantic spec content.
 6. Complete (done) — provide conclusion with what was fixed
+
+> **Canonical sources (forward pointers):** eligible-scenario reuse is defined in `reference/tool-docs/card.md`; content lock behavior is covered by **SpecLockedError** in `reference/errors.md`. The steps above intentionally separate Path A traceability reuse, Path B semantic-gap amendment, and Path C hotfix execution lane.
 
 **If you get an error moving a bug card:** see the "Common Errors and How to Fix Them" section in the error reference.
 

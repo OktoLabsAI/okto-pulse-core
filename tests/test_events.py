@@ -149,15 +149,17 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
         assert execs[0].status == "pending"
 
 
-# --- AC12 (spec 4007e4a3 — Ideação #3): registry has 17 events ---
+# --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_seventeen_events():
+def test_registry_has_twenty_five_events():
     """All EVENT_TYPES are registered with at least one handler.
 
-    History: 12 MVP + 4 from spec eaf78891 (Ideação #2) + 1 from spec
-    4007e4a3 (Ideação #3 — card.conclusion_added) + 3 from spec 28583299
-    (Ideação #4 — kg.hit_flushed, card.priority_changed, card.severity_changed).
+    History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
+    Ideação #3 — card.conclusion_added) + 4 (spec 28583299, Ideação #4 —
+    kg.hit_flushed, card.priority_changed, card.severity_changed, kg.tick.daily)
+    + 3 (structured-entity canonicalization — structured_entity.{created,
+    updated,revoked}) + 1 (bug regression reuse decision audit) = 25.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -166,7 +168,7 @@ def test_registry_has_seventeen_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 21
+    assert len(EVENT_TYPES) == 25
     operational_kg_events = {
         "kg.hit_flushed",
         "card.priority_changed",
@@ -1311,15 +1313,21 @@ def test_begin_consolidation_has_nothing_changed_log_site():
 
 
 def test_agent_instructions_documents_new_triggers():
-    """TS11: grep-style assertion that agent_instructions.md mentions both events."""
-    from pathlib import Path
+    """TS11 (modernised): the card-lifecycle trigger events exist in the registry.
 
-    doc = Path(__file__).parent.parent / "src" / "okto_pulse" / "core" / "mcp" / "agent_instructions.md"
-    text = doc.read_text(encoding="utf-8")
-    assert "card.moved" in text
-    assert "card.conclusion_added" in text
-    assert "human_curated" in text
-    assert "Ideação #3" in text or "spec 4007e4a3" in text
+    The pre-0.2.1 contract pinned that agent_instructions.md enumerated
+    ``card.moved`` / ``card.conclusion_added`` / ``human_curated`` / Ideação #3
+    by name. The MCP lazy-loading restructure deliberately stopped enumerating
+    internal event names in the slim agent docs, so the doc-grep assertion is
+    obsolete. Assert the durable underlying fact instead: the trigger events are
+    registered and resolvable.
+    """
+    from okto_pulse.core.events.types import EVENT_TYPES, resolve_event_class
+
+    assert "card.moved" in EVENT_TYPES
+    assert "card.conclusion_added" in EVENT_TYPES
+    assert resolve_event_class("card.moved") is not None
+    assert resolve_event_class("card.conclusion_added") is not None
 
 
 @pytest.mark.asyncio

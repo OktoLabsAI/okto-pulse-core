@@ -1,0 +1,11 @@
+{
+  "name": "r5_fixture",
+  "per_tool_description_chars": 900,
+  "aggregate_tool_description_chars": 60000,
+  "always_loaded_instruction_chars": 8000,
+  "per_resource_chars": 20000,
+  "payload_budgets": {
+    "within_budget.json": 500,
+    "oversized.json": 500
+  }
+}

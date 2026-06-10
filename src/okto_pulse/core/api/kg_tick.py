@@ -23,11 +23,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.events import publish as event_publish
-from okto_pulse.core.events.types import KGDailyTick
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
+from okto_pulse.core.services.kg_health_service import get_kg_health
 
 logger = logging.getLogger("okto_pulse.api.kg_tick")
 router = APIRouter()
@@ -42,6 +42,37 @@ class TickRunNowResponse(BaseModel):
     tick_id: str
     status: str  # "running"
     scheduled_at: str  # ISO
+
+
+async def _refuse_tick_if_degraded(
+    board_id: str | None, db: AsyncSession
+) -> dict | None:
+    """Shared tick-admission gate (F17). Returns a structured refusal payload
+    when a CONCRETE board's KG is degraded (``graph_state`` in the shared
+    ``_RISK_STATE_HARD_REJECT`` set), else ``None``.
+
+    A global tick (``board_id is None``) is NOT health-gated — there is no single
+    board to probe and a global tick must not be blocked by one board's health
+    (FR9). Both the REST endpoint and the MCP twin call this ONE gate, so the
+    refusal originates from a single place and the degraded predicate is never
+    duplicated (FR10/FR11).
+    """
+    if board_id is None:
+        return None
+    health = await get_kg_health(board_id, db)
+    graph_state = health.get("graph_state")
+    if graph_state in _RISK_STATE_HARD_REJECT:
+        return {
+            "error": "graph_recovery_needed",
+            "graph_state": graph_state,
+            "board_id": board_id,
+            "message": (
+                f"KG for board {board_id} is {graph_state}; a manual tick is "
+                "refused until recovery completes. Use the explicit KG Health "
+                "recovery flow."
+            ),
+        }
+    return None
 
 
 @router.post(
@@ -78,6 +109,17 @@ async def run_tick_now(
                 "error": "tick_already_running",
                 "message": "Tick already running, retry shortly",
             },
+        )
+
+    # F17 admission gate: refuse a manual tick on a degraded CONCRETE board with
+    # a structured 409 — AFTER the lock check (so tick_already_running keeps
+    # priority, TR7) and BEFORE any tick_id is allocated (no doomed tick). The
+    # global tick (board_id is None) is not health-gated (FR9).
+    refusal = await _refuse_tick_if_degraded(payload.board_id, db)
+    if refusal is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=refusal,
         )
 
     tick_id = str(uuid.uuid4())
@@ -145,32 +187,48 @@ async def _dispatch_manual_tick(
     force_full_rebuild: bool,
     session: AsyncSession | None = None,
 ) -> None:
-    """Persist a KGDailyTick event through the same path as the cron.
+    """Persist KGDailyTick event(s) through the same path as the cron.
+
+    Fan-out por board real (campo 2026-06-10): o sentinel global ``'*'``
+    violava a FK de ``domain_events.board_id`` com PRAGMA foreign_keys=ON
+    (runtime community) — o agendamento falhava com IntegrityError. O
+    ``tick_id`` do response vira correlação de log; cada evento do fan-out
+    tem o próprio uuid.
 
     When ``session`` is provided, the caller owns commit/rollback. MCP and
     other non-request callers may omit it; this helper then opens and commits
     a short-lived session.
     """
+    from okto_pulse.core.events.handlers.kg_decay_tick import (
+        publish_tick_events,
+    )
+
     if force_full_rebuild:
         await _reset_last_recomputed_at(board_id)
 
-    event = KGDailyTick(
-        tick_id=tick_id,
-        scheduled_at=datetime.now(timezone.utc).isoformat(),
-        board_id=board_id or "*",
-        actor_id="manual-trigger",
-        actor_type="user",
-    )
+    scheduled_at = datetime.now(timezone.utc).isoformat()
 
     if session is not None:
-        await event_publish(event, session=session)
+        await publish_tick_events(
+            session,
+            board_id=board_id,
+            actor_id="manual-trigger",
+            actor_type="user",
+            scheduled_at=scheduled_at,
+        )
         return
 
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
     async with factory() as owned_session:
-        await event_publish(event, session=owned_session)
+        await publish_tick_events(
+            owned_session,
+            board_id=board_id,
+            actor_id="manual-trigger",
+            actor_type="user",
+            scheduled_at=scheduled_at,
+        )
         await owned_session.commit()
 
 
@@ -190,6 +248,7 @@ async def _reset_last_recomputed_at(board_id: str | None) -> None:
         VECTOR_INDEX_TYPES,
         open_board_connection,
     )
+    from okto_pulse.core.kg.write_barrier import require_write_token
     from okto_pulse.core.models.db import Board
     from sqlalchemy import select
 
@@ -202,6 +261,12 @@ async def _reset_last_recomputed_at(board_id: str | None) -> None:
             board_ids = list(rows)
 
     for bid in board_ids:
+        # KG-01.3.1 boundary: force_full_rebuild is a write path against
+        # graph.lbug. require_write_token() raises in STRICT mode if no
+        # safe-write guard is active; in SOFT mode (default) it logs and
+        # bumps kg_unguarded_write_total. Production wires the caller to
+        # enter KGSafeWriteLifecycle before invoking this path.
+        require_write_token(bid)
         try:
             conn = open_board_connection(bid)
             with conn as (_kdb, kconn):

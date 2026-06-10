@@ -230,7 +230,7 @@ class DefaultFilters:
 class KGToolError(Exception):
     """Typed error for tier primario tools (FR-8)."""
 
-    code: str  # not_found, permission_denied, invalid_param, kuzu_error, timeout, schema_drift, empty_result
+    code: str  # not_found, permission_denied, invalid_param, kuzu_error, timeout, schema_drift, empty_result, graph_unavailable
     message: str
     details: dict = field(default_factory=dict)
 
@@ -504,6 +504,7 @@ class KGService:
     ):
         """Execute fn() with optional read-through cache and metrics."""
         from okto_pulse.core.kg.cache import emit_tool_metrics
+        from okto_pulse.core.kg.graph_availability import open_or_classify
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
         cache = get_kg_registry().cache_backend
@@ -521,15 +522,24 @@ class KGService:
                 return cached
 
         try:
-            result = fn()
+            # open_or_classify turns a fail-closed graph-open failure into a
+            # typed KGToolError(code="graph_unavailable"); any other failure
+            # propagates unchanged and is flattened to kuzu_error below (FR6).
+            result = open_or_classify(fn, board_id=board_id)
         except Exception as exc:
             dur = (_time.monotonic() - t0) * 1000
+            is_unavailable = (
+                isinstance(exc, KGToolError) and exc.code == "graph_unavailable"
+            )
+            error_code = "graph_unavailable" if is_unavailable else "kuzu_error"
             if tool_name:
                 emit_tool_metrics(
                     tool_name=tool_name, board_id=board_id,
                     cache_hit=False, duration_ms=dur,
-                    result_count=0, error_code="kuzu_error",
+                    result_count=0, error_code=error_code,
                 )
+            if is_unavailable:
+                raise
             raise KGToolError(
                 code="kuzu_error",
                 message=f"Query failed: {exc}",
@@ -961,13 +971,30 @@ class KGService:
         embedder = get_kg_registry().embedding_provider
         query_vec = embedder.encode(topic)
 
-        raw = store.vector_search(
-            board_id=board_id,
-            node_type="Decision",
-            query_vec=query_vec,
-            top_k=top_k * 2,  # fetch extra for re-ranking
-            min_similarity=min_similarity,
-        )
+        # The vector path bypasses _cached_call. search.find_similar_nodes_by_type
+        # now re-raises a fail-closed graph-open failure as a typed
+        # KGToolError(code="graph_unavailable") instead of swallowing it into a
+        # silent [] (FR4/FR5); emit the open-failure metric here (OR or_0a8b78be)
+        # before that typed error propagates to the MCP handler.
+        _t0 = _time.monotonic()
+        try:
+            raw = store.vector_search(
+                board_id=board_id,
+                node_type="Decision",
+                query_vec=query_vec,
+                top_k=top_k * 2,  # fetch extra for re-ranking
+                min_similarity=min_similarity,
+            )
+        except KGToolError as exc:
+            if exc.code == "graph_unavailable":
+                from okto_pulse.core.kg.cache import emit_tool_metrics
+
+                emit_tool_metrics(
+                    tool_name="find_similar_decisions", board_id=board_id,
+                    cache_hit=False, duration_ms=(_time.monotonic() - _t0) * 1000,
+                    result_count=0, error_code="graph_unavailable",
+                )
+            raise
 
         results = []
         for r in raw:

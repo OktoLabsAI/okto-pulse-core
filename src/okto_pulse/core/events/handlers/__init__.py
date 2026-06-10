@@ -16,6 +16,9 @@ from okto_pulse.core.events.handlers.cognitive_extraction import (  # noqa: F401
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (  # noqa: F401
     ConsolidationEnqueuer,
 )
+from okto_pulse.core.events.handlers.discovery_selector_cache import (  # noqa: F401
+    DiscoverySelectorCacheInvalidationHandler,
+)
 from okto_pulse.core.events.handlers.kg_hit_recompute import (  # noqa: F401
     KGHitRecomputeHandler,
 )
@@ -32,6 +35,7 @@ __all__ = [
     "CancellationRestoreHandler",
     "CognitiveExtractionHandler",
     "ConsolidationEnqueuer",
+    "DiscoverySelectorCacheInvalidationHandler",
     "KGHitRecomputeHandler",
     "CardPriorityChangedHandler",
     "CardSeverityChangedHandler",

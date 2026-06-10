@@ -32,7 +32,8 @@ def test_alternatives_from_analysis_section_only():
     assert any("MQTT" in t for t in titles)
     assert any("Redis Streams" in t for t in titles)
     assert all(r.source_section == "analysis" for r in results)
-    assert all(r.source_ref == "spec:abc" for r in results)
+    # Per-concept source_ref (spec eca49df9): ``spec:abc:alternative:<hash8>``.
+    assert all(r.source_ref.startswith("spec:abc:alternative:") for r in results)
 
 
 def test_alternatives_returns_empty_when_no_analysis_section():

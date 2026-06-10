@@ -12,7 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastapi.routing import APIRoute
 
-from okto_pulse.core.api.analytics import router
+from okto_pulse.core.api.analytics import _hours_between, router
+from okto_pulse.core.services.analytics_service import _hours_between as service_hours_between
 
 
 EXPECTED_PHASES = {"ideation", "refinement", "spec", "sprint", "card"}
@@ -74,6 +75,15 @@ class TestCycleTimeBuilder:
             return None  # replicate early exit
 
         assert _phase_ct([], "done") is None
+
+    def test_cycle_time_accepts_mixed_naive_and_aware_datetimes(self):
+        from datetime import datetime, timezone
+
+        naive = datetime(2026, 5, 28, 10, 0, 0)
+        aware = datetime(2026, 5, 28, 12, 30, 0, tzinfo=timezone.utc)
+
+        assert _hours_between(naive, aware) == 2.5
+        assert service_hours_between(naive, aware) == 2.5
 
 
 class TestExpectedShape:

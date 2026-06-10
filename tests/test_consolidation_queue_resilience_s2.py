@@ -11,6 +11,7 @@ test_events.py + test_commit_coordinator.py suites.
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -268,6 +269,126 @@ def test_ac17_attempt_entry_traceback_only_when_requested():
     assert with_tb["traceback"] is not None
     assert "RuntimeError" in with_tb["traceback"]
     assert len(with_tb["traceback"]) <= 2000
+
+
+# ----------------------------------------------------------------------
+# KG-01 regression — worker commits must be guarded + durable before ACK
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
+    """Regression for the restart-empty graph failure.
+
+    The consolidation worker used to call commit_consolidation directly and
+    then acknowledge the queue row. In strict barrier mode, both the commit
+    primitive and every lifecycle step must see an active guard; otherwise
+    a worker could mark a source as consolidated while graph.lbug was only
+    readable through a live process handle.
+    """
+
+    import okto_pulse.core.kg.workers.consolidation as worker
+    from okto_pulse.core.kg.safe_write_lifecycle import (
+        LifecycleStepResult,
+    )
+    from okto_pulse.core.kg.write_barrier import (
+        BarrierMode,
+        get_barrier_mode,
+        require_write_token,
+        set_barrier_mode,
+    )
+
+    original_mode = get_barrier_mode()
+    set_barrier_mode(BarrierMode.STRICT)
+    events: list[str] = []
+
+    async def fake_commit(req, *, agent_id, db):
+        guard = require_write_token(BOARD_ID_S2)
+        assert guard is not None
+        assert guard.operation == worker.CONSOLIDATION_COMMIT_OPERATION
+        events.append(f"commit:{req.session_id}")
+        return SimpleNamespace(nodes_added=1, edges_added=2)
+
+    def fake_lifecycle_step(board_id: str, graph_type: str, step: str):
+        guard = require_write_token(board_id)
+        assert guard is not None
+        assert guard.operation == worker.CONSOLIDATION_COMMIT_OPERATION
+        events.append(f"step:{step}")
+        assert graph_type == "board_graph"
+        return LifecycleStepResult(ok=True)
+
+    monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
+    monkeypatch.setattr(
+        worker, "apply_ladybug_lifecycle_step", fake_lifecycle_step
+    )
+    entry = SimpleNamespace(
+        id="queue-guarded",
+        board_id=BOARD_ID_S2,
+        artifact_type="spec",
+        artifact_id="spec-guarded",
+    )
+
+    try:
+        resp = await worker._commit_consolidation_with_board_graph_lifecycle(
+            entry=entry,
+            session_id="session-guarded",
+            summary_text="guarded commit",
+            db=object(),
+        )
+    finally:
+        set_barrier_mode(original_mode)
+
+    assert resp.nodes_added == 1
+    # Spec 3d89c192 (FR-4): o commit do worker usa o subset não-destrutivo
+    # (checkpoint/flush/fsync) — o close_reopen_probe sai do hot path e fica
+    # exclusivo das lanes de rebuild/recovery (DEFAULT_REQUIRED_STEPS).
+    assert events == (
+        ["commit:session-guarded"]
+        + [f"step:{step}" for step in worker.WORKER_COMMIT_LIFECYCLE_STEPS]
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
+    """A lifecycle failure must bubble out so the queue row is retried/DLQed.
+
+    Spec 3d89c192 (BR-3): com o subset não-destrutivo do worker, a barreira
+    de durabilidade é o CHECKPOINT — a falha dele bloqueia o ACK (antes era
+    o close_reopen_probe, que saiu do hot path por FR-4).
+    """
+
+    import okto_pulse.core.kg.workers.consolidation as worker
+    from okto_pulse.core.kg.safe_write_lifecycle import (
+        STEP_CHECKPOINT,
+        LifecycleStepResult,
+    )
+
+    async def fake_commit(req, *, agent_id, db):
+        return SimpleNamespace(nodes_added=1, edges_added=0)
+
+    def fake_lifecycle_step(board_id: str, graph_type: str, step: str):
+        if step == STEP_CHECKPOINT:
+            return LifecycleStepResult(ok=False, detail="checkpoint failed")
+        return LifecycleStepResult(ok=True)
+
+    monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
+    monkeypatch.setattr(
+        worker, "apply_ladybug_lifecycle_step", fake_lifecycle_step
+    )
+    entry = SimpleNamespace(
+        id="queue-probe-failed",
+        board_id=BOARD_ID_S2,
+        artifact_type="spec",
+        artifact_id="spec-probe-failed",
+    )
+
+    with pytest.raises(RuntimeError, match="board_graph_safe_lifecycle_failed"):
+        await worker._commit_consolidation_with_board_graph_lifecycle(
+            entry=entry,
+            session_id="session-probe-failed",
+            summary_text="probe failure",
+            db=object(),
+        )
 
 
 # ----------------------------------------------------------------------

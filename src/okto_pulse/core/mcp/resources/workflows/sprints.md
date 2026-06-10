@@ -20,6 +20,21 @@ Sprints break large specs into incremental deliverables with scoped gates and ev
 2. Create sprints with `okto_pulse_create_sprint` — scope test_scenario_ids and business_rule_ids from the spec
 3. Assign cards with `okto_pulse_assign_tasks_to_sprint(board_id, sprint_id, card_ids)`
 
+### Sprint Lane Model
+
+Sprints expose `lane_type` so normal delivery work and post-closure bug work are distinguishable in API, MCP, analytics, history, and KG discovery.
+
+| `lane_type` | Meaning |
+|-------------|---------|
+| `normal` | Default delivery sprint. Existing sprints with no lane metadata are treated as `normal`. |
+| `hotfix` | Post-closure execution lane for bug and regression test cards on a done spec or closed origin sprint. |
+
+Hotfix lanes carry optional lineage fields:
+- `origin_sprint_id` — the closed original sprint that produced the post-closure work, when applicable.
+- `origin_bug_id` — the bug card that triggered the lane, when available.
+
+An `active` hotfix lane satisfies the same sprint ownership gate as an `active` normal sprint. It does not bypass bug governance: bug cards in hotfix lanes still need the required linked post-bug test card when the board bug regression gate applies.
+
 ### MANDATORY — Detailed Sprint Fields
 
 When creating or updating a sprint, the following fields MUST be filled with meaningful, detailed content:

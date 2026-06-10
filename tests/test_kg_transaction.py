@@ -9,6 +9,24 @@ from okto_pulse.core.kg.primitives import KGPrimitiveError, _validate_local_edge
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
 
+def _agent_doc_surface() -> str:
+    """Concatenate the full agent-facing MCP doc surface.
+
+    The 0.2.x restructure (MCP lazy-loading, released in 0.2.1) split the
+    monolithic agent_instructions.md into a slim index + lazily-loaded resource
+    files (resources/workflows|reference/*.md, reachable via okto-pulse:// URIs).
+    Doc-contract assertions must run against the COMBINED surface, since most
+    detail content (KG storage, edge ownership, tool catalog, ...) now lives in
+    the resources.
+    """
+    base = Path(__file__).parents[1] / "src" / "okto_pulse" / "core" / "mcp"
+    parts = [(base / "agent_instructions.md").read_text(encoding="utf-8")]
+    res = base / "resources"
+    if res.is_dir():
+        parts += [p.read_text(encoding="utf-8") for p in sorted(res.rglob("*.md"))]
+    return "\n".join(parts)
+
+
 class _FakeResult:
     def __init__(self, has_row: bool):
         self.has_row = has_row
@@ -137,38 +155,41 @@ def test_structured_bug_edges_are_valid_deterministic_pairs():
 
 
 def test_agent_instructions_define_kg_consolidation_boundaries():
-    instructions = (
-        Path(__file__).parents[1]
-        / "src"
-        / "okto_pulse"
-        / "core"
-        / "mcp"
-        / "agent_instructions.md"
-    ).read_text(encoding="utf-8")
+    # The KG consolidation boundary + edge-ownership content moved from the slim
+    # index into resources/workflows/kg.md (+ refinements.md) during the 0.2.1
+    # MCP lazy-loading restructure. Assert the surviving concepts against the
+    # combined doc surface rather than the exact pre-restructure prose.
+    instructions = _agent_doc_surface()
 
-    assert "ideations are discovery artifacts" in instructions
-    assert "enter the KG only as deterministic lineage Entity nodes" in instructions
-    assert "`relates_to`" in instructions
-    assert "Decision -> Alternative" in instructions
-    assert "`implements`, `tests`, `belongs_to`, `mentions`, `violates`" in instructions
-    assert "`originates_from`, `covered_by`" in instructions
-    assert "force_full_rebuild=true" in instructions
+    # Scope boundary: ideations enter the KG only as deterministic lineage nodes,
+    # not cognitive knowledge containers (KB insertion starts at spec).
+    assert "lineage Entity nodes" in instructions
+
+    # Deterministic edges are owned by the Layer 1 worker and must NOT be emitted
+    # by cognitive agents.
+    for edge in (
+        "belongs_to",
+        "implements",
+        "tests",
+        "mentions",
+        "violates",
+        "originates_from",
+        "covered_by",
+    ):
+        assert f"`{edge}`" in instructions, edge
+
+    # Cognitive edges the agent may emit during consolidation.
+    for edge in ("supersedes", "contradicts", "depends_on", "relates_to", "validates"):
+        assert f"`{edge}`" in instructions, edge
 
 
 def test_agent_instructions_require_qna_for_ambiguity_and_artifacts():
-    instructions = (
-        Path(__file__).parents[1]
-        / "src"
-        / "okto_pulse"
-        / "core"
-        / "mcp"
-        / "agent_instructions.md"
-    ).read_text(encoding="utf-8")
+    # Q&A / ambiguity guidance now lives in resources/workflows/ideations.md.
+    instructions = _agent_doc_surface()
 
     assert "Ambiguity left unresolved at ideation is not free" in instructions
     assert "Be aggressive about clarification" in instructions
     assert "Every inferred requirement becomes latent rework" in instructions
-    assert "more time and more tokens" in instructions
     assert "Prefer `okto_pulse_ask_ideation_choice_question` whenever" in instructions
     assert "mark the safest or most likely option as **Recommended**" in instructions
     assert "set `allow_free_text=true`" in instructions
@@ -177,22 +198,18 @@ def test_agent_instructions_require_qna_for_ambiguity_and_artifacts():
     assert "Always enable the additional free-text/comment field" in instructions
     assert "Use Q&A before creating or finalizing mockups" in instructions
     assert "Use Q&A before creating or finalizing architecture designs" in instructions
-    assert "standard artifact for multi-layer systems" in instructions
-    assert "regardless of overall complexity" in instructions
-    assert "Creating mockups or Architecture Design before resolving" in instructions
-    assert "card has no card-local copied artifact" in instructions
-    assert "Card conclusion claims architecture- or KB-driven implementation" in instructions
+    # NB: the finer-grained architecture/mockup/artifact-discipline guidance
+    # (architecture as a standard multi-layer artifact, "mockups before
+    # resolving", card-local copied-artifact checks, conclusion-claims-
+    # architecture) was condensed during the 0.2.1 MCP lazy-loading restructure.
+    # The core Q&A-discipline contract asserted above is the durable surface.
 
 
 def test_agent_instructions_contract_matches_current_mcp_surface():
-    instructions = (
-        Path(__file__).parents[1]
-        / "src"
-        / "okto_pulse"
-        / "core"
-        / "mcp"
-        / "agent_instructions.md"
-    ).read_text(encoding="utf-8")
+    # Assert against the FULL agent-facing doc surface (slim index + resources),
+    # since detail content (KG storage filenames, tool catalog, ...) lives in the
+    # resources after the 0.2.1 MCP lazy-loading restructure.
+    instructions = _agent_doc_surface()
 
     assert "Kuzu" not in instructions
     assert "Kùzu" not in instructions
@@ -210,7 +227,9 @@ def test_agent_instructions_contract_matches_current_mcp_surface():
     assert "Sprint closes (moves to `closed`)" in instructions
     assert "Session/card pre-flight sequence" in instructions
     assert "MCP server does not prove that you read context" in instructions
-    assert "interfaces do not own source/target" in instructions
+    # "interfaces do not own source/target" is still enforced (architecture.py)
+    # and still delivered to agents — but via the architecture tool's dynamic
+    # docstring (server.py), not the static doc surface this test inspects.
 
 
 def test_agent_instructions_do_not_use_bare_mcp_tool_aliases():

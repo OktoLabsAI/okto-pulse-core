@@ -76,6 +76,13 @@ class SprintStatus(str, PyEnum):
     CANCELLED = "cancelled"
 
 
+class SprintLaneType(str, PyEnum):
+    """Sprint lane type for normal delivery and post-closure hotfix work."""
+
+    NORMAL = "normal"
+    HOTFIX = "hotfix"
+
+
 class SpecStatus(str, PyEnum):
     """Spec lifecycle status."""
 
@@ -251,6 +258,21 @@ class SprintStatusType(TypeDecorator):
         if value is None:
             return None
         return SprintStatus(value)
+
+
+class SprintLaneTypeType(TypeDecorator):
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return value.value if isinstance(value, SprintLaneType) else value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return SprintLaneType(value)
 
 
 class SpecStatusType(TypeDecorator):
@@ -986,6 +1008,14 @@ class Sprint(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     spec_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[SprintStatus] = mapped_column(SprintStatusType(), default=SprintStatus.DRAFT, nullable=False)
+    lane_type: Mapped[SprintLaneType] = mapped_column(
+        SprintLaneTypeType(),
+        default=SprintLaneType.NORMAL,
+        server_default=text("'normal'"),
+        nullable=False,
+    )
+    origin_sprint_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("sprints.id", ondelete="SET NULL"), nullable=True)
+    origin_bug_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cards.id", ondelete="SET NULL"), nullable=True)
     # Dates
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1016,10 +1046,19 @@ class Sprint(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    @property
+    def normal_sprint_created(self) -> bool:
+        """Derived response flag for creation surfaces."""
+        return self.lane_type == SprintLaneType.NORMAL
+
     # Relationships
     spec: Mapped["Spec"] = relationship("Spec", back_populates="sprints")
     board: Mapped["Board"] = relationship("Board", back_populates="sprints")
-    cards: Mapped[list["Card"]] = relationship("Card", back_populates="sprint")
+    cards: Mapped[list["Card"]] = relationship(
+        "Card",
+        back_populates="sprint",
+        foreign_keys="Card.sprint_id",
+    )
     qa_items: Mapped[list["SprintQAItem"]] = relationship("SprintQAItem", back_populates="sprint", cascade="all, delete-orphan")
     history: Mapped[list["SprintHistory"]] = relationship("SprintHistory", back_populates="sprint", cascade="all, delete-orphan")
 
@@ -1143,7 +1182,11 @@ class Card(Base):
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="cards")
     spec: Mapped["Spec | None"] = relationship("Spec", back_populates="cards")
-    sprint: Mapped["Sprint | None"] = relationship("Sprint", back_populates="cards")
+    sprint: Mapped["Sprint | None"] = relationship(
+        "Sprint",
+        back_populates="cards",
+        foreign_keys=[sprint_id],
+    )
     attachments: Mapped[list["Attachment"]] = relationship(
         "Attachment", back_populates="card", cascade="all, delete-orphan"
     )
@@ -1226,6 +1269,12 @@ class ArchitectureDesign(Base):
     versions: Mapped[list["ArchitectureDesignVersion"]] = relationship(
         "ArchitectureDesignVersion", back_populates="design", cascade="all, delete-orphan"
     )
+    finding_runs: Mapped[list["ArchitectureFindingRun"]] = relationship(
+        "ArchitectureFindingRun", back_populates="design", cascade="all, delete-orphan"
+    )
+    warning_acknowledgements: Mapped[list["ArchitectureWarningAcknowledgement"]] = relationship(
+        "ArchitectureWarningAcknowledgement", back_populates="design", cascade="all, delete-orphan"
+    )
 
     @property
     def parent_id(self) -> str | None:
@@ -1296,6 +1345,101 @@ class ArchitectureDesignVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="versions")
+
+
+class ArchitectureFindingRun(Base):
+    """Latest deterministic architecture critic run for one Architecture Design."""
+
+    __tablename__ = "architecture_finding_runs"
+    __table_args__ = (
+        UniqueConstraint("design_id", "critic_run_id", name="uq_architecture_finding_run_design_critic"),
+        Index("ix_architecture_finding_runs_board_design", "board_id", "design_id"),
+        Index("ix_architecture_finding_runs_current", "design_id", "is_current"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    design_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    critic_run_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    is_current: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    active_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    resolved_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    superseded_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    validator_summary: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    actor_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="user")
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="finding_runs")
+    findings: Mapped[list["ArchitectureFinding"]] = relationship(
+        "ArchitectureFinding", back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class ArchitectureFinding(Base):
+    """One warning finding from a successful ArchitectureFindingRun."""
+
+    __tablename__ = "architecture_findings"
+    __table_args__ = (
+        UniqueConstraint("design_id", "critic_run_id", "finding_key", name="uq_architecture_finding_run_key"),
+        Index("ix_architecture_findings_design_lifecycle", "design_id", "lifecycle"),
+        Index("ix_architecture_findings_board_code", "board_id", "warning_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_finding_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    design_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    critic_run_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    finding_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    warning_code: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, server_default="warning")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    suggested_fix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    target_ref: Mapped[str] = mapped_column(String(500), nullable=False)
+    normalized_target_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    diagram_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    diagram_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    lifecycle: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    raw_warning: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    run: Mapped["ArchitectureFindingRun"] = relationship("ArchitectureFindingRun", back_populates="findings")
+
+
+class ArchitectureWarningAcknowledgement(Base):
+    """Audit-only acknowledgement for warning-bearing architecture saves."""
+
+    __tablename__ = "architecture_warning_acknowledgements"
+    __table_args__ = (
+        UniqueConstraint(
+            "design_id",
+            "critic_run_id",
+            "finding_key",
+            "actor_id",
+            name="uq_architecture_warning_ack_actor",
+        ),
+        Index("ix_architecture_warning_ack_design_run", "design_id", "critic_run_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    board_id: Mapped[str] = mapped_column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)
+    design_id: Mapped[str] = mapped_column(String(36), ForeignKey("architecture_designs.id", ondelete="CASCADE"), nullable=False, index=True)
+    design_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    critic_run_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    finding_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    actor_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="user")
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    statement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    design: Mapped["ArchitectureDesign"] = relationship("ArchitectureDesign", back_populates="warning_acknowledgements")
 
 
 class CardDependency(Base):
@@ -2046,6 +2190,9 @@ class KGTickRun(Base):
     duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     boards_processed: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0"),
+    )
+    boards_failed: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0"),
     )
 

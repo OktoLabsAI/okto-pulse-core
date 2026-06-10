@@ -109,7 +109,7 @@ async def get_board_guidelines(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
 
     service = GuidelineService(db)
-    return await service.get_board_guidelines(board_id)
+    return await service.get_board_guidelines(board_id, surface="menu_board")
 
 
 @router.post("/boards/{board_id}/guidelines", status_code=status.HTTP_201_CREATED)
@@ -137,7 +137,7 @@ async def link_or_create_board_guideline(
 
     if not data.title or not data.content:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Provide guideline_id to link a global guideline, or title and content to create an inline guideline.",
         )
 

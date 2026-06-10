@@ -39,6 +39,8 @@ def _make_spec(
     api_contracts=None,
     technical_requirements=None,
     decisions=None,
+    integration_requirements=None,
+    observability_requirements=None,
 ):
     return SimpleNamespace(
         id="spec-test",
@@ -50,9 +52,13 @@ def _make_spec(
         api_contracts=api_contracts or [],
         technical_requirements=technical_requirements or [],
         decisions=decisions or [],
+        integration_requirements=integration_requirements or [],
+        observability_requirements=observability_requirements or [],
         skip_test_coverage=False,
         skip_rules_coverage=False,
         skip_decisions_coverage=False,
+        skip_ir_coverage=False,
+        skip_or_coverage=False,
     )
 
 
@@ -155,6 +161,30 @@ class TestTRDrop:
         assert cov["tr_task_linkage_pct"] == 0.0
 
 
+class TestIRORDrop:
+    def test_ir_drop_when_only_card_cancelled(self):
+        spec = _make_spec(
+            integration_requirements=[
+                {"id": "ir_x", "status": "active", "linked_task_ids": ["c_ir"]}
+            ]
+        )
+        cov = spec_coverage_summary(spec, cards=[_card("c_ir", "cancelled")])
+        assert cov["irs_linked"] == 0
+        assert cov["ir_task_linkage_pct"] == 0.0
+        assert cov["irs_uncovered_ids"] == ["ir_x"]
+
+    def test_or_drop_when_only_card_cancelled(self):
+        spec = _make_spec(
+            observability_requirements=[
+                {"id": "or_x", "status": "active", "linked_task_ids": ["c_or"]}
+            ]
+        )
+        cov = spec_coverage_summary(spec, cards=[_card("c_or", "cancelled")])
+        assert cov["ors_linked"] == 0
+        assert cov["or_task_linkage_pct"] == 0.0
+        assert cov["ors_uncovered_ids"] == ["or_x"]
+
+
 # ---------------------------------------------------------------------------
 # C5c — Decision drop, restore e revoked regression
 # ---------------------------------------------------------------------------
@@ -214,7 +244,7 @@ class TestRevokedSupersededRegression:
 
 
 class TestCoverageRowForSpecExtension:
-    def test_extended_shape_includes_4_new_fields(self):
+    def test_extended_shape_includes_14_new_fields(self):
         spec = _make_spec(
             acs=["AC1"],
             frs=["FR1"],
@@ -224,6 +254,12 @@ class TestCoverageRowForSpecExtension:
             ],
             technical_requirements=[
                 {"id": "tr1", "text": "tr", "linked_task_ids": ["c"]}
+            ],
+            integration_requirements=[
+                {"id": "ir1", "status": "active", "linked_task_ids": ["c"]}
+            ],
+            observability_requirements=[
+                {"id": "or1", "status": "active", "linked_task_ids": ["c"]}
             ],
         )
         row = _coverage_row_for_spec(spec, cards=[_card("c", "in_progress")])
@@ -241,16 +277,28 @@ class TestCoverageRowForSpecExtension:
             "fr_with_contracts_pct",
         ):
             assert legacy_key in row, f"legacy field {legacy_key} missing"
-        # 4 new fields present
+        # Additive Analytics fields present
         for new_key in (
             "decisions_coverage_pct",
             "decisions_total",
             "tr_task_linkage_pct",
             "trs_total",
+            "irs_linked",
+            "irs_total",
+            "ir_task_linkage_pct",
+            "irs_uncovered_ids",
+            "skip_ir_coverage",
+            "ors_linked",
+            "ors_total",
+            "or_task_linkage_pct",
+            "ors_uncovered_ids",
+            "skip_or_coverage",
         ):
             assert new_key in row, f"new field {new_key} missing"
         assert row["decisions_total"] == 1
         assert row["trs_total"] == 1
+        assert row["irs_total"] == 1
+        assert row["ors_total"] == 1
 
     def test_cancelled_card_propagates_to_extended_shape(self):
         spec = _make_spec(
@@ -264,6 +312,23 @@ class TestCoverageRowForSpecExtension:
         row = _coverage_row_for_spec(spec, cards=[_card("c", "cancelled")])
         assert row["decisions_coverage_pct"] == 0.0
         assert row["tr_task_linkage_pct"] == 0.0
+
+    def test_cancelled_card_propagates_to_ir_or_row_shape(self):
+        spec = _make_spec(
+            integration_requirements=[
+                {"id": "ir1", "status": "active", "linked_task_ids": ["c"]}
+            ],
+            observability_requirements=[
+                {"id": "or1", "status": "active", "linked_task_ids": ["c"]}
+            ],
+        )
+        row = _coverage_row_for_spec(spec, cards=[_card("c", "cancelled")])
+        assert row["irs_linked"] == 0
+        assert row["ir_task_linkage_pct"] == 0.0
+        assert row["irs_uncovered_ids"] == ["ir1"]
+        assert row["ors_linked"] == 0
+        assert row["or_task_linkage_pct"] == 0.0
+        assert row["ors_uncovered_ids"] == ["or1"]
 
 
 class TestACFRCoverageUnaffected:

@@ -1,11 +1,11 @@
 """Core application factory."""
 
+import asyncio
 import logging
 import os
 import time
-import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator, Callable, Optional
 
 from fastapi import FastAPI
@@ -19,6 +19,58 @@ from okto_pulse.core.api import api_router
 from okto_pulse.core.telemetry.service import TelemetryService
 
 logger = logging.getLogger(__name__)
+
+
+class _TelemetryASGIMiddleware:
+    """Telemetria HTTP como ASGI puro (sem BaseHTTPMiddleware).
+
+    Intercepta ``http.response.start`` para capturar o status e registra o
+    evento quando o downstream conclui (para streams, ao fim do stream —
+    mesma semântica da versão BaseHTTPMiddleware). Não cria task group nem
+    cancel scope em volta da resposta, o que mantém o caminho de
+    cancelamento de SSE/streaming idêntico ao do servidor puro.
+    """
+
+    def __init__(self, app, settings: CoreSettings) -> None:
+        self.app = app
+        self.settings = settings
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http" or not scope.get("path", "").startswith("/api/"):
+            await self.app(scope, receive, send)
+            return
+
+        started = time.perf_counter()
+        status_holder = {"status": 500}
+        error_class = None
+
+        async def send_wrapper(message) -> None:
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception as exc:
+            error_class = exc.__class__.__name__
+            raise
+        finally:
+            # O router popula scope["route"] durante o dispatch — disponível
+            # aqui depois que o downstream rodou.
+            route = scope.get("route")
+            route_template = getattr(route, "path", scope.get("path", ""))
+            payload = {
+                "method": scope.get("method", ""),
+                "route_template": route_template,
+                "status_code": status_holder["status"],
+                "duration_ms": int((time.perf_counter() - started) * 1000),
+            }
+            if error_class:
+                payload["error_class"] = error_class
+            try:
+                TelemetryService(self.settings).record_event("http", payload)
+            except Exception:
+                logger.debug("telemetry.record_failed", exc_info=True)
 
 
 def create_app(
@@ -71,6 +123,59 @@ def create_app(
             # already cover the safe budget.
             pass
 
+        # Self-heal: Q&A respondidas herdadas sem answered_at viravam
+        # falso-abertas no badge open_qa_count (a herança não copiava o
+        # timestamp). Idempotente — só carimba linhas respondidas órfãs.
+        try:
+            from okto_pulse.core.services.main import backfill_qa_answered_at
+
+            factory = get_session_factory()
+            async with factory() as _qa_session:
+                _qa_fixed = await backfill_qa_answered_at(_qa_session)
+            if _qa_fixed:
+                logger.info(
+                    "qa.answered_at.backfilled %s", _qa_fixed,
+                    extra={
+                        "event": "qa.answered_at.backfilled",
+                        "fixed": _qa_fixed,
+                    },
+                )
+        except Exception as _exc:
+            logger.warning(
+                "qa.answered_at.backfill_failed err=%s", _exc,
+                extra={"event": "qa.answered_at.backfill_failed"},
+            )
+
+        # Self-heal AFG (investigacao 2026-06-10): findings de arquitetura
+        # so nasciam em saves pos-feature; 83% dos designs nunca tiveram
+        # run e o gate avaliava tabela vazia. O sweep re-avalia os designs
+        # (payloads re-hidratados) em BACKGROUND para nao atrasar o boot.
+        async def _afg_backfill_task() -> None:
+            try:
+                from okto_pulse.core.services.architecture import (
+                    backfill_architecture_finding_runs,
+                )
+
+                factory = get_session_factory()
+                async with factory() as _afg_session:
+                    _afg_stats = await backfill_architecture_finding_runs(
+                        _afg_session
+                    )
+                logger.info(
+                    "architecture.finding_backfill.completed %s", _afg_stats,
+                    extra={
+                        "event": "architecture.finding_backfill.completed",
+                        **_afg_stats,
+                    },
+                )
+            except Exception as _afg_exc:
+                logger.warning(
+                    "architecture.finding_backfill.failed err=%s", _afg_exc,
+                    extra={"event": "architecture.finding_backfill.failed"},
+                )
+
+        _afg_task = asyncio.create_task(_afg_backfill_task())
+
         # Import events package BEFORE dispatcher.start — side-effect of
         # importing handlers is @register_handler populating the registry.
         # Dispatcher relies on the registry being complete when it drains.
@@ -80,6 +185,29 @@ def create_app(
         event_dispatcher = EventDispatcher(get_session_factory())
         await event_dispatcher.start()
         set_dispatcher(event_dispatcher)
+
+        # Start the deterministic KG consolidation worker. The dispatcher
+        # only enqueues consolidation work; this worker is the component that
+        # drains consolidation_queue into graph.lbug. Without it, DLQ
+        # reprocess and rebuild backlogs remain pending until an ad-hoc MCP
+        # process_now call runs a one-off batch.
+        consolidation_worker = None
+        try:
+            from okto_pulse.core.kg.workers.consolidation import (
+                get_consolidation_worker,
+            )
+
+            consolidation_worker = get_consolidation_worker()
+            await consolidation_worker.start()
+        except Exception as exc:
+            logger.warning(
+                "kg.consolidation_worker.start_failed err=%s",
+                exc,
+                extra={
+                    "event": "kg.consolidation_worker.start_failed",
+                    "error": str(exc),
+                },
+            )
 
         # NC-10 fix: migrate per-board KG schemas idempotently on boot.
         # Boards created before SCHEMA_VERSION 0.3.3 lack the
@@ -103,13 +231,25 @@ def create_app(
                 board_ids = (
                     await _session.execute(_select(_Board.id))
                 ).scalars().all()
+
+            def _sweep_one(_bid: str) -> bool:
+                """Abre/fecha a BoardConnection (migração idempotente).
+
+                Roda via asyncio.to_thread — abrir um Kùzu DB é I/O pesado
+                (até 6.2s de retry em lock contention) e este loop rodava
+                SÍNCRONO no event loop, congelando o servidor inteiro no
+                startup quando havia boards lentos/em recuperação.
+                """
+                bc = _open_board_connection(_bid)
+                bc.close()
+                return True
+
             migrated = 0
             for _bid in board_ids:
                 if not _board_kuzu_path(_bid).exists():
                     continue
                 try:
-                    bc = _open_board_connection(_bid)
-                    bc.close()
+                    await asyncio.to_thread(_sweep_one, _bid)
                     migrated += 1
                 except Exception as _exc:
                     logger.warning(
@@ -173,6 +313,24 @@ def create_app(
 
                 _interval_minutes = _get_settings().kg_decay_tick_interval_minutes
                 scheduler = AsyncIOScheduler(timezone=timezone.utc)
+                # Catch-up no boot (campo 2026-06-10): IntervalTrigger só
+                # dispara o PRIMEIRO tick um intervalo COMPLETO após o
+                # start — com interval de 24h e um processo que reinicia
+                # (deploys/crashes), o tick nunca rodava. O next_run_time
+                # explícito honra o último tick persistido: vencido →
+                # dispara em ~2min; senão → no vencimento real.
+                _job_kwargs: dict = {}
+                try:
+                    _next_run = await _compute_tick_catch_up_next_run(
+                        _interval_minutes
+                    )
+                    if _next_run is not None:
+                        _job_kwargs["next_run_time"] = _next_run
+                except Exception as _exc:
+                    logger.warning(
+                        "kg.tick.catch_up_compute_failed err=%s", _exc,
+                        extra={"event": "kg.tick.catch_up_compute_failed"},
+                    )
                 scheduler.add_job(
                     _emit_daily_tick,
                     # Spec 54399628 (Wave 2 NC f9732afc): IntervalTrigger
@@ -187,6 +345,7 @@ def create_app(
                     replace_existing=True,
                     max_instances=1,
                     coalesce=True,
+                    **_job_kwargs,
                 )
                 scheduler.start()
                 set_scheduler(scheduler)  # expose for hot-reload
@@ -216,12 +375,41 @@ def create_app(
                     scheduler.shutdown(wait=False)
                 except Exception:
                     pass
+            # Para os pollers SSE antes do DB fechar — eles abrem sessões
+            # próprias fora do escopo de qualquer request.
+            try:
+                from okto_pulse.core.api.kg_events_hub import shutdown_kg_events_hub
+
+                await shutdown_kg_events_hub()
+            except Exception:
+                pass
             await event_dispatcher.stop(timeout=5.0)
             set_dispatcher(None)
+            if consolidation_worker is not None:
+                await consolidation_worker.stop()
             if cleanup_worker is not None:
                 await cleanup_worker.stop()
             if outbox_worker is not None:
                 await outbox_worker.stop()
+            # Release LadybugDB handles explicitly on graceful shutdown.
+            # Relying on interpreter teardown can leave WAL sidecars as the
+            # only holder of recent writes; a later bootstrap probe may then
+            # see a corrupt WAL and previously attempted an automatic purge.
+            try:
+                from okto_pulse.core.kg.schema import close_all_connections
+
+                # to_thread: o close drena leitores (até 5s por board via o
+                # close guard) — síncrono no loop, congelava o shutdown.
+                await asyncio.to_thread(close_all_connections)
+            except Exception as exc:
+                logger.warning(
+                    "kg.shutdown.close_connections_failed err=%s",
+                    exc,
+                    extra={
+                        "event": "kg.shutdown.close_connections_failed",
+                        "error": str(exc),
+                    },
+                )
             await close_db()
 
     app = FastAPI(
@@ -240,32 +428,15 @@ def create_app(
             allow_headers=["*"],
         )
 
-    @app.middleware("http")
-    async def telemetry_http_middleware(request, call_next):
-        started = time.perf_counter()
-        status_code = 500
-        error_class = None
-        try:
-            response = await call_next(request)
-            status_code = response.status_code
-            return response
-        except Exception as exc:
-            error_class = exc.__class__.__name__
-            raise
-        finally:
-            path = request.url.path
-            if path.startswith("/api/"):
-                route = request.scope.get("route")
-                route_template = getattr(route, "path", path)
-                payload = {
-                    "method": request.method,
-                    "route_template": route_template,
-                    "status_code": status_code,
-                    "duration_ms": int((time.perf_counter() - started) * 1000),
-                }
-                if error_class:
-                    payload["error_class"] = error_class
-                TelemetryService(settings).record_event("http", payload)
+    # Root-cause fix (2026-06-09): este middleware era um
+    # ``@app.middleware("http")`` (= BaseHTTPMiddleware). BaseHTTPMiddleware
+    # consome respostas de streaming dentro de um task group do anyio; quando
+    # o cliente de um SSE desconectava, o cancel scope cancelava o generator
+    # com hard-cancel no meio de awaits de DB — vazando conexões do pool
+    # (exaustão → "travamento"). Como ASGI puro, a desconexão fecha o
+    # generator pelo caminho normal (aclose), sem cancel scope atravessando
+    # o cleanup.
+    app.add_middleware(_TelemetryASGIMiddleware, settings=settings)
 
     # Health check
     @app.get("/health")
@@ -278,6 +449,46 @@ def create_app(
     return app
 
 
+def _tick_next_run_from_last(
+    last_completed_at: datetime | None,
+    interval_minutes: int,
+    now: datetime,
+) -> datetime:
+    """Próximo disparo do tick honrando o histórico (função pura).
+
+    Sem histórico ou com último tick vencido → ~2min após o boot (dá tempo
+    do app estabilizar); senão → no vencimento real (last + interval)."""
+    floor = now + timedelta(seconds=120)
+    if last_completed_at is None:
+        return floor
+    if last_completed_at.tzinfo is None:
+        last_completed_at = last_completed_at.replace(tzinfo=timezone.utc)
+    due = last_completed_at + timedelta(minutes=interval_minutes)
+    return max(due, floor)
+
+
+async def _compute_tick_catch_up_next_run(
+    interval_minutes: int,
+) -> datetime | None:
+    """Lê o último tick persistido e devolve o next_run_time do job."""
+    from sqlalchemy import select
+
+    from okto_pulse.core.models.db import KGTickRun
+
+    factory = get_session_factory()
+    async with factory() as session:
+        last = (
+            await session.execute(
+                select(KGTickRun.completed_at)
+                .order_by(KGTickRun.completed_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+    return _tick_next_run_from_last(
+        last, interval_minutes, datetime.now(timezone.utc)
+    )
+
+
 async def _emit_daily_tick() -> None:
     """APScheduler callback — emits KGDailyTick if this replica owns the lock.
 
@@ -285,8 +496,6 @@ async def _emit_daily_tick() -> None:
     if another emitter already holds it on this loop, returns silently. The
     handler picks up the event and runs the actual tick body.
     """
-    from okto_pulse.core.events import publish as event_publish
-    from okto_pulse.core.events.types import KGDailyTick
     from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
 
     lock = get_async_lock("kg_daily_tick", "global")
@@ -305,24 +514,26 @@ async def _emit_daily_tick() -> None:
                 extra={"event": "kg.tick.no_session_factory"},
             )
             return
-        tick_id = str(uuid.uuid4())
         scheduled_at = datetime.now(timezone.utc).isoformat()
         try:
+            # Fan-out por board real (campo 2026-06-10): o evento global
+            # board_id='*' violava a FK de domain_events com
+            # PRAGMA foreign_keys=ON (runtime community) — nenhum tick
+            # chegava a ser agendado em produção.
+            from okto_pulse.core.events.handlers.kg_decay_tick import (
+                publish_tick_events,
+            )
+
             async with factory() as session:
-                await event_publish(
-                    KGDailyTick(
-                        board_id="*",
-                        tick_id=tick_id,
-                        scheduled_at=scheduled_at,
-                    ),
-                    session=session,
+                tick_ids = await publish_tick_events(
+                    session, scheduled_at=scheduled_at,
                 )
                 await session.commit()
             logger.info(
                 "kg.tick.emitted",
                 extra={
                     "event": "kg.tick.emitted",
-                    "tick_id": tick_id,
+                    "tick_count": len(tick_ids),
                     "scheduled_at": scheduled_at,
                 },
             )

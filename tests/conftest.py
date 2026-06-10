@@ -186,6 +186,7 @@ def _isolation_reset(request: pytest.FixtureRequest):
     reset_session_manager_for_tests()
     reset_cleanup_worker_for_tests()
     reset_embedding_provider_cache()
+    _reset_commit_health_cache()
 
     logger = get_test_logger(request.node.nodeid)
     logger.debug("ISOLATION: singletons reset (session_mgr, cleanup_worker, embedding_cache)")
@@ -196,7 +197,22 @@ def _isolation_reset(request: pytest.FixtureRequest):
     reset_session_manager_for_tests()
     reset_cleanup_worker_for_tests()
     reset_embedding_provider_cache()
+    _reset_commit_health_cache()
     logger.debug("ISOLATION: singletons reset after teardown")
+
+
+def _reset_commit_health_cache() -> None:
+    """O resolver de health do write-path cacheia por board (TTL 5s) e o
+    health cacheia a projeção de órfãos (TTL 300s); o board_id das fixtures
+    é compartilhado entre testes, então os caches vazariam estado de um
+    teste para o seguinte."""
+    from okto_pulse.core.kg.primitives import reset_commit_health_cache_for_tests
+    from okto_pulse.core.services.kg_health_service import (
+        reset_orphan_projection_cache_for_tests,
+    )
+
+    reset_commit_health_cache_for_tests()
+    reset_orphan_projection_cache_for_tests()
 
 
 # ============================================================================

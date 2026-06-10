@@ -8,6 +8,93 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-10
+
+The largest release since the governed-SDLC + Knowledge Graph cut in 0.2.0. Scope is taken from the **53 finalized specs on the Okto Pulse 0.2.3 board** (the platform dogfooded its own SDLC), landing **64 new core modules** across eight subsystems. The throughline is making the embedded Knowledge Graph survivable under real concurrency and rebuildable from canonical sources, while the SDLC layer gained governance context-guards, a bug-regression workflow, structured spec-entity editing, and a token-budget/projection layer for agents.
+
+The MCP surface grows to **215 tools**, the named-gate surface to **17**, and the package to **52 models / 28 services / 33 API modules**. `335 files changed, +103,183 / −4,532` over `v0.2.2`. Every subsystem ships with its pytest suite.
+
+### Added — Knowledge Graph corruption prevention & durability (KG-01, KGDL.01)
+
+The headline. A dedicated set of write-path primitives (`safe_write_lifecycle`, `write_barrier`, `single_writer_lock`, `backpressure`, `quarantine`, `contingency`, `config_guard`) that remove the corruption vectors observed under concurrent reads.
+
+- **Non-destructive durability lifecycle on the hot path** (spec `3d89c192`). `STEP_CHECKPOINT` now runs a real `CHECKPOINT` without closing the cached `Database`; `STEP_FLUSH`/`STEP_FSYNC` became non-destructive; a per-board `_BoardCloseGuard` drains live readers (up to 5s, fail-open + structured `kg.close_guard.timeout`) before any close. This eliminates the use-after-close of the shared `Database` — the probable second corruption vector for `graph.lbug` — where FLUSH/FSYNC closed the handle while the `kg_service` thread pool held live `Connection`s over it (C++ UB). The `close_reopen_probe` leaves the hot path and is now exclusive to the rebuild/recovery lanes.
+- **Single-writer enforcement** + write barrier so only one path mutates a board's graph at a time.
+
+### Added — KG recovery, reset & deterministic rebuild (KG-02 + R2a)
+
+Rebuild a board's graph from canonical SQL sources, deterministically and audited.
+
+- `rebuild_service`, `rebuild_preflight`, `rebuild_confirmation`, `rebuild_deterministic`, `rebuild_generation`, `rebuild_sources`, `board_source_store`, `board_rebuild_adapter`, plus `rebuild_audit`/`rebuild_report`.
+- REST `api/kg_rebuild` + agent-actionable MCP twins `okto_pulse_kg_rebuild_preflight` / `_confirm` / `_run` (confirmation-token gated; refuses when the board is quarantined). Closes the 2 inherited REST gaps (health-probe + per-board scope).
+- **Auto-recovery of interrupted checkpoints** — orphaned sidecars detected and recovered on boot; recovery accepts a non-empty checkpoint shadow.
+
+### Added — KG zero-orphan integrity (KG-ZO-01, KG-ZO-02)
+
+- **Node connectivity pre-commit guard & writer enforcement** (`connectivity_guard`) — refuses to commit nodes that would be orphaned.
+- `orphan_integrity` + `global_discovery_reindex` + REST `kg_orphan_integrity` + MCP `okto_pulse_kg_orphan_report` / `okto_pulse_kg_orphan_backfill` — orphan backfill, health reporting and rebuild visibility, with single-flight scanning off the event loop.
+
+### Added — KG cognitive consolidation & source governance (KG-03, KG-03A)
+
+- `cognitive_closeout_gate`, `cognitive_badge_resolver`, `candidate_decision_store`, `refinement_cognitive_guard`, extractor `source_ref` (per-concept `{base}:{type}:{hash8}`).
+- REST `kg_cognitive_badges` / `kg_cognitive_candidates` / `kg_cognitive_candidate_commands` / `kg_cognitive_pending` + MCP `okto_pulse_kg_list_cognitive_pending_items` / `okto_pulse_kg_update_cognitive_pending_item` — cognitive item control, candidate-decision promotion and UI feedback.
+- **Cognitive dedup granularity, SUPERSEDE wiring & counted merge** — per-concept reference, a dedicated `SUPERSEDE` branch, and counted/audited merges (eliminates the over-dedup that collapsed distinct concepts).
+
+### Added — KG health honesty & degraded-mode resilience (F3, F4, F16, F17, R2c)
+
+- **Health signal clarity** (`health_state`, `kg_health_service`) — distinguishes scheduler/decay debt from corruption; footprint is a file-size proxy, not a corruption signal.
+- **Resilient, observable decay tick** — per-board failure isolation, idempotent persistence without retry-storm; the 24h tick honors the last `kg_tick_runs` so it fires on restarting processes.
+- **Degraded-KG protocol** — `graph_availability` + `connectivity_guard` fallback gates, a uniform structured `graph_unavailable` envelope across KG read tools, a `kg_health`-first protocol fallback, and a health-aware closeout gate + tick admission control.
+- **Real memory-pressure instrumentation** (`memory_pressure` + `memory_pressure_collector`, buffer/flush) + opt-in **DLQ auto-drain** (board setting `dlq_auto_drain_enabled`).
+- **KG discovery attribute loading & entity selectors** (`discovery_params_schema`, `discovery_selector_catalog`, `discovery_selector_cache`) — new Global Discovery intents incl. "Key Decisions" (relevance + connectivity) and "Learnings by relevance".
+
+### Added — Governance, lineage & gates (BG-01, RG-01, AFG)
+
+- **`critical_context_guard` (BG-01)** + `board_governance` + `governance_observability` — board agent governance settings; critical mutations resolve and fingerprint full entity context first (board setting `require_full_context_for_critical_actions`).
+- **`resource_lineage` resolver (RG-01)** — provenance contract + resource-gate N/A inheritance down the lineage.
+- **Architecture Finding Done Gate (AFG)** — `architecture_observability` + a dedicated `validate_or_raise_architecture_findings` on `spec → done`.
+
+### Added — MCP token-optimization & projection (R1–R5)
+
+- **Token-budget & projection layer** — `payload_budget`, `payload_compaction`, `projection_envelope`, `context_projection`, `copy_projection`, `kg_query_safety`, `tool_family_registry`. Compact tools/list description budgets, projection profiles, high-frequency response projection + dedup, and KG-query payload bounds.
+- **Schema honesty** — `anyOf array|string` across the full multi-value cluster (refinement/spec/decision/choice) + object/`array|string` on `*_json` params + a uniform `{error, detail}` error envelope.
+- **Canonical id/ref references** — positional → canonical id/ref migration for inter-entity spec references (`linked_requirements → FR`, `linked_criteria → AC`) with backward-compat.
+- Two consolidated tools (`okto_pulse_ask`, `okto_pulse_remove_spec_entity`) + 3 rebuild twins take the surface to **215 tools**. The pre-flight checklist is now a real `okto-pulse://workflows/preflight` resource with a registry-URI drift guard.
+
+### Added — Bug-regression workflow
+
+- `bug_regression_scenarios`, `bug_regression_preview`, `bug_regression_observability`, `bug_workflow_remediation` + MCP `okto_pulse_resolve_bug_regression_scenarios` — scenario reuse and test-gate remediation, bug-workflow guidance/error-remediation operator UX, and a post-closure hotfix lane in the sprint lifecycle.
+
+### Added — Structured spec entities & API-contract hardening
+
+- **Structured editing for spec entities** (`spec_structured_entities`, `spec_entity_canonicalization`, `test_scenario_lifecycle`) + MCP `okto_pulse_update_spec_entity` / `okto_pulse_update_spec_api_contract` / `okto_pulse_update_test_scenario` / `okto_pulse_delete_test_scenario`. **`test_scenario` CRUD** closes the NC-9 bypass at the service gate. Phased move to structured-only FR/AC writes with an idempotent migrator + the legacy `materialize_legacy_fr_ac` command.
+- **ApiContract data-model hardening** — `contract_type` discriminator, HTTP-method enum, documented JSON shapes, canonical construction errors; granular per-requirement `not_applicable` for IR/OR/contract; N/A inheritance parent→child with auto-derive documented as Spec→Card-only.
+- **Structured choice fields** (`recommended`/`tradeoff`) + opt-in Q&A role separation per board.
+
+### Added — Analytics & telemetry
+
+- `coverage_calculator` — Analytics IR/OR coverage with a cancelled-card filter; Decision coverage surfaced in the entity-detail analytics with dashboard-row parity.
+- Local-first **metrics telemetry** settings/sender/service (beacon-off modes).
+
+### Changed
+
+- **Named governance gates 15 → 17** — **Cognitive Closeout Gate** enforced (blocks `done` while active cognitive-consolidation items remain; board setting `skip_cognitive_consolidation`) and the **Architecture Finding Done Gate** wired into `spec → done`.
+- **Buffer hygiene** — periodic `CLOSE` every K commits instead of `CHECKPOINT`; progress-aware rebuild drain keeps cognitive-pending badges correct on large boards.
+- Canonical API errors and data-model/doc-drift guards; `kg_health` doc corrected (the model has 38 fields, not 12); `EVENT_TYPES` 21 → 24 (`structured_entity.*`).
+
+### Fixed
+
+- **Graph projection omitted almost every edge** — it required both endpoints on the same page, so cross-page edges vanished; they are now retained.
+- **`CHECKPOINT` requires an exclusive window** — fixed a `SIGSEGV` (the 6th observed crash) under concurrent reads.
+- **Decay tick never ran in production** — a foreign key on the global event plus an `IntervalTrigger` with no catch-up meant the 24h tick never fired on a restarting process.
+- **Native-memory exhaustion** across many boards — LRU cap on the `Database` cache.
+- **AFG was inoperative in practice** — lazy evaluation without backfill (83% of board 0.2.3 designs had never had a run), raw diagrams skipped by the critique, and the missing `spec → done` enforcement; fixed with `backfill_architecture_finding_runs` (idempotent sweep) + always-on payload re-hydration + the dedicated spec gate.
+- **Q&A inheritance** preserved the answer but not `answered_at`, producing false "Open Q&A" badges on derived refinements/specs.
+- **SSE pool leak** root-caused — it hung the server and corrupted data.
+- **Structured-spec linking crash** — `add/update business_rule` & `api_contract` stored the FR dict instead of a canonical FR index; now routed through the shared `_parse_linked_requirements` resolver (14 stale contract-tests realigned).
+- **Spec evaluation REST/MCP parity** + complexity doc-drift.
+- Telemetry beacon usage payload is now WAF-safe; FastAPI 422 deprecation fixed; LadybugDB naming corrected in `commit_coordinator`.
+
 ## [0.2.2] - 2026-05-18
 
 Patch release rolling up the post-0.2.1 fixes (SDLC E2E gate polish + the related agent-instructions refactor and reference docs). See the entries below for the full picture.

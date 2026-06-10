@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from okto_pulse.core.mcp.server import _activity_log_summary
+from okto_pulse.core.services.activity_log import (
+    activity_log_summary,
+    sanitize_activity_details,
+)
 
 
 def test_summary_for_arch_create_carries_trigger_and_counts():
@@ -259,3 +263,102 @@ def test_summary_output_never_exceeds_200_chars():
         assert len(out) <= 200, (
             f"action={action!r} produced {len(out)} chars (>200): {out!r}"
         )
+
+
+def test_shared_summary_matches_mcp_wrapper():
+    details = {
+        "trigger": "structured_entity_updated",
+        "entity_type": "functional_requirement",
+        "entity_id": "fr_1234567890",
+        "operation": "updated",
+        "field": "description",
+    }
+    assert _activity_log_summary("structured_entity_updated", details) == (
+        activity_log_summary("structured_entity_updated", details)
+    )
+
+
+def test_summary_structured_entity_is_readable_without_object_repr():
+    details = {
+        "trigger": "structured_entity_updated",
+        "entity_type": "functional_requirement",
+        "entity_id": "fr_1234567890",
+        "operation": "updated",
+        "field": "description",
+        "after": {"text": "large object should not be stringified"},
+    }
+    out = _activity_log_summary("structured_entity_updated", details)
+    assert "structured_entity updated" in out
+    assert "type=functional_requirement" in out
+    assert "id=fr_12345" in out
+    assert "field=description" in out
+    assert "[object Object]" not in out
+    assert "{'text'" not in out
+    assert len(out) <= 200
+
+
+def test_summary_known_domains_are_readable_and_bounded():
+    cases = [
+        (
+            "kg.rebuild_completed",
+            {
+                "trigger": "kg_rebuild_completed",
+                "status": "completed",
+                "generation_id": "g" * 80,
+            },
+            "kg",
+        ),
+        (
+            "metrics.mode_changed",
+            {"trigger": "metrics_mode_changed", "setting": "anonymous_beacon", "status": "off"},
+            "metrics",
+        ),
+        (
+            "architecture.validation_completed",
+            {
+                "trigger": "architecture_validation_completed",
+                "blocking_issue_count": 3,
+                "status": "failed",
+            },
+            "architecture",
+        ),
+    ]
+    for action, details, expected_domain in cases:
+        out = _activity_log_summary(action, details)
+        assert expected_domain in out
+        assert "trigger=" in out
+        assert len(out) <= 200
+        assert "[object Object]" not in out
+
+
+def test_details_sanitizer_masks_sensitive_values_and_preserves_shape():
+    details = {
+        "trigger": "structured_entity_updated",
+        "email": "user@example.com",
+        "nested": {
+            "api_token": "secret-token",
+            "safe": "visible",
+            "authorization_header": "Bearer abc",
+        },
+    }
+    out = sanitize_activity_details(details)
+    assert out is not None
+    assert out["trigger"] == "structured_entity_updated"
+    assert out["email"] == "[redacted]"
+    assert out["nested"]["api_token"] == "[redacted]"
+    assert out["nested"]["authorization_header"] == "[redacted]"
+    assert out["nested"]["safe"] == "visible"
+
+
+def test_details_sanitizer_bounds_large_payload_without_dropping_audit_context():
+    details = {
+        "trigger": "structured_entity_updated",
+        "large_list": list(range(80)),
+        "large_text": "x" * 1000,
+    }
+    out = sanitize_activity_details(details)
+    assert out is not None
+    assert out["trigger"] == "structured_entity_updated"
+    assert len(out["large_list"]) == 41
+    assert out["large_list"][-1] == "[truncated:40 items omitted]"
+    assert len(out["large_text"]) <= 500

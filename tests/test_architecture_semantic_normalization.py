@@ -17,7 +17,6 @@ from okto_pulse.core.models.db import Board, Ideation
 from okto_pulse.core.services.architecture import (
     ALLOWED_NODE_ICON_NAMES,
     REQUIRED_LINKED_NODE_FIELDS,
-    SEMANTIC_NODE_REGISTRY,
     ArchitectureDesignRepository,
     ArchitecturePayloadValidationError,
     architecture_design_payload_schema,
@@ -140,7 +139,12 @@ async def test_create_persists_normalized_metadata(db_factory) -> None:
     _, ideation_id = await _seed(db_factory)
     async with db_factory() as db:
         repo = ArchitectureDesignRepository(db)
-        design = await repo.create("ideation", ideation_id, _base_payload(), USER_ID)
+        payload = _base_payload()
+        payload["architecture_warning_acknowledgement"] = {
+            "accepted": True,
+            "statement": "Known unmapped entities are acceptable for this normalization fixture.",
+        }
+        design = await repo.create("ideation", ideation_id, payload, USER_ID)
         await db.commit()
         # Re-fetch in same session and load payload via diagram store.
         loaded = await repo.get(design.id)

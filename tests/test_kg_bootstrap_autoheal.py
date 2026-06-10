@@ -140,12 +140,13 @@ def test_open_board_connection_autobootstraps(fresh_board):
         res.close()
 
 
-def test_corrupt_ladybug_wal_is_purged_before_rebootstrap(fresh_board, monkeypatch):
+def test_corrupt_ladybug_wal_is_preserved_and_blocks_rebootstrap(fresh_board, monkeypatch):
     """A crash during LadybugDB commit can leave graph.lbug.wal corrupt.
 
-    The next bootstrap probe should remove only the local graph file and
-    sidecars so a clean graph can be recreated instead of sending every
-    consolidation attempt to DLQ.
+    The next bootstrap probe must not quarantine or replace the existing
+    graph automatically. A probe is not an operator-approved recovery action;
+    preserving graph.lbug + graph.lbug.wal is safer than silently creating an
+    empty graph.
     """
     from okto_pulse.core.kg import schema as schema_module
 
@@ -164,9 +165,10 @@ def test_corrupt_ladybug_wal_is_purged_before_rebootstrap(fresh_board, monkeypat
     monkeypatch.setattr(schema_module, "_open_kuzu_db_path_cached", _raise_corrupt)
     reset_bootstrap_cache_for_tests()
 
-    assert schema_module._graph_needs_bootstrap(fresh_board) is True
-    assert not path.exists()
-    assert not wal_path.exists()
+    with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
+        schema_module._graph_needs_bootstrap(fresh_board)
+    assert path.exists()
+    assert wal_path.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -221,14 +223,18 @@ async def test_worker_commits_on_cold_board(fresh_board, db_factory):
     fixed, a cold board would crash here with `Table Entity does not
     exist`. After the fix, the first commit self-heals the graph."""
     from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
         add_node_candidate,
         begin_consolidation,
         commit_consolidation,
     )
     from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
         AddNodeCandidateRequest,
         BeginConsolidationRequest,
         CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
         KGNodeType,
         NodeCandidate,
     )
@@ -237,7 +243,7 @@ async def test_worker_commits_on_cold_board(fresh_board, db_factory):
     path = board_kuzu_path(fresh_board)
     assert not path.exists()
 
-    agent_id = "test-agent"
+    agent_id = "system:layer1_worker"
     artifact_id = f"spec-{uuid.uuid4().hex[:8]}"
 
     async with db_factory() as db:
@@ -256,10 +262,37 @@ async def test_worker_commits_on_cold_board(fresh_board, db_factory):
         AddNodeCandidateRequest(
             session_id=begin.session_id,
             candidate=NodeCandidate(
-                candidate_id="cand-1",
-                node_type=KGNodeType.DECISION,
+                candidate_id="board-root",
+                node_type=KGNodeType.ENTITY,
+                title="Cold board root",
+                source_artifact_ref=f"board:{fresh_board}",
+                source_confidence=1.0,
+            ),
+        ),
+        agent_id=agent_id,
+    )
+    await add_node_candidate(
+        AddNodeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=NodeCandidate(
+                candidate_id="learning-1",
+                node_type=KGNodeType.LEARNING,
                 title="Use per-board autoheal for cold graphs",
+                source_artifact_ref=f"spec:{artifact_id}:learning:0",
                 source_confidence=0.9,
+            ),
+        ),
+        agent_id=agent_id,
+    )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id="learning-1-belongs-to-board",
+                edge_type=KGEdgeType.BELONGS_TO,
+                from_candidate_id="learning-1",
+                to_candidate_id="board-root",
+                confidence=1.0,
             ),
         ),
         agent_id=agent_id,
@@ -273,7 +306,9 @@ async def test_worker_commits_on_cold_board(fresh_board, db_factory):
         )
 
     assert commit.status == "committed"
-    assert commit.nodes_added == 1
+    assert commit.nodes_added == 2
+    assert commit.edges_added == 1
+    assert commit.connectivity["passed"] is True
     assert path.exists(), "commit must have triggered the autoheal bootstrap"
 
 
@@ -284,14 +319,18 @@ async def test_event_triggered_consolidation_on_cold_board(fresh_board, db_facto
     the first event-driven consolidation blows up. The autoheal in
     BoardConnection must make that scenario succeed."""
     from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
         add_node_candidate,
         begin_consolidation,
         commit_consolidation,
     )
     from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
         AddNodeCandidateRequest,
         BeginConsolidationRequest,
         CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
         KGNodeType,
         NodeCandidate,
     )
@@ -300,7 +339,7 @@ async def test_event_triggered_consolidation_on_cold_board(fresh_board, db_facto
     path = board_kuzu_path(fresh_board)
     assert not path.exists()
 
-    agent_id = "test-agent-event"
+    agent_id = "system:layer1_worker"
     artifact_id = f"spec-{uuid.uuid4().hex[:8]}"
 
     async with db_factory() as db:
@@ -319,10 +358,37 @@ async def test_event_triggered_consolidation_on_cold_board(fresh_board, db_facto
         AddNodeCandidateRequest(
             session_id=begin.session_id,
             candidate=NodeCandidate(
-                candidate_id="cand-event-1",
-                node_type=KGNodeType.DECISION,
-                title="Event-triggered autoheal decision",
+                candidate_id="board-root",
+                node_type=KGNodeType.ENTITY,
+                title="Cold event board root",
+                source_artifact_ref=f"board:{fresh_board}",
+                source_confidence=1.0,
+            ),
+        ),
+        agent_id=agent_id,
+    )
+    await add_node_candidate(
+        AddNodeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=NodeCandidate(
+                candidate_id="learning-event-1",
+                node_type=KGNodeType.LEARNING,
+                title="Event-triggered autoheal learning",
+                source_artifact_ref=f"spec:{artifact_id}:learning:0",
                 source_confidence=0.85,
+            ),
+        ),
+        agent_id=agent_id,
+    )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id="learning-event-1-belongs-to-board",
+                edge_type=KGEdgeType.BELONGS_TO,
+                from_candidate_id="learning-event-1",
+                to_candidate_id="board-root",
+                confidence=1.0,
             ),
         ),
         agent_id=agent_id,
@@ -336,5 +402,7 @@ async def test_event_triggered_consolidation_on_cold_board(fresh_board, db_facto
         )
 
     assert commit.status == "committed"
-    assert commit.nodes_added == 1
+    assert commit.nodes_added == 2
+    assert commit.edges_added == 1
+    assert commit.connectivity["passed"] is True
     assert path.exists()

@@ -12,9 +12,9 @@ from typing import Any
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 from okto_pulse.core.kg.schema import (
     NODE_TYPES,
-    REL_TYPES,
     SCHEMA_VERSION,
     VECTOR_INDEX_TYPES,
+    stable_rel_type_entries,
     vector_index_name,
 )
 
@@ -209,9 +209,7 @@ class InMemoryGraphStore:
         result: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "stable_node_types": [{"name": nt, "stable": True} for nt in NODE_TYPES],
-            "stable_rel_types": [
-                {"name": rt[0], "from": rt[1], "to": rt[2]} for rt in REL_TYPES
-            ],
+            "stable_rel_types": stable_rel_type_entries(),
             "vector_indexes": [
                 {"node_type": nt, "attribute": "embedding",
                  "dimension": 384, "similarity_metric": "cosine",

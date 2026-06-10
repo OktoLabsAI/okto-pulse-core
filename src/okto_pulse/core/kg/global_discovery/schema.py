@@ -98,56 +98,135 @@ def _is_ladybug_corruption_error(exc: BaseException) -> bool:
         )
 
 
-def purge_global_discovery_storage(*, reason: str = "manual") -> list[str]:
-    """Delete the local global LadybugDB discovery file and sidecars.
+def _global_quarantine_service():
+    """Build the canonical KGQuarantineService for global discovery purges.
 
-    This only touches ``discovery.lbug`` plus ``discovery.lbug.*`` under the
-    configured KG global directory. SQLite application state and per-board
-    graph files are left intact; the next bootstrap recreates this meta-graph
-    from pending/outbox activity.
+    scope_roots is the global discovery storage dir. quarantine base_dir
+    lives one level up so it's siblings to per-board quarantine.
     """
+    from okto_pulse.core.kg.quarantine import KGQuarantineService
+
+    global_dir = _global_kuzu_path().parent
+    quarantine_base = global_dir.parent  # one level up
+    return KGQuarantineService(
+        base_dir=quarantine_base,
+        scope_roots=[global_dir],
+    )
+
+
+def _raise_existing_global_graph_open_failed(
+    *,
+    path: Path,
+    operation: str,
+    exc: BaseException,
+) -> None:
+    """Fail closed when global discovery storage already exists but fails open.
+
+    On-demand bootstrap may create a missing discovery graph, but it must not
+    quarantine an existing one just because the probe hit a WAL/open failure.
+    That recovery decision belongs to an explicit operator action.
+    """
+    logger.error(
+        "global_discovery.existing_graph_open_failed_preserved "
+        "operation=%s path=%s err=%s",
+        operation, path, exc,
+        extra={
+            "event": "global_discovery.existing_graph_open_failed_preserved",
+            "operation": operation,
+            "path": str(path),
+            "error": str(exc),
+        },
+    )
+    raise RuntimeError(
+        "Existing global discovery LadybugDB graph could not be opened during "
+        f"{operation}; refusing to auto-bootstrap or purge it. path={path}. "
+        "Use the explicit KG Health recovery flow after reviewing the "
+        "rebuild/quarantine report; the current files were preserved."
+    ) from exc
+
+
+def purge_global_discovery_storage(*, reason: str = "manual") -> list[str]:
+    """Quarantine-then-clear the local global LadybugDB discovery file and sidecars.
+
+    KG-01.4 (val_79e6f555 rework): purges of ``discovery.lbug`` and
+    sidecars MUST go through ``KGQuarantineService`` first. If
+    quarantine fails the whole purge is aborted with the evidence
+    preserved at the original path (per FR7 / AC10 / IR ir_f175bc42).
+
+    KG-01.3.1 boundary (val_441ad311): destructive global write path;
+    requires an active ``under_global_safe_write`` guard. In SOFT mode
+    (default) a missing guard logs + bumps the counter; in STRICT
+    raises ``WriteLifecycleViolation`` BEFORE any filesystem mutation.
+    """
+    from okto_pulse.core.kg.quarantine import QuarantineError
+    from okto_pulse.core.kg.write_barrier import require_global_write_token
+
+    require_global_write_token()
+
     path = _global_kuzu_path()
     close_global_connection()
-    removed: list[str] = []
     targets: list[Path] = []
     if path.exists():
         targets.append(path)
     if path.parent.exists():
         targets.extend(sorted(path.parent.glob(path.name + ".*")))
 
-    for target in targets:
-        try:
-            if target.is_dir():
-                shutil.rmtree(target, ignore_errors=True)
-            else:
-                target.unlink(missing_ok=True)
-            removed.append(str(target))
-        except Exception as exc:
-            logger.warning(
-                "global_discovery.purge_failed path=%s reason=%s err=%s",
-                target, reason, exc,
-                extra={
-                    "event": "global_discovery.purge_failed",
-                    "path": str(target),
-                    "reason": reason,
-                },
-            )
+    if not targets:
+        return []
 
-    if removed:
-        logger.warning(
-            "global_discovery.purged reason=%s removed=%d",
-            reason, len(removed),
+    service = _global_quarantine_service()
+    try:
+        response = service.create(
+            board_id="_global",
+            graph_type="global_discovery",
+            affected_paths=[str(t) for t in targets],
+            reason=reason,
+            correlation_ids=[],
+        )
+    except QuarantineError as exc:
+        logger.error(
+            "global_discovery.purge_blocked_quarantine_failed "
+            "reason=%s code=%s err=%s",
+            reason, exc.code.value, exc.reason,
             extra={
-                "event": "global_discovery.purged",
+                "event": "global_discovery.purge_blocked_quarantine_failed",
                 "reason": reason,
-                "removed": removed,
+                "code": exc.code.value,
             },
         )
-    return removed
+        return []
+
+    moved_count = response.files_moved
+    removed_str = [str(t) for t in targets[:moved_count]]
+    logger.warning(
+        "global_discovery.purged reason=%s removed=%d "
+        "quarantine_id=%s manifest=%s",
+        reason, moved_count,
+        response.quarantine_id, response.manifest_ref,
+        extra={
+            "event": "global_discovery.purged",
+            "reason": reason,
+            "quarantine_id": response.quarantine_id,
+            "manifest_ref": response.manifest_ref,
+            "files_moved": moved_count,
+        },
+    )
+    return removed_str
 
 
 def bootstrap_global_discovery() -> Path:
-    """Create or open the global discovery Kuzu meta-graph. Idempotent."""
+    """Create or open the global discovery Kuzu meta-graph. Idempotent.
+
+    KG-01.3.1 boundary (val_441ad311 rework): this path runs DDL against
+    `discovery.lbug` and may invoke ``purge_global_discovery_storage`` on
+    corruption. It MUST be wrapped in ``under_global_safe_write`` by the
+    caller. The barrier check raises ``WriteLifecycleViolation`` in
+    STRICT mode and logs+bumps ``kg_unguarded_write_total`` in SOFT.
+    """
+    from okto_pulse.core.kg.write_barrier import require_global_write_token
+
+    require_global_write_token()
+
     try:
         import ladybug as kuzu
     except ImportError as exc:
@@ -161,11 +240,11 @@ def bootstrap_global_discovery() -> Path:
     try:
         db = _open_kuzu_db(path)
     except Exception as exc:
-        if not _is_ladybug_corruption_error(exc):
-            raise
-        purge_global_discovery_storage(reason="corrupt_open_during_bootstrap")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        db = _open_kuzu_db(path)
+        _raise_existing_global_graph_open_failed(
+            path=path,
+            operation="bootstrap",
+            exc=exc,
+        )
     conn = kuzu.Connection(db)
     try:
         load_vector_extension(conn)
@@ -223,11 +302,11 @@ def open_global_connection():
         try:
             _global_db = _open_kuzu_db(path)
         except Exception as exc:
-            if not _is_ladybug_corruption_error(exc):
-                raise
-            purge_global_discovery_storage(reason="corrupt_open_global_connection")
-            bootstrap_global_discovery()
-            _global_db = _open_kuzu_db(path)
+            _raise_existing_global_graph_open_failed(
+                path=path,
+                operation="open_connection",
+                exc=exc,
+            )
     conn = kuzu.Connection(_global_db)
     load_vector_extension(conn)
     return _global_db, conn

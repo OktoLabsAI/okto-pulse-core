@@ -14,6 +14,7 @@ preservar bisectability.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,9 @@ from okto_pulse.core.models.db import (
     SprintStatus,
     Topic,
 )
+from okto_pulse.core.services.coverage_calculator import (
+    spec_saturation_envelope_from_coverage,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -46,8 +50,44 @@ from okto_pulse.core.models.db import (
 # ---------------------------------------------------------------------------
 
 
+def _structured_ref_text(item) -> str:
+    if isinstance(item, dict):
+        return str(item.get("text") or item.get("title") or item.get("description") or "")
+    return str(item)
+
+
+def _structured_ref_id(item) -> str | None:
+    if isinstance(item, dict):
+        raw = item.get("id")
+        return str(raw) if raw not in (None, "") else None
+    return None
+
+
+def _utc_datetime(value) -> _dt | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = _dt.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(value, _dt):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=_tz.utc)
+    return value.astimezone(_tz.utc)
+
+
+def _hours_between(start, end) -> float | None:
+    start_dt = _utc_datetime(start)
+    end_dt = _utc_datetime(end)
+    if not start_dt or not end_dt:
+        return None
+    return (end_dt - start_dt).total_seconds() / 3600.0
+
+
 def resolve_linked_criteria_to_indices(
-    linked_list: list | None, ac_list: list[str]
+    linked_list: list | None, ac_list: list
 ) -> set[int]:
     """Normalize heterogeneous `linked_criteria` entries into a deduplicated set
     of 0-based AC indices.
@@ -83,13 +123,113 @@ def resolve_linked_criteria_to_indices(
                     resolved.add(idx)
                 continue
             for i, ac in enumerate(ac_list):
-                if stripped == ac or ac.startswith(stripped) or stripped.startswith(ac):
+                ac_text = _structured_ref_text(ac)
+                ac_id = _structured_ref_id(ac)
+                if (
+                    stripped == ac_id
+                    or stripped == ac_text
+                    or (ac_text and ac_text.startswith(stripped))
+                    or (ac_text and stripped.startswith(ac_text))
+                ):
                     resolved.add(i)
                     break
     return resolved
 
 
-def resolve_linked_fr_indices(linked_refs: list, frs: list[str]) -> set[int]:
+def _resolve_one_linked_criterion_to_id(entry, ac_list: list) -> str | None:
+    """Resolve ONE ``linked_criteria`` token to a canonical ac_id (write-path, STRICT).
+
+    Accepts a 0-based index (``int`` or numeric ``str``), an exact ``ac_id``, or
+    the exact AC text. Unlike :func:`resolve_linked_criteria_to_indices`
+    (read-path), this does NO prefix matching — write resolution must be
+    deterministic. Returns the ac_id (or the AC text when the AC is legacy and
+    has no id), else ``None``.
+    """
+    # bool is a subclass of int — reject explicitly so True/False never index.
+    if isinstance(entry, bool):
+        return None
+
+    idx: int | None = None
+    if isinstance(entry, int):
+        idx = entry
+    elif isinstance(entry, str):
+        stripped = entry.strip()
+        if stripped.lstrip("-").isdigit():
+            idx = int(stripped)
+    if idx is not None:
+        if 0 <= idx < len(ac_list):
+            ac = ac_list[idx]
+            return _structured_ref_id(ac) or _structured_ref_text(ac)
+        return None
+
+    token = str(entry).strip()
+    if not token:
+        return None
+    for ac in ac_list:
+        ac_id = _structured_ref_id(ac)
+        ac_text = _structured_ref_text(ac)
+        if token == ac_id or token == ac_text:
+            return ac_id or ac_text
+    return None
+
+
+def resolve_linked_criteria_to_ids(
+    linked_list: list | None, ac_list: list
+) -> tuple[list[str], list[str]]:
+    """Write-path resolver for ``linked_criteria``. Mirrors the read resolver but
+    projects to canonical ids instead of indices.
+
+    Returns ``(resolved_ids, unresolved_tokens)``:
+
+    * ``resolved_ids`` — canonical ``ac_id`` values (or the AC text for legacy
+      ACs without an id), deduplicated while preserving first-seen order.
+    * ``unresolved_tokens`` — tokens that did not resolve. These are NEVER
+      dropped silently, so the caller can fail closed.
+
+    Never emits a dict. The tolerant read resolver
+    :func:`resolve_linked_criteria_to_indices` is intentionally left untouched —
+    its prefix/index leniency must not leak into write persistence.
+    """
+    resolved: list[str] = []
+    unresolved: list[str] = []
+    seen: set[str] = set()
+    for entry in linked_list or []:
+        rid = _resolve_one_linked_criterion_to_id(entry, ac_list)
+        if rid is None:
+            unresolved.append(str(entry))
+        elif rid not in seen:
+            seen.add(rid)
+            resolved.append(rid)
+    return resolved, unresolved
+
+
+def resolve_linked_requirements_to_ids(
+    linked_list: list | None, fr_list: list
+) -> tuple[list[str], list[str]]:
+    """Write-path resolver for ``linked_requirements`` — the FR analog of
+    :func:`resolve_linked_criteria_to_ids` (spec 9d66847f).
+
+    Returns ``(resolved_ids, unresolved_tokens)``: canonical ``fr_id`` values
+    (or the FR text for legacy FRs without an id), deduplicated in first-seen
+    order, plus the tokens that did not resolve (never dropped silently). Token
+    resolution is identical to the AC write-path — strict, exact match, no
+    prefix leniency. The tolerant read resolver
+    :func:`resolve_linked_fr_indices` is intentionally left untouched.
+    """
+    resolved: list[str] = []
+    unresolved: list[str] = []
+    seen: set[str] = set()
+    for entry in linked_list or []:
+        rid = _resolve_one_linked_criterion_to_id(entry, fr_list)
+        if rid is None:
+            unresolved.append(str(entry))
+        elif rid not in seen:
+            seen.add(rid)
+            resolved.append(rid)
+    return resolved, unresolved
+
+
+def resolve_linked_fr_indices(linked_refs: list, frs: list) -> set[int]:
     """Resolve linked_requirements (indices or FR text) to FR indices."""
     indices: set[int] = set()
     for ref in linked_refs:
@@ -101,8 +241,10 @@ def resolve_linked_fr_indices(linked_refs: list, frs: list[str]) -> set[int]:
                 continue
         except (ValueError, TypeError):
             pass
-        for i, fr_text in enumerate(frs):
-            if ref_str in fr_text or fr_text in ref_str:
+        for i, fr in enumerate(frs):
+            fr_text = _structured_ref_text(fr)
+            fr_id = _structured_ref_id(fr)
+            if ref_str == fr_id or (fr_text and (ref_str in fr_text or fr_text in ref_str)):
                 indices.add(i)
                 break
     return indices
@@ -183,8 +325,22 @@ def _coverage_row_for_spec(spec: Spec, cards: list | None = None) -> dict:
         "fr_coverage_pct": cov["fr_coverage_pct"],
         "decisions_coverage_pct": cov["decisions_coverage_pct"],
         "decisions_total": cov["decisions_total"],
+        # Bug 42e78332: decisions parity with IR/OR (linked + uncovered_ids + skip).
+        "decisions_linked": cov["decisions_linked"],
+        "decisions_uncovered_ids": cov["decisions_uncovered_ids"],
+        "skip_decisions_coverage": cov["skip_decisions_coverage"],
         "tr_task_linkage_pct": cov["tr_task_linkage_pct"],
         "trs_total": cov["trs_total"],
+        "irs_linked": cov["irs_linked"],
+        "irs_total": cov["irs_total"],
+        "ir_task_linkage_pct": cov["ir_task_linkage_pct"],
+        "irs_uncovered_ids": cov["irs_uncovered_ids"],
+        "skip_ir_coverage": cov["skip_ir_coverage"],
+        "ors_linked": cov["ors_linked"],
+        "ors_total": cov["ors_total"],
+        "or_task_linkage_pct": cov["or_task_linkage_pct"],
+        "ors_uncovered_ids": cov["ors_uncovered_ids"],
+        "skip_or_coverage": cov["skip_or_coverage"],
     }
 
 
@@ -426,10 +582,9 @@ async def compute_funnel(
     done_cards_board = [c for c in all_cards if c.status == CardStatus.DONE]
     cycle_times_board: list[float] = []
     for c in done_cards_board:
-        if c.created_at and c.updated_at:
-            cycle_times_board.append(
-                (c.updated_at - c.created_at).total_seconds() / 3600.0
-            )
+        hours = _hours_between(c.created_at, c.updated_at)
+        if hours is not None:
+            cycle_times_board.append(hours)
     counts["avg_cycle_hours"] = (
         round(sum(cycle_times_board) / len(cycle_times_board), 1)
         if cycle_times_board
@@ -460,7 +615,9 @@ async def compute_funnel(
         times = []
         for it in items:
             if str(it.status) == done_status_str and it.created_at and it.updated_at:
-                times.append((it.updated_at - it.created_at).total_seconds() / 3600.0)
+                hours = _hours_between(it.created_at, it.updated_at)
+                if hours is not None:
+                    times.append(hours)
         return round(sum(times) / len(times), 1) if times else None
 
     counts["cycle_time_by_phase"] = {
@@ -642,9 +799,15 @@ def spec_coverage_summary(
         if (set(br.get("linked_task_ids") or []) - cancelled_card_ids)
     )
 
-    c_total = len(_contracts)
+    # F13: exclude not_applicable (and superseded/revoked) contracts from coverage,
+    # mirroring active_irs/active_ors. A not_applicable contract is a justified waiver.
+    active_contracts = [
+        c for c in _contracts
+        if isinstance(c, dict) and c.get("status", "active") == "active"
+    ]
+    c_total = len(active_contracts)
     c_linked = sum(
-        1 for c in _contracts
+        1 for c in active_contracts
         if (set(c.get("linked_task_ids") or []) - cancelled_card_ids)
     )
 
@@ -748,35 +911,7 @@ def spec_saturation_envelope(coverage: dict[str, Any]) -> dict[str, Any]:
     weighted equally; blocking[] lists dimension keys whose percentage is
     below 100 (or whose linkage is short) and that aren't skip-flagged.
     """
-    if not coverage:
-        return {"pct": 100.0, "blocking": []}
-    dims = [
-        ("acceptance_criteria", "ac_coverage_pct", "ac_total", "skip_test_coverage"),
-        ("functional_requirements", "fr_coverage_pct", "fr_total", None),
-        ("scenarios", "scenario_task_linkage_pct", "scenarios_total", "skip_test_coverage"),
-        ("rules", "br_task_linkage_pct", "brs_total", "skip_rules_coverage"),
-        ("contracts", "contract_task_linkage_pct", "contracts_total", None),
-        ("trs", "tr_task_linkage_pct", "trs_total", None),
-        ("decisions", "decisions_coverage_pct", "decisions_total", "skip_decisions_coverage"),
-        ("irs", "ir_task_linkage_pct", "irs_total", "skip_ir_coverage"),
-        ("ors", "or_task_linkage_pct", "ors_total", "skip_or_coverage"),
-    ]
-    pcts: list[float] = []
-    blocking: list[str] = []
-    for name, pct_key, total_key, skip_key in dims:
-        if skip_key and coverage.get(skip_key):
-            continue
-        total = coverage.get(total_key, 0) or 0
-        if total <= 0:
-            continue
-        pct = float(coverage.get(pct_key, 0) or 0)
-        pcts.append(pct)
-        if pct < 100:
-            blocking.append(name)
-    if not pcts:
-        return {"pct": 100.0, "blocking": []}
-    avg = round(sum(pcts) / len(pcts), 1)
-    return {"pct": avg, "blocking": blocking}
+    return spec_saturation_envelope_from_coverage(coverage)
 
 
 # ---------------------------------------------------------------------------

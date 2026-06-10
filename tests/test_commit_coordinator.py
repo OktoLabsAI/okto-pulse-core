@@ -228,11 +228,15 @@ async def test_parallel_commits_on_distinct_boards_run_concurrently():
 # ----------------------------------------------------------------------
 
 def _read_instructions() -> str:
-    path = (
-        Path(__file__).resolve().parent.parent
-        / "src/okto_pulse/core/mcp/agent_instructions.md"
-    )
-    return path.read_text(encoding="utf-8")
+    # Combined agent-facing doc surface: the slim index plus the lazily-loaded
+    # resources. Post-0.2.1, KG commit-concurrency guidance lives in
+    # resources/workflows/kg.md, not the index.
+    base = Path(__file__).resolve().parent.parent / "src/okto_pulse/core/mcp"
+    parts = [(base / "agent_instructions.md").read_text(encoding="utf-8")]
+    res = base / "resources"
+    if res.is_dir():
+        parts += [p.read_text(encoding="utf-8") for p in sorted(res.rglob("*.md"))]
+    return "\n".join(parts)
 
 
 def test_instructions_drop_manual_serialisation_line():

@@ -453,6 +453,12 @@ def test_ts35_response_model_defaults_when_fields_missing():
         "top_disconnected_nodes": [],
         "schema_version": "1.0",
         "contradict_warn_count": 0,
+        # KG-01 contract fields (api_3ed9037f) — required since 0.2.x. This
+        # TS35 case predates the KG-01 health contract and only omitted them by
+        # oversight; the *new* fields it exercises are the tick fields below.
+        "board_id": "board-ts35",
+        "correlation_id": "corr-ts35",
+        "checked_at": "2026-04-27T09:30:00+00:00",
     }
     response = KGHealthResponse(**payload)
     assert response.last_decay_tick_at is None
@@ -474,6 +480,10 @@ def test_ts35_response_model_accepts_populated_new_fields():
         ],
         "schema_version": "1.0",
         "contradict_warn_count": 1,
+        # KG-01 contract fields (api_3ed9037f) — required since 0.2.x.
+        "board_id": "board-ts35",
+        "correlation_id": "corr-ts35",
+        "checked_at": "2026-04-27T09:30:00+00:00",
         "last_decay_tick_at": "2026-04-27T09:30:00+00:00",
         "nodes_recomputed_in_last_tick": 137,
     }
@@ -654,10 +664,11 @@ def test_kg_hit_flushed_event_class_registered():
 
     assert KGHitFlushed.event_type == "kg.hit_flushed"
     assert "kg.hit_flushed" in EVENT_TYPES
-    # Was 17 before Ideação #4 — IMPL-B (KGHitFlushed) + IMPL-C
-    # (CardPriorityChanged + CardSeverityChanged) + IMPL-D (KGDailyTick)
-    # bring the total to 21.
-    assert len(EVENT_TYPES) == 21
+    # Ideação #4 took it to 21 — IMPL-B (KGHitFlushed) + IMPL-C
+    # (CardPriorityChanged + CardSeverityChanged) + IMPL-D (KGDailyTick). The
+    # later structured-entity canonicalization added 3 more
+    # (structured_entity.{created,updated,revoked}) → 24 total.
+    assert len(EVENT_TYPES) == 24
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1089,14 +1100,15 @@ def test_impl_c_frozen_on_insert_doc_updated_to_mutable_semantics():
 
 
 def test_impl_d_kg_daily_tick_event_class_registered():
-    """KGDailyTick takes total event count to 21 and resolves by class."""
+    """KGDailyTick took the Ideação #4 event count to 21; structured-entity
+    canonicalization later added 3 more (structured_entity.*) → 24 total."""
     from okto_pulse.core.events.types import (
         EVENT_TYPES, KGDailyTick, resolve_event_class,
     )
 
     assert KGDailyTick.event_type == "kg.tick.daily"
     assert "kg.tick.daily" in EVENT_TYPES
-    assert len(EVENT_TYPES) == 21
+    assert len(EVENT_TYPES) == 24
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 
@@ -1341,13 +1353,31 @@ def test_impl_e_extract_node_ids_dedupes_repeated_pairs():
     assert pairs == [("unknown", same)]
 
 
-def test_impl_e_agent_instructions_documents_return_id_contract():
-    """agent_instructions.md must spell out the RETURN-shape requirement."""
+def _agent_doc_surface() -> str:
+    """Combined agent-facing MCP doc surface (slim index + lazy resources).
+
+    Post-0.2.1 MCP lazy-loading, detail content lives in resources/**/*.md
+    reachable via okto-pulse:// URIs — assert against the union, not the index.
+    """
     from pathlib import Path
 
-    doc = Path(
-        "src/okto_pulse/core/mcp/agent_instructions.md"
-    ).read_text(encoding="utf-8")
+    base = Path(__file__).parents[1] / "src" / "okto_pulse" / "core" / "mcp"
+    parts = [(base / "agent_instructions.md").read_text(encoding="utf-8")]
+    res = base / "resources"
+    if res.is_dir():
+        parts += [p.read_text(encoding="utf-8") for p in sorted(res.rglob("*.md"))]
+    return "\n".join(parts)
+
+
+def test_impl_e_agent_instructions_documents_return_id_contract():
+    """The agent-facing doc surface must spell out the RETURN-shape requirement.
+
+    The Cypher hit-counting / RETURN contract lives in the KG workflow resource
+    (resources/workflows/kg.md), reachable via the ``okto-pulse://workflows/kg``
+    URI. Assert against the combined surface so the contract is enforced
+    wherever it physically lives.
+    """
+    doc = _agent_doc_surface()
     assert "Hit-counting parity" in doc
     assert "RETURN n.id" in doc
     assert "RETURN n" in doc
@@ -1362,20 +1392,20 @@ def test_impl_e_agent_instructions_documents_return_id_contract():
 # ===========================================================================
 
 
-def test_doc_g_agent_instructions_describes_12_health_fields():
-    """The 'KG health and operational signals' section now reports 12 fields."""
-    from pathlib import Path
+def test_doc_g_agent_instructions_describes_tick_health_fields():
+    """The KG workflow doc surface describes the daily-tick health fields.
 
-    doc = Path(
-        "src/okto_pulse/core/mcp/agent_instructions.md"
-    ).read_text(encoding="utf-8")
-    assert "JSON with 12 fields" in doc
+    Post-0.2.1 the kg_health field catalog + tick guidance moved into
+    resources/workflows/kg.md. The old assertion pinned 'JSON with 12 fields',
+    which is now stale AND wrong: KGHealthResponse also carries the KG-01
+    contract fields (~38 total), so a hard count is brittle. Assert the durable
+    tick-field concept against the combined surface instead.
+    """
+    doc = _agent_doc_surface()
     assert "last_decay_tick_at" in doc
     assert "nodes_recomputed_in_last_tick" in doc
-    # Operational guidance bullets so agents know what each field means.
-    assert "Reading the new tick fields" in doc
     assert "spec 28583299" in doc
-    assert "KG_DECAY_TICK_STALENESS_DAYS" in doc
+    assert "03:00 UTC" in doc  # daily decay tick cadence
 
 
 def test_doc_g_scoring_module_docstring_v033_paragraph():

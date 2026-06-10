@@ -77,6 +77,13 @@ def board_delete_cascade(board_id: str) -> dict:
     polluting the canvas with disconnected debris.
 
     Returns counts of removed entities per type.
+
+    KG-01.3.1 boundary: this is a destructive write path against both
+    graph.lbug and discovery.lbug. require_write_token() raises in STRICT
+    mode if no safe-write guard is active; in SOFT mode logs + bumps
+    kg_unguarded_write_total. Production wires the caller (admin tooling
+    or rebuild service) to enter KGSafeWriteLifecycle under the admin
+    lane first.
     """
     from okto_pulse.core.kg.global_discovery.schema import open_global_connection
     from okto_pulse.core.kg.schema import (
@@ -84,6 +91,9 @@ def board_delete_cascade(board_id: str) -> dict:
         board_kuzu_path,
         open_board_connection,
     )
+    from okto_pulse.core.kg.write_barrier import require_write_token
+
+    require_write_token(board_id)
 
     counts = {
         "board_removed": False,
@@ -211,8 +221,19 @@ def board_delete_cascade(board_id: str) -> dict:
 
 
 def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
-    """Garbage collect orphan Topics and Entities from the global graph."""
+    """Garbage collect orphan Topics and Entities from the global graph.
+
+    KG-01.3.1 boundary (val_441ad311 rework): destructive global write
+    path when ``dry_run=False``. Even in ``dry_run=True`` mode we still
+    open a global connection that may bootstrap on first use, so we
+    enforce the barrier unconditionally. Caller MUST enter
+    ``under_global_safe_write`` first; STRICT mode raises before any
+    Cypher MATCH, SOFT mode logs + bumps the counter.
+    """
     from okto_pulse.core.kg.global_discovery.schema import open_global_connection
+    from okto_pulse.core.kg.write_barrier import require_global_write_token
+
+    require_global_write_token()
 
     counts = {"topics_removed": 0, "entities_removed": 0, "dry_run": dry_run}
 
@@ -261,34 +282,43 @@ def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
     """Drop and rebuild the global discovery meta-graph.
 
     If board_ids is None, rebuilds for all boards with existing graph files.
+
+    KG-01.4 (val_b15ff42f rework): the drop of `discovery.lbug` and
+    sidecars MUST go through ``purge_global_discovery_storage`` so the
+    files are quarantined with a manifest before being moved out of the
+    way. Direct ``unlink``/``rmtree`` is forbidden by FR7/AC10/IR
+    ``ir_f175bc42``. We enter ``under_global_safe_write`` so the
+    purge's barrier check + the bootstrap's barrier check both pass
+    inside one logical "rebuild" operation.
+
+    The previous ad-hoc ``discovery_backup_<hex>`` copy is dropped —
+    quarantine IS the durable evidence path now, with a manifest that
+    the operator can audit (TR8 fields), retention enforced (TR9), and
+    counter-instrumented. A separate "backup" without a manifest only
+    confused responders.
     """
     from okto_pulse.core.kg.global_discovery.schema import (
         _global_kuzu_path,
         bootstrap_global_discovery,
+        purge_global_discovery_storage,
     )
-    import shutil
+    from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
     path = _global_kuzu_path()
-    # Backup + drop
-    backup = None
-    if path.exists():
-        backup = path.parent / f"discovery_backup_{uuid.uuid4().hex[:8]}{path.suffix}"
-        if path.is_dir():
-            shutil.copytree(str(path), str(backup))
-            shutil.rmtree(str(path))
-        else:
-            shutil.copy2(str(path), str(backup))
-            path.unlink()
-            for sibling in path.parent.glob(path.name + ".*"):
-                if sibling.is_file():
-                    sibling.unlink()
-                elif sibling.is_dir():
-                    shutil.rmtree(str(sibling))
 
-    # Recreate schema
-    bootstrap_global_discovery()
+    purge_response: list[str] = []
+    rebuild_token = f"rebuild-{uuid.uuid4().hex[:12]}"
+
+    with under_global_safe_write(rebuild_token, "rebuild_from_scratch"):
+        if path.exists() or any(
+            path.parent.glob(path.name + ".*")
+        ):
+            purge_response = purge_global_discovery_storage(
+                reason="rebuild_from_scratch"
+            )
+        bootstrap_global_discovery()
 
     return {
         "status": "rebuilt",
-        "backup_path": str(backup) if backup is not None else None,
+        "quarantined_paths": purge_response,
     }

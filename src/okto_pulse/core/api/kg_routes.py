@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -206,7 +205,7 @@ async def get_subgraph(
 
     Pagination contract:
 
-    * ``limit`` in [1, 500]; out-of-range values yield **400** (not 422) per
+    * ``limit`` in [1, 1000]; out-of-range values yield **400** (not 422) per
       AC-11 so clients get a human-readable reason instead of Pydantic's
       validation schema.
     * ``cursor`` is an opaque base64 token emitted by a prior call. A
@@ -216,11 +215,11 @@ async def get_subgraph(
       returned page is the last one so clients can stop paging without a
       second round trip.
     """
-    if limit < 1 or limit > 500:
+    if limit < 1 or limit > 1000:
         return _problem(
             400,
             "Bad Request",
-            f"limit must be in range [1, 500], got {limit}",
+            f"limit must be in range [1, 1000], got {limit}",
             "invalid_limit",
         )
 
@@ -328,7 +327,7 @@ def _fetch_edges_for_nodes(
                     result = conn.execute(
                         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
                         f"RETURN a.id, b.id, r.confidence "
-                        f"LIMIT 500",
+                        f"LIMIT 5000",
                     )
                     while result.has_next():
                         row = result.get_next()
@@ -336,7 +335,14 @@ def _fetch_edges_for_nodes(
                         key = (rel_name, src, tgt)
                         if key in seen:
                             continue
-                        if src in node_ids and tgt in node_ids:
+                        # Pelo menos UMA ponta na página (era AND): com a
+                        # projeção paginada (100 nós/página), exigir ambas
+                        # as pontas escondia quase toda edge — a UI mostrava
+                        # milhares de nós conectados como se fossem órfãos.
+                        # O cliente acumula as edges e materializa cada uma
+                        # quando a outra ponta chega nas páginas seguintes
+                        # (GraphCanvas já pula edges com nó ausente).
+                        if src in node_ids or tgt in node_ids:
                             seen.add(key)
                             edges.append({
                                 "id": f"{src}-{rel_name}-{tgt}",
@@ -513,12 +519,20 @@ async def get_stats(
             min_relevance=min_relevance,
             max_rows=1000,
         )
-        node_counts: dict[str, int] = {}
+        from okto_pulse.core.kg.schema import NODE_TYPES
+
+        node_counts: dict[str, int] = {
+            node_type: svc.count_all_nodes(
+                board_id,
+                min_confidence=0.0,
+                min_relevance=min_relevance,
+                node_type=node_type,
+            )
+            for node_type in NODE_TYPES
+        }
         total_conf = 0.0
         total_relevance = 0.0
         for n in all_nodes:
-            t = n.get("node_type", "Unknown")
-            node_counts[t] = node_counts.get(t, 0) + 1
             total_conf += float(n.get("source_confidence") or 0.0)
             total_relevance += float(n.get("relevance_score") or 0.0)
         edge_counts, edge_metadata = _count_edges_by_type(board_id)
@@ -1131,10 +1145,9 @@ async def stream_kg_events(
     """Server-Sent Events stream of `kg.session.committed` /
     `kg.board.cleared` events for the given board.
 
-    The stream reads the `global_update_outbox` table for the latest events
-    and emits new rows at a 1-second poll cadence. This endpoint is the
-    backing data source for the React `useKgLiveEvents` hook (Frontend
-    responsibility — hook implementation lives in the sibling UI repo).
+    This endpoint is the backing data source for the React `useKgLiveEvents`
+    hook (Frontend responsibility — hook implementation lives in the sibling
+    UI repo).
 
     Protocol:
         event: kg.session.committed
@@ -1143,164 +1156,81 @@ async def stream_kg_events(
     Filter by `since` to resume a dropped connection without replaying the
     entire outbox backlog. Absence ⇒ start from now().
 
-    Bug fix (QueuePool exhaustion): este handler NÃO injeta mais
-    ``db: AsyncSession = Depends(get_db)`` porque a session da request
-    ficaria viva durante toda a vida do SSE stream (loop ``while True``
-    forever) — cada cliente prendia 1 conexão do pool, e um pool de 15
-    saturava com poucas tabs/clientes (somando consolidation_worker,
-    outbox_worker, dispatcher e endpoints normais). Em vez disso abrimos
-    uma sessão **por iteração** via ``async_session_factory``, devolvendo
-    a conexão ao pool entre os ``sleep(1.0)``.
+    Root-cause fix (pool leak → exaustão → "travamento", 2026-06-09): o
+    generator NÃO toca mais no DB. O polling do outbox + queue snapshot vive
+    no :mod:`okto_pulse.core.api.kg_events_hub` — uma task em background por
+    board, com fan-out para uma ``asyncio.Queue`` por assinante. A versão
+    anterior abria uma sessão por iteração DENTRO do generator; quando o
+    cliente desconectava, o hard-cancel da request interrompia o close da
+    conexão e ela nunca voltava ao pool. O único acesso a DB remanescente
+    aqui é o replay de reconexão (``since``), feito via
+    ``cancel_safe_session`` (close blindado contra cancelamento).
     """
     import asyncio as _asyncio
-    import uuid as _uuid
     from datetime import datetime as _dt, timezone as _tz
 
-    from sqlalchemy import and_, asc, func, select as _select
-
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.kg.governance import HISTORICAL_PROGRESS_SETTINGS_KEY
-    from okto_pulse.core.models.db import Board, ConsolidationQueue, GlobalUpdateOutbox
+    from okto_pulse.core.api.kg_events_hub import (
+        format_outbox_row_sse,
+        format_progress_sse,
+        get_kg_events_hub,
+        query_outbox_rows,
+    )
+    from okto_pulse.core.infra.database import cancel_safe_session
 
     try:
-        cursor = _dt.fromisoformat(since) if since else _dt.now(_tz.utc)
+        since_cursor = _dt.fromisoformat(since) if since else None
     except ValueError:
         raise HTTPException(status_code=400, detail="since must be ISO 8601")
 
-    session_factory = get_session_factory()
+    def _as_utc(value: _dt) -> _dt:
+        return value if value.tzinfo is not None else value.replace(tzinfo=_tz.utc)
 
-    async def _queue_snapshot(session) -> dict[str, int]:
-        """Counters for `ConsolidationQueue` rows scoped to this board."""
-        rows = (await session.execute(
-            _select(ConsolidationQueue.status, ConsolidationQueue.source, func.count())
-            .where(ConsolidationQueue.board_id == board_id)
-            .group_by(ConsolidationQueue.status, ConsolidationQueue.source)
-        )).all()
-        snap = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-        historical = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-        for status, source, count in rows:
-            if status in snap:
-                snap[status] += int(count)
-                if source == "historical_backfill":
-                    historical[status] += int(count)
-
-        live_total = sum(snap.values())
-        historical_active = (
-            historical["pending"] + historical["claimed"] + historical["paused"]
-        )
-        historical_total = 0
-        if historical_active > 0:
-            board = await session.get(Board, board_id)
-            if board is not None and isinstance(board.settings, dict):
-                state = board.settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
-                if isinstance(state, dict):
-                    try:
-                        historical_total = int(state.get("total") or 0)
-                    except (TypeError, ValueError):
-                        historical_total = 0
-
-        non_historical_total = live_total - sum(historical.values())
-        if historical_active > 0 and historical_total > 0:
-            snap["total"] = max(live_total, historical_total + non_historical_total)
-            snap["processed"] = max(0, snap["total"] - (
-                snap["pending"] + snap["claimed"] + snap["paused"]
-            ))
-        else:
-            snap["total"] = live_total
-            snap["processed"] = snap["done"]
-        return snap
+    hub = get_kg_events_hub()
+    subscription = hub.subscribe(board_id)
 
     async def _iter():
-        # Initial heartbeat so the client knows the connection is alive.
-        yield "event: hello\ndata: {}\n\n"
-        # Emit an initial progress snapshot so the client can render the
-        # toast immediately instead of waiting for the first change.
         try:
-            async with session_factory() as session:
-                initial = await _queue_snapshot(session)
-            yield (
-                "event: kg.queue.progress\n"
-                "data: "
-                + json.dumps(
-                    {
-                        "event_id": f"progress:{_uuid.uuid4().hex}",
-                        "event_type": "kg.queue.progress",
-                        "created_at": _dt.now(_tz.utc).isoformat(),
-                        "payload": initial,
-                    },
-                    default=str,
-                )
-                + "\n\n"
-            )
-            last_progress = initial
-        except Exception:
-            last_progress = None
+            # Initial heartbeat so the client knows the connection is alive.
+            yield "event: hello\ndata: {}\n\n"
 
-        last_seen = cursor
-        while True:
-            # Cada iteração abre/fecha a session — devolve a conn ao pool
-            # antes do sleep para que outros endpoints possam usá-la.
-            try:
-                async with session_factory() as session:
-                    rows = (await session.execute(
-                        _select(GlobalUpdateOutbox).where(and_(
-                            GlobalUpdateOutbox.board_id == board_id,
-                            GlobalUpdateOutbox.created_at > last_seen,
-                        )).order_by(asc(GlobalUpdateOutbox.created_at)).limit(50)
-                    )).scalars().all()
-                    serialized_rows = [
-                        {
-                            "event_id": row.event_id,
-                            "session_id": row.session_id,
-                            "event_type": row.event_type,
-                            "created_at": row.created_at.isoformat() if row.created_at else None,
-                            "payload": row.payload,
-                            "_created_at_raw": row.created_at,
-                        }
-                        for row in rows
-                    ]
-            except Exception:
-                serialized_rows = []
-
-            for row in serialized_rows:
-                yield (
-                    f"event: {row['event_type']}\n"
-                    f"data: {json.dumps({k: v for k, v in row.items() if k != '_created_at_raw'}, default=str)}\n\n"
-                )
-                last_seen = row["_created_at_raw"] or last_seen
-
-            # Emit progress whenever queue counters change. Saves bandwidth
-            # on idle boards while keeping the UI chip authoritative.
-            try:
-                async with session_factory() as session:
-                    snap = await _queue_snapshot(session)
-                if snap != last_progress:
-                    yield (
-                        "event: kg.queue.progress\n"
-                        "data: "
-                        + json.dumps(
-                            {
-                                "event_id": f"progress:{_uuid.uuid4().hex}",
-                                "event_type": "kg.queue.progress",
-                                "created_at": _dt.now(_tz.utc).isoformat(),
-                                "payload": snap,
-                            },
-                            default=str,
+            # Replay de reconexão: eventos em (since, cursor-do-hub] saem
+            # daqui; eventos posteriores ao cursor chegam pela queue do hub
+            # (sem gap nem duplicata). Best-effort — nunca quebra o stream.
+            if since_cursor is not None:
+                try:
+                    async with cancel_safe_session() as session:
+                        backlog = await query_outbox_rows(
+                            session, board_id, since_cursor, limit=500,
                         )
-                        + "\n\n"
-                    )
-                    last_progress = snap
-            except Exception:
-                # Snapshot is best-effort — never break the stream over it.
-                pass
+                    for row in backlog:
+                        raw = row.pop("_created_at_raw")
+                        if raw is not None and _as_utc(raw) > _as_utc(subscription.cursor):
+                            break  # daqui em diante a queue do hub entrega
+                        yield format_outbox_row_sse(row)
+                except Exception:
+                    pass
 
-            # Keepalive comment every poll so proxies don't drop the
-            # connection in between committed bursts.
-            yield ": keepalive\n\n"
-            try:
-                await _asyncio.sleep(1.0)
-            except _asyncio.CancelledError:
-                break
+            # Snapshot imediato quando o hub já conhece o estado da queue;
+            # para um board recém-assinado o primeiro ciclo do poller emite
+            # o snapshot em ≤1s.
+            if subscription.initial_progress is not None:
+                yield format_progress_sse(subscription.initial_progress)
+
+            while True:
+                try:
+                    chunk = await _asyncio.wait_for(
+                        subscription.queue.get(), timeout=15.0,
+                    )
+                except _asyncio.TimeoutError:
+                    # Keepalive comment so proxies don't drop the connection
+                    # in between committed bursts.
+                    yield ": keepalive\n\n"
+                    continue
+                yield chunk
+        finally:
+            # Roda tanto no fechamento normal (aclose/GeneratorExit) quanto
+            # no hard-cancel — unsubscribe é síncrono e não toca em DB.
+            hub.unsubscribe(subscription)
 
     return StreamingResponse(_iter(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache",

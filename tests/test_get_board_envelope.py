@@ -153,3 +153,64 @@ def test_board_response_accepts_counts_payload():
         counts={"ideations": 23, "specs": 28, "cards": 247, "agents": 1},
     )
     assert with_counts.counts == {"ideations": 23, "specs": 28, "cards": 247, "agents": 1}
+
+
+def test_board_response_normalizes_historical_card_conclusion_shapes():
+    """Full board payloads must tolerate executor/MCP conclusion variants."""
+    from datetime import datetime, timezone
+
+    from okto_pulse.core.models.schemas import BoardResponse
+
+    now = datetime.now(timezone.utc)
+    board = BoardResponse.model_validate(
+        {
+            "id": "b1",
+            "name": "Board",
+            "description": None,
+            "owner_id": "u1",
+            "settings": {},
+            "created_at": now,
+            "updated_at": now,
+            "cards": [
+                {
+                    "id": "c1",
+                    "board_id": "b1",
+                    "title": "Task",
+                    "description": None,
+                    "details": None,
+                    "status": "done",
+                    "priority": "none",
+                    "position": 0,
+                    "assignee_id": None,
+                    "created_by": "u1",
+                    "created_at": now,
+                    "updated_at": now,
+                    "due_date": None,
+                    "labels": None,
+                    "conclusions": [
+                        {
+                            "description": "Executor summary",
+                            "author": "executor",
+                            "created_at": now.isoformat(),
+                            "completeness": 95,
+                            "drift": 2,
+                        },
+                        {
+                            "body": "Structured execution body",
+                            "author_agent_id": "agent-executor",
+                            "kind": "execution_summary",
+                            "created_at": now.isoformat(),
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    first, second = board.cards[0].conclusions or []
+    assert first.text == "Executor summary"
+    assert first.author_id == "executor"
+    assert first.completeness == 95
+    assert first.drift == 2
+    assert second.text == "Structured execution body"
+    assert second.author_id == "agent-executor"

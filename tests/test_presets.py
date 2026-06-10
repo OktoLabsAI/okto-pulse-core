@@ -16,6 +16,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from okto_pulse.core.infra.permissions import (  # noqa: E402
+    STRUCTURED_SPEC_ENTITY_OPERATIONS,
+    STRUCTURED_SPEC_ENTITY_TYPES,
     _get_nested,
     get_builtin_presets,
 )
@@ -151,6 +153,36 @@ def test_resolve_permissions_check_with_state_executor_blocked_in_active(
     )
     assert err is not None
     assert "sprint.move.active_to_review" in err
+
+
+# ---------------------------------------------------------------------------
+# Structured spec entity editing
+# ---------------------------------------------------------------------------
+
+
+def test_full_control_has_all_structured_spec_entity_permissions(presets_by_name):
+    flags = presets_by_name["Full Control"]["flags"]
+    for entity_type in STRUCTURED_SPEC_ENTITY_TYPES:
+        for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS:
+            flag = f"spec.structured_entity.{entity_type}.{operation}"
+            assert _get_nested(flags, flag) is True, f"Full Control missing {flag}"
+
+
+def test_spec_writer_has_all_structured_spec_entity_permissions(presets_by_name):
+    flags = presets_by_name["Spec"]["flags"]
+    for entity_type in STRUCTURED_SPEC_ENTITY_TYPES:
+        for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS:
+            flag = f"spec.structured_entity.{entity_type}.{operation}"
+            assert _get_nested(flags, flag) is True, f"Spec preset missing {flag}"
+
+
+@pytest.mark.parametrize("preset_name", ["Executor", "QA", "Validator", "Reporter"])
+def test_non_spec_presets_do_not_mutate_structured_spec_entities(presets_by_name, preset_name):
+    flags = presets_by_name[preset_name]["flags"]
+    for entity_type in STRUCTURED_SPEC_ENTITY_TYPES:
+        for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS:
+            flag = f"spec.structured_entity.{entity_type}.{operation}"
+            assert _get_nested(flags, flag) is False, f"{preset_name} must not own {flag}"
 
 
 # ---------------------------------------------------------------------------
