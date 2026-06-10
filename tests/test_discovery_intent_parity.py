@@ -59,6 +59,8 @@ SEED_INTENTS: list[dict[str, Any]] = [
      "params_schema": {"query": {"type": "text", "required": True, "label": "Phrase"}}},
     {"name": "learning_from_bugs", "tool_binding": "okto_pulse_kg_get_learning_from_bugs",
      "params_schema": None},
+    {"name": "learnings_by_relevance", "tool_binding": "okto_pulse_kg_list_learnings_by_relevance",
+     "params_schema": None},
     {"name": "recent_activity", "tool_binding": "okto_pulse_get_activity_log",
      "params_schema": None},
     {"name": "my_mentions", "tool_binding": "okto_pulse_list_my_mentions",

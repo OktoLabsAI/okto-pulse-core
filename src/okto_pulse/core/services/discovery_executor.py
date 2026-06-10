@@ -169,6 +169,9 @@ async def execute_intent(
     if binding == "okto_pulse_kg_get_learning_from_bugs":
         return await _exec_learnings(board_id, params)
 
+    if binding == "okto_pulse_kg_list_learnings_by_relevance":
+        return await _exec_learnings_by_relevance(board_id)
+
     raise ValueError(f"Unsupported tool_binding: {binding}")
 
 
@@ -1784,4 +1787,78 @@ async def _exec_learnings(board_id: str, params: dict) -> dict:
         columns=["Learning", "Source bug"],
         tool_binding="okto_pulse_kg_get_learning_from_bugs",
         params_echo={"area": area} if area else {},
+    )
+
+
+async def _exec_learnings_by_relevance(board_id: str) -> dict:
+    """learnings_by_relevance — every Learning node on the board ordered by
+    relevance_score (highest first).
+
+    Reads the board graph directly (read-only) e roda a query em
+    ``asyncio.to_thread``: queries Kùzu síncronas no event loop foram o
+    bloqueador dominante da UI no incidente de 2026-06-10."""
+    import asyncio
+
+    from okto_pulse.core.kg.schema import open_board_connection
+
+    def _query() -> list[tuple]:
+        out: list[tuple] = []
+        with open_board_connection(board_id) as (_db, conn):
+            res = conn.execute(
+                "MATCH (l:Learning) "
+                "RETURN l.id, l.title, l.content, l.relevance_score, "
+                "l.source_artifact_ref "
+                "ORDER BY l.relevance_score DESC LIMIT 200"
+            )
+            try:
+                while res.has_next():
+                    out.append(tuple(res.get_next()))
+            finally:
+                if hasattr(res, "close"):
+                    res.close()
+        return out
+
+    try:
+        rows_raw = await asyncio.to_thread(_query)
+    except Exception as e:  # noqa: BLE001
+        # Board sem grafo bootstrapped ou KG indisponível: degrade com
+        # resultado vazio tipado + warning inline (mesmo padrão do
+        # learning_from_bugs acima).
+        return {
+            "rows": [],
+            "columns": ["Learning", "Relevance"],
+            "total": 0,
+            "tool_binding": "okto_pulse_kg_list_learnings_by_relevance",
+            "params_echo": {},
+            "execution": "real_tool",
+            "warning": f"KG unavailable: {type(e).__name__}: {str(e)[:140]}",
+        }
+
+    rows = []
+    for node_id, title, content, relevance, source_ref in rows_raw:
+        score = round(float(relevance), 3) if relevance is not None else None
+        rows.append(
+            {
+                "id": node_id,
+                "type": "Learning",
+                "title": title or "(untitled)",
+                "summary": (
+                    f"relevance {score}" if score is not None else "relevance n/a"
+                ),
+                "meta": {
+                    "entity_type": "kg_node",
+                    "entity_id": node_id,
+                    "entity_title": title,
+                    "node_type": "Learning",
+                    "relevance_score": score,
+                    "content": (content or "")[:400],
+                    "source_artifact_ref": source_ref,
+                },
+            }
+        )
+    return _ok(
+        rows,
+        columns=["Learning", "Relevance"],
+        tool_binding="okto_pulse_kg_list_learnings_by_relevance",
+        params_echo={},
     )

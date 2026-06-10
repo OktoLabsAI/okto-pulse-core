@@ -1381,6 +1381,20 @@ async def _bootstrap_default_discovery_intents() -> None:
             "renderer": "table",
             "min_permission": "kg.query.global",
         },
+        {
+            "name": "learnings_by_relevance",
+            "label": "Learnings by relevance",
+            "description": (
+                "Lists every Learning node on this board ordered by "
+                "relevance score, highest first — the institutional memory "
+                "ranked by how alive each lesson still is."
+            ),
+            "category": "similarity_reuse",
+            "tool_binding": "okto_pulse_kg_list_learnings_by_relevance",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
 
         # --- Activity & Recency ---
         {
