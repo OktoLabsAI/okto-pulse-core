@@ -1,0 +1,869 @@
+"""Zero-orphan connectivity guard for KG node write batches.
+
+The guard is deliberately independent from the MCP Pydantic DTOs and from the
+Layer 1 worker dataclasses. Both paths pass objects with candidate_id,
+node_type and source_artifact_ref-shaped attributes, so this module consumes
+duck-typed objects or dictionaries and returns serializable results.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Iterable, Literal, Protocol
+
+
+CONNECTIVITY_ERROR_CODE = "kg_node_connectivity_violation"
+
+SAFE_CONNECTIVITY_METRIC_LABELS: tuple[str, ...] = (
+    "board_id",
+    "node_type",
+    "writer_path",
+    "outcome",
+    "reason",
+    "source_resolution_status",
+    "generation_id",
+)
+
+DEGRADED_KG_STATES: frozenset[str] = frozenset(
+    {"recovery_needed", "quarantined"}
+)
+
+
+class SourceResolutionStatus(str, Enum):
+    RESOLVED_IN_BATCH = "resolved_in_batch"
+    RESOLVED_EXISTING_NODE = "resolved_existing_node"
+    UNRESOLVED_SOURCE_REF = "unresolved_source_ref"
+    AMBIGUOUS_SOURCE_REF = "ambiguous_source_ref"
+    SOURCE_TYPE_NOT_SUPPORTED = "source_type_not_supported"
+    DEFERRED_DEGRADED_GRAPH = "deferred_degraded_graph"
+    ALLOWLISTED_TECHNICAL_ROOT = "allowlisted_technical_root"
+
+
+class KGConnectivityOutcome(str, Enum):
+    PASSED = "passed"
+    REJECTED = "rejected"
+    DEFERRED = "deferred"
+    ALLOWLISTED = "allowlisted"
+
+
+class KGConnectivityOwner(str, Enum):
+    DETERMINISTIC = "deterministic"
+    COGNITIVE = "cognitive"
+    DUAL = "dual"
+
+
+class WriterClass(str, Enum):
+    DETERMINISTIC = "deterministic"
+    COGNITIVE = "cognitive"
+    UNKNOWN = "unknown"
+
+
+class MetricSinkProtocol(Protocol):
+    def emit(self, event: "KGConnectivityMetricEvent") -> None:
+        """Record one safe connectivity metric event."""
+
+
+@dataclass(frozen=True)
+class KGConnectivityMetricEvent:
+    board_id: str
+    node_type: str
+    writer_path: str
+    outcome: str
+    reason: str
+    source_resolution_status: str
+    generation_id: str
+
+    def labels(self) -> dict[str, str]:
+        return {
+            "board_id": self.board_id,
+            "node_type": self.node_type,
+            "writer_path": self.writer_path,
+            "outcome": self.outcome,
+            "reason": self.reason,
+            "source_resolution_status": self.source_resolution_status,
+            "generation_id": self.generation_id,
+        }
+
+
+@dataclass
+class InMemoryConnectivityMetricSink:
+    events: list[KGConnectivityMetricEvent] = field(default_factory=list)
+
+    def emit(self, event: KGConnectivityMetricEvent) -> None:
+        self.events.append(event)
+
+
+@dataclass(frozen=True)
+class KGConnectivityEdgeRequirement:
+    edge_type: str
+    direction: Literal["outgoing", "incoming", "any"] = "outgoing"
+    target_node_types: tuple[str, ...] = ()
+    description: str = ""
+
+    def label(self) -> str:
+        target = "|".join(self.target_node_types) if self.target_node_types else "*"
+        return f"{self.edge_type}:{self.direction}:{target}"
+
+
+@dataclass(frozen=True)
+class KGConnectivityEdgeGroup:
+    name: str
+    alternatives: tuple[KGConnectivityEdgeRequirement, ...]
+    remediation_hint: str
+
+    def label(self) -> str:
+        return " OR ".join(req.label() for req in self.alternatives)
+
+
+@dataclass(frozen=True)
+class KGTechnicalRootAllowlistEntry:
+    node_type: str
+    writer_path: str
+    source_artifact_ref: str | None = None
+    source_artifact_ref_prefix: str | None = None
+
+    def matches(
+        self,
+        *,
+        node_type: str,
+        writer_path: str,
+        source_artifact_ref: str | None,
+    ) -> bool:
+        if self.node_type != node_type or self.writer_path != writer_path:
+            return False
+        if self.source_artifact_ref_prefix is not None:
+            return (source_artifact_ref or "").startswith(
+                self.source_artifact_ref_prefix
+            )
+        if self.source_artifact_ref is None:
+            return True
+        return self.source_artifact_ref == (source_artifact_ref or "")
+
+
+@dataclass(frozen=True)
+class KGConnectivityRule:
+    node_type: str
+    owner: KGConnectivityOwner
+    required_edge_groups: tuple[KGConnectivityEdgeGroup, ...]
+    semantic_target_policy: str
+    allowed_new_node_writers: tuple[WriterClass, ...]
+    technical_root_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class KGNodeRef:
+    ref_id: str
+    node_type: str
+    source_artifact_ref: str | None = None
+
+
+@dataclass(frozen=True)
+class _NodeSnapshot:
+    candidate_id: str
+    node_type: str
+    source_artifact_ref: str | None
+    raw: Any
+
+
+@dataclass(frozen=True)
+class _EdgeSnapshot:
+    candidate_id: str
+    edge_type: str
+    from_candidate_id: str
+    to_candidate_id: str
+    raw: Any
+
+
+@dataclass(frozen=True)
+class _RequirementResolution:
+    passed: bool
+    status: SourceResolutionStatus
+    missing_endpoint: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class KGConnectivityViolation:
+    node_type: str
+    candidate_id: str
+    source_artifact_ref: str | None
+    required_edge: str
+    missing_endpoint: str
+    writer_path: str
+    source_resolution_status: SourceResolutionStatus
+    remediation_hint: str
+    reason: str
+    error_code: str = CONNECTIVITY_ERROR_CODE
+
+    def to_safe_dict(self) -> dict[str, str | None]:
+        return {
+            "error_code": self.error_code,
+            "node_type": self.node_type,
+            "candidate_id": self.candidate_id,
+            "source_artifact_ref": self.source_artifact_ref,
+            "required_edge": self.required_edge,
+            "missing_endpoint": self.missing_endpoint,
+            "writer_path": self.writer_path,
+            "source_resolution_status": self.source_resolution_status.value,
+            "remediation_hint": self.remediation_hint,
+            "reason": self.reason,
+        }
+
+    def safe_for_api(self) -> bool:
+        return True
+
+    def safe_for_metric(self) -> bool:
+        return True
+
+
+@dataclass(frozen=True)
+class KGConnectivityValidationResult:
+    passed: bool
+    violations: tuple[KGConnectivityViolation, ...] = ()
+    allowlisted_roots: tuple[str, ...] = ()
+    materializable_edges: tuple[dict[str, str], ...] = ()
+    outcome: KGConnectivityOutcome = KGConnectivityOutcome.PASSED
+
+    @property
+    def rejected_nodes(self) -> int:
+        return len(self.violations)
+
+    @property
+    def connected_nodes(self) -> int:
+        if not self.passed:
+            return 0
+        return 0 if self.outcome == KGConnectivityOutcome.DEFERRED else 1
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "passed": self.passed,
+            "violations": [v.to_safe_dict() for v in self.violations],
+            "allowlisted_roots": list(self.allowlisted_roots),
+            "materializable_edges": list(self.materializable_edges),
+            "outcome": self.outcome.value,
+        }
+
+
+def classify_writer_path(writer_path: str) -> WriterClass:
+    normalized = (writer_path or "").lower()
+    if any(
+        marker in normalized
+        for marker in (
+            "deterministic",
+            "worker_layer1",
+            "rebuild",
+            "discovery",
+            "bootstrap",
+            "schema",
+        )
+    ):
+        return WriterClass.DETERMINISTIC
+    if any(
+        marker in normalized
+        for marker in (
+            "cognitive",
+            "commit_consolidation",
+            "consolidation",
+            "agent",
+            "mcp",
+        )
+    ):
+        return WriterClass.COGNITIVE
+    return WriterClass.UNKNOWN
+
+
+def _provenance_group() -> KGConnectivityEdgeGroup:
+    return KGConnectivityEdgeGroup(
+        name="provenance",
+        alternatives=(
+            KGConnectivityEdgeRequirement(
+                "belongs_to",
+                "outgoing",
+                ("Entity", "Bug"),
+                "Artifact node must be navigable to its source/root entity.",
+            ),
+        ),
+        remediation_hint=(
+            "Attach a belongs_to edge to the source/root Entity or use an "
+            "explicit technical-root allowlist entry."
+        ),
+    )
+
+
+def _decision_judgement_group() -> KGConnectivityEdgeGroup:
+    return KGConnectivityEdgeGroup(
+        name="decision_judgement",
+        alternatives=(
+            KGConnectivityEdgeRequirement("supersedes", "outgoing", ("Decision",)),
+            KGConnectivityEdgeRequirement("contradicts", "outgoing", ("Decision",)),
+            KGConnectivityEdgeRequirement("depends_on", "outgoing", ("Decision",)),
+            KGConnectivityEdgeRequirement("relates_to", "outgoing", ("Alternative",)),
+            KGConnectivityEdgeRequirement("derives_from", "outgoing", ("Requirement",)),
+            KGConnectivityEdgeRequirement("mentions", "outgoing", ("Entity",)),
+        ),
+        remediation_hint=(
+            "Provide a schema-valid judgement/provenance edge from the Decision "
+            "to a structured endpoint."
+        ),
+    )
+
+
+def _learning_bug_group() -> KGConnectivityEdgeGroup:
+    return KGConnectivityEdgeGroup(
+        name="bug_learning",
+        alternatives=(
+            KGConnectivityEdgeRequirement("validates", "outgoing", ("Bug",)),
+        ),
+        remediation_hint=(
+            "Provide Learning -> validates -> Bug when the learning is derived "
+            "from a known bug."
+        ),
+    )
+
+
+class KGConnectivityRuleRegistry:
+    """Registry of minimal connectivity and owner rules by node type."""
+
+    def __init__(
+        self,
+        *,
+        technical_root_allowlist: Iterable[KGTechnicalRootAllowlistEntry] | None = None,
+    ) -> None:
+        self._rules = self._build_default_rules()
+        self._technical_root_allowlist = tuple(
+            technical_root_allowlist
+            if technical_root_allowlist is not None
+            else (
+                KGTechnicalRootAllowlistEntry(
+                    node_type="Entity",
+                    writer_path="deterministic_worker",
+                    source_artifact_ref="tech_entities.yml",
+                ),
+                KGTechnicalRootAllowlistEntry(
+                    node_type="Entity",
+                    writer_path="deterministic_worker",
+                    source_artifact_ref_prefix="board:",
+                ),
+            )
+        )
+
+    @staticmethod
+    def _build_default_rules() -> dict[str, KGConnectivityRule]:
+        provenance = _provenance_group()
+        deterministic_only = (WriterClass.DETERMINISTIC,)
+        cognitive_only = (WriterClass.COGNITIVE,)
+        cognitive_or_deterministic = (
+            WriterClass.COGNITIVE,
+            WriterClass.DETERMINISTIC,
+        )
+        return {
+            "Entity": KGConnectivityRule(
+                node_type="Entity",
+                owner=KGConnectivityOwner.DETERMINISTIC,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="structured_provenance_only",
+                allowed_new_node_writers=deterministic_only,
+                technical_root_allowed=True,
+            ),
+            "Requirement": KGConnectivityRule(
+                node_type="Requirement",
+                owner=KGConnectivityOwner.DETERMINISTIC,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="deterministic_spec_source",
+                allowed_new_node_writers=deterministic_only,
+            ),
+            "Criterion": KGConnectivityRule(
+                node_type="Criterion",
+                owner=KGConnectivityOwner.DETERMINISTIC,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="deterministic_spec_source",
+                allowed_new_node_writers=deterministic_only,
+            ),
+            "APIContract": KGConnectivityRule(
+                node_type="APIContract",
+                owner=KGConnectivityOwner.DETERMINISTIC,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="deterministic_spec_source",
+                allowed_new_node_writers=deterministic_only,
+            ),
+            "TestScenario": KGConnectivityRule(
+                node_type="TestScenario",
+                owner=KGConnectivityOwner.DETERMINISTIC,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="deterministic_spec_source",
+                allowed_new_node_writers=deterministic_only,
+            ),
+            "Constraint": KGConnectivityRule(
+                node_type="Constraint",
+                owner=KGConnectivityOwner.DETERMINISTIC,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="deterministic_spec_source",
+                allowed_new_node_writers=deterministic_only,
+            ),
+            "Bug": KGConnectivityRule(
+                node_type="Bug",
+                owner=KGConnectivityOwner.DETERMINISTIC,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="bug_workflow_source",
+                allowed_new_node_writers=deterministic_only,
+            ),
+            "Decision": KGConnectivityRule(
+                node_type="Decision",
+                owner=KGConnectivityOwner.DUAL,
+                required_edge_groups=(provenance, _decision_judgement_group()),
+                semantic_target_policy="structured_provenance_and_judgement",
+                allowed_new_node_writers=cognitive_or_deterministic,
+            ),
+            "Learning": KGConnectivityRule(
+                node_type="Learning",
+                owner=KGConnectivityOwner.COGNITIVE,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="bug_learning_requires_validates_when_known",
+                allowed_new_node_writers=cognitive_or_deterministic,
+            ),
+            "Alternative": KGConnectivityRule(
+                node_type="Alternative",
+                owner=KGConnectivityOwner.COGNITIVE,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="cognitive_per_concept_source",
+                allowed_new_node_writers=cognitive_only,
+            ),
+            "Assumption": KGConnectivityRule(
+                node_type="Assumption",
+                owner=KGConnectivityOwner.COGNITIVE,
+                required_edge_groups=(provenance,),
+                semantic_target_policy="provenance_only_v1",
+                allowed_new_node_writers=cognitive_only,
+            ),
+        }
+
+    def get_rule(self, node_type: str, writer_path: str = "") -> KGConnectivityRule:
+        try:
+            return self._rules[node_type]
+        except KeyError as exc:
+            raise KeyError(f"unknown KG node_type for connectivity guard: {node_type}") from exc
+
+    def rule_node_types(self) -> tuple[str, ...]:
+        """Return the canonical node types governed by this registry."""
+
+        return tuple(self._rules)
+
+    def is_technical_root_allowlisted(
+        self,
+        *,
+        node_type: str,
+        writer_path: str,
+        source_artifact_ref: str | None,
+    ) -> bool:
+        return any(
+            entry.matches(
+                node_type=node_type,
+                writer_path=writer_path,
+                source_artifact_ref=source_artifact_ref,
+            )
+            for entry in self._technical_root_allowlist
+        )
+
+
+class KGNodeConnectivityGuard:
+    def __init__(
+        self,
+        registry: KGConnectivityRuleRegistry | None = None,
+        *,
+        metric_sink: MetricSinkProtocol | None = None,
+    ) -> None:
+        self._registry = registry or KGConnectivityRuleRegistry()
+        self._metric_sink = metric_sink
+
+    def validate(
+        self,
+        *,
+        board_id: str,
+        writer_path: str,
+        kg_health_state: str,
+        nodes: Iterable[Any],
+        edges: Iterable[Any],
+        existing_node_refs: Iterable[Any] = (),
+        generation_id: str = "",
+    ) -> KGConnectivityValidationResult:
+        node_snapshots = tuple(_snapshot_node(node) for node in nodes)
+        edge_snapshots = tuple(_snapshot_edge(edge) for edge in edges)
+        existing_refs = tuple(_snapshot_existing_ref(ref) for ref in existing_node_refs)
+
+        if kg_health_state in DEGRADED_KG_STATES:
+            violations = tuple(
+                _violation(
+                    node=node,
+                    writer_path=writer_path,
+                    required_edge="deferred_until_graph_recovers",
+                    missing_endpoint="kg_health_state",
+                    status=SourceResolutionStatus.DEFERRED_DEGRADED_GRAPH,
+                    remediation_hint=(
+                        "Do not commit candidates while the graph is recovery_needed "
+                        "or quarantined; leave them pending and retry after recovery."
+                    ),
+                    reason="deferred_degraded_graph",
+                )
+                for node in node_snapshots
+            )
+            result = KGConnectivityValidationResult(
+                passed=False,
+                violations=violations,
+                outcome=KGConnectivityOutcome.DEFERRED,
+            )
+            self._emit_metric(board_id, writer_path, generation_id, result)
+            return result
+
+        violations: list[KGConnectivityViolation] = []
+        allowlisted_roots: list[str] = []
+        writer_class = classify_writer_path(writer_path)
+        for node in node_snapshots:
+            try:
+                rule = self._registry.get_rule(node.node_type, writer_path)
+            except KeyError:
+                violations.append(
+                    _violation(
+                        node=node,
+                        writer_path=writer_path,
+                        required_edge="known_node_type",
+                        missing_endpoint=node.node_type,
+                        status=SourceResolutionStatus.SOURCE_TYPE_NOT_SUPPORTED,
+                        remediation_hint=(
+                            "Register an explicit connectivity rule before "
+                            "writing this node type."
+                        ),
+                        reason="unknown_node_type",
+                    )
+                )
+                continue
+
+            if (
+                rule.technical_root_allowed
+                and self._registry.is_technical_root_allowlisted(
+                    node_type=node.node_type,
+                    writer_path=writer_path,
+                    source_artifact_ref=node.source_artifact_ref,
+                )
+            ):
+                allowlisted_roots.append(node.candidate_id)
+                continue
+
+            if writer_class not in rule.allowed_new_node_writers:
+                violations.append(
+                    _violation(
+                        node=node,
+                        writer_path=writer_path,
+                        required_edge="connectivity_owner",
+                        missing_endpoint=writer_class.value,
+                        status=SourceResolutionStatus.SOURCE_TYPE_NOT_SUPPORTED,
+                        remediation_hint=(
+                            "Route node creation through the connectivity owner "
+                            "for this node_type, or reference an existing node."
+                        ),
+                        reason="writer_not_connectivity_owner",
+                    )
+                )
+                continue
+
+            if node.node_type == "Learning" and _candidate_has_known_bug(node.raw):
+                required_groups = [_learning_bug_group()]
+            else:
+                required_groups = list(rule.required_edge_groups)
+
+            for group in required_groups:
+                resolution = self._resolve_group(
+                    node=node,
+                    group=group,
+                    nodes=node_snapshots,
+                    edges=edge_snapshots,
+                    existing_refs=existing_refs,
+                )
+                if not resolution.passed:
+                    violations.append(
+                        _violation(
+                            node=node,
+                            writer_path=writer_path,
+                            required_edge=group.label(),
+                            missing_endpoint=resolution.missing_endpoint,
+                            status=resolution.status,
+                            remediation_hint=group.remediation_hint,
+                            reason=resolution.reason,
+                        )
+                    )
+                    break
+
+        result = KGConnectivityValidationResult(
+            passed=not violations,
+            violations=tuple(violations),
+            allowlisted_roots=tuple(allowlisted_roots),
+            outcome=(
+                KGConnectivityOutcome.ALLOWLISTED
+                if allowlisted_roots and len(allowlisted_roots) == len(node_snapshots)
+                else KGConnectivityOutcome.PASSED if not violations
+                else KGConnectivityOutcome.REJECTED
+            ),
+        )
+        self._emit_metric(board_id, writer_path, generation_id, result)
+        return result
+
+    def _resolve_group(
+        self,
+        *,
+        node: _NodeSnapshot,
+        group: KGConnectivityEdgeGroup,
+        nodes: tuple[_NodeSnapshot, ...],
+        edges: tuple[_EdgeSnapshot, ...],
+        existing_refs: tuple[KGNodeRef, ...],
+    ) -> _RequirementResolution:
+        node_types_by_candidate = {item.candidate_id: item.node_type for item in nodes}
+        existing_by_ref = _existing_ref_index(existing_refs)
+        touched_unresolved = False
+        touched_unsupported = False
+        for edge in edges:
+            if edge.from_candidate_id == node.candidate_id:
+                direction = "outgoing"
+                other_ref = edge.to_candidate_id
+            elif edge.to_candidate_id == node.candidate_id:
+                direction = "incoming"
+                other_ref = edge.from_candidate_id
+            else:
+                continue
+
+            for req in group.alternatives:
+                if req.edge_type != edge.edge_type:
+                    continue
+                if req.direction != "any" and req.direction != direction:
+                    continue
+                endpoint_type, status = _resolve_endpoint_type(
+                    other_ref,
+                    node_types_by_candidate,
+                    existing_by_ref,
+                )
+                if status in (
+                    SourceResolutionStatus.UNRESOLVED_SOURCE_REF,
+                    SourceResolutionStatus.AMBIGUOUS_SOURCE_REF,
+                ):
+                    touched_unresolved = True
+                    continue
+                if req.target_node_types and endpoint_type not in req.target_node_types:
+                    touched_unsupported = True
+                    continue
+                return _RequirementResolution(
+                    passed=True,
+                    status=status,
+                    missing_endpoint="",
+                    reason="ok",
+                )
+
+        if touched_unresolved:
+            return _RequirementResolution(
+                passed=False,
+                status=SourceResolutionStatus.UNRESOLVED_SOURCE_REF,
+                missing_endpoint=group.label(),
+                reason="unresolved_required_endpoint",
+            )
+        if touched_unsupported:
+            return _RequirementResolution(
+                passed=False,
+                status=SourceResolutionStatus.SOURCE_TYPE_NOT_SUPPORTED,
+                missing_endpoint=group.label(),
+                reason="unsupported_endpoint_type",
+            )
+        return _RequirementResolution(
+            passed=False,
+            status=SourceResolutionStatus.UNRESOLVED_SOURCE_REF,
+            missing_endpoint=group.label(),
+            reason="missing_required_edge",
+        )
+
+    def _emit_metric(
+        self,
+        board_id: str,
+        writer_path: str,
+        generation_id: str,
+        result: KGConnectivityValidationResult,
+    ) -> None:
+        if self._metric_sink is None:
+            return
+        first = result.violations[0] if result.violations else None
+        try:
+            self._metric_sink.emit(
+                KGConnectivityMetricEvent(
+                    board_id=board_id,
+                    node_type=first.node_type if first else "batch",
+                    writer_path=writer_path,
+                    outcome=result.outcome.value,
+                    reason=first.reason if first else "ok",
+                    source_resolution_status=(
+                        first.source_resolution_status.value
+                        if first
+                        else (
+                            SourceResolutionStatus.ALLOWLISTED_TECHNICAL_ROOT.value
+                            if result.outcome == KGConnectivityOutcome.ALLOWLISTED
+                            else SourceResolutionStatus.RESOLVED_IN_BATCH.value
+                        )
+                    ),
+                    generation_id=generation_id,
+                )
+            )
+        except Exception:
+            return
+
+
+def _violation(
+    *,
+    node: _NodeSnapshot,
+    writer_path: str,
+    required_edge: str,
+    missing_endpoint: str,
+    status: SourceResolutionStatus,
+    remediation_hint: str,
+    reason: str,
+) -> KGConnectivityViolation:
+    return KGConnectivityViolation(
+        node_type=node.node_type,
+        candidate_id=node.candidate_id,
+        source_artifact_ref=node.source_artifact_ref,
+        required_edge=required_edge,
+        missing_endpoint=missing_endpoint,
+        writer_path=writer_path,
+        source_resolution_status=status,
+        remediation_hint=remediation_hint,
+        reason=reason,
+    )
+
+
+def _snapshot_node(node: Any) -> _NodeSnapshot:
+    return _NodeSnapshot(
+        candidate_id=str(_get_field(node, "candidate_id", "")),
+        node_type=_enum_value(_get_field(node, "node_type", "")),
+        source_artifact_ref=_optional_str(_get_field(node, "source_artifact_ref", None)),
+        raw=node,
+    )
+
+
+def _snapshot_edge(edge: Any) -> _EdgeSnapshot:
+    return _EdgeSnapshot(
+        candidate_id=str(_get_field(edge, "candidate_id", "")),
+        edge_type=_enum_value(_get_field(edge, "edge_type", "")),
+        from_candidate_id=str(_get_field(edge, "from_candidate_id", "")),
+        to_candidate_id=str(_get_field(edge, "to_candidate_id", "")),
+        raw=edge,
+    )
+
+
+def _snapshot_existing_ref(ref: Any) -> KGNodeRef:
+    if isinstance(ref, str):
+        return KGNodeRef(ref_id=ref, node_type="", source_artifact_ref=None)
+    node_id = (
+        _get_field(ref, "ref_id", None)
+        or _get_field(ref, "node_id", None)
+        or _get_field(ref, "kuzu_node_id", None)
+        or _get_field(ref, "id", "")
+    )
+    return KGNodeRef(
+        ref_id=str(node_id),
+        node_type=_enum_value(_get_field(ref, "node_type", "")),
+        source_artifact_ref=_optional_str(_get_field(ref, "source_artifact_ref", None)),
+    )
+
+
+def _existing_ref_index(existing_refs: tuple[KGNodeRef, ...]) -> dict[str, list[KGNodeRef]]:
+    index: dict[str, list[KGNodeRef]] = {}
+    for ref in existing_refs:
+        keys = {ref.ref_id}
+        if ref.ref_id and not ref.ref_id.startswith("kg:"):
+            keys.add(f"kg:{ref.ref_id}")
+        if ref.source_artifact_ref:
+            keys.add(ref.source_artifact_ref)
+        for key in keys:
+            if key:
+                bucket = index.setdefault(key, [])
+                canonical_ref_id = _canonical_ref_id(ref.ref_id)
+                if not any(
+                    _canonical_ref_id(existing.ref_id) == canonical_ref_id
+                    and existing.node_type == ref.node_type
+                    and existing.source_artifact_ref == ref.source_artifact_ref
+                    for existing in bucket
+                ):
+                    bucket.append(ref)
+    return index
+
+
+def _canonical_ref_id(ref_id: str) -> str:
+    return ref_id[3:] if ref_id.startswith("kg:") else ref_id
+
+
+def _resolve_endpoint_type(
+    ref: str,
+    node_types_by_candidate: dict[str, str],
+    existing_by_ref: dict[str, list[KGNodeRef]],
+) -> tuple[str | None, SourceResolutionStatus]:
+    if ref in node_types_by_candidate:
+        return node_types_by_candidate[ref], SourceResolutionStatus.RESOLVED_IN_BATCH
+    matches = existing_by_ref.get(ref, ())
+    if len(matches) == 1:
+        return matches[0].node_type, SourceResolutionStatus.RESOLVED_EXISTING_NODE
+    if len(matches) > 1:
+        return None, SourceResolutionStatus.AMBIGUOUS_SOURCE_REF
+    if ref.startswith("kg:"):
+        return None, SourceResolutionStatus.UNRESOLVED_SOURCE_REF
+    return None, SourceResolutionStatus.UNRESOLVED_SOURCE_REF
+
+
+def _candidate_has_known_bug(raw: Any) -> bool:
+    for field_name in (
+        "bug_id",
+        "bug_ref",
+        "known_bug_ref",
+        "known_bug_source_ref",
+        "target_bug_ref",
+    ):
+        if _get_field(raw, field_name, None):
+            return True
+    source_ref = _optional_str(_get_field(raw, "source_artifact_ref", None)) or ""
+    return source_ref.startswith("bug:") or source_ref.startswith("card:bug:")
+
+
+def _get_field(obj: Any, name: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _enum_value(value: Any) -> str:
+    if isinstance(value, Enum):
+        return str(value.value)
+    return str(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if text else None
+
+
+__all__ = [
+    "CONNECTIVITY_ERROR_CODE",
+    "DEGRADED_KG_STATES",
+    "SAFE_CONNECTIVITY_METRIC_LABELS",
+    "InMemoryConnectivityMetricSink",
+    "KGConnectivityEdgeGroup",
+    "KGConnectivityEdgeRequirement",
+    "KGConnectivityMetricEvent",
+    "KGConnectivityOutcome",
+    "KGConnectivityOwner",
+    "KGConnectivityRule",
+    "KGConnectivityRuleRegistry",
+    "KGConnectivityValidationResult",
+    "KGConnectivityViolation",
+    "KGNodeConnectivityGuard",
+    "KGNodeRef",
+    "KGTechnicalRootAllowlistEntry",
+    "MetricSinkProtocol",
+    "SourceResolutionStatus",
+    "WriterClass",
+    "classify_writer_path",
+]

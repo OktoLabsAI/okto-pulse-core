@@ -143,7 +143,9 @@ class TestSchemaInfo:
     def test_stable_types_count(self):
         info = get_schema_info("board-x")
         assert len(info["stable_node_types"]) == 11
-        assert len(info["stable_rel_types"]) == 10
+        assert len(info["stable_rel_types"]) == 13
+        rel_names = {rel["name"] for rel in info["stable_rel_types"]}
+        assert {"belongs_to", "originates_from", "covered_by"} <= rel_names
 
     def test_vector_indexes_count(self):
         info = get_schema_info("board-x")

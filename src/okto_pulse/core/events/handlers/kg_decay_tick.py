@@ -1,12 +1,16 @@
 """KGDailyTickHandler — daily decay tick for the KG (Ideação #4, IMPL-D).
 
-Reacts to ``kg.tick.daily`` (emitted by the APScheduler cron at 03:00 UTC)
-by walking every active board and recomputing the relevance_score of nodes
-that haven't been recomputed in ``KG_DECAY_TICK_STALENESS_DAYS`` days.
+Reacts to ``kg.tick.daily`` (emitted by the APScheduler
+``IntervalTrigger(minutes=kg_decay_tick_interval_minutes)``, configured in
+``app.py`` / ``config.py``) by walking every active board and recomputing
+the relevance_score of nodes that haven't been recomputed in
+``KG_DECAY_TICK_STALENESS_DAYS`` days.
 
 Cursor scan keeps memory bounded: results stream in batches of
 ``KG_DECAY_TICK_BATCH_SIZE`` ordered by ``id ASC`` so a tick never revisits
 a node in the same run. Failure of one node never aborts the loop (BR14).
+Board-level failures (corrupt/locked graph) are caught and counted
+(``boards_failed``) so the rest of the fleet continues — FR1.
 
 The tick run is logged in the ``kg_tick_runs`` table (Ideação #4 IMPL-F)
 so kg_health can surface ``last_decay_tick_at`` and
@@ -19,9 +23,9 @@ import asyncio
 import gc
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
@@ -32,13 +36,71 @@ from okto_pulse.core.kg.schema import (
     open_board_connection,
 )
 from okto_pulse.core.kg.scoring import _recompute_relevance_batch
-from okto_pulse.core.models.db import Board, KGTickRun
+from okto_pulse.core.models.db import KGTickRun
 
 logger = logging.getLogger(__name__)
 
 
 KG_DECAY_TICK_BATCH_SIZE = int(os.getenv("KG_DECAY_TICK_BATCH_SIZE", "200"))
 KG_DECAY_TICK_STALENESS_DAYS = int(os.getenv("KG_DECAY_TICK_STALENESS_DAYS", "7"))
+
+
+async def publish_tick_events(
+    session: AsyncSession,
+    *,
+    board_id: str | None = None,
+    actor_id: str | None = None,
+    actor_type: str | None = None,
+    scheduled_at: str | None = None,
+) -> list[str]:
+    """Publica ``KGDailyTick`` com FAN-OUT por board real. Retorna os tick_ids.
+
+    Campo 2026-06-10: ``domain_events.board_id`` é NOT NULL com FK para
+    ``boards.id``, e o runtime de produção (community ``serve``) liga
+    ``PRAGMA foreign_keys=ON`` desde sempre — o sentinel global ``'*'``
+    violava a constraint no INSERT do evento, então NENHUM tick (cron OU
+    manual) chegava a ser agendado em produção (IntegrityError →
+    ``tick_schedule_failed``). Os testes do core não ligam o PRAGMA, por
+    isso o bug nunca apareceu na suíte.
+
+    O fan-out publica um evento POR board existente: a FK passa, o
+    isolamento por board vira total (falha de um board não toca os outros
+    nem na enumeração) e eventos de boards deletados são limpos pelo
+    ON DELETE CASCADE. O handler já suportava ``board_id`` concreto.
+    """
+    from sqlalchemy import select
+
+    from okto_pulse.core.events import publish as event_publish
+    from okto_pulse.core.models.db import Board
+
+    if board_id and board_id != "*":
+        board_ids = [board_id]
+    else:
+        board_ids = list(
+            (await session.execute(select(Board.id))).scalars().all()
+        )
+
+    when = scheduled_at or datetime.now(timezone.utc).isoformat()
+    extra_kwargs: dict[str, str] = {}
+    if actor_id is not None:
+        extra_kwargs["actor_id"] = actor_id
+    if actor_type is not None:
+        extra_kwargs["actor_type"] = actor_type
+
+    tick_ids: list[str] = []
+    for bid in board_ids:
+        tid = str(uuid.uuid4())
+        await event_publish(
+            KGDailyTick(
+                board_id=bid,
+                tick_id=tid,
+                scheduled_at=when,
+                **extra_kwargs,
+            ),
+            session=session,
+        )
+        tick_ids.append(tid)
+    return tick_ids
 
 
 def _fetch_stale_nodes(
@@ -136,12 +198,19 @@ def _count_stale_nodes_pre_tick(conn, cutoff_iso: str) -> int:
 def _process_board_sync(
     board_id: str, cutoff_iso: str, *, batch_size: int,
 ) -> tuple[int, int]:
-    """Drain stale nodes for one board. Returns (recomputed, stale_pre_count)."""
+    """Drain stale nodes for one board. Returns (recomputed, stale_pre_count).
+
+    FR7: ``open_board_connection`` is called BEFORE entering the try/finally
+    block. This is intentional: if opening the connection itself raises (e.g.
+    RuntimeError from a corrupt or locked graph), the exception propagates to
+    the caller so the per-board try/except in ``_run_daily_tick`` can catch
+    it and increment ``boards_failed`` without entering the finally branch.
+    """
     if not board_kuzu_path(board_id).exists():
         return (0, 0)
     total = 0
     stale_pre_count = 0
-    bc = open_board_connection(board_id)
+    bc = open_board_connection(board_id)  # FR7: stays OUTSIDE try/finally
     try:
         stale_pre_count = _count_stale_nodes_pre_tick(bc.conn, cutoff_iso)
         for node_type in NODE_TYPES:
@@ -183,20 +252,45 @@ async def _persist_tick_run(
     nodes_recomputed: int,
     duration_ms: float,
     boards_processed: int,
+    boards_failed: int = 0,
     error: str | None = None,
 ) -> None:
-    """Insert the row that kg_health will surface as the latest tick state."""
-    session.add(
-        KGTickRun(
-            tick_id=tick_id,
-            started_at=started_at,
-            completed_at=completed_at,
-            nodes_recomputed=nodes_recomputed,
-            duration_ms=duration_ms,
-            boards_processed=boards_processed,
-            error=error,
-        )
+    """Insert or update the row that kg_health will surface as the latest tick state.
+
+    Uses an idempotent upsert (ON CONFLICT DO UPDATE on ``tick_id`` PK) so
+    that dispatcher retries with the same ``tick_id`` produce exactly one
+    row — FR2/TR1.  ``session.merge`` is NOT used (it issues a SELECT +
+    conditional INSERT/UPDATE; the explicit upsert is a single statement).
+    """
+    # Dialect dispatch: same approach as consolidation_enqueuer.py so both
+    # SQLite (dev/test) and PostgreSQL (prod) are covered by a single code path.
+    dialect_name = session.bind.dialect.name if session.bind else None
+    if dialect_name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as _upsert_insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert as _upsert_insert
+
+    stmt = _upsert_insert(KGTickRun).values(
+        tick_id=tick_id,
+        started_at=started_at,
+        completed_at=completed_at,
+        nodes_recomputed=nodes_recomputed,
+        duration_ms=duration_ms,
+        boards_processed=boards_processed,
+        boards_failed=boards_failed,
+        error=error,
+    ).on_conflict_do_update(
+        index_elements=["tick_id"],
+        set_={
+            "completed_at": completed_at,
+            "nodes_recomputed": nodes_recomputed,
+            "duration_ms": duration_ms,
+            "boards_processed": boards_processed,
+            "boards_failed": boards_failed,
+            "error": error,
+        },
     )
+    await session.execute(stmt)
     await session.commit()
 
 
@@ -211,11 +305,21 @@ async def _run_daily_tick(
     """Execute the full tick cycle and persist the run row.
 
     Returns a summary dict suitable for structured logging / tests:
-    ``{tick_id, nodes_recomputed, boards_processed, duration_ms}``.
+    ``{tick_id, nodes_recomputed, boards_processed, boards_failed,
+    duration_ms, nodes_with_stale_score_pre_tick}``.
+
+    FR1/TR2: each board iteration is wrapped in an independent try/except.
+    A board whose ``open_board_connection`` raises (corrupt/locked graph)
+    increments ``boards_failed`` and emits a ``kg.tick.board_failed`` warning
+    without aborting the remaining boards.
     """
+    from sqlalchemy import select
+    from okto_pulse.core.models.db import Board
+
     started_at = datetime.now(timezone.utc)
     cutoff_iso = (started_at - timedelta(days=staleness_days)).isoformat()
     boards_processed = 0
+    boards_failed = 0
     total_recomputed = 0
 
     nodes_with_stale_score_pre_tick = 0
@@ -223,13 +327,28 @@ async def _run_daily_tick(
         boards = [board_id]
     else:
         boards = (await session.execute(select(Board.id))).scalars().all()
-    for board_id in boards:
-        boards_processed += 1
-        recomputed, stale_pre = await asyncio.to_thread(
-            _process_board_sync, board_id, cutoff_iso, batch_size=batch_size,
-        )
-        total_recomputed += recomputed
-        nodes_with_stale_score_pre_tick += stale_pre
+
+    for bid in boards:
+        try:
+            recomputed, stale_pre = await asyncio.to_thread(
+                _process_board_sync, bid, cutoff_iso, batch_size=batch_size,
+            )
+            boards_processed += 1
+            total_recomputed += recomputed
+            nodes_with_stale_score_pre_tick += stale_pre
+        except Exception as exc:
+            # FR1/TR2: any exception (RuntimeError from open_board_connection,
+            # asyncio wrapper, etc.) is caught here so the fleet continues.
+            boards_failed += 1
+            logger.warning(
+                "kg.tick.board_failed board_id=%s error=%s",
+                bid, str(exc),
+                extra={
+                    "event": "kg.tick.board_failed",
+                    "board_id": bid,
+                    "error": str(exc),
+                },
+            )
 
     completed_at = datetime.now(timezone.utc)
     duration_ms = (completed_at - started_at).total_seconds() * 1000.0
@@ -241,12 +360,14 @@ async def _run_daily_tick(
         nodes_recomputed=total_recomputed,
         duration_ms=duration_ms,
         boards_processed=boards_processed,
+        boards_failed=boards_failed,
     )
 
     summary = {
         "tick_id": tick_id,
         "nodes_recomputed": total_recomputed,
         "boards_processed": boards_processed,
+        "boards_failed": boards_failed,
         "duration_ms": duration_ms,
         "nodes_with_stale_score_pre_tick": nodes_with_stale_score_pre_tick,
     }
@@ -268,6 +389,9 @@ class KGDailyTickHandler:
                 board_id=event.board_id,
             )
         except Exception as exc:
+            # FR3: on error, persist the tick_run with the error string and
+            # return normally. The persisted row IS the idempotent signal; the
+            # dispatcher marks the handler execution done. Do NOT re-raise.
             completed_at = datetime.now(timezone.utc)
             try:
                 await _persist_tick_run(
@@ -280,6 +404,7 @@ class KGDailyTickHandler:
                         completed_at - started_at
                     ).total_seconds() * 1000.0,
                     boards_processed=0,
+                    boards_failed=0,
                     error=str(exc),
                 )
             except Exception:
@@ -287,7 +412,6 @@ class KGDailyTickHandler:
                     "kg.relevance.tick.failure_persist_failed tick_id=%s",
                     event.tick_id,
                 )
-            raise
 
 
 __all__ = [

@@ -22,7 +22,14 @@ from okto_pulse.core.models.schemas import (
     RefinementUpdate,
     SpecResponse,
 )
-from okto_pulse.core.services import IdeationService, RefinementKnowledgeService, RefinementQAService, RefinementService, SpecService
+from okto_pulse.core.services import (
+    IdeationService,
+    QASelfAnsweringNotAllowedError,
+    RefinementKnowledgeService,
+    RefinementQAService,
+    RefinementService,
+    SpecService,
+)
 
 router = APIRouter()
 
@@ -209,7 +216,16 @@ async def answer_refinement_question(
 ):
     """Answer a refinement Q&A question."""
     service = RefinementQAService(db)
-    qa = await service.answer_question(qa_id, user_id, data)
+    try:
+        qa = await service.answer_question(
+            qa_id, user_id, data, actor_type="user", surface="rest"
+        )
+    except QASelfAnsweringNotAllowedError as exc:
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"reason": exc.reason, "message": str(exc)},
+        ) from exc
     if not qa:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Q&A item not found")
     await db.commit()

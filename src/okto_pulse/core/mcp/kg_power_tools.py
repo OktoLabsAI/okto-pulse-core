@@ -18,6 +18,13 @@ from okto_pulse.core.kg.tier_power import (
     execute_natural_query,
     get_schema_info,
 )
+from okto_pulse.core.mcp.kg_query_safety import (
+    KGCypherResponseSanitizer,
+    KGNaturalQueryBoundaryGuard,
+    annotate_truncation,
+    resolve_cypher_max_rows,
+    round_kg_numbers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +126,7 @@ async def _record_cypher_hits(
     """Fire-and-forget loop that increments the hit counter for each pair.
 
     ``record_query_hit`` is a thin wrapper around the in-process counter
-    that lazy-flushes to Kùzu when ``HIT_FLUSH_THRESHOLD`` is reached. The
+    that lazy-flushes to LadybugDB when ``HIT_FLUSH_THRESHOLD`` is reached. The
     invocation must NEVER block the query response (BR3 + dec_3a6eb8ad).
     """
     try:
@@ -154,30 +161,16 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         board_id: str,
         cypher: str,
         params: dict | None = None,
-        max_rows: int = 1000,
+        max_rows: int = 0,
         timeout_ms: int = 5000,
     ) -> str:
-        """
-        Execute a read-only Cypher query directly against a board's Kuzu graph.
-
-        Safety rails applied automatically:
-        - Parser whitelist rejects write keywords (CREATE/DELETE/SET/etc)
-        - Comment stripping + unicode normalization
-        - Auto-inject LIMIT if missing
-        - Variable-length paths auto-bounded to *..20
-        - Timeout 5s default, 30s max
-        - Rate limit 30 queries/min per agent
-
-        Args:
-            board_id: Board ID
-            cypher: Read-only Cypher query string
-            params: Optional parameter dict for parameterized queries
-            max_rows: Max rows (default 1000, max 10000)
-            timeout_ms: Timeout in ms (default 5000, max 30000)
-
-        Returns:
-            JSON with rows, row_count, truncated, execution_time_ms
-        """
+        """Execute a read-only Cypher query against a board's graph. Safety rails auto-applied:
+write-keyword whitelist (CREATE/DELETE/SET rejected), comment strip + unicode
+normalize, auto-LIMIT, variable-length paths bounded to *..20, timeout 5s default /
+30s max, rate limit 30/min, embedding/vector columns STRIPPED from the response,
+rows bounded to an agent-safe page, numeric scores rounded. max_rows: 0=agent-safe
+default (50), 1..1000 explicit, >1000 rejected. Full args/returns:
+okto-pulse://reference/tool-docs/kg."""
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
@@ -185,12 +178,21 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
                      board_id, len(cypher), max_rows, timeout_ms)
         try:
             check_rate_limit(agent.id)
+            # FR2/FR9: clamp to an agent-safe page; reject above the hard cap.
+            effective_rows, bound_err = resolve_cypher_max_rows(max_rows)
+            if bound_err is not None:
+                return _err(
+                    bound_err["error"],
+                    bound_err["detail"],
+                    requested_max_rows=bound_err["requested_max_rows"],
+                    hard_cap=bound_err["hard_cap"],
+                )
             logger.debug("[KG] kg_query_cypher offloading to thread")
             result = await asyncio.wait_for(
                 asyncio.to_thread(
                     execute_cypher_read_only,
                     board_id, cypher, params,
-                    max_rows=max_rows, timeout_ms=timeout_ms,
+                    max_rows=effective_rows, timeout_ms=timeout_ms,
                 ),
                 timeout=30.0,
             )
@@ -213,6 +215,12 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
                     "kg.cypher.hit_extract_failed board=%s err=%s",
                     board_id, exc,
                 )
+            # FR1/FR2/FR3: strip embeddings, annotate row bounds, round numeric
+            # scores — at the response boundary, AFTER hit-counting (which needs
+            # the raw node ids). Ordering of rows is untouched.
+            result = KGCypherResponseSanitizer().sanitize(result)
+            result = annotate_truncation(result, effective_rows)
+            result = round_kg_numbers(result)
             return json.dumps(result, default=str)
         except asyncio.TimeoutError:
             logger.error("[KG] kg_query_cypher timed out after 30s: board_id=%s", board_id)
@@ -229,30 +237,13 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         since: str = "",
         until: str = "",
     ) -> str:
-        """
-        Natural language search over the board's knowledge graph. Uses hybrid
-        search (embedding + HNSW + traversal). Falls back to string match if
-        embedding is unavailable.
-
-        Does NOT invoke any LLM — all processing is deterministic (embedding
-        model is local sentence-transformers or stub).
-
-        Args:
-            board_id: Board ID
-            nl_query: Natural language query
-            limit: Max results (default 20)
-            min_confidence: Min confidence threshold (default 0.5)
-            since: Optional ISO-8601 timestamp — return only nodes with
-                ``created_at >= since``. Empty string = no lower bound.
-                Invalid timestamps are ignored (best-effort).
-            until: Optional ISO-8601 timestamp — return only nodes with
-                ``created_at <= until``. Empty string = no upper bound.
-
-        Returns:
-            JSON with nodes, total_matches, optional warning. When a temporal
-            filter is active the response also carries ``temporal_filter``
-            metadata (candidates_before_filter, filtered_out).
-        """
+        """Natural-language search over a board's knowledge graph using hybrid search
+(embedding + HNSW + traversal), falling back to string match if embedding is
+unavailable. Deterministic — invokes NO LLM (local sentence-transformers or stub).
+Args include nl_query, limit (default 20), min_confidence (default 0.5), and optional
+since/until ISO-8601 bounds on created_at. Returns nodes, total_matches, optional
+warning, and temporal_filter metadata when a time bound is active. Full args:
+okto-pulse://reference/tool-docs/kg."""
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
@@ -260,6 +251,21 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
                      board_id, nl_query[:80], limit)
         try:
             check_rate_limit(agent.id)
+            # FR0: reject an oversize natural query at the MCP boundary BEFORE
+            # the embedding provider is resolved. execute_natural_query resolves
+            # registry.embedding_provider internally, so the guard MUST run
+            # before it is offloaded — never invoking any embedding call.
+            rejection = KGNaturalQueryBoundaryGuard().check(nl_query)
+            if rejection is not None:
+                # Structured query_too_large via the tool's _err envelope; safe
+                # metadata only (counts + embedding_invoked), never the query text.
+                return _err(
+                    "query_too_large",
+                    rejection["detail"],
+                    embedding_invoked=False,
+                    query_chars=rejection["rejection"]["query_chars"],
+                    max_chars=rejection["rejection"]["max_chars"],
+                )
             logger.debug("[KG] kg_query_natural offloading to thread")
             result = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -272,6 +278,8 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
             )
             logger.debug("[KG] kg_query_natural thread returned: total_matches=%d",
                          result.get("total_matches", "unknown"))
+            # FR3: round numeric scores at the response boundary.
+            result = round_kg_numbers(result)
             return json.dumps(result, default=str)
         except asyncio.TimeoutError:
             logger.error("[KG] kg_query_natural timed out after 30s: board_id=%s", board_id)
@@ -323,39 +331,12 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         retrieved_rows_json: str,
         pre_extracted_entities_json: str = "",
     ) -> str:
-        """
-        Verify that an agent answer is grounded in the retrieved KG nodes.
-
-        Deterministic entity check only in this V1 — matches entity names
-        against retrieved row titles via normalized exact match (NFKD +
-        strip diacritics + lowercase) with Jaccard fallback (threshold
-        0.7). Semantic grounding via LLM is available programmatically
-        via the Python API `verify_grounding(..., extractor_fn=,
-        grounder_fn=)` but not exposed over MCP (no LLM wired here).
-
-        Ideação d3dfdab8. Enforcement is decoupled — this tool returns
-        the verdict; the caller (agent, UI, critic loop) decides what to
-        do with it.
-
-        Args:
-            board_id: Board ID for authorization (kg.query.global).
-            answer_text: The agent's response to verify.
-            retrieved_rows_json: JSON string — list of
-                `{"node_id": ..., "title": ..., ...}` rows the answer
-                was based on.
-            pre_extracted_entities_json: Optional JSON array of strings
-                listing the entity names the caller wants to check. If
-                empty, falls back to heuristic extraction (quoted terms
-                and capitalised multi-word phrases).
-
-        Returns:
-            JSON with the GroundingResult fields: overall_grounded,
-            confidence, hallucinated_entities, unsupported_claims,
-            attribution_map.
-
-        Raises:
-            ValueError: if retrieved_rows_json is not valid JSON.
-        """
+        """Verify an agent answer is grounded in the retrieved KG nodes. V1 is a deterministic
+entity check only — normalized exact match (NFKD + strip diacritics + lowercase)
+with Jaccard fallback (0.7); no LLM over MCP (semantic grounding is Python-API only).
+Returns the verdict (overall_grounded, confidence, hallucinated_entities,
+unsupported_claims, attribution_map); enforcement is the caller's decision. Full
+args: okto-pulse://reference/tool-docs/kg."""
         import re
 
         from okto_pulse.core.kg.grounding import check_entities_present

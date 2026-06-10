@@ -8,7 +8,10 @@ For each pending queue entry the worker:
     3. Drives the primitives pipeline: begin → propose_reconciliation →
        commit. The session uses `agent_id="system:historical_consolidation"`
        so the layer-ownership BR allows deterministic edges through.
-    4. Marks the queue entry as `done` (or `failed`).
+    4. Runs the LadybugDB safe-write lifecycle before the queue row is
+       acknowledged, proving the graph is readable from disk after
+       close/reopen.
+    5. Marks the queue entry as `done` (or `failed`).
 
 The cognitive agent picks up `missing_link_candidates` later and proposes
 the residual semantic edges (capped at confidence 0.85 per BR `Cognitive
@@ -51,6 +54,20 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
+from okto_pulse.core.kg.memory_pressure import FailureEvent
+from okto_pulse.core.kg.memory_pressure_collector import record_failure
+from okto_pulse.core.kg.workers.dead_letter import route_to_dead_letter
+from okto_pulse.core.kg.safe_write_lifecycle import (
+    STEP_CHECKPOINT,
+    STEP_FLUSH,
+    STEP_FSYNC,
+    HealthProbe,
+    KGSafeWriteLifecycle,
+    LockOwnerProbe,
+    SafeWriteLifecycleStatus,
+)
+from okto_pulse.core.kg.schema import apply_ladybug_lifecycle_step
+from okto_pulse.core.kg.write_barrier import under_safe_write
 from okto_pulse.core.kg.workers.deterministic_worker import (
     DeterministicWorker,
     EmittedEdge,
@@ -63,6 +80,163 @@ from okto_pulse.core.kg.workers.deterministic_worker import (
 logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
 AGENT_ID = "system:historical_consolidation"
+CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
+
+# Spec 3d89c192 (FR-4): o commit incremental do worker usa o subset
+# não-destrutivo do lifecycle — checkpoint real + verificação + fsync, SEM o
+# close_reopen_probe. O probe fecha o Database compartilhado (use-after-close
+# com leitores concorrentes) e só é necessário nas lanes de rebuild/recovery,
+# que continuam usando DEFAULT_REQUIRED_STEPS (contrato api_1c9d19e1 prevê
+# subset custom por caller).
+WORKER_COMMIT_LIFECYCLE_STEPS: tuple[str, ...] = (
+    STEP_CHECKPOINT,
+    STEP_FLUSH,
+    STEP_FSYNC,
+)
+
+_board_processing_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_board_processing_lock(board_id: str) -> asyncio.Lock:
+    lock = _board_processing_locks.get(board_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _board_processing_locks[board_id] = lock
+    return lock
+
+
+def _worker_owner_probe(_board_id: str, owner_token: str) -> bool:
+    """Validate process-local consolidation owner tokens.
+
+    The historical consolidation worker is already serialised by the
+    queue-claim contract for one board inside one server process. The
+    critical durability gap was that normal worker commits never entered
+    the safe-write guard/lifecycle before acknowledging the queue row.
+    This probe keeps KGSafeWriteLifecycle's owner-token contract explicit
+    for the worker-owned token generated per queue entry.
+    """
+
+    return owner_token.startswith("consolidation-worker:")
+
+
+def _worker_health_probe(
+    _board_id: str,
+    _graph_type: str,
+    status: SafeWriteLifecycleStatus,
+    _step: str | None,
+) -> str:
+    return "healthy" if status is SafeWriteLifecycleStatus.APPLIED else "recovery_needed"
+
+
+def _apply_board_graph_lifecycle_after_commit(
+    *,
+    board_id: str,
+    owner_token: str,
+    mutation_ref: str,
+):
+    """Run checkpoint/flush/fsync/close-reopen before queue acknowledgement.
+
+    FR3 (spec R2c): when the lifecycle fails, a FailureEvent with
+    ``event_kind="kg.wal.flush.failed"`` is recorded in the collector
+    ring-buffer before the RuntimeError is re-raised.  This is
+    non-blocking (the record call is swallowed if it fails) so it never
+    masks the original lifecycle error.
+    """
+
+    lifecycle = KGSafeWriteLifecycle(
+        step_adapter=apply_ladybug_lifecycle_step,
+        owner_probe=LockOwnerProbe(is_active_owner=_worker_owner_probe),
+        health_probe=HealthProbe(classify=_worker_health_probe),
+    )
+    response = lifecycle.apply(
+        board_id=board_id,
+        graph_type="board_graph",
+        operation=CONSOLIDATION_COMMIT_OPERATION,
+        owner_token=owner_token,
+        mutation_ref=mutation_ref,
+        required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
+    )
+    if response.status is not SafeWriteLifecycleStatus.APPLIED:
+        # FR3: record WAL/lifecycle failure before raising so the correlator
+        # receives a real FailureEvent.  Swallow any collector error (TR2).
+        try:
+            record_failure(
+                board_id,
+                FailureEvent(
+                    timestamp=datetime.now(timezone.utc),
+                    event_kind="kg.wal.flush.failed",
+                    graph_type="board",
+                    correlation_id=uuid.uuid4().hex,
+                ),
+            )
+        except Exception:
+            pass
+        raise RuntimeError(
+            "board_graph_safe_lifecycle_failed "
+            f"board_id={board_id} mutation_ref={mutation_ref} "
+            f"failed_step={response.failed_step} "
+            f"health_state_after={response.health_state_after} "
+            f"correlation_id={response.correlation_id}"
+        )
+    return response
+
+
+async def _commit_consolidation_with_board_graph_lifecycle(
+    *,
+    entry: ConsolidationQueue,
+    session_id: str,
+    summary_text: str,
+    db: AsyncSession,
+):
+    """Commit a queue item and prove the persisted graph before ACK.
+
+    A previous implementation called ``commit_consolidation`` directly and
+    then deleted the queue row. Field evidence showed the graph could be
+    readable through the process handle while reopening after restart
+    produced an empty/corrupt graph. This wrapper makes the ACK depend on
+    the same LadybugDB lifecycle used by explicit rebuild recovery.
+    """
+
+    owner_token = f"consolidation-worker:{entry.id}:{uuid.uuid4().hex}"
+    mutation_ref = f"{entry.artifact_type}:{entry.artifact_id}:{session_id}"
+    with under_safe_write(entry.board_id, owner_token, CONSOLIDATION_COMMIT_OPERATION):
+        commit_resp = await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=session_id,
+                summary_text=summary_text,
+            ),
+            agent_id=AGENT_ID,
+            db=db,
+        )
+        # Em thread (review dcea02d, blocker): o lifecycle é síncrono —
+        # CHECKPOINT, fsync e o dreno da higiene (até 2s sob leitor ativo)
+        # bloqueavam o event loop INTEIRO a cada commit durante janelas de
+        # scan. asyncio.to_thread copia contextvars, então o write barrier
+        # de under_safe_write continua visível para o owner probe.
+        await asyncio.to_thread(
+            _apply_board_graph_lifecycle_after_commit,
+            board_id=entry.board_id,
+            owner_token=owner_token,
+            mutation_ref=mutation_ref,
+        )
+    return commit_resp
+
+
+async def _process_queue_entry_serialized(
+    db: AsyncSession,
+    entry: ConsolidationQueue,
+) -> bool:
+    """Process one queue row under a process-local per-board mutex.
+
+    The queue claim contract prevents duplicate rows, but reprocess tools,
+    background workers and rebuild waiters can instantiate more than one
+    worker object in the same server process. LadybugDB allows only one
+    write transaction per graph. Without this guard, two workers can claim
+    different rows for the same board and collide at commit time.
+    """
+
+    async with _get_board_processing_lock(entry.board_id):
+        return await _process_queue_entry(db, entry)
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +264,7 @@ def _spec_to_dict(spec: Spec) -> dict:
     the same contract as production callers."""
     return {
         "id": spec.id,
+        "board_id": spec.board_id,
         "ideation_id": getattr(spec, "ideation_id", None),
         "refinement_id": getattr(spec, "refinement_id", None),
         "title": spec.title,
@@ -115,6 +290,7 @@ def _story_to_dict(story: Story) -> dict:
     status = getattr(story, "status", None)
     return {
         "id": story.id,
+        "board_id": story.board_id,
         "topic_id": story.topic_id,
         "title": story.title,
         "description": story.description,
@@ -131,6 +307,7 @@ def _ideation_to_dict(ideation: Ideation) -> dict:
     complexity = getattr(ideation, "complexity", None)
     return {
         "id": ideation.id,
+        "board_id": ideation.board_id,
         "title": ideation.title,
         "description": ideation.description,
         "problem_statement": ideation.problem_statement,
@@ -151,6 +328,7 @@ def _refinement_to_dict(refinement: Refinement) -> dict:
     status = getattr(refinement, "status", None)
     return {
         "id": refinement.id,
+        "board_id": refinement.board_id,
         "ideation_id": refinement.ideation_id,
         "title": refinement.title,
         "description": refinement.description,
@@ -166,11 +344,15 @@ def _refinement_to_dict(refinement: Refinement) -> dict:
 def _sprint_to_dict(sprint: Sprint) -> dict:
     return {
         "id": sprint.id,
+        "board_id": sprint.board_id,
         "title": sprint.title,
         "description": sprint.description,
         "objective": sprint.objective,
         "expected_outcome": sprint.expected_outcome,
         "spec_id": sprint.spec_id,
+        "lane_type": getattr(getattr(sprint, "lane_type", None), "value", getattr(sprint, "lane_type", None)) or "normal",
+        "origin_sprint_id": getattr(sprint, "origin_sprint_id", None),
+        "origin_bug_id": getattr(sprint, "origin_bug_id", None),
     }
 
 
@@ -179,6 +361,7 @@ def _card_to_dict(card) -> dict:
     severity = getattr(card, "severity", None)
     return {
         "id": card.id,
+        "board_id": card.board_id,
         "title": card.title,
         "description": card.description,
         "card_type": getattr(card.card_type, "value", card.card_type) if getattr(card, "card_type", None) else "normal",
@@ -319,6 +502,46 @@ def _append_refinement_entity_node(result: WorkerResult, refinement: Refinement)
     return cid
 
 
+def _board_root_candidate_id(board_id: str) -> str:
+    return f"board_{board_id[:8]}_entity"
+
+
+def _append_board_root_entity_node(result: WorkerResult, board_id: str) -> str:
+    cid = _board_root_candidate_id(board_id)
+    if _node_exists(result, cid):
+        return cid
+    result.nodes.append(EmittedNode(
+        candidate_id=cid,
+        node_type="Entity",
+        title=f"Board {board_id}",
+        content="Deterministic KG board root.",
+        source_artifact_ref=f"board:{board_id}",
+        source_confidence=1.0,
+    ))
+    return cid
+
+
+def _attach_entity_node_to_board_root(
+    result: WorkerResult,
+    *,
+    board_id: str,
+    child_candidate_id: str,
+    rule_slot: str,
+) -> None:
+    board_root_id = _append_board_root_entity_node(result, board_id)
+    edge_id = f"{child_candidate_id}_belongs_to_board"
+    if _edge_exists(result, edge_id):
+        return
+    result.edges.append(EmittedEdge(
+        candidate_id=edge_id,
+        edge_type="belongs_to",
+        from_candidate_id=child_candidate_id,
+        to_candidate_id=board_root_id,
+        confidence=1.0,
+        rule_id=f"belongs_to/{rule_slot}_to_board@{WORKER_VERSION}",
+    ))
+
+
 async def _materialize_lineage_endpoint_nodes(
     db: AsyncSession,
     entry: ConsolidationQueue,
@@ -342,24 +565,48 @@ async def _materialize_lineage_endpoint_nodes(
                 select(Story).where(Story.id.in_(story_ids))
             )).scalars().all()
             for story in stories:
-                _append_story_entity_node(result, story)
+                story_cid = _append_story_entity_node(result, story)
+                _attach_entity_node_to_board_root(
+                    result,
+                    board_id=entry.board_id,
+                    child_candidate_id=story_cid,
+                    rule_slot="story",
+                )
         return result
 
     if entry.artifact_type == "refinement" and getattr(artifact, "ideation_id", None):
         ideation = await db.get(Ideation, artifact.ideation_id)
         if ideation is not None:
-            _append_ideation_entity_node(result, ideation)
+            ideation_cid = _append_ideation_entity_node(result, ideation)
+            _attach_entity_node_to_board_root(
+                result,
+                board_id=entry.board_id,
+                child_candidate_id=ideation_cid,
+                rule_slot="ideation",
+            )
         return result
 
     if entry.artifact_type == "spec":
         if getattr(artifact, "refinement_id", None):
             refinement = await db.get(Refinement, artifact.refinement_id)
             if refinement is not None:
-                _append_refinement_entity_node(result, refinement)
+                refinement_cid = _append_refinement_entity_node(result, refinement)
+                _attach_entity_node_to_board_root(
+                    result,
+                    board_id=entry.board_id,
+                    child_candidate_id=refinement_cid,
+                    rule_slot="refinement",
+                )
         elif getattr(artifact, "ideation_id", None):
             ideation = await db.get(Ideation, artifact.ideation_id)
             if ideation is not None:
-                _append_ideation_entity_node(result, ideation)
+                ideation_cid = _append_ideation_entity_node(result, ideation)
+                _attach_entity_node_to_board_root(
+                    result,
+                    board_id=entry.board_id,
+                    child_candidate_id=ideation_cid,
+                    rule_slot="ideation",
+                )
         return result
 
     return result
@@ -642,13 +889,16 @@ async def _process_queue_entry(
         force_reprocess=True,
     )
 
-    # 4. commit
-    commit_resp = await commit_consolidation(
-        CommitConsolidationRequest(
-            session_id=session_id,
-            summary_text=f"Historical consolidation of {entry.artifact_type} '{getattr(artifact, 'title', entry.artifact_id)}'",
+    # 4. commit + safe lifecycle. The queue row is only acknowledged after
+    # graph.lbug survives close/reopen from disk.
+    commit_resp = await _commit_consolidation_with_board_graph_lifecycle(
+        entry=entry,
+        session_id=session_id,
+        summary_text=(
+            "Historical consolidation of "
+            f"{entry.artifact_type} "
+            f"'{getattr(artifact, 'title', entry.artifact_id)}'"
         ),
-        agent_id=AGENT_ID,
         db=db,
     )
 
@@ -694,6 +944,11 @@ class ConsolidationWorker:
         self._running = False
         # Lazily created in start() so the event binds to the running loop.
         self._wake_event: asyncio.Event | None = None
+        # FR5/FR6 (spec R2c): per-board DLQ auto-drain state.
+        # _dlq_drain_last_run: board_id -> datetime of last drain attempt.
+        # _dlq_drain_last_requeued: board_id -> requeued_count of last run.
+        self._dlq_drain_last_run: dict[str, datetime] = {}
+        self._dlq_drain_last_requeued: dict[str, int] = {}
 
     @property
     def is_running(self) -> bool:
@@ -716,6 +971,20 @@ class ConsolidationWorker:
             max_workers = 1
         active = max_workers if self.is_running else 0
         return {"active": active, "idle": 0, "draining": 0}
+
+    def get_dlq_drain_stats(self, board_id: str) -> dict:
+        """Return DLQ auto-drain stats for ``board_id`` (FR6, spec R2c).
+
+        Returns ``{last_run_at: ISO-string|None, requeued_count: int}``.
+        Both values come from in-process tracking only — process restart
+        resets them. The health endpoint uses this to populate the additive
+        ``dlq_auto_drain_*`` fields without touching storage.
+        """
+        last_run = self._dlq_drain_last_run.get(board_id)
+        return {
+            "last_run_at": last_run.isoformat() if last_run is not None else None,
+            "requeued_count": self._dlq_drain_last_requeued.get(board_id, 0),
+        }
 
     def signal_new_work(self) -> None:
         """Wake the run-loop now. Safe to call from any coroutine in the
@@ -983,9 +1252,13 @@ class ConsolidationWorker:
         # Step 2: Process each entry with its own session (short-lived tx).
         max_attempts = settings.kg_queue_max_attempts
         for entry in entries:
+            # Cede o event loop entre entries — flagrado por py-spy
+            # (2026-06-10) ocupando o loop em rajadas durante batches
+            # grandes, deixando a UI sem resposta (nem static files saíam).
+            await asyncio.sleep(0)
             try:
                 async with self.session_factory() as db:
-                    success = await _process_queue_entry(db, entry)
+                    success = await _process_queue_entry_serialized(db, entry)
                     fresh = await db.get(ConsolidationQueue, entry.id)
                     if fresh is None:
                         # Row was already removed (e.g. recovery scan +
@@ -1043,13 +1316,30 @@ class ConsolidationWorker:
         """Common failure handler: increment attempts, schedule exp backoff,
         re-pending the row. When ``attempts >= max_attempts`` the row is
         instead routed to ``ConsolidationDeadLetter`` (IMPL-3 wiring) and
-        deleted from the queue. Caller is responsible for the commit."""
-        from okto_pulse.core.kg.workers.dead_letter import route_to_dead_letter
+        deleted from the queue. Caller is responsible for the commit.
 
+        FR3 (spec R2c): when the entry is routed to the dead-letter queue,
+        a FailureEvent with ``event_kind="kg.commit.failed"`` is recorded
+        in the collector ring-buffer so the MemoryPressureCorrelator
+        receives a real commit-failure signal.  Non-blocking/non-raising.
+        """
         entry.attempts = (entry.attempts or 0) + 1
         entry.last_error = error_text
         if entry.attempts >= max_attempts:
             await route_to_dead_letter(db, entry, error_text=error_text)
+            # FR3: record commit failure for the memory-pressure correlator.
+            try:
+                record_failure(
+                    entry.board_id,
+                    FailureEvent(
+                        timestamp=datetime.now(timezone.utc),
+                        event_kind="kg.commit.failed",
+                        graph_type="board",
+                        correlation_id=uuid.uuid4().hex,
+                    ),
+                )
+            except Exception:
+                pass
             return
         backoff_s = min(2 ** entry.attempts, 300)
         entry.status = "pending"
@@ -1064,6 +1354,129 @@ class ConsolidationWorker:
             entry.artifact_type, entry.artifact_id, entry.attempts, backoff_s,
         )
 
+    async def _run_dlq_auto_drain(self) -> None:
+        """FR5/FR6 (spec R2c): opt-in automatic DLQ reprocess on each heartbeat.
+
+        For every board that has ``dlq_auto_drain_enabled=True`` in its
+        ``Board.settings`` JSON column AND has dead-letter rows pending, we
+        call ``reprocess_dead_letter_rows`` at most once per
+        ``kg_queue_dlq_auto_drain_backoff_s`` seconds (in-process per-board
+        cooldown dictionary, not persisted).
+
+        Poison-pill guard: DLQ rows whose ``attempts`` counter has reached
+        ``kg_queue_dlq_auto_drain_max_requeue_attempts`` are permanently
+        deleted and a WARN log is emitted so operators know they have an
+        artifact that cannot be consolidated.
+
+        The settings are re-read from the DB on every heartbeat so operators
+        can enable/disable the feature per board at runtime without a restart.
+        """
+        from okto_pulse.core.infra.config import get_settings
+        from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+        from okto_pulse.core.services.dead_letter_inspector_service import (
+            reprocess_dead_letter_rows,
+        )
+
+        try:
+            settings = get_settings()
+            backoff_s: int = settings.kg_queue_dlq_auto_drain_backoff_s
+            max_attempts: int = settings.kg_queue_dlq_auto_drain_max_requeue_attempts
+        except Exception:
+            return  # defensive: don't break the heartbeat on config failure
+
+        now = datetime.now(timezone.utc)
+
+        try:
+            async with self.session_factory() as db:
+                # Load all boards that have dlq_auto_drain_enabled=True.
+                board_result = await db.execute(select(Board))
+                boards = list(board_result.scalars().all())
+
+            enabled_boards = [
+                b for b in boards
+                if isinstance(b.settings, dict)
+                and b.settings.get("dlq_auto_drain_enabled")
+            ]
+
+            for board in enabled_boards:
+                board_id = board.id
+
+                # Backoff: skip if we ran recently for this board
+                last_run = self._dlq_drain_last_run.get(board_id)
+                if last_run is not None:
+                    elapsed = (now - last_run).total_seconds()
+                    if elapsed < backoff_s:
+                        continue  # AC11: still within backoff window
+
+                # Check if the board actually has DLQ rows
+                async with self.session_factory() as db:
+                    dlq_count = await db.scalar(
+                        select(func.count()).where(
+                            ConsolidationDeadLetter.board_id == board_id
+                        )
+                    ) or 0
+
+                if dlq_count == 0:
+                    continue
+
+                # Poison-pill exclusion: remove rows at or beyond max attempts
+                # before passing them to the requeue path (so they don't just
+                # cycle back to DLQ again immediately).
+                skipped_poison: list[str] = []
+                async with self.session_factory() as db:
+                    poison_result = await db.execute(
+                        select(ConsolidationDeadLetter).where(
+                            ConsolidationDeadLetter.board_id == board_id,
+                            ConsolidationDeadLetter.attempts >= max_attempts,
+                        )
+                    )
+                    poison_rows = list(poison_result.scalars().all())
+                    for row in poison_rows:
+                        skipped_poison.append(row.id)
+                        logger.warning(
+                            "kg.dlq.auto_drain.poison_pill_excluded "
+                            "board_id=%s dlq_id=%s attempts=%d max=%d",
+                            board_id, row.id, row.attempts, max_attempts,
+                            extra={
+                                "event": "kg.dlq.auto_drain.poison_pill_excluded",
+                                "board_id": board_id,
+                                "dlq_id": row.id,
+                                "attempts": row.attempts,
+                                "max_requeue_attempts": max_attempts,
+                            },
+                        )
+                        await db.delete(row)
+                    if poison_rows:
+                        await db.commit()
+
+                # Reprocess the remaining (non-poison) rows
+                async with self.session_factory() as db:
+                    result = await reprocess_dead_letter_rows(db, board_id, limit=50)
+                    await db.commit()
+
+                requeued_count: int = result.get("requeued_count", 0)
+                already_queued_count: int = result.get("already_queued_count", 0)
+
+                self._dlq_drain_last_run[board_id] = now
+                self._dlq_drain_last_requeued[board_id] = requeued_count
+
+                logger.info(
+                    "kg.dlq.auto_drain board_id=%s requeued=%d already_queued=%d skipped=%d",
+                    board_id, requeued_count, already_queued_count, len(skipped_poison),
+                    extra={
+                        "event": "kg.dlq.auto_drain",
+                        "board_id": board_id,
+                        "requeued": requeued_count,
+                        "already_queued": already_queued_count,
+                        "skipped": len(skipped_poison),
+                    },
+                )
+
+        except Exception as exc:
+            logger.warning(
+                "kg.dlq.auto_drain.failed: %s", exc, exc_info=True,
+            )
+
     async def _run_loop(self) -> None:
         try:
             while self._running:
@@ -1073,6 +1486,14 @@ class ConsolidationWorker:
                         logger.info(
                             "kg.consolidation_worker.batch processed=%d", processed,
                         )
+                        # Keep draining while there is real progress. The
+                        # rebuild path waits synchronously for this queue to
+                        # reach zero before promoting a generation; sleeping
+                        # the full heartbeat between successful batches turns
+                        # large deterministic rebuilds into artificial
+                        # timeout failures even though the worker is healthy.
+                        await asyncio.sleep(0)
+                        continue
                 except Exception as exc:
                     logger.error(
                         "kg.consolidation_worker.batch_failed: %s", exc, exc_info=True,
@@ -1093,6 +1514,10 @@ class ConsolidationWorker:
                 except asyncio.TimeoutError:
                     pass
                 evt.clear()
+                # FR5 (spec R2c): opt-in DLQ auto-drain on every heartbeat.
+                # Runs after the wake/timeout so it does not delay queue
+                # draining when there is real consolidation work pending.
+                await self._run_dlq_auto_drain()
         except asyncio.CancelledError:
             pass
 

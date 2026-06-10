@@ -25,7 +25,7 @@ version: "1.0"
 - **Always use `card_type="test"` when the intent is to cover a scenario.**
 - Test cards skip `okto_pulse_submit_task_validation` — moving to `done` is controlled by scenario status.
 - When moving test card to `done`, `okto_pulse_move_card` requires: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification`.
-- **Before moving to `done`**: ALL linked test scenarios must be `passed` or `automated` (not `draft` or `ready`). Call `okto_pulse_update_test_scenario_status` first.
+- **Before moving to `done`**: ALL linked test scenarios must be `passed` or `automated` (not `draft` or `ready`). Call `okto_pulse_update_test_scenario_status` first. If the spec is already `validated` or `done`, this status update is allowed only for a scenario already linked to an executable test card (`started`, `in_progress`, `validation`, or `done`); it records operational evidence and does not unlock semantic spec content.
 
 **Test card naming convention:** Prefix with `[TEST]`:
 Example: `[TEST] E2E — Valid OAuth2 token grants access`
@@ -50,18 +50,25 @@ Pass evidence as a JSON string in the `evidence` parameter of `okto_pulse_update
 
 ```
 1. Create bug card (status: not_started)
-2. Triage & create NEW test scenarios (status: started)
-3. Create test task & link to bug (still started)
+2. Triage the regression path (status: started)
+   ├── Path A: reuse an existing scenario only if it is eligible by lineage
+   │   (same spec and linked to the bug origin task or affected task)
+   └── Path B: if no eligible scenario exists or expected behavior changed,
+       route to amendment, refinement, spec revision, or hotfix spec
+3. Create a fresh test task & link to bug (still started)
    └── okto_pulse_update_card(card_id=bug_id, linked_test_task_ids="<test_task_id>")
 4. Move to in_progress (BLOCKED until step 3 is done)
    └── System validates:
        ✓ At least 1 test task linked
        ✓ Each test task has test_scenario_ids
        ✓ Each test task belongs to the same spec as the bug
-       ✓ Each test scenario was created AFTER the bug card (pre-existing scenarios don't count)
+       ✓ Each referenced scenario is eligible by origin/affected-task lineage
+       ✓ Each test TASK (card) was created AFTER the bug card — pre-existing scenarios DO count as regression coverage; the "after the bug" temporal applies to the test TASK, not the scenario
 5. Fix the bug (in_progress)
 6. Complete (done) — provide conclusion with what was fixed
 ```
+
+Use `okto_pulse_resolve_bug_regression_scenarios` before creating the test card when eligibility is not obvious. Same-spec membership alone is not enough; unrelated or cross-spec scenarios are semantic gap signals, not acceptable shortcuts around the bug regression gate.
 
 ## Coverage Gate Interactions
 

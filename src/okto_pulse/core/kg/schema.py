@@ -11,9 +11,10 @@ from __future__ import annotations
 import gc
 import logging
 import os
-import shutil
 import threading
 import time
+from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import ladybug as kuzu  # type: ignore
@@ -32,6 +33,7 @@ CORRUPT_DB_ERROR_MARKERS = (
     "wal_record.cpp",
     "unreachable_code",
 )
+CAPI_SHARED_LIB_MISSING_MARKER = "could not find lbug c api shared library"
 
 # Provenance metadata required on every rel (KG Pipeline v2 — spec c48a5c33).
 # `layer` is a closed enum validated by the worker/agent and the layer_isolation
@@ -128,6 +130,37 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     )),
 )
 
+
+def stable_rel_type_entries() -> list[dict[str, Any]]:
+    """Return one schema-catalog entry per stable relationship name.
+
+    ``REL_TYPES`` contains single endpoint-pair relationships, while
+    ``MULTI_REL_TYPES`` contains relationship names that support multiple
+    endpoint pairs under one table. Schema introspection is consumed as a
+    catalog of available edge *names*, so multi-pair relationships must appear
+    once with their endpoint pairs attached instead of being omitted.
+    """
+
+    entries: list[dict[str, Any]] = [
+        {"name": rel_name, "from": from_type, "to": to_type}
+        for rel_name, from_type, to_type in REL_TYPES
+    ]
+    entries.extend(
+        {
+            "name": rel_name,
+            "from": "multiple",
+            "to": "multiple",
+            "multi": True,
+            "pairs": [
+                {"from": from_type, "to": to_type}
+                for from_type, to_type in pairs
+            ],
+        }
+        for rel_name, pairs in MULTI_REL_TYPES
+    )
+    return entries
+
+
 # Common attributes shared across every node type — written once in the DDL
 # template below. Embedding is always declared even on types without a vector
 # index so nothing breaks if a future tool queries similarity on them.
@@ -217,8 +250,105 @@ class BoardGraphHandle:
 # Multiple kuzu.Connection instances over a single Database are safe and
 # the supported pattern. The cache is freed by close_board_db_cache /
 # close_all_connections (the rmtree paths).
-_board_db_cache: dict[str, Any] = {}
+_board_db_cache: "OrderedDict[str, Any]" = OrderedDict()
 _board_db_cache_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# Close guard — coordenação leitor-escritor por board (spec 3d89c192, FR-5)
+# ---------------------------------------------------------------------------
+#
+# `close_board_db_cache` fecha o kuzu.Database compartilhado; uma
+# kuzu.Connection viva sobre ele em outra thread é use-after-close em handle
+# C++ (UB: crash/corrupção silenciosa). Este guard registra leitores
+# (BoardConnection.__init__/close) e faz o close legítimo aguardar o dreno.
+# Fail-open nas duas direções para nunca deadlockar: leitor novo espera o
+# close por até _READER_ENTER_TIMEOUT_S e prossegue; o close espera o dreno
+# por até _CLOSE_DRAIN_TIMEOUT_S e prossegue com warning estruturado
+# (kg.close_guard.timeout) — o comportamento antigo é o piso, nunca o teto.
+
+_CLOSE_DRAIN_TIMEOUT_S = 5.0
+_READER_ENTER_TIMEOUT_S = 10.0
+
+
+class _BoardCloseGuard:
+    __slots__ = ("_cond", "_readers", "_closing")
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._readers = 0
+        self._closing = False
+
+    def reader_enter(self) -> None:
+        """Registra um leitor; bloqueia (bounded) enquanto um close drena."""
+        with self._cond:
+            self._cond.wait_for(lambda: not self._closing, _READER_ENTER_TIMEOUT_S)
+            self._readers += 1
+
+    def reader_exit(self) -> None:
+        with self._cond:
+            self._readers = max(0, self._readers - 1)
+            self._cond.notify_all()
+
+    @property
+    def readers(self) -> int:
+        with self._cond:
+            return self._readers
+
+    @contextmanager
+    def closing(self, timeout: float = _CLOSE_DRAIN_TIMEOUT_S):
+        """Janela exclusiva de close: barra leitores novos e drena os ativos.
+
+        Yields ``(drained, stuck_readers)``; com ``drained=False`` o caller
+        prossegue em fail-open e DEVE logar o warning.
+        """
+        with self._cond:
+            self._closing = True
+            drained = self._cond.wait_for(lambda: self._readers == 0, timeout)
+            stuck = self._readers
+        try:
+            yield drained, stuck
+        finally:
+            with self._cond:
+                self._closing = False
+                self._cond.notify_all()
+
+
+_board_close_guards: dict[str, _BoardCloseGuard] = {}
+_board_close_guards_lock = threading.Lock()
+
+
+def _get_close_guard(board_id: str) -> _BoardCloseGuard:
+    guard = _board_close_guards.get(board_id)
+    if guard is not None:
+        return guard
+    with _board_close_guards_lock:
+        guard = _board_close_guards.get(board_id)
+        if guard is None:
+            guard = _BoardCloseGuard()
+            _board_close_guards[board_id] = guard
+        return guard
+
+
+# Cap LRU do cache de Databases abertos (campo 2026-06-10): cada
+# kuzu.Database aloca um buffer pool de até kg_kuzu_buffer_pool_mb (512MB
+# default). Sem o close-por-commit (KGDL.01), TODO board visitado ficava com
+# o Database aberto para sempre — um backfill multi-board acumulou 7+ buffer
+# pools e o processo morreu por exaustão de memória nativa ("No more frame
+# groups can be added to the allocator" + abort silencioso). O cap limita o
+# pico de memória; a eviction LRU drena leitores via close guard antes de
+# fechar. Override via env KG_DB_CACHE_CAP.
+_BOARD_DB_CACHE_CAP_DEFAULT = 4
+
+
+def _board_db_cache_cap() -> int:
+    raw = os.environ.get("KG_DB_CACHE_CAP")
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return _BOARD_DB_CACHE_CAP_DEFAULT
 
 
 def _open_kuzu_db_path_cached(path: Path) -> Any:
@@ -230,14 +360,42 @@ def _open_kuzu_db_path_cached(path: Path) -> Any:
     are trying to avoid). Used by every per-board callsite (BoardConnection
     + bootstrap/migration probes) to guarantee a single OS-level lock per
     board path within the process.
+
+    LRU: acesso move a entrada para o fim; ao exceder o cap, o Database
+    menos-recentemente-usado é fechado (drenando leitores via close guard).
     """
     key = str(path)
-    cached = _board_db_cache.get(key)
-    if cached is not None:
-        return cached
     with _board_db_cache_lock:
         cached = _board_db_cache.get(key)
         if cached is not None:
+            _board_db_cache.move_to_end(key)
+            return cached
+
+    # Evict FORA do cache lock: o drain do close guard pode esperar e não
+    # pode bloquear cache hits de outros boards nesse intervalo. A eviction
+    # é DISCRICIONÁRIA (ao contrário do close legítimo): um board com
+    # leitores ativos é pulado — exceder o cap temporariamente é melhor que
+    # fechar um Database em uso (use-after-close).
+    with _board_db_cache_lock:
+        over = len(_board_db_cache) - _board_db_cache_cap() + 1
+        candidates = list(_board_db_cache.keys())[: max(0, over) + 4] if over > 0 else []
+    evicted = 0
+    needed = max(0, over)
+    for evict_key in candidates:
+        if evicted >= needed:
+            break
+        if _evict_board_db(evict_key):
+            evicted += 1
+    if needed > 0 and evicted < needed:
+        logger.debug(
+            "[KG] _board_db_cache over cap (todos os candidatos LRU com "
+            "leitores ativos) — pico temporário aceito"
+        )
+
+    with _board_db_cache_lock:
+        cached = _board_db_cache.get(key)
+        if cached is not None:
+            _board_db_cache.move_to_end(key)
             return cached
         # Cache miss: call the raw factory directly to avoid recursion.
         db = _open_kuzu_db(path)
@@ -247,6 +405,171 @@ def _open_kuzu_db_path_cached(path: Path) -> Any:
             path, len(_board_db_cache),
         )
         return db
+
+
+def _evict_board_db(key: str) -> bool:
+    """Close and drop one cached Database (LRU eviction path).
+
+    DIFERENTE do close legítimo (``close_board_db_cache``, que precisa
+    fechar e por isso faz fail-open no timeout): a eviction é discricionária
+    e NUNCA fecha sob leitores ativos — se o dreno curto não completa, a
+    eviction é abortada e o caller tenta outra vítima. Retorna True quando
+    o Database foi de fato fechado.
+    """
+    guard = _get_close_guard(Path(key).parent.name)
+    with guard.closing(timeout=0.5) as (drained, _stuck):
+        if not drained:
+            return False
+        with _board_db_cache_lock:
+            db = _board_db_cache.pop(key, None)
+        if db is None:
+            return False
+        logger.info(
+            "kg.db_cache.lru_evicted board=%s cache_cap=%d",
+            Path(key).parent.name, _board_db_cache_cap(),
+            extra={
+                "event": "kg.db_cache.lru_evicted",
+                "board_id": Path(key).parent.name,
+            },
+        )
+        try:
+            db.close()
+        except Exception as exc:
+            logger.warning(
+                "kg.db_cache.close_failed key=%s err=%s", key, exc,
+                extra={"event": "kg.db_cache.close_failed", "key": key},
+            )
+        del db
+    gc.collect()  # Windows: libera handles C++ antes do próximo open
+    return True
+
+
+# Dreno curto do close discricionário da higiene: longo o suficiente para
+# leitores rápidos (queries pontuais) saírem, curto o suficiente para não
+# atrasar o worker quando um scan longo (health/orphan) segura o board.
+_HYGIENE_CLOSE_DRAIN_TIMEOUT_S = 2.0
+
+# Dreno da janela exclusiva do CHECKPOINT (6º crash): só precisa cobrir
+# queries pontuais em voo — leitores longos fazem o checkpoint ser adiado
+# pelo fast-path antes mesmo de abrir a janela.
+_CHECKPOINT_EXCLUSIVE_DRAIN_TIMEOUT_S = 1.0
+
+
+def _execute_checkpoint_unguarded(path: Path) -> None:
+    """Executa CHECKPOINT com conexão crua — APENAS dentro de uma janela
+    exclusiva do close guard (zero leitores). Conexão crua porque um
+    BoardConnection aqui daria deadlock: reader_enter espera o fim da
+    própria janela closing que nos dá a exclusividade."""
+    db = _open_kuzu_db_path_cached(path)
+    conn = kuzu.Connection(db)
+    try:
+        conn.execute("CHECKPOINT")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _close_cached_db_unguarded(board_id: str) -> None:
+    """Fecha o Database cacheado do board SEM abrir janela de guard —
+    APENAS para callers que JÁ estão dentro de uma janela exclusiva.
+    Falha de close propaga (BR-3: o caller converte em step failure)."""
+    key = str(board_kuzu_path(board_id))
+    with _board_db_cache_lock:
+        db = _board_db_cache.pop(key, None)
+    if db is None:
+        return
+    db.close()
+    del db
+    gc.collect()  # Windows: libera handles C++ antes do próximo open
+
+
+def try_close_board_db(
+    board_id: str,
+    *,
+    drain_timeout: float | None = None,
+    fast_path: bool = True,
+) -> bool:
+    """Close DISCRICIONÁRIO do Database do board (higiene de buffer).
+
+    Diferente do close legítimo (``close_board_db_cache``, fail-open no
+    timeout — aceitável só em shutdown/rmtree, quando o handle PRECISA
+    morrer): fechar o Database com um leitor ativo é use-after-close em
+    handle C++ → abort nativo do processo inteiro (campo 2026-06-10, 4º
+    crash: ``kg.close_guard.timeout`` fail-open disparado pela higiene
+    periódica enquanto um health scan lia o board → exit 5). Se o dreno
+    não completa, NADA é fechado e o caller adia a higiene para o próximo
+    commit. Fecha as conexões pooled primeiro (idle no pool = reader no
+    guard). Retorna True quando o Database foi liberado (ou já não estava
+    aberto).
+    """
+    try:
+        from okto_pulse.core.kg.connection_pool import close_board_connection
+    except ImportError:
+        close_board_connection = None  # type: ignore[assignment]
+    if close_board_connection is not None:
+        try:
+            close_board_connection(board_id)
+        except Exception as exc:
+            logger.warning(
+                "kg.hygiene.pool_close_failed board=%s err=%s", board_id, exc,
+                extra={
+                    "event": "kg.hygiene.pool_close_failed",
+                    "board_id": board_id,
+                },
+            )
+
+    key = str(board_kuzu_path(board_id))
+    guard = _get_close_guard(board_id)
+    # Fast-path (review dcea02d): com leitor ativo AGORA, nem abre a janela
+    # de closing — abrir custaria o dreno inteiro (2s) E bloquearia leitores
+    # novos durante a janela, a cada commit re-armado enquanto um scan longo
+    # estiver vivo. O skip custa ~0 e a higiene re-tenta no próximo commit.
+    # Callers que preferem ESPERAR o dreno (ex.: close_reopen_probe do
+    # rebuild) desligam o fast-path e passam um drain_timeout generoso.
+    if fast_path:
+        active = guard.readers
+        if active > 0:
+            logger.info(
+                "kg.hygiene.close_skipped_active_readers board=%s "
+                "stuck_readers=%d — higiene adiada para o próximo commit",
+                board_id, active,
+                extra={
+                    "event": "kg.hygiene.close_skipped_active_readers",
+                    "board_id": board_id,
+                    "stuck_readers": active,
+                },
+            )
+            return False
+    effective_timeout = (
+        _HYGIENE_CLOSE_DRAIN_TIMEOUT_S if drain_timeout is None else drain_timeout
+    )
+    with guard.closing(timeout=effective_timeout) as (drained, stuck):
+        if not drained:
+            logger.warning(
+                "kg.hygiene.close_skipped_active_readers board=%s "
+                "stuck_readers=%d — higiene adiada para o próximo commit",
+                board_id, stuck,
+                extra={
+                    "event": "kg.hygiene.close_skipped_active_readers",
+                    "board_id": board_id,
+                    "stuck_readers": stuck,
+                },
+            )
+            return False
+        with _board_db_cache_lock:
+            db = _board_db_cache.pop(key, None)
+        if db is None:
+            return True
+        # Falha REAL do close propaga (≠ skip por leitor): o caller do
+        # lifecycle converte em step failure → a queue entry não é ACKada
+        # (BR-3 terminal preservada). Estado pós-falha é suspeito demais
+        # para fingir durabilidade.
+        db.close()
+        del db
+    gc.collect()  # Windows: libera handles C++ antes do próximo open
+    return True
 
 
 def _open_kuzu_db_cached(board_id: str, path: Path) -> Any:
@@ -266,10 +589,37 @@ def close_board_db_cache(board_id: str | None = None) -> None:
         else:
             target = str(board_kuzu_path(board_id))
             keys = [target] if target in _board_db_cache else []
-        for key in keys:
-            db = _board_db_cache.pop(key, None)
+
+    closed_any = False
+    for key in keys:
+        # Close guard (spec 3d89c192, FR-5/BR-2): drena leitores ativos do
+        # board antes de fechar o Database compartilhado. O guard é
+        # adquirido FORA do _board_db_cache_lock para não bloquear opens de
+        # outros boards durante o dreno. A chave do cache é o path do
+        # graph.lbug (…/boards/<board_id>/graph.lbug) — o nome do diretório
+        # pai identifica o board.
+        guard_board_id = Path(key).parent.name
+        guard = _get_close_guard(guard_board_id)
+        # timeout passado explicitamente (lookup do módulo em runtime) para
+        # que testes possam encurtá-lo via monkeypatch.
+        with guard.closing(timeout=_CLOSE_DRAIN_TIMEOUT_S) as (drained, stuck):
+            if not drained:
+                logger.warning(
+                    "kg.close_guard.timeout board=%s stuck_readers=%d timeout_s=%.1f "
+                    "(fail-open: fechando com leitores ativos — investigar leitor vazado)",
+                    guard_board_id, stuck, _CLOSE_DRAIN_TIMEOUT_S,
+                    extra={
+                        "event": "kg.close_guard.timeout",
+                        "board_id": guard_board_id,
+                        "stuck_readers": stuck,
+                        "timeout_s": _CLOSE_DRAIN_TIMEOUT_S,
+                    },
+                )
+            with _board_db_cache_lock:
+                db = _board_db_cache.pop(key, None)
             if db is None:
                 continue
+            closed_any = True
             try:
                 db.close()
             except Exception as exc:
@@ -278,8 +628,8 @@ def close_board_db_cache(board_id: str | None = None) -> None:
                     extra={"event": "kg.db_cache.close_failed", "key": key},
                 )
             del db
-        if keys:
-            gc.collect()  # Windows: ensure C++ handles release before next caller
+    if closed_any:
+        gc.collect()  # Windows: ensure C++ handles release before next caller
 
 
 class BoardConnection:
@@ -306,19 +656,32 @@ class BoardConnection:
         self._closed = False
         # Defensive: self-heal missing or partial graphs before we open our
         # own handle. No-op on hot boards (cache hit in
-        # ensure_board_graph_bootstrapped).
+        # ensure_board_graph_bootstrapped). Roda ANTES do reader_enter porque
+        # o bootstrap pode legitimamente fechar o cache deste board
+        # (migração de schema) — registrar o leitor antes causaria um
+        # auto-dreno de 5s em todo cold-open com migração.
         ensure_board_graph_bootstrapped(board_id)
-        path = board_kuzu_path(board_id)
-        logger.debug("[KG] BoardConnection.__init__ board_id=%s path=%s", board_id, path)
-        self.db = _open_kuzu_db_cached(board_id, path)
-        logger.debug("[KG] Kùzu database (cached) for board_id=%s", board_id)
-        self.conn = kuzu.Connection(self.db)  # type: ignore[attr-defined]
-        # The VECTOR extension is connection-scoped in LadybugDB/Kuzu. The
-        # bootstrap path loads it before creating HNSW indexes, but hot boards
-        # skip bootstrap and still open fresh connections for worker commits.
-        # Without this, inserts into indexed tables such as Entity can fail
-        # with "Trying to insert into an index ... extension is not loaded".
-        load_vector_extension(self.conn)
+        # Close guard (spec 3d89c192, FR-5): registra este leitor ANTES de
+        # tocar no cache de Database, para que um close legítimo em curso
+        # bloqueie a entrada (bounded) e nunca entregue um handle prestes a
+        # ser fechado. reader_exit acontece em close().
+        self._close_guard = _get_close_guard(board_id)
+        self._close_guard.reader_enter()
+        try:
+            path = board_kuzu_path(board_id)
+            logger.debug("[KG] BoardConnection.__init__ board_id=%s path=%s", board_id, path)
+            self.db = _open_kuzu_db_cached(board_id, path)
+            logger.debug("[KG] Kùzu database (cached) for board_id=%s", board_id)
+            self.conn = kuzu.Connection(self.db)  # type: ignore[attr-defined]
+            # The VECTOR extension is connection-scoped in LadybugDB/Kuzu. The
+            # bootstrap path loads it before creating HNSW indexes, but hot boards
+            # skip bootstrap and still open fresh connections for worker commits.
+            # Without this, inserts into indexed tables such as Entity can fail
+            # with "Trying to insert into an index ... extension is not loaded".
+            load_vector_extension(self.conn)
+        except BaseException:
+            self._close_guard.reader_exit()
+            raise
         logger.debug("[KG] Kùzu connection created successfully for board_id=%s", board_id)
 
     def __enter__(self) -> tuple[Any, Any]:
@@ -343,8 +706,27 @@ class BoardConnection:
             return
         logger.debug("[KG] BoardConnection.close board_id=%s", self._board_id)
         self._closed = True
+        # File-handle leak fix (test_kg_file_handles::test_close_releases_handles):
+        # `del self.conn` confiava no refcount para destruir o handle C++ —
+        # qualquer QueryResult vivo segurava a Connection (e os handles de
+        # graph.lbug + WAL) indefinidamente. `Connection.close()` libera o
+        # handle nativo deterministicamente, independente de referências
+        # Python remanescentes.
+        try:
+            self.conn.close()
+        except Exception as exc:
+            logger.debug(
+                "[KG] BoardConnection.close conn_close_failed board_id=%s err=%s",
+                self._board_id, exc,
+            )
         try:
             del self.conn
+        except Exception:
+            pass
+        # Close guard (FR-5): leitor sai do registro — idempotente porque
+        # `_closed` barra reentrada deste método.
+        try:
+            self._close_guard.reader_exit()
         except Exception:
             pass
         # NOTE: do NOT close self.db — the Database is shared via the
@@ -371,6 +753,42 @@ def board_kuzu_path(board_id: str) -> Path:
 def _is_ladybug_corruption_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     return any(marker in msg for marker in CORRUPT_DB_ERROR_MARKERS)
+
+
+def _raise_existing_graph_open_failed(
+    *,
+    board_id: str,
+    path: Path,
+    operation: str,
+    exc: BaseException,
+) -> None:
+    """Fail closed when an existing graph cannot be opened.
+
+    A bootstrap/migration probe is not an operator-approved recovery action.
+    Earlier code quarantined the active graph on WAL corruption and then
+    created a fresh empty graph, which made a previously queryable KG appear
+    to vanish. Preserve evidence in place; explicit recovery/rebuild tooling
+    owns any destructive move.
+    """
+    logger.error(
+        "kg.schema.existing_graph_open_failed_preserved "
+        "board=%s operation=%s path=%s err=%s",
+        board_id, operation, path, exc,
+        extra={
+            "event": "kg.schema.existing_graph_open_failed_preserved",
+            "board_id": board_id,
+            "operation": operation,
+            "path": str(path),
+            "error": str(exc),
+        },
+    )
+    raise RuntimeError(
+        "Existing LadybugDB graph could not be opened during "
+        f"{operation}; refusing to auto-bootstrap or purge it. "
+        f"board_id={board_id} path={path}. "
+        "Use the explicit KG Health recovery flow after reviewing the "
+        "quarantine/rebuild report; the current files were preserved."
+    ) from exc
 
 
 def _ladybug_open_error_context(path: Path, exc: BaseException, settings: Any) -> str:
@@ -412,40 +830,78 @@ def _ladybug_open_error_context(path: Path, exc: BaseException, settings: Any) -
     return f"{settings_context} {' '.join(guidance)}"
 
 
-def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[str]:
-    """Delete a board's local LadybugDB graph file and sidecars.
+def _board_quarantine_service():
+    """Build the canonical KGQuarantineService for board graph purges.
 
-    The SQLite application data remains untouched. This is intentionally
-    narrow: remove ``graph.lbug`` plus ``graph.lbug.*`` siblings so the
-    next bootstrap recreates the local graph from the consolidation queue.
+    The scope_roots are the per-board storage root (parent of every
+    board_kuzu_path). The quarantine base_dir lives under the same KG
+    storage root so the operator's recovery tooling is one filesystem
+    away from the evidence.
     """
+    from okto_pulse.core.kg.quarantine import KGQuarantineService
+
+    sample_path = board_kuzu_path("__scope_probe__")
+    storage_root = sample_path.parent.parent  # boards/ root
+    quarantine_base = storage_root.parent  # one level up: KG storage root
+    return KGQuarantineService(
+        base_dir=quarantine_base,
+        scope_roots=[storage_root],
+    )
+
+
+def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[str]:
+    """Quarantine-then-clear a board's local LadybugDB graph file and sidecars.
+
+    KG-01.4 (val_79e6f555 rework): purges of `graph.lbug` and sidecars
+    MUST go through ``KGQuarantineService`` first. The service moves the
+    files into a quarantine directory and writes an auditable manifest
+    BEFORE the originals are gone. Direct unlink/rmtree is gone — if
+    quarantine fails the whole purge is aborted with the evidence
+    preserved at the original path (per FR7 / AC10 / IR ir_f175bc42).
+
+    The returned list is the set of paths that were moved into
+    quarantine, kept for backward compatibility with callers that
+    counted removed entries.
+    """
+    from okto_pulse.core.kg.quarantine import QuarantineError
+
     path = board_kuzu_path(board_id)
     close_board_db_cache(board_id)
-    removed: list[str] = []
     targets: list[Path] = []
     if path.exists():
         targets.append(path)
     if path.parent.exists():
         targets.extend(sorted(path.parent.glob(path.name + ".*")))
 
-    for target in targets:
-        try:
-            if target.is_dir():
-                shutil.rmtree(target, ignore_errors=True)
-            else:
-                target.unlink(missing_ok=True)
-            removed.append(str(target))
-        except Exception as exc:
-            logger.warning(
-                "kg.schema.graph_purge_failed board=%s path=%s reason=%s err=%s",
-                board_id, target, reason, exc,
-                extra={
-                    "event": "kg.schema.graph_purge_failed",
-                    "board_id": board_id,
-                    "path": str(target),
-                    "reason": reason,
-                },
-            )
+    if not targets:
+        return []
+
+    service = _board_quarantine_service()
+    try:
+        response = service.create(
+            board_id=board_id,
+            graph_type="board_graph",
+            affected_paths=[str(t) for t in targets],
+            reason=reason,
+            correlation_ids=[],
+        )
+    except QuarantineError as exc:
+        logger.error(
+            "kg.schema.graph_purge_blocked_quarantine_failed "
+            "board=%s reason=%s code=%s err=%s",
+            board_id, reason, exc.code.value, exc.reason,
+            extra={
+                "event": "kg.schema.graph_purge_blocked_quarantine_failed",
+                "board_id": board_id,
+                "reason": reason,
+                "code": exc.code.value,
+            },
+        )
+        # FR7: refuse the purge so corruption evidence survives.
+        return []
+
+    moved_count = response.files_moved
+    removed_str = [str(t) for t in targets[:moved_count]]
 
     if path.parent.exists() and not any(path.parent.iterdir()):
         try:
@@ -457,18 +913,346 @@ def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[
         _BOOTSTRAPPED_BOARDS.discard(board_id)
     if "_MIGRATED_BOARDS" in globals():
         _MIGRATED_BOARDS.discard(board_id)
-    if removed:
-        logger.warning(
-            "kg.schema.graph_purged board=%s reason=%s removed=%d",
-            board_id, reason, len(removed),
-            extra={
-                "event": "kg.schema.graph_purged",
-                "board_id": board_id,
-                "reason": reason,
-                "removed": removed,
-            },
+
+    logger.warning(
+        "kg.schema.graph_purged board=%s reason=%s removed=%d "
+        "quarantine_id=%s manifest=%s",
+        board_id, reason, moved_count,
+        response.quarantine_id, response.manifest_ref,
+        extra={
+            "event": "kg.schema.graph_purged",
+            "board_id": board_id,
+            "reason": reason,
+            "quarantine_id": response.quarantine_id,
+            "manifest_ref": response.manifest_ref,
+            "files_moved": moved_count,
+        },
+    )
+    return removed_str
+
+
+def _fsync_if_file(path: Path) -> None:
+    if not path.is_file():
+        return
+    # Windows rejects os.fsync() on a read-only descriptor with EBADF. Use
+    # read/write without truncation so the durability step is real but does not
+    # mutate content.
+    with path.open("r+b") as fh:
+        os.fsync(fh.fileno())
+
+
+def _fsync_board_graph_files(board_id: str) -> None:
+    path = board_kuzu_path(board_id)
+    _fsync_if_file(path)
+    for sibling in sorted(path.parent.glob(path.name + ".*")):
+        _fsync_if_file(sibling)
+    # Directory fsync is POSIX-only in practice. Keep it best-effort so
+    # Windows does not fail a valid lifecycle just because directories cannot
+    # be opened as file descriptors there.
+    try:
+        fd = os.open(str(path.parent), os.O_RDONLY)
+    except Exception:
+        return
+    try:
+        try:
+            os.fsync(fd)
+        except OSError:
+            # Windows can allow opening the directory but still reject fsync
+            # on that descriptor. File fsyncs above are the required durable
+            # boundary there; directory fsync remains best-effort.
+            return
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _close_reopen_probe_existing_board_graph(board_id: str) -> tuple[bool, str | None]:
+    """Close process handles, reopen the existing graph, and verify BoardMeta.
+
+    This intentionally bypasses ``ensure_board_graph_bootstrapped``. A
+    lifecycle probe must validate the graph that was just materialized, not
+    auto-create a fresh empty graph if the expected file is missing or
+    unreadable.
+    """
+
+    path = board_kuzu_path(board_id)
+    if not path.exists():
+        return False, f"{GRAPH_DB_FILENAME} missing at {path}"
+
+    # Review dcea02d (F4): o close fail-open fechava o Database com leitores
+    # ativos plausíveis (health scan, projeção da UI) → use-after-close
+    # nativo → SIGSEGV do processo. O probe PRECISA fechar de verdade (é a
+    # prova de durabilidade do rebuild), então espera um dreno generoso; se
+    # um leitor não sair, o probe FALHA explicitamente — rebuild reporta a
+    # causa em vez de arriscar derrubar o servidor inteiro.
+    if not try_close_board_db(board_id, drain_timeout=30.0, fast_path=False):
+        return False, "close_reopen_probe_blocked_by_active_readers"
+    try:
+        db = _open_kuzu_db_path_cached(path)
+        conn = kuzu.Connection(db)
+        try:
+            res = conn.execute(
+                "CALL SHOW_TABLES() WHERE name = 'BoardMeta' RETURN name"
+            )
+            try:
+                has_meta_table = res.has_next()
+            finally:
+                res.close()
+            if not has_meta_table:
+                return False, "BoardMeta table missing after reopen"
+
+            res = conn.execute(
+                "MATCH (m:BoardMeta {board_id: $bid}) RETURN m.schema_version",
+                {"bid": board_id},
+            )
+            try:
+                if not res.has_next():
+                    return False, "BoardMeta row missing after reopen"
+                row = res.get_next()
+                schema_version = row[0] if row else None
+            finally:
+                res.close()
+            if not schema_version:
+                return False, "BoardMeta schema_version empty after reopen"
+            return True, None
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    finally:
+        # Force the next dashboard/API read to prove it can open from disk too,
+        # instead of reusing a probe-created Database object.
+        close_board_db_cache(board_id)
+        if "_BOOTSTRAPPED_BOARDS" in globals():
+            _BOOTSTRAPPED_BOARDS.discard(board_id)
+
+
+def apply_ladybug_lifecycle_step(
+    board_id: str,
+    graph_type: str,
+    step: str,
+):
+    """Production KG safe-write lifecycle adapter for board ``graph.lbug``.
+
+    Earlier REST rebuild wiring used a fake ``LifecycleStepResult(ok=True)``
+    for every step. That allowed rebuild reports to say COMPLETED while the
+    real graph was still only readable through a live process handle. This
+    adapter performs the minimum real boundary checks LadybugDB exposes:
+    close handles to force WAL flush, fsync graph files, and reopen-probe the
+    existing graph without auto-bootstrap.
+    """
+
+    from okto_pulse.core.kg.safe_write_lifecycle import (
+        LifecycleStepResult,
+        STEP_CHECKPOINT,
+        STEP_CLOSE_REOPEN_PROBE,
+        STEP_FLUSH,
+        STEP_FSYNC,
+    )
+
+    if graph_type != "board_graph":
+        return LifecycleStepResult(
+            ok=False,
+            detail=f"unsupported_graph_type={graph_type}",
         )
-    return removed
+
+    path = board_kuzu_path(board_id)
+    try:
+        # Spec 3d89c192 (FR-1/FR-2/FR-3): os steps checkpoint/flush/fsync são
+        # NÃO-DESTRUTIVOS — nenhum deles fecha o Database compartilhado.
+        # Fechar por commit criava a corrida use-after-close com leitores
+        # concorrentes (kg_service no thread pool) e custava
+        # close+gc.collect+reopen por queue entry. A barreira de durabilidade
+        # REAL é o WAL + fsync; o CHECKPOINT é compactação/higiene e — campo
+        # 2026-06-10, 6º crash — NÃO é seguro sob leitura concorrente no
+        # ladybug 0.16.1 (SIGSEGV nativo), por isso roda em janela exclusiva
+        # e é adiado quando há leitor ativo. O caminho destrutivo continua
+        # existindo exclusivamente em STEP_CLOSE_REOPEN_PROBE
+        # (rebuild/recovery).
+        if step == STEP_CHECKPOINT:
+            if not path.exists():
+                return LifecycleStepResult(
+                    ok=False,
+                    detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                )
+            # Higiene periódica do buffer (campo 2026-06-10, 3 crashes): o
+            # Ladybug 0.16 degrada sob CHECKPOINTs sucessivos no MESMO
+            # Database aberto — após algumas centenas de commits o processo
+            # morre por abort nativo no meio do checkpoint ("Buffer manager
+            # exception: No more frame groups..." quando o erro chega a
+            # emergir). A cada K commits o step troca o CHECKPOINT pelo
+            # CLOSE do board (zera o buffer pool + checkpoint implícito do
+            # close — o caminho estável pré-KGDL.01), amortizando o custo do
+            # close em 1/K e ficando ordens de magnitude abaixo do limiar de
+            # crash observado (~250-500 checkpoints).
+            if _bump_checkpoint_counter_and_check_close(board_id):
+                # Close DISCRICIONÁRIO (4º crash em campo): o caminho
+                # fail-open de close_all_connections fechava o Database com
+                # um health scan lendo o board → use-after-close nativo →
+                # abort do processo. Com leitor ativo a higiene é ADIADA
+                # (contador re-armado: o próximo commit tenta de novo) e
+                # este commit faz o CHECKPOINT normal para durabilidade.
+                if try_close_board_db(board_id):
+                    if not path.exists():
+                        return LifecycleStepResult(
+                            ok=False,
+                            detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                        )
+                    return LifecycleStepResult(ok=True)
+                _rearm_checkpoint_counter(board_id)
+            # CHECKPOINT exige EXCLUSIVIDADE (6º crash, faulthandler:
+            # CHECKPOINT em thread do worker × outbox do discovery lendo
+            # embeddings no MESMO Database → SIGSEGV nativo). A premissa do
+            # KGDL.01 ("CHECKPOINT seguro sob leitura concorrente ativa no
+            # ladybug 0.16.1") é FALSA em campo. Com leitor ativo o
+            # CHECKPOINT é ADIADO — o commit já é durável via WAL (fsync no
+            # STEP_FSYNC); a compactação re-tenta nos commits seguintes e
+            # sempre encontra janela (TTL pós-scan garante 300s sem scan).
+            guard = _get_close_guard(board_id)
+            if guard.readers > 0:
+                logger.info(
+                    "kg.lifecycle.checkpoint_skipped_active_readers board=%s "
+                    "readers=%d — checkpoint adiado (durabilidade via WAL)",
+                    board_id, guard.readers,
+                    extra={
+                        "event": "kg.lifecycle.checkpoint_skipped_active_readers",
+                        "board_id": board_id,
+                    },
+                )
+                return LifecycleStepResult(ok=True)
+            with guard.closing(timeout=_CHECKPOINT_EXCLUSIVE_DRAIN_TIMEOUT_S) as (
+                drained,
+                stuck,
+            ):
+                if not drained:
+                    logger.info(
+                        "kg.lifecycle.checkpoint_skipped_active_readers "
+                        "board=%s readers=%d — checkpoint adiado "
+                        "(durabilidade via WAL)",
+                        board_id, stuck,
+                        extra={
+                            "event": "kg.lifecycle.checkpoint_skipped_active_readers",
+                            "board_id": board_id,
+                        },
+                    )
+                    return LifecycleStepResult(ok=True)
+                try:
+                    _execute_checkpoint_unguarded(path)
+                except Exception as exc:
+                    # Válvula de escape: CHECKPOINT falhou (ex.: buffer
+                    # exausto) → fecha o Database (libera o buffer pool
+                    # inteiro + flush via close). Já estamos DENTRO da
+                    # janela exclusiva (zero leitores), então o close
+                    # direto é seguro. Falha REAL do close propaga →
+                    # step falha → queue entry não ACKada (BR-3).
+                    logger.warning(
+                        "kg.lifecycle.checkpoint_statement_failed board=%s "
+                        "err=%s — fallback: close do Database (flush via "
+                        "close)",
+                        board_id, exc,
+                        extra={
+                            "event": "kg.lifecycle.checkpoint_statement_failed",
+                            "board_id": board_id,
+                        },
+                    )
+                    _reset_checkpoint_counter(board_id)
+                    _close_cached_db_unguarded(board_id)
+                    if not path.exists():
+                        return LifecycleStepResult(
+                            ok=False,
+                            detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                        )
+                    return LifecycleStepResult(ok=True)
+            return LifecycleStepResult(ok=True)
+
+        if step == STEP_FLUSH:
+            # FR-2: verificação não-destrutiva. A durabilidade do WAL é
+            # responsabilidade do CHECKPOINT (FR-1); aqui só confirmamos que
+            # o arquivo principal continua presente.
+            if not path.exists():
+                return LifecycleStepResult(
+                    ok=False,
+                    detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                )
+            return LifecycleStepResult(ok=True)
+
+        if step == STEP_FSYNC:
+            # FR-3: fsync dos arquivos do grafo com o Database aberto — abrir
+            # handles de leitura para fsync não exige soltar o lock do Kùzu.
+            if not path.exists():
+                return LifecycleStepResult(
+                    ok=False,
+                    detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                )
+            _fsync_board_graph_files(board_id)
+            return LifecycleStepResult(ok=True)
+
+        if step == STEP_CLOSE_REOPEN_PROBE:
+            ok, detail = _close_reopen_probe_existing_board_graph(board_id)
+            return LifecycleStepResult(ok=ok, detail=detail)
+
+        return LifecycleStepResult(ok=False, detail=f"unknown_step={step}")
+    except Exception as exc:
+        return LifecycleStepResult(
+            ok=False,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def _is_ladybug_capi_shared_lib_missing(exc: BaseException) -> bool:
+    return CAPI_SHARED_LIB_MISSING_MARKER in str(exc).lower()
+
+
+def _ladybug_pybind_available() -> bool:
+    try:
+        import ladybug._lbug  # type: ignore  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def _open_ladybug_database_forced_pybind(
+    kuzu_module: Any,
+    path: str,
+    *,
+    buffer_pool_size: int,
+    max_db_size: int,
+) -> Any:
+    """Open LadybugDB through pybind when the C-API shim is unavailable.
+
+    Some desktop launches inherit ``LBUG_PYTHON_BACKEND=capi`` or hit
+    Ladybug's C-API fallback even though the bundled ``_lbug`` pybind
+    extension is present. The C-API shim needs an extra shared library that
+    the wheel does not install on Windows. Treat that as a backend selection
+    issue, not as a graph corruption signal.
+    """
+
+    previous_backend = os.environ.get("LBUG_PYTHON_BACKEND")
+    os.environ["LBUG_PYTHON_BACKEND"] = "pybind"
+    try:
+        try:
+            return kuzu_module.Database(
+                path,
+                buffer_pool_size=buffer_pool_size,
+                max_db_size=max_db_size,
+                backend="pybind",
+            )
+        except TypeError:
+            return kuzu_module.Database(
+                path,
+                buffer_pool_size=buffer_pool_size,
+                max_db_size=max_db_size,
+            )
+    finally:
+        if previous_backend is None:
+            os.environ.pop("LBUG_PYTHON_BACKEND", None)
+        else:
+            os.environ["LBUG_PYTHON_BACKEND"] = previous_backend
 
 
 def _open_kuzu_db(path: Path):
@@ -511,16 +1295,59 @@ def _open_kuzu_db(path: Path):
     last_exc: BaseException | None = None
     for attempt in range(1, 6):
         try:
-            db = kuzu.Database(
-                str(path),
-                buffer_pool_size=bp,
-                max_db_size=mds,
-            )
+            db = kuzu.Database(str(path), buffer_pool_size=bp, max_db_size=mds)
             logger.debug("[KG] kuzu.Database() created successfully for path=%s", path)
             return db
         except Exception as e:
+            if _is_ladybug_capi_shared_lib_missing(e) and _ladybug_pybind_available():
+                try:
+                    logger.warning(
+                        "kg.db_open.capi_missing_retry_pybind path=%s attempt=%d/5 err=%s",
+                        path,
+                        attempt,
+                        e,
+                        extra={
+                            "event": "kg.db_open.capi_missing_retry_pybind",
+                            "path": str(path),
+                            "attempt": attempt,
+                        },
+                    )
+                    db = _open_ladybug_database_forced_pybind(
+                        kuzu,
+                        str(path),
+                        buffer_pool_size=bp,
+                        max_db_size=mds,
+                    )
+                    logger.debug(
+                        "[KG] kuzu.Database() created successfully with pybind backend for path=%s",
+                        path,
+                    )
+                    return db
+                except Exception as retry_exc:
+                    e = retry_exc
             last_exc = e
             msg = str(e)
+            # Auto-recovery (campo 2026-06-10): crash no MEIO de um checkpoint
+            # deixa sidecars órfãos (graph.lbug.shadow vazio +
+            # graph.lbug.wal.checkpoint) que fazem o replay do Ladybug abortar
+            # com UNREACHABLE_CODE em wal_record.cpp — com o main file 100%
+            # íntegro (confirmado em campo: 3926 nodes recuperados ao remover
+            # os sidecars). Quarentena os sidecars (preserva evidência; NUNCA
+            # toca o main file nem um .wal principal) e re-tenta uma vez.
+            if (
+                attempt < 5
+                and _is_ladybug_corruption_error(e)
+                and _quarantine_interrupted_checkpoint_sidecars(path)
+            ):
+                logger.warning(
+                    "kg.db_open.interrupted_checkpoint_recovered path=%s err=%s",
+                    path, e,
+                    extra={
+                        "event": "kg.db_open.interrupted_checkpoint_recovered",
+                        "path": str(path),
+                    },
+                )
+                continue
             is_lock_contention = "Could not set lock" in msg or "lock contention" in msg.lower()
             if is_lock_contention and attempt < 5:
                 sleep_s = 0.2 * (2 ** (attempt - 1))
@@ -556,6 +1383,103 @@ def _open_kuzu_db(path: Path):
         "or call MCP tool `okto_pulse_kg_migrate_schema`; "
         "(3) corrupted db file."
     ) from e
+
+
+# Contador de checkpoints por board para a higiene periódica do buffer
+# (a cada K commits o STEP_CHECKPOINT vira CLOSE). Override via env
+# KG_CHECKPOINT_CLOSE_INTERVAL.
+_CHECKPOINT_CLOSE_INTERVAL_DEFAULT = 10
+_checkpoint_counters: dict[str, int] = {}
+_checkpoint_counters_lock = threading.Lock()
+
+
+def _checkpoint_close_interval() -> int:
+    raw = os.environ.get("KG_CHECKPOINT_CLOSE_INTERVAL")
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return _CHECKPOINT_CLOSE_INTERVAL_DEFAULT
+
+
+def _bump_checkpoint_counter_and_check_close(board_id: str) -> bool:
+    """Incrementa o contador do board; True quando é a vez do CLOSE."""
+    with _checkpoint_counters_lock:
+        n = _checkpoint_counters.get(board_id, 0) + 1
+        if n >= _checkpoint_close_interval():
+            _checkpoint_counters[board_id] = 0
+            return True
+        _checkpoint_counters[board_id] = n
+        return False
+
+
+def _reset_checkpoint_counter(board_id: str) -> None:
+    with _checkpoint_counters_lock:
+        _checkpoint_counters[board_id] = 0
+
+
+def _rearm_checkpoint_counter(board_id: str) -> None:
+    """Deixa o contador a 1 bump do close — higiene adiada por leitor ativo
+    re-tenta no commit seguinte em vez de esperar mais K commits."""
+    with _checkpoint_counters_lock:
+        _checkpoint_counters[board_id] = _checkpoint_close_interval() - 1
+
+
+def _quarantine_interrupted_checkpoint_sidecars(path: Path) -> bool:
+    """Move órfãos de checkpoint interrompido para a quarentena.
+
+    O shadow é a área de trabalho do checkpoint EM ANDAMENTO — o main file
+    só é substituído atomicamente na conclusão. Logo, quando a abertura
+    falha com marcador de corrupção e existem ``<graph>.shadow`` /
+    ``<graph>.wal.checkpoint`` órfãos, o main é o estado autoritativo e os
+    sidecars são lixo do checkpoint que não completou (confirmado DUAS
+    vezes em campo 2026-06-10: shadow vazio e shadow de 283KB — main
+    íntegro com 3926/3929 nodes em ambos). Os sidecars vão para a
+    quarentena (nada é destruído); o main e um eventual ``<graph>.wal``
+    principal NUNCA são tocados (o .wal pode conter commits legítimos
+    não-checkpointed). Concorrência: outro processo segurando o grafo
+    falharia com lock contention, não com marcador de corrupção — este
+    caminho só roda quando não há dono vivo.
+
+    Retorna True quando moveu algo (o caller re-tenta a abertura).
+    """
+    shadow = path.parent / (path.name + ".shadow")
+    wal_checkpoint = path.parent / (path.name + ".wal.checkpoint")
+    movable: list[Path] = []
+    if shadow.exists():
+        movable.append(shadow)
+    if wal_checkpoint.exists():
+        movable.append(wal_checkpoint)
+    if not movable:
+        return False
+
+    quarantine_dir = (
+        path.parents[2]
+        / "quarantine"
+        / f"interrupted-checkpoint-{path.parent.name}-{_now_iso().replace(':', '').replace('.', '')}"
+    )
+    try:
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        for f in movable:
+            f.rename(quarantine_dir / f.name)
+        (quarantine_dir / "manifest.txt").write_text(
+            "Sidecars orfaos de checkpoint interrompido movidos automaticamente "
+            f"para destravar a abertura de {path}. Main file preservado no lugar. "
+            f"Arquivos: {', '.join(f.name for f in movable)}.",
+            encoding="utf-8",
+        )
+        return True
+    except OSError as exc:
+        logger.warning(
+            "kg.db_open.sidecar_quarantine_failed path=%s err=%s",
+            path, exc,
+            extra={
+                "event": "kg.db_open.sidecar_quarantine_failed",
+                "path": str(path),
+            },
+        )
+        return False
 
 
 def verify_kuzu_db_health(board_id: str) -> dict[str, Any]:
@@ -1111,10 +2035,12 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     try:
         db = _open_kuzu_db_path_cached(path)
     except Exception as exc:
-        if not _is_ladybug_corruption_error(exc):
-            raise
-        purge_board_graph_storage(board_id, reason="corrupt_open_during_bootstrap")
-        db = _open_kuzu_db_path_cached(path)
+        _raise_existing_graph_open_failed(
+            board_id=board_id,
+            path=path,
+            operation="schema_migration_open",
+            exc=exc,
+        )
     conn = kuzu.Connection(db)
     try:
         for node_type in NODE_TYPES:
@@ -1648,6 +2574,24 @@ def bootstrap_board_graph(board_id: str) -> BoardGraphHandle:
         ) from exc
 
     path = board_kuzu_path(board_id)
+    # Sinalização forense (2026-06-10): criar um grafo NOVO para um board é
+    # normal no primeiro uso, mas quando o arquivo anterior foi removido por
+    # fora (deleção manual durante troubleshooting, por exemplo) este
+    # bootstrap recriava um grafo VAZIO silenciosamente — o health então via
+    # "empty_after_materialized_history" e o board entrava em
+    # recovery_needed sem nenhuma pista no log de QUANDO o conteúdo sumiu.
+    # O warning abaixo é a pista.
+    if not path.exists():
+        logger.warning(
+            "kg.bootstrap.fresh_graph_created board=%s path=%s "
+            "(se um grafo anterior existia e foi removido manualmente, "
+            "re-materialize via historical consolidation/rebuild)",
+            board_id, path,
+            extra={
+                "event": "kg.bootstrap.fresh_graph_created",
+                "board_id": board_id,
+            },
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
 
     db = _open_kuzu_db_path_cached(path)
@@ -1744,23 +2688,12 @@ def _graph_needs_bootstrap(board_id: str) -> bool:
             return False
         return True
     except Exception as exc:
-        if _is_ladybug_corruption_error(exc):
-            logger.warning(
-                "kg.schema.corrupt_graph_detected board=%s path=%s err=%s",
-                board_id, path, exc,
-                extra={
-                    "event": "kg.schema.corrupt_graph_detected",
-                    "board_id": board_id,
-                    "path": str(path),
-                },
-            )
-            purge_board_graph_storage(board_id, reason="corrupt_bootstrap_probe")
-            return True
-        logger.debug(
-            "kg.schema.bootstrap_probe_failed board=%s err=%s — will bootstrap",
-            board_id, exc,
+        _raise_existing_graph_open_failed(
+            board_id=board_id,
+            path=path,
+            operation="bootstrap_probe",
+            exc=exc,
         )
-        return True
 
 
 def ensure_board_graph_bootstrapped(board_id: str) -> None:

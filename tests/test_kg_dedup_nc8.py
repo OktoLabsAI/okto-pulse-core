@@ -63,26 +63,43 @@ async def _drive_one_session(
     artifact_ref: str,
     title: str,
     content: str = "",
-    agent_id: str = "agent-nc8-test",
+    agent_id: str = "system:layer1_worker",
 ):
-    """Run one begin → propose → commit cycle for a single Entity candidate.
+    """Run one begin -> propose -> commit cycle for one Entity candidate.
 
     Returns the CommitConsolidationResponse so callers can assert on
     `nodes_added` and the kuzu node id mappings.
+
+    The zero-orphan guard requires structured Entity nodes to be attached to a
+    source/root entity. NC-8 is a deterministic dedup test, so the fixture uses
+    the allowlisted technical root and adds an explicit belongs_to edge instead
+    of creating a standalone Entity.
     """
     from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
         begin_consolidation,
         commit_consolidation,
         propose_reconciliation,
     )
     from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
         BeginConsolidationRequest,
         CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
         KGNodeType,
         NodeCandidate,
         ProposeReconciliationRequest,
     )
 
+    root_cand = NodeCandidate(
+        candidate_id="nc8_technical_root",
+        node_type=KGNodeType.ENTITY,
+        title="NC-8 technical root",
+        content="Allowlisted deterministic source root for NC-8 tests.",
+        source_artifact_ref="tech_entities.yml",
+        source_confidence=1.0,
+    )
     cand = NodeCandidate(
         candidate_id=f"nc8_entity_{uuid.uuid4().hex[:8]}",
         node_type=KGNodeType.ENTITY,
@@ -97,10 +114,23 @@ async def _drive_one_session(
             artifact_type="spec",
             artifact_id=artifact_ref.split(":", 1)[1],
             raw_content=f"NC-8 dedup test — {title}",
-            deterministic_candidates=[cand],
+            deterministic_candidates=[root_cand, cand],
         ),
         agent_id=agent_id,
         db=None,
+    )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id=f"edge_{cand.candidate_id}_belongs_to_root",
+                edge_type=KGEdgeType.BELONGS_TO,
+                from_candidate_id=cand.candidate_id,
+                to_candidate_id=root_cand.candidate_id,
+                confidence=1.0,
+            ),
+        ),
+        agent_id=agent_id,
     )
     await propose_reconciliation(
         ProposeReconciliationRequest(session_id=begin.session_id),
@@ -218,6 +248,10 @@ async def _drive_spec_worker_session(
         AddEdgeCandidateRequest,
         BeginConsolidationRequest,
         CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
+        KGNodeType,
+        NodeCandidate,
         ProposeReconciliationRequest,
     )
     from okto_pulse.core.kg.workers.consolidation import (
@@ -234,7 +268,15 @@ async def _drive_spec_worker_session(
             artifact_id=spec_payload["id"],
             raw_content=worker_result.raw_content,
             deterministic_candidates=[
-                _worker_node_to_candidate(node) for node in worker_result.nodes
+                NodeCandidate(
+                    candidate_id="kgdet_technical_root",
+                    node_type=KGNodeType.ENTITY,
+                    title="KGDET technical root",
+                    content="Allowlisted deterministic source root for KGDET tests.",
+                    source_artifact_ref="tech_entities.yml",
+                    source_confidence=1.0,
+                ),
+                *[_worker_node_to_candidate(node) for node in worker_result.nodes],
             ],
         ),
         agent_id=agent_id,
@@ -248,6 +290,22 @@ async def _drive_spec_worker_session(
             ),
             agent_id=agent_id,
         )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id="kgdet_spec_belongs_to_technical_root",
+                edge_type=KGEdgeType.BELONGS_TO,
+                from_candidate_id=f"spec_{spec_payload['id'][:8]}_entity",
+                to_candidate_id="kgdet_technical_root",
+                confidence=1.0,
+                layer="deterministic",
+                rule_id="belongs_to/kgdet_fixture@v1",
+                created_by="worker_layer1",
+            ),
+        ),
+        agent_id=agent_id,
+    )
     await propose_reconciliation(
         ProposeReconciliationRequest(session_id=begin.session_id),
         agent_id=agent_id,
@@ -379,6 +437,187 @@ def _query_one(board_id: str, source_artifact_ref: str):
                 res.close()
             except Exception:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# TC-3 (spec eca49df9, AC6 + AC7) — merge contado/auditado + soma de counters
+# ---------------------------------------------------------------------------
+
+
+async def test_tc3_reconsolidation_counts_and_audits_merge(
+    dedup_tempdir, monkeypatch
+):
+    """AC6: NC-8 dedup-reuse on re-consolidation increments nodes_merged and
+    emits a merge audit item in the response (no silent drop, no KuzuWriteRecord).
+    AC7: the counters sum closes as processed_candidates. Structural Entity
+    dedup stays intact (AC8 invariant)."""
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}"
+
+    commit1 = await _drive_one_session(
+        session_factory, board_id, artifact_ref, "[TC-3] titulo original", content="v1"
+    )
+    assert commit1.nodes_added >= 1
+    assert commit1.nodes_merged == 0  # first commit is a create, not a merge
+
+    # Re-consolidate the SAME ref with changed content -> NC-8 dedup-reuse.
+    commit2 = await _drive_one_session(
+        session_factory, board_id, artifact_ref, "[TC-3] titulo atualizado", content="v2"
+    )
+
+    # AC6: merge counted + audited, not a silent nodes_updated:0/superseded:0.
+    assert commit2.nodes_merged >= 1
+    assert commit2.nodes_added == 0
+    artifact_merge_items = [
+        item
+        for item in commit2.merge_audit_items
+        if item["source_artifact_ref"] == artifact_ref
+    ]
+    assert len(artifact_merge_items) == 1
+    item = artifact_merge_items[0]
+    assert item["operation"] == "MERGE"
+    assert item["source_artifact_ref"] == artifact_ref
+    assert item["node_type"] == "Entity"
+    assert item["reused_node_id"]  # the prior node's id was reused, not re-created
+
+    # AC7: the sum closes.
+    assert commit2.processed_candidates == (
+        commit2.nodes_added
+        + commit2.nodes_updated
+        + commit2.nodes_merged
+        + commit2.nodes_superseded
+        + commit2.nodes_noop
+    )
+    assert commit2.processed_candidates >= 1
+
+    # AC8 invariant: structural Entity dedup intact — still exactly 1 node.
+    assert _count_entities(board_id, artifact_ref) == 1
+
+
+# ---------------------------------------------------------------------------
+# TC-3 (spec eca49df9, FR6 + TR6) — op==UPDATE usa update_node (nodes_updated)
+# ---------------------------------------------------------------------------
+
+
+async def test_tc3_update_op_increments_nodes_updated_not_merged(
+    dedup_tempdir, monkeypatch
+):
+    """FR6/TR6 regression guard: a non-curated op==UPDATE candidate with a
+    target_node_id routes through orch.update_node, so nodes_updated == 1 and
+    nodes_merged == 0 (UPDATE is not miscounted as MERGE), and the counters sum
+    closes. Fails before IMPL-3 rework (no update_node call site)."""
+    from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
+        begin_consolidation,
+        commit_consolidation,
+        propose_reconciliation,
+    )
+    from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
+        BeginConsolidationRequest,
+        CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
+        KGNodeType,
+        NodeCandidate,
+        ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
+    )
+
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}"
+
+    # Session 1: create the target node.
+    commit1 = await _drive_one_session(
+        session_factory, board_id, artifact_ref, "[TC-3 UPDATE] original", content="v1"
+    )
+    assert commit1.nodes_added >= 1
+    existing_id = _query_one(board_id, artifact_ref)["id"]
+
+    # Session 2: force op==UPDATE on the candidate via agent_overrides.
+    cand_id = "nc8_update_cand"
+    root_cand = NodeCandidate(
+        candidate_id="nc8_update_technical_root",
+        node_type=KGNodeType.ENTITY,
+        title="NC-8 UPDATE technical root",
+        content="Allowlisted deterministic source root for forced UPDATE test.",
+        source_artifact_ref="tech_entities.yml",
+        source_confidence=1.0,
+    )
+    cand = NodeCandidate(
+        candidate_id=cand_id,
+        node_type=KGNodeType.ENTITY,
+        title="[TC-3 UPDATE] revised",
+        content="v2",
+        source_artifact_ref=artifact_ref,
+        source_confidence=0.95,
+    )
+    begin = await begin_consolidation(
+        BeginConsolidationRequest(
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=spec_id,
+            raw_content="forced UPDATE content v2",
+            deterministic_candidates=[root_cand, cand],
+        ),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id="edge_nc8_update_belongs_to_root",
+                edge_type=KGEdgeType.BELONGS_TO,
+                from_candidate_id=cand_id,
+                to_candidate_id=root_cand.candidate_id,
+                confidence=1.0,
+            ),
+        ),
+        agent_id="system:layer1_worker",
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    override = ReconciliationHint(
+        candidate_id=cand_id,
+        operation=ReconciliationOperation.UPDATE,
+        target_node_id=existing_id,
+        confidence=0.9,  # < 1.0 -> not an authorship override; node is not curated
+        reason="test forces in-place UPDATE",
+    )
+    async with session_factory() as db:
+        commit2 = await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=begin.session_id,
+                summary_text="forced update",
+                agent_overrides={cand_id: override},
+            ),
+            agent_id="system:layer1_worker",
+            db=db,
+        )
+
+    assert commit2.nodes_updated == 1  # in-place UPDATE via update_node
+    artifact_merge_items = [
+        item
+        for item in commit2.merge_audit_items
+        if item["source_artifact_ref"] == artifact_ref
+    ]
+    assert artifact_merge_items == []  # target UPDATE was NOT miscounted as MERGE
+    assert commit2.nodes_added == 0    # NOT a CREATE
+    assert commit2.processed_candidates == (
+        commit2.nodes_added
+        + commit2.nodes_updated
+        + commit2.nodes_merged
+        + commit2.nodes_superseded
+        + commit2.nodes_noop
+    )
+    # In-place: still exactly one Entity, with the updated title.
+    assert _count_entities(board_id, artifact_ref) == 1
+    assert _query_one(board_id, artifact_ref)["title"] == "[TC-3 UPDATE] revised"
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +801,14 @@ async def test_ts8_dedup_reused_log_emitted(dedup_tempdir, monkeypatch):
         "expected kg.consolidation.dedup_reused log on re-consolidation; "
         "no matching records captured"
     )
-    rec = captured[0]
+    artifact_records = [
+        rec for rec in captured if rec.source_artifact_ref == artifact_ref
+    ]
+    assert artifact_records, (
+        "expected a dedup_reused log for the artifact Entity; captured only "
+        f"{[rec.source_artifact_ref for rec in captured]}"
+    )
+    rec = artifact_records[0]
     assert rec.node_type == "Entity"
     assert rec.source_artifact_ref == artifact_ref
     assert rec.was_curated_preserved is False
@@ -618,12 +864,12 @@ async def test_ts7_tech_entity_dedup_cross_spec(dedup_tempdir, monkeypatch):
                 raw_content=f"NC-8 TS7 — spec {spec_id} mentions Python",
                 deterministic_candidates=[cand],
             ),
-            agent_id="agent-nc8-ts7",
+            agent_id="system:layer1_worker",
             db=None,
         )
         await propose_reconciliation(
             ProposeReconciliationRequest(session_id=begin.session_id),
-            agent_id="agent-nc8-ts7",
+            agent_id="system:layer1_worker",
             db=None,
         )
         async with session_factory() as db:
@@ -632,7 +878,7 @@ async def test_ts7_tech_entity_dedup_cross_spec(dedup_tempdir, monkeypatch):
                     session_id=begin.session_id,
                     summary_text="NC-8 TS7 Python mention",
                 ),
-                agent_id="agent-nc8-ts7",
+                agent_id="system:layer1_worker",
                 db=db,
             )
 

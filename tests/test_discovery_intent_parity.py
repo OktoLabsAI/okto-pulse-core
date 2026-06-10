@@ -21,11 +21,17 @@ service calls the executor makes — we're validating wiring, not KG data.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from okto_pulse.core.discovery_params_schema import (
+    SUPPORTED_DISCOVERY_PARAM_TYPES,
+    normalize_discovery_params_schema,
+)
+from okto_pulse.core.models.schemas import DiscoveryIntentResponse
 from okto_pulse.core.services import discovery_executor
 
 
@@ -34,7 +40,7 @@ from okto_pulse.core.services import discovery_executor
 # is intentional: the test has to fail if database.py diverges.
 SEED_INTENTS: list[dict[str, Any]] = [
     {"name": "coverage_for_fr", "tool_binding": "okto_pulse_list_test_scenarios",
-     "params_schema": {"fr_id": {"required": True}}},
+     "params_schema": {"fr_id": {"type": "spec_child_selector", "required": True, "label": "Functional requirement", "child_types": ["functional_requirement"]}}},
     {"name": "uncovered_requirements", "tool_binding": "okto_pulse_list_uncovered_requirements",
      "params_schema": None},
     {"name": "scenarios_without_tasks", "tool_binding": "okto_pulse_list_test_scenarios",
@@ -44,14 +50,18 @@ SEED_INTENTS: list[dict[str, Any]] = [
     {"name": "contradictions_in_kg", "tool_binding": "okto_pulse_kg_find_contradictions",
      "params_schema": None},
     {"name": "decisions_by_topic", "tool_binding": "okto_pulse_kg_find_similar_decisions",
-     "params_schema": {"topic": {"required": True}}},
+     "params_schema": {"topic": {"type": "text", "required": True, "label": "Topic / phrase"}}},
     {"name": "blockers_current_sprint", "tool_binding": "okto_pulse_list_blockers",
      "params_schema": None},
     {"name": "dependencies_of_card", "tool_binding": "okto_pulse_get_card_dependencies",
-     "params_schema": {"card_id": {"required": True}}},
+     "params_schema": {"card_id": {"type": "entity_selector", "entity_type": "card", "required": True, "label": "Card"}}},
     {"name": "similar_nodes_to_text", "tool_binding": "okto_pulse_kg_query_natural",
-     "params_schema": {"query": {"required": True}}},
+     "params_schema": {"query": {"type": "text", "required": True, "label": "Phrase"}}},
     {"name": "learning_from_bugs", "tool_binding": "okto_pulse_kg_get_learning_from_bugs",
+     "params_schema": None},
+    {"name": "learnings_by_relevance", "tool_binding": "okto_pulse_kg_list_learnings_by_relevance",
+     "params_schema": None},
+    {"name": "key_decisions", "tool_binding": "okto_pulse_kg_list_key_decisions",
      "params_schema": None},
     {"name": "recent_activity", "tool_binding": "okto_pulse_get_activity_log",
      "params_schema": None},
@@ -75,6 +85,101 @@ def _make_intent(row: dict[str, Any]) -> SimpleNamespace:
         tool_binding=row["tool_binding"],
         params_schema=row["params_schema"],
     )
+
+
+def test_legacy_params_schema_missing_type_defaults_to_text():
+    schema = {"topic": {"required": True, "label": "Topic / phrase"}}
+
+    normalized = normalize_discovery_params_schema(schema)
+
+    assert normalized == {
+        "topic": {"type": "text", "required": True, "label": "Topic / phrase"}
+    }
+    assert "type" not in schema["topic"], "normalization must not mutate input"
+
+
+def test_discovery_intent_response_normalizes_legacy_params_schema():
+    now = datetime.now(UTC)
+    intent = SimpleNamespace(
+        id="intent-1",
+        name="legacy_text",
+        label="Legacy Text",
+        description=None,
+        category="tests",
+        tool_binding="okto_pulse_kg_query_natural",
+        params_schema={"query": {"required": True}},
+        renderer="table",
+        min_permission="kg.query.global",
+        active=True,
+        is_seed=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+    response = DiscoveryIntentResponse.model_validate(intent)
+
+    assert response.params_schema == {"query": {"type": "text", "required": True}}
+
+
+@pytest.mark.asyncio
+async def test_legacy_text_param_without_type_executes_existing_binding(monkeypatch):
+    captured: dict[str, Any] = {}
+
+    async def fake_query_natural(board_id: str, params: dict[str, Any]) -> dict[str, Any]:
+        captured["board_id"] = board_id
+        captured["params"] = params
+        return {
+            "rows": [],
+            "columns": [],
+            "total": 0,
+            "tool_binding": "okto_pulse_kg_query_natural",
+            "params_echo": params,
+            "execution": "real_tool",
+        }
+
+    monkeypatch.setattr(discovery_executor, "_exec_query_natural", fake_query_natural)
+    intent = SimpleNamespace(
+        id="legacy-query",
+        name="similar_nodes_to_text",
+        tool_binding="okto_pulse_kg_query_natural",
+        params_schema={"query": {"required": True, "label": "Phrase"}},
+    )
+
+    out = await discovery_executor.execute_intent(
+        db=None,
+        user_id="user-1",
+        board_id="board-1",
+        intent=intent,
+        params={"query": "policy boundary"},
+    )
+
+    assert out["execution"] == "real_tool"
+    assert captured == {
+        "board_id": "board-1",
+        "params": {"query": "policy boundary"},
+    }
+
+
+def test_seed_params_schema_uses_supported_types():
+    for row in SEED_INTENTS:
+        normalized = normalize_discovery_params_schema(row["params_schema"])
+        for param_name, meta in (normalized or {}).items():
+            assert meta["type"] in SUPPORTED_DISCOVERY_PARAM_TYPES, (
+                f"{row['name']}.{param_name} declares unsupported "
+                f"Discovery param type {meta['type']!r}"
+            )
+
+
+def test_high_value_seed_intents_use_structured_selectors_not_free_text():
+    by_name = {row["name"]: row for row in SEED_INTENTS}
+
+    coverage_param = by_name["coverage_for_fr"]["params_schema"]["fr_id"]
+    assert coverage_param["type"] == "spec_child_selector"
+    assert coverage_param["child_types"] == ["functional_requirement"]
+
+    dependency_param = by_name["dependencies_of_card"]["params_schema"]["card_id"]
+    assert dependency_param["type"] == "entity_selector"
+    assert dependency_param["entity_type"] == "card"
 
 
 def test_every_seed_binding_is_known_to_executor():

@@ -30,6 +30,28 @@ from okto_pulse.core.kg.primitives import (
     get_similar_nodes,
     propose_reconciliation,
 )
+from okto_pulse.core.kg.rebuild_audit import (
+    CognitiveConsolidationItemStore,
+    CognitiveItemListOutcome,
+    CognitiveItemListReasonCode,
+    CognitiveItemListSurface,
+    CognitiveItemStatus,
+    CognitiveItemUpdateOutcome,
+    CognitiveItemUpdateReasonCode,
+    CognitivePendingOutcomeType,
+    CognitiveUnsafePayloadReason,
+    CognitiveUnsafePayloadSurface,
+    _emit_list_sample,
+    _emit_unsafe_payload_sample,
+    _emit_update_sample,
+    compute_status_counts,
+    default_rebuild_base_dir,
+    detect_unsafe_update_payload,
+    empty_status_counts,
+    project_item_for_api,
+    project_item_for_update_api,
+)
+
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
     AddEdgeCandidateRequest,
@@ -38,6 +60,14 @@ from okto_pulse.core.kg.schemas import (
     CommitConsolidationRequest,
     GetSimilarNodesRequest,
     ProposeReconciliationRequest,
+)
+
+_VALID_OUTCOME_TYPES: frozenset[str] = frozenset(
+    o.value for o in CognitivePendingOutcomeType
+)
+
+_VALID_LIST_STATUS_FILTERS: frozenset[str] = frozenset(
+    s.value for s in CognitiveItemStatus
 )
 
 
@@ -149,7 +179,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         Add an edge candidate to an open session.
 
         Endpoints (from_candidate_id / to_candidate_id) must reference either
-        another in-session node candidate OR an existing Kùzu node via the
+        another in-session node candidate OR an existing LadybugDB node via the
         'kg:' prefix (kg:decision_abc123).
 
         Cognitive agents may only propose judgement edges: supersedes,
@@ -188,7 +218,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         min_similarity: float = 0.3,
     ) -> str:
         """
-        Fetch existing Kùzu nodes similar to an in-session candidate.
+        Fetch existing LadybugDB nodes similar to an in-session candidate.
 
         MVP uses title-prefix match as a deterministic fallback; production
         replaces with HNSW k-NN via vector index (card 00dae72a).
@@ -261,7 +291,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         agent_overrides: dict[str, dict] | None = None,
     ) -> str:
         """
-        Atomically commit the session: Kùzu writes + audit row + outbox event.
+        Atomically commit the session: LadybugDB writes + audit row + outbox event.
 
         agent_overrides map candidate_id → ReconciliationHint for cases where
         the agent's semantic reasoning produces a different op than the
@@ -299,7 +329,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
             try:
                 # Wrap the actual commit in the per-board lock + retry
                 # coordinator. This serialises concurrent commits on the
-                # same board (Kùzu holds an exclusive writer lock at the
+                # same board (LadybugDB holds an exclusive writer lock at the
                 # OS file level) and absorbs transient inter-process
                 # lock contention — see core/kg/commit_coordinator.py.
                 resp = await run_with_commit_lock_and_retry(
@@ -312,6 +342,401 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
                             details=e.details)
 
     @mcp.tool()
+    async def okto_pulse_kg_list_cognitive_pending_items(
+        board_id: str,
+        kg_generation_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        status_filter: str | None = None,
+    ) -> str:
+        """KG-03.2 — List cognitive pending items by board + generation (api_ae3a932a).
+Resolves to the latest generation when kg_generation_id is omitted; an explicit
+missing generation returns generation_not_found. Items use a strict API projection
+(contract fields only; storage-only fields never echoed). Filters: status from
+{pending,in_progress,consolidated,skipped,failed}; limit 1..200 (default 100);
+offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
+        agent = await get_agent()
+        if agent is None:
+            return _err("unauthorized", "authentication required")
+
+        # ``status`` is the contract parameter; ``status_filter`` is kept
+        # only as a compatibility alias and ignored when ``status`` is set.
+        effective_status = status if status is not None else status_filter
+        status_present = effective_status is not None
+
+        if not isinstance(board_id, str) or not board_id:
+            _emit_list_sample(
+                surface=CognitiveItemListSurface.MCP.value,
+                board_id="",
+                outcome=CognitiveItemListOutcome.VALIDATION_ERROR.value,
+                status_filter_present=status_present,
+                reason_code=CognitiveItemListReasonCode.MISSING_BOARD_ID.value,
+                item_count=0,
+            )
+            return _err(
+                "missing_board_id",
+                "board_id must be a non-empty string",
+                reason_code=CognitiveItemListReasonCode.MISSING_BOARD_ID.value,
+            )
+
+        if status_present and effective_status not in _VALID_LIST_STATUS_FILTERS:
+            _emit_list_sample(
+                surface=CognitiveItemListSurface.MCP.value,
+                board_id=board_id,
+                outcome=CognitiveItemListOutcome.VALIDATION_ERROR.value,
+                status_filter_present=True,
+                reason_code=CognitiveItemListReasonCode.INVALID_STATUS.value,
+                item_count=0,
+            )
+            return _err(
+                "invalid_status",
+                (
+                    "status must be one of "
+                    f"{sorted(_VALID_LIST_STATUS_FILTERS)}"
+                ),
+                provided=effective_status,
+                reason_code=CognitiveItemListReasonCode.INVALID_STATUS.value,
+            )
+
+        # Bounded limit/offset per api_ae3a932a.
+        if not isinstance(limit, int) or not 1 <= limit <= 200:
+            return _err(
+                "invalid_limit",
+                "limit must be an integer in [1, 200]",
+                provided=limit,
+            )
+        if not isinstance(offset, int) or offset < 0:
+            return _err(
+                "invalid_offset",
+                "offset must be a non-negative integer",
+                provided=offset,
+            )
+
+        store = CognitiveConsolidationItemStore(
+            base_dir=default_rebuild_base_dir()
+        )
+
+        explicit_generation = bool(kg_generation_id)
+        resolved_generation = (
+            kg_generation_id
+            if explicit_generation
+            else store.latest_generation(board_id)
+        )
+
+        if explicit_generation and not store.record_exists(
+            board_id, resolved_generation
+        ):
+            # Codex audit val_ead80fbd: explicit gen + missing record =
+            # typed generation_not_found, not silent empty success.
+            _emit_list_sample(
+                surface=CognitiveItemListSurface.MCP.value,
+                board_id=board_id,
+                outcome=CognitiveItemListOutcome.NOT_FOUND.value,
+                status_filter_present=status_present,
+                reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
+                item_count=0,
+            )
+            return _err(
+                "generation_not_found",
+                "no cognitive pending record exists for the requested generation",
+                board_id=board_id,
+                kg_generation_id=resolved_generation,
+                reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
+            )
+
+        if resolved_generation is None:
+            # No explicit gen + no latest = empty board (safe empty per
+            # Codex audit: keep the friendly response for THIS case).
+            _emit_list_sample(
+                surface=CognitiveItemListSurface.MCP.value,
+                board_id=board_id,
+                outcome=CognitiveItemListOutcome.NOT_FOUND.value,
+                status_filter_present=status_present,
+                reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
+                item_count=0,
+            )
+            return json.dumps({
+                "board_id": board_id,
+                "selected_kg_generation_id": None,
+                "legacy_mode": False,
+                "counts": empty_status_counts(),
+                "items": [],
+            }, default=str)
+
+        legacy_mode = store.is_legacy_record(board_id, resolved_generation)
+        page_items = store.list_items(
+            board_id,
+            resolved_generation,
+            status_filter=effective_status,
+            limit=limit,
+            offset=offset,
+        )
+
+        counts = compute_status_counts(page_items)
+        item_count = counts["total"]
+
+        _emit_list_sample(
+            surface=CognitiveItemListSurface.MCP.value,
+            board_id=board_id,
+            outcome=CognitiveItemListOutcome.SUCCESS.value,
+            status_filter_present=status_present,
+            reason_code=CognitiveItemListReasonCode.NONE.value,
+            item_count=item_count,
+        )
+
+        return json.dumps({
+            "board_id": board_id,
+            "selected_kg_generation_id": resolved_generation,
+            "legacy_mode": legacy_mode,
+            "counts": counts,
+            "items": [project_item_for_api(item) for item in page_items],
+        }, default=str)
+
+    @mcp.tool()
+    async def okto_pulse_kg_update_cognitive_pending_item(
+        board_id: str,
+        kg_generation_id: str,
+        item_id: str,
+        status: str,
+        consolidation_session_id: str | None = None,
+        reason: str | None = None,
+        summary_text: str | None = None,
+        outcome_type: str | None = None,
+        evidence_refs: list[str] | None = None,
+        generated_candidate_decision_ids: list[str] | None = None,
+        promoted_formal_decision_ids: list[str] | None = None,
+    ) -> str:
+        """KG-03.3 — Mutate exactly one cognitive consolidation item (api_525a25f1).
+Invariants: status=consolidated needs a consolidation_session_id from a prior
+commit_consolidation; status=skipped/failed need a reason; token shapes and
+oversized narrative are rejected as unsafe_payload so raw bodies never enter the
+ledger. Atomic single-item update; aggregate counts recomputed. Emits
+kg_cognitive_item_update_total with bounded labels (free-text reason never
+labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg."""
+        agent = await get_agent()
+        if agent is None:
+            return _err("unauthorized", "authentication required")
+
+        # Compute the bounded target_status label up front so the counter
+        # observes a finite label set even on invalid input.
+        target_status_label = (
+            status
+            if isinstance(status, str) and status in _VALID_LIST_STATUS_FILTERS
+            else "invalid"
+        )
+        safe_board_id = board_id if isinstance(board_id, str) and board_id else ""
+
+        def _reject(
+            code: str,
+            message: str,
+            *,
+            outcome: str,
+            reason_code: str,
+            **extra: Any,
+        ) -> str:
+            _emit_update_sample(
+                board_id=safe_board_id,
+                target_status=target_status_label,
+                outcome=outcome,
+                reason_code=reason_code,
+            )
+            return _err(code, message, reason_code=reason_code, **extra)
+
+        if not isinstance(board_id, str) or not board_id:
+            return _reject(
+                "missing_board_id",
+                "board_id must be a non-empty string",
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.MISSING_BOARD_ID.value,
+            )
+        if not isinstance(kg_generation_id, str) or not kg_generation_id:
+            return _reject(
+                "missing_kg_generation_id",
+                "kg_generation_id must be a non-empty string",
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.MISSING_GENERATION_ID.value,
+            )
+        if not isinstance(item_id, str) or not item_id:
+            return _reject(
+                "missing_item_id",
+                "item_id must be a non-empty string",
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.MISSING_ITEM_ID.value,
+            )
+
+        if status not in _VALID_LIST_STATUS_FILTERS:
+            return _reject(
+                "invalid_status",
+                (
+                    "status must be one of "
+                    f"{sorted(_VALID_LIST_STATUS_FILTERS)}"
+                ),
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.INVALID_STATUS.value,
+                provided=status,
+            )
+
+        # br_858a0859 — reject unsafe narrative payloads BEFORE any
+        # content validation so security checks fail fast even when the
+        # consolidated/skipped/failed gates would otherwise reject first.
+        # KG-03A.3 rework: outcome metadata lists are also validated
+        # (Codex audit val_44b86726).
+        unsafe, unsafe_field = detect_unsafe_update_payload(
+            consolidation_session_id=consolidation_session_id,
+            reason=reason,
+            summary_text=summary_text,
+            evidence_refs=evidence_refs,
+            generated_candidate_decision_ids=generated_candidate_decision_ids,
+            promoted_formal_decision_ids=promoted_formal_decision_ids,
+        )
+        if unsafe:
+            # or_03222a4f — alert metric: any non-zero value in
+            # production must be investigated. The label set is bounded
+            # (surface + board_id + reason enum).
+            _emit_unsafe_payload_sample(
+                surface=CognitiveUnsafePayloadSurface.MCP_UPDATE.value,
+                board_id=safe_board_id,
+                reason=(
+                    CognitiveUnsafePayloadReason(unsafe_field).value
+                    if unsafe_field in {r.value for r in CognitiveUnsafePayloadReason}
+                    else CognitiveUnsafePayloadReason.OTHER.value
+                ),
+            )
+            return _reject(
+                "unsafe_payload",
+                "request contains disallowed raw or sensitive content",
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.UNSAFE_PAYLOAD.value,
+                unsafe_field=unsafe_field,
+            )
+
+        # br_689bdf14 — consolidated requires consolidation_session_id.
+        if status == CognitiveItemStatus.CONSOLIDATED.value and (
+            not isinstance(consolidation_session_id, str)
+            or not consolidation_session_id.strip()
+        ):
+            return _reject(
+                "consolidation_session_required",
+                "consolidated status requires consolidation_session_id",
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.CONSOLIDATION_SESSION_REQUIRED.value,
+            )
+
+        # KG-03A.3 — outcome_type validation (br_7500e5f9 + tr_16ec917c).
+        # When consolidated, the agent MUST attribute one of the bounded
+        # outcome types. ``no_action_required`` is accepted but also
+        # requires a justifying ``reason`` (br_f9823bad-style).
+        if status == CognitiveItemStatus.CONSOLIDATED.value:
+            if outcome_type is None or (
+                isinstance(outcome_type, str) and not outcome_type.strip()
+            ):
+                return _reject(
+                    "outcome_required",
+                    (
+                        "consolidated status requires outcome_type from "
+                        f"{sorted(_VALID_OUTCOME_TYPES)}"
+                    ),
+                    outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                    reason_code=CognitiveItemUpdateReasonCode.OUTCOME_REQUIRED.value,
+                )
+            if outcome_type not in _VALID_OUTCOME_TYPES:
+                return _reject(
+                    "invalid_outcome_type",
+                    (
+                        "outcome_type must be one of "
+                        f"{sorted(_VALID_OUTCOME_TYPES)}"
+                    ),
+                    outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                    reason_code=CognitiveItemUpdateReasonCode.INVALID_OUTCOME_TYPE.value,
+                    provided=outcome_type,
+                )
+            # no_action_required outcome demands an auditable reason
+            # (no silent empty consolidations — br_7500e5f9).
+            if outcome_type == CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value and (
+                not isinstance(reason, str) or not reason.strip()
+            ):
+                return _reject(
+                    "reason_required",
+                    (
+                        "outcome_type=no_action_required requires a "
+                        "non-empty reason justifying the empty consolidation"
+                    ),
+                    outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                    reason_code=CognitiveItemUpdateReasonCode.REASON_REQUIRED.value,
+                )
+
+        # br_f9823bad — skipped/failed require non-empty reason.
+        if status in (
+            CognitiveItemStatus.SKIPPED.value,
+            CognitiveItemStatus.FAILED.value,
+        ) and (not isinstance(reason, str) or not reason.strip()):
+            return _reject(
+                "reason_required",
+                "skipped or failed status requires a non-empty reason",
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.REASON_REQUIRED.value,
+            )
+
+        store = CognitiveConsolidationItemStore(
+            base_dir=default_rebuild_base_dir()
+        )
+
+        try:
+            updated_item = store.update_item(
+                board_id=board_id,
+                kg_generation_id=kg_generation_id,
+                item_id=item_id,
+                new_status=status,
+                updated_by_agent_id=str(agent.id),
+                consolidation_session_id=consolidation_session_id,
+                reason=reason,
+                outcome_type=outcome_type,
+                evidence_refs=evidence_refs,
+                generated_candidate_decision_ids=generated_candidate_decision_ids,
+                promoted_formal_decision_ids=promoted_formal_decision_ids,
+            )
+        except Exception as exc:
+            _emit_update_sample(
+                board_id=safe_board_id,
+                target_status=target_status_label,
+                outcome=CognitiveItemUpdateOutcome.STORE_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.NONE.value,
+            )
+            return _err(
+                "store_error",
+                f"ledger update failed: {type(exc).__name__}",
+                reason_code=CognitiveItemUpdateReasonCode.NONE.value,
+            )
+
+        if updated_item is None:
+            return _reject(
+                "item_not_found",
+                "item_id was not found in the requested generation",
+                outcome=CognitiveItemUpdateOutcome.ITEM_NOT_FOUND.value,
+                reason_code=CognitiveItemUpdateReasonCode.ITEM_NOT_FOUND.value,
+            )
+
+        # Recompute generation counts from the post-update ledger.
+        full_items = store.list_items(board_id, kg_generation_id)
+        counts = compute_status_counts(full_items)
+
+        _emit_update_sample(
+            board_id=safe_board_id,
+            target_status=target_status_label,
+            outcome=CognitiveItemUpdateOutcome.UPDATED.value,
+            reason_code=CognitiveItemUpdateReasonCode.NONE.value,
+        )
+
+        return json.dumps({
+            "board_id": board_id,
+            "kg_generation_id": kg_generation_id,
+            "updated": True,
+            "item": project_item_for_update_api(updated_item),
+            "counts": counts,
+        }, default=str)
+
+    @mcp.tool()
     async def okto_pulse_kg_abort_consolidation(
         session_id: str,
         reason: str = "",
@@ -319,7 +744,7 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         """
         Drop an in-flight session without committing.
 
-        No compensating delete is applied — commit was never called, so Kùzu
+        No compensating delete is applied — commit was never called, so LadybugDB
         has no partial writes. The session is marked aborted and removed from
         the in-memory registry.
 

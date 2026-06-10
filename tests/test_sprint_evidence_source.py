@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from okto_pulse.core.services.main import _test_scenario_has_required_evidence
+from okto_pulse.core.services.test_scenario_lifecycle import (
+    scenario_has_required_evidence as _test_scenario_has_required_evidence,
+)
 
 
 def test_passed_scenario_accepts_latest_evidence():

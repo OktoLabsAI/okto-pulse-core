@@ -150,7 +150,9 @@ class TestSemanticGraphStore:
         info = store.get_schema_info("b1")
         assert info["schema_version"] == "0.3.5"
         assert len(info["stable_node_types"]) == 11
-        assert len(info["stable_rel_types"]) == 10
+        assert len(info["stable_rel_types"]) == 13
+        rel_names = {rel["name"] for rel in info["stable_rel_types"]}
+        assert {"belongs_to", "originates_from", "covered_by"} <= rel_names
         assert len(info["vector_indexes"]) == 9
 
     def test_get_schema_info_with_internal(self):

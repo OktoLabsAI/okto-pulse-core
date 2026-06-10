@@ -8,6 +8,7 @@ ACs 1-10. Aligns with the Ideação #3 lesson: every scenario marked
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -24,9 +25,13 @@ from okto_pulse.core.kg.scoring import (
 )
 from okto_pulse.core.models.db import (
     Board,
+    ConsolidationAudit,
     ConsolidationDeadLetter,
     ConsolidationQueue,
+    KGTickRun,
+    KuzuNodeRef,
 )
+import okto_pulse.core.services.kg_health_service as kg_health_service
 from okto_pulse.core.services.kg_health_service import (
     BoardNotFoundError,
     DEFAULT_SCORE_BAND_HIGH,
@@ -66,6 +71,17 @@ async def kg_health_board(db_factory):
                 ConsolidationDeadLetter.board_id == KG_HEALTH_BOARD_ID,
             )
         )
+        await session.execute(
+            ConsolidationAudit.__table__.delete().where(
+                ConsolidationAudit.board_id == KG_HEALTH_BOARD_ID,
+            )
+        )
+        await session.execute(
+            KuzuNodeRef.__table__.delete().where(
+                KuzuNodeRef.board_id == KG_HEALTH_BOARD_ID,
+            )
+        )
+        await session.execute(KGTickRun.__table__.delete())
         await session.commit()
 
     reset_contradict_warn_counters()
@@ -109,6 +125,43 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         # consiga desabilitar o botão mesmo se o usuário fechar o modal
         # e voltar enquanto o tick (cron OU manual) está rodando.
         "tick_in_progress",
+        # FR5/FR6 (spec R2b, IMPL-3): board counters from last tick run.
+        "boards_processed_in_last_tick",
+        "boards_failed_in_last_tick",
+        # KG-01 REST contract api_3ed9037f (required fields).
+        "board_id",
+        "graph_state",
+        "discovery_state",
+        "overall_state",
+        "current_kg_generation_id",
+        "metric_status",
+        "classification_reason",
+        "correlation_id",
+        "recent_events",
+        "checked_at",
+        # KG-01 internal / debug surface kept in addition to the contract
+        # so dashboards built against the old 0.2.2 endpoint don't regress.
+        "state",
+        "memory_pressure_status",
+        "classification_reasons",
+        # Additive UI diagnosis: canonical state stays conservative, but the
+        # dashboard can explain whether the board graph itself is queryable.
+        "graph_read_status",
+        "board_graph_queryable",
+        "board_graph_recovery_required",
+        "discovery_recovery_required",
+        "discovery_health_cause",
+        "primary_health_cause",
+        "operator_action",
+        "health_issues",
+        # FR6 (spec R2c, IMPL-3): DLQ auto-drain telemetry (additive).
+        "dlq_auto_drain_last_run_at",
+        "dlq_auto_drain_requeued_count",
+        # KG-HS.1 clarity payloads.
+        "decay_scheduler_diagnostics",
+        "storage_footprint_proxy",
+        # KG-ZO-02 integrity debt projection.
+        "orphan_integrity",
     }
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == HEALTH_SCHEMA_VERSION
@@ -122,6 +175,389 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert result["last_tick_error"] is None or isinstance(result["last_tick_error"], str)
     assert isinstance(result["nodes_recomputed_in_last_tick"], int)
     assert isinstance(result["tick_in_progress"], bool)
+    assert isinstance(result["boards_processed_in_last_tick"], int)
+    assert isinstance(result["boards_failed_in_last_tick"], int)
+    # KG-01 contract enforcement: states must use the 5 canonical values;
+    # metric_status REST surface is strictly available|unavailable (partial
+    # is internal and gets collapsed to unavailable);
+    # memory_pressure_status is binary per TR3/TR4. With no real
+    # instrumentation wired yet (KG-01.5 lands the sensors), every sensor
+    # is None so metric_status=unavailable and overall_state degrades to
+    # at_risk per BR br_2a8cdfdc "Health unavailable is not zero".
+    canonical_states = {
+        "healthy", "at_risk", "backpressure", "recovery_needed", "quarantined",
+    }
+    assert result["graph_state"] in canonical_states
+    assert result["discovery_state"] in canonical_states
+    assert result["overall_state"] in canonical_states
+    assert result["state"] == result["overall_state"]
+    assert result["metric_status"] in {"available", "unavailable"}
+    assert result["memory_pressure_status"] in {
+        "unconfirmed", "confirmed_primary_cause",
+    }
+    assert isinstance(result["classification_reasons"], list)
+    assert isinstance(result["correlation_id"], str)
+    assert len(result["correlation_id"]) > 0
+    assert isinstance(result["classification_reason"], str)
+    assert result["board_id"] == kg_health_board
+    assert isinstance(result["graph_read_status"], str)
+    assert isinstance(result["board_graph_queryable"], bool)
+    assert isinstance(result["board_graph_recovery_required"], bool)
+    assert isinstance(result["discovery_recovery_required"], bool)
+    assert isinstance(result["discovery_health_cause"], str)
+    assert isinstance(result["primary_health_cause"], str)
+    assert isinstance(result["operator_action"], str)
+    assert isinstance(result["health_issues"], list)
+    assert result["current_kg_generation_id"] is None or isinstance(
+        result["current_kg_generation_id"], str
+    )
+    assert isinstance(result["recent_events"], list)
+    assert isinstance(result["checked_at"], str)
+    assert isinstance(result["decay_scheduler_diagnostics"], dict)
+    assert isinstance(result["storage_footprint_proxy"], dict)
+    assert isinstance(result["orphan_integrity"], dict)
+    assert result["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
+    assert result["storage_footprint_proxy"]["source"] == "file_size_proxy"
+    assert result["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
+
+
+@pytest.mark.asyncio
+async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
+    monkeypatch, db_factory, kg_health_board
+):
+    """KG-ZO-02.3: orphan debt is actionable integrity debt, not corruption."""
+
+    monkeypatch.setattr(
+        kg_health_service,
+        "_build_orphan_integrity_for_health",
+        lambda **_: {
+            "classification_delta": "at_risk",
+            "integrity_warning": True,
+            "orphan_count": 2,
+            "orphan_count_by_type": {"Learning": 2},
+            "samples": [
+                {
+                    "node_id": "learning_orphan_1",
+                    "node_type": "Learning",
+                    "writer_path": "cognitive_consolidation",
+                    "source_artifact_ref": "bug:bug-1",
+                    "source_resolution_status": "unresolved_source_ref",
+                    "generation_id": "gen-test",
+                    "reason": "zero_graph_degree",
+                    "correlation_id": "corr-orphan-health",
+                }
+            ],
+            "unresolved_reasons": {"unresolved_source_ref": 2},
+            "allowlisted_root_count": 0,
+            "generation_id": "gen-test",
+            "correlation_id": "corr-orphan-health",
+            "zero_orphan_validation": "pending_backfill",
+            "reason": "orphan_count_gt_zero",
+        },
+    )
+    monkeypatch.setattr(
+        kg_health_service,
+        "_aggregate_kuzu_metrics",
+        lambda _board_id: {
+            "total_nodes": 10,
+            "default_score_count": 0,
+            "avg_relevance": 0.75,
+            "top_disconnected_nodes": [],
+        },
+    )
+    monkeypatch.setattr(
+        kg_health_service,
+        "_get_graph_schema_version",
+        lambda _board_id: "0.3.5",
+    )
+    monkeypatch.setattr(
+        kg_health_service,
+        "_probe_board_graph_telemetry",
+        lambda **_kwargs: kg_health_service._telemetry_ok("board"),
+    )
+    monkeypatch.setattr(
+        kg_health_service,
+        "_probe_global_discovery_telemetry",
+        lambda: kg_health_service._telemetry_ok("discovery"),
+    )
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    assert result["orphan_integrity"]["integrity_warning"] is True
+    assert result["orphan_integrity"]["orphan_count"] == 2
+    assert result["graph_state"] == "at_risk"
+    assert result["overall_state"] == "at_risk"
+    assert "graph:orphan_integrity_warning" in result["classification_reasons"]
+    assert result["classification_reason"].count("orphan_integrity_warning") == 1
+    orphan_issue = next(
+        issue
+        for issue in result["health_issues"]
+        if issue["code"] == "orphan_integrity_warning"
+    )
+    assert orphan_issue["operator_action"] == "inspect_orphan_integrity_report"
+    assert orphan_issue["reason"] == "orphan_count_gt_zero"
+
+
+# --- KG-01 BR br_2a8cdfdc: "Health unavailable is not zero" ----------------------
+
+
+@pytest.mark.asyncio
+async def test_default_response_is_conservative_never_healthy(
+    monkeypatch, db_factory, kg_health_board
+):
+    """When no real sensor data flows (KG-01.5 not landed yet) the
+    endpoint MUST emit conservative state and metric_status. A composition
+    bug that accidentally produced state=healthy would be masked silently
+    without this guard. BR br_2a8cdfdc is the canonical rule.
+    """
+    from okto_pulse.core.services import kg_health_service as svc
+
+    monkeypatch.setattr(
+        svc,
+        "_probe_board_graph_telemetry",
+        lambda **_kwargs: svc._telemetry_unavailable("board"),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_global_discovery_telemetry",
+        lambda: svc._telemetry_unavailable("discovery"),
+    )
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    assert result["graph_state"] != "healthy"
+    assert result["discovery_state"] != "healthy"
+    assert result["overall_state"] != "healthy"
+    assert result["metric_status"] == "unavailable"
+    assert "metric.unavailable" in result["classification_reason"]
+
+
+@pytest.mark.asyncio
+async def test_empty_graph_after_materialized_history_requires_recovery(
+    monkeypatch, db_factory, kg_health_board
+):
+    """If SQLite audit proves prior KG materialization but Ladybug reports
+    zero nodes, Health must surface recovery_needed instead of a generic
+    at_risk/empty state.
+    """
+    now = datetime.now(timezone.utc)
+    async with db_factory() as session:
+        session.add(
+            ConsolidationAudit(
+                session_id=f"kgses_{uuid.uuid4().hex}",
+                board_id=kg_health_board,
+                artifact_id="artifact-with-prior-kg-materialization",
+                artifact_type="spec",
+                agent_id="test",
+                started_at=now,
+                committed_at=now,
+                nodes_added=3,
+                edges_added=1,
+                summary_text="prior materialization evidence",
+            )
+        )
+        await session.commit()
+
+    from okto_pulse.core.services import kg_health_service as svc
+
+    monkeypatch.setattr(
+        svc,
+        "_probe_board_graph_telemetry",
+        lambda **_kwargs: svc._telemetry_unavailable("board"),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_global_discovery_telemetry",
+        lambda: svc._telemetry_unavailable("discovery"),
+    )
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    assert result["total_nodes"] == 0
+    assert result["graph_state"] == "recovery_needed"
+    assert result["overall_state"] == "recovery_needed"
+    assert "graph:empty_after_materialized_history" in result["classification_reason"]
+    assert result["graph_read_status"] == "empty_after_materialized_history"
+    assert result["board_graph_queryable"] is False
+    assert result["board_graph_recovery_required"] is True
+    assert result["primary_health_cause"] == "board_graph_recovery_required"
+    assert result["operator_action"] == "run_explicit_rebuild"
+    assert any(
+        issue["code"] == "board_graph_empty_after_materialized_history"
+        for issue in result["health_issues"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_required(
+    monkeypatch, db_factory, kg_health_board
+):
+    """A readable board graph may still be `at_risk` because sensors are
+    unavailable. The UI diagnosis must distinguish this from corruption so the
+    operator is not pushed into an unnecessary rebuild.
+    """
+    from okto_pulse.core.services import kg_health_service as svc
+
+    original_metrics = svc._aggregate_kuzu_metrics
+    original_schema_version = svc._get_graph_schema_version
+
+    def _metrics(_board_id):
+        return {
+            "total_nodes": 7,
+            "default_score_count": 1,
+            "avg_relevance": 0.61,
+            "top_disconnected_nodes": [],
+        }
+
+    svc._aggregate_kuzu_metrics = _metrics
+    svc._get_graph_schema_version = lambda _board_id: "0.3.5"
+    monkeypatch.setattr(
+        svc,
+        "_probe_board_graph_telemetry",
+        lambda **_kwargs: svc._telemetry_ok("board"),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_global_discovery_telemetry",
+        lambda: svc._telemetry_unavailable("discovery"),
+    )
+    try:
+        async with db_factory() as session:
+            result = await get_kg_health(kg_health_board, session)
+    finally:
+        svc._aggregate_kuzu_metrics = original_metrics
+        svc._get_graph_schema_version = original_schema_version
+
+    assert result["total_nodes"] == 7
+    assert result["graph_read_status"] == "queryable"
+    assert result["board_graph_queryable"] is True
+    assert result["board_graph_recovery_required"] is False
+    assert result["metric_status"] == "unavailable"
+    assert result["overall_state"] == "at_risk"
+    assert result["primary_health_cause"] == "telemetry_unavailable"
+    assert result["operator_action"] == "inspect_telemetry"
+    issue_codes = {issue["code"] for issue in result["health_issues"]}
+    assert "board_graph_queryable" in issue_codes
+    assert "telemetry_unavailable" in issue_codes
+    assert "board_graph_empty_after_materialized_history" not in issue_codes
+
+
+@pytest.mark.asyncio
+async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
+    monkeypatch, db_factory, kg_health_board
+):
+    """Dead-letter backlog should be explicit in Health, but it must not mark
+    a queryable board graph as needing recovery by itself.
+    """
+    from okto_pulse.core.services import kg_health_service as svc
+
+    async with db_factory() as session:
+        session.add(
+            ConsolidationDeadLetter(
+                board_id=kg_health_board,
+                artifact_type="spec",
+                artifact_id="spec-dlq-diagnostic",
+                attempts=3,
+                errors=[{
+                    "attempt": 1,
+                    "occurred_at": "2026-05-27T00:00:00Z",
+                    "error_type": "TestError",
+                    "message": "seeded for diagnostic test",
+                }],
+            )
+        )
+        await session.commit()
+
+    original_metrics = svc._aggregate_kuzu_metrics
+    original_schema_version = svc._get_graph_schema_version
+
+    def _metrics(_board_id):
+        return {
+            "total_nodes": 3,
+            "default_score_count": 0,
+            "avg_relevance": 0.8,
+            "top_disconnected_nodes": [],
+        }
+
+    svc._aggregate_kuzu_metrics = _metrics
+    svc._get_graph_schema_version = lambda _board_id: "0.3.5"
+    monkeypatch.setattr(
+        svc,
+        "_probe_board_graph_telemetry",
+        lambda **_kwargs: svc._telemetry_ok("board"),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_global_discovery_telemetry",
+        lambda: svc._telemetry_unavailable("discovery"),
+    )
+    try:
+        async with db_factory() as session:
+            result = await get_kg_health(kg_health_board, session)
+    finally:
+        svc._aggregate_kuzu_metrics = original_metrics
+        svc._get_graph_schema_version = original_schema_version
+
+    assert result["dead_letter_count"] >= 1
+    assert result["board_graph_queryable"] is True
+    assert result["board_graph_recovery_required"] is False
+    assert any(
+        issue["code"] == "dead_letter_backlog"
+        and issue["operator_action"] == "inspect_dead_letters"
+        for issue in result["health_issues"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_discovery_open_error_is_concrete_recovery_signal(
+    monkeypatch, db_factory, kg_health_board
+):
+    """An existing unreadable discovery graph should not appear as vague
+    telemetry-unavailable. It is a recovery signal independent of whether the
+    current board graph is queryable.
+    """
+    from okto_pulse.core.services import kg_health_service as svc
+
+    monkeypatch.setattr(
+        svc,
+        "_aggregate_kuzu_metrics",
+        lambda _board_id: {
+            "total_nodes": 5,
+            "default_score_count": 0,
+            "avg_relevance": 0.7,
+            "top_disconnected_nodes": [],
+        },
+    )
+    monkeypatch.setattr(svc, "_get_graph_schema_version", lambda _board_id: "0.3.5")
+    monkeypatch.setattr(
+        svc,
+        "_probe_board_graph_telemetry",
+        lambda **_kwargs: svc._telemetry_ok("board"),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_probe_global_discovery_telemetry",
+        lambda: svc._telemetry_wal_or_open_error("discovery"),
+    )
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    assert result["board_graph_queryable"] is True
+    assert result["board_graph_recovery_required"] is False
+    assert result["discovery_state"] == "recovery_needed"
+    assert result["overall_state"] == "recovery_needed"
+    assert result["metric_status"] == "available"
+    assert result["discovery_recovery_required"] is True
+    assert result["primary_health_cause"] == "discovery_recovery_required"
+    assert result["operator_action"] == "run_explicit_global_discovery_recovery"
+    assert any(
+        issue["code"] == "discovery_recovery_required"
+        for issue in result["health_issues"]
+    )
 
 
 # --- TS2 / AC2: 404 (BoardNotFoundError) for unknown board ---
@@ -157,6 +593,289 @@ async def test_service_layer_response_matches_pydantic_model(
     response = KGHealthResponse(**data)
     # And the dump round-trips into the same set of keys.
     assert set(response.model_dump().keys()) == set(data.keys())
+
+
+@pytest.mark.asyncio
+async def test_recent_completed_tick_produces_ok_scheduler_diagnostics(
+    db_factory, kg_health_board
+):
+    """KG-HS.1 AC1/AC7 — recent success is explicit and legacy fields stay."""
+    now = datetime.now(timezone.utc)
+    async with db_factory() as session:
+        session.add(
+            KGTickRun(
+                tick_id=f"kg-hs-ok-{uuid.uuid4().hex}",
+                started_at=now - timedelta(minutes=5),
+                completed_at=now,
+                nodes_recomputed=17,
+                boards_processed=2,
+                boards_failed=0,
+            )
+        )
+        await session.commit()
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    diag = result["decay_scheduler_diagnostics"]
+    assert diag["status"] == "ok"
+    assert diag["severity"] == "info"
+    assert diag["last_success_at"] is not None
+    assert diag["operational_debt"] is False
+    assert diag["graph_recovery_required"] is False
+    assert result["last_decay_tick_at"] == diag["last_success_at"]
+    assert result["last_tick_status"] == "completed"
+    assert result["nodes_recomputed_in_last_tick"] == 17
+
+
+@pytest.mark.asyncio
+async def test_next_scheduled_at_unavailable_preserves_tick_evidence(
+    db_factory, kg_health_board, monkeypatch
+):
+    """KG-HS.1 AC6 — scheduler metadata loss is not graph recovery."""
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(
+        kg_health_service,
+        "_read_next_scheduled_at",
+        lambda: (None, "scheduler_next_run_unavailable"),
+    )
+    async with db_factory() as session:
+        session.add(
+            KGTickRun(
+                tick_id=f"kg-hs-next-run-unavailable-{uuid.uuid4().hex}",
+                started_at=now - timedelta(minutes=5),
+                completed_at=now,
+                nodes_recomputed=13,
+                boards_processed=1,
+                boards_failed=0,
+            )
+        )
+        await session.commit()
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    diag = result["decay_scheduler_diagnostics"]
+    assert diag["status"] == "ok"
+    assert diag["severity"] == "info"
+    assert diag["next_scheduled_at"] is None
+    assert diag["reason"] == "scheduler_next_run_unavailable"
+    assert diag["last_success_at"] is not None
+    assert diag["operational_debt"] is False
+    assert diag["graph_recovery_required"] is False
+    assert result["last_tick_status"] == "completed"
+    assert result["nodes_recomputed_in_last_tick"] == 13
+
+
+@pytest.mark.asyncio
+async def test_no_tick_runs_produces_never_run_without_recovery(
+    db_factory, kg_health_board
+):
+    """KG-HS.1 AC2 — absence of tick history is operational debt only."""
+    async with db_factory() as session:
+        await session.execute(KGTickRun.__table__.delete())
+        await session.commit()
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    diag = result["decay_scheduler_diagnostics"]
+    assert diag["status"] == "never_run"
+    assert diag["severity"] == "warning"
+    assert diag["recommended_action"] == "run_tick_now"
+    assert diag["operational_debt"] is True
+    assert diag["graph_recovery_required"] is False
+    assert any(
+        issue["code"] == "decay_scheduler_never_run"
+        and issue["operator_action"] == "run_tick_now"
+        for issue in result["health_issues"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_success_is_scheduler_debt_not_graph_recovery(
+    db_factory, kg_health_board
+):
+    """KG-HS.1 AC3 — stale decay ticks are operational debt only."""
+    now = datetime.now(timezone.utc)
+    stale_success_at = now - timedelta(days=8)
+    async with db_factory() as session:
+        session.add(
+            KGTickRun(
+                tick_id=f"kg-hs-stale-{uuid.uuid4().hex}",
+                started_at=stale_success_at - timedelta(minutes=4),
+                completed_at=stale_success_at,
+                nodes_recomputed=21,
+                boards_processed=2,
+                boards_failed=0,
+            )
+        )
+        await session.commit()
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    diag = result["decay_scheduler_diagnostics"]
+    assert diag["status"] == "stale"
+    assert diag["severity"] == "warning"
+    assert diag["last_success_at"] is not None
+    assert diag["stale_tolerance_seconds"] and diag["stale_tolerance_seconds"] > 0
+    assert diag["recommended_action"] == "run_tick_now"
+    assert diag["operational_debt"] is True
+    assert diag["graph_recovery_required"] is False
+    assert any(
+        issue["code"] == "decay_scheduler_stale"
+        and issue["operator_action"] == "run_tick_now"
+        and "does not imply" in issue["description"].lower()
+        for issue in result["health_issues"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_tick_after_success_preserves_success_and_safe_error(
+    db_factory, kg_health_board
+):
+    """KG-HS.1 AC4/TR11 — failure does not erase last success and errors are safe."""
+    now = datetime.now(timezone.utc)
+    success_at = now - timedelta(hours=2)
+    failure_at = now - timedelta(minutes=5)
+    async with db_factory() as session:
+        session.add_all([
+            KGTickRun(
+                tick_id=f"kg-hs-success-{uuid.uuid4().hex}",
+                started_at=success_at - timedelta(minutes=3),
+                completed_at=success_at,
+                nodes_recomputed=11,
+                boards_processed=3,
+                boards_failed=0,
+            ),
+            KGTickRun(
+                tick_id=f"kg-hs-failed-{uuid.uuid4().hex}",
+                started_at=failure_at - timedelta(minutes=2),
+                completed_at=failure_at,
+                nodes_recomputed=0,
+                boards_processed=1,
+                boards_failed=1,
+                error='Traceback File "C:\\secret\\graph.lbug\\worker.py": boom',
+            ),
+        ])
+        await session.commit()
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    diag = result["decay_scheduler_diagnostics"]
+    assert diag["status"] == "failed"
+    assert diag["last_success_at"] is not None
+    assert diag["last_failure_at"] is not None
+    assert diag["last_error"] == "scheduler_tick_failed"
+    assert "C:\\" not in diag["last_error"]
+    assert "Traceback" not in diag["last_error"]
+    assert result["last_tick_status"] == "failed"
+    assert result["last_tick_error"] == "scheduler_tick_failed"
+    assert result["last_decay_tick_at"] == diag["last_failure_at"]
+
+
+@pytest.mark.asyncio
+async def test_running_tick_preserves_previous_checkpoint_without_recovery(
+    db_factory, kg_health_board
+):
+    """KG-HS.1 running matrix — in-progress tick is not failure or recovery."""
+    now = datetime.now(timezone.utc)
+    success_at = now - timedelta(hours=1)
+    running_started_at = now - timedelta(minutes=3)
+    async with db_factory() as session:
+        session.add_all([
+            KGTickRun(
+                tick_id=f"kg-hs-prev-{uuid.uuid4().hex}",
+                started_at=success_at - timedelta(minutes=3),
+                completed_at=success_at,
+                nodes_recomputed=9,
+                boards_processed=2,
+                boards_failed=0,
+            ),
+            KGTickRun(
+                tick_id=f"kg-hs-running-{uuid.uuid4().hex}",
+                started_at=running_started_at,
+                completed_at=None,
+                nodes_recomputed=0,
+                boards_processed=0,
+                boards_failed=0,
+            ),
+        ])
+        await session.commit()
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    diag = result["decay_scheduler_diagnostics"]
+    assert diag["status"] == "running"
+    assert diag["severity"] == "info"
+    assert diag["last_success_at"] is not None
+    assert diag["running_started_at"] is not None
+    assert diag["operational_debt"] is False
+    assert diag["graph_recovery_required"] is False
+    assert result["last_tick_status"] == "running"
+    assert result["last_decay_tick_at"] == diag["last_success_at"]
+
+
+@pytest.mark.asyncio
+async def test_tick_evidence_query_failure_degrades_to_unknown_without_recovery(
+    db_factory, kg_health_board, monkeypatch
+):
+    """KG-HS.1 AC5 — scheduler storage errors do not turn into graph recovery."""
+
+    async def _failed_tick_evidence(_db):
+        return {
+            "query_failed": True,
+            "query_error": "scheduler_tick_failed",
+            "latest_success": None,
+            "latest_failure": None,
+            "latest_terminal": None,
+            "running_row": None,
+        }
+
+    monkeypatch.setattr(
+        kg_health_service,
+        "_load_tick_evidence",
+        _failed_tick_evidence,
+    )
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    diag = result["decay_scheduler_diagnostics"]
+    assert diag["status"] == "unknown"
+    assert diag["severity"] == "warning"
+    assert diag["reason"] == "tick_run_query_failed"
+    assert diag["recommended_action"] == "inspect_scheduler_storage"
+    assert diag["last_error"] == "scheduler_tick_failed"
+    assert diag["operational_debt"] is True
+    assert diag["graph_recovery_required"] is False
+    assert any(
+        issue["code"] == "decay_scheduler_unknown"
+        and issue["operator_action"] == "inspect_scheduler_storage"
+        for issue in result["health_issues"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_storage_footprint_proxy_payload_is_not_direct_memory_telemetry(
+    db_factory, kg_health_board
+):
+    """KG-HS.1 AC10 — proxy payload explicitly labels file-size semantics."""
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    proxy = result["storage_footprint_proxy"]
+    assert proxy["source"] == "file_size_proxy"
+    assert proxy["is_direct_memory_telemetry"] is False
+    copy = f"{proxy['description']} {proxy['tooltip']}".lower()
+    assert "storage footprint" in copy or "file-size proxy" in copy
+    assert "not live ladybug memory telemetry" in copy
+    assert "buffer-pool telemetry" not in copy
+    assert "direct memory pressure" not in copy
+    assert "raw buffer pressure" not in copy
 
 
 # --- TS4 / AC4: contradict cap preserves floor + structured log ---
@@ -359,13 +1078,22 @@ def test_agent_instructions_documents_kg_health_subsection():
     """The new subsection covers the 4 required topics (FR7, BR7) and
     primarily directs agents to the MCP tool (not the REST endpoint)."""
     repo_root = Path(__file__).parent.parent
-    doc = (
-        repo_root / "src" / "okto_pulse" / "core" / "mcp"
-        / "agent_instructions.md"
+    mcp_dir = repo_root / "src" / "okto_pulse" / "core" / "mcp"
+    instr = (mcp_dir / "agent_instructions.md").read_text(encoding="utf-8")
+    # R1.1: the always-loaded index keeps the KG-health subsection + stop-rule +
+    # the MCP tool, and points to the mandatory lazy resource for the deep
+    # payload contract (REST endpoint, contradict_penalty/decay fields,
+    # when-to-consult). Assert against the COMBINED agent-facing surface.
+    kg_health_res = (
+        mcp_dir / "resources" / "reference" / "kg-health.md"
     ).read_text(encoding="utf-8")
+    doc = instr + "\n" + kg_health_res
 
-    assert "KG health and operational signals" in doc
-    assert "okto_pulse_kg_health" in doc
+    # The subsection + MCP tool stay in the always-loaded index.
+    assert "KG health and operational signals" in instr
+    assert "okto_pulse_kg_health" in instr
+    assert "reference/kg-health" in instr  # mandatory resource pointer
+    # The deep payload contract is discoverable in the combined surface.
     assert "/api/v1/kg/health" in doc
     assert "contradict_penalty" in doc.lower() or "CONTRADICT_PENALTY" in doc
     assert "decay" in doc.lower()
@@ -435,3 +1163,63 @@ def test_default_score_band_bounds():
     assert DEFAULT_SCORE_BAND_HIGH == 0.55
     assert DEFAULT_SCORE_BAND_LOW <= 0.5 <= DEFAULT_SCORE_BAND_HIGH
     assert 0.0 < DEFAULT_SCORE_RATIO_ALARM_THRESHOLD < 1.0
+
+
+# --- Single-flight do orphan scan (campo 2026-06-10, 4º crash) ---
+
+
+def test_orphan_scan_single_flight_serves_stale_while_revalidating(monkeypatch):
+    """Health requests concorrentes não podem empilhar scans de minutos em
+    paralelo (cada um segura um leitor do board → bloqueia a higiene do
+    buffer). Com um scan em andamento: quem chega recebe o cache stale (ou
+    a projeção indisponível) SEM disparar um segundo scan."""
+    import threading as _threading
+
+    from okto_pulse.core.kg import orphan_integrity as oi
+    from okto_pulse.core.services.kg_health_service import (
+        _build_orphan_integrity_for_health,
+        reset_orphan_projection_cache_for_tests,
+    )
+
+    board_id = "board-orphan-singleflight"
+    reset_orphan_projection_cache_for_tests(board_id)
+
+    scan_started = _threading.Event()
+    release_scan = _threading.Event()
+    scan_calls: list[str] = []
+
+    class SlowScanner:
+        def scan(self, *, board_id, generation_id=None):
+            scan_calls.append(board_id)
+            scan_started.set()
+            assert release_scan.wait(10), "teste destravou o scan tarde demais"
+            return None  # projection de report None = unavailable, ok p/ teste
+
+    monkeypatch.setattr(oi, "OrphanNodeScanner", SlowScanner)
+
+    results: dict[str, dict] = {}
+
+    def first_caller():
+        results["first"] = _build_orphan_integrity_for_health(
+            board_id=board_id, generation_id=None
+        )
+
+    t = _threading.Thread(target=first_caller)
+    t.start()
+    try:
+        assert scan_started.wait(10), "primeiro scan nao comecou"
+        # Segundo caller chega DURANTE o scan: não pode rodar outro scan.
+        second = _build_orphan_integrity_for_health(
+            board_id=board_id, generation_id=None
+        )
+        # Sem cache prévio, o segundo caller recebe a projeção indisponível
+        # (scan_error vira reason=orphan_scan_unavailable no safe dict).
+        assert second["reason"] == "orphan_scan_unavailable"
+        assert scan_calls == [board_id], (
+            f"single-flight violado: {len(scan_calls)} scans concorrentes"
+        )
+    finally:
+        release_scan.set()
+        t.join(timeout=10)
+
+    reset_orphan_projection_cache_for_tests(board_id)

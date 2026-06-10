@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models import QACreate, QAAnswer, QAResponse
-from okto_pulse.core.services import BoardService, QAService
+from okto_pulse.core.services import (
+    BoardService,
+    QAService,
+    QASelfAnsweringNotAllowedError,
+)
 
 router = APIRouter()
 
@@ -52,7 +56,16 @@ async def answer_question(
 ):
     """Answer a question."""
     service = QAService(db)
-    qa = await service.answer_question(qa_id, user_id, data)
+    try:
+        qa = await service.answer_question(
+            qa_id, user_id, data, actor_type="user", surface="rest"
+        )
+    except QASelfAnsweringNotAllowedError as exc:
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"reason": exc.reason, "message": str(exc)},
+        ) from exc
     if not qa:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Q&A item not found")
     await _log(db, qa.card_id, "question_answered", user_id, {"qa_id": qa_id, "answer": data.answer[:100]})

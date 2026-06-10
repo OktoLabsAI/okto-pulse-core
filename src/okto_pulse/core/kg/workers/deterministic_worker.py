@@ -225,6 +225,58 @@ def reset_tech_whitelist_cache() -> None:
     _whitelist_cache = None
 
 
+def _board_root_candidate_id(board_id: str) -> str:
+    return f"board_{board_id[:8]}_entity"
+
+
+def _has_node(result: WorkerResult, candidate_id: str) -> bool:
+    return any(node.candidate_id == candidate_id for node in result.nodes)
+
+
+def _has_edge(result: WorkerResult, candidate_id: str) -> bool:
+    return any(edge.candidate_id == candidate_id for edge in result.edges)
+
+
+def _append_board_root(result: WorkerResult, board_id: str | None) -> str | None:
+    if not board_id:
+        return None
+    board_id = str(board_id)
+    candidate_id = _board_root_candidate_id(board_id)
+    if not _has_node(result, candidate_id):
+        result.nodes.append(EmittedNode(
+            candidate_id=candidate_id,
+            node_type="Entity",
+            title=f"Board {board_id}",
+            content="Deterministic KG board root.",
+            source_artifact_ref=f"board:{board_id}",
+            source_confidence=1.0,
+        ))
+    return candidate_id
+
+
+def _attach_to_board_root(
+    result: WorkerResult,
+    *,
+    board_id: str | None,
+    child_candidate_id: str,
+    rule_slot: str,
+) -> None:
+    board_root_id = _append_board_root(result, board_id)
+    if not board_root_id:
+        return
+    edge_id = f"{child_candidate_id}_belongs_to_board"
+    if _has_edge(result, edge_id):
+        return
+    result.edges.append(EmittedEdge(
+        candidate_id=edge_id,
+        edge_type="belongs_to",
+        from_candidate_id=child_candidate_id,
+        to_candidate_id=board_root_id,
+        confidence=1.0,
+        rule_id=f"belongs_to/{rule_slot}_to_board@{WORKER_VERSION}",
+    ))
+
+
 def _extract_tech_mentions(text: str) -> list[str]:
     """Return canonical names of whitelisted techs mentioned in `text`.
 
@@ -491,6 +543,7 @@ class DeterministicWorker:
         testable without a DB.
         """
         spec_id = spec["id"]
+        board_id = spec.get("board_id")
         prefix = f"spec_{spec_id[:8]}"
         artifact_ref = f"spec:{spec_id}"
         result = WorkerResult(raw_content="")
@@ -532,6 +585,12 @@ class DeterministicWorker:
                 confidence=1.0,
                 rule_id=f"belongs_to/spec_to_ideation@{WORKER_VERSION}",
             ))
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=spec_entity_id,
+            rule_slot="spec",
+        )
 
         # Helper to attach `belongs_to` edges from each child node to the
         # spec entity, building the hierarchy backbone the UI relies on.
@@ -547,6 +606,11 @@ class DeterministicWorker:
 
         # 2. Functional requirements → Requirement (confidence 1.0, deterministic)
         fr_ids: list[tuple[str, str]] = []  # (candidate_id, text)
+        # fr_id_to_cid: maps the canonical fr_id (persisted by IMPL-1 on the
+        # FR dict) to its candidate_id so that linked_requirements references
+        # expressed as fr_ids (rather than positional ints or full text) can
+        # resolve deterministically in sections (a) and (b) below.
+        fr_id_to_cid: dict[str, str] = {}
         for i, req in enumerate(spec.get("functional_requirements") or []):
             text = req if isinstance(req, str) else (
                 req.get("text") or req.get("description") or json.dumps(req)
@@ -554,6 +618,10 @@ class DeterministicWorker:
             raw_parts.append(text)
             cid = f"{prefix}_fr_{i}"
             fr_ids.append((cid, text))
+            if isinstance(req, dict):
+                fr_id = req.get("id")
+                if fr_id not in (None, ""):
+                    fr_id_to_cid[str(fr_id)] = cid
             result.nodes.append(EmittedNode(
                 candidate_id=cid,
                 node_type="Requirement",
@@ -736,7 +804,10 @@ class DeterministicWorker:
             for idx, link in enumerate(linked):
                 if not isinstance(link, str):
                     continue
-                target = fr_text_to_cid.get(link.strip())
+                # (a) Resolve linked_requirements entry: try canonical fr_id
+                # first (IMPL-1 persists the id field on FR dicts), then fall
+                # back to full-text match for specs written before IMPL-1.
+                target = fr_id_to_cid.get(link.strip()) or fr_text_to_cid.get(link.strip())
                 if target is None:
                     result.missing_link_candidates.append(MissingLinkCandidate(
                         edge_type="implements",
@@ -880,15 +951,29 @@ class DeterministicWorker:
             _add_belongs_to(dec_cid, "fdec", i)
             # derives_from — link to linked_requirements when provided,
             # otherwise fall back to co-occurrence (all FRs, confidence 0.6).
-            explicit_idx: list[int] = []
+            # (b) Resolve refs: try canonical fr_id first (IMPL-1 persists the
+            # id field on FR dicts), then fall back to positional int index for
+            # specs written before IMPL-1.  Unresolvable refs are silently
+            # skipped so the co-occurrence fallback still fires when the
+            # explicit_fr_cids set ends up empty.
+            explicit_fr_cids: set[str] = set()
             for ref in (dec.get("linked_requirements") or []):
-                try:
-                    explicit_idx.append(int(str(ref)))
-                except (TypeError, ValueError):
-                    continue
+                ref_str = str(ref) if ref is not None else ""
+                # Try fr_id lookup first.
+                resolved = fr_id_to_cid.get(ref_str)
+                if resolved is None:
+                    # Legacy fallback: interpret ref as a positional int index.
+                    try:
+                        idx_int = int(ref_str)
+                        if 0 <= idx_int < len(fr_ids):
+                            resolved = fr_ids[idx_int][0]
+                    except (TypeError, ValueError):
+                        pass
+                if resolved is not None:
+                    explicit_fr_cids.add(resolved)
             for j, (fr_cid, _fr_text) in enumerate(fr_ids):
-                is_explicit = j in explicit_idx
-                if explicit_idx and not is_explicit:
+                is_explicit = fr_cid in explicit_fr_cids
+                if explicit_fr_cids and not is_explicit:
                     continue
                 result.edges.append(EmittedEdge(
                     candidate_id=f"{prefix}_edge_fdec{i}_derives_fr_{fr_cid}",
@@ -1009,6 +1094,7 @@ class DeterministicWorker:
 
     def process_story(self, story: dict[str, Any]) -> WorkerResult:
         sid = story["id"]
+        board_id = story.get("board_id")
         prefix = f"story_{sid[:8]}"
         artifact_ref = f"story:{sid}"
         result = WorkerResult()
@@ -1034,6 +1120,12 @@ class DeterministicWorker:
             source_artifact_ref=artifact_ref,
             source_confidence=1.0,
         ))
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=f"{prefix}_entity",
+            rule_slot="story",
+        )
         raw = "\n---\n".join(p for p in raw_parts if p)
         result.raw_content = raw
         result.content_hash = _sha256(raw)
@@ -1051,6 +1143,7 @@ class DeterministicWorker:
 
     def process_ideation(self, ideation: dict[str, Any]) -> WorkerResult:
         iid = ideation["id"]
+        board_id = ideation.get("board_id")
         prefix = f"ideation_{iid[:8]}"
         artifact_ref = f"ideation:{iid}"
         result = WorkerResult()
@@ -1093,6 +1186,12 @@ class DeterministicWorker:
                 confidence=1.0,
                 rule_id=f"belongs_to/story_to_ideation@{WORKER_VERSION}",
             ))
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=ideation_cid,
+            rule_slot="ideation",
+        )
 
         raw = "\n---\n".join(p for p in raw_parts if p and p not in ("{}", "[]"))
         result.raw_content = raw
@@ -1111,6 +1210,7 @@ class DeterministicWorker:
 
     def process_refinement(self, refinement: dict[str, Any]) -> WorkerResult:
         rid = refinement["id"]
+        board_id = refinement.get("board_id")
         prefix = f"refinement_{rid[:8]}"
         artifact_ref = f"refinement:{rid}"
         result = WorkerResult()
@@ -1151,6 +1251,12 @@ class DeterministicWorker:
                 confidence=1.0,
                 rule_id=f"belongs_to/refinement_to_ideation@{WORKER_VERSION}",
             ))
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=refinement_cid,
+            rule_slot="refinement",
+        )
 
         raw = "\n---\n".join(p for p in raw_parts if p and p not in ("[]",))
         result.raw_content = raw
@@ -1174,12 +1280,26 @@ class DeterministicWorker:
 
     def process_sprint(self, sprint: dict[str, Any]) -> WorkerResult:
         sid = sprint["id"]
+        board_id = sprint.get("board_id")
         prefix = f"sprint_{sid[:8]}"
         artifact_ref = f"sprint:{sid}"
         result = WorkerResult()
+        lane_type = sprint.get("lane_type") or "normal"
+        origin_sprint_id = sprint.get("origin_sprint_id")
+        origin_bug_id = sprint.get("origin_bug_id")
+        normal_sprint_created = sprint.get("normal_sprint_created")
+        if normal_sprint_created is None:
+            normal_sprint_created = lane_type == "normal"
+        lane_context = (
+            f"lane_type={lane_type}\n"
+            f"origin_sprint_id={origin_sprint_id or ''}\n"
+            f"origin_bug_id={origin_bug_id or ''}\n"
+            f"normal_sprint_created={str(bool(normal_sprint_created)).lower()}"
+        )
         raw_parts = [sprint.get("title") or "",
                      sprint.get("description") or "",
-                     sprint.get("objective") or ""]
+                     sprint.get("objective") or "",
+                     lane_context]
 
         sprint_cid = f"{prefix}_entity"
         result.nodes.append(EmittedNode(
@@ -1187,7 +1307,7 @@ class DeterministicWorker:
             node_type="Entity",
             title=sprint.get("title") or f"Sprint {sid}",
             content=sprint.get("description") or "",
-            context=sprint.get("objective") or "",
+            context="\n".join(p for p in [sprint.get("objective") or "", lane_context] if p),
             source_artifact_ref=artifact_ref,
             source_confidence=1.0,
         ))
@@ -1229,6 +1349,12 @@ class DeterministicWorker:
                 confidence=1.0,
                 rule_id=f"belongs_to/sprint_to_spec@{WORKER_VERSION}",
             ))
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=sprint_cid,
+            rule_slot="sprint",
+        )
 
         raw = "\n---\n".join(p for p in raw_parts if p)
         result.raw_content = raw
@@ -1258,6 +1384,7 @@ class DeterministicWorker:
         )
 
         cid = card["id"]
+        board_id = card.get("board_id")
         prefix = f"card_{cid[:8]}"
         artifact_ref = f"card:{cid}"
         card_type = card.get("card_type") or "normal"
@@ -1369,6 +1496,12 @@ class DeterministicWorker:
                 confidence=1.0,
                 rule_id=f"belongs_to/card_to_spec@{WORKER_VERSION}",
             ))
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=card_cid,
+            rule_slot="card",
+        )
 
         _append_architecture_designs(
             result,

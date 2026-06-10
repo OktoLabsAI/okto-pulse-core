@@ -140,7 +140,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
 
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())
-    agent_id = "agent-e2e-pipeline"
+    agent_id = "system:layer1_worker"
 
     # Pre-bootstrap the per-board Kùzu graph. Creating it here up-front means
     # the first Kùzu open in the pipeline (via `find_similar_for_candidate`
@@ -233,6 +233,14 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     # --- drive the primitives pipeline ---------------------------------
     nodes = [
         NodeCandidate(
+            candidate_id=f"e2e_board_entity_{board_id[:8]}",
+            node_type=KGNodeType.ENTITY,
+            title="E2E Board Root",
+            content="Board root for deterministic E2E pipeline test.",
+            source_artifact_ref=f"board:{board_id}",
+            source_confidence=1.0,
+        ),
+        NodeCandidate(
             candidate_id=f"e2e_spec_entity_{spec_id[:8]}",
             node_type=KGNodeType.ENTITY,
             title="E2E Spec Entity",
@@ -241,27 +249,48 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
             source_confidence=0.95,
         ),
         NodeCandidate(
+            candidate_id=f"e2e_requirement_{spec_id[:8]}",
+            node_type=KGNodeType.REQUIREMENT,
+            title="E2E Requirement",
+            content="Requirement used to validate deterministic edge materialization.",
+            source_artifact_ref=f"spec:{spec_id}:fr:0",
+            source_confidence=0.9,
+        ),
+        NodeCandidate(
             candidate_id=f"e2e_decision_{spec_id[:8]}",
             node_type=KGNodeType.DECISION,
             title="E2E Decision",
             content="Chosen to validate digest propagation.",
-            source_artifact_ref=f"spec:{spec_id}",
+            source_artifact_ref=f"spec:{spec_id}:decision:0",
             source_confidence=0.9,
-        ),
-        NodeCandidate(
-            candidate_id=f"e2e_alternative_{spec_id[:8]}",
-            node_type=KGNodeType.ALTERNATIVE,
-            title="E2E Alternative",
-            content="Alternative path used to validate edge materialization.",
-            source_artifact_ref=f"spec:{spec_id}",
-            source_confidence=0.85,
         ),
     ]
     edges = [
         EdgeCandidate(
-            candidate_id=f"e2e_edge_relates_to_{spec_id[:8]}",
-            edge_type=KGEdgeType.RELATES_TO,
+            candidate_id=f"e2e_spec_belongs_to_board_{spec_id[:8]}",
+            edge_type=KGEdgeType.BELONGS_TO,
             from_candidate_id=nodes[1].candidate_id,
+            to_candidate_id=nodes[0].candidate_id,
+            confidence=1.0,
+        ),
+        EdgeCandidate(
+            candidate_id=f"e2e_req_belongs_to_spec_{spec_id[:8]}",
+            edge_type=KGEdgeType.BELONGS_TO,
+            from_candidate_id=nodes[2].candidate_id,
+            to_candidate_id=nodes[1].candidate_id,
+            confidence=1.0,
+        ),
+        EdgeCandidate(
+            candidate_id=f"e2e_decision_belongs_to_spec_{spec_id[:8]}",
+            edge_type=KGEdgeType.BELONGS_TO,
+            from_candidate_id=nodes[3].candidate_id,
+            to_candidate_id=nodes[1].candidate_id,
+            confidence=1.0,
+        ),
+        EdgeCandidate(
+            candidate_id=f"e2e_decision_derives_from_req_{spec_id[:8]}",
+            edge_type=KGEdgeType.DERIVES_FROM,
+            from_candidate_id=nodes[3].candidate_id,
             to_candidate_id=nodes[2].candidate_id,
             confidence=0.85,
         ),
@@ -293,8 +322,10 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
             agent_id=agent_id,
             db=db,
         )
-        assert commit.nodes_added >= 3, commit
-        assert commit.edges_added >= 1, commit
+        assert commit.nodes_added >= 4, commit
+        assert commit.edges_added >= 4, commit
+        assert commit.connectivity["enforced"] is True
+        assert commit.connectivity["passed"] is True
 
     # --- drain the outbox once to mirror into global discovery ---------
     worker = OutboxWorker(session_factory=session_factory, interval_seconds=5)
@@ -312,7 +343,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
 
     assert queue_h.healthy, f"queue unhealthy: {queue_h}"
     assert kuzu_h.healthy, f"kuzu unhealthy: {kuzu_h}"
-    assert kuzu_h.counts["total"] >= 3, kuzu_h
+    assert kuzu_h.counts["total"] >= 4, kuzu_h
     assert refs_h.healthy, f"kuzu_node_refs unhealthy: {refs_h}"
     assert outbox_h.healthy, f"outbox unhealthy: {outbox_h}"
     assert outbox_h.counts["pending"] == 0, outbox_h

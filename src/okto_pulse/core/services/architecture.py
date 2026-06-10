@@ -12,7 +12,11 @@ import copy
 import hashlib
 import json
 import re
+import logging
 import uuid
+from collections import Counter
+from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy import select
@@ -23,6 +27,9 @@ from okto_pulse.core.models.db import (
     ArchitectureDesign,
     ArchitectureDesignVersion,
     ArchitectureDiagramPayload,
+    ArchitectureFinding,
+    ArchitectureFindingRun,
+    ArchitectureWarningAcknowledgement,
     Card,
     Ideation,
     Refinement,
@@ -34,6 +41,13 @@ from okto_pulse.core.models.schemas import (
     ArchitectureDesignSummary,
     ArchitectureDesignUpdate,
     ArchitectureDiffResponse,
+    ArchitectureWarningAcknowledgementRequest,
+)
+from okto_pulse.core.services.architecture_observability import (
+    observe_architecture_finding_run_persist,
+    observe_architecture_gate_eval,
+    observe_architecture_projection,
+    observe_architecture_warning_ack,
 )
 
 PARENT_MODELS = {
@@ -110,8 +124,494 @@ REQUIRED_LINKED_NODE_FIELDS: tuple[str, ...] = (
     "text", "displayType", "architectureKind", "iconName", "linkedEntityId",
 )
 
+logger = logging.getLogger("okto_pulse.architecture")
+
 ARCHITECTURE_DESIGN_SCHEMA_VERSION = "2026-05-04"
 SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT = "excalidraw_json"
+
+TOPOLOGY_WARNING_CODES: frozenset[str] = frozenset({
+    "isolated_entity_node",
+    "disconnected_subgraph",
+    "dangling_connector",
+    "entity_without_diagram",
+    "conceptual_justification_invalid",
+})
+
+TOPOLOGY_SUGGESTED_FIXES: dict[str, str] = {
+    "isolated_entity_node": "Connect '{label}' to a producer/consumer, remove it from this diagram, or add a valid conceptual justification.",
+    "disconnected_subgraph": "Connect the disconnected subgraph to the main flow, split it into a separate diagram, or justify it when the diagram is conceptual.",
+    "dangling_connector": "Set both sourceElementId and targetElementId to existing diagram elements or remove the connector.",
+    "entity_without_diagram": "Add a linked diagram node for entity '{entity_name}' or document why the entity is intentionally not visualized.",
+    "conceptual_justification_invalid": "Replace the placeholder justification with a specific reason for why this element is intentionally isolated.",
+}
+
+CONCEPTUAL_CONNECTIVITY_WARNING_CODES: frozenset[str] = frozenset({
+    "isolated_entity_node",
+    "disconnected_subgraph",
+})
+
+CONCEPTUAL_JUSTIFICATION_PLACEHOLDERS: frozenset[str] = frozenset({
+    "todo",
+    "tbd",
+    "n/a",
+    "na",
+    "none",
+    "fix later",
+})
+
+CONCEPTUAL_JUSTIFICATION_MIN_CHARS = 12
+CONCEPTUAL_JUSTIFICATION_MAX_CHARS = 500
+
+
+@dataclass(frozen=True)
+class ArchitectureWarningRecord:
+    """Structured non-blocking architecture validation warning."""
+
+    code: str
+    message: str
+    path: str
+    suggested_fix: str
+    severity: str = "warning"
+    diagram_id: str | None = None
+    diagram_type: str | None = None
+    element_id: str | None = None
+    entity_id: str | None = None
+    node_ref: str | None = None
+    justification: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.code not in TOPOLOGY_WARNING_CODES:
+            raise ValueError(f"unknown architecture warning code: {self.code}")
+        if self.severity != "warning":
+            raise ValueError("ArchitectureWarningRecord severity must be 'warning'")
+        target_count = sum(1 for value in (self.element_id, self.entity_id, self.node_ref) if value)
+        if target_count > 1:
+            raise ValueError("ArchitectureWarningRecord accepts at most one primary target")
+        if not self.path:
+            raise ValueError("ArchitectureWarningRecord.path is required")
+
+    def to_dict(self) -> dict[str, Any]:
+        data = {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "path": self.path,
+            "suggested_fix": self.suggested_fix,
+            "diagram_id": self.diagram_id,
+            "diagram_type": self.diagram_type,
+            "element_id": self.element_id,
+            "entity_id": self.entity_id,
+            "node_ref": self.node_ref,
+            "justification": self.justification,
+        }
+        return {key: value for key, value in data.items() if value not in (None, "")}
+
+
+@dataclass(frozen=True)
+class TopologyWarningEvaluation:
+    """Result produced by the pure architecture topology analyzer."""
+
+    warnings: tuple[ArchitectureWarningRecord, ...]
+    suppressed_warnings: tuple[ArchitectureWarningRecord, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "warnings": [warning.to_dict() for warning in self.warnings],
+            "suppressed_warnings": [warning.to_dict() for warning in self.suppressed_warnings],
+        }
+
+
+@dataclass(frozen=True)
+class _TopologyNode:
+    ref: str
+    element_id: str | None
+    path: str
+    label: str
+    linked_entity_ref: str | None
+
+
+class TopologyWarningEngine:
+    """Pure, adapter-neutral topology checks for Architecture Design diagrams."""
+
+    EDGE_TYPES = frozenset({"arrow", "line"})
+
+    def evaluate(
+        self,
+        *,
+        entities: list[dict[str, Any]],
+        diagrams: list[dict[str, Any]],
+        existing_issues: list[str] | None = None,
+    ) -> TopologyWarningEvaluation:
+        """Return deterministic non-blocking topology and coverage warnings.
+
+        ``existing_issues`` is accepted for the later payload-critic wiring path.
+        The engine never downgrades or removes existing blocking issues.
+        """
+        _ = existing_issues
+        if not isinstance(entities, list) or not isinstance(diagrams, list):
+            return TopologyWarningEvaluation(warnings=())
+
+        declared_entities, entity_ref_to_declared = self._declared_entities(entities)
+        covered_entities: set[str] = set()
+        warnings: list[ArchitectureWarningRecord] = []
+        suppressed_warnings: list[ArchitectureWarningRecord] = []
+
+        for diagram_index, raw_diagram in enumerate(diagrams):
+            if not isinstance(raw_diagram, dict):
+                continue
+            if (raw_diagram.get("format") or SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT) != SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT:
+                continue
+            payload = raw_diagram.get("adapter_payload")
+            if not isinstance(payload, dict):
+                continue
+            diagram_warnings, diagram_covered = self._evaluate_diagram(
+                raw_diagram,
+                payload,
+                diagram_index,
+                entity_ref_to_declared,
+            )
+            active_warnings, suppressed, justification_warnings = self._apply_conceptual_justifications(
+                raw_diagram,
+                diagram_index,
+                diagram_warnings,
+            )
+            warnings.extend(active_warnings)
+            warnings.extend(justification_warnings)
+            suppressed_warnings.extend(suppressed)
+            covered_entities.update(diagram_covered)
+
+        for declared in declared_entities:
+            if declared["declared_ref"] in covered_entities:
+                continue
+            entity_name = declared["name"] or declared["entity_id"]
+            warnings.append(
+                ArchitectureWarningRecord(
+                    code="entity_without_diagram",
+                    diagram_id=None,
+                    diagram_type=None,
+                    entity_id=declared["entity_id"],
+                    path=declared["path"],
+                    message=f"Architecture entity '{entity_name}' is not represented by any linked diagram node.",
+                    suggested_fix=TOPOLOGY_SUGGESTED_FIXES["entity_without_diagram"].format(entity_name=entity_name),
+                )
+            )
+
+        return TopologyWarningEvaluation(
+            warnings=tuple(self._sort_warnings(warnings)),
+            suppressed_warnings=tuple(self._sort_warnings(suppressed_warnings)),
+        )
+
+    def _evaluate_diagram(
+        self,
+        diagram: dict[str, Any],
+        payload: dict[str, Any],
+        diagram_index: int,
+        entity_ref_to_declared: dict[str, str],
+    ) -> tuple[list[ArchitectureWarningRecord], set[str]]:
+        diagram_id = str(diagram.get("id") or f"diagram[{diagram_index}]")
+        diagram_type = str(diagram.get("diagram_type") or "")
+        elements = payload.get("elements") or []
+        if not isinstance(elements, list):
+            return [], set()
+
+        nodes: dict[str, _TopologyNode] = {}
+        covered_entities: set[str] = set()
+        warnings: list[ArchitectureWarningRecord] = []
+        edge_candidates: list[tuple[int, dict[str, Any]]] = []
+
+        diagram_path = f"diagrams[{diagram_index}].adapter_payload"
+        for element_index, raw_element in enumerate(elements):
+            if not isinstance(raw_element, dict):
+                continue
+            element_type = str(raw_element.get("type") or "")
+            if element_type in self.EDGE_TYPES:
+                edge_candidates.append((element_index, raw_element))
+                continue
+            element_id = str(raw_element.get("id") or "").strip() or None
+            element_ref = self._node_ref(raw_element, element_id)
+            if not element_ref:
+                continue
+            linked_entity_raw = _custom_or_top_level(raw_element, "linkedEntityId")
+            linked_entity_ref = _canonical_ref(linked_entity_raw)
+            declared_ref = entity_ref_to_declared.get(linked_entity_ref) if linked_entity_ref else None
+            if declared_ref:
+                covered_entities.add(declared_ref)
+            nodes[element_ref] = _TopologyNode(
+                ref=element_ref,
+                element_id=element_id,
+                path=f"{diagram_path}.elements[{element_index}]",
+                label=self._element_label(raw_element, element_id or element_ref),
+                linked_entity_ref=declared_ref,
+            )
+
+        adjacency: dict[str, set[str]] = {node_ref: set() for node_ref in nodes}
+        for element_index, raw_edge in edge_candidates:
+            edge_path = f"{diagram_path}.elements[{element_index}]"
+            source_id = _custom_or_top_level(raw_edge, "sourceElementId")
+            target_id = _custom_or_top_level(raw_edge, "targetElementId")
+            source_ref = _canonical_ref(source_id)
+            target_ref = _canonical_ref(target_id)
+            if not source_ref or not target_ref or source_ref not in nodes or target_ref not in nodes:
+                element_id = str(raw_edge.get("id") or "").strip() or None
+                warnings.append(
+                    ArchitectureWarningRecord(
+                        code="dangling_connector",
+                        diagram_id=diagram_id,
+                        diagram_type=diagram_type,
+                        element_id=element_id,
+                        path=edge_path,
+                        message="Diagram connector does not resolve both sourceElementId and targetElementId to existing nodes.",
+                        suggested_fix=TOPOLOGY_SUGGESTED_FIXES["dangling_connector"],
+                    )
+                )
+                continue
+            adjacency[source_ref].add(target_ref)
+            adjacency[target_ref].add(source_ref)
+
+        for node_ref, node in nodes.items():
+            if node.linked_entity_ref and not adjacency[node_ref]:
+                warnings.append(
+                    ArchitectureWarningRecord(
+                        code="isolated_entity_node",
+                        diagram_id=diagram_id,
+                        diagram_type=diagram_type,
+                        element_id=node.element_id,
+                        node_ref=None if node.element_id else node.ref,
+                        path=node.path,
+                        message=f"Diagram entity node '{node.label}' has no incident connector.",
+                        suggested_fix=TOPOLOGY_SUGGESTED_FIXES["isolated_entity_node"].format(label=node.label),
+                    )
+                )
+
+        connected_components = self._connected_components(adjacency)
+        connected_components = [component for component in connected_components if any(adjacency[node_ref] for node_ref in component)]
+        if len(connected_components) > 1:
+            primary = connected_components[0]
+            for component in connected_components:
+                if component == primary:
+                    continue
+                focus_ref = sorted(component)[0]
+                focus = nodes[focus_ref]
+                warnings.append(
+                    ArchitectureWarningRecord(
+                        code="disconnected_subgraph",
+                        diagram_id=diagram_id,
+                        diagram_type=diagram_type,
+                        element_id=focus.element_id,
+                        node_ref=None if focus.element_id else focus.ref,
+                        path=focus.path,
+                        message=f"Diagram contains a disconnected subgraph with {len(component)} node(s).",
+                        suggested_fix=TOPOLOGY_SUGGESTED_FIXES["disconnected_subgraph"],
+                    )
+                )
+
+        return warnings, covered_entities
+
+    def _apply_conceptual_justifications(
+        self,
+        diagram: dict[str, Any],
+        diagram_index: int,
+        warnings: list[ArchitectureWarningRecord],
+    ) -> tuple[list[ArchitectureWarningRecord], list[ArchitectureWarningRecord], list[ArchitectureWarningRecord]]:
+        raw_justifications = diagram.get("connectivity_justifications")
+        if not isinstance(raw_justifications, dict) or not raw_justifications:
+            return warnings, [], []
+
+        valid_justifications: dict[str, str] = {}
+        invalid_warnings: list[ArchitectureWarningRecord] = []
+        for raw_key, raw_value in raw_justifications.items():
+            key = str(raw_key or "").strip()
+            path = f"diagrams[{diagram_index}].connectivity_justifications[{key!r}]"
+            if not key:
+                invalid_warnings.append(self._invalid_justification_warning(diagram, diagram_index, path, None, None))
+                continue
+            justification, invalid_reason = self._validate_connectivity_justification(raw_value)
+            if invalid_reason:
+                target_warning = self._warning_for_justification_key(warnings, key)
+                invalid_warnings.append(
+                    self._invalid_justification_warning(
+                        diagram,
+                        diagram_index,
+                        path,
+                        target_warning,
+                        invalid_reason,
+                    )
+                )
+                continue
+            valid_justifications[_canonical_ref(key)] = justification
+
+        if not self._is_conceptual_diagram(diagram):
+            return warnings, [], invalid_warnings
+
+        active_warnings: list[ArchitectureWarningRecord] = []
+        suppressed_warnings: list[ArchitectureWarningRecord] = []
+        for warning in warnings:
+            if warning.code not in CONCEPTUAL_CONNECTIVITY_WARNING_CODES:
+                active_warnings.append(warning)
+                continue
+            justification = self._matching_justification(warning, valid_justifications)
+            if not justification:
+                active_warnings.append(warning)
+                continue
+            suppressed_warnings.append(
+                ArchitectureWarningRecord(
+                    code=warning.code,
+                    message=warning.message,
+                    path=warning.path,
+                    suggested_fix=warning.suggested_fix,
+                    severity=warning.severity,
+                    diagram_id=warning.diagram_id,
+                    diagram_type=warning.diagram_type,
+                    element_id=warning.element_id,
+                    entity_id=warning.entity_id,
+                    node_ref=warning.node_ref,
+                    justification=justification,
+                )
+            )
+        return active_warnings, suppressed_warnings, invalid_warnings
+
+    def _invalid_justification_warning(
+        self,
+        diagram: dict[str, Any],
+        diagram_index: int,
+        path: str,
+        target_warning: ArchitectureWarningRecord | None,
+        reason: str | None,
+    ) -> ArchitectureWarningRecord:
+        reason_suffix = f" {reason}" if reason else ""
+        return ArchitectureWarningRecord(
+            code="conceptual_justification_invalid",
+            diagram_id=str(diagram.get("id") or f"diagram[{diagram_index}]"),
+            diagram_type=str(diagram.get("diagram_type") or ""),
+            element_id=target_warning.element_id if target_warning else None,
+            node_ref=(None if target_warning and target_warning.element_id else target_warning.node_ref) if target_warning else None,
+            path=path,
+            message=f"Conceptual connectivity justification is invalid.{reason_suffix}",
+            suggested_fix=TOPOLOGY_SUGGESTED_FIXES["conceptual_justification_invalid"],
+        )
+
+    def _validate_connectivity_justification(self, value: Any) -> tuple[str, str | None]:
+        justification = str(value or "").strip()
+        if not justification:
+            return "", "Provide a non-empty justification."
+        length = len(justification)
+        if length < CONCEPTUAL_JUSTIFICATION_MIN_CHARS:
+            return justification, f"Use at least {CONCEPTUAL_JUSTIFICATION_MIN_CHARS} characters after trimming."
+        if length > CONCEPTUAL_JUSTIFICATION_MAX_CHARS:
+            return justification, f"Use at most {CONCEPTUAL_JUSTIFICATION_MAX_CHARS} characters after trimming."
+        lowered = justification.casefold()
+        compacted = re.sub(r"[\s/._-]+", "", lowered)
+        if lowered in CONCEPTUAL_JUSTIFICATION_PLACEHOLDERS or compacted in {"todo", "tbd", "na", "none", "fixlater"}:
+            return justification, "Replace placeholder text with a specific reason."
+        if lowered.startswith(("todo", "tbd", "fix later")):
+            return justification, "Replace placeholder text with a specific reason."
+        return justification, None
+
+    def _warning_for_justification_key(
+        self,
+        warnings: list[ArchitectureWarningRecord],
+        key: str,
+    ) -> ArchitectureWarningRecord | None:
+        key_ref = _canonical_ref(key)
+        for warning in warnings:
+            if warning.element_id and _canonical_ref(warning.element_id) == key_ref:
+                return warning
+        for warning in warnings:
+            if not warning.element_id and warning.node_ref and _canonical_ref(warning.node_ref) == key_ref:
+                return warning
+        return None
+
+    def _matching_justification(
+        self,
+        warning: ArchitectureWarningRecord,
+        valid_justifications: dict[str, str],
+    ) -> str | None:
+        if warning.element_id:
+            return valid_justifications.get(_canonical_ref(warning.element_id))
+        if warning.node_ref:
+            return valid_justifications.get(_canonical_ref(warning.node_ref))
+        return None
+
+    def _is_conceptual_diagram(self, diagram: dict[str, Any]) -> bool:
+        if diagram.get("is_conceptual") is True:
+            return True
+        diagram_type = _canonical_ref(diagram.get("diagram_type"))
+        return "concept" in diagram_type
+
+    def _declared_entities(self, entities: list[dict[str, Any]]) -> tuple[list[dict[str, str]], dict[str, str]]:
+        declared: list[dict[str, str]] = []
+        ref_to_declared: dict[str, str] = {}
+        for index, entity in enumerate(entities):
+            if not isinstance(entity, dict):
+                continue
+            entity_id = str(entity.get("id") or entity.get("name") or f"entities[{index}]").strip()
+            entity_name = str(entity.get("name") or "").strip()
+            declared_ref = _canonical_ref(entity.get("id") or entity.get("name") or entity_id)
+            if not declared_ref:
+                continue
+            declared.append(
+                {
+                    "declared_ref": declared_ref,
+                    "entity_id": entity_id,
+                    "name": entity_name,
+                    "path": f"entities[{index}]",
+                }
+            )
+            for ref_value in (entity.get("id"), entity.get("name")):
+                ref = _canonical_ref(ref_value)
+                if ref:
+                    ref_to_declared[ref] = declared_ref
+        return declared, ref_to_declared
+
+    def _connected_components(self, adjacency: dict[str, set[str]]) -> list[set[str]]:
+        visited: set[str] = set()
+        components: list[set[str]] = []
+        for node_ref in adjacency:
+            if node_ref in visited:
+                continue
+            stack = [node_ref]
+            component: set[str] = set()
+            while stack:
+                current = stack.pop()
+                if current in visited:
+                    continue
+                visited.add(current)
+                component.add(current)
+                stack.extend(sorted(adjacency[current] - visited, reverse=True))
+            components.append(component)
+        return components
+
+    def _element_label(self, element: dict[str, Any], fallback: str) -> str:
+        for key in ("text", "label", "name"):
+            value = str(element.get(key) or "").strip()
+            if value:
+                return value.splitlines()[0].strip()
+        return fallback
+
+    def _node_ref(self, element: dict[str, Any], element_id: str | None) -> str:
+        for value in (
+            element_id,
+            _custom_or_top_level(element, "node_ref"),
+            _custom_or_top_level(element, "nodeRef"),
+        ):
+            ref = _canonical_ref(value)
+            if ref:
+                return ref
+        return ""
+
+    def _sort_warnings(self, warnings: list[ArchitectureWarningRecord]) -> list[ArchitectureWarningRecord]:
+        return sorted(
+            warnings,
+            key=lambda warning: (
+                warning.severity,
+                warning.code,
+                warning.diagram_id or "",
+                warning.path,
+                warning.element_id or "",
+                warning.entity_id or "",
+                warning.node_ref or "",
+            ),
+        )
 
 
 def architecture_design_payload_schema() -> dict[str, Any]:
@@ -124,6 +624,28 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                 "interface.direction": sorted(ALLOWED_INTERFACE_DIRECTIONS),
                 "diagram.format": [SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT],
                 "excalidraw.connectionType": sorted(ALLOWED_CONNECTION_TYPES),
+                "topology_warning.code": sorted(TOPOLOGY_WARNING_CODES),
+                "topology_warning.severity": ["warning"],
+            },
+            "topology_warning_contract": {
+                "record_shape": {
+                    "required": ["code", "severity", "message", "path", "suggested_fix"],
+                    "target_fields": ["element_id", "entity_id", "node_ref"],
+                    "target_rule": "At most one primary target field is set; node_ref is legacy/import fallback.",
+                },
+                "connectivity_justifications": {
+                    "location": "diagram.connectivity_justifications",
+                    "scope": "conceptual diagrams only",
+                    "key_preference": "Use element_id keys; use node_ref only for legacy/imported diagrams without stable ids.",
+                    "value_constraints": {
+                        "min_trimmed_chars": CONCEPTUAL_JUSTIFICATION_MIN_CHARS,
+                        "max_trimmed_chars": CONCEPTUAL_JUSTIFICATION_MAX_CHARS,
+                        "placeholder_values": sorted(CONCEPTUAL_JUSTIFICATION_PLACEHOLDERS),
+                    },
+                    "suppressible_codes": sorted(CONCEPTUAL_CONNECTIVITY_WARNING_CODES),
+                    "non_suppressible_codes": ["dangling_connector", "entity_without_diagram"],
+                },
+                "suggested_fix_templates": copy.deepcopy(TOPOLOGY_SUGGESTED_FIXES),
             },
             "root_contract": {
                 "required": ["title", "global_description"],
@@ -333,6 +855,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     "Each element needs a stable id.",
                     "Nodes should set linkedEntityId to an entity id or name.",
                     "Edges should set sourceElementId, targetElementId, linkedInterfaceIds and connectionType.",
+                    "For conceptual diagrams, diagram.connectivity_justifications may suppress isolated_entity_node and disconnected_subgraph warnings only with valid explicit reasons.",
                     "Use linkedInterfaceIds for one or more contracts on the same connection; linkedInterfaceId remains accepted for legacy single-contract edges.",
                     "The source and target linkedEntityId values of the edge define the two endpoint entities for linked interfaces.",
                     "connectionType accepts only direct or elbow. Use elbow for routed/orthogonal connections. Do not use curved.",
@@ -416,6 +939,37 @@ class ArchitecturePayloadValidationError(ValueError):
         self.issues = issues
         issue_count = len(issues)
         super().__init__(f"Architecture payload rejected: {issue_count} issue(s): " + "; ".join(issues))
+
+
+class ArchitectureWarningAcknowledgementRequired(ValueError):
+    """Raised when a valid architecture payload has active warnings without explicit acknowledgement."""
+
+    def __init__(
+        self,
+        *,
+        design_id: str,
+        warning_keys: list[str],
+        warnings: list[dict[str, Any]],
+        reason: str = "architecture_warning_acknowledgement_required",
+    ):
+        self.reason = reason
+        self.design_id = design_id
+        self.warning_keys = warning_keys
+        self.warnings = warnings
+        super().__init__(reason)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "error": self.reason,
+            "code": "architecture_warning_acknowledgement_required",
+            "design_id": self.design_id,
+            "warning_keys": self.warning_keys,
+            "structured_warnings": self.warnings,
+            "message": (
+                "Architecture design has active warnings. Explicitly acknowledge the warning keys "
+                "to save; acknowledgement is audit-only and does not clear the warnings."
+            ),
+        }
 
 
 def _stable_json(value: Any) -> str:
@@ -874,6 +1428,551 @@ class ArchitectureDiagramStore:
         return result.scalar_one_or_none()
 
 
+ARCHITECTURE_FINDING_ACTIVE = "active"
+ARCHITECTURE_FINDING_RESOLVED = "resolved"
+ARCHITECTURE_FINDING_SUPERSEDED = "superseded"
+
+
+class ArchitectureFindingRunError(ValueError):
+    """Base error for architecture finding run persistence."""
+
+
+class ArchitectureInvalidDesignNotPersisted(ArchitectureFindingRunError):
+    """Raised when a caller attempts to persist findings for an invalid design."""
+
+
+class ArchitectureFindingKeyCollision(ArchitectureFindingRunError):
+    """Raised when one critic run produces conflicting payloads for one key."""
+
+
+def _warning_as_dict(warning: ArchitectureWarningRecord | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(warning, ArchitectureWarningRecord):
+        return warning.to_dict()
+    if isinstance(warning, dict):
+        return dict(warning)
+    raise TypeError(f"unsupported architecture warning type: {type(warning).__name__}")
+
+
+def architecture_warning_target(warning: ArchitectureWarningRecord | dict[str, Any]) -> tuple[str, str, str]:
+    """Return normalized target kind, target ref, and path for a warning.
+
+    Priority is intentionally identical to TR3: element_id, then entity_id,
+    then node_ref, then path. Path is required by ArchitectureWarningRecord and
+    by the persisted finding contract.
+    """
+
+    data = _warning_as_dict(warning)
+    path = str(data.get("path") or "").strip()
+    if not path:
+        raise ValueError("architecture warning path is required")
+    for field_name, kind in (
+        ("element_id", "element"),
+        ("entity_id", "entity"),
+        ("node_ref", "node"),
+    ):
+        value = data.get(field_name)
+        if value not in (None, ""):
+            return kind, str(value), path
+    return "path", path, path
+
+
+def stable_architecture_finding_key(
+    design_id: str,
+    warning: ArchitectureWarningRecord | dict[str, Any],
+) -> str:
+    """Compute the stable key that drives finding lifecycle transitions."""
+
+    data = _warning_as_dict(warning)
+    kind, target_ref, _path = architecture_warning_target(data)
+    payload = {
+        "design_id": design_id,
+        "warning_code": str(data.get("code") or ""),
+        "diagram_id": str(data.get("diagram_id") or ""),
+        "target_ref": target_ref,
+        "normalized_target_kind": kind,
+    }
+    return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+class ArchitectureFindingRunStore:
+    """Persistence boundary for Architecture Design finding runs.
+
+    The store consumes existing backend critic output. It never calls
+    ``TopologyWarningEngine`` and never creates persisted error findings for
+    invalid payloads.
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def upsert_latest_run(
+        self,
+        *,
+        board_id: str,
+        design_id: str,
+        design_version: int,
+        critic_run_id: str,
+        actor: dict[str, Any],
+        validator_summary: dict[str, Any] | None,
+        structured_warnings: list[ArchitectureWarningRecord | dict[str, Any]],
+    ) -> dict[str, Any]:
+        design = await self.db.get(ArchitectureDesign, design_id)
+        if design is None:
+            raise ValueError(f"architecture design not found: {design_id}")
+        if design.board_id != board_id:
+            raise ValueError("architecture design does not belong to board")
+
+        summary = dict(validator_summary or {})
+        if summary.get("valid") is False or summary.get("issues"):
+            raise ArchitectureInvalidDesignNotPersisted("invalid_design_not_persisted")
+
+        await self._delete_existing_run(design_id, critic_run_id)
+
+        previous_runs = await self.db.execute(
+            select(ArchitectureFindingRun).where(
+                ArchitectureFindingRun.design_id == design_id,
+                ArchitectureFindingRun.is_current == True,  # noqa: E712
+            )
+        )
+        for run in previous_runs.scalars().all():
+            run.is_current = False
+
+        previous_active = await self.db.execute(
+            select(ArchitectureFinding).where(
+                ArchitectureFinding.design_id == design_id,
+                ArchitectureFinding.lifecycle == ARCHITECTURE_FINDING_ACTIVE,
+            )
+        )
+        previous_by_key = {
+            finding.finding_key: finding
+            for finding in previous_active.scalars().all()
+        }
+
+        warning_rows = self._dedupe_warnings(design_id, structured_warnings)
+        new_keys = set(warning_rows)
+        resolved_count = 0
+        superseded_count = 0
+        for key, finding in previous_by_key.items():
+            if key in new_keys:
+                finding.lifecycle = ARCHITECTURE_FINDING_SUPERSEDED
+                superseded_count += 1
+            else:
+                finding.lifecycle = ARCHITECTURE_FINDING_RESOLVED
+                resolved_count += 1
+
+        run = ArchitectureFindingRun(
+            board_id=board_id,
+            design_id=design_id,
+            design_version=design_version,
+            critic_run_id=critic_run_id,
+            is_current=True,
+            active_count=len(warning_rows),
+            resolved_count=resolved_count,
+            superseded_count=superseded_count,
+            validator_summary=summary,
+            actor_type=str(actor.get("actor_type") or "user"),
+            actor_id=str(actor.get("actor_id") or "system"),
+            actor_name=actor.get("actor_name"),
+        )
+        self.db.add(run)
+        await self.db.flush()
+
+        findings: list[ArchitectureFinding] = []
+        for key, warning in warning_rows.items():
+            kind, target_ref, path = architecture_warning_target(warning)
+            finding = ArchitectureFinding(
+                run_id=run.id,
+                board_id=board_id,
+                design_id=design_id,
+                design_version=design_version,
+                critic_run_id=critic_run_id,
+                finding_key=key,
+                warning_code=str(warning.get("code") or "unknown"),
+                severity=str(warning.get("severity") or "warning"),
+                message=str(warning.get("message") or ""),
+                suggested_fix=warning.get("suggested_fix"),
+                path=path,
+                target_ref=target_ref,
+                normalized_target_kind=kind,
+                diagram_id=warning.get("diagram_id"),
+                diagram_type=warning.get("diagram_type"),
+                lifecycle=ARCHITECTURE_FINDING_ACTIVE,
+                raw_warning=warning,
+            )
+            self.db.add(finding)
+            findings.append(finding)
+        await self.db.flush()
+
+        return {
+            "design_id": design_id,
+            "critic_run_id": critic_run_id,
+            "active_count": len(findings),
+            "resolved_count": resolved_count,
+            "superseded_count": superseded_count,
+            "findings": [self._finding_to_dict(finding) for finding in findings],
+        }
+
+    async def list_findings(
+        self,
+        *,
+        design_id: str,
+        lifecycle: str | None = None,
+    ) -> list[ArchitectureFinding]:
+        stmt = select(ArchitectureFinding).where(ArchitectureFinding.design_id == design_id)
+        if lifecycle is not None:
+            stmt = stmt.where(ArchitectureFinding.lifecycle == lifecycle)
+        stmt = stmt.order_by(ArchitectureFinding.created_at.asc(), ArchitectureFinding.finding_key.asc())
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_current_run(self, design_id: str) -> ArchitectureFindingRun | None:
+        result = await self.db.execute(
+            select(ArchitectureFindingRun)
+            .where(
+                ArchitectureFindingRun.design_id == design_id,
+                ArchitectureFindingRun.is_current == True,  # noqa: E712
+            )
+            .order_by(ArchitectureFindingRun.created_at.desc())
+        )
+        return result.scalars().first()
+
+    async def record_acknowledgements(
+        self,
+        *,
+        board_id: str,
+        design_id: str,
+        critic_run_id: str,
+        finding_keys: list[str],
+        actor: dict[str, Any],
+        statement: str | None = None,
+    ) -> list[ArchitectureWarningAcknowledgement]:
+        run = await self._get_run(design_id, critic_run_id)
+        if run is None:
+            raise ValueError(f"architecture finding run not found: {critic_run_id}")
+        active = await self.list_findings(design_id=design_id, lifecycle=ARCHITECTURE_FINDING_ACTIVE)
+        active_keys = {finding.finding_key for finding in active if finding.critic_run_id == critic_run_id}
+        missing = sorted(set(finding_keys) - active_keys)
+        if missing:
+            raise ValueError(f"warning acknowledgement references unknown active findings: {missing}")
+
+        acknowledgements: list[ArchitectureWarningAcknowledgement] = []
+        for finding_key in finding_keys:
+            result = await self.db.execute(
+                select(ArchitectureWarningAcknowledgement).where(
+                    ArchitectureWarningAcknowledgement.design_id == design_id,
+                    ArchitectureWarningAcknowledgement.critic_run_id == critic_run_id,
+                    ArchitectureWarningAcknowledgement.finding_key == finding_key,
+                    ArchitectureWarningAcknowledgement.actor_id == str(actor.get("actor_id") or "system"),
+                )
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                row = ArchitectureWarningAcknowledgement(
+                    board_id=board_id,
+                    design_id=design_id,
+                    design_version=run.design_version,
+                    critic_run_id=critic_run_id,
+                    finding_key=finding_key,
+                    actor_type=str(actor.get("actor_type") or "user"),
+                    actor_id=str(actor.get("actor_id") or "system"),
+                    actor_name=actor.get("actor_name"),
+                    statement=statement,
+                )
+                self.db.add(row)
+            else:
+                row.actor_type = str(actor.get("actor_type") or row.actor_type)
+                row.actor_name = actor.get("actor_name")
+                row.statement = statement
+            acknowledgements.append(row)
+        await self.db.flush()
+        return acknowledgements
+
+    async def _delete_existing_run(self, design_id: str, critic_run_id: str) -> None:
+        existing = await self._get_run(design_id, critic_run_id)
+        if existing is not None:
+            await self.db.delete(existing)
+            await self.db.flush()
+
+    async def _get_run(self, design_id: str, critic_run_id: str) -> ArchitectureFindingRun | None:
+        result = await self.db.execute(
+            select(ArchitectureFindingRun).where(
+                ArchitectureFindingRun.design_id == design_id,
+                ArchitectureFindingRun.critic_run_id == critic_run_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    def _dedupe_warnings(
+        self,
+        design_id: str,
+        structured_warnings: list[ArchitectureWarningRecord | dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        by_key: dict[str, dict[str, Any]] = {}
+        fingerprints: dict[str, str] = {}
+        for warning in structured_warnings:
+            data = _warning_as_dict(warning)
+            key = stable_architecture_finding_key(design_id, data)
+            fingerprint = _hash_payload(data)
+            if key in by_key:
+                if fingerprints[key] != fingerprint:
+                    raise ArchitectureFindingKeyCollision("finding_key_collision")
+                continue
+            by_key[key] = data
+            fingerprints[key] = fingerprint
+        return by_key
+
+    def _finding_to_dict(self, finding: ArchitectureFinding) -> dict[str, Any]:
+        return {
+            "finding_key": finding.finding_key,
+            "code": finding.warning_code,
+            "severity": finding.severity,
+            "lifecycle": finding.lifecycle,
+            "normalized_target_kind": finding.normalized_target_kind,
+            "target_ref": finding.target_ref,
+            "path": finding.path,
+            "message": finding.message,
+            "suggested_fix": finding.suggested_fix,
+            "diagram_id": finding.diagram_id,
+            "diagram_type": finding.diagram_type,
+        }
+
+
+async def backfill_architecture_finding_runs(
+    db: AsyncSession,
+    *,
+    board_id: str | None = None,
+    only_missing: bool = False,
+) -> dict[str, int]:
+    """Materializa finding runs para designs existentes (self-heal).
+
+    Investigação 2026-06-10: o AFG avalia FINDINGS PERSISTIDOS, mas eles só
+    nascem num save pós-AFG — 83% dos designs do board 0.2.3 nunca tiveram
+    um run (criados antes da feature ou nunca re-salvos), então a tabela
+    estava vazia e o gate nunca bloqueou nada. Este sweep re-avalia os
+    designs com os payloads RE-HIDRATADOS (o segundo furo: refs
+    externalizadas eram puladas pelo engine) e grava o run atual de cada
+    um. Idempotente: ``upsert_latest_run`` substitui o run corrente.
+
+    ``only_missing=True`` restringe a designs sem nenhum run (sweep de boot
+    barato); o default re-avalia tudo (reconcilia runs imprecisos gravados
+    antes do fix da re-hidratação).
+    """
+    repo = ArchitectureDesignRepository(db)
+    stmt = select(ArchitectureDesign)
+    if board_id:
+        stmt = stmt.where(ArchitectureDesign.board_id == board_id)
+    designs = list((await db.execute(stmt)).scalars().all())
+
+    stats = {"designs": 0, "skipped": 0, "with_findings": 0, "findings": 0, "errors": 0}
+    for design in designs:
+        if only_missing:
+            existing = await db.execute(
+                select(ArchitectureFindingRun.id)
+                .where(ArchitectureFindingRun.design_id == design.id)
+                .limit(1)
+            )
+            if existing.first() is not None:
+                stats["skipped"] += 1
+                continue
+        try:
+            diagrams = await repo._diagrams_for_validation(design.diagrams or [])
+            critique = repo.critique_payload(
+                {
+                    "title": design.title,
+                    "global_description": design.global_description,
+                    "entities": design.entities or [],
+                    "interfaces": design.interfaces or [],
+                    "diagrams": diagrams,
+                }
+            )
+            if critique.get("valid") is False:
+                # Designs com payload inválido nunca persistem run (contrato
+                # da store) — ficam para correção manual.
+                stats["skipped"] += 1
+                continue
+            warnings = repo._structured_warnings_with_keys(
+                design.id, list(critique.get("structured_warnings") or [])
+            )
+            store = ArchitectureFindingRunStore(db)
+            await store.upsert_latest_run(
+                board_id=design.board_id,
+                design_id=design.id,
+                design_version=design.version,
+                critic_run_id=(
+                    f"archcrit-backfill:{design.id}:v{design.version}:"
+                    f"{uuid.uuid4().hex[:8]}"
+                ),
+                actor={
+                    "actor_type": "system",
+                    "actor_id": "architecture-finding-backfill",
+                    "actor_name": "Architecture finding backfill",
+                },
+                validator_summary={
+                    "valid": True,
+                    "issues": [],
+                    "warnings_count": len(critique.get("warnings") or []),
+                    "structured_warnings_count": len(warnings),
+                    "suppressed_warnings_count": len(
+                        critique.get("suppressed_warnings") or []
+                    ),
+                    "summary": critique.get("summary") or {},
+                },
+                structured_warnings=warnings,
+            )
+            stats["designs"] += 1
+            if warnings:
+                stats["with_findings"] += 1
+                stats["findings"] += len(warnings)
+        except Exception:
+            logger.exception(
+                "architecture.finding_backfill.design_failed design_id=%s",
+                design.id,
+            )
+            stats["errors"] += 1
+    await db.commit()
+    return stats
+
+
+
+@dataclass(frozen=True)
+class ArchitectureFindingGate:
+    """Evaluate persisted architecture findings for SDLC completion gates.
+
+    The gate consumes Resource Gate-resolved Architecture Design references and
+    the persisted finding lifecycle. It intentionally never re-runs topology
+    analysis; the backend architecture critic remains the source of truth.
+    """
+
+    db: AsyncSession
+
+    async def evaluate(
+        self,
+        *,
+        board_id: str,
+        owner_type: str,
+        owner_id: str,
+        architecture_refs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        started = perf_counter()
+        store = ArchitectureFindingRunStore(self.db)
+        active: list[dict[str, Any]] = []
+        resolved_count = 0
+        superseded_count = 0
+        by_design: list[dict[str, Any]] = []
+        seen_design_ids: set[str] = set()
+
+        for ref in architecture_refs:
+            design_id = str(ref.get("id") or "").strip()
+            if not design_id or design_id in seen_design_ids:
+                continue
+            seen_design_ids.add(design_id)
+
+            findings = await store.list_findings(design_id=design_id)
+            active_findings = [
+                finding for finding in findings
+                if finding.lifecycle == ARCHITECTURE_FINDING_ACTIVE
+            ]
+            resolved_findings = [
+                finding for finding in findings
+                if finding.lifecycle == ARCHITECTURE_FINDING_RESOLVED
+            ]
+            superseded_findings = [
+                finding for finding in findings
+                if finding.lifecycle == ARCHITECTURE_FINDING_SUPERSEDED
+            ]
+            resolved_count += len(resolved_findings)
+            superseded_count += len(superseded_findings)
+
+            by_design.append({
+                "design_id": design_id,
+                "title": ref.get("title"),
+                "source_entity_type": ref.get("source_entity_type"),
+                "source_entity_id": ref.get("source_entity_id"),
+                "source_entity_title": ref.get("source_entity_title"),
+                "active_count": len(active_findings),
+                "resolved_count": len(resolved_findings),
+                "superseded_count": len(superseded_findings),
+            })
+            active.extend(
+                self._finding_to_remediation(finding, ref)
+                for finding in active_findings
+            )
+
+        by_code = dict(Counter(item["code"] for item in active))
+        projection = {
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "design_count": len(seen_design_ids),
+            "active_count": len(active),
+            "resolved_count": resolved_count,
+            "superseded_count": superseded_count,
+            "by_code": by_code,
+            "by_design": by_design,
+            "top_remediation": active[:10],
+            "blocking": bool(active),
+            "remediation": (
+                "Resolve active Architecture Design findings by updating the "
+                "diagram/design until the backend architecture critic no longer "
+                "emits those warning keys. Save acknowledgement is audit-only "
+                "and does not bypass Done."
+                if active else None
+            ),
+        }
+        outcome = "active" if active else "clear"
+        duration_ms = (perf_counter() - started) * 1000
+        observe_architecture_gate_eval(
+            board_id=board_id,
+            owner_type=owner_type,
+            duration_ms=duration_ms,
+            active_count=len(active),
+            design_count=len(seen_design_ids),
+            outcome=outcome,
+        )
+        observe_architecture_projection(
+            board_id=board_id,
+            owner_type=owner_type,
+            active_count=len(active),
+            design_count=len(seen_design_ids),
+            outcome=outcome,
+        )
+        return {
+            "allowed": not active,
+            "board_id": board_id,
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "architecture_findings": projection,
+        }
+
+    @staticmethod
+    def _finding_to_remediation(
+        finding: ArchitectureFinding,
+        ref: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "design_id": finding.design_id,
+            "design_title": ref.get("title"),
+            "source_entity_type": ref.get("source_entity_type"),
+            "source_entity_id": ref.get("source_entity_id"),
+            "source_entity_title": ref.get("source_entity_title"),
+            "finding_key": finding.finding_key,
+            "critic_run_id": finding.critic_run_id,
+            "design_version": finding.design_version,
+            "code": finding.warning_code,
+            "severity": finding.severity,
+            "message": finding.message,
+            "normalized_target_kind": finding.normalized_target_kind,
+            "target_ref": finding.target_ref,
+            "path": finding.path,
+            "suggested_fix": finding.suggested_fix,
+            "diagram_id": finding.diagram_id,
+            "diagram_type": finding.diagram_type,
+            "remediation": (
+                "Update the Architecture Design so the backend critic resolves "
+                "this warning; acknowledgement records are audit-only."
+            ),
+        }
+
+
 class ArchitectureDesignRepository:
     """Repository for Architecture Design envelopes and versions."""
 
@@ -913,9 +2012,24 @@ class ArchitectureDesignRepository:
         if parent is None:
             raise ValueError(f"{parent_type} parent not found: {parent_id}")
         payload = _dump_model_or_dict(data)
-        self._validate_payload(payload)
+        acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
+        design_id = str(uuid.uuid4())
         board_id = getattr(parent, "board_id")
+        # Hidrata uma CÓPIA para o critique (refs externalizadas → payload),
+        # preservando o payload original para a persistência normal.
+        critique_input = dict(payload)
+        critique_input["diagrams"] = await self._diagrams_for_validation(
+            list(payload.get("diagrams") or [])
+        )
+        critique = self._critique_for_save(
+            design_id=design_id,
+            board_id=board_id,
+            entity_type=parent_type,
+            payload=critique_input,
+            acknowledgement=acknowledgement,
+        )
         design = ArchitectureDesign(
+            id=design_id,
             board_id=board_id,
             parent_type=parent_type,
             **{parent_field: parent_id},
@@ -942,6 +2056,12 @@ class ArchitectureDesignRepository:
         )
         flag_modified(design, "diagrams")
         await self.snapshot(design.id, actor_id, "Initial architecture design")
+        await self._persist_finding_run(
+            design=design,
+            critique=critique,
+            actor_id=actor_id,
+            acknowledgement=acknowledgement,
+        )
         await self._publish_parent_semantic_change(design, actor_id)
         await self.db.flush()
         await self.db.refresh(design)
@@ -959,15 +2079,33 @@ class ArchitectureDesignRepository:
             raise ValueError(f"architecture design not found: {design_id}")
         payload = _dump_model_or_dict(patch, exclude_unset=True)
         change_summary = payload.pop("change_summary", None)
+        acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
         semantic_change = bool(SEMANTIC_PATCH_FIELDS & payload.keys())
+        # Re-hidrata SEMPRE (investigação 2026-06-10): um patch com
+        # ``diagrams`` carregando ``adapter_payload_ref`` sem o payload
+        # inline (ex.: import_excalidraw re-anexa os diagramas existentes
+        # crus) fazia o TopologyWarningEngine pular esses diagramas
+        # silenciosamente — entidades cobertas pareciam órfãs (falso
+        # entity_without_diagram) e warnings reais de dentro deles se
+        # perdiam. O helper só carrega quando há ref sem payload, então o
+        # caso inline permanece intocado.
+        candidate_diagrams = await self._diagrams_for_validation(
+            payload["diagrams"] if "diagrams" in payload else (design.diagrams or [])
+        )
         candidate_payload = {
             "title": payload.get("title", design.title),
             "global_description": payload.get("global_description", design.global_description),
             "entities": payload.get("entities", design.entities or []),
             "interfaces": payload.get("interfaces", design.interfaces or []),
-            "diagrams": payload.get("diagrams", design.diagrams or []),
+            "diagrams": candidate_diagrams,
         }
-        self._validate_payload(candidate_payload)
+        critique = self._critique_for_save(
+            design_id=design.id,
+            board_id=design.board_id,
+            entity_type=design.parent_type,
+            payload=candidate_payload,
+            acknowledgement=acknowledgement,
+        )
         if "title" in payload:
             design.title = payload["title"]
         if "global_description" in payload:
@@ -992,6 +2130,12 @@ class ArchitectureDesignRepository:
         design.requires_arch_review = False
         design.version += 1
         await self.snapshot(design.id, actor_id, change_summary or "Architecture design updated")
+        await self._persist_finding_run(
+            design=design,
+            critique=critique,
+            actor_id=actor_id,
+            acknowledgement=acknowledgement,
+        )
         if semantic_change:
             await self._publish_parent_semantic_change(design, actor_id)
         await self.db.flush()
@@ -1003,6 +2147,182 @@ class ArchitectureDesignRepository:
                 trigger="spec_architecture_updated",
             )
         return design
+
+    def _critique_for_save(
+        self,
+        *,
+        design_id: str,
+        board_id: str | None,
+        entity_type: str | None,
+        payload: dict[str, Any],
+        acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        critique = self.critique_payload(payload)
+        issues = list(critique.get("issues") or [])
+        if issues:
+            raise ArchitecturePayloadValidationError(issues)
+
+        warnings = self._structured_warnings_with_keys(
+            design_id,
+            list(critique.get("structured_warnings") or []),
+        )
+        critique["structured_warnings"] = warnings
+        if warnings:
+            self._require_warning_acknowledgement(
+                design_id=design_id,
+                board_id=board_id,
+                entity_type=entity_type,
+                warnings=warnings,
+                acknowledgement=acknowledgement,
+            )
+        return critique
+
+    def _structured_warnings_with_keys(
+        self,
+        design_id: str,
+        structured_warnings: list[ArchitectureWarningRecord | dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        keyed: list[dict[str, Any]] = []
+        for warning in structured_warnings:
+            data = _warning_as_dict(warning)
+            data["finding_key"] = stable_architecture_finding_key(design_id, data)
+            keyed.append(data)
+        return keyed
+
+    async def _diagrams_for_validation(self, diagrams: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        enriched: list[dict[str, Any]] = []
+        for diagram in diagrams:
+            item = dict(diagram)
+            ref = item.get("adapter_payload_ref")
+            if ref and "adapter_payload" not in item:
+                try:
+                    loaded = await self.diagram_store.load_payload(ref)
+                    # payload_text retorna string JSON; o TopologyWarningEngine
+                    # exige dict e pularia o diagrama silenciosamente.
+                    if isinstance(loaded, str):
+                        try:
+                            loaded = json.loads(loaded)
+                        except (TypeError, ValueError):
+                            loaded = None
+                    if isinstance(loaded, dict):
+                        item["adapter_payload"] = loaded
+                except KeyError:
+                    pass
+            enriched.append(item)
+        return enriched
+
+    def _require_warning_acknowledgement(
+        self,
+        *,
+        design_id: str,
+        board_id: str | None,
+        entity_type: str | None,
+        warnings: list[dict[str, Any]],
+        acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None,
+    ) -> None:
+        data = _dump_model_or_dict(acknowledgement) if acknowledgement is not None else {}
+        warning_keys = sorted(str(warning["finding_key"]) for warning in warnings)
+        code_count = len({str(warning.get("code") or "unknown") for warning in warnings})
+        metric_labels = {
+            "board_id": board_id or "unknown",
+            "entity_type": entity_type or "unknown",
+            "warning_count": len(warnings),
+            "code_count": code_count,
+        }
+        if not data.get("accepted"):
+            observe_architecture_warning_ack(
+                **metric_labels,
+                outcome="required_without_ack",
+            )
+            raise ArchitectureWarningAcknowledgementRequired(
+                design_id=design_id,
+                warning_keys=warning_keys,
+                warnings=warnings,
+            )
+        acknowledged_keys = sorted(
+            str(key)
+            for key in (data.get("warning_keys") or [])
+            if str(key).strip()
+        )
+        if acknowledged_keys and acknowledged_keys != warning_keys:
+            observe_architecture_warning_ack(
+                **metric_labels,
+                outcome="failed_ack_mismatch",
+            )
+            raise ArchitectureWarningAcknowledgementRequired(
+                design_id=design_id,
+                warning_keys=warning_keys,
+                warnings=warnings,
+                reason="architecture_warning_acknowledgement_keys_mismatch",
+            )
+        observe_architecture_warning_ack(
+            **metric_labels,
+            outcome="accepted_with_ack",
+        )
+
+    async def _persist_finding_run(
+        self,
+        *,
+        design: ArchitectureDesign,
+        critique: dict[str, Any],
+        actor_id: str,
+        acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None,
+    ) -> None:
+        structured_warnings = list(critique.get("structured_warnings") or [])
+        critic_run_id = f"archcrit:{design.id}:v{design.version}:{uuid.uuid4().hex[:8]}"
+        actor = {
+            "actor_type": "user",
+            "actor_id": actor_id,
+            "actor_name": actor_id,
+        }
+        store = ArchitectureFindingRunStore(self.db)
+        try:
+            await store.upsert_latest_run(
+                board_id=design.board_id,
+                design_id=design.id,
+                design_version=design.version,
+                critic_run_id=critic_run_id,
+                actor=actor,
+                validator_summary={
+                    "valid": True,
+                    "issues": [],
+                    "warnings_count": len(critique.get("warnings") or []),
+                    "structured_warnings_count": len(structured_warnings),
+                    "suppressed_warnings_count": len(critique.get("suppressed_warnings") or []),
+                    "summary": critique.get("summary") or {},
+                },
+                structured_warnings=structured_warnings,
+            )
+        except Exception:
+            observe_architecture_finding_run_persist(
+                board_id=design.board_id,
+                entity_type=design.parent_type,
+                warning_count=len(structured_warnings),
+                outcome="failed",
+            )
+            raise
+        observe_architecture_finding_run_persist(
+            board_id=design.board_id,
+            entity_type=design.parent_type,
+            warning_count=len(structured_warnings),
+            outcome="persisted",
+        )
+        if structured_warnings and acknowledgement is not None:
+            data = _dump_model_or_dict(acknowledgement)
+            if data.get("accepted"):
+                warning_keys = [
+                    str(warning["finding_key"])
+                    for warning in structured_warnings
+                    if warning.get("finding_key")
+                ]
+                await store.record_acknowledgements(
+                    board_id=design.board_id,
+                    design_id=design.id,
+                    critic_run_id=critic_run_id,
+                    finding_keys=warning_keys,
+                    actor=actor,
+                    statement=data.get("statement"),
+                )
 
     async def delete(self, design_id: str, actor_id: str | None = None) -> bool:
         design = await self.get(design_id)
@@ -1172,6 +2492,8 @@ class ArchitectureDesignRepository:
                 "valid": False,
                 "issues": issues,
                 "warnings": warnings,
+                "structured_warnings": [],
+                "suppressed_warnings": [],
                 "suggested_fixes": self._suggest_fixes(issues),
                 "summary": self._payload_summary({}),
             }
@@ -1190,11 +2512,20 @@ class ArchitectureDesignRepository:
         interface_items = self._ref_item_index(interfaces)
         self._validate_diagrams(payload.get("diagrams"), entity_refs, interface_refs, interface_items, issues, warnings)
 
+        diagrams_value = payload.get("diagrams")
+        topology_evaluation = TopologyWarningEngine().evaluate(
+            entities=entities,
+            diagrams=diagrams_value if isinstance(diagrams_value, list) else [],
+            existing_issues=issues,
+        )
+        topology_result = topology_evaluation.to_dict()
+        structured_warnings = topology_result["warnings"]
+        suppressed_warnings = topology_result["suppressed_warnings"]
+
         # Spec cc497a0d — semantic node normalization. Runs after structural
         # validation so dangling refs surface their own messages first, then
         # checks that linked nodes carry text/displayType/architectureKind/iconName
         # consistent with the entity's entity_type and the canonical registry.
-        diagrams_value = payload.get("diagrams")
         if isinstance(diagrams_value, list):
             for d_index, raw_diagram in enumerate(diagrams_value):
                 if not isinstance(raw_diagram, dict):
@@ -1210,12 +2541,35 @@ class ArchitectureDesignRepository:
                 warnings.extend(sem_warnings)
                 issues.extend(sem_issues)
 
+        summary = self._payload_summary(payload)
+        summary["structured_warnings_count"] = len(structured_warnings)
+        summary["suppressed_warnings_count"] = len(suppressed_warnings)
+        summary["structured_warning_codes"] = [warning["code"] for warning in structured_warnings]
+        by_code = Counter(str(warning.get("code") or "unknown") for warning in structured_warnings)
+        by_code_and_diagram_type = Counter(
+            (
+                str(warning.get("code") or "unknown"),
+                str(warning.get("diagram_type") or "unknown"),
+            )
+            for warning in structured_warnings
+        )
+        summary["structured_warning_counts_by_code"] = {
+            code: by_code[code]
+            for code in sorted(by_code)
+        }
+        summary["structured_warning_counts_by_code_and_diagram_type"] = [
+            {"code": code, "diagram_type": diagram_type, "count": count}
+            for (code, diagram_type), count in sorted(by_code_and_diagram_type.items())
+        ]
+
         return {
             "valid": not issues,
             "issues": issues,
             "warnings": warnings,
+            "structured_warnings": structured_warnings,
+            "suppressed_warnings": suppressed_warnings,
             "suggested_fixes": self._suggest_fixes(issues + warnings),
-            "summary": self._payload_summary(payload),
+            "summary": summary,
         }
 
     def validate_payload(self, payload: dict[str, Any]) -> None:
@@ -1814,6 +3168,7 @@ class ArchitecturePropagationService:
         target_parent_id: str,
         actor_id: str,
         design_ids: list[str] | None = None,
+        architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None = None,
     ) -> list[ArchitectureDesign]:
         source_parent = await self._get_parent(source_parent_type, source_parent_id)
         target_parent = await self._get_parent(target_parent_type, target_parent_id)
@@ -1834,6 +3189,8 @@ class ArchitecturePropagationService:
             source_ref = self.repository.source_ref_for(source_design)
             existing = await self._find_existing_copy(target_parent_type, target_parent_id, source_ref)
             payload = self._payload_from_source(source_design, source_ref)
+            if architecture_warning_acknowledgement is not None:
+                payload["architecture_warning_acknowledgement"] = architecture_warning_acknowledgement
             if existing is None:
                 copied_design = await self.repository.create(
                     target_parent_type,
@@ -1856,6 +3213,7 @@ class ArchitecturePropagationService:
                         stale=False,
                         breaking_change_flag=False,
                         requires_arch_review=False,
+                        architecture_warning_acknowledgement=architecture_warning_acknowledgement,
                         change_summary=f"Re-synced from {source_parent_type} architecture",
                     ),
                     actor_id,
@@ -1870,8 +3228,17 @@ class ArchitecturePropagationService:
         card_id: str,
         actor_id: str,
         design_ids: list[str] | None = None,
+        architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None = None,
     ) -> list[ArchitectureDesign]:
-        return await self.copy_from_parent("spec", spec_id, "card", card_id, actor_id, design_ids)
+        return await self.copy_from_parent(
+            "spec",
+            spec_id,
+            "card",
+            card_id,
+            actor_id,
+            design_ids,
+            architecture_warning_acknowledgement=architecture_warning_acknowledgement,
+        )
 
     async def _get_parent(self, parent_type: str, parent_id: str) -> Any | None:
         parent_model, _ = self.repository._parent_config(parent_type)
@@ -1897,9 +3264,11 @@ class ArchitecturePropagationService:
         diagrams = []
         for diagram in design.diagrams or []:
             copied = copy.deepcopy(diagram)
+            source_diagram_id = copied.get("id")
             source_payload_ref = copied.pop("adapter_payload_ref", None)
-            copied["source_diagram_id"] = copied.get("id")
+            copied["source_diagram_id"] = source_diagram_id
             copied["source_payload_ref"] = source_payload_ref
+            copied["id"] = _new_scoped_id("diag")
             copied.pop("content_hash", None)
             copied.pop("size_bytes", None)
             diagrams.append(copied)

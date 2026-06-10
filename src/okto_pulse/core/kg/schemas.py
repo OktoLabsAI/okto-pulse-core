@@ -271,6 +271,14 @@ class CommitConsolidationResponse(BaseModel):
     nodes_updated: int
     nodes_superseded: int
     edges_added: int
+    # Spec eca49df9 (FR5/FR6): counters are mutually exclusive per candidate
+    # and processed_candidates closes as their sum. merge_audit_items carries
+    # the NC-8 dedup-reuse audit payload (no KuzuWriteRecord written).
+    nodes_merged: int = 0
+    nodes_noop: int = 0
+    processed_candidates: int = 0
+    merge_audit_items: list[dict] = Field(default_factory=list)
+    connectivity: dict = Field(default_factory=dict)
     committed_at: datetime
 
 
@@ -309,6 +317,9 @@ class KGPrimitiveError(BaseModel):
         "duplicate_candidate_id",
         "backend_error",
         "commit_failed",
+        "kg_graph_degraded",
+        "kg_node_connectivity_violation",
+        "layer_violation",
         "session_already_committed",
     ]
     message: str

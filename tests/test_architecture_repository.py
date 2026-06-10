@@ -2,22 +2,40 @@
 
 from __future__ import annotations
 
+import copy
 import uuid
 
 import pytest
 from sqlalchemy import select
 
 from okto_pulse.core.models.db import (
+    ArchitectureFinding,
+    ArchitectureFindingRun,
     ArchitectureDesignVersion,
     ArchitectureDiagramPayload,
+    ArchitectureWarningAcknowledgement,
     Board,
+    Card,
+    CardStatus,
+    CardType,
     DomainEventRow,
     Ideation,
     Refinement,
     Spec,
 )
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
-from okto_pulse.core.services.architecture import ArchitectureDesignRepository
+from okto_pulse.core.services.architecture import (
+    ArchitectureDesignRepository,
+    ArchitecturePropagationService,
+    ArchitectureWarningAcknowledgementRequired,
+)
+from okto_pulse.core.services.architecture_observability import (
+    METRIC_FINDING_RUN_PERSIST_TOTAL,
+    METRIC_WARNING_ACK_TOTAL,
+    assert_architecture_metric_payload_is_safe,
+    get_architecture_metric_samples,
+    reset_architecture_observability_for_tests,
+)
 
 
 USER_ID = "architecture-repository-user"
@@ -89,6 +107,25 @@ async def _seed_spec_and_refinement(db_factory) -> tuple[str, str, str, str]:
     return board_id, ideation_id, refinement_id, spec_id
 
 
+async def _seed_spec_card(db_factory) -> tuple[str, str, str]:
+    board_id, _, _, spec_id = await _seed_spec_and_refinement(db_factory)
+    card_id = _id("architecture-copy-card")
+    async with db_factory() as db:
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Architecture Copy Card",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                created_by=USER_ID,
+            )
+        )
+        await db.commit()
+    return board_id, spec_id, card_id
+
+
 def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDesignCreate:
     return ArchitectureDesignCreate(
         title="Architecture Tab",
@@ -113,7 +150,7 @@ def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDe
                 "id": "interface-diagram-store",
                 "name": "ArchitectureDiagramStore",
                 "description": "Stores heavy diagram adapter payloads behind opaque refs.",
-                "participants": ["ArchitectureDesignRepository", "ArchitectureDiagramPayload"],
+                "participants": ["entity-architecture-repository", "entity-diagram-payload"],
                 "contract_type": "repository",
             }
         ],
@@ -127,8 +164,30 @@ def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDe
                     "type": "excalidraw",
                     "version": 2,
                     "elements": [
-                        {"id": "box-1", "type": "rectangle", "x": 10, "y": 20},
-                        {"id": "label-1", "type": "text", "text": "Architecture"},
+                        {
+                            "id": "node-repository",
+                            "type": "rectangle",
+                            "x": 10,
+                            "y": 20,
+                            "text": "ArchitectureDesignRepository",
+                            "linkedEntityId": "entity-architecture-repository",
+                        },
+                        {
+                            "id": "node-payload",
+                            "type": "rectangle",
+                            "x": 220,
+                            "y": 20,
+                            "text": "ArchitectureDiagramPayload",
+                            "linkedEntityId": "entity-diagram-payload",
+                        },
+                        {
+                            "id": "edge-repository-payload",
+                            "type": "arrow",
+                            "sourceElementId": "node-repository",
+                            "targetElementId": "node-payload",
+                            "linkedInterfaceId": "interface-diagram-store",
+                            "connectionType": "elbow",
+                        },
                     ],
                     "appState": {},
                     "files": {},
@@ -138,6 +197,44 @@ def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDe
         source_ref=source_ref,
         source_version=1,
     )
+
+
+def _invalid_connectivity_justification_payload() -> dict:
+    payload = _architecture_payload().model_dump(mode="json")
+    payload["diagrams"][0]["is_conceptual"] = True
+    payload["diagrams"][0]["connectivity_justifications"] = {
+        "node-repository": "todo",
+    }
+    payload["architecture_warning_acknowledgement"] = {
+        "accepted": True,
+        "statement": "Source acknowledgement is scoped only to the source design.",
+    }
+    return payload
+
+
+def _valid_connectivity_justification_payload() -> dict:
+    payload = _architecture_payload().model_dump(mode="json")
+    payload["entities"].append(
+        {
+            "id": "entity-external-audit",
+            "name": "External Audit Sink",
+            "entity_type": "service",
+            "responsibility": "Intentionally shown as an external terminal dependency.",
+        }
+    )
+    payload["diagrams"][0]["is_conceptual"] = True
+    payload["diagrams"][0]["adapter_payload"]["elements"].append(
+        {
+            "id": "node-external-audit",
+            "type": "rectangle",
+            "linkedEntityId": "entity-external-audit",
+            "text": "External Audit Sink",
+        }
+    )
+    payload["diagrams"][0]["connectivity_justifications"] = {
+        "node-external-audit": "External audit sink is intentionally shown as a terminal dependency for planning.",
+    }
+    return payload
 
 
 @pytest.mark.asyncio
@@ -335,7 +432,7 @@ async def test_create_design_stores_diagram_payload_separately(db_factory):
         ).scalar_one()
         assert row.board_id == board_id
         assert row.storage_backend == "database"
-        assert row.adapter_payload_json["elements"][1]["text"] == "Architecture"
+        assert row.adapter_payload_json["elements"][1]["text"] == "ArchitectureDiagramPayload"
 
         versions = (
             await db.execute(
@@ -367,7 +464,7 @@ async def test_summary_is_lightweight_and_response_can_include_payloads(db_facto
         loaded = await repo.get(design.id, include_payloads=True)
         assert loaded is not None
         response = repo.to_response(loaded)
-        assert response.diagrams[0].adapter_payload["elements"][1]["text"] == "Architecture"
+        assert response.diagrams[0].adapter_payload["elements"][1]["text"] == "ArchitectureDiagramPayload"
 
 
 @pytest.mark.asyncio
@@ -386,6 +483,7 @@ async def test_update_creates_new_version_and_diff_marks_semantic_changes(db_fac
                         "id": "interface-diagram-store",
                         "name": "ArchitectureDiagramStore",
                         "description": "Updated interface contract.",
+                        "participants": ["entity-architecture-repository", "entity-diagram-payload"],
                     }
                 ],
                 change_summary="Document architecture versioning",
@@ -445,6 +543,351 @@ async def test_change_control_flags_are_ignored(db_factory):
         assert response.stale is False
         assert response.breaking_change_flag is False
         assert response.requires_arch_review is False
+
+
+@pytest.mark.asyncio
+async def test_update_with_structured_warning_requires_explicit_acknowledgement(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("ideation", ideation_id, _architecture_payload(), USER_ID)
+        reset_architecture_observability_for_tests()
+        original_version = design.version
+
+        warning_entities = [
+            *design.entities,
+            {
+                "id": "entity-unmapped-worker",
+                "name": "Unmapped Worker",
+                "entity_type": "worker",
+                "responsibility": "Intentionally missing from the diagram.",
+            },
+            {
+                "id": "entity-unmapped-queue",
+                "name": "Unmapped Queue",
+                "entity_type": "queue",
+                "responsibility": "Intentionally missing from the diagram.",
+            },
+        ]
+        with pytest.raises(ArchitectureWarningAcknowledgementRequired) as exc_info:
+            await repo.update(
+                design.id,
+                ArchitectureDesignUpdate(
+                    entities=warning_entities,
+                    change_summary="Add unmapped worker",
+                ),
+                USER_ID,
+            )
+
+        assert exc_info.value.reason == "architecture_warning_acknowledgement_required"
+        assert exc_info.value.warning_keys
+        assert exc_info.value.warnings[0]["code"] == "entity_without_diagram"
+        loaded = await repo.get(design.id)
+        assert loaded is not None
+        assert loaded.version == original_version
+
+        runs = (
+            await db.execute(
+                select(ArchitectureFindingRun)
+                .where(ArchitectureFindingRun.design_id == design.id)
+                .order_by(ArchitectureFindingRun.design_version)
+            )
+        ).scalars().all()
+        assert [run.design_version for run in runs] == [1]
+        assert runs[0].active_count == 0
+        samples = get_architecture_metric_samples()
+        assert [
+            sample for sample in samples
+            if sample["metric_name"] == METRIC_WARNING_ACK_TOTAL
+            and sample["labels"]["outcome"] == "required_without_ack"
+        ]
+        assert not [
+            sample for sample in samples
+            if sample["metric_name"] == METRIC_FINDING_RUN_PERSIST_TOTAL
+        ]
+        for sample in samples:
+            assert_architecture_metric_payload_is_safe(sample["labels"])
+
+
+@pytest.mark.asyncio
+async def test_update_with_acknowledged_structured_warning_persists_audit_only_ack(db_factory):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        design = await repo.create("ideation", ideation_id, _architecture_payload(), USER_ID)
+        reset_architecture_observability_for_tests()
+        warning_entities = [
+            *design.entities,
+            {
+                "id": "entity-unmapped-worker",
+                "name": "Unmapped Worker",
+                "entity_type": "worker",
+                "responsibility": "Intentionally missing from the diagram.",
+            },
+            {
+                "id": "entity-unmapped-queue",
+                "name": "Unmapped Queue",
+                "entity_type": "queue",
+                "responsibility": "Intentionally missing from the diagram.",
+            },
+        ]
+
+        updated = await repo.update(
+            design.id,
+            ArchitectureDesignUpdate(
+                entities=warning_entities,
+                change_summary="Add acknowledged unmapped worker",
+                architecture_warning_acknowledgement={
+                    "accepted": True,
+                    "statement": "Reviewed warning before save.",
+                },
+            ),
+            USER_ID,
+        )
+        await db.commit()
+        samples = get_architecture_metric_samples()
+        assert [
+            sample for sample in samples
+            if sample["metric_name"] == METRIC_WARNING_ACK_TOTAL
+            and sample["labels"]["outcome"] == "accepted_with_ack"
+        ]
+        assert [
+            sample for sample in samples
+            if sample["metric_name"] == METRIC_FINDING_RUN_PERSIST_TOTAL
+            and sample["labels"]["outcome"] == "persisted"
+            and sample["labels"]["warning_count_bucket"] == "2_5"
+        ]
+        for sample in samples:
+            assert_architecture_metric_payload_is_safe(sample["labels"])
+
+    async with db_factory() as db:
+        runs = (
+            await db.execute(
+                select(ArchitectureFindingRun)
+                .where(ArchitectureFindingRun.design_id == updated.id)
+                .order_by(ArchitectureFindingRun.design_version)
+            )
+        ).scalars().all()
+        assert [run.design_version for run in runs] == [1, 2]
+        assert runs[-1].is_current is True
+        assert runs[-1].active_count == 2
+        assert runs[-1].critic_run_id.startswith(f"archcrit:{updated.id}:v2:")
+
+        findings = (
+            await db.execute(
+                select(ArchitectureFinding)
+                .where(
+                    ArchitectureFinding.design_id == updated.id,
+                    ArchitectureFinding.critic_run_id == runs[-1].critic_run_id,
+                )
+                .order_by(ArchitectureFinding.target_ref)
+            )
+        ).scalars().all()
+        assert [finding.warning_code for finding in findings] == [
+            "entity_without_diagram",
+            "entity_without_diagram",
+        ]
+        assert [finding.target_ref for finding in findings] == [
+            "entity-unmapped-queue",
+            "entity-unmapped-worker",
+        ]
+
+        acknowledgements = (
+            await db.execute(
+                select(ArchitectureWarningAcknowledgement)
+                .where(ArchitectureWarningAcknowledgement.design_id == updated.id)
+                .order_by(ArchitectureWarningAcknowledgement.finding_key)
+            )
+        ).scalars().all()
+        assert len(acknowledgements) == 2
+        assert {ack.finding_key for ack in acknowledgements} == {finding.finding_key for finding in findings}
+        for acknowledgement in acknowledgements:
+            assert acknowledgement.critic_run_id == runs[-1].critic_run_id
+            assert acknowledgement.design_version == 2
+            assert acknowledgement.actor_type == "user"
+            assert acknowledgement.actor_id == USER_ID
+            assert acknowledgement.actor_name == USER_ID
+            assert acknowledgement.statement == "Reviewed warning before save."
+            assert acknowledgement.created_at is not None
+
+
+@pytest.mark.asyncio
+async def test_copy_warning_design_requires_copy_scoped_acknowledgement_and_finding_run(db_factory):
+    _, spec_id, card_id = await _seed_spec_card(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        source = await repo.create("spec", spec_id, _invalid_connectivity_justification_payload(), USER_ID)
+        source_diagram_id = source.diagrams[0]["id"]
+        source_payload_ref = source.diagrams[0]["adapter_payload_ref"]
+        service = ArchitecturePropagationService(db, repository=repo)
+
+        with pytest.raises(ArchitectureWarningAcknowledgementRequired) as exc_info:
+            await service.copy_spec_to_card(spec_id, card_id, USER_ID)
+
+        assert exc_info.value.reason == "architecture_warning_acknowledgement_required"
+        assert await repo.list("card", card_id) == []
+
+        copied = (
+            await service.copy_spec_to_card(
+                spec_id,
+                card_id,
+                USER_ID,
+                architecture_warning_acknowledgement={
+                    "accepted": True,
+                    "statement": "Copied design warning reviewed independently.",
+                },
+            )
+        )[0]
+        await db.flush()
+
+        assert copied.id != source.id
+        assert copied.source_design_id == source.id
+        assert copied.source_ref == f"architecture_design:{source.id}"
+        assert copied.diagrams[0]["source_diagram_id"] == source_diagram_id
+        assert copied.diagrams[0]["source_payload_ref"] == source_payload_ref
+        assert copied.diagrams[0]["id"] != source_diagram_id
+        assert copied.diagrams[0]["adapter_payload_ref"] != source_payload_ref
+
+        runs = (
+            await db.execute(
+                select(ArchitectureFindingRun)
+                .where(ArchitectureFindingRun.design_id.in_([source.id, copied.id]))
+                .order_by(ArchitectureFindingRun.design_id)
+            )
+        ).scalars().all()
+        by_design = {run.design_id: run for run in runs}
+        assert by_design[source.id].active_count == 1
+        assert by_design[copied.id].active_count == 1
+        assert by_design[source.id].critic_run_id.startswith(f"archcrit:{source.id}:v1:")
+        assert by_design[copied.id].critic_run_id.startswith(f"archcrit:{copied.id}:v1:")
+        assert by_design[source.id].critic_run_id != by_design[copied.id].critic_run_id
+
+        copied_finding = (
+            await db.execute(
+                select(ArchitectureFinding).where(
+                    ArchitectureFinding.design_id == copied.id,
+                    ArchitectureFinding.warning_code == "conceptual_justification_invalid",
+                )
+            )
+        ).scalar_one()
+        source_finding = (
+            await db.execute(
+                select(ArchitectureFinding).where(
+                    ArchitectureFinding.design_id == source.id,
+                    ArchitectureFinding.warning_code == "conceptual_justification_invalid",
+                )
+            )
+        ).scalar_one()
+        assert copied_finding.finding_key != source_finding.finding_key
+        assert copied_finding.diagram_id == copied.diagrams[0]["id"]
+        assert copied_finding.diagram_id != source_diagram_id
+
+        acknowledgements = (
+            await db.execute(
+                select(ArchitectureWarningAcknowledgement)
+                .where(ArchitectureWarningAcknowledgement.design_id.in_([source.id, copied.id]))
+                .order_by(ArchitectureWarningAcknowledgement.design_id)
+            )
+        ).scalars().all()
+        ack_by_design = {ack.design_id: ack for ack in acknowledgements}
+        assert ack_by_design[source.id].statement == "Source acknowledgement is scoped only to the source design."
+        assert ack_by_design[copied.id].statement == "Copied design warning reviewed independently."
+        assert ack_by_design[source.id].finding_key != ack_by_design[copied.id].finding_key
+        assert ack_by_design[source.id].critic_run_id == by_design[source.id].critic_run_id
+        assert ack_by_design[copied.id].critic_run_id == by_design[copied.id].critic_run_id
+        assert ack_by_design[source.id].design_version == source.version
+        assert ack_by_design[copied.id].design_version == copied.version
+
+
+@pytest.mark.asyncio
+async def test_copy_preserves_connectivity_justifications_as_content_but_reevaluates_them(db_factory):
+    _, spec_id, card_id = await _seed_spec_card(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        source = await repo.create("spec", spec_id, _valid_connectivity_justification_payload(), USER_ID)
+        service = ArchitecturePropagationService(db, repository=repo)
+
+        copied = (await service.copy_spec_to_card(spec_id, card_id, USER_ID))[0]
+        await db.flush()
+
+        assert copied.diagrams[0]["connectivity_justifications"] == source.diagrams[0]["connectivity_justifications"]
+        assert copied.diagrams[0]["source_diagram_id"] == source.diagrams[0]["id"]
+        assert copied.diagrams[0]["id"] != source.diagrams[0]["id"]
+
+        runs = (
+            await db.execute(
+                select(ArchitectureFindingRun)
+                .where(ArchitectureFindingRun.design_id.in_([source.id, copied.id]))
+                .order_by(ArchitectureFindingRun.design_id)
+            )
+        ).scalars().all()
+        by_design = {run.design_id: run for run in runs}
+        assert by_design[source.id].active_count == 0
+        assert by_design[copied.id].active_count == 0
+        assert by_design[source.id].validator_summary["suppressed_warnings_count"] == 1
+        assert by_design[copied.id].validator_summary["suppressed_warnings_count"] == 1
+        assert by_design[source.id].validator_summary["structured_warnings_count"] == 0
+        assert by_design[copied.id].validator_summary["structured_warnings_count"] == 0
+        assert by_design[copied.id].critic_run_id.startswith(f"archcrit:{copied.id}:v1:")
+
+        copied_diagrams = copy.deepcopy(copied.diagrams)
+        copied_diagrams[0]["connectivity_justifications"] = {
+            "node-external-audit": "todo",
+        }
+        updated_copy = await repo.update(
+            copied.id,
+            ArchitectureDesignUpdate(
+                diagrams=copied_diagrams,
+                change_summary="Make copied justification invalid in copy scope",
+                architecture_warning_acknowledgement={
+                    "accepted": True,
+                    "statement": "Copied design warning reviewed after copy-local re-evaluation.",
+                },
+            ),
+            USER_ID,
+        )
+        await db.flush()
+
+        current_runs = (
+            await db.execute(
+                select(ArchitectureFindingRun)
+                .where(
+                    ArchitectureFindingRun.design_id.in_([source.id, copied.id]),
+                    ArchitectureFindingRun.is_current == True,  # noqa: E712
+                )
+                .order_by(ArchitectureFindingRun.design_id)
+            )
+        ).scalars().all()
+        current_by_design = {run.design_id: run for run in current_runs}
+        assert current_by_design[source.id].active_count == 0
+        assert current_by_design[source.id].validator_summary["suppressed_warnings_count"] == 1
+        assert current_by_design[copied.id].active_count >= 1
+        assert current_by_design[copied.id].validator_summary["structured_warnings_count"] >= 1
+        assert current_by_design[copied.id].validator_summary["suppressed_warnings_count"] == 0
+        assert current_by_design[copied.id].critic_run_id.startswith(f"archcrit:{copied.id}:v{updated_copy.version}:")
+
+        copied_active_findings = (
+            await db.execute(
+                select(ArchitectureFinding).where(
+                    ArchitectureFinding.design_id == copied.id,
+                    ArchitectureFinding.lifecycle == "active",
+                )
+            )
+        ).scalars().all()
+        assert copied_active_findings
+        assert {finding.critic_run_id for finding in copied_active_findings} == {
+            current_by_design[copied.id].critic_run_id
+        }
+        assert {finding.design_version for finding in copied_active_findings} == {updated_copy.version}
+        source_active_findings = (
+            await db.execute(
+                select(ArchitectureFinding).where(
+                    ArchitectureFinding.design_id == source.id,
+                    ArchitectureFinding.lifecycle == "active",
+                )
+            )
+        ).scalars().all()
+        assert source_active_findings == []
 
 
 @pytest.mark.asyncio

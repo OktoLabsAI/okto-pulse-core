@@ -1,6 +1,6 @@
 [project]
 name = "okto-pulse-core"
-version = "0.2.2"
+version = "0.2.3"
 description = "Okto Pulse Core — spec-driven project management engine with MCP support for AI agents"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
@@ -94,4 +94,5 @@ markers = [
     "e2e: end-to-end pipeline contract tests — slow, open Kùzu handles, exercise outbox worker; excluded by the fast unit run via `pytest -m 'not e2e'`",
     "real_kg: integration tests that exercise the real LadybugDB/KG backend",
     "timeout(seconds): override per-test timeout (default 120s)",
+    "stress: KG-01.6 destructive stress profile — opt-in slow tests that drive KGChaosExecutor against the primitives for release evidence; excluded by default via `pytest -m 'not stress'`. Run with `pytest -m stress` or `python scripts/run_kg_ci_destructive_stress.py`.",
 ]

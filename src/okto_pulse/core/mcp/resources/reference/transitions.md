@@ -18,7 +18,7 @@
 | From | To | Pre-requisites |
 |------|-----|---------------|
 | `not_started` | `started` | Spec must be `validated` or later |
-| `validation` | `done` | ALL linked test scenarios must be `passed` or `automated` + `conclusion` + completeness/drift |
+| `validation` | `done` | ALL linked test scenarios must be `passed` or `automated` + `conclusion` + completeness/drift. On `validated`/`done` specs, scenario status/evidence updates are allowed only when the scenario is already linked to an executable test card. |
 
 ## Sprint transitions
 

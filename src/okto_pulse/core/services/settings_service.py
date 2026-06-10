@@ -345,18 +345,121 @@ def _maybe_reschedule_tick(values: dict[str, int]) -> None:
         )
 
 
+class ConfigChangeBlocked(Exception):
+    """Raised when KG-01.5 KGConfigChangeGuard rejects a runtime change.
+
+    Carries the bounded ``reason`` code (from ``ConfigBlockReason``) and
+    the ``setting_group`` bucket so the API layer can return a safe
+    HTTP response without leaking raw values.
+    """
+
+    def __init__(
+        self,
+        *,
+        reason: str,
+        setting_group: str,
+        audit_event: str,
+    ) -> None:
+        super().__init__(f"{reason} (setting_group={setting_group})")
+        self.reason = reason
+        self.setting_group = setting_group
+        self.audit_event = audit_event
+
+
 async def put_runtime_settings(
-    db: AsyncSession, values: dict[str, int]
+    db: AsyncSession,
+    values: dict[str, int],
+    *,
+    actor_id: str = "unknown",
+    migration_plan_ref: str | None = None,
+    restart_policy: str | None = None,
 ) -> dict[str, Any]:
     """Upsert runtime settings into the table. Caller validates ranges first.
 
+    KG-01.5 (val_06cd6809 rework): any LadybugDB-relevant key (graph DB
+    settings — kg_kuzu_buffer_pool_mb, kg_kuzu_max_db_size_gb, etc.)
+    MUST pass through ``KGConfigChangeGuard`` BEFORE the persist. The
+    guard enforces FR10/TR14: hot config changes that could invalidate
+    storage are blocked, storage shrink below current footprint is
+    blocked, migration-required groups (storage/wal/index) need a
+    ``migration_plan_ref``. Non-graph-DB keys (event queue, decay tick)
+    skip the guard — those are hot-reloadable by design.
+
+    On block: raises ``ConfigChangeBlocked`` with bounded reason +
+    setting_group + audit_event. Caller MUST translate to HTTP 400
+    without leaking raw values. Counter
+    ``kg_config_change_blocked_total{setting_group, reason}`` is bumped
+    by the guard.
+
+    ``restart_policy`` defaults to ``"required"`` whenever any graph-DB
+    key is in the diff (because GRAPH_DB_KEYS are constructor-time on
+    LadybugDB Database()) and ``"none"`` otherwise. Caller may override
+    explicitly.
+
     Returns the GET-style view (effective + restart_required). The lock
-    serialises concurrent PUTs so the last-writer-wins semantic is deterministic.
+    serialises concurrent PUTs so the last-writer-wins semantic is
+    deterministic.
 
     Spec 54399628 (Wave 2 NC f9732afc) — when `kg_decay_tick_interval_minutes`
     changes, also hot-reloads the APScheduler trigger so the new interval
     takes effect immediately (no restart_required for tick keys).
     """
+    # Local imports to avoid cycles + keep KG-01.5 dependency optional
+    # for callers that only use legacy keys.
+    from okto_pulse.core.kg.config_guard import (
+        ConfigGuardError,
+        KGConfigChangeGuard,
+        RestartPolicy,
+    )
+
+    # Identify the graph-DB subset of the request — only those flow
+    # through the guard. Other RUNTIME_KEYS (event queue, decay tick)
+    # are hot-reloadable by contract.
+    graph_db_changes = {
+        k: v for k, v in values.items() if k in GRAPH_DB_KEYS
+    }
+
+    if graph_db_changes:
+        effective_policy = restart_policy or RestartPolicy.REQUIRED.value
+        # Read current settings for the guard's diff. We read directly
+        # from the rows (not the GET-style view) to feed the guard a
+        # clean dict — the guard only cares about pre/post values for
+        # keys it knows about.
+        current: dict[str, Any] = {}
+        for key in graph_db_changes:
+            row = await db.get(AppSetting, key)
+            if row is not None:
+                try:
+                    current[key] = int(row.value)
+                except (TypeError, ValueError):
+                    current[key] = row.value
+
+        guard = KGConfigChangeGuard()
+        try:
+            decision = guard.validate(
+                board_id="_runtime",
+                current_settings=current,
+                requested_settings=graph_db_changes,
+                actor_id=actor_id,
+                migration_plan_ref=migration_plan_ref,
+                restart_policy=effective_policy,
+            )
+        except ConfigGuardError as exc:
+            # Map typed guard errors to ConfigChangeBlocked so the API
+            # layer can return a single safe 400 shape.
+            raise ConfigChangeBlocked(
+                reason=exc.code.value,
+                setting_group="unknown",
+                audit_event=f"kg.config_change.unknown.blocked",
+            ) from exc
+
+        if not decision.allowed:
+            raise ConfigChangeBlocked(
+                reason=decision.reason,
+                setting_group=decision.setting_group or "unknown",
+                audit_event=decision.audit_event,
+            )
+
     async with _write_lock:
         for key, value in values.items():
             if key not in RUNTIME_KEYS:

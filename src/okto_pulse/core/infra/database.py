@@ -2,12 +2,16 @@
 
 import asyncio
 import contextlib
+import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Awaitable
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
+
+logger = logging.getLogger(__name__)
 
 # Base class for models — always available at import time
 Base = declarative_base()
@@ -79,6 +83,104 @@ def create_database(url: str, *, echo: bool = False) -> None:
         class_=AsyncSession,
         expire_on_commit=False,
     )
+
+    _install_pool_observability(_engine)
+
+
+# ---------------------------------------------------------------------------
+# Pool observability — leak detection (corruption/freeze root-cause hardening)
+# ---------------------------------------------------------------------------
+#
+# Conexões "vazadas" (checked-out e nunca devolvidas) eram invisíveis até o
+# GC emitir SAWarnings espalhados — quando o pool já estava exausto e o
+# servidor parecia travado. Estes listeners mantêm o timestamp de checkout
+# por _ConnectionRecord e logam um warning agregado quando algum checkout
+# ultrapassa o threshold, ANTES da exaustão.
+
+_POOL_STALE_CHECKOUT_WARN_SECONDS = 30.0
+_POOL_STALE_WARN_INTERVAL_SECONDS = 60.0
+_checked_out_since: dict[int, float] = {}
+_last_stale_warn_at: float = 0.0
+
+
+def _install_pool_observability(engine) -> None:
+    sync_engine = engine.sync_engine
+
+    @event.listens_for(sync_engine, "checkout")
+    def _on_checkout(_dbapi_conn, conn_record, _conn_proxy):  # noqa: ANN001
+        global _last_stale_warn_at
+        now = time.monotonic()
+        _checked_out_since[id(conn_record)] = now
+        stale_ages = [
+            now - ts for ts in _checked_out_since.values()
+            if now - ts > _POOL_STALE_CHECKOUT_WARN_SECONDS
+        ]
+        if stale_ages and now - _last_stale_warn_at > _POOL_STALE_WARN_INTERVAL_SECONDS:
+            _last_stale_warn_at = now
+            logger.warning(
+                "db.pool.stale_checkouts count=%d oldest_s=%.0f pool=%s",
+                len(stale_ages), max(stale_ages), sync_engine.pool.status(),
+                extra={
+                    "event": "db.pool.stale_checkouts",
+                    "count": len(stale_ages),
+                    "oldest_s": round(max(stale_ages)),
+                    "pool_status": sync_engine.pool.status(),
+                },
+            )
+
+    @event.listens_for(sync_engine, "checkin")
+    def _on_checkin(_dbapi_conn, conn_record):  # noqa: ANN001
+        _checked_out_since.pop(id(conn_record), None)
+
+    @event.listens_for(sync_engine, "close")
+    def _on_close(_dbapi_conn, conn_record):  # noqa: ANN001
+        _checked_out_since.pop(id(conn_record), None)
+
+
+def get_pool_status() -> str:
+    """Snapshot legível do pool (size/checked-out/overflow) para diagnóstico."""
+    return get_engine().sync_engine.pool.status()
+
+
+# ---------------------------------------------------------------------------
+# Cancel-safe session — para endpoints de streaming (SSE/exports)
+# ---------------------------------------------------------------------------
+#
+# Quando o cliente de um StreamingResponse desconecta, o servidor cancela a
+# task da request com hard-cancel; o CancelledError aterrissa em QUALQUER
+# await — inclusive no ``session.close()`` do ``async with``. O close
+# interrompido nunca devolve a conexão ao pool (vazamento → exaustão →
+# "travamento"). Este context manager roda o close numa task própria,
+# referenciada em módulo (não morre com a request), e faz shield para que o
+# fechamento SEMPRE complete mesmo com a request já cancelada.
+
+_pending_session_closes: set[asyncio.Task] = set()
+
+
+@asynccontextmanager
+async def cancel_safe_session() -> AsyncGenerator[AsyncSession, None]:
+    """AsyncSession cujo fechamento sobrevive a um hard-cancel da request.
+
+    Use em generators de streaming (SSE, exports) onde a desconexão do
+    cliente cancela a task no meio de awaits. Fora de streaming, o
+    ``async with session_factory() as s`` normal continua sendo o padrão.
+    """
+    session = get_session_factory()()
+    try:
+        yield session
+    finally:
+        loop = asyncio.get_running_loop()
+        close_task = loop.create_task(session.close())
+        _pending_session_closes.add(close_task)
+        close_task.add_done_callback(_pending_session_closes.discard)
+        try:
+            await asyncio.shield(close_task)
+        except asyncio.CancelledError:
+            # Request cancelada — o close continua em background na task
+            # referenciada acima e a conexão volta ao pool de qualquer forma.
+            raise
+        except Exception:
+            logger.exception("db.session.cancel_safe_close_failed")
 
 
 def get_engine():
@@ -799,6 +901,48 @@ async def _migrate_add_sprint_scope_fields() -> None:
                     pass
 
 
+async def _migrate_add_sprint_lane_fields() -> None:
+    """Add sprint lane metadata for normal and post-closure hotfix lanes."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE sprints ADD COLUMN IF NOT EXISTS "
+                    "lane_type VARCHAR(50) NOT NULL DEFAULT 'normal'"
+                ))
+            except Exception:
+                pass
+            for col in ["origin_sprint_id", "origin_bug_id"]:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE sprints ADD COLUMN IF NOT EXISTS {col} VARCHAR(36)"
+                    ))
+                except Exception:
+                    pass
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE sprints ADD COLUMN lane_type VARCHAR(50) NOT NULL DEFAULT 'normal'"
+                ))
+            except Exception:
+                pass
+            for col in ["origin_sprint_id", "origin_bug_id"]:
+                try:
+                    await conn.execute(sa_text(f"ALTER TABLE sprints ADD COLUMN {col} VARCHAR(36)"))
+                except Exception:
+                    pass
+
+        try:
+            await conn.execute(sa_text(
+                "UPDATE sprints SET lane_type = 'normal' WHERE lane_type IS NULL"
+            ))
+        except Exception:
+            pass
+
+
 async def _migrate_add_card_knowledge_bases() -> None:
     """Add knowledge_bases JSON column to cards table."""
     from sqlalchemy import text as sa_text
@@ -858,6 +1002,37 @@ async def _migrate_add_knowledge_source_columns() -> None:
                         ))
                     except Exception:
                         pass
+
+
+async def _migrate_add_kg_tick_boards_failed() -> None:
+    """Add boards_failed column to kg_tick_runs table (spec R2b, IMPL-2/TR4).
+
+    Tracks how many boards failed (graph corrupt/locked) during a tick without
+    aborting the rest of the fleet (FR1/TR2). Idempotent.
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'kg_tick_runs')"
+            ))
+            if not table_check.scalar():
+                return
+            await conn.execute(sa_text(
+                "ALTER TABLE kg_tick_runs "
+                "ADD COLUMN IF NOT EXISTS boards_failed INTEGER NOT NULL DEFAULT 0"
+            ))
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE kg_tick_runs "
+                    "ADD COLUMN boards_failed INTEGER NOT NULL DEFAULT 0"
+                ))
+            except Exception:
+                pass
 
 
 async def _migrate_drop_spec_skills() -> None:
@@ -1001,9 +1176,11 @@ async def init_db() -> None:
     await _migrate_add_card_knowledge_bases()
     await _migrate_add_knowledge_source_columns()
     await _migrate_add_sprint_scope_fields()
+    await _migrate_add_sprint_lane_fields()
     await _migrate_agent_boards()
     await _migrate_add_task_validation_columns()
     await _migrate_add_consolidation_resilience_columns()
+    await _migrate_add_kg_tick_boards_failed()
     await _migrate_drop_spec_skills()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()
@@ -1034,7 +1211,12 @@ async def _bootstrap_default_discovery_intents() -> None:
             "category": "coverage_tracing",
             "tool_binding": "okto_pulse_list_test_scenarios",
             "params_schema": {
-                "fr_id": {"type": "text", "required": True, "label": "FR id"}
+                "fr_id": {
+                    "type": "spec_child_selector",
+                    "required": True,
+                    "label": "Functional requirement",
+                    "child_types": ["functional_requirement"],
+                }
             },
             "renderer": "table",
             "min_permission": "kg.query.global",
@@ -1104,6 +1286,20 @@ async def _bootstrap_default_discovery_intents() -> None:
             "min_permission": "kg.query.global",
         },
         {
+            "name": "key_decisions",
+            "label": "Key Decisions",
+            "description": (
+                "The most relevant decisions on this board, ranked by a "
+                "blend of relevance score and graph connectivity (number "
+                "of connections) — highest first."
+            ),
+            "category": "decisions_history",
+            "tool_binding": "okto_pulse_kg_list_key_decisions",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
             "name": "decisions_by_topic",
             "label": "Find decisions about a topic",
             "description": (
@@ -1149,9 +1345,10 @@ async def _bootstrap_default_discovery_intents() -> None:
             "tool_binding": "okto_pulse_get_card_dependencies",
             "params_schema": {
                 "card_id": {
-                    "type": "text",
+                    "type": "entity_selector",
+                    "entity_type": "card",
                     "required": True,
-                    "label": "Card id",
+                    "label": "Card",
                 }
             },
             "renderer": "table",
@@ -1194,6 +1391,20 @@ async def _bootstrap_default_discovery_intents() -> None:
             ),
             "category": "similarity_reuse",
             "tool_binding": "okto_pulse_kg_get_learning_from_bugs",
+            "params_schema": None,
+            "renderer": "table",
+            "min_permission": "kg.query.global",
+        },
+        {
+            "name": "learnings_by_relevance",
+            "label": "Learnings by relevance",
+            "description": (
+                "Lists every Learning node on this board ordered by "
+                "relevance score, highest first — the institutional memory "
+                "ranked by how alive each lesson still is."
+            ),
+            "category": "similarity_reuse",
+            "tool_binding": "okto_pulse_kg_list_learnings_by_relevance",
             "params_schema": None,
             "renderer": "table",
             "min_permission": "kg.query.global",

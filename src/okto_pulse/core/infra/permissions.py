@@ -11,6 +11,43 @@ from __future__ import annotations
 import json
 from typing import Any
 
+STRUCTURED_SPEC_ENTITY_TYPES: tuple[str, ...] = (
+    "functional_requirement",
+    "business_rule",
+    "technical_requirement",
+    "decision",
+    "acceptance_criterion",
+    "api_contract",
+    "integration_requirement",
+    "observability_requirement",
+)
+
+STRUCTURED_SPEC_ENTITY_OPERATIONS: tuple[str, ...] = (
+    "create",
+    "update",
+    "revoke",
+    "supersede",
+    "restore",
+    "reorder",
+    "link_task",
+    "unlink_task",
+)
+
+
+def _structured_spec_entity_registry() -> dict[str, dict[str, bool]]:
+    return {
+        entity_type: {operation: True for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS}
+        for entity_type in STRUCTURED_SPEC_ENTITY_TYPES
+    }
+
+
+def structured_spec_entity_permission_flags() -> list[str]:
+    return [
+        f"spec.structured_entity.{entity_type}.{operation}"
+        for entity_type in STRUCTURED_SPEC_ENTITY_TYPES
+        for operation in STRUCTURED_SPEC_ENTITY_OPERATIONS
+    ]
+
 
 # ---------------------------------------------------------------------------
 # Legacy flat permissions (kept for backward compat during migration)
@@ -232,6 +269,7 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "read": True, "create": True, "edit": True,
             "delete": True, "link_task": True,
         },
+        "structured_entity": _structured_spec_entity_registry(),
         "mockups": {"read": True, "create": True, "edit": True, "delete": True, "annotate": True},
         "architecture": {
             "read": True, "create": True, "edit": True,
@@ -561,7 +599,7 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
         "spec.architecture.delete", "spec.architecture.import", "spec.architecture.render",
         "spec.knowledge.create", "spec.knowledge.delete",
         "spec.cards_derive",
-    ],
+    ] + structured_spec_entity_permission_flags(),
     "specs:delete": [
         "story.entity.delete", "topic.entity.delete",
         "spec.entity.delete",
@@ -777,6 +815,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         "spec.observability_requirements.read", "spec.observability_requirements.create",
         "spec.observability_requirements.edit", "spec.observability_requirements.delete",
         "spec.observability_requirements.link_task",
+        "spec.structured_entity.*",
         "spec.mockups.read", "spec.mockups.create", "spec.mockups.edit",
         "spec.mockups.delete", "spec.mockups.annotate",
         "spec.architecture.read", "spec.architecture.create", "spec.architecture.edit",

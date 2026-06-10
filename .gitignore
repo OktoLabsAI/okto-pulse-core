@@ -43,3 +43,19 @@ htmlcov/
 
 # MCP config
 .mcp.json
+
+# Codex run artifacts
+/.codex-*.log
+/.codex-*.json
+
+# DLQ dumps / exports
+/dlq-*.json
+
+# Scratch scripts & notes kept in repo root during development
+# (root-anchored so package __init__.py files are never matched)
+/_*.py
+/_*.md
+
+# One-off R1 dogfood generators
+/scripts/r1_*.py
+/scripts/r1_*.json

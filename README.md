@@ -9,32 +9,34 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 ## What's inside
 
-- **49 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, KG queues, discovery entities and audit/outbox records. (Skills entity dropped in 0.2.0.)
-- **24 service classes** — Full business logic with governance rules, resource propagation, archive/restore, traceability and board-level resource readiness. (Skills service dropped in 0.2.0.)
-- **26 API route modules** — FastAPI REST endpoints
-- **15 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, evidence, bug traceability and sprint health controls.
-- **204 MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
+- **52 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, KG queues, rebuild/cognitive-candidate records, discovery entities and audit/outbox records. (Skills entity dropped in 0.2.0.)
+- **28 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. (Skills service dropped in 0.2.0.)
+- **33 API route modules** — FastAPI REST endpoints
+- **17 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence, bug traceability and sprint health controls.
+- **215 MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
-  - 21 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability)
-  - Community runtime exposure: 204 core MCP tools, 0 community-only MCP tools
+  - 24 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability, rebuild preflight/confirm/run)
+  - Community runtime exposure: 215 core MCP tools, 0 community-only MCP tools
 - **App factory** — `create_app()` with dependency injection for auth and storage providers
-- **Embedded Knowledge Graph** — per-board Kùzu instance + global discovery meta-graph, deterministic + cognitive workers, 11 node types and 10 relationship types
+- **Embedded Knowledge Graph** — per-board LadybugDB instance + global discovery meta-graph, deterministic + cognitive workers, 11 node types and 10 relationship types
 
 ## Governance Gate Surface
 
-Okto Pulse currently documents and enforces **15 named governance gates**:
+Okto Pulse currently documents and enforces **17 named governance gates**:
 
 | Gate family | Gates |
 | --- | --- |
 | Resource readiness | Resource readiness; resource-to-task coverage |
 | Spec coverage | Scenario/test coverage; functional requirement/business rule coverage; technical requirement/task coverage; API contract/task coverage; active decision/task coverage |
 | Validation and evaluation | Spec validation; spec qualitative evaluation; task validation |
-| Execution quality | Task start/spec readiness; task conclusion; test evidence; bug test-first/traceability |
+| Execution quality | Task start/spec readiness; task conclusion; cognitive closeout; architecture-findings done; test evidence; bug test-first/traceability |
 | Sprint health | Sprint closure/evaluation |
+
+The two execution-quality additions in 0.2.3 — **cognitive closeout** (a `done` transition is blocked while active cognitive-consolidation items remain) and the **architecture-findings done gate** (active architecture warnings block `spec`/card `done`) — moved from defined to enforced in this release.
 
 ## Architecture
 
@@ -81,7 +83,24 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-### 0.2.2 — current
+### 0.2.3 — current
+
+The largest release since 0.2.0. Scope is taken from the **53 finalized specs on the Okto Pulse 0.2.3 board** (the platform dogfooded its own SDLC), landing **64 new core modules** across eight subsystems. `335 files changed, +103,183 / −4,532` over `0.2.2`; every subsystem ships with its pytest suite. The package grew to **52 models / 28 services / 33 API modules / 215 MCP tools / 17 named gates**.
+
+- **KG corruption prevention & durability (headline — KG-01, KGDL.01)** — new write-path primitives (`safe_write_lifecycle`, `write_barrier`, `single_writer_lock`, `backpressure`, `quarantine`, `contingency`). A non-destructive durability lifecycle (`STEP_CHECKPOINT` no longer closes the cached `Database`; a per-board `_BoardCloseGuard` drains live readers before any close) eliminates the use-after-close of the shared `Database` — the probable second corruption vector for `graph.lbug`. Spec `3d89c192`.
+- **KG recovery, reset & deterministic rebuild (KG-02 + R2a)** — rebuild a board's graph from canonical SQL sources, deterministically and audited: `rebuild_preflight`/`_confirm`/`_run` via REST + agent-actionable MCP twins (confirmation-token gated, quarantine-aware), plus auto-recovery of interrupted checkpoints.
+- **KG zero-orphan integrity (KG-ZO-01/02)** — a node-connectivity pre-commit guard that refuses to commit orphans, plus orphan backfill, health reporting and rebuild visibility.
+- **KG cognitive consolidation & source governance (KG-03/03A)** — cognitive item control + candidate-decision promotion (`candidate_decision_store`, `cognitive_badge_resolver`), per-concept `source_ref`, and dedup granularity with SUPERSEDE wiring + counted/audited merge.
+- **KG health honesty & degraded-mode resilience (F3/F4/F16/F17, R2c)** — signal clarity (scheduler/decay debt ≠ corruption; footprint = file-size proxy), a resilient/observable decay tick, a uniform `graph_unavailable` envelope, a health-aware closeout gate + tick admission, real memory-pressure instrumentation and opt-in DLQ auto-drain.
+- **Governance, lineage & gates (BG-01, RG-01, AFG)** — `critical_context_guard` (critical mutations resolve + fingerprint full entity context first), the `resource_lineage` provenance resolver with N/A inheritance, and the Architecture Finding Done Gate wired into `spec → done`. Two gates moved from defined to enforced (15 → 17): **Cognitive Closeout** and **Architecture Findings**.
+- **MCP token-optimization & projection (R1–R5)** — `payload_budget`, `payload_compaction`, `projection_envelope`, context/copy projection, `kg_query_safety`, `tool_family_registry`; schema honesty (`anyOf array|string`), positional → canonical id/ref migration (`linked_requirements → FR`, `linked_criteria → AC`), and the pre-flight checklist as a real `okto-pulse://workflows/preflight` resource. Surface grew to **215 tools**.
+- **Bug-regression workflow** — scenario reuse + test-gate remediation, operator-facing bug guidance/error remediation, and a post-closure hotfix lane.
+- **Structured spec entities + API-contract hardening** — structured editing + `test_scenario` CRUD (closes the NC-9 bypass), `contract_type` discriminator + HTTP-method enum, granular per-requirement N/A for IR/OR/contract, and structured choice fields.
+- **Analytics & telemetry** — IR/OR coverage calculator with a cancelled-card filter, Decision-coverage surfacing, and beacon-off metrics modes.
+
+See `CHANGELOG.md` for the per-subsystem diff-level rationale.
+
+### 0.2.2
 
 Patch release rolling up the post-0.2.1 fixes. Same surface as `0.2.1` plus:
 

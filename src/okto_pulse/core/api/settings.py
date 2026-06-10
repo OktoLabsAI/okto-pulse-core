@@ -12,7 +12,7 @@ the UI display a banner.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.config import validate_graph_db_max_size_gb
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.services.settings_service import (
+    ConfigChangeBlocked,
     get_runtime_settings,
     put_runtime_settings,
 )
@@ -74,6 +75,13 @@ class RuntimeSettingsPayload(BaseModel):
     kg_decay_tick_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
     kg_decay_tick_staleness_days: int | None = Field(default=None, ge=1, le=365)
     kg_decay_tick_max_age_days: int | None = Field(default=None, ge=0, le=365)
+    # KG-01.5 guard inputs — optional; for graph-DB changes these may be
+    # required by KGConfigChangeGuard (storage/wal/index need a migration
+    # plan ref; buffer requires restart_policy in {required, scheduled}).
+    # Default restart_policy for graph-DB changes is "required" when
+    # omitted — matches the existing "restart_required" semantics.
+    migration_plan_ref: str | None = Field(default=None, max_length=256)
+    restart_policy: str | None = Field(default=None, pattern="^(none|required|scheduled)$")
 
     @field_validator("kg_kuzu_max_db_size_gb")
     @classmethod
@@ -96,11 +104,39 @@ async def get_runtime(
 @router.put("/settings/runtime", response_model=RuntimeSettingsResponse)
 async def put_runtime(
     payload: RuntimeSettingsPayload,
-    _: str = Depends(require_user),
+    user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ) -> RuntimeSettingsResponse:
-    """Persist new runtime settings. Values only take effect after restart."""
-    # Strip unset fields — pass only what the caller actually sent.
-    values = {k: v for k, v in payload.model_dump().items() if v is not None}
-    data = await put_runtime_settings(db, values)
+    """Persist new runtime settings. Values only take effect after restart.
+
+    KG-01.5: LadybugDB runtime changes pass through ``KGConfigChangeGuard``
+    inside ``put_runtime_settings``. If the guard blocks the change, the
+    service raises ``ConfigChangeBlocked`` which we surface as HTTP 400
+    with a bounded reason code (no raw values leak per TR12).
+    """
+    payload_dict = payload.model_dump()
+    migration_plan_ref = payload_dict.pop("migration_plan_ref", None)
+    restart_policy = payload_dict.pop("restart_policy", None)
+    # Strip unset value fields — pass only what the caller actually sent.
+    values = {k: v for k, v in payload_dict.items() if v is not None}
+    try:
+        data = await put_runtime_settings(
+            db,
+            values,
+            actor_id=user_id,
+            migration_plan_ref=migration_plan_ref,
+            restart_policy=restart_policy,
+        )
+    except ConfigChangeBlocked as exc:
+        # Safe error envelope: bounded reason + setting_group + audit_event.
+        # Raw values are NEVER in the response body (TR12).
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "kg_config_change_blocked",
+                "reason": exc.reason,
+                "setting_group": exc.setting_group,
+                "audit_event": exc.audit_event,
+            },
+        ) from exc
     return RuntimeSettingsResponse(**data)

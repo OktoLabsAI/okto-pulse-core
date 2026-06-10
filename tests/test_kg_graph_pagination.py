@@ -3,7 +3,7 @@
 Covers Spec 8 cards S1.6 and S1.7:
 
 - S1.6 / AC-10: limit=50 returns at most 50 nodes + next_cursor.
-- S1.6 / AC-11: limit>500, limit<1 return 400 Bad Request.
+- S1.6 / AC-11: limit>1000, limit<1 return 400 Bad Request.
 - S1.7 / AC-12: identical cursor returns identical page (stability).
 - S1.7 / AC-12: corrupted cursor returns 410 Gone.
 - S1.7 / AC-12: walking all pages visits every seeded node exactly once.
@@ -187,8 +187,8 @@ class TestLimitContract:
         )
         assert body.get("next_cursor"), "next_cursor must be non-empty mid-pagination"
 
-    def test_limit_500_hard_cap_accepted(self, client):
-        code, _body = _get_graph(client, limit=500)
+    def test_limit_1000_hard_cap_accepted(self, client):
+        code, _body = _get_graph(client, limit=1000)
         assert code == 200
 
     def test_limit_default_is_100_when_omitted(self, client):
@@ -217,13 +217,13 @@ class TestLimitContract:
 
 
 class TestLimitValidation:
-    def test_limit_1000_rejected_with_400(self, client):
-        code, body = _get_graph(client, limit=1000)
-        # FastAPI Query(..., le=500) yields 422 by default; the spec wants a
+    def test_limit_above_1000_rejected_with_400(self, client):
+        code, body = _get_graph(client, limit=1001)
+        # FastAPI Query(..., le=1000) yields 422 by default; the spec wants a
         # 400 with a specific detail. S1.1 must translate the validation error.
         assert code == 400, (code, body)
         detail = (body.get("detail") or "").lower() if isinstance(body, dict) else ""
-        assert "limit" in detail and ("500" in detail or "range" in detail), body
+        assert "limit" in detail and ("1000" in detail or "range" in detail), body
 
     def test_limit_zero_rejected_with_400(self, client):
         code, _body = _get_graph(client, limit=0)
@@ -295,8 +295,8 @@ class TestCursorStability:
 
 class TestResponseShape:
     def test_last_page_has_null_next_cursor(self, client):
-        # limit=500 >= SEED_COUNT → single page → next_cursor must be None
-        code, body = _get_graph(client, limit=500)
+        # limit=1000 >= SEED_COUNT → single page → next_cursor must be None
+        code, body = _get_graph(client, limit=1000)
         assert code == 200
         assert body.get("next_cursor") in (None, "")
 
@@ -369,8 +369,47 @@ class TestNodesAndStats:
         assert body["schema_version"] == "0.3.5"
         assert body["graph_schema_version"] == "0.3.5"
         assert body["node_counts_by_type"]["Decision"] == SEED_COUNT
+        assert body["node_counts_by_type"]["Learning"] == 0
         assert body["edge_counts_by_type"] == {"belongs_to": 3}
         assert body["edge_count_status"] == "ok"
+
+    def test_stats_counts_learning_nodes_beyond_first_thousand(self, monkeypatch):
+        many_decisions = _seed_rows(1005)
+        learning = {
+            "id": "learning-old-001",
+            "node_type": "Learning",
+            "title": "Late-page Learning",
+            "content": "A learning node older than the first 1000 rows.",
+            "created_at": "2020-01-01T00:00:00",
+            "source_confidence": 0.9,
+            "relevance_score": 0.75,
+            "source_artifact_ref": "bug-1",
+        }
+        fake = _FakeKGService([*many_decisions, learning])
+        monkeypatch.setattr(kg_routes, "get_kg_service", lambda: fake)
+        monkeypatch.setattr(
+            kg_routes,
+            "_count_edges_by_type",
+            lambda _board: (
+                {},
+                {
+                    "edge_count_status": "ok",
+                    "edge_count_tables_scanned": 0,
+                    "edge_count_tables_failed": 0,
+                    "edge_count_errors": [],
+                },
+            ),
+        )
+        app = FastAPI()
+        app.include_router(kg_router, prefix="/api/v1")
+        local_client = TestClient(app)
+
+        resp = local_client.get(f"/api/v1/kg/boards/{SEED_BOARD}/stats")
+        body = resp.json()
+
+        assert resp.status_code == 200, body
+        assert body["node_counts_by_type"]["Decision"] == 1005
+        assert body["node_counts_by_type"]["Learning"] == 1
 
     def test_board_routes_do_not_use_global_discovery_fallback(self, client):
         graph_code, graph_body = _get_graph(client, limit=1)
@@ -409,3 +448,64 @@ class TestCursorCodec:
         bad = base64.b64encode(b";").decode()
         with pytest.raises(ValueError):
             kg_routes.decode_cursor(bad)
+
+
+class TestCrossPageEdges:
+    """Investigação 2026-06-10: a projeção paginada exigia AMBAS as pontas
+    da edge na mesma página — com 100 nós/página, quase toda edge cruzava
+    páginas e era omitida, e a Graph view mostrava milhares de nós
+    conectados como se fossem órfãos."""
+
+    def test_fetch_edges_includes_edges_with_one_endpoint_in_page(self, monkeypatch):
+        from okto_pulse.core.api import kg_routes
+
+        class _Result:
+            def __init__(self, rows):
+                self._rows = list(rows)
+
+            def has_next(self):
+                return bool(self._rows)
+
+            def get_next(self):
+                return self._rows.pop(0)
+
+            def close(self):
+                pass
+
+        class _Conn:
+            def execute(self, query):
+                if ":belongs_to" in query and "(a:Requirement)" in query:
+                    return _Result([
+                        ("req-in-page", "entity-OUT-of-page", 0.9),
+                        ("req-other-page", "entity-in-page", 0.8),
+                        ("req-out", "entity-out", 0.7),
+                    ])
+                return _Result([])
+
+        class _BC:
+            def __enter__(self):
+                return (None, _Conn())
+
+            def __exit__(self, *a):
+                return None
+
+        import okto_pulse.core.kg.schema as schema
+
+        monkeypatch.setattr(schema, "open_board_connection", lambda _bid: _BC())
+        monkeypatch.setattr(
+            kg_routes,
+            "_relation_pairs",
+            lambda *_a, **_k: [("belongs_to", "Requirement", "Entity")],
+        )
+
+        edges, diagnostics = kg_routes._fetch_edges_for_nodes(
+            "board-x", {"req-in-page", "entity-in-page"}
+        )
+
+        ids = {(e["source"], e["target"]) for e in edges}
+        # uma ponta na página basta (as duas edges abaixo eram omitidas):
+        assert ("req-in-page", "entity-OUT-of-page") in ids
+        assert ("req-other-page", "entity-in-page") in ids
+        # edges sem NENHUMA ponta na página continuam fora:
+        assert ("req-out", "entity-out") not in ids
+        assert diagnostics["edge_read_status"] == "ok"

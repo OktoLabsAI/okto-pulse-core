@@ -19,9 +19,18 @@ from okto_pulse.core.models import (
     CardResponse,
 )
 from okto_pulse.core.models.db import CardStatus
+from okto_pulse.core.services.board_governance import BoardGovernanceService
 from okto_pulse.core.services import AgentService, BoardService, CardService, ShareService
 
 router = APIRouter()
+
+
+def _attach_effective_board_settings(board):
+    if board is not None:
+        board.__dict__["settings"] = BoardGovernanceService.normalize_settings(
+            getattr(board, "settings", None)
+        )
+    return board
 
 
 @router.post("", response_model=BoardResponse, status_code=status.HTTP_201_CREATED)
@@ -38,7 +47,7 @@ async def create_board(
     # Re-fetch with relationships loaded
     board = await service.get_board(board.id)
     board.__dict__["agents"] = []
-    return board
+    return _attach_effective_board_settings(board)
 
 
 @router.get("", response_model=list[BoardSummary])
@@ -53,6 +62,8 @@ async def list_boards(
     """List boards for the current user. view: my|shared|all."""
     service = BoardService(db)
     boards, _ = await service.list_boards(user_id, offset, limit, realm_id=realm_id, view=view)
+    for board in boards:
+        _attach_effective_board_settings(board)
     return boards
 
 
@@ -83,7 +94,7 @@ async def get_board(
         board.__dict__["cards"] = []
     else:
         board.__dict__["agents"] = board_agents
-    return board
+    return _attach_effective_board_settings(board)
 
 
 @router.patch("/{board_id}", response_model=BoardResponse)
@@ -103,7 +114,7 @@ async def update_board(
     board = await service.get_board(board_id, user_id)
     agent_service = AgentService(db)
     board.__dict__["agents"] = await agent_service.list_agents_for_board(board_id)
-    return board
+    return _attach_effective_board_settings(board)
 
 
 @router.delete("/{board_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -185,6 +196,9 @@ async def get_board_columns(
             "severity": getattr(card, "severity", None),
             "linked_test_task_ids": getattr(card, "linked_test_task_ids", None),
             "archived": getattr(card, "archived", False),
+            # Unanswered Q&A count (answered_at IS NULL) for the kanban card badge.
+            # card.qa_items is eager-loaded by BoardService.get_board.
+            "open_qa_count": sum(1 for q in (card.qa_items or []) if q.answered_at is None),
         })
 
     return {"board_id": board_id, "columns": columns}

@@ -27,6 +27,17 @@ from datetime import datetime, timezone
 from functools import partial
 
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+from okto_pulse.core.kg.connectivity_guard import (
+    CONNECTIVITY_ERROR_CODE,
+    DEGRADED_KG_STATES,
+    KGConnectivityEdgeGroup,
+    KGConnectivityEdgeRequirement,
+    KGConnectivityMetricEvent,
+    KGConnectivityRuleRegistry,
+    KGNodeConnectivityGuard,
+    KGNodeRef,
+    MetricSinkProtocol,
+)
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
     AbortConsolidationResponse,
@@ -138,6 +149,65 @@ class KGPrimitiveError(Exception):
         self.message = message
         self.session_id = session_id
         self.details = details or {}
+
+
+KG_GRAPH_DEGRADED_ERROR_CODE = "kg_graph_degraded"
+
+
+class _LoggingConnectivityMetricSink:
+    """Emit connectivity guard telemetry using safe metric labels only."""
+
+    def emit(self, event: KGConnectivityMetricEvent) -> None:
+        labels = event.labels()
+        logger.info(
+            "kg.connectivity.guard board=%s node_type=%s writer_path=%s "
+            "outcome=%s reason=%s source_resolution_status=%s generation=%s",
+            labels["board_id"],
+            labels["node_type"],
+            labels["writer_path"],
+            labels["outcome"],
+            labels["reason"],
+            labels["source_resolution_status"],
+            labels["generation_id"],
+            extra={
+                "event": "kg_node_connectivity_guard_total",
+                **labels,
+            },
+        )
+        if labels["outcome"] == "rejected":
+            logger.info(
+                "kg.connectivity.orphan_rejected board=%s node_type=%s "
+                "writer_path=%s reason=%s source_resolution_status=%s",
+                labels["board_id"],
+                labels["node_type"],
+                labels["writer_path"],
+                labels["reason"],
+                labels["source_resolution_status"],
+                extra={
+                    "event": "kg_orphan_node_rejected_total",
+                    **labels,
+                },
+            )
+        if labels["source_resolution_status"] == "deferred_degraded_graph":
+            logger.info(
+                "kg.connectivity.deferred board=%s node_type=%s "
+                "writer_path=%s reason=%s",
+                labels["board_id"],
+                labels["node_type"],
+                labels["writer_path"],
+                labels["reason"],
+                extra={
+                    "event": "kg_connectivity_deferred_total",
+                    **labels,
+                },
+            )
+
+
+_CONNECTIVITY_METRIC_SINK: MetricSinkProtocol = _LoggingConnectivityMetricSink()
+
+
+def _connectivity_metric_sink() -> MetricSinkProtocol:
+    return _CONNECTIVITY_METRIC_SINK
 
 
 def _contextualize_ladybug_commit_error(exc: BaseException) -> tuple[str, dict]:
@@ -636,6 +706,538 @@ def _compensate_kuzu_writes(board_id: str, session_id: str, records: list) -> No
         )
 
 
+def _connectivity_writer_path(agent_id: str) -> str:
+    """Map the runtime caller to the guard's stable writer path vocabulary."""
+    if (agent_id or "").startswith("system:"):
+        return "deterministic_worker"
+    return "commit_consolidation"
+
+
+def _validate_kuzu_connectivity_before_commit(
+    *,
+    kconn,
+    board_id: str,
+    session_id: str,
+    node_candidates: dict,
+    edge_candidates: dict,
+    effective_hints: dict,
+    writer_path: str,
+    kg_health_state: str,
+) -> dict:
+    """Validate zero-orphan invariants before any Kùzu mutation.
+
+    The primitives commit path has three ways to report success without a
+    fresh create: NOOP, UPDATE target reuse, and natural
+    source_artifact_ref dedup/MERGE. All three must prove an existing minimal
+    edge or materialize one from the current batch before counters move.
+    """
+    if not node_candidates:
+        return _connectivity_empty_result()
+
+    registry = KGConnectivityRuleRegistry()
+    guard = KGNodeConnectivityGuard(
+        registry,
+        metric_sink=_connectivity_metric_sink(),
+    )
+    guard_nodes: list[object] = []
+    guard_edges: list[object] = list(edge_candidates.values())
+    existing_refs: list[KGNodeRef] = []
+    candidate_to_existing_id: dict[str, str] = {}
+
+    for cand_id, cand in node_candidates.items():
+        node_type = _enum_value(cand.node_type)
+        op = _resolve_op(effective_hints.get(cand_id), cand.source_confidence)
+        existing_id = _planned_existing_node_id(
+            kconn=kconn,
+            cand=cand,
+            node_type=node_type,
+            op=op,
+            hint=effective_hints.get(cand_id),
+        )
+        if op == ReconciliationOperation.NOOP and not existing_id:
+            continue
+
+        guard_nodes.append(cand)
+        if existing_id:
+            candidate_to_existing_id[cand_id] = existing_id
+            existing_refs.extend(
+                _existing_refs_for_candidate(
+                    candidate_id=cand_id,
+                    node_type=node_type,
+                    node_id=existing_id,
+                    source_artifact_ref=cand.source_artifact_ref,
+                )
+            )
+            guard_edges.extend(
+                _existing_connectivity_edges_for_candidate(
+                    kconn=kconn,
+                    registry=registry,
+                    candidate_id=cand_id,
+                    cand=cand,
+                    node_type=node_type,
+                    node_id=existing_id,
+                    existing_refs=existing_refs,
+                )
+            )
+
+        if (
+            op == ReconciliationOperation.SUPERSEDE
+            and effective_hints.get(cand_id)
+            and getattr(effective_hints[cand_id], "target_node_id", None)
+        ):
+            target_id = effective_hints[cand_id].target_node_id
+            target_type = _lookup_node_type_by_id(kconn, target_id) or node_type
+            guard_edges.append({
+                "candidate_id": f"{cand_id}__supersedes_existing",
+                "edge_type": "supersedes",
+                "from_candidate_id": cand_id,
+                "to_candidate_id": f"kg:{target_id}",
+            })
+            existing_refs.append(
+                KGNodeRef(
+                    ref_id=f"kg:{target_id}",
+                    node_type=target_type,
+                    source_artifact_ref=None,
+                )
+            )
+
+    existing_refs.extend(
+        _existing_refs_for_edge_endpoints(
+            kconn=kconn,
+            edge_candidates=edge_candidates,
+            node_candidates=node_candidates,
+            candidate_to_existing_id=candidate_to_existing_id,
+        )
+    )
+
+    result = guard.validate(
+        board_id=board_id,
+        writer_path=writer_path,
+        kg_health_state=kg_health_state,
+        nodes=guard_nodes,
+        edges=guard_edges,
+        existing_node_refs=existing_refs,
+        generation_id="",
+    )
+    response = result.to_response()
+    response["checked_nodes"] = len(guard_nodes)
+    response["enforced"] = True
+    response["kg_health_state"] = kg_health_state
+    if result.passed:
+        return response
+
+    if kg_health_state in DEGRADED_KG_STATES:
+        raise KGPrimitiveError(
+            KG_GRAPH_DEGRADED_ERROR_CODE,
+            (
+                "KG graph is degraded; connectivity validation was deferred "
+                "and no graph mutation was attempted."
+            ),
+            session_id=session_id,
+            details={
+                "connectivity": response,
+                "kg_health_state": kg_health_state,
+            },
+        )
+
+    raise KGPrimitiveError(
+        CONNECTIVITY_ERROR_CODE,
+        "KG node connectivity guard rejected the commit before graph mutation.",
+        session_id=session_id,
+        details={"connectivity": response},
+    )
+
+
+def _validate_degraded_connectivity_before_open(
+    *,
+    board_id: str,
+    session_id: str,
+    node_candidates: dict,
+    edge_candidates: dict,
+    writer_path: str,
+    kg_health_state: str,
+) -> None:
+    """Return a contextual error before opening a degraded graph."""
+    if not node_candidates or kg_health_state not in DEGRADED_KG_STATES:
+        return
+
+    registry = KGConnectivityRuleRegistry()
+    guard = KGNodeConnectivityGuard(
+        registry,
+        metric_sink=_connectivity_metric_sink(),
+    )
+    result = guard.validate(
+        board_id=board_id,
+        writer_path=writer_path,
+        kg_health_state=kg_health_state,
+        nodes=list(node_candidates.values()),
+        edges=list(edge_candidates.values()),
+        existing_node_refs=(),
+        generation_id="",
+    )
+    response = result.to_response()
+    response["checked_nodes"] = len(node_candidates)
+    response["enforced"] = True
+    response["kg_health_state"] = kg_health_state
+    raise KGPrimitiveError(
+        KG_GRAPH_DEGRADED_ERROR_CODE,
+        (
+            "KG graph is degraded; connectivity validation was deferred "
+            "and no graph mutation was attempted."
+        ),
+        session_id=session_id,
+        details={
+            "connectivity": response,
+            "kg_health_state": kg_health_state,
+        },
+    )
+
+
+def _connectivity_empty_result() -> dict:
+    return {
+        "passed": True,
+        "violations": [],
+        "allowlisted_roots": [],
+        "materializable_edges": [],
+        "outcome": "passed",
+        "checked_nodes": 0,
+        "enforced": True,
+    }
+
+
+def _planned_existing_node_id(
+    *,
+    kconn,
+    cand,
+    node_type: str,
+    op: ReconciliationOperation,
+    hint: ReconciliationHint | None,
+) -> str | None:
+    source_ref = cand.source_artifact_ref or ""
+    if source_ref:
+        existing_by_source = _lookup_existing_node(kconn, node_type, source_ref)
+        if existing_by_source:
+            return existing_by_source
+
+    if op == ReconciliationOperation.NOOP:
+        return None
+
+    target_node_id = getattr(hint, "target_node_id", None) if hint else None
+    if op == ReconciliationOperation.UPDATE and target_node_id:
+        is_curated = _node_is_human_curated(kconn, node_type, target_node_id)
+        has_override = bool(hint.confidence and hint.confidence >= 1.0)
+        if is_curated and has_override:
+            return None
+        return target_node_id
+
+    return None
+
+
+def _existing_refs_for_candidate(
+    *,
+    candidate_id: str,
+    node_type: str,
+    node_id: str,
+    source_artifact_ref: str | None,
+) -> list[KGNodeRef]:
+    refs = [
+        KGNodeRef(
+            ref_id=candidate_id,
+            node_type=node_type,
+            source_artifact_ref=source_artifact_ref,
+        ),
+        KGNodeRef(
+            ref_id=node_id,
+            node_type=node_type,
+            source_artifact_ref=source_artifact_ref,
+        ),
+        KGNodeRef(
+            ref_id=f"kg:{node_id}",
+            node_type=node_type,
+            source_artifact_ref=source_artifact_ref,
+        ),
+    ]
+    if source_artifact_ref:
+        refs.append(
+            KGNodeRef(
+                ref_id=source_artifact_ref,
+                node_type=node_type,
+                source_artifact_ref=source_artifact_ref,
+            )
+        )
+    return refs
+
+
+def _existing_refs_for_edge_endpoints(
+    *,
+    kconn,
+    edge_candidates: dict,
+    node_candidates: dict,
+    candidate_to_existing_id: dict[str, str],
+) -> list[KGNodeRef]:
+    refs: list[KGNodeRef] = []
+    for edge in edge_candidates.values():
+        for endpoint in (edge.from_candidate_id, edge.to_candidate_id):
+            if endpoint in node_candidates:
+                continue
+            node_id, resolved_type = _resolve_endpoint(
+                endpoint, candidate_to_existing_id, kconn=kconn,
+            )
+            if not node_id:
+                continue
+            node_type = resolved_type or _lookup_node_type_by_id(kconn, node_id)
+            if not node_type:
+                continue
+            refs.append(KGNodeRef(ref_id=endpoint, node_type=node_type))
+            refs.append(KGNodeRef(ref_id=node_id, node_type=node_type))
+            refs.append(KGNodeRef(ref_id=f"kg:{node_id}", node_type=node_type))
+    return refs
+
+
+def _existing_connectivity_edges_for_candidate(
+    *,
+    kconn,
+    registry: KGConnectivityRuleRegistry,
+    candidate_id: str,
+    cand,
+    node_type: str,
+    node_id: str,
+    existing_refs: list[KGNodeRef],
+) -> list[dict[str, str]]:
+    try:
+        rule = registry.get_rule(node_type)
+    except KeyError:
+        return []
+
+    if node_type == "Learning" and _candidate_has_known_bug_source(cand):
+        groups = [
+            KGConnectivityEdgeGroup(
+                name="bug_learning",
+                alternatives=(
+                    KGConnectivityEdgeRequirement(
+                        "validates", "outgoing", ("Bug",),
+                    ),
+                ),
+                remediation_hint=(
+                    "Provide Learning -> validates -> Bug when the learning "
+                    "is derived from a known bug."
+                ),
+            )
+        ]
+    else:
+        groups = list(rule.required_edge_groups)
+
+    synthesized: list[dict[str, str]] = []
+    for group in groups:
+        for req in group.alternatives:
+            match = _find_existing_connectivity_match(
+                kconn=kconn,
+                node_type=node_type,
+                node_id=node_id,
+                edge_type=req.edge_type,
+                direction=req.direction,
+                target_node_types=req.target_node_types,
+            )
+            if match is None:
+                continue
+            other_id, other_type, direction = match
+            endpoint_ref = f"kg:{other_id}"
+            existing_refs.append(KGNodeRef(ref_id=endpoint_ref, node_type=other_type))
+            existing_refs.append(KGNodeRef(ref_id=other_id, node_type=other_type))
+            if direction == "outgoing":
+                from_ref = candidate_id
+                to_ref = endpoint_ref
+            else:
+                from_ref = endpoint_ref
+                to_ref = candidate_id
+            synthesized.append({
+                "candidate_id": f"{candidate_id}__existing_{req.edge_type}",
+                "edge_type": req.edge_type,
+                "from_candidate_id": from_ref,
+                "to_candidate_id": to_ref,
+            })
+            break
+    return synthesized
+
+
+def _candidate_has_known_bug_source(cand) -> bool:
+    for attr in (
+        "bug_id",
+        "bug_ref",
+        "known_bug_ref",
+        "known_bug_source_ref",
+        "target_bug_ref",
+    ):
+        if getattr(cand, attr, None):
+            return True
+    source_ref = cand.source_artifact_ref or ""
+    return source_ref.startswith("bug:") or source_ref.startswith("card:bug:")
+
+
+def _find_existing_connectivity_match(
+    *,
+    kconn,
+    node_type: str,
+    node_id: str,
+    edge_type: str,
+    direction: str,
+    target_node_types: tuple[str, ...],
+) -> tuple[str, str, str] | None:
+    directions = ("outgoing", "incoming") if direction == "any" else (direction,)
+    targets = target_node_types or tuple(_kg_node_types())
+    for actual_direction in directions:
+        for target_type in targets:
+            if actual_direction == "outgoing":
+                cypher = (
+                    f"MATCH (n:{node_type})-[r:{edge_type}]->(m:{target_type}) "
+                    "WHERE n.id = $node_id RETURN m.id LIMIT 1"
+                )
+            else:
+                cypher = (
+                    f"MATCH (m:{target_type})-[r:{edge_type}]->(n:{node_type}) "
+                    "WHERE n.id = $node_id RETURN m.id LIMIT 1"
+                )
+            try:
+                res = kconn.execute(cypher, {"node_id": node_id})
+                try:
+                    if res.has_next():
+                        return res.get_next()[0], target_type, actual_direction
+                finally:
+                    try:
+                        res.close()
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+    return None
+
+
+def _lookup_node_type_by_id(kconn, node_id: str) -> str | None:
+    if not node_id:
+        return None
+    for node_type in _kg_node_types():
+        try:
+            res = kconn.execute(
+                f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.id LIMIT 1",
+                {"id": node_id},
+            )
+            try:
+                if res.has_next():
+                    return node_type
+            finally:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+        except Exception:
+            continue
+    return None
+
+
+def _kg_node_types() -> tuple[str, ...]:
+    from okto_pulse.core.kg.schema import NODE_TYPES
+
+    return tuple(NODE_TYPES)
+
+
+# Estado efetivo de health por board para o write-path, com TTL curto.
+# `get_kg_health` é caro (dezenas de queries + probes de arquivo); sem cache,
+# um batch de N entries do mesmo board recomputa N healths idênticos — parte
+# do bloqueio de event loop observado em campo (py-spy 2026-06-10).
+_COMMIT_HEALTH_CACHE: dict[str, tuple[float, str]] = {}
+_COMMIT_HEALTH_CACHE_TTL_S = 5.0
+
+# Estado sintético devolvido quando o board está recovery_needed mas o grafo
+# é LEGÍVEL (o health acabou de contar os nodes): NÃO pertence a
+# DEGRADED_KG_STATES, então o gate deixa a mutação passar.
+RECOVERY_WRITABLE_STATE = "recovery_needed_graph_readable"
+# Alias mantido para os primeiros consumidores do fix (mesma semântica).
+RECOVERY_EMPTY_REMATERIALIZATION_STATE = RECOVERY_WRITABLE_STATE
+
+
+def reset_commit_health_cache_for_tests(board_id: str | None = None) -> None:
+    """Test helper — drop the write-path health cache (all boards or one)."""
+    if board_id is None:
+        _COMMIT_HEALTH_CACHE.clear()
+    else:
+        _COMMIT_HEALTH_CACHE.pop(board_id, None)
+
+
+async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
+    """Read the write-path KG health state without making tests DB-coupled.
+
+    Catch-22 fix (2026-06-10): ``recovery_needed`` bloqueava TODA mutação —
+    inclusive a re-materialização de um grafo vazio (única cura de
+    ``empty_after_materialized_history``; 994 entries foram para a DLQ em
+    campo) e os retries após falha TRANSITÓRIA de escrita (ex.: buffer
+    manager exausto), que re-registrava ``kg.commit.failed`` e realimentava o
+    próprio estado. Falha recente de escrita não implica grafo corrompido.
+
+    Regra efetiva para o WRITE-PATH:
+    - ``quarantined`` → bloqueia sempre.
+    - ``recovery_needed`` com grafo LEGÍVEL (o health acabou de contar os
+      nodes — ``total_nodes`` presente, 0 ou N) → permite a mutação: a
+      conectividade real é validada contra o grafo aberto, e um commit
+      bem-sucedido limpa as falhas de write do ring buffer (self-heal).
+    - ``recovery_needed`` SEM contagem (telemetria indisponível = grafo
+      ilegível) → mantém o bloqueio/deferral (contrato Zero-Orphan); e
+      corrupção real continua fail-closed na própria abertura
+      (``throw_on_wal_replay_failure=True``), sem mutação.
+    """
+    if db is None:
+        return "healthy"
+
+    import time as _time
+
+    now = _time.monotonic()
+    cached = _COMMIT_HEALTH_CACHE.get(board_id)
+    if cached is not None and now - cached[0] < _COMMIT_HEALTH_CACHE_TTL_S:
+        return cached[1]
+
+    try:
+        from okto_pulse.core.services.kg_health_service import get_kg_health
+
+        health = await get_kg_health(board_id, db)
+    except Exception as exc:
+        logger.warning(
+            "kg.connectivity.health_resolution_failed board=%s err=%s",
+            board_id,
+            exc,
+            extra={
+                "event": "kg.connectivity.health_resolution_failed",
+                "board_id": board_id,
+            },
+        )
+        return "healthy"
+    state = str(health.get("overall_state") or health.get("graph_state") or "healthy")
+
+    raw_total_nodes = health.get("total_nodes")
+    if state == "recovery_needed" and raw_total_nodes is not None:
+        # total_nodes AUSENTE = payload sem telemetria de contagem (grafo
+        # ilegível) → mantém o bloqueio (conservador, contrato Zero-Orphan).
+        try:
+            total_nodes = int(raw_total_nodes)
+        except (TypeError, ValueError):
+            total_nodes = -1
+        if total_nodes >= 0:
+            logger.info(
+                "kg.connectivity.recovery_writable_graph board=%s "
+                "total_nodes=%d reason=%s",
+                board_id,
+                total_nodes,
+                health.get("classification_reason"),
+                extra={
+                    "event": "kg.connectivity.recovery_writable_graph",
+                    "board_id": board_id,
+                    "total_nodes": total_nodes,
+                },
+            )
+            state = RECOVERY_WRITABLE_STATE
+
+    _COMMIT_HEALTH_CACHE[board_id] = (now, state)
+    return state
+
+
 def _do_kuzu_commit(
     board_id: str,
     session_id: str,
@@ -644,15 +1246,27 @@ def _do_kuzu_commit(
     effective_hints: dict,
     agent_id: str,
     embedder,
-) -> tuple[dict, object, list, datetime]:
+    kg_health_state: str,
+) -> tuple[dict, object, list, datetime, dict]:
     """Synchronous Kùzu writes for ``commit_consolidation``.
 
     Runs in the thread pool via ``_run_kuzu``. Returns
-    ``(candidate_to_kuzu_id, counters, records, committed_at)`` on success.
+    ``(candidate_to_kuzu_id, counters, records, committed_at, connectivity)``
+    on success.
     Raises ``KGPrimitiveError`` on failure (after inline compensation).
     """
     from okto_pulse.core.kg.schema import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
+
+    writer_path = _connectivity_writer_path(agent_id)
+    _validate_degraded_connectivity_before_open(
+        board_id=board_id,
+        session_id=session_id,
+        node_candidates=node_candidates,
+        edge_candidates=edge_candidates,
+        writer_path=writer_path,
+        kg_health_state=kg_health_state,
+    )
 
     board_conn = open_board_connection(board_id)
     with board_conn as (_kdb, kconn):
@@ -666,12 +1280,24 @@ def _do_kuzu_commit(
         candidate_to_node_type: dict[str, str] = {}
 
         try:
+            connectivity = _validate_kuzu_connectivity_before_commit(
+                kconn=kconn,
+                board_id=board_id,
+                session_id=session_id,
+                node_candidates=node_candidates,
+                edge_candidates=edge_candidates,
+                effective_hints=effective_hints,
+                writer_path=writer_path,
+                kg_health_state=kg_health_state,
+            )
             for cand_id, cand in node_candidates.items():
                 hint = effective_hints.get(cand_id)
                 op = _resolve_op(hint, cand.source_confidence)
                 node_type = _enum_value(cand.node_type)
 
                 if op == ReconciliationOperation.NOOP:
+                    # Spec eca49df9 (FR6): NOOP is a processed candidate too.
+                    orch.counters.nodes_noop += 1
                     existing_id = _lookup_existing_node(
                         kconn, node_type, cand.source_artifact_ref or ""
                     )
@@ -726,6 +1352,89 @@ def _do_kuzu_commit(
                             },
                         )
 
+                    if not is_curated:
+                        # Spec eca49df9 (FR6/TR6): a non-curated UPDATE with a
+                        # target is an in-place semantic update — route it
+                        # through orch.update_node so nodes_updated has a real
+                        # production call site. The NC-8 dedup-reuse branch
+                        # below stays a MERGE; an UPDATE must not be miscounted
+                        # as MERGE or CREATE. (Curated+override keeps falling
+                        # through to reset-via-create.)
+                        update_attrs = {
+                            "title": cand.title,
+                            "content": cand.content or "",
+                            "context": cand.context or "",
+                            "justification": cand.justification or "",
+                            "source_confidence": cand.source_confidence,
+                            "priority_boost": getattr(cand, "priority_boost", 0.0),
+                        }
+                        orch.update_node(node_type_check, target_node_id, update_attrs)
+                        candidate_to_kuzu_id[cand_id] = target_node_id
+                        candidate_to_node_type[cand_id] = node_type_check
+                        logger.info(
+                            "kg.consolidation.updated candidate=%s target=%s "
+                            "type=%s session=%s",
+                            cand_id, target_node_id, node_type_check, session_id,
+                            extra={
+                                "event": "kg.consolidation.updated",
+                                "candidate_id": cand_id,
+                                "target_node_id": target_node_id,
+                                "node_type": node_type_check,
+                                "session_id": session_id,
+                            },
+                        )
+                        continue
+
+                # Spec eca49df9 (FR4): op==SUPERSEDE must go through
+                # supersede_node (new node + superseded_by + :supersedes edge
+                # for node types the schema supports — Decision today), never
+                # fall through to a lone CREATE. supersede_node reclassifies the
+                # counter (nodes_added-1 / nodes_superseded+1) internally.
+                if (
+                    op == ReconciliationOperation.SUPERSEDE
+                    and hint
+                    and getattr(hint, "target_node_id", None)
+                ):
+                    superseded_id = hint.target_node_id
+                    new_node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
+                    embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+                    new_attrs = {
+                        "title": cand.title,
+                        "content": cand.content or "",
+                        "context": cand.context or "",
+                        "justification": cand.justification or "",
+                        "source_artifact_ref": cand.source_artifact_ref or "",
+                        "created_at": _now_iso(),
+                        "created_by_agent": agent_id,
+                        "source_confidence": cand.source_confidence,
+                        "relevance_score": getattr(cand, "relevance_score", 0.5),
+                        "query_hits": 0,
+                        "last_queried_at": None,
+                        "priority_boost": getattr(cand, "priority_boost", 0.0),
+                        "human_curated": False,
+                        "embedding": embedding,
+                    }
+                    orch.supersede_node(
+                        node_type, new_node_id, superseded_id, new_attrs,
+                        revocation_reason="superseded by consolidation session",
+                    )
+                    candidate_to_kuzu_id[cand_id] = new_node_id
+                    candidate_to_node_type[cand_id] = node_type
+                    logger.info(
+                        "kg.consolidation.superseded candidate=%s new=%s old=%s "
+                        "type=%s session=%s",
+                        cand_id, new_node_id, superseded_id, node_type, session_id,
+                        extra={
+                            "event": "kg.consolidation.superseded",
+                            "candidate_id": cand_id,
+                            "new_node_id": new_node_id,
+                            "superseded_node_id": superseded_id,
+                            "node_type": node_type,
+                            "session_id": session_id,
+                        },
+                    )
+                    continue
+
                 # Spec 7f23535f (NC-8): natural dedup by source_artifact_ref.
                 # Before generating a fresh UUID, check whether this artifact
                 # already has a Kuzu node from a prior session. If yes, reuse
@@ -759,6 +1468,18 @@ def _do_kuzu_commit(
                             )
                         candidate_to_kuzu_id[cand_id] = existing_id
                         candidate_to_node_type[cand_id] = node_type
+                        # Spec eca49df9 (FR5/AC6): count + audit the NC-8
+                        # dedup-reuse (merge). No KuzuWriteRecord — the reused
+                        # node belongs to a prior session and must not enter
+                        # compensation rollback.
+                        orch.counters.nodes_merged += 1
+                        orch.counters.merge_audit_items.append({
+                            "candidate_id": cand_id,
+                            "node_type": node_type,
+                            "source_artifact_ref": source_ref,
+                            "reused_node_id": existing_id,
+                            "operation": "MERGE",
+                        })
                         logger.info(
                             "kg.consolidation.dedup_reused candidate=%s "
                             "existing=%s type=%s ref=%s session=%s curated=%s",
@@ -901,6 +1622,7 @@ def _do_kuzu_commit(
                 orch.counters,
                 list(orch.records),
                 committed_at,
+                connectivity,
             )
 
         except KGPrimitiveError:
@@ -927,18 +1649,44 @@ async def commit_consolidation(
     Kùzu writes are offloaded to the thread pool via ``_run_kuzu`` and
     ``_do_kuzu_commit``.  Audit persistence (SQLite) remains in the async
     context via ``_commit_audit_records``.
+
+    KG-01 FR5/FR6 enforcement: this primitive is a write path against
+    `graph.lbug` and MUST run inside a `under_safe_write` guard. In SOFT
+    mode (default) a missing guard logs `kg.write_barrier.unguarded` and
+    bumps `kg_unguarded_write_total` without blocking — production wires
+    callers to enter the guard via KGSafeWriteLifecycle. In STRICT mode
+    (tests + dedicated production deployments) the absence of a guard
+    raises ``WriteLifecycleViolation`` before the Kùzu write begins.
     """
+    from okto_pulse.core.kg.write_barrier import require_write_token
+
     registry = get_kg_registry()
     session = await _require_open_session(req.session_id, agent_id)
+
+    # FR5/FR6 barrier check. Uses session.board_id so a multi-board
+    # process never blocks the wrong board. Raises in STRICT, logs+counter
+    # in SOFT.
+    require_write_token(session.board_id)
 
     async with session.lock:
         effective_hints = dict(session.reconciliation_hints)
         for cid, override in req.agent_overrides.items():
             effective_hints[cid] = override
 
+        kg_health_state = await _resolve_commit_kg_health_state(
+            session.board_id,
+            db,
+        )
+
         # --- Kùzu writes (offloaded to thread pool) ---
         try:
-            candidate_to_kuzu_id, counters, records, committed_at = await _run_kuzu(
+            (
+                candidate_to_kuzu_id,
+                counters,
+                records,
+                committed_at,
+                connectivity,
+            ) = await _run_kuzu(
                 _do_kuzu_commit,
                 session.board_id,
                 req.session_id,
@@ -947,6 +1695,7 @@ async def commit_consolidation(
                 effective_hints,
                 agent_id,
                 registry.embedding_provider,
+                kg_health_state,
             )
         except KGPrimitiveError:
             raise
@@ -973,6 +1722,21 @@ async def commit_consolidation(
 
         registry.cache_backend.invalidate_board(session.board_id)
 
+        # Commit bem-sucedido prova que o write-path está saudável:
+        # (a) limpa falhas de WAL/commit do ring buffer (sem isso, o health
+        #     manteria wal_or_commit_errors até o restart — feedback loop);
+        # (b) invalida o cache de health do write-path para a transição
+        #     vazio→populado refletir já no próximo commit.
+        try:
+            from okto_pulse.core.kg.memory_pressure_collector import (
+                record_write_success,
+            )
+
+            record_write_success(session.board_id)
+        except Exception:  # pragma: no cover — defensivo, nunca quebra commit
+            pass
+        _COMMIT_HEALTH_CACHE.pop(session.board_id, None)
+
         return CommitConsolidationResponse(
             session_id=req.session_id,
             status=SessionStatus.COMMITTED,
@@ -980,6 +1744,17 @@ async def commit_consolidation(
             nodes_updated=counters.nodes_updated,
             nodes_superseded=counters.nodes_superseded,
             edges_added=counters.edges_added,
+            nodes_merged=counters.nodes_merged,
+            nodes_noop=counters.nodes_noop,
+            processed_candidates=(
+                counters.nodes_added
+                + counters.nodes_updated
+                + counters.nodes_merged
+                + counters.nodes_superseded
+                + counters.nodes_noop
+            ),
+            merge_audit_items=list(counters.merge_audit_items),
+            connectivity=connectivity,
             committed_at=committed_at,
         )
 

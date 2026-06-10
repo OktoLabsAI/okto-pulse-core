@@ -1,0 +1,141 @@
+---
+version: "1.0"
+---
+
+# Tool docs — `test-scenario`
+
+Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
+
+## `okto_pulse_add_test_scenario`
+
+Add a test scenario to a spec. Test scenarios translate acceptance criteria into
+concrete Given/When/Then test plans.
+
+Args:
+    board_id: Board ID
+    spec_id: Spec ID
+    title: Scenario title (e.g. "Valid OAuth2 token grants access")
+    given: Precondition (e.g. "User has a valid JWT token")
+    when: Action (e.g. "GET /api/v1/boards with Bearer token")
+    then: Expected result (e.g. "Returns 200 with board list")
+    scenario_type: unit | integration | e2e | manual (default: integration)
+    linked_criteria: Multi-value (pipe ``"0|2"`` or JSON-array ``'["0","2"]'``)
+        references to the acceptance criteria this scenario validates. Each
+        token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
+        or the EXACT acceptance-criterion text. ``ac_id`` is recommended — it is
+        the canonical projection persisted in ``linked_criteria`` (legacy ACs
+        without an id fall back to their text). Matching is exact: prefix
+        matching is NOT accepted on this write path. Resolution is fail-closed
+        and atomic — if ANY token is unresolved the tool returns a structured
+        error JSON (listing the failing tokens, the valid index range and the
+        available ac_ids) and appends no scenario. Use okto_pulse_get_spec to
+        see the acceptance_criteria list, their indices, and their ids.
+    notes: Additional notes or edge cases (optional)
+
+Returns:
+    JSON with the created scenario; ``linked_criteria`` is always a list of
+    canonical ac_id strings (never a dict).
+
+## `okto_pulse_delete_test_scenario`
+
+Delete a test scenario and clean Card.test_scenario_ids in CASCADE.
+
+    Removes the scenario from the spec AND drops its id from every card that
+    references it, atomically (all-or-nothing). Does not block on existing links.
+    Respects the spec content-lock.
+
+    Args:
+        board_id: Board ID.
+        spec_id: Spec ID.
+        scenario_id: Test scenario ID to delete.
+
+    Returns:
+        JSON {success, scenario_id, cards_unlinked} or
+        {error: spec_locked|scenario_not_found}.
+
+## `okto_pulse_list_test_scenarios`
+
+List test scenarios for a spec with coverage information. Supports filtering and pagination.
+
+Args:
+    board_id: Board ID
+    spec_id: Spec ID
+    status: Filter by scenario status (optional) — one of: draft, ready, automated, passed, failed
+    scenario_type: Filter by type (optional) — one of: unit, integration, e2e, manual
+    linked: Filter by task linkage (optional) — "linked" = only scenarios with tasks, "unlinked" = only scenarios without tasks
+    offset: Skip first N scenarios (default 0)
+    limit: Max scenarios to return (default 50, max 200)
+
+Returns:
+    JSON with filtered/paginated scenarios and acceptance criteria coverage status
+
+## `okto_pulse_update_test_scenario`
+
+Edit the BODY of a test scenario (title/given/when/then/scenario_type/
+    linked_criteria/notes). Does NOT accept status — status stays exclusive to
+    okto_pulse_update_test_scenario_status so no second NC-9 bypass is created.
+
+    Empty-string params mean "leave unchanged". To intentionally CLEAR a field,
+    list it in `clear` (pipe-separated); only `notes` and `linked_criteria` are
+    clearable. `linked_criteria` is a pipe-separated list of AC index/id/text,
+    resolved to AC ids (fail-closed on unresolved tokens).
+
+    Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
+    scenario that holds evidence invalidates it: status resets to `ready` and the
+    evidence is dropped. Cosmetic edits (title/notes) preserve status + evidence.
+    Respects the spec content-lock.
+
+    Args:
+        board_id: Board ID.
+        spec_id: Spec ID.
+        scenario_id: Test scenario ID (e.g. "ts_abc123").
+        title/given/when/then/scenario_type/notes: New value, or "" to leave as-is.
+        linked_criteria: Pipe-separated AC index/id/text (resolved to AC ids).
+        clear: Pipe-separated field names to empty (notes, linked_criteria).
+
+    Returns:
+        JSON {success, scenario_id, updated_fields, evidence_invalidated} or
+        {error: spec_locked|scenario_not_found|unresolved_criteria|invalid_update}.
+
+## `okto_pulse_update_test_scenario_status`
+
+Update the status of a test scenario, optionally attaching structured
+evidence that the test really exists/ran.
+
+**Test theater prevention gate (NC-9, spec 873e98cc):**
+
+When the board's `skip_test_evidence_global` setting is False (default),
+setting status to one of `automated`, `passed`, or `failed` REQUIRES
+structured evidence:
+  - `automated`: evidence.test_file_path AND evidence.test_function
+  - `passed`/`failed`: evidence.last_run_at AND
+    (evidence.output_snippet OR evidence.test_run_id)
+  - `draft`/`ready`: evidence opcional (intent declarado)
+
+When `skip_test_evidence_global=True`, the gate is bypassed — every
+status update is accepted without evidence, but a structured audit log
+`test_scenario.evidence_gate_skipped` is emitted for forensics.
+
+Evidence is persisted inline within the scenario dict (no DB migration).
+Audit log `test_scenario.status_changed` is emitted on every successful
+update with `evidence_provided`, `evidence_gate_skipped`, and
+`changed_by_agent_id`.
+
+Validated/done specs keep their semantic content lock. The only post-lock
+status update allowed here is operational evidence for a scenario that is
+already linked to an executable `card_type="test"` card (`started`,
+`in_progress`, `validation`, or `done`). If no such test card exists, the call
+returns `status_not_mutable`.
+
+Args:
+    board_id: Board ID
+    spec_id: Spec ID
+    scenario_id: Test scenario ID (e.g. "ts_abc123")
+    status: New status — one of: draft, ready, automated, passed, failed
+    evidence: Optional JSON string with keys test_file_path, test_function,
+        last_run_at, test_run_id, output_snippet. Empty string = no evidence.
+
+Returns:
+    JSON. On success: {success, scenario_id, old_status, new_status,
+    evidence_provided, evidence_gate_skipped}. On gate failure:
+    {error: "evidence_required", required: [...], message: "..."}.

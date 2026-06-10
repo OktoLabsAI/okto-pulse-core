@@ -18,6 +18,13 @@ History
   ergonomic without reintroducing ambiguous comma splitting.
 - v5 (spec P0.B — TR-B3): adds ``_structured_error()`` for the
   polymorphic consolidated list handlers.
+- v6 (spec bfb30e51 — R5 IMPL-2 — FR3/TR3): adds
+  ``parse_options_json()`` — a dedicated parser for the ``options_json``
+  parameter accepted by the 4 choice-question handlers.  Accepts a
+  JSON-array of ``{label, recommended?, tradeoff?}`` objects and returns
+  a list of normalised dicts ready for ``*ChoiceOption`` construction.
+  ``parse_multi_value`` is string-list-only and rejects non-string
+  items, so a separate parser is required for object-typed items.
 
 Design
 ------
@@ -200,6 +207,104 @@ def coerce_to_list_str(
     return parse_multi_value(value, strict_mode=strict_mode)
 
 
+def parse_options_json(
+    raw: str | None,
+) -> list[dict] | None:
+    """Parse the ``options_json`` parameter accepted by the 4 choice handlers.
+
+    This is a dedicated parser for **object-typed** option items — distinct
+    from :func:`parse_multi_value` which is string-list-only (spec bfb30e51,
+    FR3/TR3).
+
+    Accepted input shapes:
+
+    * **None** or empty/whitespace-only string → returns ``None`` (caller
+      falls back to the legacy ``options`` label-list path).
+    * **JSON-array string** ``'[{"label": "A", "recommended": true}]'`` or
+      **native list** (when FastMCP's Pydantic Union delivers it already
+      decoded) — each element is validated as an object with at least a
+      non-empty ``label`` string.
+
+    Normalisation rules applied to each item:
+
+    * ``label`` — required; must be a non-empty string after stripping
+      whitespace.  Missing or empty ``label`` raises ``ValueError``.
+    * ``recommended`` — optional; coerced to ``bool`` via truthiness if
+      present; defaults to ``False`` when absent.
+    * ``tradeoff`` — optional; must be a string or ``None``/absent; defaults
+      to ``None``.  Non-string, non-``None`` values are coerced via ``str()``.
+
+    Returns:
+        ``None`` when the input is absent/empty (signals "use legacy path").
+        Otherwise a list of normalised dicts with keys ``label``
+        (``str``), ``recommended`` (``bool``), ``tradeoff``
+        (``str | None``).  The caller is responsible for assigning
+        ``id=f"opt_{i}"`` when constructing the ``*ChoiceOption`` instances.
+
+    Raises:
+        ValueError: Malformed JSON, decoded value is not a list, any item is
+            not a dict, or any item has a missing/empty ``label``.
+    """
+    if raw is None:
+        return None
+
+    # Normalise: accept either a pre-decoded list (FastMCP Pydantic Union) or
+    # a JSON string.
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if not stripped:
+            return None
+        try:
+            decoded = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"malformed JSON for options_json: {exc.msg} (at pos {exc.pos})"
+            ) from exc
+    elif isinstance(raw, list):
+        decoded = raw
+    else:
+        raise ValueError(
+            f"options_json must be a JSON-array string or list, "
+            f"got {type(raw).__name__}"
+        )
+
+    if not isinstance(decoded, list):
+        raise ValueError(
+            f"options_json must decode to a list, got {type(decoded).__name__}"
+        )
+
+    # Empty list → treat as absent (caller uses legacy path).
+    if not decoded:
+        return None
+
+    result: list[dict] = []
+    for idx, item in enumerate(decoded):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"options_json item at index {idx} must be an object, "
+                f"got {type(item).__name__}"
+            )
+        raw_label = item.get("label")
+        if raw_label is None or not str(raw_label).strip():
+            raise ValueError(
+                f"options_json item at index {idx} is missing a non-empty 'label'"
+            )
+        label = str(raw_label).strip()
+
+        recommended_raw = item.get("recommended")
+        recommended: bool = bool(recommended_raw) if recommended_raw is not None else False
+
+        tradeoff_raw = item.get("tradeoff")
+        if tradeoff_raw is None:
+            tradeoff: str | None = None
+        else:
+            tradeoff = str(tradeoff_raw)
+
+        result.append({"label": label, "recommended": recommended, "tradeoff": tradeoff})
+
+    return result
+
+
 def _structured_error(
     error_code: str,
     supported: list,
@@ -222,9 +327,12 @@ def _structured_error(
     suggested_tool:
         Replacement tool name when the agent used an old tool, or ``None``.
     error_msg:
-        Human-readable detail; included as ``"error"`` for compat and as
-        ``"detail"`` for structured consumers.
+        Human-readable detail; surfaced once under ``"error"`` for compat. The
+        machine code travels in ``"error_code"``.
     """
+    # FR7 dedup: the human string lived in BOTH ``error`` and ``detail`` — the
+    # same value twice. Keep ``error`` (back-compat) + ``error_code`` (machine);
+    # drop the redundant ``detail`` copy.
     payload: dict = {
         "error": error_msg or error_code,
         "error_code": error_code,
@@ -232,13 +340,12 @@ def _structured_error(
     }
     if suggested_tool is not None:
         payload["suggested_tool"] = suggested_tool
-    if error_msg:
-        payload["detail"] = error_msg
     return json.dumps(payload)
 
 
 __all__ = [
     "parse_multi_value",
+    "parse_options_json",
     "coerce_to_list_str",
     "_clean_str_list",
     "_structured_error",

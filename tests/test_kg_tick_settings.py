@@ -140,14 +140,18 @@ async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior(monkeypatch)
     e completar sem exception (best-effort background).
     """
     from okto_pulse.core.api import kg_tick
+    from okto_pulse.core.events.handlers import kg_decay_tick
 
-    published: list[object] = []
+    published: list[dict] = []
 
-    async def _fake_publish(event, session):
+    async def _fake_publish_tick_events(session, *, board_id=None, **kwargs):
         assert session is not None
-        published.append(event)
+        published.append({"board_id": board_id, **kwargs})
+        return ["fanout-tick-uuid"]
 
-    monkeypatch.setattr(kg_tick, "event_publish", _fake_publish)
+    monkeypatch.setattr(
+        kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
+    )
 
     await kg_tick._dispatch_manual_tick(
         tick_id="ts5-test-uuid",
@@ -156,7 +160,7 @@ async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior(monkeypatch)
         session=object(),
     )
     assert len(published) == 1
-    assert getattr(published[0], "tick_id") == "ts5-test-uuid"
+    assert published[0]["board_id"] == "board-does-not-exist-uuid"
 
 
 async def test_ts5_mcp_dispatch_opens_session_when_omitted(monkeypatch):
@@ -166,6 +170,7 @@ async def test_ts5_mcp_dispatch_opens_session_when_omitted(monkeypatch):
     of passing None into event_publish.
     """
     from okto_pulse.core.api import kg_tick
+    from okto_pulse.core.events.handlers import kg_decay_tick
     from okto_pulse.core.infra import database as database_module
 
     class _OwnedSession:
@@ -186,16 +191,19 @@ async def test_ts5_mcp_dispatch_opens_session_when_omitted(monkeypatch):
             return None
 
     owned = _OwnedSession()
-    published: list[object] = []
+    published: list[dict] = []
 
-    async def _fake_publish(event, session):
+    async def _fake_publish_tick_events(session, *, board_id=None, **kwargs):
         assert session is owned
-        published.append(event)
+        published.append({"board_id": board_id, **kwargs})
+        return ["fanout-tick-uuid"]
 
     def _factory():
         return _SessionContext(owned)
 
-    monkeypatch.setattr(kg_tick, "event_publish", _fake_publish)
+    monkeypatch.setattr(
+        kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
+    )
     monkeypatch.setattr(database_module, "get_session_factory", lambda: _factory)
 
     await kg_tick._dispatch_manual_tick(
@@ -205,7 +213,7 @@ async def test_ts5_mcp_dispatch_opens_session_when_omitted(monkeypatch):
     )
 
     assert len(published) == 1
-    assert getattr(published[0], "tick_id") == "ts5-owned-session"
+    assert published[0]["board_id"] == "board-does-not-exist-uuid"
     assert owned.committed is True
 
 
@@ -245,13 +253,27 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
         async def rollback(self) -> None:
             self.rolled_back = True
 
-    published: list[object] = []
+    from okto_pulse.core.events.handlers import kg_decay_tick
 
-    async def _fake_publish(event, session):
+    published: list[dict] = []
+
+    async def _fake_publish_tick_events(session, *, board_id=None, **kwargs):
         assert isinstance(session, _FakeSession)
-        published.append(event)
+        published.append({"board_id": board_id, **kwargs})
+        return ["fanout-tick-uuid"]
 
-    monkeypatch.setattr(kg_tick, "event_publish", _fake_publish)
+    monkeypatch.setattr(
+        kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
+    )
+
+    # F17: run_tick_now now probes board health before allocating a tick. Stub
+    # it healthy so this 202 path proceeds (a concrete board that is NOT degraded
+    # is admitted); the advisory-lock 409 path below short-circuits before the
+    # probe is reached.
+    async def _healthy_health(board_id, db):
+        return {"graph_state": "healthy"}
+
+    monkeypatch.setattr(kg_tick, "get_kg_health", _healthy_health)
     fake_db = _FakeSession()
 
     # First call: 202 success.

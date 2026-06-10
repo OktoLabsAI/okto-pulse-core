@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +15,7 @@ from okto_pulse.core.telemetry.schema import SchemaReject, count_rejected_payloa
 from okto_pulse.core.telemetry.service import TelemetryService
 
 router = APIRouter()
+logger = logging.getLogger("okto_pulse.api.metrics")
 
 
 class MetricsSettingsPayload(BaseModel):
@@ -29,6 +31,23 @@ class MetricsSettingsPayload(BaseModel):
 class LocalMetricsEventPayload(BaseModel):
     event_type: str = Field(min_length=1, max_length=64)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class MigrationNoticeSeenPayload(BaseModel):
+    notice_key: str = Field(min_length=1, max_length=64)
+
+
+def _log_settings_update(*, source: str, target_mode: str, outcome: str, reason: str) -> None:
+    logger.info(
+        "metrics.settings_update",
+        extra={
+            "metric_name": "metrics_settings_update_total",
+            "source": source,
+            "target_mode": target_mode,
+            "outcome": outcome,
+            "reason": reason,
+        },
+    )
 
 
 def _public_event_response(*, written: bool, rejected_fields_count: int, schema_version: str) -> dict[str, Any]:
@@ -119,22 +138,67 @@ async def post_metrics_settings(
         "no_pii",
         "local_control",
     }
+    if payload.source == "settings_ui" and payload.mode == "local_only":
+        _log_settings_update(
+            source=payload.source,
+            target_mode=payload.mode,
+            outcome="rejected",
+            reason="invalid_legacy_mode_for_ui",
+        )
+        raise HTTPException(status_code=400, detail="invalid_legacy_mode_for_ui")
     if payload.mode == "anonymous_beacon":
         if not payload.policy_version or not payload.schema_version:
+            _log_settings_update(
+                source=payload.source,
+                target_mode=payload.mode,
+                outcome="rejected",
+                reason="opt_in_prerequisites_not_approved",
+            )
             raise HTTPException(status_code=409, detail="OPT_IN_PREREQUISITES_NOT_APPROVED")
         if not required_ack.issubset(set(payload.acknowledged_items)):
+            _log_settings_update(
+                source=payload.source,
+                target_mode=payload.mode,
+                outcome="rejected",
+                reason="missing_policy_ack",
+            )
             raise HTTPException(status_code=400, detail="MISSING_POLICY_ACK")
     service = TelemetryService(get_settings())
     try:
-        return service.update_settings(
+        result = service.update_settings(
             mode=payload.mode,
             source=payload.source,
             policy_version=payload.policy_version,
             schema_version=payload.schema_version,
             acknowledged_items=payload.acknowledged_items,
         )
+        _log_settings_update(
+            source=payload.source,
+            target_mode=str(result.get("mode") or payload.mode),
+            outcome="accepted",
+            reason="saved",
+        )
+        return result
     except ValueError as exc:
+        _log_settings_update(
+            source=payload.source,
+            target_mode=payload.mode,
+            outcome="rejected",
+            reason=str(exc).lower(),
+        )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/metrics/settings/migration-notice/seen")
+async def mark_metrics_migration_notice_seen(
+    payload: MigrationNoticeSeenPayload,
+    _: str = Depends(require_user),
+):
+    service = TelemetryService(get_settings())
+    try:
+        return service.mark_migration_notice_seen(notice_key=payload.notice_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/metrics/local/export")
