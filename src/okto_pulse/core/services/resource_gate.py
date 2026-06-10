@@ -400,6 +400,62 @@ class ResourceGateService:
             },
         )
 
+    async def validate_or_raise_architecture_findings(
+        self,
+        board_id: str,
+        entity_type: EntityType | str,
+        entity_id: str,
+        *,
+        phase: str = "completion",
+    ) -> dict[str, Any]:
+        """Bloqueia a completion quando os designs referenciados têm findings
+        ativos — SEM arrastar o gate de recursos Level 1.
+
+        Investigação 2026-06-10: spec→done validava cognitive closeout e
+        Level 2 task coverage, mas nunca passava pelo ArchitectureFindingGate
+        (que vivia apenas em validate_or_raise_entity_completion, usado por
+        card/ideation/refinement). Specs com findings ativos completavam.
+        Este método isola o gate de findings para a transição de spec, onde
+        a obrigação de recursos já é coberta pelo Level 2.
+        """
+        summary = await self.get_summary(board_id, entity_type, entity_id)
+        architecture_findings = summary.get("architecture_findings") or {}
+        blocking = list(architecture_findings.get("top_remediation") or [])
+        if not blocking:
+            return summary
+
+        label_items = []
+        for item in blocking[:5]:
+            target = item.get("target_ref") or item.get("path") or "unknown target"
+            label_items.append(f"{item.get('code', 'architecture_warning')} ({target})")
+        labels = ", ".join(label_items)
+        extra = f" and {len(blocking) - 5} more" if len(blocking) > 5 else ""
+        observe_architecture_done_blocker(
+            board_id=board_id,
+            owner_type=str(entity_type),
+            active_count=int(architecture_findings.get("active_count") or 0),
+            design_count=int(architecture_findings.get("design_count") or 0),
+            phase=phase,
+        )
+        raise ResourceGateViolation(
+            "architecture_findings_block_done",
+            (
+                f"Cannot complete {entity_type} '{entity_id}': active "
+                f"Architecture Design finding(s) remain: {labels}{extra}. "
+                "Resolve the findings by updating the architecture design; "
+                "warning acknowledgement is audit-only and does not bypass Done."
+            ),
+            details={
+                "board_id": board_id,
+                "entity_type": str(entity_type),
+                "entity_id": entity_id,
+                "phase": phase,
+                "architecture_findings": architecture_findings,
+                "blocking_architecture_findings": blocking,
+                "summary": summary,
+            },
+        )
+
     async def validate_spec_resource_task_coverage(
         self,
         board_id: str,

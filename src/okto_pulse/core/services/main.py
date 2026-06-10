@@ -4760,6 +4760,15 @@ class SpecService:
                 phase="spec_done",
                 enabled=resource_gate.is_spec_resource_task_coverage_required(board),
             )
+            # AFG na spec (investigacao 2026-06-10): specs com findings de
+            # arquitetura ativos completavam - o finding gate so rodava em
+            # card/ideation/refinement via entity_completion.
+            await resource_gate.validate_or_raise_architecture_findings(
+                spec.board_id,
+                "spec",
+                spec.id,
+                phase="spec_done",
+            )
 
         old_status = spec.status
         spec.status = data.status

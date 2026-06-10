@@ -146,6 +146,36 @@ def create_app(
                 extra={"event": "qa.answered_at.backfill_failed"},
             )
 
+        # Self-heal AFG (investigacao 2026-06-10): findings de arquitetura
+        # so nasciam em saves pos-feature; 83% dos designs nunca tiveram
+        # run e o gate avaliava tabela vazia. O sweep re-avalia os designs
+        # (payloads re-hidratados) em BACKGROUND para nao atrasar o boot.
+        async def _afg_backfill_task() -> None:
+            try:
+                from okto_pulse.core.services.architecture import (
+                    backfill_architecture_finding_runs,
+                )
+
+                factory = get_session_factory()
+                async with factory() as _afg_session:
+                    _afg_stats = await backfill_architecture_finding_runs(
+                        _afg_session
+                    )
+                logger.info(
+                    "architecture.finding_backfill.completed %s", _afg_stats,
+                    extra={
+                        "event": "architecture.finding_backfill.completed",
+                        **_afg_stats,
+                    },
+                )
+            except Exception as _afg_exc:
+                logger.warning(
+                    "architecture.finding_backfill.failed err=%s", _afg_exc,
+                    extra={"event": "architecture.finding_backfill.failed"},
+                )
+
+        _afg_task = asyncio.create_task(_afg_backfill_task())
+
         # Import events package BEFORE dispatcher.start — side-effect of
         # importing handlers is @register_handler populating the registry.
         # Dispatcher relies on the registry being complete when it drains.

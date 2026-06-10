@@ -12,6 +12,7 @@ import copy
 import hashlib
 import json
 import re
+import logging
 import uuid
 from collections import Counter
 from dataclasses import dataclass
@@ -122,6 +123,8 @@ ALLOWED_NODE_ICON_NAMES: frozenset[str] = frozenset({
 REQUIRED_LINKED_NODE_FIELDS: tuple[str, ...] = (
     "text", "displayType", "architectureKind", "iconName", "linkedEntityId",
 )
+
+logger = logging.getLogger("okto_pulse.architecture")
 
 ARCHITECTURE_DESIGN_SCHEMA_VERSION = "2026-05-04"
 SUPPORTED_ARCHITECTURE_DIAGRAM_FORMAT = "excalidraw_json"
@@ -1734,6 +1737,103 @@ class ArchitectureFindingRunStore:
         }
 
 
+async def backfill_architecture_finding_runs(
+    db: AsyncSession,
+    *,
+    board_id: str | None = None,
+    only_missing: bool = False,
+) -> dict[str, int]:
+    """Materializa finding runs para designs existentes (self-heal).
+
+    Investigação 2026-06-10: o AFG avalia FINDINGS PERSISTIDOS, mas eles só
+    nascem num save pós-AFG — 83% dos designs do board 0.2.3 nunca tiveram
+    um run (criados antes da feature ou nunca re-salvos), então a tabela
+    estava vazia e o gate nunca bloqueou nada. Este sweep re-avalia os
+    designs com os payloads RE-HIDRATADOS (o segundo furo: refs
+    externalizadas eram puladas pelo engine) e grava o run atual de cada
+    um. Idempotente: ``upsert_latest_run`` substitui o run corrente.
+
+    ``only_missing=True`` restringe a designs sem nenhum run (sweep de boot
+    barato); o default re-avalia tudo (reconcilia runs imprecisos gravados
+    antes do fix da re-hidratação).
+    """
+    repo = ArchitectureDesignRepository(db)
+    stmt = select(ArchitectureDesign)
+    if board_id:
+        stmt = stmt.where(ArchitectureDesign.board_id == board_id)
+    designs = list((await db.execute(stmt)).scalars().all())
+
+    stats = {"designs": 0, "skipped": 0, "with_findings": 0, "findings": 0, "errors": 0}
+    for design in designs:
+        if only_missing:
+            existing = await db.execute(
+                select(ArchitectureFindingRun.id)
+                .where(ArchitectureFindingRun.design_id == design.id)
+                .limit(1)
+            )
+            if existing.first() is not None:
+                stats["skipped"] += 1
+                continue
+        try:
+            diagrams = await repo._diagrams_for_validation(design.diagrams or [])
+            critique = repo.critique_payload(
+                {
+                    "title": design.title,
+                    "global_description": design.global_description,
+                    "entities": design.entities or [],
+                    "interfaces": design.interfaces or [],
+                    "diagrams": diagrams,
+                }
+            )
+            if critique.get("valid") is False:
+                # Designs com payload inválido nunca persistem run (contrato
+                # da store) — ficam para correção manual.
+                stats["skipped"] += 1
+                continue
+            warnings = repo._structured_warnings_with_keys(
+                design.id, list(critique.get("structured_warnings") or [])
+            )
+            store = ArchitectureFindingRunStore(db)
+            await store.upsert_latest_run(
+                board_id=design.board_id,
+                design_id=design.id,
+                design_version=design.version,
+                critic_run_id=(
+                    f"archcrit-backfill:{design.id}:v{design.version}:"
+                    f"{uuid.uuid4().hex[:8]}"
+                ),
+                actor={
+                    "actor_type": "system",
+                    "actor_id": "architecture-finding-backfill",
+                    "actor_name": "Architecture finding backfill",
+                },
+                validator_summary={
+                    "valid": True,
+                    "issues": [],
+                    "warnings_count": len(critique.get("warnings") or []),
+                    "structured_warnings_count": len(warnings),
+                    "suppressed_warnings_count": len(
+                        critique.get("suppressed_warnings") or []
+                    ),
+                    "summary": critique.get("summary") or {},
+                },
+                structured_warnings=warnings,
+            )
+            stats["designs"] += 1
+            if warnings:
+                stats["with_findings"] += 1
+                stats["findings"] += len(warnings)
+        except Exception:
+            logger.exception(
+                "architecture.finding_backfill.design_failed design_id=%s",
+                design.id,
+            )
+            stats["errors"] += 1
+    await db.commit()
+    return stats
+
+
+
 @dataclass(frozen=True)
 class ArchitectureFindingGate:
     """Evaluate persisted architecture findings for SDLC completion gates.
@@ -1915,11 +2015,17 @@ class ArchitectureDesignRepository:
         acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
         design_id = str(uuid.uuid4())
         board_id = getattr(parent, "board_id")
+        # Hidrata uma CÓPIA para o critique (refs externalizadas → payload),
+        # preservando o payload original para a persistência normal.
+        critique_input = dict(payload)
+        critique_input["diagrams"] = await self._diagrams_for_validation(
+            list(payload.get("diagrams") or [])
+        )
         critique = self._critique_for_save(
             design_id=design_id,
             board_id=board_id,
             entity_type=parent_type,
-            payload=payload,
+            payload=critique_input,
             acknowledgement=acknowledgement,
         )
         design = ArchitectureDesign(
@@ -1975,10 +2081,16 @@ class ArchitectureDesignRepository:
         change_summary = payload.pop("change_summary", None)
         acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
         semantic_change = bool(SEMANTIC_PATCH_FIELDS & payload.keys())
-        candidate_diagrams = (
-            payload["diagrams"]
-            if "diagrams" in payload
-            else await self._diagrams_for_validation(design.diagrams or [])
+        # Re-hidrata SEMPRE (investigação 2026-06-10): um patch com
+        # ``diagrams`` carregando ``adapter_payload_ref`` sem o payload
+        # inline (ex.: import_excalidraw re-anexa os diagramas existentes
+        # crus) fazia o TopologyWarningEngine pular esses diagramas
+        # silenciosamente — entidades cobertas pareciam órfãs (falso
+        # entity_without_diagram) e warnings reais de dentro deles se
+        # perdiam. O helper só carrega quando há ref sem payload, então o
+        # caso inline permanece intocado.
+        candidate_diagrams = await self._diagrams_for_validation(
+            payload["diagrams"] if "diagrams" in payload else (design.diagrams or [])
         )
         candidate_payload = {
             "title": payload.get("title", design.title),
@@ -2084,7 +2196,16 @@ class ArchitectureDesignRepository:
             ref = item.get("adapter_payload_ref")
             if ref and "adapter_payload" not in item:
                 try:
-                    item["adapter_payload"] = await self.diagram_store.load_payload(ref)
+                    loaded = await self.diagram_store.load_payload(ref)
+                    # payload_text retorna string JSON; o TopologyWarningEngine
+                    # exige dict e pularia o diagrama silenciosamente.
+                    if isinstance(loaded, str):
+                        try:
+                            loaded = json.loads(loaded)
+                        except (TypeError, ValueError):
+                            loaded = None
+                    if isinstance(loaded, dict):
+                        item["adapter_payload"] = loaded
                 except KeyError:
                     pass
             enriched.append(item)
