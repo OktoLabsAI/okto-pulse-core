@@ -448,3 +448,64 @@ class TestCursorCodec:
         bad = base64.b64encode(b";").decode()
         with pytest.raises(ValueError):
             kg_routes.decode_cursor(bad)
+
+
+class TestCrossPageEdges:
+    """Investigação 2026-06-10: a projeção paginada exigia AMBAS as pontas
+    da edge na mesma página — com 100 nós/página, quase toda edge cruzava
+    páginas e era omitida, e a Graph view mostrava milhares de nós
+    conectados como se fossem órfãos."""
+
+    def test_fetch_edges_includes_edges_with_one_endpoint_in_page(self, monkeypatch):
+        from okto_pulse.core.api import kg_routes
+
+        class _Result:
+            def __init__(self, rows):
+                self._rows = list(rows)
+
+            def has_next(self):
+                return bool(self._rows)
+
+            def get_next(self):
+                return self._rows.pop(0)
+
+            def close(self):
+                pass
+
+        class _Conn:
+            def execute(self, query):
+                if ":belongs_to" in query and "(a:Requirement)" in query:
+                    return _Result([
+                        ("req-in-page", "entity-OUT-of-page", 0.9),
+                        ("req-other-page", "entity-in-page", 0.8),
+                        ("req-out", "entity-out", 0.7),
+                    ])
+                return _Result([])
+
+        class _BC:
+            def __enter__(self):
+                return (None, _Conn())
+
+            def __exit__(self, *a):
+                return None
+
+        import okto_pulse.core.kg.schema as schema
+
+        monkeypatch.setattr(schema, "open_board_connection", lambda _bid: _BC())
+        monkeypatch.setattr(
+            kg_routes,
+            "_relation_pairs",
+            lambda *_a, **_k: [("belongs_to", "Requirement", "Entity")],
+        )
+
+        edges, diagnostics = kg_routes._fetch_edges_for_nodes(
+            "board-x", {"req-in-page", "entity-in-page"}
+        )
+
+        ids = {(e["source"], e["target"]) for e in edges}
+        # uma ponta na página basta (as duas edges abaixo eram omitidas):
+        assert ("req-in-page", "entity-OUT-of-page") in ids
+        assert ("req-other-page", "entity-in-page") in ids
+        # edges sem NENHUMA ponta na página continuam fora:
+        assert ("req-out", "entity-out") not in ids
+        assert diagnostics["edge_read_status"] == "ok"

@@ -327,7 +327,7 @@ def _fetch_edges_for_nodes(
                     result = conn.execute(
                         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
                         f"RETURN a.id, b.id, r.confidence "
-                        f"LIMIT 500",
+                        f"LIMIT 5000",
                     )
                     while result.has_next():
                         row = result.get_next()
@@ -335,7 +335,14 @@ def _fetch_edges_for_nodes(
                         key = (rel_name, src, tgt)
                         if key in seen:
                             continue
-                        if src in node_ids and tgt in node_ids:
+                        # Pelo menos UMA ponta na página (era AND): com a
+                        # projeção paginada (100 nós/página), exigir ambas
+                        # as pontas escondia quase toda edge — a UI mostrava
+                        # milhares de nós conectados como se fossem órfãos.
+                        # O cliente acumula as edges e materializa cada uma
+                        # quando a outra ponta chega nas páginas seguintes
+                        # (GraphCanvas já pula edges com nó ausente).
+                        if src in node_ids or tgt in node_ids:
                             seen.add(key)
                             edges.append({
                                 "id": f"{src}-{rel_name}-{tgt}",
