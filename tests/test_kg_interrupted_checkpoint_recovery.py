@@ -62,7 +62,9 @@ def test_moves_empty_shadow_and_wal_checkpoint(icr_board):
     assert not shadow.exists()
     assert not ckpt.exists()
     assert path.exists(), "main file deve permanecer intocado"
-    quarantined = sorted(_quarantine_root(path).glob("interrupted-checkpoint-*"))
+    quarantined = sorted(
+        _quarantine_root(path).glob(f"interrupted-checkpoint-{path.parent.name}-*")
+    )
     assert quarantined, "sidecars devem ir para a quarentena, nao ser apagados"
     latest = quarantined[-1]
     assert (latest / (path.name + ".shadow")).exists()
@@ -86,7 +88,9 @@ def test_nonempty_shadow_is_also_quarantined(icr_board):
     assert moved is True
     assert not shadow.exists() and not ckpt.exists()
     assert path.exists(), "main file deve permanecer intocado"
-    quarantined = sorted(_quarantine_root(path).glob("interrupted-checkpoint-*"))
+    quarantined = sorted(
+        _quarantine_root(path).glob(f"interrupted-checkpoint-{path.parent.name}-*")
+    )
     latest = quarantined[-1]
     assert (latest / (path.name + ".shadow")).read_bytes() == b"partial checkpoint payload"
 

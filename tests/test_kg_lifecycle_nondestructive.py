@@ -275,6 +275,31 @@ def test_worker_subset_constant_excludes_probe():
 # ---------------------------------------------------------------------------
 
 
+def test_periodic_buffer_hygiene_closes_every_kth_commit(nd_board, monkeypatch):
+    """Campo 2026-06-10 (3 crashes): CHECKPOINTs sucessivos no mesmo Database
+    aberto degradam o buffer do Ladybug até abort nativo. A cada K commits o
+    step troca o CHECKPOINT pelo CLOSE (higiene do buffer pool)."""
+    monkeypatch.setenv("KG_CHECKPOINT_CLOSE_INTERVAL", "3")
+    schema._reset_checkpoint_counter(nd_board)
+    close_calls: list[str] = []
+    orig_cac = schema.close_all_connections
+    monkeypatch.setattr(
+        schema, "close_all_connections",
+        lambda *a, **k: (close_calls.append("close"), orig_cac(*a, **k)),
+    )
+    executed: list[str] = []
+    _spy_board_connection(monkeypatch, executed)
+
+    for _ in range(6):
+        result = apply_ladybug_lifecycle_step(nd_board, "board_graph", STEP_CHECKPOINT)
+        assert result.ok is True
+
+    # K=3: commits 3 e 6 viram CLOSE; os demais (1,2,4,5) usam CHECKPOINT.
+    assert len(close_calls) == 2, f"esperava 2 closes em 6 commits, veio {len(close_calls)}"
+    checkpoints = [q for q in executed if "CHECKPOINT" in q.upper()]
+    assert len(checkpoints) == 4, f"esperava 4 CHECKPOINTs, veio {len(checkpoints)}"
+
+
 def test_checkpoint_failure_falls_back_to_close(nd_board, monkeypatch):
     """Campo 2026-06-10: CHECKPOINT esgotou o buffer manager do Ladybug sob
     backfill massivo e derrubava o processo. O fallback fecha o Database do

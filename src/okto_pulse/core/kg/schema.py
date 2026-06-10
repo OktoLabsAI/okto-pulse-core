@@ -943,17 +943,31 @@ def apply_ladybug_lifecycle_step(
                     ok=False,
                     detail=f"{GRAPH_DB_FILENAME} missing at {path}",
                 )
+            # Higiene periódica do buffer (campo 2026-06-10, 3 crashes): o
+            # Ladybug 0.16 degrada sob CHECKPOINTs sucessivos no MESMO
+            # Database aberto — após algumas centenas de commits o processo
+            # morre por abort nativo no meio do checkpoint ("Buffer manager
+            # exception: No more frame groups..." quando o erro chega a
+            # emergir). A cada K commits o step troca o CHECKPOINT pelo
+            # CLOSE do board (zera o buffer pool + checkpoint implícito do
+            # close — o caminho estável pré-KGDL.01), amortizando o custo do
+            # close em 1/K e ficando ordens de magnitude abaixo do limiar de
+            # crash observado (~250-500 checkpoints).
+            if _bump_checkpoint_counter_and_check_close(board_id):
+                close_all_connections(board_id)
+                if not path.exists():
+                    return LifecycleStepResult(
+                        ok=False,
+                        detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                    )
+                return LifecycleStepResult(ok=True)
             bc = BoardConnection(board_id)
             try:
                 bc.conn.execute("CHECKPOINT")
             except Exception as exc:
-                # Válvula de escape (campo 2026-06-10): sob backfill massivo o
-                # CHECKPOINT com o Database sempre-aberto esgota o buffer
-                # manager do Ladybug ("No more frame groups can be added to
-                # the allocator") — e a exaustão derrubou o processo. Fechar o
-                # Database do board libera o buffer pool inteiro E executa o
-                # checkpoint implícito do close (a barreira de durabilidade
-                # pré-KGDL.01). Só se o close TAMBÉM falhar o step falha.
+                # Válvula de escape: CHECKPOINT falhou (ex.: buffer exausto)
+                # → fecha o Database (libera o buffer pool inteiro + flush
+                # via close). Só se o close TAMBÉM falhar o step falha.
                 logger.warning(
                     "kg.lifecycle.checkpoint_statement_failed board=%s err=%s "
                     "— fallback: close_all_connections (flush via close)",
@@ -964,6 +978,7 @@ def apply_ladybug_lifecycle_step(
                     },
                 )
                 bc.close()
+                _reset_checkpoint_counter(board_id)
                 close_all_connections(board_id)
                 if not path.exists():
                     return LifecycleStepResult(
@@ -1188,6 +1203,40 @@ def _open_kuzu_db(path: Path):
         "or call MCP tool `okto_pulse_kg_migrate_schema`; "
         "(3) corrupted db file."
     ) from e
+
+
+# Contador de checkpoints por board para a higiene periódica do buffer
+# (a cada K commits o STEP_CHECKPOINT vira CLOSE). Override via env
+# KG_CHECKPOINT_CLOSE_INTERVAL.
+_CHECKPOINT_CLOSE_INTERVAL_DEFAULT = 10
+_checkpoint_counters: dict[str, int] = {}
+_checkpoint_counters_lock = threading.Lock()
+
+
+def _checkpoint_close_interval() -> int:
+    raw = os.environ.get("KG_CHECKPOINT_CLOSE_INTERVAL")
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return _CHECKPOINT_CLOSE_INTERVAL_DEFAULT
+
+
+def _bump_checkpoint_counter_and_check_close(board_id: str) -> bool:
+    """Incrementa o contador do board; True quando é a vez do CLOSE."""
+    with _checkpoint_counters_lock:
+        n = _checkpoint_counters.get(board_id, 0) + 1
+        if n >= _checkpoint_close_interval():
+            _checkpoint_counters[board_id] = 0
+            return True
+        _checkpoint_counters[board_id] = n
+        return False
+
+
+def _reset_checkpoint_counter(board_id: str) -> None:
+    with _checkpoint_counters_lock:
+        _checkpoint_counters[board_id] = 0
 
 
 def _quarantine_interrupted_checkpoint_sidecars(path: Path) -> bool:
