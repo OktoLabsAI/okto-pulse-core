@@ -1193,13 +1193,18 @@ def _open_kuzu_db(path: Path):
 def _quarantine_interrupted_checkpoint_sidecars(path: Path) -> bool:
     """Move órfãos de checkpoint interrompido para a quarentena.
 
-    Critério ESTRITO (fail-closed em ambiguidade):
-    - ``<graph>.shadow`` só é movido quando tem 0 bytes (checkpoint nem
-      chegou a escrever — com bytes, o estado é ambíguo e preservamos tudo
-      no lugar para análise);
-    - ``<graph>.wal.checkpoint`` é movido junto;
-    - o main file e um eventual ``<graph>.wal`` principal NUNCA são tocados
-      (o .wal pode conter commits legítimos não-checkpointed).
+    O shadow é a área de trabalho do checkpoint EM ANDAMENTO — o main file
+    só é substituído atomicamente na conclusão. Logo, quando a abertura
+    falha com marcador de corrupção e existem ``<graph>.shadow`` /
+    ``<graph>.wal.checkpoint`` órfãos, o main é o estado autoritativo e os
+    sidecars são lixo do checkpoint que não completou (confirmado DUAS
+    vezes em campo 2026-06-10: shadow vazio e shadow de 283KB — main
+    íntegro com 3926/3929 nodes em ambos). Os sidecars vão para a
+    quarentena (nada é destruído); o main e um eventual ``<graph>.wal``
+    principal NUNCA são tocados (o .wal pode conter commits legítimos
+    não-checkpointed). Concorrência: outro processo segurando o grafo
+    falharia com lock contention, não com marcador de corrupção — este
+    caminho só roda quando não há dono vivo.
 
     Retorna True quando moveu algo (o caller re-tenta a abertura).
     """
@@ -1207,15 +1212,7 @@ def _quarantine_interrupted_checkpoint_sidecars(path: Path) -> bool:
     wal_checkpoint = path.parent / (path.name + ".wal.checkpoint")
     movable: list[Path] = []
     if shadow.exists():
-        try:
-            if shadow.stat().st_size == 0:
-                movable.append(shadow)
-            else:
-                # shadow com conteúdo = checkpoint adiantado demais para
-                # decidir automaticamente. Preserva tudo, sem retry.
-                return False
-        except OSError:
-            return False
+        movable.append(shadow)
     if wal_checkpoint.exists():
         movable.append(wal_checkpoint)
     if not movable:

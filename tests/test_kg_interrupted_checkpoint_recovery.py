@@ -70,20 +70,25 @@ def test_moves_empty_shadow_and_wal_checkpoint(icr_board):
     assert (latest / "manifest.txt").exists()
 
 
-def test_nonempty_shadow_is_ambiguous_and_preserved(icr_board):
+def test_nonempty_shadow_is_also_quarantined(icr_board):
+    """Campo (2ª ocorrência): shadow de 283KB de um checkpoint interrompido
+    — main file íntegro (3929 nodes). O shadow só vira main na conclusão
+    atômica do checkpoint, então shadow órfão de QUALQUER tamanho é lixo
+    recuperável; vai para a quarentena (preservado), nunca deletado."""
     path = board_kuzu_path(icr_board)
     shadow = path.parent / (path.name + ".shadow")
     ckpt = path.parent / (path.name + ".wal.checkpoint")
     shadow.write_bytes(b"partial checkpoint payload")
     ckpt.write_bytes(b"garbage")
-    try:
-        moved = _quarantine_interrupted_checkpoint_sidecars(path)
-        assert moved is False
-        assert shadow.exists(), "shadow com bytes NUNCA deve ser movido automaticamente"
-        assert ckpt.exists()
-    finally:
-        shadow.unlink(missing_ok=True)
-        ckpt.unlink(missing_ok=True)
+
+    moved = _quarantine_interrupted_checkpoint_sidecars(path)
+
+    assert moved is True
+    assert not shadow.exists() and not ckpt.exists()
+    assert path.exists(), "main file deve permanecer intocado"
+    quarantined = sorted(_quarantine_root(path).glob("interrupted-checkpoint-*"))
+    latest = quarantined[-1]
+    assert (latest / (path.name + ".shadow")).read_bytes() == b"partial checkpoint payload"
 
 
 def test_no_sidecars_is_noop(icr_board):
