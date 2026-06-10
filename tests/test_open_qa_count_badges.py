@@ -238,3 +238,164 @@ async def test_card_columns_open_qa_count():
     cards = payload["columns"][CardStatus.IN_PROGRESS.value]
     assert len(cards) == 1
     assert cards[0]["open_qa_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_inherited_answered_qa_does_not_inflate_open_qa_count():
+    """Campo 2026-06-10: a herança de Q&A copiava resposta/seleção sem
+    ``answered_at`` — e o badge define "aberta" como ``answered_at IS NULL``,
+    então TODA Q&A respondida herdada virava falso-aberta no derivado (100%
+    dos badges de refinements/specs do board 0.2.3 eram falsos)."""
+    from okto_pulse.core.models.db import (
+        Refinement,
+        RefinementQAItem,
+        RefinementStatus,
+    )
+    from okto_pulse.core.services.main import propagate_artifacts
+    from sqlalchemy import select
+
+    board_id, ideation_id, refinement_id = _id(), _id(), _id()
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="QA Inherit Board", owner_id=USER))
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="Parent ideation",
+                status=IdeationStatus.APPROVED,
+                version=1,
+                created_by=USER,
+            )
+        )
+        answered_text = IdeationQAItem(
+            ideation_id=ideation_id,
+            question="Text answered on parent?",
+            question_type="text",
+            answer="Yes — decided on the parent.",
+            asked_by=USER,
+            answered_by=USER,
+            answered_at=_now(),
+        )
+        answered_choice = IdeationQAItem(
+            ideation_id=ideation_id,
+            question="Choice answered on parent?",
+            question_type="single_choice",
+            choices=[{"id": "a", "label": "A"}],
+            selected=["a"],
+            asked_by=USER,
+            answered_by=USER,
+            answered_at=_now(),
+        )
+        open_qa = IdeationQAItem(
+            ideation_id=ideation_id,
+            question="Never answered — must NOT be copied.",
+            question_type="text",
+            asked_by=USER,
+        )
+        db.add_all([answered_text, answered_choice, open_qa])
+        refinement = Refinement(
+            id=refinement_id,
+            ideation_id=ideation_id,
+            board_id=board_id,
+            title="Derived refinement",
+            status=RefinementStatus.DRAFT,
+            version=1,
+            created_by=USER,
+        )
+        db.add(refinement)
+        await db.flush()
+
+        await propagate_artifacts(
+            db,
+            source_mockups=None,
+            source_qa_items=[answered_text, answered_choice, open_qa],
+            source_knowledge_bases=None,
+            target_entity=refinement,
+            target_kb_class=None,
+            user_id=USER,
+        )
+        await db.commit()
+
+        copied = (
+            await db.execute(
+                select(RefinementQAItem).where(
+                    RefinementQAItem.refinement_id == refinement_id
+                )
+            )
+        ).scalars().all()
+
+    # Só as respondidas são copiadas, e TODAS chegam com answered_at.
+    assert len(copied) == 2
+    for qa in copied:
+        assert qa.answered_at is not None, (
+            f"Q&A herdada respondida sem answered_at: {qa.question!r} — "
+            "volta a inflar o badge open_qa_count"
+        )
+
+
+@pytest.mark.asyncio
+async def test_backfill_qa_answered_at_stamps_only_answered_rows():
+    """O backfill do boot carimba answered_at APENAS nas linhas respondidas
+    órfãs (answer OU selected presentes); abertas reais permanecem NULL.
+    Segunda execução é no-op (idempotente)."""
+    from okto_pulse.core.services.main import backfill_qa_answered_at
+    from sqlalchemy import select
+
+    board_id, spec_id = _id(), _id()
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="QA Backfill Board", owner_id=USER))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec with orphan answered QA",
+                status=SpecStatus.DRAFT,
+                version=1,
+                created_by=USER,
+            )
+        )
+        # Linhas pré-fix: respondidas mas sem answered_at (herança antiga).
+        orphan_text = SpecQAItem(
+            spec_id=spec_id,
+            question="Inherited text answer, no timestamp",
+            question_type="text",
+            answer="Inherited answer",
+            asked_by=USER,
+            answered_by=USER,
+        )
+        orphan_choice = SpecQAItem(
+            spec_id=spec_id,
+            question="Inherited choice answer, no timestamp",
+            question_type="single_choice",
+            choices=[{"id": "a", "label": "A"}],
+            selected=["a"],
+            asked_by=USER,
+            answered_by=USER,
+        )
+        genuinely_open = SpecQAItem(
+            spec_id=spec_id,
+            question="Really open — must stay open",
+            question_type="text",
+            asked_by=USER,
+        )
+        db.add_all([orphan_text, orphan_choice, genuinely_open])
+        await db.commit()
+
+        fixed = await backfill_qa_answered_at(db)
+        assert fixed.get("spec_qa_items", 0) >= 2
+
+        rows = (
+            await db.execute(
+                select(SpecQAItem).where(SpecQAItem.spec_id == spec_id)
+            )
+        ).scalars().all()
+        by_q = {r.question: r for r in rows}
+        assert by_q["Inherited text answer, no timestamp"].answered_at is not None
+        assert by_q["Inherited choice answer, no timestamp"].answered_at is not None
+        assert by_q["Really open — must stay open"].answered_at is None
+
+        # Idempotência: nada mais a corrigir nesta spec.
+        again = await backfill_qa_answered_at(db)
+        assert again.get("spec_qa_items", 0) == 0 or "spec_qa_items" not in again

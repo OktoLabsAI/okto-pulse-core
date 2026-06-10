@@ -214,6 +214,49 @@ async def _attach_open_qa_counts(
         r.open_qa_count = counts.get(r.id, 0)
 
 
+async def backfill_qa_answered_at(db: AsyncSession) -> dict[str, int]:
+    """One-shot self-heal: carimba ``answered_at`` em Q&A respondidas órfãs.
+
+    A herança de Q&A (``propagate_artifacts``) copiava resposta/seleção sem
+    ``answered_at`` — e o badge ``open_qa_count`` define "aberta" como
+    ``answered_at IS NULL``, então toda Q&A respondida herdada virava
+    falso-aberta em refinements/specs derivados (em campo: 100% dos badges
+    do board 0.2.3 eram falsos). Idempotente: só toca linhas com resposta
+    (``answer`` ou ``selected`` preenchidos) e timestamp ausente, usando o
+    ``created_at`` da própria linha como melhor aproximação histórica.
+    Retorna {tabela: linhas_corrigidas} para o log estruturado do boot.
+    """
+    from sqlalchemy import text as sa_text
+
+    tables = (
+        ("ideation_qa_items", True),
+        ("refinement_qa_items", True),
+        ("spec_qa_items", True),
+        ("sprint_qa_items", True),
+        ("qa_items", False),  # card Q&A: text-only, sem coluna selected
+    )
+    fixed: dict[str, int] = {}
+    for table, has_selected in tables:
+        answered_predicate = "(answer IS NOT NULL AND answer != '')"
+        if has_selected:
+            answered_predicate = (
+                f"({answered_predicate} OR (selected IS NOT NULL "
+                "AND CAST(selected AS TEXT) NOT IN ('', '[]', 'null')))"
+            )
+        result = await db.execute(
+            sa_text(
+                f"UPDATE {table} "
+                "SET answered_at = COALESCE(created_at, CURRENT_TIMESTAMP) "
+                f"WHERE answered_at IS NULL AND {answered_predicate}"
+            )
+        )
+        count = result.rowcount if result.rowcount and result.rowcount > 0 else 0
+        if count:
+            fixed[table] = count
+    await db.commit()
+    return fixed
+
+
 async def _authorize_qa_answer_or_raise(
     db: AsyncSession,
     *,
@@ -665,17 +708,35 @@ async def propagate_artifacts(
                 has_selection = bool(selected) and len(selected) > 0
                 if not answer and not has_selection:
                     continue
-                new_qa = target_qa_class(
-                    **{target_fk_field: target_entity.id},
-                    question=_get("question") or "",
-                    question_type=_get("question_type") or "text",
-                    choices=_get("choices"),
-                    allow_free_text=_get("allow_free_text") or False,
-                    answer=answer,
-                    selected=selected,
-                    asked_by=_get("asked_by") or user_id,
-                    answered_by=_get("answered_by"),
-                )
+                qa_payload: dict[str, Any] = {
+                    target_fk_field: target_entity.id,
+                    "question": _get("question") or "",
+                    "question_type": _get("question_type") or "text",
+                    "choices": _get("choices"),
+                    "allow_free_text": _get("allow_free_text") or False,
+                    "answer": answer,
+                    "selected": selected,
+                    "asked_by": _get("asked_by") or user_id,
+                    "answered_by": _get("answered_by"),
+                    # `answered_at` DEVE acompanhar a resposta copiada: o badge
+                    # open_qa_count usa `answered_at IS NULL` como definição de
+                    # "aberta" (choice answers deixam `answer` NULL), então uma
+                    # herança sem o timestamp marcava TODA Q&A respondida
+                    # herdada como falso-aberta no refinement/spec derivado.
+                    # Fallback para created_at/now cobre pais antigos que já
+                    # perderam o timestamp em heranças anteriores ao fix —
+                    # este branch só roda para itens RESPONDIDOS.
+                    "answered_at": (
+                        _get("answered_at")
+                        or _get("created_at")
+                        or datetime.now(timezone.utc)
+                    ),
+                }
+                # Preserva a data original da pergunta quando disponível
+                # (ordenacão/histórico); ausente, o default do modelo cobre.
+                if _get("created_at") is not None:
+                    qa_payload["created_at"] = _get("created_at")
+                new_qa = target_qa_class(**qa_payload)
                 db.add(new_qa)
             await db.flush()
 

@@ -123,6 +123,29 @@ def create_app(
             # already cover the safe budget.
             pass
 
+        # Self-heal: Q&A respondidas herdadas sem answered_at viravam
+        # falso-abertas no badge open_qa_count (a herança não copiava o
+        # timestamp). Idempotente — só carimba linhas respondidas órfãs.
+        try:
+            from okto_pulse.core.services.main import backfill_qa_answered_at
+
+            factory = get_session_factory()
+            async with factory() as _qa_session:
+                _qa_fixed = await backfill_qa_answered_at(_qa_session)
+            if _qa_fixed:
+                logger.info(
+                    "qa.answered_at.backfilled %s", _qa_fixed,
+                    extra={
+                        "event": "qa.answered_at.backfilled",
+                        "fixed": _qa_fixed,
+                    },
+                )
+        except Exception as _exc:
+            logger.warning(
+                "qa.answered_at.backfill_failed err=%s", _exc,
+                extra={"event": "qa.answered_at.backfill_failed"},
+            )
+
         # Import events package BEFORE dispatcher.start — side-effect of
         # importing handlers is @register_handler populating the registry.
         # Dispatcher relies on the registry being complete when it drains.
