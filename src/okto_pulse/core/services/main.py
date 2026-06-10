@@ -5057,6 +5057,128 @@ class SpecService:
             "validations": result_list,
         }
 
+    # Dimensões qualitativas da spec evaluation — fonte única compartilhada
+    # entre o endpoint REST e o MCP tool okto_pulse_submit_spec_evaluation.
+    SPEC_EVALUATION_DIMENSIONS: tuple[tuple[str, str], ...] = (
+        ("breakdown_completeness", "breakdown_justification"),
+        ("granularity", "granularity_justification"),
+        ("dependency_coherence", "dependency_justification"),
+        ("test_coverage_quality", "test_coverage_justification"),
+    )
+    SPEC_EVALUATION_RECOMMENDATIONS: tuple[str, ...] = (
+        "approve", "request_changes", "reject",
+    )
+
+    async def submit_spec_evaluation(
+        self,
+        spec_id: str,
+        actor_id: str,
+        actor_name: str,
+        data: dict,
+        *,
+        actor_type: str = "user",
+        surface: str = "service",
+    ) -> dict:
+        """Submit a qualitative evaluation for a spec in 'validated' status.
+
+        Caminho de escrita ÚNICO da spec evaluation — consumido pelo endpoint
+        REST ``POST /specs/{id}/evaluations`` e pelo MCP tool
+        ``okto_pulse_submit_spec_evaluation`` (paridade REST/MCP; antes o
+        tool era o único caminho e usuários UI/REST ficavam presos no gate
+        validated→in_progress sem como satisfazê-lo).
+
+        Multiple evaluators can submit independent evaluations (append-only).
+        Caller owns the commit. Raises ValueError on status/input problems.
+        """
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            raise ValueError("Spec not found")
+        if spec.status != SpecStatus.VALIDATED:
+            raise ValueError(
+                f"Spec must be in 'validated' status to submit evaluations "
+                f"(currently '{spec.status.value}')"
+            )
+
+        recommendation = data.get("recommendation")
+        if recommendation not in self.SPEC_EVALUATION_RECOMMENDATIONS:
+            raise ValueError(
+                "Recommendation must be one of: "
+                + ", ".join(self.SPEC_EVALUATION_RECOMMENDATIONS)
+            )
+        score_fields = [name for name, _ in self.SPEC_EVALUATION_DIMENSIONS]
+        score_fields.append("overall_score")
+        for name in score_fields:
+            score = int(data[name])
+            if not (0 <= score <= 100):
+                raise ValueError(f"{name} must be between 0 and 100")
+
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=spec.board_id,
+            actor_id=actor_id,
+            entity_type="spec",
+            entity_id=spec.id,
+            critical_action=CriticalAction.SPEC_SUBMIT_EVALUATION,
+            surface=surface,
+            actor_type=actor_type,
+            actor_name=actor_name,
+        )
+
+        import uuid as _uuid
+
+        evaluation = {
+            "id": f"eval_{_uuid.uuid4().hex[:8]}",
+            "spec_id": spec_id,
+            "evaluator_id": actor_id,
+            "evaluator_name": actor_name,
+            "evaluator_type": actor_type,
+            "dimensions": {
+                name: {
+                    "score": int(data[name]),
+                    "justification": data[justification],
+                }
+                for name, justification in self.SPEC_EVALUATION_DIMENSIONS
+            },
+            "overall_score": int(data["overall_score"]),
+            "overall_justification": data["overall_justification"],
+            "recommendation": recommendation,
+            "stale": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        evaluations = list(spec.evaluations or [])
+        evaluations.append(evaluation)
+        spec.evaluations = evaluations
+        flag_modified(spec, "evaluations")
+
+        await self._log_activity(
+            board_id=spec.board_id,
+            action="spec_evaluation_submitted",
+            actor_type=actor_type,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            details={
+                "spec_id": spec_id,
+                "evaluation_id": evaluation["id"],
+                "overall_score": evaluation["overall_score"],
+                "recommendation": recommendation,
+            },
+        )
+        return evaluation
+
+    async def list_spec_evaluations(self, spec_id: str) -> dict[str, Any]:
+        """List spec evaluations (newest first) with an active (non-stale) count."""
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            raise ValueError("Spec not found")
+        evaluations = list(spec.evaluations or [])
+        return {
+            "spec_id": spec_id,
+            "spec_status": spec.status.value,
+            "evaluations": list(reversed(evaluations)),
+            "active_count": len([e for e in evaluations if not e.get("stale")]),
+        }
+
     async def _log_activity(self, **kwargs: Any) -> None:
         """Log an activity."""
         log = ActivityLog(**kwargs)

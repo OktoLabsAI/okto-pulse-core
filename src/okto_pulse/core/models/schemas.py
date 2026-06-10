@@ -904,6 +904,22 @@ class ArchitectureDiffResponse(BaseModel):
 # ============================================================================
 
 
+def _validate_ideation_complexity(value: str | None) -> str | None:
+    """Valida complexity contra o enum real (IdeationComplexity).
+
+    Doc-drift fix (2026-06-10): a description anunciava low/medium/high/
+    very_high, mas o enum sempre foi small/medium/large — e um valor
+    inválido só explodia como ValueError 500 dentro do service. Validar no
+    schema devolve 422 com a lista correta.
+    """
+    if value is None:
+        return value
+    allowed = tuple(c.value for c in IdeationComplexity)
+    if value not in allowed:
+        raise ValueError(f"complexity must be one of: {', '.join(allowed)}")
+    return value
+
+
 class IdeationCreate(BaseModel):
     """Schema for creating an ideation."""
 
@@ -912,10 +928,15 @@ class IdeationCreate(BaseModel):
     problem_statement: str | None = Field(None, description="Enunciado do problema que a ideacao pretende resolver.")
     proposed_approach: str | None = Field(None, description="Abordagem proposta para solucionar o problema.")
     scope_assessment: dict | None = Field(None, description="Avaliacao do escopo em formato livre (impacto, esforco, etc).")
-    complexity: str | None = Field(None, description="Complexidade estimada: low, medium, high, very_high.")
+    complexity: str | None = Field(None, description="Complexidade estimada: small, medium, large (enum IdeationComplexity).")
     assignee_id: str | None = Field(None, description="ID do responsavel pela ideacao.")
     labels: list[str] | None = Field(None, description="Labels de categorizacao da ideacao.")
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela associados a ideacao.")
+
+    @field_validator("complexity")
+    @classmethod
+    def _check_complexity(cls, value: str | None) -> str | None:
+        return _validate_ideation_complexity(value)
 
 
 class IdeationUpdate(BaseModel):
@@ -926,10 +947,15 @@ class IdeationUpdate(BaseModel):
     problem_statement: str | None = Field(None, description="Novo enunciado do problema (opcional).")
     proposed_approach: str | None = Field(None, description="Nova abordagem proposta (opcional).")
     scope_assessment: dict | None = Field(None, description="Nova avaliacao de escopo em formato livre (opcional).")
-    complexity: str | None = Field(None, description="Nova complexidade estimada: low, medium, high, very_high (opcional).")
+    complexity: str | None = Field(None, description="Nova complexidade estimada: small, medium, large (enum IdeationComplexity, opcional).")
     assignee_id: str | None = Field(None, description="Novo ID do responsavel pela ideacao (opcional).")
     labels: list[str] | None = Field(None, description="Novas labels de categorizacao (opcional).")
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela (opcional).")
+
+    @field_validator("complexity")
+    @classmethod
+    def _check_complexity(cls, value: str | None) -> str | None:
+        return _validate_ideation_complexity(value)
 
 
 class IdeationMove(BaseModel):

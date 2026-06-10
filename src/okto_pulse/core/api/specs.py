@@ -1,7 +1,7 @@
 """Spec API endpoints."""
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
@@ -1100,3 +1100,77 @@ async def list_spec_validations(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return {"spec_id": spec_id, **result}
+
+
+class SpecEvaluationSubmit(BaseModel):
+    """Avaliação qualitativa de uma spec validated — gêmeo REST do MCP tool
+    ``okto_pulse_submit_spec_evaluation`` (paridade de superfícies)."""
+
+    breakdown_completeness: int = Field(..., ge=0, le=100)
+    breakdown_justification: str = Field(..., min_length=10)
+    granularity: int = Field(..., ge=0, le=100)
+    granularity_justification: str = Field(..., min_length=10)
+    dependency_coherence: int = Field(..., ge=0, le=100)
+    dependency_justification: str = Field(..., min_length=10)
+    test_coverage_quality: int = Field(..., ge=0, le=100)
+    test_coverage_justification: str = Field(..., min_length=10)
+    overall_score: int = Field(..., ge=0, le=100)
+    overall_justification: str = Field(..., min_length=10)
+    recommendation: Literal["approve", "request_changes", "reject"]
+
+
+@router.post("/specs/{spec_id}/evaluations", status_code=status.HTTP_201_CREATED)
+async def submit_spec_evaluation(
+    spec_id: str,
+    data: SpecEvaluationSubmit,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit a qualitative evaluation for a spec in 'validated' status.
+
+    Gap fechado (paridade REST/MCP): este gate é pré-requisito de
+    ``move_spec(validated→in_progress)``, mas só existia como MCP tool —
+    usuários UI/REST ficavam presos em ``validated`` sem caminho de escrita.
+    Mesma semântica do tool: múltiplos avaliadores, append-only, spec
+    precisa estar em 'validated'.
+    """
+    service = SpecService(db)
+    spec = await service.get_spec(spec_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
+
+    try:
+        from okto_pulse.core.services.main import resolve_actor_name
+        evaluator_name = await resolve_actor_name(db, user_id, spec.board_id)
+    except Exception:
+        evaluator_name = user_id
+
+    try:
+        evaluation = await service.submit_spec_evaluation(
+            spec_id,
+            user_id,
+            evaluator_name,
+            data.model_dump(),
+            actor_type="user",
+            surface="api",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    await db.commit()
+    return {"success": True, "evaluation": evaluation}
+
+
+@router.get("/specs/{spec_id}/evaluations")
+async def list_spec_evaluations(
+    spec_id: str,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List spec evaluations (newest first) — gêmeo REST de
+    ``okto_pulse_list_spec_evaluations``."""
+    service = SpecService(db)
+    try:
+        return await service.list_spec_evaluations(spec_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

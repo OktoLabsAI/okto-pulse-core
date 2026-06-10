@@ -10915,52 +10915,34 @@ async def okto_pulse_submit_spec_evaluation(
     if perm_err:
         return _perm_error(perm_err)
 
-    # Validate recommendation
-    if recommendation not in ("approve", "request_changes", "reject"):
-        return json.dumps({"error": "Recommendation must be one of: approve, request_changes, reject"})
-
-    # Validate scores
-    for name, score in [
-        ("breakdown_completeness", breakdown_completeness),
-        ("granularity", granularity),
-        ("dependency_coherence", dependency_coherence),
-        ("test_coverage_quality", test_coverage_quality),
-        ("overall_score", overall_score),
-    ]:
-        if not (0 <= score <= 100):
-            return json.dumps({"error": f"{name} must be between 0 and 100"})
-
+    # Caminho de escrita único: SpecService.submit_spec_evaluation — o mesmo
+    # consumido pelo gêmeo REST POST /specs/{id}/evaluations (paridade de
+    # superfícies; evita drift de validação/shape entre MCP e REST).
     async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.critical_context_guard import FullContextGuardError
         from okto_pulse.core.services.main import SpecService
+
         service = SpecService(db)
-        spec = await service.get_spec(spec_id)
-        if not spec:
-            return json.dumps({"error": "Spec not found"})
-
-        from okto_pulse.core.models.db import SpecStatus
-        if spec.status != SpecStatus.VALIDATED:
-            return json.dumps({
-                "error": f"Spec must be in 'validated' status to submit evaluations "
-                         f"(currently '{spec.status.value}')"
-            })
-
-        from okto_pulse.core.services.critical_context_guard import (
-            CriticalAction,
-            FullContextGuardError,
-        )
-        from okto_pulse.core.services.main import _authorize_critical_context_or_raise
-
         try:
-            await _authorize_critical_context_or_raise(
-                db,
-                board_id=board_id,
-                actor_id=ctx.agent_id,
-                entity_type="spec",
-                entity_id=spec.id,
-                critical_action=CriticalAction.SPEC_SUBMIT_EVALUATION,
-                surface="mcp",
+            evaluation = await service.submit_spec_evaluation(
+                spec_id,
+                ctx.agent_id,
+                ctx.agent_name,
+                {
+                    "breakdown_completeness": breakdown_completeness,
+                    "breakdown_justification": breakdown_justification,
+                    "granularity": granularity,
+                    "granularity_justification": granularity_justification,
+                    "dependency_coherence": dependency_coherence,
+                    "dependency_justification": dependency_justification,
+                    "test_coverage_quality": test_coverage_quality,
+                    "test_coverage_justification": test_coverage_justification,
+                    "overall_score": overall_score,
+                    "overall_justification": overall_justification,
+                    "recommendation": recommendation,
+                },
                 actor_type="agent",
-                actor_name=ctx.agent_name,
+                surface="mcp",
             )
         except FullContextGuardError as exc:
             await db.commit()
@@ -10969,32 +10951,8 @@ async def okto_pulse_submit_spec_evaluation(
                 "reason": exc.reason,
                 "decision": exc.decision.audit_details(),
             })
-
-        import uuid as _uuid
-        evaluation = {
-            "id": f"eval_{_uuid.uuid4().hex[:8]}",
-            "spec_id": spec_id,
-            "evaluator_id": ctx.agent_id,
-            "evaluator_name": ctx.agent_name,
-            "evaluator_type": "agent",
-            "dimensions": {
-                "breakdown_completeness": {"score": breakdown_completeness, "justification": breakdown_justification},
-                "granularity": {"score": granularity, "justification": granularity_justification},
-                "dependency_coherence": {"score": dependency_coherence, "justification": dependency_justification},
-                "test_coverage_quality": {"score": test_coverage_quality, "justification": test_coverage_justification},
-            },
-            "overall_score": overall_score,
-            "overall_justification": overall_justification,
-            "recommendation": recommendation,
-            "stale": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-
-        evaluations = list(spec.evaluations or [])
-        evaluations.append(evaluation)
-        spec.evaluations = evaluations
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(spec, "evaluations")
+        except ValueError as exc:
+            return json.dumps({"error": str(exc)})
         await db.commit()
 
     return json.dumps({"success": True, "evaluation": evaluation}, default=str)
