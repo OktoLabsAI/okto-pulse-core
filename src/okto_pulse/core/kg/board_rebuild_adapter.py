@@ -75,6 +75,15 @@ class BoardRebuildIngestionAdapter:
     drain_poll_interval_seconds: float = 0.5
     drain_final_grace_seconds: float = 180.0
     drain_low_depth_threshold: int = 10
+    # Teto ABSOLUTO do drain (campo 2026-06-10): o timeout acima é a janela
+    # de ESTAGNAÇÃO (sem progresso), não o teto total. Um board grande
+    # (520+ sources a ~6 entries/min) leva >1h para drenar — com teto fixo
+    # de 15min o rebuild SEMPRE falhava (queue_drain_timeout), a generation
+    # nunca promovia e o cognitive pending nunca materializava (sem badges),
+    # apesar de o worker completar o grafo minutos depois. Enquanto a fila
+    # PROGRIDE o drain continua; este teto só protege contra um worker
+    # zumbi que progride para sempre sem terminar.
+    drain_hard_timeout_seconds: float = 14400.0
 
     def prepare_board_graph_storage(
         self,
@@ -290,6 +299,7 @@ class BoardRebuildIngestionAdapter:
                         "queue_drain_timeout:"
                         f"final_depth={drain['final_depth']}"
                         f" waited_seconds={drain['waited_seconds']}"
+                        f" cause={'hard_timeout' if drain.get('hard_timed_out') else 'stalled'}"
                     ),
                     current_kg_generation_id=base_result.current_kg_generation_id,
                     previous_kg_generation_id=base_result.previous_kg_generation_id,
@@ -343,16 +353,26 @@ class BoardRebuildIngestionAdapter:
         poll_interval_seconds: float = 0.5,
         final_grace_seconds: float | None = None,
         low_depth_threshold: int | None = None,
+        hard_timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         """Block until the board's ConsolidationQueue has no
-        pending/claimed rows or the timeout fires. Returns a snapshot
-        with the wait duration and final depth. Optional helper —
-        production callers may prefer to return immediately after the
-        rebuild promotes the generation and let the worker drain in the
-        background.
+        pending/claimed rows, the queue STALLS, or the hard ceiling
+        fires. Returns a snapshot with the wait duration and final depth.
+
+        PROGRESS-AWARE (campo 2026-06-10): ``timeout_seconds`` é a janela
+        de ESTAGNAÇÃO, não o teto total. Cada vez que a profundidade da
+        fila cai abaixo do menor valor já visto (o worker drenou pelo
+        menos uma entry), a janela renova. Um board grande drenando
+        devagar NÃO falha mais por teto fixo — antes, 520 sources a
+        ~6 entries/min estouravam os 900s, o rebuild reportava
+        queue_drain_timeout, a generation não promovia e o cognitive
+        pending nunca materializava, embora o worker completasse o grafo
+        em background minutos depois (grafo saudável, zero badges).
+        ``hard_timeout_seconds`` continua como teto absoluto de segurança
+        contra um produtor que re-enfileira para sempre.
 
         A small final grace window avoids a false failed rebuild when
-        the queue is nearly drained at the hard timeout. The Pulse SaaS
+        the queue is nearly drained at the stall deadline. The Pulse SaaS
         E2E rebuild exposed that failure mode: the run timed out with
         four rows still visible, then the worker finished seconds later,
         leaving a healthy graph but no promoted generation. The grace is
@@ -361,8 +381,16 @@ class BoardRebuildIngestionAdapter:
         fails closed."""
 
         start = time.monotonic()
-        base_timeout = max(0.5, float(timeout_seconds))
-        deadline = start + base_timeout
+        stall_window = max(0.5, float(timeout_seconds))
+        hard_ceiling = max(
+            stall_window,
+            float(
+                self.drain_hard_timeout_seconds
+                if hard_timeout_seconds is None
+                else hard_timeout_seconds
+            ),
+        )
+        deadline = start + stall_window
         grace_seconds = max(
             0.0,
             float(
@@ -382,6 +410,9 @@ class BoardRebuildIngestionAdapter:
         grace_applied = False
         grace_reason: str | None = None
         final_depth = -1
+        best_depth: int | None = None
+        progress_events = 0
+        hard_timed_out = False
         with sqlite3.connect(str(self.db_path), timeout=5.0) as conn:
             while True:
                 row = conn.execute(
@@ -393,6 +424,24 @@ class BoardRebuildIngestionAdapter:
                 if final_depth == 0:
                     break
                 now = time.monotonic()
+                if best_depth is None:
+                    best_depth = final_depth
+                elif final_depth < best_depth:
+                    # Progresso real: o worker drenou pelo menos uma entry
+                    # desde o último melhor — renova a janela de estagnação.
+                    # (Profundidade SUBINDO é trabalho novo chegando, não
+                    # progresso; não renova.)
+                    best_depth = final_depth
+                    progress_events += 1
+                    deadline = now + stall_window
+                if now - start >= hard_ceiling:
+                    hard_timed_out = True
+                    logger.error(
+                        "kg.rebuild.queue_drain_hard_timeout board=%s "
+                        "final_depth=%s waited_seconds=%.1f",
+                        board_id, final_depth, now - start,
+                    )
+                    break
                 if now >= deadline:
                     if (
                         not grace_applied
@@ -404,11 +453,11 @@ class BoardRebuildIngestionAdapter:
                         deadline = now + grace_seconds
                         logger.warning(
                             "kg.rebuild.queue_drain_grace board=%s "
-                            "final_depth=%s base_timeout_seconds=%s "
+                            "final_depth=%s stall_window_seconds=%s "
                             "grace_seconds=%s",
                             board_id,
                             final_depth,
-                            base_timeout,
+                            stall_window,
                             grace_seconds,
                         )
                         continue
@@ -418,7 +467,12 @@ class BoardRebuildIngestionAdapter:
             "final_depth": final_depth,
             "waited_seconds": round(time.monotonic() - start, 2),
             "idle": final_depth == 0,
-            "base_timeout_seconds": base_timeout,
+            "base_timeout_seconds": stall_window,
+            "stall_window_seconds": stall_window,
+            "hard_timeout_seconds": hard_ceiling,
+            "hard_timed_out": hard_timed_out,
+            "progress_events": progress_events,
+            "best_depth": best_depth,
             "final_grace_seconds": grace_seconds,
             "low_depth_threshold": low_depth,
             "grace_applied": grace_applied,

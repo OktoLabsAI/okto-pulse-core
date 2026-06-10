@@ -294,6 +294,132 @@ def test_drain_until_idle_does_not_grace_large_stuck_backlog(
     assert result["grace_applied"] is False
 
 
+def test_drain_until_idle_renews_window_while_queue_progresses(
+    tmp_path: Path,
+) -> None:
+    """Campo 2026-06-10: board grande (520+ sources a ~6 entries/min)
+    estourava o teto fixo de 900s — rebuild failed, generation não
+    promovida, cognitive pending nunca materializado (zero badges) apesar
+    de o worker completar o grafo em background. ``timeout_seconds`` agora
+    é janela de ESTAGNAÇÃO: enquanto a profundidade cair, o drain segue."""
+    db_path = tmp_path / "pulse.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "CREATE TABLE consolidation_queue ("
+            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
+            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
+            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
+            "claim_timeout_at TEXT, next_retry_at TEXT)"
+        )
+        for idx in range(6):
+            conn.execute(
+                "INSERT INTO consolidation_queue "
+                "(id, board_id, artifact_type, artifact_id, priority, source, status, "
+                "triggered_at, attempts) "
+                "VALUES (?, 'b1', 'spec', ?, 'high', 'rebuild:test', "
+                "'pending', datetime('now'), 0)",
+                (f"q{idx}", f"s{idx}"),
+            )
+        conn.commit()
+
+    def slow_worker() -> None:
+        # Drena 1 entry a cada 0.25s — mais LENTO que a stall window de
+        # 0.4s mas sempre progredindo. Tempo total (1.5s) >> janela.
+        for idx in range(6):
+            time.sleep(0.25)
+            with sqlite3.connect(str(db_path)) as conn:
+                conn.execute(
+                    "UPDATE consolidation_queue SET status='done' WHERE id=?",
+                    (f"q{idx}",),
+                )
+                conn.commit()
+
+    worker = threading.Thread(target=slow_worker)
+    worker.start()
+    try:
+        adapter = BoardRebuildIngestionAdapter(
+            db_path=db_path,
+            drain_final_grace_seconds=0.0,
+        )
+        result = adapter.drain_until_idle(
+            board_id="b1",
+            timeout_seconds=0.4,
+            poll_interval_seconds=0.02,
+            hard_timeout_seconds=30.0,
+        )
+    finally:
+        worker.join(timeout=5.0)
+
+    assert result["idle"] is True, f"drain falhou com fila progredindo: {result}"
+    assert result["final_depth"] == 0
+    assert result["progress_events"] >= 5
+    assert result["hard_timed_out"] is False
+
+
+def test_drain_until_idle_hard_ceiling_stops_endless_progress(
+    tmp_path: Path,
+) -> None:
+    """O teto absoluto protege contra produtor que re-enfileira para
+    sempre: progresso constante mas fila nunca zera → hard timeout."""
+    db_path = tmp_path / "pulse.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "CREATE TABLE consolidation_queue ("
+            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
+            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
+            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
+            "claim_timeout_at TEXT, next_retry_at TEXT)"
+        )
+        for idx in range(50):
+            conn.execute(
+                "INSERT INTO consolidation_queue "
+                "(id, board_id, artifact_type, artifact_id, priority, source, status, "
+                "triggered_at, attempts) "
+                "VALUES (?, 'b1', 'spec', ?, 'high', 'rebuild:test', "
+                "'pending', datetime('now'), 0)",
+                (f"q{idx}", f"s{idx}"),
+            )
+        conn.commit()
+
+    stop = threading.Event()
+
+    def churning_worker() -> None:
+        # Drena 1 e re-enfileira 1 (depth líquido cai 1 por ciclo bem
+        # devagar) — progresso eterno sem nunca zerar dentro do teto.
+        idx = 0
+        while not stop.is_set():
+            time.sleep(0.05)
+            with sqlite3.connect(str(db_path)) as conn:
+                conn.execute(
+                    "UPDATE consolidation_queue SET status='done' WHERE id=?",
+                    (f"q{idx}",),
+                )
+                conn.commit()
+            idx += 1
+            if idx >= 20:
+                break
+
+    worker = threading.Thread(target=churning_worker)
+    worker.start()
+    try:
+        adapter = BoardRebuildIngestionAdapter(
+            db_path=db_path,
+            drain_final_grace_seconds=0.0,
+        )
+        result = adapter.drain_until_idle(
+            board_id="b1",
+            timeout_seconds=0.3,
+            poll_interval_seconds=0.02,
+            hard_timeout_seconds=0.6,
+        )
+    finally:
+        stop.set()
+        worker.join(timeout=5.0)
+
+    assert result["idle"] is False
+    assert result["hard_timed_out"] is True
+
+
 def test_ladybug_lifecycle_reopen_probe_fails_on_unopenable_existing_graph(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
