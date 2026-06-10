@@ -449,6 +449,41 @@ def _evict_board_db(key: str) -> bool:
 # atrasar o worker quando um scan longo (health/orphan) segura o board.
 _HYGIENE_CLOSE_DRAIN_TIMEOUT_S = 2.0
 
+# Dreno da janela exclusiva do CHECKPOINT (6º crash): só precisa cobrir
+# queries pontuais em voo — leitores longos fazem o checkpoint ser adiado
+# pelo fast-path antes mesmo de abrir a janela.
+_CHECKPOINT_EXCLUSIVE_DRAIN_TIMEOUT_S = 1.0
+
+
+def _execute_checkpoint_unguarded(path: Path) -> None:
+    """Executa CHECKPOINT com conexão crua — APENAS dentro de uma janela
+    exclusiva do close guard (zero leitores). Conexão crua porque um
+    BoardConnection aqui daria deadlock: reader_enter espera o fim da
+    própria janela closing que nos dá a exclusividade."""
+    db = _open_kuzu_db_path_cached(path)
+    conn = kuzu.Connection(db)
+    try:
+        conn.execute("CHECKPOINT")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _close_cached_db_unguarded(board_id: str) -> None:
+    """Fecha o Database cacheado do board SEM abrir janela de guard —
+    APENAS para callers que JÁ estão dentro de uma janela exclusiva.
+    Falha de close propaga (BR-3: o caller converte em step failure)."""
+    key = str(board_kuzu_path(board_id))
+    with _board_db_cache_lock:
+        db = _board_db_cache.pop(key, None)
+    if db is None:
+        return
+    db.close()
+    del db
+    gc.collect()  # Windows: libera handles C++ antes do próximo open
+
 
 def try_close_board_db(
     board_id: str,
@@ -1033,10 +1068,12 @@ def apply_ladybug_lifecycle_step(
         # Fechar por commit criava a corrida use-after-close com leitores
         # concorrentes (kg_service no thread pool) e custava
         # close+gc.collect+reopen por queue entry. A barreira de durabilidade
-        # é o CHECKPOINT real (valida o WAL dobrado no arquivo principal com
-        # o Database aberto — comportamento verificado no ladybug 0.16.1 sob
-        # leitura concorrente ativa). O caminho destrutivo continua existindo
-        # exclusivamente em STEP_CLOSE_REOPEN_PROBE (rebuild/recovery).
+        # REAL é o WAL + fsync; o CHECKPOINT é compactação/higiene e — campo
+        # 2026-06-10, 6º crash — NÃO é seguro sob leitura concorrente no
+        # ladybug 0.16.1 (SIGSEGV nativo), por isso roda em janela exclusiva
+        # e é adiado quando há leitor ativo. O caminho destrutivo continua
+        # existindo exclusivamente em STEP_CLOSE_REOPEN_PROBE
+        # (rebuild/recovery).
         if step == STEP_CHECKPOINT:
             if not path.exists():
                 return LifecycleStepResult(
@@ -1068,38 +1105,69 @@ def apply_ladybug_lifecycle_step(
                         )
                     return LifecycleStepResult(ok=True)
                 _rearm_checkpoint_counter(board_id)
-            bc = BoardConnection(board_id)
-            try:
-                bc.conn.execute("CHECKPOINT")
-            except Exception as exc:
-                # Válvula de escape: CHECKPOINT falhou (ex.: buffer exausto)
-                # → fecha o Database (libera o buffer pool inteiro + flush
-                # via close). O close aqui também é discricionário: com
-                # leitor ativo, NÃO fecha (abort nativo) — o commit já está
-                # durável no WAL e o STEP_FSYNC seguinte sincroniza os
-                # arquivos; o replay na próxima abertura cobre o gap.
-                logger.warning(
-                    "kg.lifecycle.checkpoint_statement_failed board=%s err=%s "
-                    "— fallback: close do Database (flush via close)",
-                    board_id, exc,
+            # CHECKPOINT exige EXCLUSIVIDADE (6º crash, faulthandler:
+            # CHECKPOINT em thread do worker × outbox do discovery lendo
+            # embeddings no MESMO Database → SIGSEGV nativo). A premissa do
+            # KGDL.01 ("CHECKPOINT seguro sob leitura concorrente ativa no
+            # ladybug 0.16.1") é FALSA em campo. Com leitor ativo o
+            # CHECKPOINT é ADIADO — o commit já é durável via WAL (fsync no
+            # STEP_FSYNC); a compactação re-tenta nos commits seguintes e
+            # sempre encontra janela (TTL pós-scan garante 300s sem scan).
+            guard = _get_close_guard(board_id)
+            if guard.readers > 0:
+                logger.info(
+                    "kg.lifecycle.checkpoint_skipped_active_readers board=%s "
+                    "readers=%d — checkpoint adiado (durabilidade via WAL)",
+                    board_id, guard.readers,
                     extra={
-                        "event": "kg.lifecycle.checkpoint_statement_failed",
+                        "event": "kg.lifecycle.checkpoint_skipped_active_readers",
                         "board_id": board_id,
                     },
                 )
-                bc.close()
-                if try_close_board_db(board_id):
-                    _reset_checkpoint_counter(board_id)
-                else:
-                    _rearm_checkpoint_counter(board_id)
-                if not path.exists():
-                    return LifecycleStepResult(
-                        ok=False,
-                        detail=f"{GRAPH_DB_FILENAME} missing at {path}",
-                    )
                 return LifecycleStepResult(ok=True)
-            finally:
-                bc.close()
+            with guard.closing(timeout=_CHECKPOINT_EXCLUSIVE_DRAIN_TIMEOUT_S) as (
+                drained,
+                stuck,
+            ):
+                if not drained:
+                    logger.info(
+                        "kg.lifecycle.checkpoint_skipped_active_readers "
+                        "board=%s readers=%d — checkpoint adiado "
+                        "(durabilidade via WAL)",
+                        board_id, stuck,
+                        extra={
+                            "event": "kg.lifecycle.checkpoint_skipped_active_readers",
+                            "board_id": board_id,
+                        },
+                    )
+                    return LifecycleStepResult(ok=True)
+                try:
+                    _execute_checkpoint_unguarded(path)
+                except Exception as exc:
+                    # Válvula de escape: CHECKPOINT falhou (ex.: buffer
+                    # exausto) → fecha o Database (libera o buffer pool
+                    # inteiro + flush via close). Já estamos DENTRO da
+                    # janela exclusiva (zero leitores), então o close
+                    # direto é seguro. Falha REAL do close propaga →
+                    # step falha → queue entry não ACKada (BR-3).
+                    logger.warning(
+                        "kg.lifecycle.checkpoint_statement_failed board=%s "
+                        "err=%s — fallback: close do Database (flush via "
+                        "close)",
+                        board_id, exc,
+                        extra={
+                            "event": "kg.lifecycle.checkpoint_statement_failed",
+                            "board_id": board_id,
+                        },
+                    )
+                    _reset_checkpoint_counter(board_id)
+                    _close_cached_db_unguarded(board_id)
+                    if not path.exists():
+                        return LifecycleStepResult(
+                            ok=False,
+                            detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                        )
+                    return LifecycleStepResult(ok=True)
             return LifecycleStepResult(ok=True)
 
         if step == STEP_FLUSH:

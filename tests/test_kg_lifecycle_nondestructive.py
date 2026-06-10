@@ -99,8 +99,8 @@ def test_worker_steps_do_not_close_shared_database(nd_board, monkeypatch):
         schema, "close_board_db_cache",
         lambda *a, **k: (close_calls.append("close_board_db_cache"), orig_cbdc(*a, **k)),
     )
-    executed: list[str] = []
-    _spy_board_connection(monkeypatch, executed)
+    checkpoints: list[str] = []
+    _spy_checkpoint(monkeypatch, checkpoints)
 
     for step in (STEP_CHECKPOINT, STEP_FLUSH, STEP_FSYNC):
         result = apply_ladybug_lifecycle_step(nd_board, "board_graph", step)
@@ -109,7 +109,7 @@ def test_worker_steps_do_not_close_shared_database(nd_board, monkeypatch):
     assert close_calls == [], (
         f"subset do worker fechou o Database compartilhado: {close_calls}"
     )
-    assert any("CHECKPOINT" in q.upper() for q in executed), (
+    assert len(checkpoints) == 1, (
         "STEP_CHECKPOINT nao executou a instrucao CHECKPOINT real"
     )
 
@@ -308,6 +308,21 @@ def _spy_try_close(monkeypatch, calls: list[bool]):
     monkeypatch.setattr(schema, "try_close_board_db", spy)
 
 
+def _spy_checkpoint(monkeypatch, calls: list[str], *, fail: bool = False):
+    """Espia _execute_checkpoint_unguarded (o CHECKPOINT roda em janela
+    exclusiva com conexão crua desde o fix do 6º crash — o SpyBC de
+    BoardConnection não o vê mais)."""
+    orig = schema._execute_checkpoint_unguarded
+
+    def spy(path):
+        calls.append(str(path))
+        if fail:
+            raise RuntimeError("forced checkpoint failure (ts_d4f7b005)")
+        return orig(path)
+
+    monkeypatch.setattr(schema, "_execute_checkpoint_unguarded", spy)
+
+
 def test_periodic_buffer_hygiene_closes_every_kth_commit(nd_board, monkeypatch):
     """Campo 2026-06-10 (3 crashes): CHECKPOINTs sucessivos no mesmo Database
     aberto degradam o buffer do Ladybug até abort nativo. A cada K commits o
@@ -316,8 +331,8 @@ def test_periodic_buffer_hygiene_closes_every_kth_commit(nd_board, monkeypatch):
     schema._reset_checkpoint_counter(nd_board)
     close_calls: list[bool] = []
     _spy_try_close(monkeypatch, close_calls)
-    executed: list[str] = []
-    _spy_board_connection(monkeypatch, executed)
+    checkpoints: list[str] = []
+    _spy_checkpoint(monkeypatch, checkpoints)
 
     for _ in range(6):
         result = apply_ladybug_lifecycle_step(nd_board, "board_graph", STEP_CHECKPOINT)
@@ -327,7 +342,6 @@ def test_periodic_buffer_hygiene_closes_every_kth_commit(nd_board, monkeypatch):
     assert close_calls == [True, True], (
         f"esperava 2 closes efetivos em 6 commits, veio {close_calls}"
     )
-    checkpoints = [q for q in executed if "CHECKPOINT" in q.upper()]
     assert len(checkpoints) == 4, f"esperava 4 CHECKPOINTs, veio {len(checkpoints)}"
 
 
@@ -342,14 +356,15 @@ def test_hygiene_close_skipped_under_active_reader(nd_board, monkeypatch):
     schema._reset_checkpoint_counter(nd_board)
     close_calls: list[bool] = []
     _spy_try_close(monkeypatch, close_calls)
-    executed: list[str] = []
-    _spy_board_connection(monkeypatch, executed)
+    checkpoints: list[str] = []
+    _spy_checkpoint(monkeypatch, checkpoints)
 
     with open_board_connection(nd_board) as (_db, conn):
         before = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
-        # K=3: commits 1-2 = CHECKPOINT; 3 = tentativa de close (PULADA,
-        # leitor ativo) + CHECKPOINT; 4 = re-tentativa via re-arme (PULADA)
-        # + CHECKPOINT. Sem o re-arme, o commit 4 seria CHECKPOINT puro.
+        # K=3: commits 1-2 tentariam CHECKPOINT — ADIADO (6º crash:
+        # CHECKPOINT sob leitor concorrente = SIGSEGV nativo); 3 = tentativa
+        # de close (PULADA, leitor ativo); 4 = re-tentativa via re-arme
+        # (PULADA). Sem o re-arme, o commit 4 nem tentaria o close.
         for _ in range(4):
             result = apply_ladybug_lifecycle_step(
                 nd_board, "board_graph", STEP_CHECKPOINT
@@ -358,8 +373,9 @@ def test_hygiene_close_skipped_under_active_reader(nd_board, monkeypatch):
         assert close_calls == [False, False], (
             f"close deveria ser pulado 2x sob leitor ativo, veio {close_calls}"
         )
-        checkpoints = [q for q in executed if "CHECKPOINT" in q.upper()]
-        assert len(checkpoints) == 4, "todo commit com close pulado faz CHECKPOINT"
+        assert checkpoints == [], (
+            "CHECKPOINT nao pode rodar com leitor ativo (SIGSEGV nativo)"
+        )
         # O leitor sobrevive intacto — prova de que nada foi fechado.
         after = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
         assert after == before
@@ -377,25 +393,27 @@ def test_checkpoint_failure_falls_back_to_close(nd_board, monkeypatch):
     backfill massivo e derrubava o processo. O fallback fecha o Database do
     board (libera o buffer pool + checkpoint implícito do close) e o step
     SUCEDE — a durabilidade fica garantida pelo close."""
-    close_calls: list[bool] = []
-    _spy_try_close(monkeypatch, close_calls)
-    executed: list[str] = []
-    _spy_board_connection(monkeypatch, executed, fail_checkpoint=True)
+    checkpoints: list[str] = []
+    _spy_checkpoint(monkeypatch, checkpoints, fail=True)
     result = apply_ladybug_lifecycle_step(nd_board, "board_graph", STEP_CHECKPOINT)
     assert result.ok is True, f"fallback close deveria salvar o step: {result.detail}"
-    assert close_calls == [True], "fallback nao fechou o Database (buffer pool nao liberado)"
+    assert checkpoints, "CHECKPOINT nem chegou a ser tentado"
+    key = str(schema.board_kuzu_path(nd_board))
+    with schema._board_db_cache_lock:
+        assert key not in schema._board_db_cache, (
+            "fallback nao fechou o Database (buffer pool nao liberado)"
+        )
 
 
-def test_checkpoint_fallback_skips_close_under_active_reader(nd_board, monkeypatch):
-    """CHECKPOINT falhou E há leitor ativo: o fallback NÃO pode fechar
-    (use-after-close nativo). O step sucede mesmo assim — o commit já está
-    no WAL e o STEP_FSYNC sincroniza os arquivos; a higiene fica adiada."""
-    monkeypatch.setattr(schema, "_HYGIENE_CLOSE_DRAIN_TIMEOUT_S", 0.05)
+def test_checkpoint_skipped_under_active_reader_after_failure_setup(
+    nd_board, monkeypatch
+):
+    """CHECKPOINT exige janela exclusiva: com leitor ativo o step é adiado
+    SEM executar o CHECKPOINT (6º crash: SIGSEGV nativo) e SEM fechar nada
+    — o commit já está no WAL e o STEP_FSYNC sincroniza os arquivos."""
     schema._reset_checkpoint_counter(nd_board)
-    close_calls: list[bool] = []
-    _spy_try_close(monkeypatch, close_calls)
-    executed: list[str] = []
-    _spy_board_connection(monkeypatch, executed, fail_checkpoint=True)
+    checkpoints: list[str] = []
+    _spy_checkpoint(monkeypatch, checkpoints, fail=True)
 
     with open_board_connection(nd_board) as (_db, conn):
         before = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
@@ -403,7 +421,7 @@ def test_checkpoint_fallback_skips_close_under_active_reader(nd_board, monkeypat
             nd_board, "board_graph", STEP_CHECKPOINT
         )
         assert result.ok is True, f"step deveria suceder via WAL: {result.detail}"
-        assert close_calls == [False], "fallback nao pode fechar sob leitor ativo"
+        assert checkpoints == [], "CHECKPOINT nao pode rodar com leitor ativo"
         after = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
         assert after == before
 
@@ -419,9 +437,9 @@ def test_checkpoint_and_fallback_failure_blocks_queue_ack(nd_board, monkeypatch)
     def _broken_close(*_a, **_k):
         raise RuntimeError("forced close failure (terminal)")
 
-    monkeypatch.setattr(schema, "try_close_board_db", _broken_close)
-    executed: list[str] = []
-    _spy_board_connection(monkeypatch, executed, fail_checkpoint=True)
+    monkeypatch.setattr(schema, "_close_cached_db_unguarded", _broken_close)
+    checkpoints: list[str] = []
+    _spy_checkpoint(monkeypatch, checkpoints, fail=True)
     with pytest.raises(RuntimeError) as exc_info:
         _apply_board_graph_lifecycle_after_commit(
             board_id=nd_board,
