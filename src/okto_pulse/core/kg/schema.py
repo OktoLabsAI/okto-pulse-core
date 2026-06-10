@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 import time
+from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -249,7 +250,7 @@ class BoardGraphHandle:
 # Multiple kuzu.Connection instances over a single Database are safe and
 # the supported pattern. The cache is freed by close_board_db_cache /
 # close_all_connections (the rmtree paths).
-_board_db_cache: dict[str, Any] = {}
+_board_db_cache: "OrderedDict[str, Any]" = OrderedDict()
 _board_db_cache_lock = threading.Lock()
 
 
@@ -329,6 +330,27 @@ def _get_close_guard(board_id: str) -> _BoardCloseGuard:
         return guard
 
 
+# Cap LRU do cache de Databases abertos (campo 2026-06-10): cada
+# kuzu.Database aloca um buffer pool de até kg_kuzu_buffer_pool_mb (512MB
+# default). Sem o close-por-commit (KGDL.01), TODO board visitado ficava com
+# o Database aberto para sempre — um backfill multi-board acumulou 7+ buffer
+# pools e o processo morreu por exaustão de memória nativa ("No more frame
+# groups can be added to the allocator" + abort silencioso). O cap limita o
+# pico de memória; a eviction LRU drena leitores via close guard antes de
+# fechar. Override via env KG_DB_CACHE_CAP.
+_BOARD_DB_CACHE_CAP_DEFAULT = 4
+
+
+def _board_db_cache_cap() -> int:
+    raw = os.environ.get("KG_DB_CACHE_CAP")
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return _BOARD_DB_CACHE_CAP_DEFAULT
+
+
 def _open_kuzu_db_path_cached(path: Path) -> Any:
     """Return a singleton kuzu.Database for ``path``, opening on miss.
 
@@ -338,14 +360,42 @@ def _open_kuzu_db_path_cached(path: Path) -> Any:
     are trying to avoid). Used by every per-board callsite (BoardConnection
     + bootstrap/migration probes) to guarantee a single OS-level lock per
     board path within the process.
+
+    LRU: acesso move a entrada para o fim; ao exceder o cap, o Database
+    menos-recentemente-usado é fechado (drenando leitores via close guard).
     """
     key = str(path)
-    cached = _board_db_cache.get(key)
-    if cached is not None:
-        return cached
     with _board_db_cache_lock:
         cached = _board_db_cache.get(key)
         if cached is not None:
+            _board_db_cache.move_to_end(key)
+            return cached
+
+    # Evict FORA do cache lock: o drain do close guard pode esperar e não
+    # pode bloquear cache hits de outros boards nesse intervalo. A eviction
+    # é DISCRICIONÁRIA (ao contrário do close legítimo): um board com
+    # leitores ativos é pulado — exceder o cap temporariamente é melhor que
+    # fechar um Database em uso (use-after-close).
+    with _board_db_cache_lock:
+        over = len(_board_db_cache) - _board_db_cache_cap() + 1
+        candidates = list(_board_db_cache.keys())[: max(0, over) + 4] if over > 0 else []
+    evicted = 0
+    needed = max(0, over)
+    for evict_key in candidates:
+        if evicted >= needed:
+            break
+        if _evict_board_db(evict_key):
+            evicted += 1
+    if needed > 0 and evicted < needed:
+        logger.debug(
+            "[KG] _board_db_cache over cap (todos os candidatos LRU com "
+            "leitores ativos) — pico temporário aceito"
+        )
+
+    with _board_db_cache_lock:
+        cached = _board_db_cache.get(key)
+        if cached is not None:
+            _board_db_cache.move_to_end(key)
             return cached
         # Cache miss: call the raw factory directly to avoid recursion.
         db = _open_kuzu_db(path)
@@ -355,6 +405,43 @@ def _open_kuzu_db_path_cached(path: Path) -> Any:
             path, len(_board_db_cache),
         )
         return db
+
+
+def _evict_board_db(key: str) -> bool:
+    """Close and drop one cached Database (LRU eviction path).
+
+    DIFERENTE do close legítimo (``close_board_db_cache``, que precisa
+    fechar e por isso faz fail-open no timeout): a eviction é discricionária
+    e NUNCA fecha sob leitores ativos — se o dreno curto não completa, a
+    eviction é abortada e o caller tenta outra vítima. Retorna True quando
+    o Database foi de fato fechado.
+    """
+    guard = _get_close_guard(Path(key).parent.name)
+    with guard.closing(timeout=0.5) as (drained, _stuck):
+        if not drained:
+            return False
+        with _board_db_cache_lock:
+            db = _board_db_cache.pop(key, None)
+        if db is None:
+            return False
+        logger.info(
+            "kg.db_cache.lru_evicted board=%s cache_cap=%d",
+            Path(key).parent.name, _board_db_cache_cap(),
+            extra={
+                "event": "kg.db_cache.lru_evicted",
+                "board_id": Path(key).parent.name,
+            },
+        )
+        try:
+            db.close()
+        except Exception as exc:
+            logger.warning(
+                "kg.db_cache.close_failed key=%s err=%s", key, exc,
+                extra={"event": "kg.db_cache.close_failed", "key": key},
+            )
+        del db
+    gc.collect()  # Windows: libera handles C++ antes do próximo open
+    return True
 
 
 def _open_kuzu_db_cached(board_id: str, path: Path) -> Any:
