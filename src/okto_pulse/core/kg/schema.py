@@ -11,9 +11,9 @@ from __future__ import annotations
 import gc
 import logging
 import os
-import shutil
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import ladybug as kuzu  # type: ignore
@@ -253,6 +253,82 @@ _board_db_cache: dict[str, Any] = {}
 _board_db_cache_lock = threading.Lock()
 
 
+# ---------------------------------------------------------------------------
+# Close guard — coordenação leitor-escritor por board (spec 3d89c192, FR-5)
+# ---------------------------------------------------------------------------
+#
+# `close_board_db_cache` fecha o kuzu.Database compartilhado; uma
+# kuzu.Connection viva sobre ele em outra thread é use-after-close em handle
+# C++ (UB: crash/corrupção silenciosa). Este guard registra leitores
+# (BoardConnection.__init__/close) e faz o close legítimo aguardar o dreno.
+# Fail-open nas duas direções para nunca deadlockar: leitor novo espera o
+# close por até _READER_ENTER_TIMEOUT_S e prossegue; o close espera o dreno
+# por até _CLOSE_DRAIN_TIMEOUT_S e prossegue com warning estruturado
+# (kg.close_guard.timeout) — o comportamento antigo é o piso, nunca o teto.
+
+_CLOSE_DRAIN_TIMEOUT_S = 5.0
+_READER_ENTER_TIMEOUT_S = 10.0
+
+
+class _BoardCloseGuard:
+    __slots__ = ("_cond", "_readers", "_closing")
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._readers = 0
+        self._closing = False
+
+    def reader_enter(self) -> None:
+        """Registra um leitor; bloqueia (bounded) enquanto um close drena."""
+        with self._cond:
+            self._cond.wait_for(lambda: not self._closing, _READER_ENTER_TIMEOUT_S)
+            self._readers += 1
+
+    def reader_exit(self) -> None:
+        with self._cond:
+            self._readers = max(0, self._readers - 1)
+            self._cond.notify_all()
+
+    @property
+    def readers(self) -> int:
+        with self._cond:
+            return self._readers
+
+    @contextmanager
+    def closing(self, timeout: float = _CLOSE_DRAIN_TIMEOUT_S):
+        """Janela exclusiva de close: barra leitores novos e drena os ativos.
+
+        Yields ``(drained, stuck_readers)``; com ``drained=False`` o caller
+        prossegue em fail-open e DEVE logar o warning.
+        """
+        with self._cond:
+            self._closing = True
+            drained = self._cond.wait_for(lambda: self._readers == 0, timeout)
+            stuck = self._readers
+        try:
+            yield drained, stuck
+        finally:
+            with self._cond:
+                self._closing = False
+                self._cond.notify_all()
+
+
+_board_close_guards: dict[str, _BoardCloseGuard] = {}
+_board_close_guards_lock = threading.Lock()
+
+
+def _get_close_guard(board_id: str) -> _BoardCloseGuard:
+    guard = _board_close_guards.get(board_id)
+    if guard is not None:
+        return guard
+    with _board_close_guards_lock:
+        guard = _board_close_guards.get(board_id)
+        if guard is None:
+            guard = _BoardCloseGuard()
+            _board_close_guards[board_id] = guard
+        return guard
+
+
 def _open_kuzu_db_path_cached(path: Path) -> Any:
     """Return a singleton kuzu.Database for ``path``, opening on miss.
 
@@ -298,10 +374,37 @@ def close_board_db_cache(board_id: str | None = None) -> None:
         else:
             target = str(board_kuzu_path(board_id))
             keys = [target] if target in _board_db_cache else []
-        for key in keys:
-            db = _board_db_cache.pop(key, None)
+
+    closed_any = False
+    for key in keys:
+        # Close guard (spec 3d89c192, FR-5/BR-2): drena leitores ativos do
+        # board antes de fechar o Database compartilhado. O guard é
+        # adquirido FORA do _board_db_cache_lock para não bloquear opens de
+        # outros boards durante o dreno. A chave do cache é o path do
+        # graph.lbug (…/boards/<board_id>/graph.lbug) — o nome do diretório
+        # pai identifica o board.
+        guard_board_id = Path(key).parent.name
+        guard = _get_close_guard(guard_board_id)
+        # timeout passado explicitamente (lookup do módulo em runtime) para
+        # que testes possam encurtá-lo via monkeypatch.
+        with guard.closing(timeout=_CLOSE_DRAIN_TIMEOUT_S) as (drained, stuck):
+            if not drained:
+                logger.warning(
+                    "kg.close_guard.timeout board=%s stuck_readers=%d timeout_s=%.1f "
+                    "(fail-open: fechando com leitores ativos — investigar leitor vazado)",
+                    guard_board_id, stuck, _CLOSE_DRAIN_TIMEOUT_S,
+                    extra={
+                        "event": "kg.close_guard.timeout",
+                        "board_id": guard_board_id,
+                        "stuck_readers": stuck,
+                        "timeout_s": _CLOSE_DRAIN_TIMEOUT_S,
+                    },
+                )
+            with _board_db_cache_lock:
+                db = _board_db_cache.pop(key, None)
             if db is None:
                 continue
+            closed_any = True
             try:
                 db.close()
             except Exception as exc:
@@ -310,8 +413,8 @@ def close_board_db_cache(board_id: str | None = None) -> None:
                     extra={"event": "kg.db_cache.close_failed", "key": key},
                 )
             del db
-        if keys:
-            gc.collect()  # Windows: ensure C++ handles release before next caller
+    if closed_any:
+        gc.collect()  # Windows: ensure C++ handles release before next caller
 
 
 class BoardConnection:
@@ -338,19 +441,32 @@ class BoardConnection:
         self._closed = False
         # Defensive: self-heal missing or partial graphs before we open our
         # own handle. No-op on hot boards (cache hit in
-        # ensure_board_graph_bootstrapped).
+        # ensure_board_graph_bootstrapped). Roda ANTES do reader_enter porque
+        # o bootstrap pode legitimamente fechar o cache deste board
+        # (migração de schema) — registrar o leitor antes causaria um
+        # auto-dreno de 5s em todo cold-open com migração.
         ensure_board_graph_bootstrapped(board_id)
-        path = board_kuzu_path(board_id)
-        logger.debug("[KG] BoardConnection.__init__ board_id=%s path=%s", board_id, path)
-        self.db = _open_kuzu_db_cached(board_id, path)
-        logger.debug("[KG] Kùzu database (cached) for board_id=%s", board_id)
-        self.conn = kuzu.Connection(self.db)  # type: ignore[attr-defined]
-        # The VECTOR extension is connection-scoped in LadybugDB/Kuzu. The
-        # bootstrap path loads it before creating HNSW indexes, but hot boards
-        # skip bootstrap and still open fresh connections for worker commits.
-        # Without this, inserts into indexed tables such as Entity can fail
-        # with "Trying to insert into an index ... extension is not loaded".
-        load_vector_extension(self.conn)
+        # Close guard (spec 3d89c192, FR-5): registra este leitor ANTES de
+        # tocar no cache de Database, para que um close legítimo em curso
+        # bloqueie a entrada (bounded) e nunca entregue um handle prestes a
+        # ser fechado. reader_exit acontece em close().
+        self._close_guard = _get_close_guard(board_id)
+        self._close_guard.reader_enter()
+        try:
+            path = board_kuzu_path(board_id)
+            logger.debug("[KG] BoardConnection.__init__ board_id=%s path=%s", board_id, path)
+            self.db = _open_kuzu_db_cached(board_id, path)
+            logger.debug("[KG] Kùzu database (cached) for board_id=%s", board_id)
+            self.conn = kuzu.Connection(self.db)  # type: ignore[attr-defined]
+            # The VECTOR extension is connection-scoped in LadybugDB/Kuzu. The
+            # bootstrap path loads it before creating HNSW indexes, but hot boards
+            # skip bootstrap and still open fresh connections for worker commits.
+            # Without this, inserts into indexed tables such as Entity can fail
+            # with "Trying to insert into an index ... extension is not loaded".
+            load_vector_extension(self.conn)
+        except BaseException:
+            self._close_guard.reader_exit()
+            raise
         logger.debug("[KG] Kùzu connection created successfully for board_id=%s", board_id)
 
     def __enter__(self) -> tuple[Any, Any]:
@@ -390,6 +506,12 @@ class BoardConnection:
             )
         try:
             del self.conn
+        except Exception:
+            pass
+        # Close guard (FR-5): leitor sai do registro — idempotente porque
+        # `_closed` barra reentrada deste método.
+        try:
+            self._close_guard.reader_exit()
         except Exception:
             pass
         # NOTE: do NOT close self.db — the Database is shared via the
@@ -526,10 +648,7 @@ def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[
     quarantine, kept for backward compatibility with callers that
     counted removed entries.
     """
-    from okto_pulse.core.kg.quarantine import (
-        QuarantineError,
-        QuarantineErrorCode,
-    )
+    from okto_pulse.core.kg.quarantine import QuarantineError
 
     path = board_kuzu_path(board_id)
     close_board_db_cache(board_id)
@@ -566,7 +685,6 @@ def purge_board_graph_storage(board_id: str, *, reason: str = "manual") -> list[
         # FR7: refuse the purge so corruption evidence survives.
         return []
 
-    moved = list(response.files_moved_paths if hasattr(response, "files_moved_paths") else [])
     moved_count = response.files_moved
     removed_str = [str(t) for t in targets[:moved_count]]
 
@@ -723,32 +841,44 @@ def apply_ladybug_lifecycle_step(
 
     path = board_kuzu_path(board_id)
     try:
-        if step in (STEP_CHECKPOINT, STEP_FLUSH):
-            # Barreira de durabilidade real (fix corrupção 2026-06-09): emite
-            # um CHECKPOINT explícito para o Ladybug dobrar o WAL no arquivo
-            # principal ANTES do close. O close sozinho dependia do teardown
-            # implícito; um kill do processo entre o commit e o teardown
-            # deixava as escritas só no WAL — a hipótese de "flush parcial
-            # sob pressão" da corrupção observada em campo. Best-effort:
-            # CHECKPOINT falha com transações ativas, e nesse caso o
-            # close_all_connections abaixo continua sendo a barreira.
-            if step == STEP_CHECKPOINT and path.exists():
-                try:
-                    bc = BoardConnection(board_id)
-                    try:
-                        bc.conn.execute("CHECKPOINT")
-                    finally:
-                        bc.close()
-                except Exception as exc:
-                    logger.warning(
-                        "kg.lifecycle.checkpoint_statement_failed board=%s err=%s",
-                        board_id, exc,
-                        extra={
-                            "event": "kg.lifecycle.checkpoint_statement_failed",
-                            "board_id": board_id,
-                        },
-                    )
-            close_all_connections(board_id)
+        # Spec 3d89c192 (FR-1/FR-2/FR-3): os steps checkpoint/flush/fsync são
+        # NÃO-DESTRUTIVOS — nenhum deles fecha o Database compartilhado.
+        # Fechar por commit criava a corrida use-after-close com leitores
+        # concorrentes (kg_service no thread pool) e custava
+        # close+gc.collect+reopen por queue entry. A barreira de durabilidade
+        # é o CHECKPOINT real (valida o WAL dobrado no arquivo principal com
+        # o Database aberto — comportamento verificado no ladybug 0.16.1 sob
+        # leitura concorrente ativa). O caminho destrutivo continua existindo
+        # exclusivamente em STEP_CLOSE_REOPEN_PROBE (rebuild/recovery).
+        if step == STEP_CHECKPOINT:
+            if not path.exists():
+                return LifecycleStepResult(
+                    ok=False,
+                    detail=f"{GRAPH_DB_FILENAME} missing at {path}",
+                )
+            # FR-1: falha de CHECKPOINT é falha do step (ok=False via o
+            # except externo) — o worker então NÃO ACKa o queue entry (BR-3).
+            bc = BoardConnection(board_id)
+            try:
+                bc.conn.execute("CHECKPOINT")
+            except Exception as exc:
+                logger.warning(
+                    "kg.lifecycle.checkpoint_statement_failed board=%s err=%s",
+                    board_id, exc,
+                    extra={
+                        "event": "kg.lifecycle.checkpoint_statement_failed",
+                        "board_id": board_id,
+                    },
+                )
+                raise
+            finally:
+                bc.close()
+            return LifecycleStepResult(ok=True)
+
+        if step == STEP_FLUSH:
+            # FR-2: verificação não-destrutiva. A durabilidade do WAL é
+            # responsabilidade do CHECKPOINT (FR-1); aqui só confirmamos que
+            # o arquivo principal continua presente.
             if not path.exists():
                 return LifecycleStepResult(
                     ok=False,
@@ -757,7 +887,8 @@ def apply_ladybug_lifecycle_step(
             return LifecycleStepResult(ok=True)
 
         if step == STEP_FSYNC:
-            close_all_connections(board_id)
+            # FR-3: fsync dos arquivos do grafo com o Database aberto — abrir
+            # handles de leitura para fsync não exige soltar o lock do Kùzu.
             if not path.exists():
                 return LifecycleStepResult(
                     ok=False,

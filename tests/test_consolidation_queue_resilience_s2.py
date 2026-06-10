@@ -289,7 +289,6 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
 
     import okto_pulse.core.kg.workers.consolidation as worker
     from okto_pulse.core.kg.safe_write_lifecycle import (
-        CANONICAL_STEP_ORDER,
         LifecycleStepResult,
     )
     from okto_pulse.core.kg.write_barrier import (
@@ -340,28 +339,36 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
         set_barrier_mode(original_mode)
 
     assert resp.nodes_added == 1
+    # Spec 3d89c192 (FR-4): o commit do worker usa o subset não-destrutivo
+    # (checkpoint/flush/fsync) — o close_reopen_probe sai do hot path e fica
+    # exclusivo das lanes de rebuild/recovery (DEFAULT_REQUIRED_STEPS).
     assert events == (
         ["commit:session-guarded"]
-        + [f"step:{step}" for step in CANONICAL_STEP_ORDER]
+        + [f"step:{step}" for step in worker.WORKER_COMMIT_LIFECYCLE_STEPS]
     )
 
 
 @pytest.mark.asyncio
-async def test_worker_commit_refuses_ack_when_reopen_probe_fails(monkeypatch):
-    """A lifecycle failure must bubble out so the queue row is retried/DLQed."""
+async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
+    """A lifecycle failure must bubble out so the queue row is retried/DLQed.
+
+    Spec 3d89c192 (BR-3): com o subset não-destrutivo do worker, a barreira
+    de durabilidade é o CHECKPOINT — a falha dele bloqueia o ACK (antes era
+    o close_reopen_probe, que saiu do hot path por FR-4).
+    """
 
     import okto_pulse.core.kg.workers.consolidation as worker
     from okto_pulse.core.kg.safe_write_lifecycle import (
+        STEP_CHECKPOINT,
         LifecycleStepResult,
-        STEP_CLOSE_REOPEN_PROBE,
     )
 
     async def fake_commit(req, *, agent_id, db):
         return SimpleNamespace(nodes_added=1, edges_added=0)
 
     def fake_lifecycle_step(board_id: str, graph_type: str, step: str):
-        if step == STEP_CLOSE_REOPEN_PROBE:
-            return LifecycleStepResult(ok=False, detail="probe failed")
+        if step == STEP_CHECKPOINT:
+            return LifecycleStepResult(ok=False, detail="checkpoint failed")
         return LifecycleStepResult(ok=True)
 
     monkeypatch.setattr(worker, "commit_consolidation", fake_commit)

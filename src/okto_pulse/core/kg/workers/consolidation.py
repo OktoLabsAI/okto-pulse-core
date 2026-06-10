@@ -58,6 +58,9 @@ from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
 from okto_pulse.core.kg.workers.dead_letter import route_to_dead_letter
 from okto_pulse.core.kg.safe_write_lifecycle import (
+    STEP_CHECKPOINT,
+    STEP_FLUSH,
+    STEP_FSYNC,
     HealthProbe,
     KGSafeWriteLifecycle,
     LockOwnerProbe,
@@ -78,6 +81,19 @@ logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
 AGENT_ID = "system:historical_consolidation"
 CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
+
+# Spec 3d89c192 (FR-4): o commit incremental do worker usa o subset
+# não-destrutivo do lifecycle — checkpoint real + verificação + fsync, SEM o
+# close_reopen_probe. O probe fecha o Database compartilhado (use-after-close
+# com leitores concorrentes) e só é necessário nas lanes de rebuild/recovery,
+# que continuam usando DEFAULT_REQUIRED_STEPS (contrato api_1c9d19e1 prevê
+# subset custom por caller).
+WORKER_COMMIT_LIFECYCLE_STEPS: tuple[str, ...] = (
+    STEP_CHECKPOINT,
+    STEP_FLUSH,
+    STEP_FSYNC,
+)
+
 _board_processing_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -138,6 +154,7 @@ def _apply_board_graph_lifecycle_after_commit(
         operation=CONSOLIDATION_COMMIT_OPERATION,
         owner_token=owner_token,
         mutation_ref=mutation_ref,
+        required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
     )
     if response.status is not SafeWriteLifecycleStatus.APPLIED:
         # FR3: record WAL/lifecycle failure before raising so the correlator
