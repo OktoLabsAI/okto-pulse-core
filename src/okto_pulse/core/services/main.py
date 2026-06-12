@@ -6221,6 +6221,16 @@ class StoryService:
         return propagated
 
 
+class AmbiguityGateError(ValueError):
+    """Raised when the Max ambiguity gate blocks an evaluating -> done transition.
+
+    A ValueError subclass (spec 2485780b, BR4) so the MCP move tool's existing
+    ``except ValueError`` surfaces the actionable detail unchanged, while REST
+    callers catch it specifically to return HTTP 400 without altering the
+    behavior of unrelated move errors.
+    """
+
+
 class IdeationService:
     """Service for ideation operations."""
 
@@ -6451,6 +6461,130 @@ class IdeationService:
         IdeationStatus.CANCELLED: [],
     }
 
+    @staticmethod
+    def _resolve_ideation_ambiguity_config(board: Board | None) -> dict[str, Any]:
+        """Resolve the Max ambiguity gate config from board settings (spec 2485780b).
+
+        Reads through the same ``settings.get(key, default)`` normalization path
+        used by other governance settings, so missing legacy settings resolve to
+        defaults (gate disabled, threshold 3). The threshold is clamped to 1-5
+        defensively in case a legacy row persisted an out-of-range value before
+        BoardSettings validation existed.
+        """
+        settings = (board.settings if board else None) or {}
+        threshold = int(settings.get("max_ideation_ambiguity", 3))
+        threshold = max(1, min(5, threshold))
+        return {
+            "require_ideation_ambiguity_gate": bool(
+                settings.get("require_ideation_ambiguity_gate", False)
+            ),
+            "max_ideation_ambiguity": threshold,
+        }
+
+    async def set_ambiguity_gate_skip(
+        self,
+        ideation_id: str,
+        user_id: str,
+        skip: bool,
+        *,
+        source: str,
+        actor_name: str | None = None,
+    ) -> Ideation | None:
+        """Dedicated write path for the per-ideation skip_ambiguity_gate flag (spec 2485780b).
+
+        Works while the ideation is in evaluating status (or any non-draft
+        status) WITHOUT routing through the generic update_ideation draft-only
+        guard — so it cannot be used to smuggle other non-draft edits past that
+        guard. Rejects archived ideations. Emits an auditable activity entry
+        (ideation.ambiguity_gate_skip_updated) carrying actor, source path and
+        the old -> new skip value. Both the REST endpoint and the MCP mirror
+        call THIS method, so their behavior, validation and audit trail are
+        identical (BR7 / FR5 / FR14 / FR15).
+        """
+        ideation = await self.get_ideation(ideation_id)
+        if not ideation:
+            return None
+
+        if getattr(ideation, "archived", False):
+            raise ValueError("Cannot update ambiguity gate skip for archived ideation.")
+
+        old_value = bool(ideation.skip_ambiguity_gate)
+        new_value = bool(skip)
+        ideation.skip_ambiguity_gate = new_value
+
+        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, ideation.board_id)
+        await self._log_activity(
+            board_id=ideation.board_id,
+            action="ideation.ambiguity_gate_skip_updated",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=resolved_name,
+            details={
+                "ideation_id": ideation_id,
+                "source": source,
+                "old_value": old_value,
+                "new_value": new_value,
+            },
+        )
+        return ideation
+
+    @staticmethod
+    def _parse_ambiguity_score(raw: Any) -> int | None:
+        """Parse scope_assessment.ambiguity as an integer 1-5 (spec 2485780b TR8).
+
+        Returns None when the value is missing, non-numeric, or outside the
+        1-5 range so the gate treats it as 'not properly evaluated' and
+        fails closed. ``bool`` is rejected explicitly (it is an ``int``
+        subclass but never a valid ambiguity score).
+        """
+        if isinstance(raw, bool):
+            return None
+        if isinstance(raw, int):
+            value = raw
+        elif isinstance(raw, float) and raw.is_integer():
+            value = int(raw)
+        elif isinstance(raw, str) and raw.strip().lstrip("-").isdigit():
+            value = int(raw.strip())
+        else:
+            return None
+        if not 1 <= value <= 5:
+            return None
+        return value
+
+    async def _enforce_ambiguity_gate(self, ideation: Ideation) -> None:
+        """Enforce the Max ambiguity gate on an evaluating -> done transition.
+
+        Spec 2485780b (TR6/TR8/TR9, BR2/BR4/BR6): only acts when the board gate
+        is enabled and the ideation has not explicitly skipped it. Blocks the
+        transition when the evaluated ambiguity is missing, non-numeric, or
+        greater than the configured threshold, raising AmbiguityGateError with
+        an actionable detail. Reads board settings through the shared
+        normalization path and never touches evaluation/KG/cognitive/resource
+        subsystems. The caller invokes this BEFORE ResourceGate so ambiguity
+        errors take precedence.
+        """
+        board = await self.db.get(Board, ideation.board_id)
+        config = self._resolve_ideation_ambiguity_config(board)
+        if not config["require_ideation_ambiguity_gate"]:
+            return
+        if bool(getattr(ideation, "skip_ambiguity_gate", False)):
+            return
+
+        threshold = config["max_ideation_ambiguity"]
+        scope = ideation.scope_assessment or {}
+        score = self._parse_ambiguity_score(scope.get("ambiguity"))
+        if score is None:
+            raise AmbiguityGateError(
+                "Max ambiguity gate failed: ambiguity has not been evaluated. "
+                "Evaluate ideation ambiguity or skip this gate for the ideation."
+            )
+        if score > threshold:
+            raise AmbiguityGateError(
+                f"Max ambiguity gate failed: ambiguity score {score} exceeds "
+                f"configured max {threshold}. Reduce ambiguity through Q&A, raise "
+                f"the threshold, disable the board gate, or skip this ideation."
+            )
+
     async def move_ideation(
         self, ideation_id: str, user_id: str, data: IdeationMove, actor_name: str | None = None
     ) -> Ideation | None:
@@ -6495,6 +6629,10 @@ class IdeationService:
 
         # Snapshot on done
         if data.status == IdeationStatus.DONE:
+            # Max ambiguity gate (spec 2485780b): only evaluating -> done, and
+            # BEFORE ResourceGate so ambiguity errors take precedence (BR4).
+            if old_status == IdeationStatus.EVALUATING:
+                await self._enforce_ambiguity_gate(ideation)
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
                 ideation.board_id,
                 "ideation",

@@ -1101,6 +1101,37 @@ async def _migrate_add_consolidation_resilience_columns() -> None:
                     pass
 
 
+async def _migrate_add_ideation_skip_ambiguity_gate() -> None:
+    """Add skip_ambiguity_gate column to the ideations table if it doesn't exist.
+
+    Spec 2485780b (Max ambiguity gate) — TR3/TR13: an explicit top-level
+    per-ideation boolean opt-out of the board ambiguity gate, default false.
+    Idempotent: ADD COLUMN IF NOT EXISTS on Postgres; try/except on SQLite
+    (which lacks IF NOT EXISTS for ADD COLUMN). Existing ideations read as
+    false after migration (legacy-safe).
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ideations')"
+            ))
+            if not table_check.scalar():
+                return
+            await conn.execute(sa_text(
+                "ALTER TABLE ideations ADD COLUMN IF NOT EXISTS skip_ambiguity_gate BOOLEAN DEFAULT false NOT NULL"
+            ))
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE ideations ADD COLUMN skip_ambiguity_gate BOOLEAN DEFAULT 0 NOT NULL"
+                ))
+            except Exception:
+                pass
+
+
 async def _migrate_story_ideation_single_link() -> None:
     """Enforce one Ideation link per Story while preserving many Stories per Ideation."""
     from sqlalchemy import text as sa_text
@@ -1165,6 +1196,7 @@ async def init_db() -> None:
     await _migrate_add_spec_validation_columns()
     await _migrate_add_ir_or_columns()
     await _migrate_add_spec_validation_gate_columns()
+    await _migrate_add_ideation_skip_ambiguity_gate()
     await _migrate_heal_task_validation_field_names()
     await _migrate_status_renames()
     await _migrate_add_permission_columns()

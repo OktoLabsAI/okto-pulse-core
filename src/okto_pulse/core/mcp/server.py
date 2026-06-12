@@ -4816,6 +4816,66 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
 
 
 @mcp.tool()
+async def okto_pulse_set_ideation_ambiguity_gate_skip(
+    board_id: str, ideation_id: str, skip_ambiguity_gate: bool
+) -> str:
+    """
+    Set the per-ideation Max ambiguity gate skip override (spec 2485780b).
+
+    Mirror of PATCH /api/v1/ideations/{ideation_id}/ambiguity-gate-skip: it
+    calls the same service path, persists the same skip state, returns the same
+    semantics and writes the same audit entry. Works while the ideation is in
+    evaluating status. Use this to execute the 'skip this ideation' remediation
+    advertised by okto_pulse_move_ideation when the board Max ambiguity gate
+    blocks the evaluating -> done transition."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        service = IdeationService(db)
+        existing = await service.get_ideation(ideation_id)
+        if not existing or existing.board_id != board_id:
+            return json.dumps({"error": "Ideation not found."})
+        try:
+            ideation = await service.set_ambiguity_gate_skip(
+                ideation_id,
+                ctx.agent_id,
+                skip_ambiguity_gate,
+                source="mcp",
+                actor_name=ctx.agent_name,
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+        if not ideation:
+            return json.dumps({"error": "Ideation not found."})
+        await db.commit()
+        # Reload after commit within the async context. updated_at uses a
+        # server-side onupdate=func.now(), so SQLAlchemy expires that column
+        # after the UPDATE flush even though the session is
+        # expire_on_commit=False; reading it during the (sync) json.dumps below
+        # would otherwise trigger an async lazy-load outside the greenlet and
+        # raise MissingGreenlet.
+        await db.refresh(ideation)
+
+        return json.dumps(
+            {
+                "success": True,
+                "id": ideation.id,
+                "status": ideation.status.value,
+                "skip_ambiguity_gate": ideation.skip_ambiguity_gate,
+                "updated_at": ideation.updated_at,
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
 async def okto_pulse_delete_ideation(board_id: str, ideation_id: str) -> str:
     """
     Delete an ideation. Linked refinements and Q&A are also deleted (cascade)."""

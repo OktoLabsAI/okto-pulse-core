@@ -514,6 +514,11 @@ class Ideation(Base):
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Max ambiguity gate (spec 2485780b): per-ideation opt-out of the board's
+    # ideation ambiguity gate. Explicit top-level column — NOT stored inside
+    # scope_assessment (which is evaluation-owned). Default false; the write
+    # path works while the ideation is in evaluating status.
+    skip_ambiguity_gate: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
 
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="ideations")

@@ -964,6 +964,20 @@ class IdeationMove(BaseModel):
     status: IdeationStatus
 
 
+class IdeationAmbiguityGateSkipUpdate(BaseModel):
+    """Dedicated payload for the per-ideation Max ambiguity gate skip write path.
+
+    Spec 2485780b (TR5/FR5): this is the ONLY field this endpoint accepts —
+    extra='forbid' guarantees the path cannot be used to smuggle unrelated
+    edits past the generic update_ideation draft-only guard. The write works
+    while the ideation is in evaluating status.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    skip_ambiguity_gate: bool
+
+
 class IdeationSummary(BaseSchema):
     """Schema for ideation summary."""
 
@@ -989,6 +1003,8 @@ class IdeationSummary(BaseSchema):
     architecture_designs: list[ArchitectureDesignSummary] = []
     archived: bool = False
     pre_archive_status: str | None = None
+    # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
+    skip_ambiguity_gate: bool = False
 
 
 # ============================================================================
@@ -1526,6 +1542,8 @@ class IdeationResponse(BaseSchema):
     labels: list[str] | None
     archived: bool = False
     pre_archive_status: str | None = None
+    # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
+    skip_ambiguity_gate: bool = False
     refinements: list[RefinementSummary] = []
     stories: list[StorySummary] = []
     specs: list[SpecSummary] = []
@@ -2143,6 +2161,12 @@ class BoardSettings(BaseModel):
     min_spec_completeness: int = 80  # min spec completeness score
     min_spec_assertiveness: int = 80  # min spec assertiveness score
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
+    # Max ambiguity gate for ideation completion — opt-in (spec 2485780b).
+    # When enabled, blocks ONLY the evaluating→done transition if the ideation
+    # has no ambiguity score or scope_assessment.ambiguity exceeds the
+    # configured threshold. Default disabled; threshold validated to 1-5.
+    require_ideation_ambiguity_gate: bool = False
+    max_ideation_ambiguity: int = 3  # max allowed ideation ambiguity (1-5)
     # Resource Gate - Level 2 spec resource-to-task coverage.
     require_spec_resource_task_coverage: bool = True
     # Spec resource automation — when enabled, selected resources are copied
@@ -2189,6 +2213,14 @@ class BoardSettings(BaseModel):
                 "when auto_derive_spec_resources_enabled is true"
             )
         return self
+
+    @field_validator("max_ideation_ambiguity")
+    @classmethod
+    def _validate_max_ideation_ambiguity(cls, value: int) -> int:
+        """Reject ideation ambiguity thresholds outside 1-5 (spec 2485780b TR2)."""
+        if not 1 <= value <= 5:
+            raise ValueError("max_ideation_ambiguity must be between 1 and 5")
+        return value
 
 
 class BoardCreate(BaseModel):
