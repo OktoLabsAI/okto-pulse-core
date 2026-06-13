@@ -13271,6 +13271,15 @@ async def okto_pulse_kg_rebuild_preflight(
             eligible_count=source_set.eligible_count,
             skipped_cancelled_count=source_set.skipped_cancelled_count,
             has_non_deterministic_inputs=source_set.has_non_deterministic_inputs,
+            canonical_source_count=source_set.canonical_source_count,
+            working_source_count=source_set.working_source_count,
+            skipped_by_maturity_count=source_set.skipped_by_maturity_count,
+            skipped_expired_working_count=(
+                source_set.skipped_expired_working_count
+            ),
+            legacy_unknown_count=source_set.legacy_unknown_count,
+            layer_counts=source_set.layer_counts,
+            source_partition_counts=source_set.source_partition_counts,
         )
 
     service = RebuildPreflightService(

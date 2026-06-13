@@ -325,6 +325,143 @@ def clamp_max_rows(max_rows: int | None) -> int:
     return max(1, min(r, MAX_MAX_ROWS))
 
 
+def _extract_match_node_vars(pattern_part: str) -> tuple[list[str], bool]:
+    """Return node variables found in a MATCH pattern and whether any node is anonymous.
+
+    This intentionally covers the supported Tier Power subset. When a query uses
+    anonymous nodes under canonical-only mode we fail closed instead of returning
+    possibly working rows or counts.
+    """
+
+    variables: list[str] = []
+    anonymous = False
+    for match in re.finditer(r"\(([^()]*)\)", pattern_part):
+        content = match.group(1).strip()
+        if not content or content.startswith(":") or content.startswith("{"):
+            anonymous = True
+            continue
+        first = re.split(r"[\s:{]", content, maxsplit=1)[0].strip()
+        if not first or "." in first or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", first):
+            continue
+        variables.append(first)
+    return sorted(set(variables)), anonymous
+
+
+def _find_clause_end(cypher: str, start: int) -> int:
+    boundary = re.search(
+        r"\b(OPTIONAL\s+MATCH|MATCH|WITH|RETURN|UNION|ORDER\s+BY|ORDER|LIMIT|CALL)\b",
+        cypher[start:],
+        flags=re.IGNORECASE,
+    )
+    return start + boundary.start() if boundary else len(cypher)
+
+
+def _canonical_filter_for_vars(variables: list[str]) -> str:
+    return " AND ".join(f"{var}.graph_layer = 'canonical'" for var in variables)
+
+
+def _rewrite_cypher_canonical_only(cypher: str) -> tuple[str, str]:
+    """Inject graph_layer predicates into supported MATCH clauses.
+
+    If the query shape cannot be filtered safely, raise instead of allowing a
+    working leak. This is deliberately stricter than row projection because
+    arbitrary ``MATCH (n) RETURN n`` rows may not expose ``graph_layer`` after
+    driver normalisation.
+    """
+
+    match_iter = list(re.finditer(r"\b(?:OPTIONAL\s+MATCH|MATCH)\b", cypher, re.IGNORECASE))
+    if not match_iter:
+        return cypher, "no_match"
+
+    out: list[str] = []
+    cursor = 0
+    for idx, match in enumerate(match_iter):
+        out.append(cypher[cursor:match.end()])
+        body_start = match.end()
+        next_match_start = match_iter[idx + 1].start() if idx + 1 < len(match_iter) else len(cypher)
+        clause_end = min(_find_clause_end(cypher, body_start), next_match_start)
+        clause_body = cypher[body_start:clause_end]
+        where_match = re.search(r"\bWHERE\b", clause_body, re.IGNORECASE)
+        pattern_part = clause_body[:where_match.start()] if where_match else clause_body
+        variables, has_anonymous = _extract_match_node_vars(pattern_part)
+        if re.search(r"\[[^\]]*\*", pattern_part):
+            raise TierPowerError(
+                "canonical_filter_unenforceable",
+                "Canonical-only query uses variable-length traversal; name and bound every traversed node or pass include_working=true.",
+                details={"filter_mode": "cypher_rewrite"},
+            )
+        if has_anonymous:
+            raise TierPowerError(
+                "canonical_filter_unenforceable",
+                "Canonical-only query uses anonymous node patterns; name every node or pass include_working=true.",
+                details={"filter_mode": "cypher_rewrite"},
+            )
+        if not variables:
+            out.append(clause_body)
+        else:
+            canonical_filter = _canonical_filter_for_vars(variables)
+            if where_match:
+                original_where = clause_body[where_match.end():].strip()
+                out.append(
+                    f"{pattern_part}WHERE {canonical_filter} AND ({original_where}) "
+                )
+            else:
+                out.append(f"{pattern_part}WHERE {canonical_filter} ")
+        cursor = clause_end
+
+    out.append(cypher[cursor:])
+    return "".join(out), "cypher_rewrite"
+
+
+def _apply_canonical_projection(
+    result: dict,
+    *,
+    include_working: bool,
+    canonical_filter_mode: str | None = None,
+) -> dict:
+    rows = list(result.get("rows") or [])
+    if include_working:
+        return {
+            **result,
+            "query_state": "canonical_and_working",
+            "layers_included": ["canonical", "working"],
+            "canonical_filter_enforced": False,
+            "working_omitted_count": 0,
+        }
+
+    kept: list[Any] = []
+    omitted = 0
+    saw_layer = False
+    for row in rows:
+        layer: str | None = None
+        if isinstance(row, dict):
+            raw = row.get("graph_layer") or row.get("layer")
+            if raw is not None:
+                layer = str(raw)
+        if layer is None:
+            kept.append(row)
+            continue
+        saw_layer = True
+        if layer == "working":
+            omitted += 1
+            continue
+        kept.append(row)
+
+    return {
+        **result,
+        "rows": kept,
+        "row_count": len(kept),
+        "query_state": "canonical_only",
+        "layers_included": ["canonical"],
+        "canonical_filter_enforced": bool(canonical_filter_mode or saw_layer),
+        "canonical_filter_mode": (
+            canonical_filter_mode
+            or ("row_projection" if saw_layer else "partial_no_layer_column")
+        ),
+        "working_omitted_count": omitted,
+    }
+
+
 # ---------------------------------------------------------------------------
 # query_cypher (FR-3, FR-4, FR-10)
 # ---------------------------------------------------------------------------
@@ -337,6 +474,7 @@ def execute_cypher_read_only(
     *,
     max_rows: int | None = None,
     timeout_ms: int | None = None,
+    include_working: bool = False,
 ) -> dict:
     """Execute a validated read-only Cypher query with safety rails.
 
@@ -350,12 +488,24 @@ def execute_cypher_read_only(
     logger.debug("[KG] execute_cypher_read_only cypher=%s", cypher[:200])
 
     max_rows = clamp_max_rows(max_rows)
+    cleaned = _normalize_unicode(cypher)
+    validate_cypher_read_only(cleaned)
+    cleaned = _auto_inject_limit(cleaned, max_rows)
+    cleaned = _auto_bound_var_length_path(cleaned, MAX_TRAVERSAL_DEPTH)
+    canonical_filter_mode = None
+    if not include_working:
+        cleaned, canonical_filter_mode = _rewrite_cypher_canonical_only(cleaned)
 
     executor = get_kg_registry().cypher_executor
     if executor is not None:
         logger.debug("[KG] execute_cypher_read_only delegating to registry.cypher_executor")
-        return executor.execute_read_only(
-            board_id, cypher, params, max_rows=max_rows,
+        result = executor.execute_read_only(
+            board_id, cleaned, params, max_rows=max_rows,
+        )
+        return _apply_canonical_projection(
+            result,
+            include_working=include_working,
+            canonical_filter_mode=canonical_filter_mode,
         )
 
     # Fallback: direct execution (should not happen with proper bootstrap)
@@ -363,15 +513,10 @@ def execute_cypher_read_only(
 
     timeout_ms = clamp_timeout(timeout_ms)
 
-    cleaned = _normalize_unicode(cypher)
-    validate_cypher_read_only(cleaned)
-    cleaned = _auto_inject_limit(cleaned, max_rows)
-    cleaned = _auto_bound_var_length_path(cleaned, MAX_TRAVERSAL_DEPTH)
-
     logger.debug("[KG] execute_cypher_read_only opening board connection board_id=%s", board_id)
     t0 = _time.monotonic()
-    with open_board_connection(board_id) as (_db, conn):
-        try:
+    try:
+        with open_board_connection(board_id) as (_db, conn):
             logger.debug("[KG] execute_cypher_read_only executing cleaned cypher (first 200 chars): %s", cleaned[:200])
             result = conn.execute(cleaned, params or {})
             rows = []
@@ -379,13 +524,21 @@ def execute_cypher_read_only(
                 rows.append(result.get_next())
                 if len(rows) > max_rows:
                     break
-        except Exception as exc:
-            logger.error("[KG] execute_cypher_read_only cypher execution failed: %s", exc)
-            raise TierPowerError(
-                "invalid_cypher",
-                f"Cypher execution failed: {exc}",
-                details={"cypher": cleaned[:200]},
-            ) from exc
+    except TierPowerError:
+        raise
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[KG] execute_cypher_read_only failed: %s", exc)
+        code = "invalid_cypher"
+        details = {"cypher": cleaned[:200]}
+        if "graph" in message.lower() or "lbug" in message.lower() or "kuzu" in message.lower():
+            code = "graph_unavailable"
+            details["graph_state"] = "unavailable"
+        raise TierPowerError(
+            code,
+            f"Cypher execution failed: {exc}",
+            details=details,
+        ) from exc
 
     dur = (_time.monotonic() - t0) * 1000
     truncated = len(rows) > max_rows
@@ -394,12 +547,17 @@ def execute_cypher_read_only(
 
     logger.debug("[KG] execute_cypher_read_only done row_count=%d truncated=%s time_ms=%.1f",
                  len(rows), truncated, dur)
-    return {
+    raw_result = {
         "rows": [list(r) for r in rows],
         "row_count": len(rows),
         "truncated": truncated,
         "execution_time_ms": round(dur, 1),
     }
+    return _apply_canonical_projection(
+        raw_result,
+        include_working=include_working,
+        canonical_filter_mode=canonical_filter_mode,
+    )
 
 
 # ---------------------------------------------------------------------------

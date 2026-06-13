@@ -81,6 +81,8 @@ class NodeCandidate(BaseModel):
     context: str | None = None
     justification: str | None = None
     source_artifact_ref: str | None = None
+    graph_layer: Literal["canonical", "working"] = "canonical"
+    maturity_status: str = "canonical_eligible"
     source_confidence: float = Field(0.7, ge=0.0, le=1.0)
     # v0.3.0: continuous score replacing validation_status. Starts neutral
     # (0.5) for fresh candidates; R2's scoring pipeline recomputes on commit

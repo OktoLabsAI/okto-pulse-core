@@ -73,6 +73,29 @@ class RebuildSourceSummary:
     eligible_count: int
     skipped_cancelled_count: int
     has_non_deterministic_inputs: bool
+    canonical_source_count: int = 0
+    working_source_count: int = 0
+    skipped_by_maturity_count: int = 0
+    skipped_expired_working_count: int = 0
+    legacy_unknown_count: int = 0
+    layer_counts: dict[str, int] = field(default_factory=dict)
+    source_partition_counts: dict[str, int] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "eligible_count": self.eligible_count,
+            "skipped_cancelled_count": self.skipped_cancelled_count,
+            "has_non_deterministic_inputs": self.has_non_deterministic_inputs,
+            "canonical_source_count": (
+                self.canonical_source_count or self.eligible_count
+            ),
+            "working_source_count": self.working_source_count,
+            "skipped_by_maturity_count": self.skipped_by_maturity_count,
+            "skipped_expired_working_count": self.skipped_expired_working_count,
+            "legacy_unknown_count": self.legacy_unknown_count,
+            "layer_counts": dict(self.layer_counts or {}),
+            "source_partition_counts": dict(self.source_partition_counts or {}),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +133,13 @@ class RebuildPreflightResult:
     eligible_source_count: int
     skipped_cancelled_count: int
     has_non_deterministic_inputs: bool
+    canonical_source_count: int
+    working_source_count: int
+    skipped_by_maturity_count: int
+    skipped_expired_working_count: int
+    legacy_unknown_count: int
+    layer_counts: dict[str, int]
+    source_partition_counts: dict[str, int]
     preflight_hash: str
     generated_at: str
     rebuild_status: str = "idle"  # idle|in_progress|completed|rebuild_failed
@@ -127,6 +157,13 @@ class RebuildPreflightResult:
             "eligible_source_count": self.eligible_source_count,
             "skipped_cancelled_count": self.skipped_cancelled_count,
             "has_non_deterministic_inputs": self.has_non_deterministic_inputs,
+            "canonical_source_count": self.canonical_source_count,
+            "working_source_count": self.working_source_count,
+            "skipped_by_maturity_count": self.skipped_by_maturity_count,
+            "skipped_expired_working_count": self.skipped_expired_working_count,
+            "legacy_unknown_count": self.legacy_unknown_count,
+            "layer_counts": self.layer_counts,
+            "source_partition_counts": self.source_partition_counts,
             "preflight_hash": self.preflight_hash,
             "generated_at": self.generated_at,
             "rebuild_status": self.rebuild_status,
@@ -215,6 +252,13 @@ def _compose_preflight_hash(
             "eligible_source_count": source.eligible_count,
             "skipped_cancelled_count": source.skipped_cancelled_count,
             "has_non_deterministic_inputs": source.has_non_deterministic_inputs,
+            "canonical_source_count": source.to_dict()["canonical_source_count"],
+            "working_source_count": source.working_source_count,
+            "skipped_by_maturity_count": source.skipped_by_maturity_count,
+            "skipped_expired_working_count": source.skipped_expired_working_count,
+            "legacy_unknown_count": source.legacy_unknown_count,
+            "layer_counts": source.layer_counts,
+            "source_partition_counts": source.source_partition_counts,
             "current_kg_generation_id": health.current_kg_generation_id,
             "base_state": health.base_state,
         },
@@ -277,6 +321,13 @@ class RebuildPreflightService:
                 eligible_source_count=0,
                 skipped_cancelled_count=0,
                 has_non_deterministic_inputs=False,
+                canonical_source_count=0,
+                working_source_count=0,
+                skipped_by_maturity_count=0,
+                skipped_expired_working_count=0,
+                legacy_unknown_count=0,
+                layer_counts={},
+                source_partition_counts={},
                 preflight_hash=_compose_preflight_hash(
                     board_id, empty_source, health
                 ),
@@ -318,6 +369,13 @@ class RebuildPreflightService:
             eligible_source_count=source.eligible_count,
             skipped_cancelled_count=source.skipped_cancelled_count,
             has_non_deterministic_inputs=source.has_non_deterministic_inputs,
+            canonical_source_count=source.to_dict()["canonical_source_count"],
+            working_source_count=source.working_source_count,
+            skipped_by_maturity_count=source.skipped_by_maturity_count,
+            skipped_expired_working_count=source.skipped_expired_working_count,
+            legacy_unknown_count=source.legacy_unknown_count,
+            layer_counts=dict(source.layer_counts or {}),
+            source_partition_counts=dict(source.source_partition_counts or {}),
             preflight_hash=preflight_hash,
             generated_at=datetime.now(timezone.utc).isoformat(),
             rebuild_status=rebuild_status,

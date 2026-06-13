@@ -893,13 +893,26 @@ async def update_settings(board_id: str, request: Request):
 
 @router.post("/boards/{board_id}/cypher")
 async def cypher_query(board_id: str, cypher: str = "", params: dict | None = None,
-                       max_rows: int = 1000, timeout_ms: int = 5000):
+                       max_rows: int = 1000, timeout_ms: int = 5000,
+                       include_working: bool = False):
     """Delegate to tier power query_cypher."""
     try:
-        result = execute_cypher_read_only(board_id, cypher, params, max_rows=max_rows, timeout_ms=timeout_ms)
+        result = execute_cypher_read_only(
+            board_id,
+            cypher,
+            params,
+            max_rows=max_rows,
+            timeout_ms=timeout_ms,
+            include_working=include_working,
+        )
         return result
     except TierPowerError as e:
-        return _problem(400 if e.code in ("unsafe_cypher", "invalid_cypher") else 503, e.code, e.message, e.code)
+        return _problem(
+            400 if e.code in ("unsafe_cypher", "invalid_cypher") else 503,
+            e.code,
+            e.message,
+            e.code,
+        )
 
 
 @router.get("/schema")

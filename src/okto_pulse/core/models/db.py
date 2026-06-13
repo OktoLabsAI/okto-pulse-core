@@ -1862,6 +1862,72 @@ class ConsolidationQueue(Base):
     )  # Exp-backoff scheduling: claim ignores rows with next_retry_at > now()
 
 
+class CanonicalDebt(Base):
+    """Items that could not be promoted to the canonical KG yet.
+
+    This ledger is intentionally separate from ConsolidationQueue. Queue rows
+    represent executable work; canonical debt records describe why an artifact
+    is not canonical and how/when an agent should retry cognitive promotion.
+    """
+
+    __tablename__ = "canonical_debt"
+    __table_args__ = (
+        UniqueConstraint(
+            "board_id",
+            "artifact_type",
+            "artifact_id",
+            "target_status",
+            "content_hash",
+            name="uq_canonical_debt_artifact_target_hash",
+        ),
+        Index("ix_canonical_debt_board_state", "board_id", "canonical_state"),
+        Index("ix_canonical_debt_board_artifact", "board_id", "artifact_type", "artifact_id"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    canonical_state: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="pending", server_default="pending"
+    )  # pending | retry_scheduled | deferred | failed | blocked | committed | not_applicable | superseded
+    graph_layer: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="working", server_default="working"
+    )
+    maturity_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    owner_agent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    queue_ref: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    dlq_ref: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    evidence_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ConsolidationDeadLetter(Base):
     """Dead-letter queue for items that exceeded ``kg_queue_max_attempts``
     consecutive failures. Spec bdcda842 (TR2) — items move here after the

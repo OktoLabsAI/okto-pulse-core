@@ -21,6 +21,7 @@ Fallback Confidence Cap`).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -76,6 +77,7 @@ from okto_pulse.core.kg.workers.deterministic_worker import (
     WorkerResult,
     _spec_child_ref,
 )
+from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
@@ -1323,6 +1325,38 @@ class ConsolidationWorker:
         in the collector ring-buffer so the MemoryPressureCorrelator
         receives a real commit-failure signal.  Non-blocking/non-raising.
         """
+        correlation_id = uuid.uuid4().hex
+        try:
+            debt_hash = hashlib.sha256(
+                "|".join([
+                    entry.board_id,
+                    entry.artifact_type,
+                    entry.artifact_id,
+                    entry.triggered_at.isoformat() if entry.triggered_at else "",
+                ]).encode("utf-8")
+            ).hexdigest()
+            await upsert_canonical_debt(
+                db,
+                board_id=entry.board_id,
+                artifact_type=entry.artifact_type,
+                artifact_id=entry.artifact_id,
+                source_ref=f"{entry.artifact_type}:{entry.artifact_id}",
+                content_hash=debt_hash,
+                target_status="canonical_consolidation",
+                canonical_state="failed",
+                failure_reason="consolidation_failed",
+                last_error=error_text,
+                owner_agent_id=entry.worker_id or AGENT_ID,
+                correlation_id=correlation_id,
+                queue_ref=entry.id,
+            )
+        except Exception as debt_exc:
+            logger.error(
+                "canonical_debt.persist_failed board=%s artifact=%s:%s err=%s",
+                entry.board_id, entry.artifact_type, entry.artifact_id,
+                debt_exc,
+            )
+
         entry.attempts = (entry.attempts or 0) + 1
         entry.last_error = error_text
         if entry.attempts >= max_attempts:
@@ -1335,7 +1369,7 @@ class ConsolidationWorker:
                         timestamp=datetime.now(timezone.utc),
                         event_kind="kg.commit.failed",
                         graph_type="board",
-                        correlation_id=uuid.uuid4().hex,
+                        correlation_id=correlation_id,
                     ),
                 )
             except Exception:

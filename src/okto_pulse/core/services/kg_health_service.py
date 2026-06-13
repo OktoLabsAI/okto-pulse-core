@@ -1176,6 +1176,44 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         board_id=board_id,
         generation_id=current_kg_generation_id,
     )
+    kg_layer_counts = await asyncio.to_thread(_aggregate_kg_layer_counts, board_id)
+    try:
+        from okto_pulse.core.services.canonical_debt_service import (
+            summarize_canonical_debt,
+        )
+
+        canonical_debt = await summarize_canonical_debt(db, board_id)
+    except Exception as exc:  # pragma: no cover - defensive health path
+        logger.warning(
+            "kg.health.canonical_debt_summary_failed board=%s err=%s",
+            board_id, exc,
+        )
+        canonical_debt = {
+            "open_count": 0,
+            "retryable_count": 0,
+            "blocked_count": 0,
+            "retry_scheduled_count": 0,
+            "terminal_count": 0,
+            "by_state": {},
+            "status": "unavailable",
+        }
+    if int(canonical_debt.get("open_count") or 0) > 0:
+        health_diagnostics["health_issues"].append({
+            "code": "canonical_debt_open",
+            "component": "canonical_graph",
+            "severity": "warning",
+            "reason": "canonical_debt_open_count_gt_zero",
+            "description": (
+                f"{int(canonical_debt.get('open_count') or 0)} artifact(s) "
+                "remain outside canonical consolidation and require retry or "
+                "cognitive promotion."
+            ),
+            "operator_action": "inspect_canonical_debt",
+        })
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = "canonical_debt_open"
+            health_diagnostics["operator_action"] = "inspect_canonical_debt"
+
     if orphan_integrity.get("integrity_warning"):
         if _STATE_SEVERITY[graph_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
             graph_state = HealthState.AT_RISK
@@ -1249,6 +1287,20 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         "decay_scheduler_diagnostics": decay_scheduler_diagnostics,
         "storage_footprint_proxy": storage_footprint_proxy,
         "orphan_integrity": orphan_integrity,
+        "kg_layer_counts": kg_layer_counts,
+        "canonical_debt": canonical_debt,
+        "rebuild_diagnostics": {
+            "last_outcome": (
+                "rebuild_complete_with_canonical_debt"
+                if int(canonical_debt.get("open_count") or 0) > 0
+                else "rebuild_complete"
+                if current_kg_generation_id
+                else "no_generation"
+            ),
+            "canonical_open_debt_count": int(canonical_debt.get("open_count") or 0),
+            "layer_counts_status": kg_layer_counts.get("status", "unknown"),
+            "operator_action": health_diagnostics["operator_action"],
+        },
         # --- UI diagnosis surface (additive, does not weaken canonical state) ---
         **health_diagnostics,
     }
@@ -1386,4 +1438,90 @@ def _zero_kuzu_metrics() -> dict[str, Any]:
         "default_score_count": 0,
         "avg_relevance": 0.0,
         "top_disconnected_nodes": [],
+    }
+
+
+def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
+    """Count nodes by graph_layer and maturity_status.
+
+    This is additive diagnostic telemetry. Any Kuzu/schema error degrades to an
+    unavailable projection and must not affect the health state machine.
+    """
+
+    counts = {
+        "canonical": 0,
+        "working": 0,
+        "none": 0,
+        "legacy_unknown": 0,
+        "unclassified": 0,
+    }
+    maturity_counts: dict[str, int] = {}
+    try:
+        from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+    except Exception as exc:
+        logger.warning(
+            "kg.health.layer_counts_import_failed board=%s err=%s",
+            board_id, exc,
+        )
+        return {
+            "status": "unavailable",
+            "by_layer": counts,
+            "by_maturity_status": maturity_counts,
+            "reason": "schema_import_failed",
+        }
+
+    try:
+        with open_board_connection(board_id) as (_db, conn):
+            successful_node_types = 0
+            failed_node_types = 0
+            for node_type in NODE_TYPES:
+                result = None
+                try:
+                    result = conn.execute(
+                        f"MATCH (n:{node_type}) "
+                        f"RETURN n.graph_layer, n.maturity_status, count(n)"
+                    )
+                    while result.has_next():
+                        row = result.get_next()
+                        layer = str(row[0] or "unclassified")
+                        maturity = str(row[1] or "unclassified")
+                        count = int(row[2] or 0)
+                        counts[layer] = counts.get(layer, 0) + count
+                        maturity_counts[maturity] = (
+                            maturity_counts.get(maturity, 0) + count
+                        )
+                    successful_node_types += 1
+                except Exception:
+                    failed_node_types += 1
+                    continue
+                finally:
+                    if result is not None:
+                        try:
+                            result.close()
+                        except Exception:
+                            pass
+    except Exception as exc:
+        logger.warning(
+            "kg.health.layer_counts_failed board=%s err=%s",
+            board_id, exc,
+        )
+        return {
+            "status": "unavailable",
+            "by_layer": counts,
+            "by_maturity_status": maturity_counts,
+            "reason": "kuzu_open_failed",
+        }
+    if successful_node_types == 0 and failed_node_types > 0:
+        return {
+            "status": "unavailable",
+            "by_layer": counts,
+            "by_maturity_status": maturity_counts,
+            "reason": "layer_columns_unavailable",
+            "failed_node_types": failed_node_types,
+        }
+    return {
+        "status": "partial" if failed_node_types else "ok",
+        "by_layer": counts,
+        "by_maturity_status": maturity_counts,
+        "failed_node_types": failed_node_types,
     }

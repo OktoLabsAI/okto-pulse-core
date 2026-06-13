@@ -163,6 +163,7 @@ def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
         params: dict | None = None,
         max_rows: int = 0,
         timeout_ms: int = 5000,
+        include_working: bool = False,
     ) -> str:
         """Execute a read-only Cypher query against a board's graph. Safety rails auto-applied:
 write-keyword whitelist (CREATE/DELETE/SET rejected), comment strip + unicode
@@ -192,7 +193,9 @@ okto-pulse://reference/tool-docs/kg."""
                 asyncio.to_thread(
                     execute_cypher_read_only,
                     board_id, cypher, params,
-                    max_rows=effective_rows, timeout_ms=timeout_ms,
+                    max_rows=effective_rows,
+                    timeout_ms=timeout_ms,
+                    include_working=include_working,
                 ),
                 timeout=30.0,
             )

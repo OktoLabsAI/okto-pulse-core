@@ -22,7 +22,7 @@ from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
 
-SCHEMA_VERSION = "0.3.5"
+SCHEMA_VERSION = "0.3.6"
 GRAPH_DB_FILENAME = "graph.lbug"
 CORRUPT_DB_ERROR_MARKERS = (
     "checksum verification failed",
@@ -176,6 +176,8 @@ _COMMON_NODE_ATTRS = """
     context STRING,
     justification STRING,
     source_artifact_ref STRING,
+    graph_layer STRING,
+    maturity_status STRING,
     source_session_id STRING,
     created_at TIMESTAMP,
     created_by_agent STRING,
@@ -227,6 +229,14 @@ HUMAN_CURATED_COLUMNS: tuple[tuple[str, str], ...] = (
 # convention as last_queried_at) so legacy boards backfill cleanly.
 LAST_RECOMPUTED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("last_recomputed_at", "STRING"),
+)
+
+# Columns added in v0.3.6 (KG graph partitioning): every node carries its
+# logical graph layer and maturity status so canonical-only queries can be
+# enforced by data, not just by UI convention.
+KG_LAYER_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("graph_layer", "STRING"),
+    ("maturity_status", "STRING"),
 )
 
 # Columns removed in v0.3.0. Kùzu v0.6 has no ALTER TABLE DROP COLUMN, so the
@@ -1803,6 +1813,49 @@ def _ensure_last_recomputed_at_columns(conn, node_type: str) -> list[str]:
     return added
 
 
+def _ensure_kg_layer_columns(conn, node_type: str) -> list[str]:
+    """ALTER TABLE ADD for v0.3.6 graph_layer/maturity_status columns."""
+
+    added: list[str] = []
+    for col_name, col_type in KG_LAYER_COLUMNS:
+        if _alter_add_column_with_retry(conn, node_type, col_name, col_type) == "added":
+            added.append(col_name)
+    return added
+
+
+def _backfill_kg_layer_defaults(conn, node_type: str) -> None:
+    """Mark legacy rows as canonical so existing boards keep querying.
+
+    The rebuild manifest and CanonicalDebt surfaces now own precise maturity
+    classification for future rebuilds. Existing graph rows predate that
+    metadata, so defaulting them to canonical preserves compatibility while
+    letting operators rebuild to materialize stricter partitioning later.
+    """
+
+    try:
+        conn.execute(
+            f"MATCH (n:{node_type}) "
+            f"WHERE n.graph_layer IS NULL "
+            f"SET n.graph_layer = 'canonical'"
+        )
+    except Exception as exc:
+        logger.warning(
+            "migrate_kg_layer.backfill_failed node=%s col=graph_layer err=%s",
+            node_type, exc,
+        )
+    try:
+        conn.execute(
+            f"MATCH (n:{node_type}) "
+            f"WHERE n.maturity_status IS NULL "
+            f"SET n.maturity_status = 'canonical_eligible'"
+        )
+    except Exception as exc:
+        logger.warning(
+            "migrate_kg_layer.backfill_failed node=%s col=maturity_status err=%s",
+            node_type, exc,
+        )
+
+
 def _backfill_relevance_defaults(conn, node_type: str) -> None:
     """Populate the v0.3.0 columns for rows that existed before the migration.
 
@@ -1975,6 +2028,7 @@ def _migrate_node_table_v030(conn, node_type: str) -> int:
                 f"id: $id, title: $title, content: $content, context: $context, "
                 f"justification: $justification, "
                 f"source_artifact_ref: $source_artifact_ref, "
+                f"graph_layer: 'canonical', maturity_status: 'canonical_eligible', "
                 f"source_session_id: $source_session_id, "
                 f"created_at: $created_at, created_by_agent: $created_by_agent, "
                 f"source_confidence: $source_confidence, "
@@ -2045,7 +2099,9 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     try:
         for node_type in NODE_TYPES:
             added = _ensure_relevance_columns(conn, node_type)
+            added.extend(_ensure_kg_layer_columns(conn, node_type))
             _backfill_relevance_defaults(conn, node_type)
+            _backfill_kg_layer_defaults(conn, node_type)
             had_legacy = _node_has_legacy_columns(conn, node_type)
             summary[node_type] = {
                 "strategy": "alter",
@@ -2437,6 +2493,10 @@ def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
                     added_for_type.extend(
                         _ensure_last_recomputed_at_columns(conn, node_type)
                     )
+                    added_for_type.extend(
+                        _ensure_kg_layer_columns(conn, node_type)
+                    )
+                    _backfill_kg_layer_defaults(conn, node_type)
                 except Exception as nt_exc:
                     errors.append(
                         f"node_type_failed: {node_type}: {nt_exc}"
@@ -2543,6 +2603,9 @@ def apply_schema_to_connection(conn) -> None:
         # ISO timestamp of the last relevance_score persist. Read by the
         # daily decay tick and kg_health for observability.
         _ensure_last_recomputed_at_columns(conn, node_type)
+        # v0.3.6: graph partition metadata for canonical-only query surfaces.
+        _ensure_kg_layer_columns(conn, node_type)
+        _backfill_kg_layer_defaults(conn, node_type)
     for rel_name, from_type, to_type in REL_TYPES:
         conn.execute(_build_rel_ddl(rel_name, from_type, to_type))
         # v0.1.0 → v0.2.0 backfill: ALTER ADD the metadata cols on legacy

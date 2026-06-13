@@ -25,6 +25,7 @@ from okto_pulse.core.kg.scoring import (
 )
 from okto_pulse.core.models.db import (
     Board,
+    CanonicalDebt,
     ConsolidationAudit,
     ConsolidationDeadLetter,
     ConsolidationQueue,
@@ -79,6 +80,11 @@ async def kg_health_board(db_factory):
         await session.execute(
             KuzuNodeRef.__table__.delete().where(
                 KuzuNodeRef.board_id == KG_HEALTH_BOARD_ID,
+            )
+        )
+        await session.execute(
+            CanonicalDebt.__table__.delete().where(
+                CanonicalDebt.board_id == KG_HEALTH_BOARD_ID,
             )
         )
         await session.execute(KGTickRun.__table__.delete())
@@ -162,6 +168,10 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "storage_footprint_proxy",
         # KG-ZO-02 integrity debt projection.
         "orphan_integrity",
+        # KG partitioning/canonical debt diagnostics.
+        "kg_layer_counts",
+        "canonical_debt",
+        "rebuild_diagnostics",
     }
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == HEALTH_SCHEMA_VERSION
@@ -216,6 +226,9 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert isinstance(result["decay_scheduler_diagnostics"], dict)
     assert isinstance(result["storage_footprint_proxy"], dict)
     assert isinstance(result["orphan_integrity"], dict)
+    assert isinstance(result["kg_layer_counts"], dict)
+    assert isinstance(result["canonical_debt"], dict)
+    assert isinstance(result["rebuild_diagnostics"], dict)
     assert result["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
     assert result["storage_footprint_proxy"]["source"] == "file_size_proxy"
     assert result["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False

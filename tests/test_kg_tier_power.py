@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from okto_pulse.core.kg.tier_power import (
     TierPowerError,
+    _apply_canonical_projection,
     _auto_bound_var_length_path,
     _auto_inject_limit,
     check_rate_limit,
@@ -20,6 +21,7 @@ from okto_pulse.core.kg.tier_power import (
     reset_rate_limiter_for_tests,
     validate_cypher_read_only,
 )
+from okto_pulse.core.kg.interfaces.registry import configure_kg_registry
 
 
 @pytest.fixture(autouse=True)
@@ -110,6 +112,116 @@ class TestSafetyRails:
     def test_clamp_max_rows(self):
         assert clamp_max_rows(None) == 1000
         assert clamp_max_rows(20000) == 10000
+
+    def test_canonical_projection_omits_working_rows_when_layer_visible(self):
+        result = _apply_canonical_projection(
+            {
+                "rows": [
+                    {"id": "c1", "graph_layer": "canonical"},
+                    {"id": "w1", "graph_layer": "working"},
+                    {"id": "legacy"},
+                ],
+                "row_count": 3,
+            },
+            include_working=False,
+        )
+        assert [row["id"] for row in result["rows"]] == ["c1", "legacy"]
+        assert result["query_state"] == "canonical_only"
+        assert result["canonical_filter_enforced"] is True
+        assert result["working_omitted_count"] == 1
+
+    def test_canonical_projection_can_include_working_explicitly(self):
+        result = _apply_canonical_projection(
+            {"rows": [{"id": "w1", "graph_layer": "working"}], "row_count": 1},
+            include_working=True,
+        )
+        assert result["row_count"] == 1
+        assert result["query_state"] == "canonical_and_working"
+
+    def test_cypher_rewrite_filters_named_nodes_before_executor(self):
+        from okto_pulse.core.kg.tier_power import execute_cypher_read_only
+
+        class FakeExecutor:
+            seen = ""
+
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+                self.seen = cypher
+                return {"rows": [[{"id": "n1"}]], "row_count": 1}
+
+        fake = FakeExecutor()
+        configure_kg_registry(cypher_executor=fake)
+
+        result = execute_cypher_read_only("board-x", "MATCH (n) RETURN n")
+
+        assert fake.seen == (
+            "MATCH (n) WHERE n.graph_layer = 'canonical' RETURN n\nLIMIT 1000"
+        )
+        assert result["canonical_filter_enforced"] is True
+        assert result["canonical_filter_mode"] == "cypher_rewrite"
+
+    def test_cypher_rewrite_preserves_existing_where_with_clause_spacing(self):
+        from okto_pulse.core.kg.tier_power import execute_cypher_read_only
+
+        class FakeExecutor:
+            seen = ""
+
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+                self.seen = cypher
+                return {"rows": [], "row_count": 0}
+
+        fake = FakeExecutor()
+        configure_kg_registry(cypher_executor=fake)
+
+        execute_cypher_read_only(
+            "board-x",
+            "MATCH (n) WHERE n.title = 'x' RETURN n",
+        )
+
+        assert fake.seen == (
+            "MATCH (n) WHERE n.graph_layer = 'canonical' "
+            "AND (n.title = 'x') RETURN n\nLIMIT 1000"
+        )
+
+    def test_cypher_rewrite_fails_closed_for_anonymous_nodes(self):
+        from okto_pulse.core.kg.tier_power import execute_cypher_read_only
+
+        with pytest.raises(TierPowerError) as exc:
+            execute_cypher_read_only("board-x", "MATCH (:Spec) RETURN count(*)")
+
+        assert exc.value.code == "canonical_filter_unenforceable"
+
+    def test_cypher_rewrite_fails_closed_for_variable_length_paths(self):
+        from okto_pulse.core.kg.tier_power import execute_cypher_read_only
+
+        with pytest.raises(TierPowerError) as exc:
+            execute_cypher_read_only("board-x", "MATCH p=(a)-[*]->(b) RETURN p")
+
+        assert exc.value.code == "canonical_filter_unenforceable"
+
+    def test_cypher_rewrite_can_include_working_without_filter(self):
+        from okto_pulse.core.kg.tier_power import execute_cypher_read_only
+
+        class FakeExecutor:
+            seen = ""
+
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+                self.seen = cypher
+                return {
+                    "rows": [{"id": "w1", "graph_layer": "working"}],
+                    "row_count": 1,
+                }
+
+        fake = FakeExecutor()
+        configure_kg_registry(cypher_executor=fake)
+
+        result = execute_cypher_read_only(
+            "board-x",
+            "MATCH (:Spec) RETURN count(*)",
+            include_working=True,
+        )
+
+        assert "graph_layer = 'canonical'" not in fake.seen
+        assert result["query_state"] == "canonical_and_working"
 
 
 class TestRateLimit:

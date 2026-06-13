@@ -1365,6 +1365,10 @@ def _do_kuzu_commit(
                             "content": cand.content or "",
                             "context": cand.context or "",
                             "justification": cand.justification or "",
+                            "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                            "maturity_status": getattr(
+                                cand, "maturity_status", "canonical_eligible"
+                            ),
                             "source_confidence": cand.source_confidence,
                             "priority_boost": getattr(cand, "priority_boost", 0.0),
                         }
@@ -1404,6 +1408,10 @@ def _do_kuzu_commit(
                         "context": cand.context or "",
                         "justification": cand.justification or "",
                         "source_artifact_ref": cand.source_artifact_ref or "",
+                        "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                        "maturity_status": getattr(
+                            cand, "maturity_status", "canonical_eligible"
+                        ),
                         "created_at": _now_iso(),
                         "created_by_agent": agent_id,
                         "source_confidence": cand.source_confidence,
@@ -1459,6 +1467,10 @@ def _do_kuzu_commit(
                                 "content": cand.content or "",
                                 "context": cand.context or "",
                                 "justification": cand.justification or "",
+                                "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                                "maturity_status": getattr(
+                                    cand, "maturity_status", "canonical_eligible"
+                                ),
                                 "source_confidence": cand.source_confidence,
                                 "priority_boost": getattr(cand, "priority_boost", 0.0),
                                 "embedding": embedding,
@@ -1506,6 +1518,10 @@ def _do_kuzu_commit(
                     "context": cand.context or "",
                     "justification": cand.justification or "",
                     "source_artifact_ref": cand.source_artifact_ref or "",
+                    "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                    "maturity_status": getattr(
+                        cand, "maturity_status", "canonical_eligible"
+                    ),
                     "created_at": _now_iso(),
                     "created_by_agent": agent_id,
                     "source_confidence": cand.source_confidence,

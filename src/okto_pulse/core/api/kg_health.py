@@ -209,6 +209,9 @@ class KGHealthResponse(BaseModel):
     orphan_integrity: OrphanIntegrityProjection = Field(
         default_factory=OrphanIntegrityProjection
     )
+    kg_layer_counts: dict = Field(default_factory=dict)
+    canonical_debt: dict = Field(default_factory=dict)
+    rebuild_diagnostics: dict = Field(default_factory=dict)
 
     # Additive UI diagnosis: separates "board graph is actually unreadable or
     # empty after prior materialization" from conservative at_risk states caused

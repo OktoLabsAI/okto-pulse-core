@@ -1,7 +1,10 @@
 """Production source store for KG rebuild (bug b4c6920c).
 
-Reads non-cancelled artifacts (specs, refinements, task/test/bug cards) from the
-SQLite-backed SQLAlchemy store and returns the canonical RebuildSourceRow
+Reads SDLC artifacts (ideations, refinements, specs, sprints and
+task/test/bug cards) from the SQLite-backed SQLAlchemy store and returns the
+raw rows expected by ``RebuildSourceEnumerator``. The enumerator owns maturity
+filtering; this store deliberately includes cancelled/archived rows so rebuild
+preflight can report deterministic skip counts.
 list expected by ``RebuildSourceEnumerator`` (KG-02.2).
 
 Replaces the ``_empty_source_store`` stub that ``core/api/kg_rebuild.py``
@@ -31,8 +34,8 @@ Design choices:
   to '1'.
 
 * **source_ref** — uses ``<artifact_type>:<id>`` to match the convention
-  used by the cognitive badge surface. Formal spec decisions are emitted as
-  first-class semantic sources using ``decision:<spec_id>:<decision_id>``.
+  used by the cognitive badge surface. Formal decisions are not emitted as
+  independent source rows; they inherit the owning spec's maturity and hash.
   Card rows are typed as task/test/bug even though the deterministic worker
   still consumes them via the legacy ConsolidationQueue ``card`` artifact type.
 """
@@ -56,6 +59,15 @@ logger = logging.getLogger("okto_pulse.kg.board_source_store")
 ARTIFACT_QUERIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     # (artifact_type, table, status_column, content_columns_for_hash)
     (
+        "ideation",
+        "ideations",
+        "status",
+        (
+            "title", "description", "problem_statement", "proposed_approach",
+            "scope_assessment", "complexity", "status", "version", "labels",
+        ),
+    ),
+    (
         "spec",
         "specs",
         "status",
@@ -70,7 +82,21 @@ ARTIFACT_QUERIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "refinement",
         "refinements",
         "status",
-        ("title", "description", "analysis", "version"),
+        (
+            "title", "description", "in_scope", "out_of_scope", "analysis",
+            "decisions", "status", "version", "labels",
+        ),
+    ),
+    (
+        "sprint",
+        "sprints",
+        "status",
+        (
+            "title", "description", "spec_id", "spec_version", "status",
+            "lane_type", "objective", "expected_outcome",
+            "test_scenario_ids", "business_rule_ids", "evaluations",
+            "version", "labels",
+        ),
     ),
 )
 
@@ -149,6 +175,50 @@ def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {str(row["name"]) for row in rows}
 
 
+def _board_working_ttl_days(
+    conn: sqlite3.Connection,
+    board_id: str,
+) -> int | None:
+    exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='boards'"
+    ).fetchone()
+    if not exists:
+        return None
+    columns = _table_columns(conn, "boards")
+    if "settings" not in columns:
+        return None
+    row = conn.execute(
+        "SELECT settings FROM boards WHERE id = ?",
+        (board_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    raw = row["settings"]
+    if not raw:
+        return None
+    try:
+        settings = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(settings, dict):
+        return None
+    for key in (
+        "kg_working_ttl_days",
+        "kg_working_source_ttl_days",
+        "working_graph_ttl_days",
+    ):
+        value = settings.get(key)
+        if value is None:
+            continue
+        try:
+            ttl = int(value)
+        except (TypeError, ValueError):
+            continue
+        if ttl >= 0:
+            return ttl
+    return None
+
+
 def _card_artifact_type(row: sqlite3.Row) -> str:
     try:
         raw_value = row["card_type"]
@@ -160,6 +230,49 @@ def _card_artifact_type(row: sqlite3.Row) -> str:
     if raw == "bug":
         return "bug"
     return "task"
+
+
+def _row_status(row: sqlite3.Row, status_col: str = "status") -> str:
+    try:
+        archived = row["archived"]
+    except (IndexError, KeyError):
+        archived = 0
+    if bool(archived):
+        return "archived"
+    try:
+        return str(row[status_col] or "")
+    except (IndexError, KeyError):
+        return ""
+
+
+def _updated_at(row: sqlite3.Row) -> str:
+    try:
+        return _to_iso(row["updated_at"])
+    except (IndexError, KeyError):
+        return _to_iso(row["created_at"])
+
+
+def _bug_has_minimal_evidence(row: sqlite3.Row) -> bool:
+    if _card_artifact_type(row) != "bug":
+        return True
+    evidence_fields = ("observed_behavior", "expected_behavior", "steps_to_reproduce")
+    has_text = False
+    for field in evidence_fields:
+        try:
+            if str(row[field] or "").strip():
+                has_text = True
+                break
+        except (IndexError, KeyError):
+            continue
+    try:
+        linked_tests = _load_json_array(row["linked_test_task_ids"])
+    except (IndexError, KeyError):
+        linked_tests = []
+    try:
+        conclusions = _load_json_array(row["conclusions"])
+    except (IndexError, KeyError):
+        conclusions = []
+    return has_text and (bool(linked_tests) or bool(conclusions))
 
 
 def _load_json_array(value: Any) -> list[Any]:
@@ -255,7 +368,7 @@ class BoardSourceStore:
     db_path: Path
 
     def fetch(self, board_id: str) -> list[dict[str, Any]]:
-        """Return the source rows for a board, excluding cancelled.
+        """Return raw source rows for a board.
 
         Best-effort: if a table doesn't exist (e.g. the schema is older
         than the queries here), the entry is skipped silently with a
@@ -277,6 +390,7 @@ class BoardSourceStore:
         )
         conn.row_factory = sqlite3.Row
         try:
+            working_ttl_days = _board_working_ttl_days(conn, board_id)
             for artifact_type, table, status_col, content_cols in ARTIFACT_QUERIES:
                 # Skip table if the schema doesn't have it yet.
                 exists = conn.execute(
@@ -290,10 +404,11 @@ class BoardSourceStore:
                     )
                     continue
                 # Stable ordering: created_at first (lex on ISO date),
-                # then id for tie-breaking. Excludes cancelled.
+                # then id for tie-breaking. Do not filter by status here;
+                # maturity/cancelled policy belongs to RebuildSourceEnumerator.
                 rows = conn.execute(
                     f"SELECT * FROM {table} "
-                    f"WHERE board_id = ? AND {status_col} != 'cancelled' "
+                    f"WHERE board_id = ? "
                     f"ORDER BY created_at ASC, id ASC",
                     (board_id,),
                 ).fetchall()
@@ -305,16 +420,21 @@ class BoardSourceStore:
                         version_raw = 1
                     source_version = str(version_raw if version_raw is not None else 1)
                     content_hash = _canonical_content_hash(row, content_cols)
-                    out.append({
+                    source_row = {
                         "artifact_type": artifact_type,
                         "id": row_id,
                         "source_ref": f"{artifact_type}:{row_id}",
                         "source_version": source_version,
                         "content_hash": content_hash,
                         "created_at": _to_iso(row["created_at"]),
-                    })
-                    if artifact_type == "spec":
-                        out.extend(_decision_sources_from_spec(row))
+                        "updated_at": _updated_at(row),
+                        "status": _row_status(row, status_col),
+                        "source_artifact_status": _row_status(row, status_col),
+                        "has_minimal_evidence": True,
+                    }
+                    if working_ttl_days is not None:
+                        source_row["working_ttl_days"] = working_ttl_days
+                    out.append(source_row)
             cards_exists = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='cards'"
             ).fetchone()
@@ -323,16 +443,9 @@ class BoardSourceStore:
                     "kg.board_source_store.table_missing table=cards — skipped",
                 )
             else:
-                card_columns = _table_columns(conn, "cards")
-                archived_clause = (
-                    "AND (archived = 0 OR archived IS NULL)"
-                    if "archived" in card_columns
-                    else ""
-                )
                 rows = conn.execute(
                     "SELECT * FROM cards "
-                    "WHERE board_id = ? AND status != 'cancelled' "
-                    f"{archived_clause} "
+                    "WHERE board_id = ? "
                     "ORDER BY created_at ASC, id ASC",
                     (board_id,),
                 ).fetchall()
@@ -343,14 +456,21 @@ class BoardSourceStore:
                         row,
                         CARD_CONTENT_COLUMNS,
                     )
-                    out.append({
+                    source_row = {
                         "artifact_type": artifact_type,
                         "id": row_id,
                         "source_ref": f"{artifact_type}:{row_id}",
                         "source_version": "1",
                         "content_hash": content_hash,
                         "created_at": _to_iso(row["created_at"]),
-                    })
+                        "updated_at": _updated_at(row),
+                        "status": _row_status(row),
+                        "source_artifact_status": _row_status(row),
+                        "has_minimal_evidence": _bug_has_minimal_evidence(row),
+                    }
+                    if working_ttl_days is not None:
+                        source_row["working_ttl_days"] = working_ttl_days
+                    out.append(source_row)
         finally:
             conn.close()
         return out
