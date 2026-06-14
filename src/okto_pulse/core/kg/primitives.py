@@ -49,8 +49,10 @@ from okto_pulse.core.kg.schemas import (
     BeginConsolidationResponse,
     CommitConsolidationRequest,
     CommitConsolidationResponse,
+    EdgeCandidate,
     GetSimilarNodesRequest,
     GetSimilarNodesResponse,
+    KGEdgeType,
     ProposeReconciliationRequest,
     ProposeReconciliationResponse,
     ReconciliationHint,
@@ -739,6 +741,11 @@ def _validate_kuzu_connectivity_before_commit(
         registry,
         metric_sink=_connectivity_metric_sink(),
     )
+    _auto_attach_provenance_edges(
+        kconn=kconn,
+        node_candidates=node_candidates,
+        edge_candidates=edge_candidates,
+    )
     guard_nodes: list[object] = []
     guard_edges: list[object] = list(edge_candidates.values())
     existing_refs: list[KGNodeRef] = []
@@ -846,6 +853,92 @@ def _validate_kuzu_connectivity_before_commit(
         session_id=session_id,
         details={"connectivity": response},
     )
+
+
+def _auto_attach_provenance_edges(
+    *,
+    kconn,
+    node_candidates: dict,
+    edge_candidates: dict,
+) -> None:
+    """Materialize deterministic provenance for cognitive nodes when resolvable.
+
+    Agents are intentionally not allowed to emit ``belongs_to`` edges. When a
+    cognitive candidate's source ref resolves to an existing root Entity/Bug, the
+    commit path owns that deterministic edge so the connectivity guard has a
+    valid, auditable remediation path instead of asking the agent to do something
+    the API rejects.
+    """
+    for cand_id, cand in list(node_candidates.items()):
+        if _has_outgoing_edge(edge_candidates, cand_id, "belongs_to"):
+            continue
+        source_ref = str(getattr(cand, "source_artifact_ref", "") or "")
+        if not source_ref:
+            continue
+        root = _resolve_provenance_root(kconn, source_ref)
+        if root is None:
+            continue
+        root_node_id, root_node_type = root
+        cand_node_type = _enum_value(getattr(cand, "node_type", ""))
+        if (cand_node_type, root_node_type) not in _allowed_edge_pairs("belongs_to"):
+            continue
+        edge_id = f"{cand_id}__auto_belongs_to_source_root"
+        if edge_id in edge_candidates:
+            continue
+        edge_candidates[edge_id] = EdgeCandidate(
+            candidate_id=edge_id,
+            edge_type=KGEdgeType.BELONGS_TO,
+            from_candidate_id=cand_id,
+            to_candidate_id=f"kg:{root_node_id}",
+            confidence=1.0,
+            layer="deterministic",
+            rule_id="belongs_to/auto_source_root@commit_consolidation",
+            created_by="system:commit_consolidation",
+            fallback_reason=(
+                "auto_attached_to_"
+                f"{root_node_type.lower()}_source_root"
+            ),
+        )
+
+
+def _has_outgoing_edge(edge_candidates: dict, cand_id: str, edge_type: str) -> bool:
+    for edge in edge_candidates.values():
+        if (
+            str(getattr(edge, "from_candidate_id", "")) == cand_id
+            and _enum_value(getattr(edge, "edge_type", "")) == edge_type
+        ):
+            return True
+    return False
+
+
+def _resolve_provenance_root(kconn, source_ref: str) -> tuple[str, str] | None:
+    for root_ref in _source_root_ref_candidates(source_ref):
+        for node_type in ("Entity", "Bug"):
+            node_id = _lookup_existing_node(kconn, node_type, root_ref)
+            if node_id:
+                return node_id, node_type
+    return None
+
+
+def _source_root_ref_candidates(source_ref: str) -> tuple[str, ...]:
+    parts = [part for part in source_ref.split(":") if part]
+    candidates: list[str] = []
+    if len(parts) >= 2:
+        kind = parts[0]
+        if kind in {"spec", "refinement", "ideation", "story"}:
+            candidates.append(f"{kind}:{parts[1]}")
+        elif kind == "bug":
+            candidates.append(f"bug:{parts[1]}")
+            candidates.append(f"card:{parts[1]}")
+        elif kind == "card":
+            if len(parts) >= 3 and parts[1] == "bug":
+                candidates.append(f"bug:{parts[2]}")
+                candidates.append(f"card:{parts[2]}")
+                candidates.append(f"card:bug:{parts[2]}")
+            else:
+                candidates.append(f"card:{parts[1]}")
+    candidates.append(source_ref)
+    return tuple(dict.fromkeys(candidates))
 
 
 def _validate_degraded_connectivity_before_open(
@@ -1896,7 +1989,10 @@ def _resolve_endpoint(
            Sprint→Spec / Card→Sprint hierarchy edges across sessions.
     """
     if endpoint.startswith("kg:"):
-        return endpoint[3:], None
+        node_id = endpoint[3:]
+        if kconn is not None:
+            return node_id, _lookup_node_type_by_id(kconn, node_id)
+        return node_id, None
     local = candidate_to_kuzu_id.get(endpoint)
     if local is not None:
         return local, None

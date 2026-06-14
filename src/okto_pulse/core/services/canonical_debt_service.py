@@ -344,6 +344,47 @@ async def reconcile_canonical_debt_with_evidence(
     }
 
 
+async def mark_canonical_debt_committed_for_artifact(
+    db: AsyncSession,
+    *,
+    board_id: str,
+    artifact_type: str,
+    artifact_id: str,
+    actor_id: str,
+    evidence_ref: str | None = None,
+    target_status: str = "canonical_consolidation",
+) -> dict[str, Any]:
+    """Resolve open queue-failure debts after a later successful commit.
+
+    Queue failure debts use a retry-attempt hash, not the artifact content hash,
+    so evidence-hash reconciliation cannot close them. A subsequent successful
+    consolidation for the same artifact is the deterministic terminal evidence.
+    """
+
+    now = datetime.now(timezone.utc)
+    rows = (await db.execute(
+        select(CanonicalDebt).where(
+            CanonicalDebt.board_id == board_id,
+            CanonicalDebt.artifact_type == artifact_type,
+            CanonicalDebt.artifact_id == artifact_id,
+            CanonicalDebt.target_status == target_status,
+            CanonicalDebt.canonical_state.in_(tuple(OPEN_STATES)),
+        )
+    )).scalars().all()
+    for row in rows:
+        row.canonical_state = "committed"
+        row.evidence_ref = evidence_ref
+        row.owner_agent_id = actor_id
+        row.updated_at = now
+    await db.flush()
+    summary = await summarize_canonical_debt(db, board_id)
+    return {
+        "committed_count": len(rows),
+        "open_count": summary["open_count"],
+        "evidence_ref": evidence_ref,
+    }
+
+
 __all__ = [
     "CanonicalDebtListResult",
     "OPEN_STATES",
@@ -351,6 +392,7 @@ __all__ = [
     "TERMINAL_STATES",
     "canonical_debt_to_dict",
     "list_canonical_debt",
+    "mark_canonical_debt_committed_for_artifact",
     "reconcile_canonical_debt_with_evidence",
     "schedule_canonical_debt_retry",
     "summarize_canonical_debt",

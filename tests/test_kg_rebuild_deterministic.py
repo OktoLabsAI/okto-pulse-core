@@ -332,10 +332,10 @@ def test_rebuilder_returns_deterministic_result_for_repeated_runs() -> None:
     )
 
 
-def test_rebuilder_filters_semantic_only_refinement_from_deterministic_hash() -> None:
-    """Refinement is semantic-only: it can exist in the rebuild source set
-    for cognitive pending, but it must not enter deterministic
-    materialisation/hash inputs."""
+def test_rebuilder_includes_working_artifacts_and_filters_decision_rows() -> None:
+    """Working graph artifacts are deterministic rebuild inputs. Decision
+    source rows stay excluded because they are emitted from the owning spec
+    payload and would otherwise duplicate materialization."""
 
     rebuilder = DeterministicStructuralRebuilder()
     sources = [
@@ -354,15 +354,26 @@ def test_rebuilder_filters_semantic_only_refinement_from_deterministic_hash() ->
             "source_version": "1",
             "content_hash": "task-hash",
         },
+        {
+            "artifact_type": "decision",
+            "id": "d1",
+            "source_ref": "decision:s1:idx-0-abc",
+            "source_version": "1",
+            "content_hash": "decision-hash",
+        },
     ]
 
     result = rebuilder.rebuild(board_id=BOARD, sources=sources)
-    assert result.counts["sources"] == 2
+    assert result.counts["sources"] == 3
     assert [row["artifact_type"] for row in result.inputs.sources] == [
+        "refinement",
         "spec",
         "task",
     ]
-    assert "refinement:r1" not in {
+    assert "refinement:r1" in {
+        row["source_ref"] for row in result.inputs.sources
+    }
+    assert "decision:s1:idx-0-abc" not in {
         row["source_ref"] for row in result.inputs.sources
     }
 

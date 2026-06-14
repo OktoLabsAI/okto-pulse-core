@@ -52,13 +52,15 @@ from typing import Any, Callable
 logger = logging.getLogger("okto_pulse.kg.rebuild_deterministic")
 
 
-# Deterministic rebuild inputs. Refinements and decision source rows are
-# intentionally absent: they are semantic-only cognitive sources. Decision
-# structural nodes are already emitted from the owning spec payload by the
-# existing consolidation worker, so adding decision rows here would duplicate
-# KG materialization.
+# Deterministic rebuild inputs. Decision source rows are intentionally absent:
+# they are emitted from the owning spec payload by the existing consolidation
+# worker, so adding decision rows here would duplicate KG materialization.
 DETERMINISTIC_REBUILD_ARTIFACT_TYPES: frozenset[str] = frozenset({
+    "story",
+    "ideation",
+    "refinement",
     "spec",
+    "sprint",
     "task",
     "test",
     "bug",

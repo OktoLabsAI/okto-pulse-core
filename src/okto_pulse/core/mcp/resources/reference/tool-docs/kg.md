@@ -93,6 +93,28 @@ Args:
 Returns:
     JSON with session_id, status=committed, counts, committed_at
 
+## `okto_pulse_kg_canonical_debt_list`
+
+List canonical-debt ledger rows for a board.
+
+Use this when `okto_pulse_kg_health` reports `canonical_debt.open_count > 0`
+and an agent needs to inspect which artifacts are pending, blocked, failed,
+or retry-scheduled. The tool is read-only and mirrors the REST canonical-debt
+list projection.
+
+Args:
+    board_id: Board UUID.
+    artifact_type: Optional filter such as `spec`, `task`, `test`, or `bug`.
+    state: Optional canonical_state filter such as `pending`, `failed`,
+        `blocked`, or `retry_scheduled`.
+    limit: Max rows to return (1-200, default 50).
+    offset: Skip first N rows (>=0, default 0).
+
+Returns:
+    JSON `{board_id, items, counts, total, limit, offset}`. Each item includes
+    artifact identity, source_ref, target_status, canonical_state, failure
+    reason, last_error, retry metadata, queue/DLQ refs, and evidence_ref.
+
 ## `okto_pulse_kg_dead_letter_list`
 
 List dead-lettered consolidation rows.
@@ -294,6 +316,43 @@ Args:
 Returns:
     JSON health snapshot, or {"error": "..."} on auth/not-found.
 
+## `okto_pulse_kg_orphan_report`
+
+Return a bounded safe orphan-node report for a board KG.
+
+The payload intentionally exposes safe identifiers and aggregate diagnostics
+only: board_id, generation_id, orphan counts, safe samples, unresolved reasons,
+backfill summary, and correlation_id. It does not return raw node text,
+embeddings, prompts, or payload bodies.
+
+Args:
+    board_id: Board ID.
+    generation_id: Optional KG generation id.
+    limit: Max safe sample count, clamped by the server.
+
+Returns:
+    JSON safe orphan report, or a structured graph-unavailable payload.
+
+## `okto_pulse_kg_orphan_backfill`
+
+Run explicit orphan backfill for structurally resolvable nodes.
+
+Defaults to dry_run=true. The tool refuses writes when KG Health is
+`recovery_needed` or `quarantined`, so operators use the recovery flow instead
+of mutating a degraded graph.
+
+Args:
+    board_id: Board ID.
+    generation_id: Optional KG generation id.
+    dry_run: true to preview, false to write resolvable edges.
+    node_ids: Optional multi-value node IDs as a native list, JSON array, or
+        pipe-separated string.
+    limit: Max nodes to inspect, clamped by the server.
+
+Returns:
+    JSON backfill summary with dry_run, detected, connected, unresolved,
+    ambiguous, semantic_pending, and correlation_id.
+
 ## `okto_pulse_kg_list_alternatives`
 
 List alternatives that were considered and discarded for a decision,
@@ -401,10 +460,18 @@ Args:
     max_rows: 0 = agent-safe default (50). Pass 1..1000 for an explicit
         bounded page; >1000 is rejected (max_rows_exceeds_hard_cap).
     timeout_ms: Timeout in ms (default 5000, max 30000)
+    include_working: Optional boolean. Default false enforces canonical-only
+        visibility. Pass true to query working + canonical rows during working
+        graph validation, rebuild checks, or E2E ingestion tests.
+
+Layer contract:
+    Node rows use `graph_layer` as the persisted node property. Do not query
+    `kg_layer` on nodes; `kg_layer_counts` appears only in KG health payloads.
 
 Returns:
     JSON with rows, row_count, truncated, row_bounds, sanitization,
-    execution_time_ms
+    execution_time_ms, query_state, canonical_filter_enforced,
+    working_omitted_count
 
 ## `okto_pulse_kg_query_global`
 
@@ -588,7 +655,7 @@ confirmation token. Pass the token to `okto_pulse_kg_rebuild_run`.
 
 Args:
     board_id: UUID of the board (same used in /preflight).
-    operation: Canonical operation (e.g. `'rebuild_full'`).
+    operation: Canonical operation (e.g. `'rebuild'`).
     preflight_hash: SHA-256 hex received from /preflight (64 chars).
     manifest_ref: Manifest identifier received from /preflight.
 

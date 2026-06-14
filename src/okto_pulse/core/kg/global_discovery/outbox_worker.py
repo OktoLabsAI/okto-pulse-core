@@ -285,6 +285,11 @@ class OutboxWorker:
         payload = event.payload or {}
         board_id = event.board_id
         require_global_write_token()
+        from okto_pulse.core.kg.global_discovery.schema import (
+            ensure_global_discovery_layer_schema,
+        )
+
+        ensure_global_discovery_layer_schema()
         session_id = payload.get("session_id", "") or event.session_id
         nodes_added = payload.get("nodes_added", 0)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
@@ -363,7 +368,7 @@ class OutboxWorker:
                         "MATCH (d:DecisionDigest {id: $did}) "
                         "SET d.board_id = $bid, d.original_node_id = $oid, "
                         "d.title = $title, d.one_line_summary = $summary, "
-                        "d.node_type = $ntype",
+                        "d.node_type = $ntype, d.graph_layer = $layer",
                         {
                             "did": digest_id,
                             "bid": board_id,
@@ -371,6 +376,7 @@ class OutboxWorker:
                             "title": title,
                             "summary": title[:280],
                             "ntype": node["node_type"],
+                            "layer": node["graph_layer"],
                         },
                     )
                 else:
@@ -378,7 +384,7 @@ class OutboxWorker:
                         "CREATE (d:DecisionDigest {"
                         "id: $did, board_id: $bid, original_node_id: $oid, "
                         "title: $title, one_line_summary: $summary, "
-                        "node_type: $ntype, embedding: $emb, "
+                        "node_type: $ntype, graph_layer: $layer, embedding: $emb, "
                         "created_at: timestamp($ts)})",
                         {
                             "did": digest_id,
@@ -387,6 +393,7 @@ class OutboxWorker:
                             "title": title,
                             "summary": title[:280],
                             "ntype": node["node_type"],
+                            "layer": node["graph_layer"],
                             "emb": node["embedding"],
                             "ts": ts,
                         },
@@ -474,7 +481,8 @@ class OutboxWorker:
                     cypher = (
                         f"MATCH (n:{ntype}) WHERE n.id IN $ids "
                         f"AND n.embedding IS NOT NULL "
-                        f"RETURN n.id, n.title, n.embedding"
+                        f"RETURN n.id, n.title, n.embedding, "
+                        f"coalesce(n.graph_layer, 'canonical') AS graph_layer"
                     )
                     res = conn.execute(cypher, {"ids": ids})
                     while res.has_next():
@@ -483,6 +491,7 @@ class OutboxWorker:
                             "id": row[0],
                             "title": row[1],
                             "embedding": row[2],
+                            "graph_layer": row[3],
                             "node_type": ntype,
                         })
         except Exception as exc:

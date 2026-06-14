@@ -57,9 +57,11 @@ def test_spec_to_dict_serializes_formal_decisions():
     ]
     spec = SimpleNamespace(
         id="spec-adapter",
+        board_id="board-adapter",
         title="Adapter Spec",
         description="desc",
         context="ctx",
+        status="draft",
         functional_requirements=[],
         technical_requirements=[],
         acceptance_criteria=[],
@@ -78,9 +80,11 @@ def test_spec_to_dict_serializes_formal_decisions():
 def test_card_to_dict_serializes_linked_test_task_ids():
     card = SimpleNamespace(
         id="bug-card-adapter",
+        board_id="board-adapter",
         title="Bug card",
         description="desc",
         card_type="bug",
+        status="not_started",
         spec_id="spec-adapter",
         sprint_id=None,
         origin_task_id="task-origin",
@@ -123,14 +127,21 @@ async def test_resolve_missing_links_emits_bug_covered_by_edges():
     )
     test_card = SimpleNamespace(
         id="testcard123",
+        board_id="board-kg-test",
         title="Regression test",
         description="covers the bug",
         card_type="test",
+        status="in_progress",
         spec_id="spec12345",
         test_scenario_ids=["ts-pass"],
     )
     spec = SimpleNamespace(
         id="spec12345",
+        board_id="board-kg-test",
+        title="Spec with regression scenario",
+        description="Spec context",
+        context="Context",
+        status="in_progress",
         test_scenarios=[
             {
                 "id": "ts-pass",
@@ -166,3 +177,17 @@ async def test_resolve_missing_links_emits_bug_covered_by_edges():
     node_types = {node.candidate_id: node.node_type for node in resolved.nodes}
     assert node_types["card_testcard_entity"] == "Entity"
     assert node_types["spec_spec1234_ts_0"] == "TestScenario"
+    assert node_types["spec_spec1234_entity"] == "Entity"
+    assert any(
+        edge.edge_type == "belongs_to"
+        and edge.from_candidate_id == "card_testcard_entity"
+        and edge.to_candidate_id == "board_board-kg_entity"
+        for edge in resolved.edges
+    )
+    assert any(
+        edge.edge_type == "belongs_to"
+        and edge.from_candidate_id == "spec_spec1234_ts_0"
+        and edge.to_candidate_id == "spec_spec1234_entity"
+        and edge.rule_id == f"belongs_to/bug_linked_test_scenario@{WORKER_VERSION}"
+        for edge in resolved.edges
+    )

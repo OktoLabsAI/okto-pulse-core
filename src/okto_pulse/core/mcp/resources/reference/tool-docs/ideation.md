@@ -216,6 +216,22 @@ Args:
 Returns:
     JSON with updated ideation status
 
+## `okto_pulse_set_ideation_ambiguity_gate_skip`
+
+Set the per-ideation Max ambiguity gate skip override.
+
+Use this remediation when the board-level Max ambiguity gate blocks an
+`evaluating` -> `done` transition and the user intentionally chooses to keep
+flow moving with visible risk instead of fail-close.
+
+Args:
+    board_id: Board ID.
+    ideation_id: Ideation ID.
+    skip_ambiguity_gate: Boolean override.
+
+Returns:
+    JSON with success, ideation id, status, skip flag, and updated_at.
+
 ## `okto_pulse_update_ideation`
 
 Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated.

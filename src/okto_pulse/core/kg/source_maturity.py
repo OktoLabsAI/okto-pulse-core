@@ -1,9 +1,8 @@
 """KG source maturity policy for working/canonical graph partitioning.
 
-The rebuild path consumes only canonical-eligible sources. Working sources are
-still reported in manifests and health diagnostics so agents can reconcile them
-later, but they must not be ingested into the canonical graph by deterministic
-rebuild.
+The rebuild path materializes canonical sources plus non-expired working
+sources. Canonical eligibility is still strict: immature rows carry
+``graph_layer=working`` and must not be exposed by canonical-only KG queries.
 """
 
 from __future__ import annotations
@@ -34,13 +33,14 @@ MATURITY_LEGACY_UNKNOWN = "legacy_unknown"
 
 CANONICAL_STATUS_BY_ARTIFACT_TYPE: dict[str, frozenset[str]] = {
     "refinement": frozenset({"done"}),
-    "spec": frozenset({"validated"}),
+    "spec": frozenset({"done"}),
     "task": frozenset({"done"}),
     "test": frozenset({"done"}),
     "bug": frozenset({"done"}),
 }
 
 WORKING_ARTIFACT_TYPES = frozenset({
+    "story",
     "ideation",
     "refinement",
     "spec",
@@ -51,6 +51,7 @@ WORKING_ARTIFACT_TYPES = frozenset({
 })
 
 REBUILD_ARTIFACT_TYPES: tuple[str, ...] = (
+    "story",
     "ideation",
     "refinement",
     "spec",
@@ -125,9 +126,9 @@ def classify_source_for_kg(
     """Classify one SDLC source into canonical/working/debt partitions.
 
     Strict canonical rules:
-    - ideation never enters canonical; it is working-only.
+    - story and ideation never enter canonical; they are working-only.
     - refinement enters canonical only at done.
-    - spec enters canonical only at validated.
+    - spec enters canonical only at done.
     - task/test/bug enter canonical only at done.
     - sprint remains working/diagnostic-only until deterministic rebuild
       materializes sprint sources end-to-end.
@@ -178,6 +179,15 @@ def classify_source_for_kg(
             reason_code=f"{kind}_{status}",
         )
 
+    if kind == "story":
+        return SourceMaturityClassification(
+            artifact_type=kind,
+            artifact_status=status,
+            graph_layer=GRAPH_LAYER_WORKING,
+            maturity_status=MATURITY_WORKING_IMMATURE,
+            disposition=DISPOSITION_WORKING,
+            reason_code="story_never_canonical",
+        )
     if kind == "bug" and status == "done" and not has_minimal_evidence:
         return SourceMaturityClassification(
             artifact_type=kind,
@@ -194,7 +204,7 @@ def classify_source_for_kg(
             graph_layer=GRAPH_LAYER_WORKING,
             maturity_status=MATURITY_WORKING_IMMATURE,
             disposition=DISPOSITION_SKIPPED_BY_MATURITY,
-            reason_code="sprint_not_canonical_rebuild_unsupported",
+            reason_code="sprint_not_canonical",
         )
 
     canonical_statuses = CANONICAL_STATUS_BY_ARTIFACT_TYPE.get(kind, frozenset())

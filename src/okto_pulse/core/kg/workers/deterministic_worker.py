@@ -32,6 +32,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.kg.source_maturity import (
+    GRAPH_LAYER_CANONICAL,
+    GRAPH_LAYER_NONE,
+    GRAPH_LAYER_WORKING,
+    MATURITY_CANONICAL_ELIGIBLE,
+    classify_source_for_kg,
+)
+
 logger = logging.getLogger("okto_pulse.kg.deterministic_worker")
 
 # Package version exposed in edge.rule_id so consumers can audit which worker
@@ -58,6 +66,8 @@ class EmittedNode:
     source_artifact_ref: str
     source_confidence: float = 1.0
     context: str = ""
+    graph_layer: str = GRAPH_LAYER_CANONICAL
+    maturity_status: str = MATURITY_CANONICAL_ELIGIBLE
     # v0.3.1: additive score boost resolved from the source card's priority.
     # Non-zero only on the root node emitted from a Card — belongs_to child
     # nodes (FR/TR/AC per Spec) stay at 0.0. Cap +0.2 (CRITICAL).
@@ -252,6 +262,48 @@ def _append_board_root(result: WorkerResult, board_id: str | None) -> str | None
             source_confidence=1.0,
         ))
     return candidate_id
+
+
+def _layer_attrs_for_artifact(
+    artifact_type: str,
+    status: Any,
+    *,
+    has_minimal_evidence: bool = True,
+) -> tuple[str, str]:
+    classification = classify_source_for_kg(
+        artifact_type=artifact_type,
+        artifact_status=status,
+        content_hash="deterministic-worker",
+        has_minimal_evidence=has_minimal_evidence,
+    )
+    graph_layer = classification.graph_layer
+    if graph_layer == GRAPH_LAYER_NONE:
+        graph_layer = GRAPH_LAYER_WORKING
+    return graph_layer, classification.maturity_status
+
+
+def _card_source_artifact_type(card_type: Any) -> str:
+    normalized = str(card_type or "normal").lower()
+    if normalized == "test":
+        return "test"
+    if normalized == "bug":
+        return "bug"
+    return "task"
+
+
+def _apply_layer_to_result(
+    result: WorkerResult,
+    *,
+    graph_layer: str,
+    maturity_status: str,
+) -> None:
+    for node in result.nodes:
+        if node.source_artifact_ref == "tech_entities.yml":
+            continue
+        if node.source_artifact_ref.startswith("board:"):
+            continue
+        node.graph_layer = graph_layer
+        node.maturity_status = maturity_status
 
 
 def _attach_to_board_root(
@@ -1069,6 +1121,15 @@ class DeterministicWorker:
         result.raw_content = raw
         result.content_hash = _sha256(raw)
 
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "spec",
+            spec.get("status"),
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
         logger.info(
             "deterministic_worker.spec_processed spec=%s nodes=%d edges=%d "
             "missing=%d det_ratio=%.2f",
@@ -1129,6 +1190,15 @@ class DeterministicWorker:
         raw = "\n---\n".join(p for p in raw_parts if p)
         result.raw_content = raw
         result.content_hash = _sha256(raw)
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "story",
+            story.get("status"),
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
         logger.info(
             "deterministic_worker.story_processed story=%s nodes=%d edges=%d",
             sid, len(result.nodes), len(result.edges),
@@ -1196,6 +1266,15 @@ class DeterministicWorker:
         raw = "\n---\n".join(p for p in raw_parts if p and p not in ("{}", "[]"))
         result.raw_content = raw
         result.content_hash = _sha256(raw)
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "ideation",
+            ideation.get("status"),
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
         logger.info(
             "deterministic_worker.ideation_processed ideation=%s nodes=%d edges=%d",
             iid, len(result.nodes), len(result.edges),
@@ -1261,6 +1340,15 @@ class DeterministicWorker:
         raw = "\n---\n".join(p for p in raw_parts if p and p not in ("[]",))
         result.raw_content = raw
         result.content_hash = _sha256(raw)
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "refinement",
+            refinement.get("status"),
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
         logger.info(
             "deterministic_worker.refinement_processed refinement=%s nodes=%d edges=%d",
             rid, len(result.nodes), len(result.edges),
@@ -1359,6 +1447,15 @@ class DeterministicWorker:
         raw = "\n---\n".join(p for p in raw_parts if p)
         result.raw_content = raw
         result.content_hash = _sha256(raw)
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "sprint",
+            sprint.get("status"),
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
         logger.info(
             "deterministic_worker.sprint_processed sprint=%s nodes=%d edges=%d",
             sid, len(result.nodes), len(result.edges),
@@ -1515,6 +1612,16 @@ class DeterministicWorker:
         raw = "\n---\n".join(p for p in raw_parts if p)
         result.raw_content = raw
         result.content_hash = _sha256(raw)
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            _card_source_artifact_type(card_type),
+            card.get("status"),
+            has_minimal_evidence=bool(card.get("has_minimal_evidence", True)),
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
         logger.info(
             "deterministic_worker.card_processed card=%s type=%s nodes=%d missing=%d",
             cid, card_type, len(result.nodes), len(result.missing_link_candidates),

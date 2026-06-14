@@ -8,6 +8,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-06-13
+
+### Added
+
+- KG working/canonical graph partitioning with source-maturity classification.
+- CanonicalDebt ledger and reprocessable retry contracts for failed or deferred canonical promotion.
+- Layer-aware rebuild/preflight diagnostics and canonical-only query defaults with explicit working-result opt-in.
+
+### Changed
+
+- KG Health reports canonical-debt diagnostics separately from cognitive-consolidation pending work.
+- Rebuild source manifests distinguish maturity skips from cancellation skips.
+
 ## [0.2.3] - 2026-06-10
 
 The largest release since the governed-SDLC + Knowledge Graph cut in 0.2.0. Scope is taken from the **53 finalized specs on the Okto Pulse 0.2.3 board** (the platform dogfooded its own SDLC), landing **64 new core modules** across eight subsystems. The throughline is making the embedded Knowledge Graph survivable under real concurrency and rebuildable from canonical sources, while the SDLC layer gained governance context-guards, a bug-regression workflow, structured spec-entity editing, and a token-budget/projection layer for agents.

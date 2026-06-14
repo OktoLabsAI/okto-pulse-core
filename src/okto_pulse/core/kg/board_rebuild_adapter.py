@@ -47,12 +47,19 @@ logger = logging.getLogger("okto_pulse.kg.board_rebuild_adapter")
 
 
 # Source artifact types that get deterministic rebuild ingestion.
-# Refinement and decision are intentionally excluded here: they are
-# semantic-only cognitive debt. Decision nodes are materialized through the
-# owning spec payload. task/test/bug are card-derived source types and are
+# Decision rows are intentionally excluded here: they are materialized through
+# the owning spec payload. task/test/bug are card-derived source types and are
 # mapped to the worker's legacy ``card`` artifact_type in ConsolidationQueue.
 _DETERMINISTIC_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset({
-    "spec", "task", "test", "bug", "card",
+    "story",
+    "ideation",
+    "refinement",
+    "spec",
+    "sprint",
+    "task",
+    "test",
+    "bug",
+    "card",
 })
 _CARD_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset({
     "task", "test", "bug", "card",

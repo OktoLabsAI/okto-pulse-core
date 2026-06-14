@@ -21,7 +21,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from okto_pulse.core.kg.kg_service import KGToolError, get_kg_service
+from okto_pulse.core.kg.kg_service import (
+    KGToolError,
+    get_kg_service,
+    normalize_graph_layer,
+)
 from okto_pulse.core.kg.tier_power import (
     TierPowerError,
     execute_cypher_read_only,
@@ -141,10 +145,12 @@ async def list_nodes(
     min_relevance: float = Query(0.0, ge=0.0),
     limit: int = Query(50, ge=1, le=200),
     cursor: str = "",
+    graph_layer: str = "canonical",
 ):
     """List KG nodes with filters and cursor pagination."""
     svc = get_kg_service()
     try:
+        layer = normalize_graph_layer(graph_layer)
         rows = svc.get_all_nodes(
             board_id,
             min_confidence=min_confidence,
@@ -152,18 +158,21 @@ async def list_nodes(
             max_rows=limit,
             cursor=cursor or None,
             node_type=type or None,
+            graph_layer=layer,
         )
         total_hint = svc.count_all_nodes(
             board_id,
             min_confidence=min_confidence,
             min_relevance=min_relevance,
             node_type=type or None,
+            graph_layer=layer,
         )
         return {
             "nodes": rows,
             "next_cursor": _next_cursor_for(rows, limit),
             "total_hint": total_hint,
             "page_count": len(rows),
+            "graph_layer": layer,
         }
     except ValueError as exc:
         return _problem(
@@ -200,6 +209,7 @@ async def get_subgraph(
     cursor: str = "",
     min_relevance: float = Query(0.0, ge=0.0),
     type: str = "",
+    graph_layer: str = "canonical",
 ):
     """Return subgraph for visualization — Spec 8 / S1.1, S1.4, S1.5.
 
@@ -225,6 +235,7 @@ async def get_subgraph(
 
     svc = get_kg_service()
     try:
+        layer = normalize_graph_layer(graph_layer)
         if center:
             rows = svc.get_related_context(board_id, center, max_rows=limit)
             next_cursor: str | None = None
@@ -237,6 +248,7 @@ async def get_subgraph(
                     max_rows=limit,
                     cursor=cursor or None,
                     node_type=type or None,
+                    graph_layer=layer,
                 )
             except ValueError as exc:
                 return _problem(
@@ -258,6 +270,7 @@ async def get_subgraph(
                 "depth": depth,
                 "truncated": len(rows) >= limit,
                 "min_relevance": min_relevance,
+                "graph_layer": layer,
                 **edge_metadata,
             },
         }
@@ -508,16 +521,19 @@ async def find_contradictions(
 async def get_stats(
     board_id: str,
     min_relevance: float = Query(0.0, ge=0.0),
+    graph_layer: str = "canonical",
 ):
     """Board KG stats: counts, confidence, pending."""
     svc = get_kg_service()
     try:
+        layer = normalize_graph_layer(graph_layer)
         ver = svc.get_schema_version(board_id)
         all_nodes = svc.get_all_nodes(
             board_id,
             min_confidence=0.0,
             min_relevance=min_relevance,
             max_rows=1000,
+            graph_layer=layer,
         )
         from okto_pulse.core.kg.schema import NODE_TYPES
 
@@ -527,6 +543,7 @@ async def get_stats(
                 min_confidence=0.0,
                 min_relevance=min_relevance,
                 node_type=node_type,
+                graph_layer=layer,
             )
             for node_type in NODE_TYPES
         }
@@ -548,6 +565,7 @@ async def get_stats(
             "pending_queue_count": 0,
             "last_consolidation_at": None,
             "min_relevance": min_relevance,
+            "graph_layer": layer,
             **edge_metadata,
         }
     except KGToolError as e:
@@ -745,6 +763,7 @@ async def global_search(
     q: str = "",
     limit: int = Query(20, ge=1, le=100),
     min_similarity: float = Query(0.3, ge=0.0, le=1.0),
+    graph_layer: str = "canonical",
     db: AsyncSession = Depends(get_db),
 ):
     """Cross-board global discovery search.
@@ -763,8 +782,15 @@ async def global_search(
 
     svc = get_kg_service()
     try:
-        results = svc.query_global(q, user_boards=user_board_ids, top_k=limit)
-        return {"results": results, "total": len(results)}
+        layer = normalize_graph_layer(graph_layer)
+        results = svc.query_global(
+            q,
+            user_boards=user_board_ids,
+            top_k=limit,
+            min_similarity=min_similarity,
+            graph_layer=layer,
+        )
+        return {"results": results, "total": len(results), "graph_layer": layer}
     except KGToolError as e:
         return _handle_kg_error(e)
 

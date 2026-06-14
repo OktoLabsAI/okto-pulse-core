@@ -184,6 +184,25 @@ Args:
 Returns:
     JSON with list of validation entries
 
+## `okto_pulse_resolve_bug_regression_scenarios`
+
+Preview reusable regression scenarios for a bug without mutating a locked spec.
+
+Use this before creating or linking a post-bug regression test. It classifies
+eligible same-spec scenarios and rejects unrelated or cross-spec candidates so
+agents can choose reuse versus amendment/hotfix work explicitly.
+
+Args:
+    board_id: Board ID.
+    bug_id: Bug card ID.
+    affected_task_ids: Optional multi-value task IDs when the incident spans
+        additional implementation tasks.
+    candidate_scenario_ids: Optional multi-value scenario IDs to classify.
+
+Returns:
+    JSON preview with eligible candidates, rejected candidates, and semantic-gap
+    guidance. The tool is read-only.
+
 ## `okto_pulse_mark_as_seen`
 
 Mark one or more items as seen so they won't appear in list_my_mentions.

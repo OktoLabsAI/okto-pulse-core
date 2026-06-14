@@ -145,6 +145,58 @@ def _seed_bug_with_parent(board_id: str) -> str:
     return bug_id
 
 
+def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str]:
+    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.transaction import TransactionOrchestrator
+
+    root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
+    decision_id = f"decision_seed_{uuid.uuid4().hex[:12]}"
+    with open_board_connection(board_id) as (_db, kconn):
+        orch = TransactionOrchestrator(
+            kuzu_conn=kconn,
+            sqlite_session=None,
+            session_id=f"seed_{uuid.uuid4().hex[:8]}",
+            board_id=board_id,
+        )
+        _seed_node(kconn, orch, "Entity", root_id, spec_ref)
+        _seed_node(kconn, orch, "Decision", decision_id, f"{spec_ref}:decision:seed")
+        orch.create_edge(
+            edge_type="belongs_to",
+            from_id=decision_id,
+            to_id=root_id,
+            attrs={"confidence": 1.0},
+            from_type="Decision",
+            to_type="Entity",
+        )
+    return root_id, decision_id
+
+
+def _count_decision_belongs_to_root(
+    board_id: str,
+    *,
+    decision_source_ref: str,
+    root_id: str,
+) -> int:
+    from okto_pulse.core.kg.schema import open_board_connection
+
+    with open_board_connection(board_id) as (_db, kconn):
+        res = kconn.execute(
+            "MATCH (n:Decision)-[r:belongs_to]->(m:Entity) "
+            "WHERE n.source_artifact_ref = $ref AND m.id = $root_id "
+            "RETURN count(r)",
+            {"ref": decision_source_ref, "root_id": root_id},
+        )
+        try:
+            if res.has_next():
+                return int(res.get_next()[0])
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    return 0
+
+
 def _count_learning_validates_bug(
     board_id: str,
     *,
@@ -410,4 +462,83 @@ async def test_bug_derived_learning_validates_existing_bug_is_connected(
         board_id,
         learning_source_ref=source_ref,
         bug_id=bug_id,
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_commit_auto_attaches_cognitive_decision_to_source_root(
+    board_id,
+    agent_id,
+    db_factory,
+    board_handle,
+):
+    spec_id = f"spec-{uuid.uuid4()}"
+    spec_ref = f"spec:{spec_id}"
+    root_id, existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
+    decision_source_ref = f"{spec_ref}:decision:e2e"
+
+    async with db_factory() as db:
+        begin = await begin_consolidation(
+            BeginConsolidationRequest(
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=spec_id,
+                raw_content="decision auto provenance",
+            ),
+            agent_id=agent_id,
+            db=db,
+        )
+
+    from okto_pulse.core.kg.primitives import add_node_candidate
+    from okto_pulse.core.kg.schemas import AddNodeCandidateRequest
+
+    await add_node_candidate(
+        AddNodeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=NodeCandidate(
+                candidate_id="decision_auto_root",
+                node_type=KGNodeType.DECISION,
+                title="Auto root decision",
+                source_artifact_ref=decision_source_ref,
+                source_confidence=0.9,
+            ),
+        ),
+        agent_id=agent_id,
+    )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id="decision_depends_on_existing",
+                edge_type=KGEdgeType.DEPENDS_ON,
+                from_candidate_id="decision_auto_root",
+                to_candidate_id=f"kg:{existing_decision_id}",
+                confidence=0.8,
+                layer="cognitive",
+                rule_id="test/depends_on_existing",
+            ),
+        ),
+        agent_id=agent_id,
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id=agent_id,
+        db=None,
+        force_reprocess=True,
+    )
+
+    async with db_factory() as db:
+        commit = await commit_consolidation(
+            CommitConsolidationRequest(session_id=begin.session_id),
+            agent_id=agent_id,
+            db=db,
+        )
+
+    assert commit.connectivity["passed"] is True
+    assert commit.nodes_added == 1
+    assert commit.edges_added == 2
+    assert _count_decision_belongs_to_root(
+        board_id,
+        decision_source_ref=decision_source_ref,
+        root_id=root_id,
     ) == 1

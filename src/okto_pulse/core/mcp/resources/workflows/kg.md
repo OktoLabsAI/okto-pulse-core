@@ -101,11 +101,13 @@ version: "1.0"
 
 | Tool | Args | Purpose |
 |------|------|---------|
-| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms? | Read-only Cypher directly on LadybugDB |
+| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms?, include_working? | Read-only Cypher directly on LadybugDB. Defaults to canonical-only rows; pass `include_working=true` when validating working graph ingestion. |
 | `okto_pulse_kg_query_natural` | board_id, nl_query, limit?, min_confidence? | Natural language search via embedding + HNSW |
 | `okto_pulse_kg_schema_info` | board_id?, include_internal? | Schema introspection: node types, rel types, vector indexes |
 
 **Safety rails:** Timeout: 5s default, 30s max. Max rows: 1000 default, 10000 max. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
+
+**Layer contract:** Graph nodes expose `graph_layer` (`canonical` or `working`). `kg_layer_counts` is a health payload aggregate, not a node property. `okto_pulse_kg_query_cypher` enforces canonical-only visibility by default and should be called with `include_working=true` for working graph checks, rebuild validation, or E2E ingestion tests.
 
 ### Cypher Hit-Counting & RETURN Contract
 
@@ -126,7 +128,7 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 
 | Trigger | Pattern |
 |---|---|
-| Spec reaches `approved`, `validated`, or `done` | Begin consolidation on the spec: extract Decision + Criterion + Constraint + Assumption + Alternative nodes |
+| Spec reaches `done` | Begin canonical consolidation on the spec: extract Decision + Criterion + Constraint + Assumption + Alternative nodes. `approved` and `validated` remain working/diagnostic only. |
 | Sprint closes (moves to `closed`) | Consolidate retrospective Learnings + Bugs + Learning→validates→Bug edges |
 | Q&A on an ideation/refinement/spec gets an answer that contains a decision | Carry decision into next formalized spec first, then consolidate from that spec-side formalization |
 | Bug card moves to `done` with root cause + fix narrative | Consolidate a Learning node that validates the Bug node |

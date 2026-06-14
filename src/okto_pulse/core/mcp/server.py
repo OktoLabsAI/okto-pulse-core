@@ -12749,6 +12749,58 @@ okto-pulse://reference/tool-docs/kg."""
     return json.dumps(data, default=str)
 
 
+@mcp.tool()
+async def okto_pulse_kg_canonical_debt_list(
+    board_id: str,
+    artifact_type: str | None = None,
+    state: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """
+    List canonical-debt ledger rows for KG health drill-down.
+
+    Use this when `okto_pulse_kg_health` reports `canonical_debt.open_count`
+    and you need to inspect which artifacts are pending, blocked, failed, or
+    retry-scheduled before deciding whether a rebuild or retry is appropriate.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    try:
+        bounded_limit = max(1, min(int(limit), 200))
+        bounded_offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        return json.dumps({
+            "error": "invalid_pagination",
+            "detail": "limit and offset must be integers",
+        })
+
+    from okto_pulse.core.services.canonical_debt_service import (
+        list_canonical_debt,
+    )
+
+    async with get_db_for_mcp() as db:
+        result = await list_canonical_debt(
+            db,
+            board_id=board_id,
+            artifact_type=artifact_type or None,
+            state=state or None,
+            limit=bounded_limit,
+            offset=bounded_offset,
+        )
+
+    return json.dumps({
+        "board_id": board_id,
+        "items": result.items,
+        "counts": result.counts,
+        "total": result.total,
+        "limit": bounded_limit,
+        "offset": bounded_offset,
+    }, default=str)
+
+
 # ============================================================================
 # KG ORPHAN INTEGRITY (spec KG-ZO-02 — FR6/TR4)
 # ============================================================================
@@ -13330,7 +13382,7 @@ async def okto_pulse_kg_rebuild_confirm(
 
     Parâmetros:
         board_id       — UUID do board (mesmo usado em /preflight)
-        operation      — operação canônica (ex: 'rebuild_full')
+        operation      — operação canônica (ex: 'rebuild')
         preflight_hash — SHA-256 hex recebido de /preflight (64 chars)
         manifest_ref   — identificador do manifesto recebido de /preflight
     """
@@ -13512,7 +13564,7 @@ async def okto_pulse_kg_rebuild_run(
         m = manifest_store_obj.load(req.manifest_ref)
         if m is None:
             return ()
-        return tuple(row.to_dict() for row in m.sources)
+        return tuple(row.to_dict() for row in m.materializable_sources)
 
     _step_adapter_with_sources = ingestion.build_step_adapter(
         source_resolver=_step_source_resolver,
@@ -13526,7 +13578,7 @@ async def okto_pulse_kg_rebuild_run(
         m = manifest_store_obj.load(event_payload.get("manifest_ref", ""))
         if m is None:
             return ()
-        return tuple(row.to_dict() for row in m.sources)
+        return tuple(row.to_dict() for row in m.materializable_sources)
 
     event_handler = build_kg_rebuilt_event_handler(
         publisher=event_publisher,

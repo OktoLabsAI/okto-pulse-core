@@ -337,14 +337,14 @@ def test_stress_evidence_counter_carries_required_labels(tmp_path: Path):
 def test_prepare_happy_path_writes_manifest(tmp_path: Path):
     service = KGStorageBackendContingency(
         base_dir=tmp_path,
-        boot_software_version="0.2.3",
+        boot_software_version="0.2.5",
         allow_unverified_quarantine_ids=True,
     )
     response = service.prepare(
         board_id="b1",
         corruption_timeline_ref="/snapshots/timeline-42",
         quarantine_ids=["q_abc", "q_def"],
-        software_version="0.2.3",
+        software_version="0.2.5",
     )
     assert response.ready_for_upstream_issue is True
     assert response.ready_for_hot_swap_decision is True
@@ -355,13 +355,13 @@ def test_prepare_happy_path_writes_manifest(tmp_path: Path):
     body = json.loads(manifest_path.read_text())
     assert body["board_id"] == "b1"
     assert body["quarantine_ids"] == ["q_abc", "q_def"]
-    assert body["software_version"] == "0.2.3"
+    assert body["software_version"] == "0.2.5"
 
 
 def test_prepare_with_stale_version_blocks_hot_swap(tmp_path: Path):
     service = KGStorageBackendContingency(
         base_dir=tmp_path,
-        boot_software_version="0.2.3",
+        boot_software_version="0.2.5",
         allow_unverified_quarantine_ids=True,
     )
     response = service.prepare(
@@ -377,7 +377,7 @@ def test_prepare_with_stale_version_blocks_hot_swap(tmp_path: Path):
 def test_prepare_missing_quarantine_raises(tmp_path: Path):
     service = KGStorageBackendContingency(
         base_dir=tmp_path,
-        boot_software_version="0.2.3",
+        boot_software_version="0.2.5",
         allow_unverified_quarantine_ids=True,
     )
     with pytest.raises(ContingencyError) as excinfo:
@@ -385,7 +385,7 @@ def test_prepare_missing_quarantine_raises(tmp_path: Path):
             board_id="b1",
             corruption_timeline_ref="/snapshots/x",
             quarantine_ids=[],
-            software_version="0.2.3",
+            software_version="0.2.5",
         )
     assert excinfo.value.code is ContingencyErrorCode.MISSING_QUARANTINE_EVIDENCE
 
@@ -393,7 +393,7 @@ def test_prepare_missing_quarantine_raises(tmp_path: Path):
 def test_prepare_empty_timeline_ref_raises(tmp_path: Path):
     service = KGStorageBackendContingency(
         base_dir=tmp_path,
-        boot_software_version="0.2.3",
+        boot_software_version="0.2.5",
         allow_unverified_quarantine_ids=True,
     )
     with pytest.raises(ContingencyError) as excinfo:
@@ -401,7 +401,7 @@ def test_prepare_empty_timeline_ref_raises(tmp_path: Path):
             board_id="b1",
             corruption_timeline_ref="",
             quarantine_ids=["q1"],
-            software_version="0.2.3",
+            software_version="0.2.5",
         )
     assert excinfo.value.code is ContingencyErrorCode.TIMELINE_UNAVAILABLE
 
@@ -417,7 +417,7 @@ def test_prepare_resolver_blocks_when_manifest_missing(tmp_path: Path):
 
     service = KGStorageBackendContingency(
         base_dir=tmp_path,
-        boot_software_version="0.2.3",
+        boot_software_version="0.2.5",
         quarantine_resolver=resolver,
     )
     with pytest.raises(ContingencyError) as excinfo:
@@ -425,7 +425,7 @@ def test_prepare_resolver_blocks_when_manifest_missing(tmp_path: Path):
             board_id="b1",
             corruption_timeline_ref="/x",
             quarantine_ids=["q_existing", "q_missing"],
-            software_version="0.2.3",
+            software_version="0.2.5",
         )
     assert excinfo.value.code is ContingencyErrorCode.MISSING_QUARANTINE_EVIDENCE
 
@@ -437,14 +437,14 @@ def test_contingency_counter_carries_required_or_labels(tmp_path: Path):
 
     service = KGStorageBackendContingency(
         base_dir=tmp_path,
-        boot_software_version="0.2.3",
+        boot_software_version="0.2.5",
         allow_unverified_quarantine_ids=True,
     )
     service.prepare(
         board_id="b1",
         corruption_timeline_ref="/x",
         quarantine_ids=["q1"],
-        software_version="0.2.3",
+        software_version="0.2.5",
     )
     samples = get_contingency_samples()
     keys = {(s["board_id"], s["outcome"]) for s in samples}
@@ -564,7 +564,7 @@ def test_contingency_rejects_construction_without_resolver_or_flag(tmp_path: Pat
     default. Construction needs an explicit knob."""
     with pytest.raises(ValueError) as excinfo:
         KGStorageBackendContingency(
-            base_dir=tmp_path, boot_software_version="0.2.3"
+            base_dir=tmp_path, boot_software_version="0.2.5"
         )
     assert "quarantine_resolver" in str(excinfo.value)
 
@@ -574,7 +574,7 @@ def test_contingency_with_explicit_allow_flag_constructs_for_tests(tmp_path: Pat
     bypassing manifest verification on purpose."""
     service = KGStorageBackendContingency(
         base_dir=tmp_path,
-        boot_software_version="0.2.3",
+        boot_software_version="0.2.5",
         allow_unverified_quarantine_ids=True,
     )
     assert service is not None

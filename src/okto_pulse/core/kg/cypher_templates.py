@@ -174,9 +174,11 @@ GET_ALL_NODES = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND ($graph_layer = 'all' OR coalesce(n.graph_layer, 'canonical') = $graph_layer)
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
-       n.source_artifact_ref
+       n.source_artifact_ref, coalesce(n.graph_layer, 'canonical') AS graph_layer,
+       n.maturity_status
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -185,10 +187,12 @@ GET_ALL_NODES_BY_TYPE = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND ($graph_layer = 'all' OR coalesce(n.graph_layer, 'canonical') = $graph_layer)
   AND label(n) = $node_type
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
-       n.source_artifact_ref
+       n.source_artifact_ref, coalesce(n.graph_layer, 'canonical') AS graph_layer,
+       n.maturity_status
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -201,11 +205,13 @@ GET_ALL_NODES_AFTER_CURSOR = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND ($graph_layer = 'all' OR coalesce(n.graph_layer, 'canonical') = $graph_layer)
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
-       n.source_artifact_ref
+       n.source_artifact_ref, coalesce(n.graph_layer, 'canonical') AS graph_layer,
+       n.maturity_status
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -214,12 +220,14 @@ GET_ALL_NODES_BY_TYPE_AFTER_CURSOR = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND ($graph_layer = 'all' OR coalesce(n.graph_layer, 'canonical') = $graph_layer)
   AND label(n) = $node_type
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
-       n.source_artifact_ref
+       n.source_artifact_ref, coalesce(n.graph_layer, 'canonical') AS graph_layer,
+       n.maturity_status
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -228,6 +236,7 @@ COUNT_ALL_NODES = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND ($graph_layer = 'all' OR coalesce(n.graph_layer, 'canonical') = $graph_layer)
 RETURN count(n)
 """
 
@@ -235,6 +244,7 @@ COUNT_ALL_NODES_BY_TYPE = """
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND ($graph_layer = 'all' OR coalesce(n.graph_layer, 'canonical') = $graph_layer)
   AND label(n) = $node_type
 RETURN count(n)
 """

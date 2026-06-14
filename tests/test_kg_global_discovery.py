@@ -60,7 +60,20 @@ class TestGlobalSchema:
         del conn
 
     def test_schema_version(self):
-        assert GLOBAL_SCHEMA_VERSION == "0.1.0"
+        assert GLOBAL_SCHEMA_VERSION == "0.1.1"
+
+    def test_decision_digest_carries_graph_layer(self):
+        db, conn = open_global_connection()
+        r = conn.execute("CALL TABLE_INFO('DecisionDigest') RETURN *")
+        columns = set()
+        while r.has_next():
+            row = r.get_next()
+            for cell in row:
+                if isinstance(cell, str):
+                    columns.add(cell)
+                    break
+        assert "graph_layer" in columns
+        del conn
 
     def test_corrupt_global_discovery_wal_is_preserved_and_blocks_rebootstrap(self, monkeypatch, tmp_path):
         from okto_pulse.core.kg import schema as kg_schema

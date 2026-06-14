@@ -238,6 +238,31 @@ class KGToolError(Exception):
         return f"KGToolError({self.code}): {self.message}"
 
 
+GRAPH_LAYER_CANONICAL = "canonical"
+GRAPH_LAYER_WORKING = "working"
+GRAPH_LAYER_ALL = "all"
+GRAPH_LAYER_CHOICES = {
+    GRAPH_LAYER_CANONICAL,
+    GRAPH_LAYER_WORKING,
+    GRAPH_LAYER_ALL,
+}
+
+
+def normalize_graph_layer(graph_layer: str | None) -> str:
+    """Normalize graph-layer query mode for per-board and global KG reads."""
+    value = (graph_layer or GRAPH_LAYER_CANONICAL).strip().lower()
+    if value not in GRAPH_LAYER_CHOICES:
+        raise KGToolError(
+            code="invalid_param",
+            message=(
+                "graph_layer must be one of "
+                "'canonical', 'working', or 'all'"
+            ),
+            details={"graph_layer": graph_layer},
+        )
+    return value
+
+
 # Ranking weights (FR-5): configurable, defaults sum to 1.0.
 @dataclass
 class RankingWeights:
@@ -622,6 +647,7 @@ class KGService:
         cursor: str | None = None,
         min_relevance: float | None = None,
         node_type: str | None = None,
+        graph_layer: str = GRAPH_LAYER_CANONICAL,
     ) -> list[dict]:
         """Return nodes ordered ``(created_at DESC, id DESC)`` — Spec 8 / S1.3.
 
@@ -631,11 +657,13 @@ class KGService:
         """
         from okto_pulse.core.kg.schema import open_board_connection
 
+        layer = normalize_graph_layer(graph_layer)
         f = _filters(min_confidence, max_rows, min_relevance, self.defaults)
         params: dict = {
             "min_confidence": f.min_confidence,
             "max_rows": f.max_rows,
             "min_relevance": f.min_relevance,
+            "graph_layer": layer,
         }
         if node_type:
             params["node_type"] = node_type
@@ -672,6 +700,8 @@ class KGService:
                 "created_at": r[4], "source_confidence": r[5],
                 "relevance_score": r[6] if r[6] is not None else 0.5,
                 "source_artifact_ref": r[7],
+                "graph_layer": r[8] if len(r) > 8 and r[8] else GRAPH_LAYER_CANONICAL,
+                "maturity_status": r[9] if len(r) > 9 else None,
             }
             for r in rows
         ]
@@ -683,6 +713,7 @@ class KGService:
         min_confidence: float = 0.0,
         min_relevance: float | None = None,
         node_type: str | None = None,
+        graph_layer: str = GRAPH_LAYER_CANONICAL,
     ) -> int:
         """Count nodes matching the same filters as ``get_all_nodes``.
 
@@ -691,10 +722,12 @@ class KGService:
         """
         from okto_pulse.core.kg.schema import open_board_connection
 
+        layer = normalize_graph_layer(graph_layer)
         f = _filters(min_confidence, None, min_relevance, self.defaults)
         params: dict = {
             "min_confidence": f.min_confidence,
             "min_relevance": f.min_relevance,
+            "graph_layer": layer,
         }
         if node_type:
             params["node_type"] = node_type
@@ -1113,6 +1146,7 @@ class KGService:
         user_boards: list[str] | None = None,
         top_k: int = 10,
         min_similarity: float = 0.3,
+        graph_layer: str = GRAPH_LAYER_CANONICAL,
     ) -> list[dict]:
         """Cross-board discovery via the global discovery meta-graph.
 
@@ -1127,9 +1161,25 @@ class KGService:
         if not user_boards:
             return []
 
+        layer = normalize_graph_layer(graph_layer)
         embedder = get_kg_registry().embedding_provider
         query_vec = embedder.encode(nl_query)
         scope = list(user_boards)
+        search_k = top_k if layer == GRAPH_LAYER_ALL else max(top_k, min(top_k * 5, 500))
+
+        try:
+            from okto_pulse.core.kg.global_discovery.schema import (
+                ensure_global_discovery_layer_schema,
+            )
+            from okto_pulse.core.kg.write_barrier import under_global_safe_write
+
+            with under_global_safe_write(
+                "kg-query-global-layer-schema",
+                "query_global.layer_schema_migrate",
+            ):
+                ensure_global_discovery_layer_schema()
+        except Exception as exc:
+            logger.debug("kg.query_global.layer_schema_migrate_failed err=%s", exc)
 
         results: list[dict] = []
         try:
@@ -1140,21 +1190,29 @@ class KGService:
                 # CONTAINS_DECISION so we can filter to the caller's scope.
                 cypher = (
                     "CALL QUERY_VECTOR_INDEX("
-                    "'DecisionDigest', 'digest_embedding_idx', $vec, $k) "
+                    "'DecisionDigest', 'digest_embedding_idx', $vec, $search_k) "
                     "WITH node, distance "
                     "MATCH (b:Board)-[:CONTAINS_DECISION]->(node) "
                     "WHERE b.board_id IN $boards "
+                    "AND ($graph_layer = 'all' OR coalesce(node.graph_layer, 'canonical') = $graph_layer) "
                     "RETURN b.board_id, node.id, node.original_node_id, "
-                    "node.title, node.one_line_summary, node.node_type, distance "
+                    "node.title, node.one_line_summary, node.node_type, "
+                    "coalesce(node.graph_layer, 'canonical') AS graph_layer, distance "
                     "ORDER BY distance ASC LIMIT $k"
                 )
                 res = conn.execute(
                     cypher,
-                    {"vec": query_vec, "k": top_k, "boards": scope},
+                    {
+                        "vec": query_vec,
+                        "search_k": search_k,
+                        "k": top_k,
+                        "boards": scope,
+                        "graph_layer": layer,
+                    },
                 )
                 while res.has_next():
                     row = res.get_next()
-                    dist = float(row[6])
+                    dist = float(row[7])
                     sim = max(0.0, min(1.0, 1.0 - dist))
                     if sim < min_similarity:
                         continue
@@ -1165,6 +1223,7 @@ class KGService:
                         "title": row[3],
                         "summary": row[4],
                         "node_type": row[5],
+                        "graph_layer": row[6],
                         "similarity": sim,
                     })
             finally:
@@ -1195,16 +1254,18 @@ class KGService:
                 cypher = (
                     "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
                     "WHERE b.board_id IN $boards AND d.embedding IS NOT NULL "
+                    "AND ($graph_layer = 'all' OR coalesce(d.graph_layer, 'canonical') = $graph_layer) "
                     "RETURN b.board_id, d.id, d.original_node_id, d.title, "
-                    "d.one_line_summary, d.node_type, d.embedding LIMIT 500"
+                    "d.one_line_summary, d.node_type, "
+                    "coalesce(d.graph_layer, 'canonical') AS graph_layer, d.embedding LIMIT 500"
                 )
-                res = conn.execute(cypher, {"boards": scope})
+                res = conn.execute(cypher, {"boards": scope, "graph_layer": layer})
                 scored: list[dict] = []
                 qv = query_vec
                 qnorm = sum(x * x for x in qv) ** 0.5 or 1.0
                 while res.has_next():
                     row = res.get_next()
-                    emb = row[6]
+                    emb = row[7]
                     if not emb or len(emb) != len(qv):
                         continue
                     dot = sum(a * b for a, b in zip(qv, emb))
@@ -1219,6 +1280,7 @@ class KGService:
                         "title": row[3],
                         "summary": row[4],
                         "node_type": row[5],
+                        "graph_layer": row[6],
                         "similarity": sim,
                     })
                 scored.sort(key=lambda r: r["similarity"], reverse=True)

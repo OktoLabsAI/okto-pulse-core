@@ -430,6 +430,7 @@ okto-pulse://reference/tool-docs/kg."""
         board_id: str = "",
         nl_query: str = "",
         top_k: int = 10,
+        graph_layer: str = "canonical",
     ) -> str:
         """
         Cross-board semantic search via the global discovery layer. Returns
@@ -440,6 +441,7 @@ okto-pulse://reference/tool-docs/kg."""
             board_id: Optional board_id to restrict search (empty = all boards)
             nl_query: Natural language query string
             top_k: Maximum results (default 10)
+            graph_layer: canonical, working, or all (default canonical)
 
         Returns:
             JSON with results: [{board_id, id, title, similarity}]
@@ -452,7 +454,13 @@ okto-pulse://reference/tool-docs/kg."""
         try:
             target_boards = [board_id] if board_id else boards
             logger.debug("[KG] kg_query_global offloading to thread, target_boards=%d", len(target_boards))
-            rows = await asyncio.to_thread(svc.query_global, nl_query, user_boards=target_boards, top_k=top_k)
+            rows = await asyncio.to_thread(
+                svc.query_global,
+                nl_query,
+                user_boards=target_boards,
+                top_k=top_k,
+                graph_layer=graph_layer,
+            )
             logger.debug("[KG] kg_query_global thread returned: count=%d", len(rows))
             resp = GlobalQueryResponse(
                 results=[GlobalResult(**r) for r in rows],

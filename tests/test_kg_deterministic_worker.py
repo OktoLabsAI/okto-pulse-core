@@ -14,10 +14,13 @@ Covers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from okto_pulse.core.kg.primitives import _validate_local_edge_pair
 from okto_pulse.core.kg.workers.deterministic_worker import (
     DeterministicWorker,
     WORKER_ID,
+    WorkerResult,
     _extract_decisions_from_context,
     _extract_tech_mentions,
     reset_tech_whitelist_cache,
@@ -167,6 +170,89 @@ def test_process_pre_spec_lineage_entities():
         and e.to_candidate_id == "refinement_ref-abcd_entity"
         for e in spec.edges
     )
+
+
+def test_process_spec_draft_marks_non_root_nodes_working():
+    spec = {**_spec_fixture(), "status": "draft", "board_id": "board-layer"}
+    result = DeterministicWorker().process_spec(spec)
+
+    assert result.nodes
+    assert all(
+        node.graph_layer == "working"
+        for node in result.nodes
+        if not node.source_artifact_ref.startswith("board:")
+        and node.source_artifact_ref != "tech_entities.yml"
+    )
+    assert all(
+        node.maturity_status == "working_immature"
+        for node in result.nodes
+        if not node.source_artifact_ref.startswith("board:")
+        and node.source_artifact_ref != "tech_entities.yml"
+    )
+
+
+def test_process_story_ready_is_working_only():
+    result = DeterministicWorker().process_story({
+        "id": "story-layer-123",
+        "title": "Story layer",
+        "description": "Working intake",
+        "status": "ready",
+    })
+
+    story_node = next(
+        node for node in result.nodes
+        if node.source_artifact_ref == "story:story-layer-123"
+    )
+    assert story_node.graph_layer == "working"
+    assert story_node.maturity_status == "working_immature"
+
+
+def test_consolidation_lineage_nodes_keep_source_maturity_layer():
+    from okto_pulse.core.kg.workers.consolidation import (
+        _append_ideation_entity_node,
+        _append_refinement_entity_node,
+    )
+
+    result = WorkerResult()
+    _append_ideation_entity_node(
+        result,
+        SimpleNamespace(
+            id="idea-layer-123",
+            title="Done ideation",
+            description="Ideation remains working",
+            problem_statement="Problem",
+            proposed_approach="Approach",
+            status="done",
+        ),
+    )
+    _append_refinement_entity_node(
+        result,
+        SimpleNamespace(
+            id="ref-draft-123",
+            title="Draft refinement",
+            description="Draft refinement",
+            analysis="Analysis",
+            status="draft",
+        ),
+    )
+    _append_refinement_entity_node(
+        result,
+        SimpleNamespace(
+            id="ref-done-123",
+            title="Done refinement",
+            description="Done refinement",
+            analysis="Analysis",
+            status="done",
+        ),
+    )
+
+    nodes = {node.source_artifact_ref: node for node in result.nodes}
+    assert nodes["ideation:idea-layer-123"].graph_layer == "working"
+    assert nodes["ideation:idea-layer-123"].maturity_status == "working_immature"
+    assert nodes["refinement:ref-draft-123"].graph_layer == "working"
+    assert nodes["refinement:ref-draft-123"].maturity_status == "working_immature"
+    assert nodes["refinement:ref-done-123"].graph_layer == "canonical"
+    assert nodes["refinement:ref-done-123"].maturity_status == "canonical_eligible"
 
 
 def test_process_first_line_artifacts_attach_to_board_root_when_board_id_exists():

@@ -34,10 +34,12 @@ Design choices:
   to '1'.
 
 * **source_ref** — uses ``<artifact_type>:<id>`` to match the convention
-  used by the cognitive badge surface. Formal decisions are not emitted as
-  independent source rows; they inherit the owning spec's maturity and hash.
-  Card rows are typed as task/test/bug even though the deterministic worker
-  still consumes them via the legacy ConsolidationQueue ``card`` artifact type.
+  used by the cognitive badge surface. Formal decisions are emitted as
+  semantic source rows for cognitive pending, while deterministic rebuild
+  materializes decision nodes through the owning spec payload to avoid
+  duplicates. Card rows are typed as task/test/bug even though the deterministic
+  worker still consumes them via the legacy ConsolidationQueue ``card``
+  artifact type.
 """
 
 from __future__ import annotations
@@ -58,6 +60,15 @@ logger = logging.getLogger("okto_pulse.kg.board_source_store")
 # source artifact_type task/test/bug.
 ARTIFACT_QUERIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     # (artifact_type, table, status_column, content_columns_for_hash)
+    (
+        "story",
+        "stories",
+        "status",
+        (
+            "title", "description", "actor", "goal", "benefit",
+            "topic_id", "status", "labels",
+        ),
+    ),
     (
         "ideation",
         "ideations",
@@ -435,6 +446,8 @@ class BoardSourceStore:
                     if working_ttl_days is not None:
                         source_row["working_ttl_days"] = working_ttl_days
                     out.append(source_row)
+                    if artifact_type == "spec":
+                        out.extend(_decision_sources_from_spec(row))
             cards_exists = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='cards'"
             ).fetchone()

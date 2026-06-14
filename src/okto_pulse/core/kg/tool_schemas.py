@@ -101,6 +101,7 @@ class GlobalResult(BaseModel):
     id: str
     title: str
     similarity: float = 0.0
+    graph_layer: str | None = None
 
 
 # ---------------------------------------------------------------------------

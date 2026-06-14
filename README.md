@@ -36,7 +36,7 @@ Okto Pulse currently documents and enforces **17 named governance gates**:
 | Execution quality | Task start/spec readiness; task conclusion; cognitive closeout; architecture-findings done; test evidence; bug test-first/traceability |
 | Sprint health | Sprint closure/evaluation |
 
-The two execution-quality additions in 0.2.3 — **cognitive closeout** (a `done` transition is blocked while active cognitive-consolidation items remain) and the **architecture-findings done gate** (active architecture warnings block `spec`/card `done`) — moved from defined to enforced in this release.
+The two execution-quality additions introduced in 0.2.3 — **cognitive closeout** (a `done` transition is blocked while active cognitive-consolidation items remain) and the **architecture-findings done gate** (active architecture warnings block `spec`/card `done`) — remain enforced in the current release.
 
 ## Architecture
 
@@ -83,7 +83,11 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-### 0.2.3 — current
+### 0.2.5 — current
+
+Release focused on KG working/canonical graph partitioning and canonical-debt visibility. It adds maturity-aware source classification, layer-aware rebuild/preflight diagnostics, canonical-only query defaults with explicit working inclusion, and CanonicalDebt tracking for failed or deferred canonical promotion.
+
+### 0.2.3
 
 The largest release since 0.2.0. Scope is taken from the **53 finalized specs on the Okto Pulse 0.2.3 board** (the platform dogfooded its own SDLC), landing **64 new core modules** across eight subsystems. `335 files changed, +103,183 / −4,532` over `0.2.2`; every subsystem ships with its pytest suite. The package grew to **52 models / 28 services / 33 API modules / 215 MCP tools / 17 named gates**.
 

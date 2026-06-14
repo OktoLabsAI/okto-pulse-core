@@ -17,6 +17,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy import select
 
 from okto_pulse.core.models.db import (
     ActivityLog,
@@ -25,6 +26,7 @@ from okto_pulse.core.models.db import (
     CardPriority,
     CardStatus,
     CardType,
+    DomainEventRow,
     Spec,
     SpecStatus,
 )
@@ -1508,6 +1510,56 @@ class TestActivityLog:
             card = await svc.create_card(BOARD_ID, USER_ID, data)
             await db.commit()
             return card, actual_spec_id
+
+    async def test_successful_task_validation_emits_card_moved_event(self, db_factory):
+        """Validation auto-route to done must re-enqueue KG consolidation."""
+        card, spec_id = await self._create_card_for_move(db_factory, CardStatus.IN_PROGRESS)
+        async with db_factory() as db:
+            svc = CardService(db)
+            await svc.move_card(
+                card.id,
+                USER_ID,
+                CardMove(
+                    status=CardStatus.VALIDATION,
+                    conclusion="Executor claim for validator review",
+                    completeness=100,
+                    completeness_justification="All acceptance criteria implemented",
+                    drift=0,
+                    drift_justification="No deviation from plan",
+                ),
+            )
+            await _mark_all_resources_na(db, "card", card.id)
+            await db.execute(DomainEventRow.__table__.delete())
+            result = await svc.submit_task_validation(
+                card.id,
+                "reviewer-1",
+                "Reviewer One",
+                {
+                    "confidence": 95,
+                    "confidence_justification": "Reviewed implementation and tests",
+                    "estimated_completeness": 100,
+                    "completeness_justification": "Everything requested is present",
+                    "estimated_drift": 0,
+                    "drift_justification": "Implementation follows the plan",
+                    "general_justification": "Approved after reviewing the executor report.",
+                    "recommendation": "approve",
+                },
+            )
+            events = (
+                await db.execute(
+                    select(DomainEventRow).where(DomainEventRow.board_id == BOARD_ID)
+                )
+            ).scalars().all()
+
+        assert result["card_status"] == "done"
+        by_type = {event.event_type: event.payload_json for event in events}
+        assert by_type["card.moved"] == {
+            "card_id": card.id,
+            "from_status": "validation",
+            "to_status": "done",
+            "spec_id": spec_id,
+            "moved_by": "reviewer-1",
+        }
 
     async def test_activity_logged_on_card_creation(self, db_factory):
         """Creating a card should log a card_created activity."""

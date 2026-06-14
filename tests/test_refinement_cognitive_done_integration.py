@@ -30,6 +30,7 @@ from okto_pulse.core.kg.rebuild_audit import (
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
 from okto_pulse.core.models.db import (
     Board,
+    DomainEventRow,
     Ideation,
     IdeationComplexity,
     IdeationStatus,
@@ -294,6 +295,39 @@ async def test_no_cognitive_item_allows_refinement_done(
     result, exc = await _move_to_done(refinement_id)
     if exc is not None:
         assert "cognitive_consolidation_pending" not in str(exc).lower()
+
+
+@pytest.mark.asyncio
+async def test_move_refinement_emits_semantic_changed_for_status(
+    isolated_kg_dir: Path,
+    seeded_refinement,
+) -> None:
+    board_id, _, refinement_id = seeded_refinement
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        svc = RefinementService(db)
+        result = await svc.move_refinement(
+            refinement_id=refinement_id,
+            user_id=USER_ID,
+            data=RefinementMove(status=RefinementStatus.REVIEW),
+            actor_name=USER_ID,
+        )
+        await db.commit()
+
+    assert result is not None
+    async with db_factory() as db:
+        from sqlalchemy import select
+
+        event = (
+            await db.execute(
+                select(DomainEventRow).where(
+                    DomainEventRow.board_id == board_id,
+                    DomainEventRow.event_type == "refinement.semantic_changed",
+                )
+            )
+        ).scalar_one()
+        assert event.payload_json["refinement_id"] == refinement_id
+        assert event.payload_json["changed_fields"] == ["status"]
 
 
 # -------- store unavailable → fail-closed ValueError --------------------

@@ -1601,6 +1601,7 @@ class CardService:
                 f"Card is not in 'validation' status (currently '{card.status.value}'). "
                 f"Only cards in 'validation' status can receive validations."
             )
+        old_status = card.status
 
         if getattr(card, "card_type", CardType.NORMAL) == CardType.TEST:
             raise ValueError("Card type 'test' is not subject to validation gate.")
@@ -1769,6 +1770,23 @@ class CardService:
         )
         max_pos = (await self.db.execute(pos_query)).scalar() or -1
         card.position = max_pos + 1
+
+        if old_status != card.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import CardMoved
+
+            await event_publish(
+                CardMoved(
+                    board_id=card.board_id,
+                    actor_id=reviewer_id,
+                    card_id=card.id,
+                    from_status=old_status.value,
+                    to_status=card.status.value,
+                    spec_id=card.spec_id,
+                    moved_by=reviewer_id,
+                ),
+                session=self.db,
+            )
 
         # Activity log
         await self._log_activity(
@@ -5076,6 +5094,28 @@ class SpecService:
         old_status = spec.status
         if outcome == "success":
             spec.status = SpecStatus.VALIDATED
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecMoved, SpecSemanticChanged
+
+            await event_publish(
+                SpecMoved(
+                    board_id=spec.board_id,
+                    actor_id=reviewer_id,
+                    spec_id=spec.id,
+                    from_status=old_status.value,
+                    to_status=spec.status.value,
+                ),
+                session=self.db,
+            )
+            await event_publish(
+                SpecSemanticChanged(
+                    board_id=spec.board_id,
+                    actor_id=reviewer_id,
+                    spec_id=spec.id,
+                    changed_fields=["status"],
+                ),
+                session=self.db,
+            )
 
         # Activity log
         await self._log_activity(
@@ -5948,6 +5988,19 @@ class StoryService:
             actor_name=actor_name,
             details={"story_id": story.id, "topic_id": story.topic_id, "title": story.title},
         )
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import StoryCreated
+
+        await event_publish(
+            StoryCreated(
+                board_id=board_id,
+                actor_id=user_id,
+                story_id=story.id,
+                topic_id=story.topic_id,
+                status=story.status.value,
+            ),
+            session=self.db,
+        )
         return await self.get_story(story.id)
 
     async def get_story(self, story_id: str) -> Story | None:
@@ -6027,6 +6080,19 @@ class StoryService:
             actor_name=actor_name,
             details={"story_id": story.id, "fields": list(update_data.keys())},
         )
+        if update_data:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import StoryUpdated
+
+            await event_publish(
+                StoryUpdated(
+                    board_id=story.board_id,
+                    actor_id=user_id,
+                    story_id=story.id,
+                    changed_fields=list(update_data.keys()),
+                ),
+                session=self.db,
+            )
         await self.db.flush()
         return await self.get_story(story_id)
 
@@ -6054,6 +6120,20 @@ class StoryService:
             actor_name=actor_name,
             details={"story_id": story.id, "from_status": old_status.value, "to_status": data.status.value},
         )
+        if old_status != data.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import StoryMoved
+
+            await event_publish(
+                StoryMoved(
+                    board_id=story.board_id,
+                    actor_id=user_id,
+                    story_id=story.id,
+                    from_status=old_status.value,
+                    to_status=data.status.value,
+                ),
+                session=self.db,
+            )
         await self.db.flush()
         return await self.get_story(story_id)
 
@@ -6117,6 +6197,18 @@ class StoryService:
             actor_id=user_id,
             actor_name=actor_name,
             details={"story_id": story_id, "ideation_id": ideation_id},
+        )
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import StoryLinkedToIdeation
+
+        await event_publish(
+            StoryLinkedToIdeation(
+                board_id=story.board_id,
+                actor_id=user_id,
+                story_id=story_id,
+                ideation_id=ideation_id,
+            ),
+            session=self.db,
         )
         return link
 
@@ -7422,6 +7514,18 @@ class RefinementService:
             refinement.version += 1
 
         refinement.status = data.status
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import RefinementSemanticChanged
+
+        await event_publish(
+            RefinementSemanticChanged(
+                board_id=refinement.board_id,
+                actor_id=user_id,
+                refinement_id=refinement.id,
+                changed_fields=["status"],
+            ),
+            session=self.db,
+        )
 
         await self._log_activity(
             board_id=refinement.board_id,

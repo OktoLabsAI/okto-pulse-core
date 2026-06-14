@@ -582,7 +582,7 @@ async def post_rebuild_run(
         manifest = manifest_store_obj.load(req.manifest_ref)
         if manifest is None:
             return ()
-        return tuple(row.to_dict() for row in manifest.sources)
+        return tuple(row.to_dict() for row in manifest.materializable_sources)
 
     _step_adapter_with_sources = ingestion.build_step_adapter(
         source_resolver=_step_source_resolver,
@@ -601,7 +601,7 @@ async def post_rebuild_run(
         manifest = manifest_store_obj.load(event_payload.get("manifest_ref", ""))
         if manifest is None:
             return ()
-        return tuple(row.to_dict() for row in manifest.sources)
+        return tuple(row.to_dict() for row in manifest.materializable_sources)
 
     event_handler = build_kg_rebuilt_event_handler(
         publisher=event_publisher,

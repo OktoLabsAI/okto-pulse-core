@@ -186,6 +186,19 @@ class RebuildSourceSet:
         return len(self.sources)
 
     @property
+    def materializable_sources(self) -> tuple[RebuildSourceRow, ...]:
+        """Sources that an explicit rebuild should materialize.
+
+        ``sources`` are canonical-eligible rows. ``working_sources`` and
+        ``skipped_by_maturity`` are still non-expired working graph rows, so
+        a corruption recovery rebuild must restore them with their
+        ``graph_layer=working`` metadata instead of dropping all immature
+        context. Expired/legacy/cancelled rows remain excluded.
+        """
+
+        return self.sources + self.working_sources + self.skipped_by_maturity
+
+    @property
     def canonical_source_count(self) -> int:
         return len(self.sources)
 
@@ -265,6 +278,10 @@ class RebuildSourceManifest:
     skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     legacy_unknown: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+
+    @property
+    def materializable_sources(self) -> tuple[RebuildSourceRow, ...]:
+        return self.sources + self.working_sources + self.skipped_by_maturity
 
     def to_dict(self) -> dict[str, Any]:
         return {
