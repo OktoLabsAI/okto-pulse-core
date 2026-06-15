@@ -644,6 +644,83 @@ def reset_list_counter() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Counter for OR or_b8ff0cc2 — kg_operational_inspection_list_total
+# ---------------------------------------------------------------------------
+#
+# Contract (or_b8ff0cc2): count operational-inspection listing calls so the
+# ABSENCE of drill-down usage is diagnosable. One bounded sample per call to
+# the three operational-signal listings KG Health points at — cognitive
+# pending, dead-letter queue, canonical debt (kept as separate `signal`
+# values per dec_68fd26a2). Labels only; no free-form text.
+OPERATIONAL_INSPECTION_SIGNALS: frozenset[str] = frozenset({
+    "cognitive_pending",
+    "dead_letter",
+    "canonical_debt",
+})
+_OPERATIONAL_INSPECTION_LABELS = ("signal", "surface", "outcome", "board_id")
+_operational_inspection_samples: list[dict[str, Any]] = []
+_operational_inspection_lock = threading.Lock()
+
+
+def emit_operational_inspection_sample(
+    *,
+    signal: str,
+    surface: str,
+    outcome: str,
+    board_id: str,
+    item_count: int,
+) -> None:
+    """Emit one sample on ``kg_operational_inspection_list_total`` (or_b8ff0cc2).
+
+    ``signal`` is one of the three separate operational domains
+    (cognitive_pending / dead_letter / canonical_debt); ``surface`` is
+    mcp/rest; ``outcome`` is success/error. ``item_count`` is the sample
+    value (how many rows the caller saw), NOT a label.
+    """
+
+    with _operational_inspection_lock:
+        _operational_inspection_samples.append({
+            "signal": signal,
+            "surface": surface,
+            "outcome": outcome,
+            "board_id": board_id,
+            "item_count": int(item_count),
+        })
+
+
+def get_operational_inspection_event_count(
+    *,
+    signal: str | None = None,
+    surface: str | None = None,
+    outcome: str | None = None,
+    board_id: str | None = None,
+) -> int:
+    with _operational_inspection_lock:
+        return sum(
+            1
+            for sample in _operational_inspection_samples
+            if (signal is None or sample["signal"] == signal)
+            and (surface is None or sample["surface"] == surface)
+            and (outcome is None or sample["outcome"] == outcome)
+            and (board_id is None or sample["board_id"] == board_id)
+        )
+
+
+def get_operational_inspection_counter_labels() -> tuple[str, ...]:
+    return _OPERATIONAL_INSPECTION_LABELS
+
+
+def get_operational_inspection_samples() -> list[dict[str, Any]]:
+    with _operational_inspection_lock:
+        return [dict(sample) for sample in _operational_inspection_samples]
+
+
+def reset_operational_inspection_counter() -> None:
+    with _operational_inspection_lock:
+        _operational_inspection_samples.clear()
+
+
+# ---------------------------------------------------------------------------
 # Counter for OR or_174f18d5 — kg_cognitive_item_update_total
 # ---------------------------------------------------------------------------
 #

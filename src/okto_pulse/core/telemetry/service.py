@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.infra.config import CoreSettings
+from okto_pulse.core.telemetry import failure_state
 from okto_pulse.core.telemetry.product import PRODUCT_AGGREGATE_FAMILIES
 from okto_pulse.core.telemetry.schema import normalize_event, now_utc
 from okto_pulse.core.telemetry.settings import (
@@ -111,6 +112,10 @@ class TelemetryService:
             "product_aggregate_families": list(PRODUCT_AGGREGATE_FAMILIES),
             "summary": summary,
             "beacon_status": beacon_status,
+            # R1-D: sanitized failure-state read for UI/MCP/CLI. Built from the
+            # R1-A allowlist projection, so it can never carry install_token /
+            # token_hash. Legacy state migrates to safe defaults (R1-A).
+            "publish_status": failure_state.public_status_projection(state),
             "next_opt_in_prompt_after": state.get("next_opt_in_prompt_after"),
             "consent": {
                 "source": state.get("source"),

@@ -47,6 +47,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_status_counts,
     default_rebuild_base_dir,
     detect_unsafe_update_payload,
+    emit_operational_inspection_sample,
     empty_status_counts,
     project_item_for_api,
     project_item_for_update_api,
@@ -483,6 +484,12 @@ offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
             status_filter_present=status_present,
             reason_code=CognitiveItemListReasonCode.NONE.value,
             item_count=item_count,
+        )
+        # or_b8ff0cc2: count this operational-inspection listing (cognitive
+        # pending domain) so absence of drill-down usage is diagnosable.
+        emit_operational_inspection_sample(
+            signal="cognitive_pending", surface="mcp", outcome="success",
+            board_id=board_id, item_count=item_count,
         )
 
         return json.dumps({

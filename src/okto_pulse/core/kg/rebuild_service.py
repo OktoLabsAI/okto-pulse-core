@@ -389,9 +389,10 @@ class KGRebuildService:
             current_source_set = self.source_enumerator.enumerate(
                 board_id=board_id
             )
-            if not self.manifest_store.revalidate(
+            revalidation = self.manifest_store.revalidate(
                 manifest=manifest, current_source_set=current_source_set
-            ):
+            )
+            if revalidation.is_drift:
                 return self._emit_audit_and_counter(
                     run_id=run_id,
                     outcome=RebuildOutcome.MANIFEST_DRIFT,
@@ -407,6 +408,22 @@ class KGRebuildService:
                     previous_kg_generation_id=None,
                     current_kg_generation_id=None,
                     detail="source_set_hash drift between preflight and run",
+                )
+            from okto_pulse.core.kg.rebuild_sources import SourceSetRevalidation
+            if revalidation.outcome is SourceSetRevalidation.REBASELINE:
+                # Spec source manifest v1->v2 rebaseline (card 5ec8c75c /
+                # dec_c8e418e7): the v1-compatible hash proved UNCHANGED, so
+                # this is a schema migration, NOT content drift — proceed (no
+                # DLQ, no canonical debt) with audit log + counter (already
+                # bumped in revalidate). FR7: record manifest version + the
+                # rebaselined spec source_refs.
+                logger.info(
+                    "kg.rebuild_service.spec_manifest_rebaseline board=%s "
+                    "run=%s from_manifest_version=%d rebaselined_count=%d "
+                    "rebaselined_source_refs=%s",
+                    board_id, run_id, manifest.manifest_schema_version,
+                    len(revalidation.rebaselined_source_refs),
+                    list(revalidation.rebaselined_source_refs)[:50],
                 )
 
         # 4. Acquire lock under admin lane (KG-01.3 TR7). Other writers

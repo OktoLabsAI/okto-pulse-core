@@ -51,7 +51,6 @@ from okto_pulse.core.kg.source_maturity import (
     DISPOSITION_SKIPPED_EXPIRED_WORKING,
     DISPOSITION_WORKING,
     GRAPH_LAYER_CANONICAL,
-    GRAPH_LAYER_NONE,
     MATURITY_CANONICAL_ELIGIBLE,
     REBUILD_ARTIFACT_TYPES,
     classify_source_for_kg,
@@ -144,6 +143,12 @@ class RebuildSourceRow:
     disposition: str = DISPOSITION_CANONICAL
     reason_code: str = ""
     expires_at: str | None = None
+    # Spec manifest v2 (card 5ec8c75c / dec_c8e418e7): the v1-compatible content
+    # hash (spec rows only; "" otherwise). TRANSIENT — computed from the live
+    # source set, intentionally NOT in to_dict() so both the v2 source_set_hash
+    # and the persisted manifest JSON shape stay stable. Used only to PROVE a
+    # legacy schema-rebaseline at revalidate time.
+    content_hash_v1: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -160,6 +165,16 @@ class RebuildSourceRow:
             "reason_code": self.reason_code,
             "expires_at": self.expires_at,
         }
+
+    def to_dict_v1(self) -> dict[str, Any]:
+        """Manifest-v1-compatible projection: identical shape to ``to_dict``
+        but carrying the v1 content hash for spec rows, so a freshly
+        enumerated source set can reproduce a legacy board's stored
+        ``source_set_hash`` byte-for-byte (card 5ec8c75c)."""
+        d = self.to_dict()
+        if self.content_hash_v1:
+            d["content_hash"] = self.content_hash_v1
+        return d
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,6 +289,10 @@ class RebuildSourceManifest:
     skipped_cancelled_count: int
     has_non_deterministic_inputs: bool
     created_at: str
+    # Spec source manifest schema version (card 5ec8c75c). 1 = legacy (spec
+    # hash without IR/OR); 2 = current (IR/OR included). Old manifests load
+    # as 1 so the first post-upgrade rebuild can rebaseline them.
+    manifest_schema_version: int = 1
     working_sources: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
@@ -299,6 +318,7 @@ class RebuildSourceManifest:
             "skipped_cancelled_count": self.skipped_cancelled_count,
             "has_non_deterministic_inputs": self.has_non_deterministic_inputs,
             "created_at": self.created_at,
+            "manifest_schema_version": self.manifest_schema_version,
             "canonical_source_count": len(self.sources),
             "working_source_count": len(self.working_sources),
             "skipped_by_maturity_count": len(self.skipped_by_maturity),
@@ -380,6 +400,7 @@ def _row_from_raw(
         disposition=classification.disposition,
         reason_code=classification.reason_code,
         expires_at=classification.expires_at,
+        content_hash_v1=str(row.get("content_hash_v1") or ""),
     )
 
 
@@ -541,16 +562,29 @@ def _compose_source_set_hash(source_set: RebuildSourceSet) -> str:
     from working->canonical changes the manifest binding even if the
     content_hash stayed stable.
     """
+    return _compose_source_set_hash_with(source_set, lambda r: r.to_dict())
+
+
+def _compose_source_set_hash_v1(source_set: RebuildSourceSet) -> str:
+    """v1-compatible source_set_hash (card 5ec8c75c): identical composition to
+    :func:`_compose_source_set_hash` but projecting each row through
+    ``to_dict_v1`` so spec rows use the v1 content hash. Reproduces a legacy
+    board's stored hash byte-for-byte, which is how a schema-rebaseline is
+    PROVEN distinct from real content drift."""
+    return _compose_source_set_hash_with(source_set, lambda r: r.to_dict_v1())
+
+
+def _compose_source_set_hash_with(source_set: RebuildSourceSet, project) -> str:
     payload_dict = {
-        "sources": [s.to_dict() for s in source_set.sources],
-        "working_sources": [s.to_dict() for s in source_set.working_sources],
+        "sources": [project(s) for s in source_set.sources],
+        "working_sources": [project(s) for s in source_set.working_sources],
         "skipped_by_maturity": [
-            s.to_dict() for s in source_set.skipped_by_maturity
+            project(s) for s in source_set.skipped_by_maturity
         ],
         "skipped_expired_working": [
-            s.to_dict() for s in source_set.skipped_expired_working
+            project(s) for s in source_set.skipped_expired_working
         ],
-        "legacy_unknown": [s.to_dict() for s in source_set.legacy_unknown],
+        "legacy_unknown": [project(s) for s in source_set.legacy_unknown],
         "skipped_cancelled_count": source_set.skipped_cancelled_count,
         "source_partition_counts": source_set.source_partition_counts,
     }
@@ -560,6 +594,123 @@ def _compose_source_set_hash(source_set: RebuildSourceSet) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+class SourceSetRevalidation(str, Enum):
+    """Typed outcome of revalidating a live source set against a stored
+    manifest (card 5ec8c75c / dec_c8e418e7)."""
+
+    EQUIVALENT = "equivalent"
+    REBASELINE = "rebaseline"
+    MANIFEST_DRIFT = "manifest_drift"
+
+
+@dataclass(frozen=True, slots=True)
+class RevalidationResult:
+    outcome: SourceSetRevalidation
+    rebaselined_source_refs: tuple[str, ...] = ()
+    from_manifest_schema_version: int = 0
+    to_manifest_schema_version: int = 0
+    hash_fields_v1: tuple[str, ...] = ()
+    hash_fields_v2: tuple[str, ...] = ()
+
+    @property
+    def is_drift(self) -> bool:
+        return self.outcome is SourceSetRevalidation.MANIFEST_DRIFT
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "outcome": self.outcome.value,
+            "rebaselined_source_refs": list(self.rebaselined_source_refs),
+            "from_manifest_schema_version": self.from_manifest_schema_version,
+            "to_manifest_schema_version": self.to_manifest_schema_version,
+            "hash_fields_v1": list(self.hash_fields_v1),
+            "hash_fields_v2": list(self.hash_fields_v2),
+        }
+
+
+# Counter OR or_b9c33b77 — kg_spec_source_manifest_rebaseline_total. Bounded
+# labels (board_id, outcome); one sample per spec-manifest rebaseline event.
+_REBASELINE_LABELS = ("board_id", "outcome")
+_rebaseline_counter: dict[tuple[str, str], int] = {}
+_rebaseline_lock = threading.Lock()
+
+
+def _bump_rebaseline(*, board_id: str, outcome: str = "rebaseline") -> None:
+    with _rebaseline_lock:
+        key = (board_id, outcome)
+        _rebaseline_counter[key] = _rebaseline_counter.get(key, 0) + 1
+
+
+def get_spec_manifest_rebaseline_count(
+    board_id: str, *, outcome: str = "rebaseline"
+) -> int:
+    with _rebaseline_lock:
+        return _rebaseline_counter.get((board_id, outcome), 0)
+
+
+def get_spec_manifest_rebaseline_labels() -> tuple[str, ...]:
+    return _REBASELINE_LABELS
+
+
+def reset_spec_manifest_rebaseline_counter() -> None:
+    with _rebaseline_lock:
+        _rebaseline_counter.clear()
+
+
+# FR7 (card 5ec8c75c): a FORMAL, persisted, queryable rebaseline audit record
+# (not just a textual log) — per board, append-only JSONL under the rebuild
+# dir. Each record carries from/to manifest schema version, the spec hash
+# fields considered, and the rebaselined source_refs.
+REBASELINE_AUDIT_DIRNAME = "rebaseline_audit"
+
+
+def _rebaseline_audit_path(base_dir: Path, board_id: str) -> Path:
+    safe = "".join(
+        c if (c.isalnum() or c in "_.-") else "_" for c in board_id
+    ) or "board"
+    return base_dir / REBUILD_DIRNAME / REBASELINE_AUDIT_DIRNAME / f"{safe}.jsonl"
+
+
+def _append_spec_manifest_rebaseline_audit(
+    base_dir: Path,
+    *,
+    board_id: str,
+    manifest_ref: str,
+    result: "RevalidationResult",
+    recorded_at: str,
+) -> None:
+    path = _rebaseline_audit_path(base_dir, board_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "board_id": board_id,
+        "manifest_ref": manifest_ref,
+        "recorded_at": recorded_at,
+        **result.to_dict(),
+    }
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def read_spec_manifest_rebaseline_audit(
+    base_dir: Path, board_id: str,
+) -> list[dict[str, Any]]:
+    """Read back the persisted spec-manifest rebaseline records for a board
+    (FR7 audit evidence — queryable from the rebuild artifacts)."""
+    path = _rebaseline_audit_path(base_dir, board_id)
+    if not path.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -587,6 +738,10 @@ class KGRebuildSourceManifest:
         # val_d0da4a75 #3: enforce canonical sha256 hex 64 chars.
         validate_preflight_hash(preflight_hash)
 
+        from okto_pulse.core.kg.board_source_store import (
+            SPEC_SOURCE_MANIFEST_VERSION,
+        )
+
         manifest_ref = f"{MANIFEST_REF_PREFIX}{secrets.token_urlsafe(16)}"
         source_set_hash = _compose_source_set_hash(source_set)
         manifest = RebuildSourceManifest(
@@ -598,6 +753,7 @@ class KGRebuildSourceManifest:
             skipped_cancelled_count=source_set.skipped_cancelled_count,
             has_non_deterministic_inputs=source_set.has_non_deterministic_inputs,
             created_at=datetime.now(timezone.utc).isoformat(),
+            manifest_schema_version=SPEC_SOURCE_MANIFEST_VERSION,
             working_sources=source_set.working_sources,
             skipped_by_maturity=source_set.skipped_by_maturity,
             skipped_expired_working=source_set.skipped_expired_working,
@@ -707,6 +863,7 @@ class KGRebuildSourceManifest:
                     data.get("has_non_deterministic_inputs", False)
                 ),
                 created_at=str(data["created_at"]),
+                manifest_schema_version=int(data.get("manifest_schema_version", 1)),
                 working_sources=_rows("working_sources"),
                 skipped_by_maturity=_rows("skipped_by_maturity"),
                 skipped_expired_working=_rows("skipped_expired_working"),
@@ -720,19 +877,79 @@ class KGRebuildSourceManifest:
         *,
         manifest: RebuildSourceManifest,
         current_source_set: RebuildSourceSet,
-    ) -> bool:
-        """Compare the manifest's source_set_hash against a freshly
-        enumerated source set — KG-02.3 calls this before mutation
-        (IR ir_1959b2e1 run_validation contract)."""
+    ) -> RevalidationResult:
+        """Classify the current source set against a stored manifest — KG-02.3
+        calls this before mutation (IR ir_1959b2e1 run_validation contract),
+        extended for spec manifest v2 (card 5ec8c75c / dec_c8e418e7):
+
+        * EQUIVALENT — current v2 hash matches the stored hash.
+        * REBASELINE — the stored manifest is legacy (<v2) AND the
+          v1-compatible hash still matches it byte-for-byte, so the ONLY
+          difference is the v2 schema (IR/OR added to the spec hash). PROVEN,
+          not inferred from "hash changed". Permitted by rebuild_service with
+          audit + counter; never DLQ/canonical-debt.
+        * MANIFEST_DRIFT — real content change (or an already-v2 manifest).
+          Blocks, same as before.
+        """
+        from okto_pulse.core.kg.board_source_store import (
+            SPEC_SOURCE_MANIFEST_VERSION,
+        )
+
         current_hash = _compose_source_set_hash(current_source_set)
-        if current_hash != manifest.source_set_hash:
-            _bump_enum(
-                board_id=manifest.board_id,
-                outcome=EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value,
-                reason="manifest_drift",
-            )
-            return False
-        return True
+        if current_hash == manifest.source_set_hash:
+            return RevalidationResult(SourceSetRevalidation.EQUIVALENT)
+
+        if manifest.manifest_schema_version < SPEC_SOURCE_MANIFEST_VERSION:
+            current_v1 = _compose_source_set_hash_v1(current_source_set)
+            if current_v1 == manifest.source_set_hash:
+                rebaselined = tuple(
+                    row.source_ref
+                    for partition in (
+                        current_source_set.sources,
+                        current_source_set.working_sources,
+                        current_source_set.skipped_by_maturity,
+                        current_source_set.skipped_expired_working,
+                        current_source_set.legacy_unknown,
+                    )
+                    for row in partition
+                    if row.content_hash_v1
+                    and row.content_hash != row.content_hash_v1
+                )
+                from okto_pulse.core.kg.board_source_store import (
+                    SPEC_CONTENT_COLUMNS_V1,
+                    SPEC_CONTENT_COLUMNS_V2,
+                )
+
+                result = RevalidationResult(
+                    SourceSetRevalidation.REBASELINE,
+                    rebaselined_source_refs=rebaselined,
+                    from_manifest_schema_version=manifest.manifest_schema_version,
+                    to_manifest_schema_version=SPEC_SOURCE_MANIFEST_VERSION,
+                    hash_fields_v1=SPEC_CONTENT_COLUMNS_V1,
+                    hash_fields_v2=SPEC_CONTENT_COLUMNS_V2,
+                )
+                _bump_rebaseline(board_id=manifest.board_id)
+                _append_spec_manifest_rebaseline_audit(
+                    self.base_dir,
+                    board_id=manifest.board_id,
+                    manifest_ref=manifest.manifest_ref,
+                    result=result,
+                    recorded_at=datetime.now(timezone.utc).isoformat(),
+                )
+                logger.info(
+                    "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
+                    "from_version=%d to_version=%d rebaselined=%d",
+                    manifest.board_id, manifest.manifest_schema_version,
+                    SPEC_SOURCE_MANIFEST_VERSION, len(rebaselined),
+                )
+                return result
+
+        _bump_enum(
+            board_id=manifest.board_id,
+            outcome=EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value,
+            reason="manifest_drift",
+        )
+        return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
 
 
 __all__ = [
@@ -747,11 +964,17 @@ __all__ = [
     "RebuildSourceManifest",
     "RebuildSourceRow",
     "RebuildSourceSet",
+    "RevalidationResult",
+    "SourceSetRevalidation",
     "SourceStore",
     "get_enumeration_count",
     "get_enumeration_counter_labels",
     "get_enumeration_samples",
+    "get_spec_manifest_rebaseline_count",
+    "get_spec_manifest_rebaseline_labels",
+    "read_spec_manifest_rebaseline_audit",
     "reset_enumeration_counter",
+    "reset_spec_manifest_rebaseline_counter",
     "validate_manifest_ref",
     "validate_preflight_hash",
 ]

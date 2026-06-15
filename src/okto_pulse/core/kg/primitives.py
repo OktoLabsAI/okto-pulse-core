@@ -390,20 +390,67 @@ async def add_node_candidate(
     *,
     agent_id: str,
 ) -> AddNodeCandidateResponse:
+    from okto_pulse.core.kg.cognitive_policy import (
+        COGNITIVE_NODE_CANONICAL_CODE,
+        CognitiveNodeLayerError,
+        check_cognitive_node_canonical,
+    )
+    from okto_pulse.core.kg.source_maturity import (
+        GRAPH_LAYER_CANONICAL,
+        MATURITY_CANONICAL_ELIGIBLE,
+    )
+
     session = await _require_open_session(req.session_id, agent_id)
     store = get_kg_registry().session_store
+    cand = req.candidate
+
+    # Cognitive canonical invariant (spec 007d1308 — FR1/FR3/FR4,
+    # dec_0b3368fe/dec_26c5cc2d). The cognitive agent only ever produces
+    # canonical knowledge; a working-layer node may originate solely from the
+    # Layer 1 deterministic worker (agent_id prefixed "system:"), which
+    # materializes immature sources per source_maturity (FR5). Enforce in the
+    # core primitive — not just the MCP wrapper — so an internal caller cannot
+    # bypass it, and BEFORE mutating the session so a rejected candidate leaves
+    # no trace in session.node_candidates (TR1/TR4).
+    is_system_worker = agent_id.startswith("system:")
+    graph_layer_value = (
+        cand.graph_layer.value if hasattr(cand.graph_layer, "value") else cand.graph_layer
+    )
+    try:
+        check_cognitive_node_canonical(
+            graph_layer_value, is_system_worker=is_system_worker,
+        )
+    except CognitiveNodeLayerError as exc:
+        raise KGPrimitiveError(
+            COGNITIVE_NODE_CANONICAL_CODE,
+            str(exc),
+            session_id=req.session_id,
+            details={
+                "graph_layer": graph_layer_value,
+                "required_graph_layer": exc.required_graph_layer,
+                "candidate_id": cand.candidate_id,
+            },
+        ) from exc
+
     async with session.lock:
-        if req.candidate.candidate_id in session.node_candidates:
+        if cand.candidate_id in session.node_candidates:
             raise KGPrimitiveError(
                 "duplicate_candidate_id",
-                f"candidate_id already in session: {req.candidate.candidate_id}",
+                f"candidate_id already in session: {cand.candidate_id}",
                 session_id=req.session_id,
             )
-        session.node_candidates[req.candidate.candidate_id] = req.candidate
+        # FR3 / dec_26c5cc2d: a persisted cognitive candidate is always
+        # canonical + canonical_eligible, even when the request omitted or
+        # under-specified the fields. The deterministic worker's working nodes
+        # (system:*) are left untouched (FR5).
+        if not is_system_worker:
+            cand.graph_layer = GRAPH_LAYER_CANONICAL
+            cand.maturity_status = MATURITY_CANONICAL_ELIGIBLE
+        session.node_candidates[cand.candidate_id] = cand
         session.touch(store.default_ttl_seconds)
         return AddNodeCandidateResponse(
             session_id=req.session_id,
-            candidate_id=req.candidate.candidate_id,
+            candidate_id=cand.candidate_id,
             accepted=True,
             node_count_in_session=len(session.node_candidates),
         )
@@ -1571,6 +1618,28 @@ def _do_kuzu_commit(
                             _apply_kuzu_node_update_partial(
                                 orch, node_type, existing_id, update_attrs
                             )
+                        else:
+                            # FR4 / dec_85ba8dc2 (card 302044a7): a human_curated
+                            # node keeps its PROTECTED content (title/content/
+                            # context/justification/embedding/source_confidence),
+                            # but maturity METADATA still promotes — a working
+                            # node a human curated must still reach canonical when
+                            # its source spec becomes done. Update ONLY the
+                            # maturity metadata (partial), never the curated
+                            # content.
+                            _apply_kuzu_node_update_partial(
+                                orch,
+                                node_type,
+                                existing_id,
+                                {
+                                    "graph_layer": getattr(
+                                        cand, "graph_layer", "canonical"
+                                    ),
+                                    "maturity_status": getattr(
+                                        cand, "maturity_status", "canonical_eligible"
+                                    ),
+                                },
+                            )
                         candidate_to_kuzu_id[cand_id] = existing_id
                         candidate_to_node_type[cand_id] = node_type
                         # Spec eca49df9 (FR5/AC6): count + audit the NC-8
@@ -2040,6 +2109,14 @@ def _resolve_endpoint(
 _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset({
     "title", "content", "context", "justification",
     "priority_boost", "source_confidence",
+    # Maturity METADATA (card 302044a7 / FR4 / dec_85ba8dc2): graph_layer +
+    # maturity_status are safe to PROMOTE on a merge by source_artifact_ref
+    # (e.g. working->canonical when the source spec reaches done). They are
+    # maturity metadata, NOT curated content — so they update even for
+    # human_curated nodes, while title/content/context/justification stay
+    # protected. Historical/HNSW-locked fields (embedding, created_at,
+    # query_hits, human_curated, …) remain excluded.
+    "graph_layer", "maturity_status",
 })
 
 # Kuzu HNSW vector indexes (see `VECTOR_INDEX_TYPES` in schema.py) own

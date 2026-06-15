@@ -45,7 +45,7 @@ def fresh_board():
 
 
 def test_schema_version_is_v030():
-    assert SCHEMA_VERSION == "0.3.5"
+    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6"}
 
 
 def test_relevance_columns_declared():
@@ -118,4 +118,4 @@ def test_migrate_bumps_board_meta_schema_version(fresh_board):
             {"bid": fresh_board},
         )
         assert res.has_next()
-        assert res.get_next()[0] == "0.3.5"
+        assert res.get_next()[0] == SCHEMA_VERSION

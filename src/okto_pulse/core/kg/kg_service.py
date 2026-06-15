@@ -852,6 +852,7 @@ class KGService:
         rel_types: list[str] | None = None,
         direction: str = "both",
         max_depth: int = 2,
+        graph_layer: str = GRAPH_LAYER_CANONICAL,
     ) -> list[dict]:
         """2-hop (or 1-hop) neighborhood around an artifact with optional
         relationship-type + direction filters for impact analysis.
@@ -863,6 +864,11 @@ class KGService:
         neighborhood.
         ``max_depth`` — ``1`` returns center+hop1 only (hop2 fields null);
         ``2`` (default) returns up to 2 hops.
+        ``graph_layer`` — ``canonical`` (default) | ``working`` | ``all`` (spec
+        849d6292, FR6/TR4). The default scopes the neighborhood to canonical
+        nodes so a centered subgraph NEVER leaks ``working`` nodes; the value is
+        propagated into the store Cypher (center+hop1+hop2), not filtered
+        post-hoc, so the non-leakage guarantee holds at the data layer.
         """
         if direction not in ("both", "incoming", "outgoing"):
             raise ValueError(
@@ -871,12 +877,13 @@ class KGService:
         if max_depth not in (1, 2):
             raise ValueError(f"invalid max_depth {max_depth!r}: expected 1 or 2")
 
+        layer = normalize_graph_layer(graph_layer)
         store = _get_graph_store()
         f = _filters(min_confidence, max_rows, defaults=self.defaults)
 
         # Prefer the filtered method when the store implements it; otherwise
         # fall back to the legacy 2-hop undirected query (caller gets a hint
-        # in the cache key so caches don't collide between shapes).
+        # in the cache key so caches don't collide between shapes / layers).
         if (
             hasattr(store, "find_by_artifact_filtered")
             and (rel_types is not None or direction != "both" or max_depth != 2)
@@ -886,18 +893,23 @@ class KGService:
                 "rel_types": sorted(rel_types) if rel_types else None,
                 "direction": direction,
                 "max_depth": max_depth,
+                "graph_layer": layer,
             }
             rows = self._cached_call(
                 "get_related_context.filtered", board_id, cache_params,
                 lambda: store.find_by_artifact_filtered(
                     board_id, artifact_id, f,
                     rel_types=rel_types, direction=direction, max_depth=max_depth,
+                    graph_layer=layer,
                 ),
             )
         else:
             rows = self._cached_call(
-                "get_related_context", board_id, {"artifact_id": artifact_id},
-                lambda: store.find_by_artifact(board_id, artifact_id, f),
+                "get_related_context", board_id,
+                {"artifact_id": artifact_id, "graph_layer": layer},
+                lambda: store.find_by_artifact(
+                    board_id, artifact_id, f, graph_layer=layer,
+                ),
             )
         return [
             {
@@ -1198,14 +1210,13 @@ class KGService:
                     "RETURN b.board_id, node.id, node.original_node_id, "
                     "node.title, node.one_line_summary, node.node_type, "
                     "coalesce(node.graph_layer, 'canonical') AS graph_layer, distance "
-                    "ORDER BY distance ASC LIMIT $k"
+                    "ORDER BY distance ASC LIMIT $search_k"
                 )
                 res = conn.execute(
                     cypher,
                     {
                         "vec": query_vec,
                         "search_k": search_k,
-                        "k": top_k,
                         "boards": scope,
                         "graph_layer": layer,
                     },
@@ -1240,13 +1251,17 @@ class KGService:
             logger.debug("kg.query_global.failed err=%s", exc)
             return []
 
+        filtered_hnsw: list[dict] = []
         if results:
-            return results[:top_k]
+            filtered_hnsw = self._filter_global_results_to_existing_nodes(results)
+            if len(filtered_hnsw) == len(results):
+                return filtered_hnsw[:top_k]
 
         # Fallback: linear scan over DecisionDigest if HNSW returned nothing
-        # (index empty or not yet populated by the outbox worker). Mirrors
-        # the per-board fallback in search.py so global stays usable while
-        # the meta-graph is still warming up.
+        # (index empty or not yet populated by the outbox worker), or if HNSW
+        # returned stale digest rows that were filtered before filling top_k.
+        # Mirrors the per-board fallback in search.py so global stays usable
+        # while the meta-graph is still warming up.
         try:
             _, conn = open_global_connection()
             res = None
@@ -1284,7 +1299,9 @@ class KGService:
                         "similarity": sim,
                     })
                 scored.sort(key=lambda r: r["similarity"], reverse=True)
-                return scored[:top_k]
+                return self._filter_global_results_to_existing_nodes(
+                    scored,
+                )[:top_k]
             finally:
                 if res is not None:
                     try:
@@ -1297,7 +1314,66 @@ class KGService:
                     pass
         except Exception as exc:
             logger.debug("kg.query_global.fallback_failed err=%s", exc)
-            return []
+            return filtered_hnsw[:top_k]
+
+    @staticmethod
+    def _filter_global_results_to_existing_nodes(results: list[dict]) -> list[dict]:
+        """Drop DecisionDigest rows whose source node is absent from board graph."""
+
+        if not results:
+            return results
+
+        ids_by_board: dict[str, set[str]] = {}
+        for row in results:
+            board_id = row.get("board_id")
+            node_id = row.get("id")
+            if board_id and node_id:
+                ids_by_board.setdefault(str(board_id), set()).add(str(node_id))
+
+        existing_by_board: dict[str, set[str]] = {}
+        from okto_pulse.core.kg.schema import open_board_connection
+
+        for board_id, node_ids in ids_by_board.items():
+            try:
+                with open_board_connection(board_id) as (_db, conn):
+                    res = conn.execute(
+                        "MATCH (n) WHERE n.id IN $ids RETURN n.id",
+                        {"ids": list(node_ids)},
+                    )
+                    existing: set[str] = set()
+                    while res.has_next():
+                        row = res.get_next()
+                        if row and row[0]:
+                            existing.add(str(row[0]))
+                    existing_by_board[board_id] = existing
+            except Exception as exc:
+                logger.warning(
+                    "kg.query_global.source_validation_failed board=%s err=%s",
+                    board_id, exc,
+                    extra={
+                        "event": "kg.query_global.source_validation_failed",
+                        "board_id": board_id,
+                    },
+                )
+                existing_by_board[board_id] = set()
+
+        filtered = [
+            row for row in results
+            if str(row.get("id")) in existing_by_board.get(
+                str(row.get("board_id")), set()
+            )
+        ]
+        dropped = len(results) - len(filtered)
+        if dropped:
+            logger.warning(
+                "kg.query_global.stale_digest_filtered count=%d",
+                dropped,
+                extra={
+                    "event": "kg.query_global.stale_digest_filtered",
+                    "count": dropped,
+                },
+            )
+        return filtered
 
 
 # Module-level default instance.

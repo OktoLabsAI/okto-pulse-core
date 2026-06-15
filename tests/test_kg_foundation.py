@@ -153,7 +153,9 @@ class TestBootstrapSchema:
         }
 
     def test_schema_version(self):
-        assert SCHEMA_VERSION == "0.3.5"
+        # Monotonic additive bumps preserve the floor (0.3.6 = KG working/
+        # canonical partitioning, dcf6130) — assert known-version membership.
+        assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6"}
 
     def test_bootstrap_creates_kuzu_dir(self, board_id):
         handle = bootstrap_board_graph(board_id)

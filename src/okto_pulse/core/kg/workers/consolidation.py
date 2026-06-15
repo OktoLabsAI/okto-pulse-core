@@ -25,6 +25,7 @@ import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +59,10 @@ from okto_pulse.core.kg.primitives import (
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
 from okto_pulse.core.kg.workers.dead_letter import route_to_dead_letter
+from okto_pulse.core.kg.schema_layer_guard import (
+    ensure_graph_layer_schema,
+    is_graph_layer_schema_error,
+)
 from okto_pulse.core.kg.safe_write_lifecycle import (
     STEP_CHECKPOINT,
     STEP_FLUSH,
@@ -1534,7 +1539,43 @@ class ConsolidationWorker:
         a FailureEvent with ``event_kind="kg.commit.failed"`` is recorded
         in the collector ring-buffer so the MemoryPressureCorrelator
         receives a real commit-failure signal.  Non-blocking/non-raising.
+
+        FR6 (spec eaf185c9 / card 81a96a49): a legacy board missing the
+        graph_layer/maturity_status schema raises ``Cannot find property
+        graph_layer for n``. Before that raw string becomes the sole DLQ
+        diagnostic we try the idempotent schema migration+backfill. If it
+        actually repairs the schema we re-pending the entry for an immediate
+        retry instead of counting it toward the dead-letter threshold; if it
+        cannot, we replace the raw error with a structured, actionable
+        diagnostic (or_1f52d4fd) so the dead-letter row names the operational
+        action rather than the opaque binder error.
         """
+        if is_graph_layer_schema_error(error_text):
+            remediation = ensure_graph_layer_schema(
+                entry.board_id, raw_error=error_text
+            )
+            if remediation.recovered:
+                # Schema repaired in place — re-pending for an immediate retry
+                # rather than charging this attempt against the DLQ threshold.
+                entry.last_error = None
+                entry.status = "pending"
+                entry.next_retry_at = datetime.now(timezone.utc)
+                entry.claim_timeout_at = None
+                entry.worker_id = None
+                entry.claimed_at = None
+                entry.claimed_by_session_id = None
+                logger.info(
+                    "consolidation.schema_layer_recovered artifact=%s:%s "
+                    "board=%s columns_added=%s",
+                    entry.artifact_type, entry.artifact_id, entry.board_id,
+                    remediation.columns_added,
+                )
+                return
+            if remediation.needs_structured_error and remediation.structured_message:
+                # Could not migrate — make the DLQ diagnostic actionable so the
+                # raw binder error is never the only thing operators see.
+                error_text = remediation.structured_message
+
         correlation_id = uuid.uuid4().hex
         try:
             classification = await _classify_queue_entry_source_for_debt(db, entry)

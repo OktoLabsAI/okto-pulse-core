@@ -237,7 +237,11 @@ async def get_subgraph(
     try:
         layer = normalize_graph_layer(graph_layer)
         if center:
-            rows = svc.get_related_context(board_id, center, max_rows=limit)
+            # Spec 849d6292 (FR6/AC5): the centered branch MUST scope to the
+            # requested layer too — default canonical never leaks working.
+            rows = svc.get_related_context(
+                board_id, center, max_rows=limit, graph_layer=layer,
+            )
             next_cursor: str | None = None
         else:
             try:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 
+from okto_pulse.core.kg.schema import SCHEMA_VERSION
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
@@ -232,7 +233,7 @@ class TestKGServiceUsesRegistry:
         assert svc.get_schema_version("b1") is None
 
         store.bootstrap("b1")
-        assert svc.get_schema_version("b1") == "0.3.5"
+        assert svc.get_schema_version("b1") == SCHEMA_VERSION
 
     def test_service_decision_history_via_graph_store(self):
         from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore

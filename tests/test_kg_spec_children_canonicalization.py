@@ -1,0 +1,299 @@
+"""Behavioral tests for canonicalization of spec-done children (spec eaf185c9, card 302044a7).
+
+    * ts_838e4ef9 (card 43bc4311) AC1 — a done spec materializes ALL structured children
+      (FR/TR/AC/BR/API/TestScenario/IR/OR/Decision) as graph_layer=canonical + canonical_eligible.
+    * ts_e16a76cd (card adcb1d25) AC2 — a pre-done spec keeps the same children working-only.
+    * ts_bd28324f (card 42034e1c) AC5 — promotion working->canonical by source_artifact_ref
+      without duplicating; including the human_curated subcase: maturity metadata promotes,
+      but protected content (title/content/context/justification) is NOT overwritten.
+"""
+
+from __future__ import annotations
+
+import uuid
+
+import pytest
+
+from okto_pulse.core.kg.primitives import (
+    _apply_kuzu_node_create_with_timestamp,
+    begin_consolidation,
+    commit_consolidation,
+    propose_reconciliation,
+)
+from okto_pulse.core.kg.schemas import (
+    BeginConsolidationRequest,
+    CommitConsolidationRequest,
+    KGNodeType,
+    NodeCandidate,
+    ProposeReconciliationRequest,
+)
+from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+
+
+def _full_spec(status: str) -> dict:
+    """A spec carrying ALL nine structured child families."""
+    return {
+        "id": f"spec-{uuid.uuid4().hex[:8]}",
+        "title": "Full spec",
+        "description": "spec with every child type",
+        "status": status,
+        "board_id": "board-canon",
+        "context": "## Decisions\n- Use PostgreSQL\n",
+        "functional_requirements": ["FR alpha", "FR beta"],
+        "technical_requirements": [{"text": "TR alpha"}],
+        "acceptance_criteria": ["AC alpha"],
+        "business_rules": ["BR alpha"],
+        "test_scenarios": [
+            {
+                "id": "ts_x",
+                "title": "Scenario",
+                "given": "g",
+                "when": "w",
+                "then": "t",
+                "linked_criteria": ["AC alpha"],
+            }
+        ],
+        "api_contracts": [{"name": "GET /x", "description": "an api"}],
+        "integration_requirements": [
+            {"id": "ir_x", "title": "IR alpha", "description": "integ"}
+        ],
+        "observability_requirements": [
+            {"id": "or_x", "title": "OR alpha", "metric_name": "m", "description": "obs"}
+        ],
+        "decisions": [
+            {"id": "dec_x", "title": "Decision alpha", "status": "active", "rationale": "r"}
+        ],
+    }
+
+
+def _children(result) -> list:
+    return [
+        n
+        for n in result.nodes
+        if not n.source_artifact_ref.startswith("board:")
+        and n.source_artifact_ref != "tech_entities.yml"
+    ]
+
+
+# ---------------------------------------------------------------------------
+# ts_838e4ef9 (card 43bc4311) AC1 — done spec -> all children canonical
+# ---------------------------------------------------------------------------
+
+
+def test_spec_done_materializes_all_children_canonical():
+    full = _full_spec("done")
+    children = _children(DeterministicWorker().process_spec(full))
+
+    assert children
+    assert all(n.graph_layer == "canonical" for n in children)
+    assert all(n.maturity_status == "canonical_eligible" for n in children)
+
+    # IR + OR + decisions materialize as their own canonical nodes — removing
+    # them strictly reduces the emitted node set (so every family contributes).
+    without = {
+        **full,
+        "integration_requirements": [],
+        "observability_requirements": [],
+        "decisions": [],
+    }
+    without_children = _children(DeterministicWorker().process_spec(without))
+    assert len(children) > len(without_children)
+
+
+# ---------------------------------------------------------------------------
+# ts_e16a76cd (card adcb1d25) AC2 — pre-done spec -> working-only
+# ---------------------------------------------------------------------------
+
+
+def test_spec_predone_children_are_working_only():
+    children = _children(DeterministicWorker().process_spec(_full_spec("draft")))
+
+    assert children
+    # working-only: a canonical-only KG read filters on graph_layer=canonical,
+    # so these nodes are excluded by construction.
+    assert all(n.graph_layer == "working" for n in children)
+    assert all(n.maturity_status == "working_immature" for n in children)
+
+
+# ---------------------------------------------------------------------------
+# ts_bd28324f (card 42034e1c) AC5 — promotion without duplicating + curated guard
+# ---------------------------------------------------------------------------
+
+
+def _seed_decision(board_id, *, title, human_curated):
+    """Seed a root Entity + a WORKING (optionally human_curated) Decision that
+    ``belongs_to`` it, so the source_artifact_ref merge has a CONNECTED node to
+    reuse (the connectivity guard otherwise rejects an isolated node). Returns
+    the Decision's source_artifact_ref."""
+    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.transaction import TransactionOrchestrator
+
+    spec_ref = f"spec:{uuid.uuid4().hex[:10]}"
+    decision_ref = f"{spec_ref}:decision:{uuid.uuid4().hex[:8]}"
+    root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
+    node_id = f"decision_seed_{uuid.uuid4().hex[:12]}"
+
+    def _attrs(title_, content, ref, curated, layer):
+        return {
+            "title": title_,
+            "content": content,
+            "context": "ORIGINAL CONTEXT",
+            "justification": "ORIGINAL JUSTIFICATION",
+            "source_artifact_ref": ref,
+            "created_at": "2026-06-08T00:00:00+00:00",
+            "created_by_agent": "human",
+            "source_confidence": 1.0,
+            "relevance_score": 0.5,
+            "query_hits": 0,
+            "last_queried_at": None,
+            "priority_boost": 0.0,
+            "human_curated": curated,
+            "graph_layer": layer,
+            "maturity_status": (
+                "working_immature" if layer == "working" else "canonical_eligible"
+            ),
+            "embedding": [0.0] * 384,
+        }
+
+    with open_board_connection(board_id) as (_db, kconn):
+        orch = TransactionOrchestrator(
+            kuzu_conn=kconn,
+            sqlite_session=None,
+            session_id=f"seed_{uuid.uuid4().hex[:8]}",
+            board_id=board_id,
+        )
+        _apply_kuzu_node_create_with_timestamp(
+            orch, "Entity", root_id,
+            _attrs("Spec root", "", spec_ref, False, "canonical"),
+        )
+        _apply_kuzu_node_create_with_timestamp(
+            orch, "Learning", node_id,
+            _attrs(title, "ORIGINAL CONTENT", decision_ref, human_curated, "working"),
+        )
+        orch.create_edge(
+            edge_type="belongs_to",
+            from_id=node_id,
+            to_id=root_id,
+            attrs={"confidence": 1.0},
+            from_type="Learning",
+            to_type="Entity",
+        )
+    return decision_ref
+
+
+def _read_decision(board_id, source_ref):
+    from okto_pulse.core.kg.schema import open_board_connection
+
+    with open_board_connection(board_id) as (_db, kconn):
+        res = kconn.execute(
+            "MATCH (n:Learning) WHERE n.source_artifact_ref = $ref "
+            "RETURN count(n), coalesce(n.graph_layer, 'canonical'), "
+            "n.maturity_status, n.title, n.content",
+            {"ref": source_ref},
+        )
+        try:
+            if res.has_next():
+                row = res.get_next()
+                return {
+                    "count": int(row[0]),
+                    "graph_layer": row[1],
+                    "maturity_status": row[2],
+                    "title": row[3],
+                    "content": row[4],
+                }
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    return None
+
+
+async def _promote(board_id, agent_id, db_factory, *, source_ref, cand_id):
+    # The real promotion is the Layer 1 deterministic worker re-emitting a
+    # done spec's child as canonical; model that with a DETERMINISTIC candidate
+    # carrying graph_layer=canonical (a cognitive add would be re-classified to
+    # the consolidation's maturity instead).
+    cand = NodeCandidate(
+        candidate_id=cand_id,
+        node_type=KGNodeType.LEARNING,
+        title="UPDATED TITLE",
+        content="UPDATED CONTENT",
+        source_artifact_ref=source_ref,
+        source_confidence=0.9,
+        graph_layer="canonical",
+        maturity_status="canonical_eligible",
+    )
+    async with db_factory() as db:
+        begin = await begin_consolidation(
+            BeginConsolidationRequest(
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=f"spec-{uuid.uuid4().hex[:8]}",
+                raw_content=f"promote {source_ref}",
+                deterministic_candidates=[cand],
+            ),
+            agent_id=agent_id,
+            db=db,
+        )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id=agent_id,
+        db=None,
+        force_reprocess=True,
+    )
+    async with db_factory() as db:
+        return await commit_consolidation(
+            CommitConsolidationRequest(session_id=begin.session_id),
+            agent_id=agent_id,
+            db=db,
+        )
+
+
+@pytest.mark.asyncio
+async def test_promotion_curated_promotes_maturity_preserves_content(
+    board_id, agent_id, db_factory, board_handle,
+):
+    # A human-curated WORKING decision: promotion must lift graph_layer to
+    # canonical (maturity metadata) WITHOUT overwriting the curated content.
+    source_ref = _seed_decision(
+        board_id, title="CURATED TITLE", human_curated=True
+    )
+
+    commit = await _promote(
+        board_id, agent_id, db_factory, source_ref=source_ref, cand_id="cand_curated"
+    )
+    assert commit.nodes_merged == 1  # reused, not duplicated
+    assert commit.nodes_added == 0
+
+    node = _read_decision(board_id, source_ref)
+    assert node is not None
+    assert node["count"] == 1  # no duplicate
+    assert node["graph_layer"] == "canonical"  # maturity METADATA promoted
+    assert node["maturity_status"] == "canonical_eligible"
+    assert node["title"] == "CURATED TITLE"  # protected content preserved
+    assert node["content"] == "ORIGINAL CONTENT"
+
+
+@pytest.mark.asyncio
+async def test_promotion_non_curated_promotes_and_updates_content(
+    board_id, agent_id, db_factory, board_handle,
+):
+    # A non-curated WORKING decision: promotion lifts the layer AND updates the
+    # agent-managed content (current behavior, unchanged by the fix).
+    source_ref = _seed_decision(
+        board_id, title="OLD TITLE", human_curated=False
+    )
+
+    commit = await _promote(
+        board_id, agent_id, db_factory, source_ref=source_ref, cand_id="cand_agent"
+    )
+    assert commit.nodes_merged == 1
+    assert commit.nodes_added == 0
+
+    node = _read_decision(board_id, source_ref)
+    assert node is not None
+    assert node["count"] == 1
+    assert node["graph_layer"] == "canonical"
+    assert node["title"] == "UPDATED TITLE"  # agent-managed content updated
+    assert node["content"] == "UPDATED CONTENT"

@@ -144,6 +144,7 @@ okto-pulse://reference/tool-docs/kg."""
         rel_types: str = "",
         direction: str = "both",
         max_depth: int = 2,
+        graph_layer: str = "canonical",
     ) -> str:
         """
         Given an artifact, return its neighborhood in the KG: prior
@@ -163,6 +164,11 @@ okto-pulse://reference/tool-docs/kg."""
                 Applied to hop1 only; hop2 is always undirected.
             max_depth: ``1`` returns center+hop1 only (hop2 fields null);
                 ``2`` (default) returns the full 2-hop context.
+            graph_layer: ``canonical`` (default) | ``working`` | ``all`` (spec
+                849d6292, FR6). The default scopes the neighborhood to canonical
+                nodes so an explored subgraph NEVER leaks ``working`` nodes;
+                pass ``working``/``all`` to widen it. Invalid values return a
+                structured error.
 
         Returns:
             JSON with 2-hop neighborhood context
@@ -184,6 +190,7 @@ okto-pulse://reference/tool-docs/kg."""
                 board_id, artifact_id,
                 min_confidence=min_confidence, max_rows=max_rows,
                 rel_types=parsed_types, direction=direction, max_depth=max_depth,
+                graph_layer=graph_layer,
             )
             logger.debug("[KG] kg_get_related_context thread returned: count=%d", len(rows))
             resp = RelatedContextResponse(

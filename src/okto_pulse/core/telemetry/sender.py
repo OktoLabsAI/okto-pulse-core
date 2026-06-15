@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import logging
 import os
+import random
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -21,9 +22,38 @@ from okto_pulse.core.telemetry.settings import (
     resolve_telemetry_config,
     save_state,
 )
+from okto_pulse.core.telemetry import failure_state as fs
 from okto_pulse.core.telemetry.store import LocalTelemetryStore, add_guided_help_counts, parse_iso
 
 logger = logging.getLogger("okto_pulse.telemetry.sender")
+
+# R1-B: preventive token refresh + jittered exponential backoff for transient
+# failures. Time and jitter go through small indirections so tests can simulate
+# the clock and make backoff deterministic.
+DEFAULT_TOKEN_REFRESH_MARGIN_HOURS = 24
+_BACKOFF_BASE_SECONDS = 30
+_BACKOFF_CAP_SECONDS = 3600
+_BACKOFF_JITTER_RATIO = 0.5
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(moment: datetime) -> str:
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+def _backoff_jitter() -> float:
+    """Jitter fraction in [0, _BACKOFF_JITTER_RATIO]; patched in tests."""
+    return random.random() * _BACKOFF_JITTER_RATIO
+
+
+def _backoff_delay_seconds(retry_count: int) -> float:
+    """Exponential backoff base*2^(n-1), capped, with additive jitter."""
+    steps = min(20, max(0, retry_count - 1))
+    base = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2**steps))
+    return min(_BACKOFF_CAP_SECONDS, base * (1.0 + _backoff_jitter()))
 
 
 def install_id_path(settings: CoreSettings) -> Path:
@@ -87,7 +117,7 @@ class TelemetryBeaconSender:
         cfg = resolve_telemetry_config(self.settings)
         return LocalTelemetryStore(cfg.metrics_dir, cfg.retention_days)
 
-    def handshake(self) -> dict[str, Any] | None:
+    def handshake(self, *, open_circuit_on_failure: bool = True) -> dict[str, Any] | None:
         cfg = resolve_telemetry_config(self.settings)
         if cfg.mode != "anonymous_beacon":
             _log_runtime_skip(reason="disabled")
@@ -112,7 +142,8 @@ class TelemetryBeaconSender:
                 timeout=5,
             )
         except requests.RequestException:
-            self._open_circuit(state, cfg, "HANDSHAKE_NETWORK")
+            if open_circuit_on_failure:
+                self._open_circuit(state, cfg, "HANDSHAKE_NETWORK")
             _log_beacon_outcome(reason="transport_failed")
             return None
         if resp.status_code in {410, 426}:
@@ -122,7 +153,8 @@ class TelemetryBeaconSender:
             _log_beacon_outcome(reason="consent_stale")
             return None
         if resp.status_code == 429 or resp.status_code >= 500:
-            self._open_circuit(state, cfg, f"HANDSHAKE_{resp.status_code}")
+            if open_circuit_on_failure:
+                self._open_circuit(state, cfg, f"HANDSHAKE_{resp.status_code}", http_status=resp.status_code)
             _log_beacon_outcome(reason="transport_failed")
             return None
         resp.raise_for_status()
@@ -240,10 +272,50 @@ class TelemetryBeaconSender:
         if circuit_until and circuit_until > datetime.now(timezone.utc):
             _log_beacon_outcome(reason="transport_failed")
             return {"sent": False, "reason": "circuit_open"}
+        refresh_status: str | None = None
+        refresh_next_retry_at: str | None = None
         if not state.get("install_token"):
             self.handshake()
             cfg = resolve_telemetry_config(self.settings)
             state = dict(cfg.state)
+        else:
+            # R1-B: preventive refresh when the current token is within the
+            # configurable expiry margin (default 24h) BEFORE POST /v1/usage.
+            expires_at = parse_iso(str(state.get("install_token_expires_at") or ""))
+            margin = timedelta(
+                hours=int(
+                    getattr(
+                        self.settings,
+                        "metrics_token_refresh_margin_hours",
+                        DEFAULT_TOKEN_REFRESH_MARGIN_HOURS,
+                    )
+                )
+            )
+            if expires_at and (expires_at - _utcnow()) <= margin:
+                refreshed = self.handshake(open_circuit_on_failure=False)
+                cfg = resolve_telemetry_config(self.settings)
+                state = dict(cfg.state)
+                if refreshed is None:
+                    if expires_at <= _utcnow():
+                        # token already expired and refresh failed -> cannot publish
+                        self._open_circuit(state, cfg, "REFRESH_FAILED")
+                        _log_beacon_outcome(reason="transport_failed")
+                        return {"sent": False, "reason": "refresh_failed"}
+                    # AC ac_7dc06c55: refresh failed by 5xx/transport but the
+                    # current token is still valid -> degrade and publish with it,
+                    # recording the refresh retry without blocking the publish path.
+                    refresh_status = "degraded"
+                    refresh_next_retry_at = _iso(_utcnow() + timedelta(seconds=_backoff_delay_seconds(1)))
+                    logger.info(
+                        "metrics.token_refresh",
+                        extra={
+                            "metric_name": "metrics_token_refresh_total",
+                            "outcome": "degraded",
+                            "reason": "refresh_failed_token_valid",
+                        },
+                    )
+                else:
+                    refresh_status = "refreshed"
         token = state.get("install_token")
         if not token:
             _log_beacon_outcome(reason="ack_missing")
@@ -252,7 +324,75 @@ class TelemetryBeaconSender:
         if not batch:
             return {"sent": False, "reason": "empty"}
         batch_seq = int(state.get("next_batch_seq") or 1)
-        timestamp = str(int(datetime.now(timezone.utc).timestamp()))
+        try:
+            resp = self._sign_and_post_usage(cfg, token, batch, batch_seq)
+        except requests.RequestException:
+            self._open_circuit(state, cfg, "USAGE_NETWORK")
+            _log_beacon_outcome(reason="transport_failed")
+            return {"sent": False, "reason": "network"}
+        outcome = self._handle_usage_response(
+            resp, state, cfg, batch=batch, batch_seq=batch_seq, allow_rehandshake=True
+        )
+        if outcome.get("sent") and refresh_status is not None:
+            outcome["refresh"] = refresh_status
+            if refresh_next_retry_at is not None:
+                outcome["refresh_next_retry_at"] = refresh_next_retry_at
+        return outcome
+
+    def _open_circuit(
+        self, state: dict[str, Any], cfg, code: str, *, http_status: int | None = None, status: str = fs.STATUS_DEGRADED
+    ) -> None:
+        # R1-B: jittered exponential backoff recorded in the R1-A failure-state
+        # schema. circuit_open_until/last_failure_code stay in sync for the
+        # existing send_once gate and backward compatibility. R1-C passes
+        # status=FATAL for integrity failures (INVALID_SIGNATURE).
+        current = fs.read_failure_state(state)
+        retry_count = current.retry_count + 1
+        now = _utcnow()
+        next_retry_at = _iso(now + timedelta(seconds=_backoff_delay_seconds(retry_count)))
+        updated = fs.merge(
+            current,
+            status=status,
+            reason_code=code,
+            http_status=http_status,
+            last_failure_at=_iso(now),
+            next_retry_at=next_retry_at,
+            retry_count=retry_count,
+            recovered_at=None,
+        )
+        state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
+        state["circuit_open_until"] = next_retry_at
+        state["last_failure_code"] = code
+        save_state(cfg.metrics_dir, state)
+        self._store().append_sent({"failed_at": now_utc(), "code": code}, failed=True)
+
+    def _record_success(self, state: dict[str, Any], cfg, *, batch_seq: int) -> None:
+        # R1-B: record a successful publish in the failure-state schema, marking
+        # recovery when the previous state was failing, and clear the legacy
+        # circuit gate. next_batch_seq/send-time seq stays here (R1 scope); event
+        # watermark/delta is R3.
+        current = fs.read_failure_state(state)
+        now_iso = now_utc()
+        was_failing = current.status in (fs.STATUS_DEGRADED, fs.STATUS_FATAL) or current.retry_count > 0
+        updated = fs.merge(
+            current,
+            status=fs.STATUS_OK,
+            reason_code=None,
+            http_status=None,
+            last_success_at=now_iso,
+            next_retry_at=None,
+            retry_count=0,
+            recovered_at=now_iso if was_failing else current.recovered_at,
+        )
+        state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
+        state["last_send_at"] = now_iso
+        state["next_batch_seq"] = batch_seq + 1
+        state.pop("circuit_open_until", None)
+        state.pop("last_failure_code", None)
+        save_state(cfg.metrics_dir, state)
+
+    def _sign_and_post_usage(self, cfg, token, batch: dict[str, Any], batch_seq: int):
+        timestamp = str(int(_utcnow().timestamp()))
         nonce = str(uuid.uuid4())
         signature = sign_payload(str(token), timestamp, nonce, batch_seq, batch)
         body = canonical_json(batch).encode("utf-8")
@@ -263,17 +403,33 @@ class TelemetryBeaconSender:
             "x-okto-nonce": nonce,
             "x-okto-batch-seq": str(batch_seq),
         }
+        return self.session.post(f"{cfg.beacon_url}/v1/usage", data=body, headers=headers, timeout=5)
+
+    @staticmethod
+    def _response_code(resp) -> str | None:
         try:
-            resp = self.session.post(
-                f"{cfg.beacon_url}/v1/usage",
-                data=body,
-                headers=headers,
-                timeout=5,
-            )
-        except requests.RequestException:
-            self._open_circuit(state, cfg, "USAGE_NETWORK")
-            _log_beacon_outcome(reason="transport_failed")
-            return {"sent": False, "reason": "network"}
+            body = resp.json()
+        except Exception:
+            return None
+        return body.get("code") if isinstance(body, dict) else None
+
+    @staticmethod
+    def _rehandshake_allowed(cfg, state: dict[str, Any]) -> bool:
+        # R1-C / FR fr_07d36948: a re-handshake re-registers the install, so it is
+        # only allowed while consent is valid — beacon opted-in AND a recorded
+        # policy acknowledgement (policy_ack) present in local state.
+        return cfg.mode == "anonymous_beacon" and bool(state.get("policy_version"))
+
+    def _handle_usage_response(
+        self,
+        resp,
+        state: dict[str, Any],
+        cfg,
+        *,
+        batch: dict[str, Any],
+        batch_seq: int,
+        allow_rehandshake: bool,
+    ) -> dict[str, Any]:
         if resp.status_code in {410, 426}:
             state["mode"] = "disabled"
             state["schema_status"] = "gone" if resp.status_code == 410 else "sunset"
@@ -281,28 +437,119 @@ class TelemetryBeaconSender:
             _log_beacon_outcome(reason="consent_stale")
             return {"sent": False, "reason": "schema_incompatible"}
         if resp.status_code in {403, 429} or resp.status_code >= 500:
-            self._open_circuit(state, cfg, f"USAGE_{resp.status_code}")
+            self._open_circuit(state, cfg, f"USAGE_{resp.status_code}", http_status=resp.status_code)
             _log_beacon_outcome(reason="transport_failed")
             return {"sent": False, "reason": "retryable"}
+        if 200 <= resp.status_code < 300:
+            self._record_success(state, cfg, batch_seq=batch_seq)
+            self._store().append_sent(
+                {
+                    "sent_at": state["last_send_at"],
+                    "batch_seq": batch_seq,
+                    "payload": batch,
+                    "response_status": resp.status_code,
+                }
+            )
+            _log_beacon_outcome(reason="sent", outcome="sent")
+            return {"sent": True, "batch_seq": batch_seq}
+        # R1-C: classify the named /v1/usage reason codes (testable, not log parsing).
+        code = self._response_code(resp)
+        if resp.status_code == 401 and code == "UNKNOWN_INSTALL":
+            return self._recover_unknown_install(
+                state, cfg, batch=batch, batch_seq=batch_seq, allow_rehandshake=allow_rehandshake
+            )
+        if resp.status_code == 401 and code == "INVALID_SIGNATURE":
+            # Integrity/auth failure: actionable/fatal, never a blind re-handshake loop.
+            self._open_circuit(state, cfg, "INVALID_SIGNATURE", http_status=401, status=fs.STATUS_FATAL)
+            _log_beacon_outcome(reason="fatal")
+            return {"sent": False, "reason": "invalid_signature"}
+        if resp.status_code == 409 and code == "DUPLICATE_NONCE_OR_BATCH_SEQ":
+            # Idempotent: backend already claimed this batch; advance the send-time
+            # seq so we stop replaying it. Event watermark/delta stays in R3.
+            self._record_duplicate(state, cfg, batch_seq=batch_seq)
+            _log_beacon_outcome(reason="duplicate")
+            return {"sent": False, "reason": "duplicate", "batch_seq": batch_seq}
         resp.raise_for_status()
-        state["last_send_at"] = now_utc()
-        state["next_batch_seq"] = batch_seq + 1
-        save_state(cfg.metrics_dir, state)
-        self._store().append_sent(
-            {
-                "sent_at": state["last_send_at"],
-                "batch_seq": batch_seq,
-                "payload": batch,
-                "response_status": resp.status_code,
-            }
-        )
-        _log_beacon_outcome(reason="sent", outcome="sent")
-        return {"sent": True, "batch_seq": batch_seq}
+        return {"sent": False, "reason": "unhandled"}
 
-    def _open_circuit(self, state: dict[str, Any], cfg, code: str) -> None:
-        state["circuit_open_until"] = (
-            datetime.now(timezone.utc) + timedelta(minutes=15)
-        ).isoformat().replace("+00:00", "Z")
-        state["last_failure_code"] = code
+    def _recover_unknown_install(
+        self,
+        state: dict[str, Any],
+        cfg,
+        *,
+        batch: dict[str, Any],
+        batch_seq: int,
+        allow_rehandshake: bool,
+    ) -> dict[str, Any]:
+        if not allow_rehandshake:
+            # Already re-handshaked + retried once and STILL unknown: persistent
+            # failure, back off without a second re-handshake.
+            self._open_circuit(state, cfg, "UNKNOWN_INSTALL", http_status=401)
+            _log_beacon_outcome(reason="transport_failed")
+            return {"sent": False, "reason": "unknown_install_unresolved"}
+        if not self._rehandshake_allowed(cfg, state):
+            # No valid consent: do NOT re-register; persist an actionable block.
+            self._record_blocked(state, cfg, reason_code="UNKNOWN_INSTALL")
+            _log_beacon_outcome(reason="consent_blocked")
+            return {"sent": False, "reason": "consent_blocked"}
+        refreshed = self.handshake(open_circuit_on_failure=False)
+        cfg = resolve_telemetry_config(self.settings)
+        state = dict(cfg.state)
+        token = state.get("install_token")
+        if refreshed is None or not token:
+            self._open_circuit(state, cfg, "UNKNOWN_INSTALL", http_status=401)
+            _log_beacon_outcome(reason="transport_failed")
+            return {"sent": False, "reason": "rehandshake_failed"}
+        try:
+            retry = self._sign_and_post_usage(cfg, token, batch, batch_seq)
+        except requests.RequestException:
+            self._open_circuit(state, cfg, "USAGE_NETWORK")
+            _log_beacon_outcome(reason="transport_failed")
+            return {"sent": False, "reason": "network"}
+        outcome = self._handle_usage_response(
+            retry, state, cfg, batch=batch, batch_seq=batch_seq, allow_rehandshake=False
+        )
+        if outcome.get("sent"):
+            outcome["recovered"] = "rehandshake"
+        return outcome
+
+    def _record_duplicate(self, state: dict[str, Any], cfg, *, batch_seq: int) -> None:
+        current = fs.read_failure_state(state)
+        was_failing = current.status in (fs.STATUS_DEGRADED, fs.STATUS_FATAL) or current.retry_count > 0
+        updated = fs.merge(
+            current,
+            status=fs.STATUS_OK,
+            reason_code=None,
+            http_status=None,
+            next_retry_at=None,
+            retry_count=0,
+            recovered_at=now_utc() if was_failing else current.recovered_at,
+        )
+        state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
+        state["next_batch_seq"] = batch_seq + 1
+        state.pop("circuit_open_until", None)
+        state.pop("last_failure_code", None)
         save_state(cfg.metrics_dir, state)
-        self._store().append_sent({"failed_at": now_utc(), "code": code}, failed=True)
+
+    def _record_blocked(self, state: dict[str, Any], cfg, *, reason_code: str) -> None:
+        current = fs.read_failure_state(state)
+        now = _utcnow()
+        retry_count = current.retry_count + 1
+        next_retry_at = _iso(now + timedelta(seconds=_backoff_delay_seconds(retry_count)))
+        updated = fs.merge(
+            current,
+            status=fs.STATUS_BLOCKED,
+            reason_code=reason_code,
+            http_status=401,
+            last_failure_at=_iso(now),
+            next_retry_at=next_retry_at,
+            retry_count=retry_count,
+            recovered_at=None,
+            publish_enabled=False,
+            consent_state=fs.CONSENT_BLOCKED,
+        )
+        state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
+        state["circuit_open_until"] = next_retry_at
+        state["last_failure_code"] = reason_code
+        save_state(cfg.metrics_dir, state)
+        self._store().append_sent({"failed_at": now_utc(), "code": reason_code}, failed=True)

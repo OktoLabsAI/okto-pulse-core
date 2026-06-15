@@ -29,12 +29,6 @@ from okto_pulse.core.services.kg_health_service import (
 router = APIRouter()
 
 
-class TopDisconnectedNode(BaseModel):
-    id: str
-    type: str
-    degree: int
-
-
 class RecentHealthEvent(BaseModel):
     """One row in `recent_events`. KG-01 contract api_3ed9037f."""
 
@@ -58,6 +52,14 @@ class HealthIssue(BaseModel):
     reason: str
     description: str
     operator_action: str
+    # FR7 (spec 007d1308 / dec_68fd26a2): the MCP tool an agent/operator should
+    # call to drill into THIS operational signal — dead_letter_list for the
+    # DLQ, list_cognitive_pending_items for cognitive pending, canonical_debt_list
+    # for canonical debt. Keeps the three operational signals separately
+    # actionable instead of hiding them behind one generic operator_action.
+    # None for signals whose drill-down is a non-MCP action (rebuild, orphan
+    # report, telemetry).
+    drill_down_tool: str | None = None
 
 
 class DecaySchedulerDiagnostics(BaseModel):
@@ -163,7 +165,6 @@ class KGHealthResponse(BaseModel):
     default_score_count: int
     default_score_ratio: float
     avg_relevance: float
-    top_disconnected_nodes: list[TopDisconnectedNode]
     schema_version: str
     health_schema_version: str = "1.0"
     graph_schema_version: str | None = None

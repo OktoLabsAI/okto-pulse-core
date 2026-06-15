@@ -79,6 +79,7 @@ class CoreSettings(BaseSettings):
     metrics_policy_version: str = "2026-05-11"
     metrics_schema_version: str = "1.1.0"
     metrics_opt_in_prompt_interval_days: int = Field(30, ge=1, le=365)
+    metrics_token_refresh_margin_hours: int = Field(24, ge=0, le=168)
 
     # MCP Server
     mcp_server_name: str = "okto-pulse"

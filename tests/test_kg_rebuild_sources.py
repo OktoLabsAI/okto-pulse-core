@@ -610,6 +610,9 @@ def test_manifest_load_returns_none_for_missing(tmp_path: Path):
 
 
 def test_manifest_revalidate_detects_drift(tmp_path: Path):
+    # revalidate is typed (card 5ec8c75c): EQUIVALENT / REBASELINE / MANIFEST_DRIFT.
+    from okto_pulse.core.kg.rebuild_sources import SourceSetRevalidation
+
     enum_a = RebuildSourceEnumerator(source_store=lambda _b: [_row(id_="a")])
     source_a = enum_a.enumerate(board_id="b1")
     enum_b = RebuildSourceEnumerator(
@@ -618,8 +621,13 @@ def test_manifest_revalidate_detects_drift(tmp_path: Path):
     source_b = enum_b.enumerate(board_id="b1")
     store = KGRebuildSourceManifest(base_dir=tmp_path)
     manifest = store.build(source_set=source_a, preflight_hash="c" * 64)
-    assert store.revalidate(manifest=manifest, current_source_set=source_a) is True
-    assert store.revalidate(manifest=manifest, current_source_set=source_b) is False
+    assert (
+        store.revalidate(manifest=manifest, current_source_set=source_a).outcome
+        is SourceSetRevalidation.EQUIVALENT
+    )
+    drift = store.revalidate(manifest=manifest, current_source_set=source_b)
+    assert drift.is_drift
+    assert drift.outcome is SourceSetRevalidation.MANIFEST_DRIFT
     assert (
         get_enumeration_count("b1", EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value)
         >= 1

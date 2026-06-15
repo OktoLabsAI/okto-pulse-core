@@ -29,6 +29,9 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 
+from okto_pulse.core.kg.global_discovery.metrics import (
+    get_missing_embedding_skipped_count,
+)
 from okto_pulse.core.kg.global_discovery.outbox_worker import DIGESTED_NODE_TYPES
 from okto_pulse.core.kg.schema import NODE_TYPES, board_kuzu_path, open_board_connection
 from okto_pulse.core.models.db import (
@@ -345,17 +348,37 @@ def check_global(board_id: str) -> LayerHealth:
             details=f"failed to query global graph: {exc}",
         )
 
-    counts = {"digests": digests, "digested_types": len(DIGESTED_NODE_TYPES)}
+    # Spec 849d6292 (FR8/AC8): surface the digested-type count (aligned to
+    # VECTOR_INDEX_TYPES via DIGESTED_NODE_TYPES) and the missing-embedding skip
+    # count (or_a921cc64) so operators see WHY a node is not globally
+    # searchable. A skip is legacy data without an embedding — a backfill, NOT
+    # a rebuild — so the diagnostic must never recommend a rebuild for it.
+    skipped = get_missing_embedding_skipped_count(board_id=board_id)
+    counts = {
+        "digests": digests,
+        "digested_types": len(DIGESTED_NODE_TYPES),
+        "missing_embedding_skipped": skipped,
+    }
+    skip_note = (
+        f"; {skipped} eligible node(s) skipped for missing embedding "
+        f"(legacy data — backfill embeddings, NOT a rebuild)"
+        if skipped else ""
+    )
     if digests == 0:
+        details = (
+            f"no DecisionDigest synced for this board yet{skip_note}"
+            if skipped
+            else "no DecisionDigest synced for this board yet"
+        )
         return LayerHealth(
             layer="global",
             healthy=False,
             counts=counts,
-            details="no DecisionDigest synced for this board yet",
+            details=details,
         )
     return LayerHealth(
         layer="global",
         healthy=True,
         counts=counts,
-        details=f"{digests} digests synced",
+        details=f"{digests} digests synced{skip_note}",
     )

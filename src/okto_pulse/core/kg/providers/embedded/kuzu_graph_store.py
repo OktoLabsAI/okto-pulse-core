@@ -282,12 +282,14 @@ class KuzuGraphStore:
         return [by_id[nid] for nid in ids_in_order if nid in by_id]
 
     def find_by_artifact(
-        self, board_id: str, artifact_id: str, filters: QueryFilters
+        self, board_id: str, artifact_id: str, filters: QueryFilters,
+        *, graph_layer: str = "all",
     ) -> list[list]:
         return self._exec(board_id, tpl.GET_RELATED_CONTEXT, {
             "artifact_id": artifact_id,
             "min_confidence": filters.min_confidence,
             "max_rows": filters.max_rows,
+            "graph_layer": graph_layer,
         })
 
     def find_by_artifact_filtered(
@@ -299,11 +301,18 @@ class KuzuGraphStore:
         rel_types: list[str] | None = None,
         direction: str = "both",
         max_depth: int = 2,
+        graph_layer: str = "all",
     ) -> list[list]:
         """Impact-analysis variant of ``find_by_artifact`` with rel-type and
         direction filters. Builds the Cypher pattern dynamically so the
         caller can scope traversal (e.g. only ``supersedes``/``contradicts``
         edges, only outgoing from the artifact).
+
+        ``graph_layer`` (spec 849d6292, TR4) scopes every returned node to a
+        layer — ``canonical`` (default at the service boundary) must never leak
+        ``working`` nodes; ``working`` returns only working; ``all`` returns
+        both. The filter is applied to center, hop1 and hop2 in Cypher so the
+        non-leakage guarantee holds at the store, not just the API surface.
         """
         if direction == "outgoing":
             hop1_pat = "(center)-[r1]->(hop1)"
@@ -316,7 +325,20 @@ class KuzuGraphStore:
             "artifact_id": artifact_id,
             "min_confidence": filters.min_confidence,
             "max_rows": filters.max_rows,
+            "graph_layer": graph_layer,
         }
+        # Layer scoping clauses (spec 849d6292). The center is the explicitly
+        # requested anchor and is always returned; only the EXPANDED neighbors
+        # (hop1, hop2) are layer-scoped so a canonical view never pulls in
+        # working nodes. hop2 is optional so a null hop2 (no second hop) is kept.
+        hop1_layer = (
+            "($graph_layer = 'all' "
+            "OR coalesce(hop1.graph_layer, 'canonical') = $graph_layer)"
+        )
+        hop2_layer = (
+            "(hop2 IS NULL OR $graph_layer = 'all' "
+            "OR coalesce(hop2.graph_layer, 'canonical') = $graph_layer)"
+        )
         if rel_types:
             # Kùzu doesn't expose `label(r)` as a parameter-safe filter, so we
             # inline a whitelist check via :<type1>|:<type2> pattern syntax.
@@ -338,6 +360,7 @@ class KuzuGraphStore:
                 f"MATCH {hop1_pat} "
                 "WHERE center.source_artifact_ref = $artifact_id "
                 "  AND center.source_confidence >= $min_confidence "
+                f"  AND {hop1_layer} "
                 "RETURN center.id AS center_id, center.title AS center_title, "
                 "       hop1.id AS hop1_id, hop1.title AS hop1_title, "
                 "       NULL AS hop2_id, NULL AS hop2_title, "
@@ -349,7 +372,9 @@ class KuzuGraphStore:
                 f"MATCH {hop1_pat} "
                 "WHERE center.source_artifact_ref = $artifact_id "
                 "  AND center.source_confidence >= $min_confidence "
+                f"  AND {hop1_layer} "
                 "OPTIONAL MATCH (hop1)-[r2]-(hop2) "
+                f"WHERE {hop2_layer} "
                 "RETURN center.id AS center_id, center.title AS center_title, "
                 "       hop1.id AS hop1_id, hop1.title AS hop1_title, "
                 "       hop2.id AS hop2_id, hop2.title AS hop2_title, "

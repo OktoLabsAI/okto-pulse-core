@@ -93,8 +93,12 @@ async def test_ts2_empty_board_returns_empty_rows():
     async with factory() as db:
         result = await list_dead_letter_rows(db, board_id)
 
+    # `items` is the additive AC6 alias of `rows` (spec 007d1308, c5dec85a) —
+    # both present and equal so the existing DLQ Inspector consumer (`rows`)
+    # and the contract field (`items`) stay in sync.
     assert result == {
         "rows": [],
+        "items": [],
         "total": 0,
         "limit": 50,
         "offset": 0,

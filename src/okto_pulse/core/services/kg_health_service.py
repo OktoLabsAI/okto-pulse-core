@@ -7,8 +7,7 @@ JSON payload describing the live state of a board's knowledge graph:
       for queue depth, oldest pending age, and dead letter count.
     * Kùzu aggregations across all node tables for total_nodes, the count
       of nodes whose relevance_score is in the [0.45, 0.55] "default"
-      band (sintoma de inflation), avg_relevance, and the top-N
-      most-disconnected nodes (lowest degree).
+      band (sintoma de inflation), and avg_relevance.
     * In-process counter from scoring.get_contradict_warn_count for
       contradict_warn_count.
     * schema_version is a fixed string ("1.0") versioning the response
@@ -97,9 +96,6 @@ DEFAULT_SCORE_BAND_HIGH = 0.55
 # When the ratio of default-band nodes crosses this threshold the service
 # emits a structured WARN log so observability tooling can flag the board.
 DEFAULT_SCORE_RATIO_ALARM_THRESHOLD = 0.7
-
-# How many "most disconnected" nodes the response surfaces.
-TOP_DISCONNECTED_NODES_LIMIT = 10
 
 _SENSITIVE_ERROR_RE = re.compile(
     r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.lbug|\.py\b)",
@@ -457,6 +453,24 @@ def _build_health_diagnostics(
                 "current board graph is queryable."
             ),
             "operator_action": "run_explicit_global_discovery_recovery",
+        })
+
+    # FR7 (spec 007d1308 / dec_68fd26a2): the dead-letter queue is its own
+    # operational signal with its own drill-down tool, kept distinct from
+    # cognitive pending and canonical debt.
+    if dead_letter_count > 0:
+        issues.append({
+            "code": "dead_letter_backlog",
+            "component": "consolidation_queue",
+            "severity": "warning",
+            "reason": "dead_letter_count_gt_zero",
+            "description": (
+                f"{dead_letter_count} consolidation row(s) are dead-lettered "
+                "and need inspection/reprocess. Distinct from cognitive pending "
+                "and canonical debt."
+            ),
+            "operator_action": "inspect_dead_letters",
+            "drill_down_tool": "okto_pulse_kg_dead_letter_list",
         })
 
     if board_graph_recovery_required:
@@ -1209,10 +1223,65 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
                 "cognitive promotion."
             ),
             "operator_action": "inspect_canonical_debt",
+            "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
         })
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "canonical_debt_open"
             health_diagnostics["operator_action"] = "inspect_canonical_debt"
+
+    # FR7 (spec 007d1308 / dec_68fd26a2): cognitive pending is its OWN
+    # operational signal with its own drill-down tool, kept separate from the
+    # dead-letter queue and canonical debt. Defensive: the store read is
+    # file-backed, so it runs off the event loop and any IO failure degrades
+    # to 0 — the health endpoint must never 500 on telemetry failure
+    # (br_2a8cdfdc).
+    def _count_active_cognitive_pending(_board_id: str) -> int:
+        from okto_pulse.core.kg.rebuild_audit import (
+            CognitiveConsolidationItemStore,
+            compute_status_counts,
+            default_rebuild_base_dir,
+        )
+
+        store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        gen = store.latest_generation(_board_id)
+        if not gen:
+            return 0
+        counts = compute_status_counts(store.list_items(_board_id, gen))
+        return (
+            int(counts.get("pending", 0))
+            + int(counts.get("in_progress", 0))
+            + int(counts.get("failed", 0))
+        )
+
+    try:
+        cognitive_pending_active = await asyncio.to_thread(
+            _count_active_cognitive_pending, board_id,
+        )
+    except Exception as exc:  # pragma: no cover - defensive health path
+        logger.warning(
+            "kg.health.cognitive_pending_lookup_failed board=%s err=%s",
+            board_id, exc,
+        )
+        cognitive_pending_active = 0
+    if cognitive_pending_active > 0:
+        health_diagnostics["health_issues"].append({
+            "code": "cognitive_consolidation_pending",
+            "component": "cognitive_consolidation",
+            "severity": "info",
+            "reason": "cognitive_pending_active_count_gt_zero",
+            "description": (
+                f"{cognitive_pending_active} cognitive consolidation item(s) "
+                "are pending/in_progress/failed and await agent action. "
+                "Distinct from the dead-letter queue and canonical debt."
+            ),
+            "operator_action": "inspect_cognitive_pending",
+            "drill_down_tool": "okto_pulse_kg_list_cognitive_pending_items",
+        })
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = (
+                "cognitive_consolidation_pending"
+            )
+            health_diagnostics["operator_action"] = "inspect_cognitive_pending"
 
     if orphan_integrity.get("integrity_warning"):
         if _STATE_SEVERITY[graph_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
@@ -1261,7 +1330,6 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         "default_score_count": default_score_count,
         "default_score_ratio": round(default_score_ratio, 4),
         "avg_relevance": kuzu_metrics["avg_relevance"],
-        "top_disconnected_nodes": kuzu_metrics["top_disconnected_nodes"],
         "schema_version": HEALTH_SCHEMA_VERSION,
         "health_schema_version": HEALTH_SCHEMA_VERSION,
         "graph_schema_version": graph_schema_version,
@@ -1356,10 +1424,9 @@ async def _has_materialized_kg_history(db: AsyncSession, board_id: str) -> bool:
 def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
     """Pull node-level aggregates from Kùzu for ``board_id``.
 
-    Returns a dict with total_nodes, default_score_count, avg_relevance and
-    top_disconnected_nodes. On any Kùzu error (board not bootstrapped,
-    schema drift, lock contention) returns zeroed defaults plus an empty
-    list so the health endpoint stays available.
+    Returns a dict with total_nodes, default_score_count and avg_relevance.
+    On any Kùzu error (board not bootstrapped, schema drift, lock contention)
+    returns zeroed defaults so the health endpoint stays available.
     """
     try:
         from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
@@ -1374,19 +1441,13 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
     default_score_count = 0
     relevance_sum = 0.0
     relevance_n = 0
-    disconnected: list[dict[str, Any]] = []
 
     try:
         with open_board_connection(board_id) as (_db, conn):
             for node_type in NODE_TYPES:
                 try:
                     res = conn.execute(
-                        f"MATCH (n:{node_type}) "
-                        f"OPTIONAL MATCH (n)-[r_out]->() "
-                        f"WITH n, COUNT(r_out) AS od "
-                        f"OPTIONAL MATCH (n)<-[r_in]-() "
-                        f"WITH n, od, COUNT(r_in) AS id_ "
-                        f"RETURN n.id, n.relevance_score, od + id_ AS deg",
+                        f"MATCH (n:{node_type}) RETURN n.relevance_score",
                         {},
                     )
                 except Exception as exc:
@@ -1397,9 +1458,7 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
                     continue
                 while res.has_next():
                     row = res.get_next()
-                    node_id = row[0]
-                    rel = row[1]
-                    deg = int(row[2] or 0)
+                    rel = row[0]
                     total_nodes += 1
                     if rel is not None:
                         rel_f = float(rel)
@@ -1407,18 +1466,12 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
                         relevance_n += 1
                         if DEFAULT_SCORE_BAND_LOW <= rel_f <= DEFAULT_SCORE_BAND_HIGH:
                             default_score_count += 1
-                    disconnected.append(
-                        {"id": node_id, "type": node_type, "degree": deg}
-                    )
     except Exception as exc:
         logger.warning(
             "kg.health.kuzu_open_failed board=%s err=%s",
             board_id, exc,
         )
         return _zero_kuzu_metrics()
-
-    disconnected.sort(key=lambda r: r["degree"])
-    top_disconnected = disconnected[:TOP_DISCONNECTED_NODES_LIMIT]
 
     avg_relevance = (
         round(relevance_sum / relevance_n, 4) if relevance_n > 0 else 0.0
@@ -1428,7 +1481,6 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
         "total_nodes": total_nodes,
         "default_score_count": default_score_count,
         "avg_relevance": avg_relevance,
-        "top_disconnected_nodes": top_disconnected,
     }
 
 
@@ -1437,7 +1489,6 @@ def _zero_kuzu_metrics() -> dict[str, Any]:
         "total_nodes": 0,
         "default_score_count": 0,
         "avg_relevance": 0.0,
-        "top_disconnected_nodes": [],
     }
 
 

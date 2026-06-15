@@ -85,6 +85,72 @@ def _strip_string_literals(cypher: str) -> str:
     return re.sub(r"'[^']*'|\"[^\"]*\"", "'__STR__'", cypher)
 
 
+def _mask_literals_and_comments(cypher: str) -> str:
+    """Return a same-length string with comments/literals replaced by spaces."""
+
+    chars = list(cypher)
+    index = 0
+    quote: str | None = None
+    in_line_comment = False
+    in_block_comment = False
+
+    while index < len(chars):
+        char = chars[index]
+        next_char = chars[index + 1] if index + 1 < len(chars) else ""
+
+        if in_line_comment:
+            if char == "\n":
+                in_line_comment = False
+            else:
+                chars[index] = " "
+            index += 1
+            continue
+
+        if in_block_comment:
+            chars[index] = " "
+            if char == "*" and next_char == "/":
+                chars[index + 1] = " "
+                in_block_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if quote:
+            chars[index] = " "
+            if char == "\\":
+                if index + 1 < len(chars):
+                    chars[index + 1] = " "
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+
+        if char in {"'", '"'}:
+            chars[index] = " "
+            quote = char
+            index += 1
+            continue
+        if char == "/" and next_char == "/":
+            chars[index] = " "
+            chars[index + 1] = " "
+            in_line_comment = True
+            index += 2
+            continue
+        if char == "/" and next_char == "*":
+            chars[index] = " "
+            chars[index + 1] = " "
+            in_block_comment = True
+            index += 2
+            continue
+
+        index += 1
+
+    return "".join(chars)
+
+
 def validate_cypher_read_only(cypher: str) -> None:
     """Validate that Cypher is read-only by checking against whitelist/blacklist.
 
@@ -348,12 +414,20 @@ def _extract_match_node_vars(pattern_part: str) -> tuple[list[str], bool]:
 
 
 def _find_clause_end(cypher: str, start: int) -> int:
-    boundary = re.search(
+    masked = _mask_literals_and_comments(cypher)
+    boundary_re = re.compile(
         r"\b(OPTIONAL\s+MATCH|MATCH|WITH|RETURN|UNION|ORDER\s+BY|ORDER|LIMIT|CALL)\b",
-        cypher[start:],
         flags=re.IGNORECASE,
     )
-    return start + boundary.start() if boundary else len(cypher)
+    for boundary in boundary_re.finditer(masked, start):
+        keyword = " ".join(boundary.group(1).upper().split())
+        if keyword == "WITH":
+            prefix = masked[:boundary.start()].rstrip()
+            previous = re.search(r"([A-Za-z_][A-Za-z0-9_]*)$", prefix)
+            if previous and previous.group(1).upper() in {"STARTS", "ENDS"}:
+                continue
+        return boundary.start()
+    return len(cypher)
 
 
 def _canonical_filter_for_vars(variables: list[str]) -> str:

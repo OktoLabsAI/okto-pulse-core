@@ -182,6 +182,29 @@ class TestSafetyRails:
             "AND (n.title = 'x') RETURN n\nLIMIT 1000"
         )
 
+    def test_cypher_rewrite_preserves_starts_with_operator(self):
+        from okto_pulse.core.kg.tier_power import execute_cypher_read_only
+
+        class FakeExecutor:
+            seen = ""
+
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+                self.seen = cypher
+                return {"rows": [], "row_count": 0}
+
+        fake = FakeExecutor()
+        configure_kg_registry(cypher_executor=fake)
+
+        execute_cypher_read_only(
+            "board-x",
+            "MATCH (n) WHERE n.source_artifact_ref STARTS WITH 'spec:abc' RETURN n",
+        )
+
+        assert fake.seen == (
+            "MATCH (n) WHERE n.graph_layer = 'canonical' "
+            "AND (n.source_artifact_ref STARTS WITH 'spec:abc') RETURN n\nLIMIT 1000"
+        )
+
     def test_cypher_rewrite_fails_closed_for_anonymous_nodes(self):
         from okto_pulse.core.kg.tier_power import execute_cypher_read_only
 

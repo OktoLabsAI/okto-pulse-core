@@ -181,6 +181,20 @@ Before creating any Decision or Constraint, run:
 
 **When to consult:** before long consolidation cycles, after flagging contradictions, when debugging stale ranking (`default_score_ratio > 0.7`).
 
+### Operational Signals — Separate Domains + Drill-Down (spec 007d1308)
+
+Cognitive consolidation produces **canonical** knowledge by construction: a cognitive `okto_pulse_kg_add_node_candidate` with `graph_layer=working` is rejected (`cognitive_node_candidates_must_be_canonical`) BEFORE the session is mutated, and accepted candidates are persisted as `canonical` / `maturity_status=canonical_eligible`. Working-layer nodes are the Layer 1 deterministic worker's responsibility only (`source_maturity`), never the cognitive agent's.
+
+KG Health surfaces three **distinct** operational signals — never merged into one bucket (dec_68fd26a2). When a signal is present, its `health_issues[]` row names the correct drill-down MCP tool in `drill_down_tool`:
+
+| Signal (`health_issues[].code`) | Domain | Drill-down tool |
+|---|---|---|
+| `cognitive_consolidation_pending` | Cognitive items awaiting agent action (pending/in_progress/failed) | `okto_pulse_kg_list_cognitive_pending_items` |
+| `dead_letter_backlog` | Consolidation rows that exhausted retries | `okto_pulse_kg_dead_letter_list` → `okto_pulse_kg_dead_letter_reprocess` after fixing the root cause |
+| `canonical_debt_open` | Artifacts still outside canonical consolidation | `okto_pulse_kg_canonical_debt_list` |
+
+Each tool lists ONLY its own domain — do NOT infer one signal's backlog from another's counters, and do not reprocess the wrong queue. `okto_pulse_kg_dead_letter_list` exposes both `rows`/`id` (legacy) and the additive `items`/`dead_letter_id` + `last_error`/`error_text` (full `errors[]` history preserved). The three listings emit the bounded `kg_operational_inspection_list_total` counter (labels: `signal`=`cognitive_pending`/`dead_letter`/`canonical_debt`, `surface`, `outcome`) so the **absence** of operational drill-down is itself diagnosable.
+
 ### Consolidation Hygiene Checklist
 
 Before `okto_pulse_kg_commit_consolidation`:

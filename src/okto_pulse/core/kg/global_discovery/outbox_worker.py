@@ -15,7 +15,14 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.kg.global_discovery.metrics import (
+    DIGEST_UPSERT_CREATED,
+    DIGEST_UPSERT_UPDATED,
+    emit_digest_upsert,
+    emit_missing_embedding_skipped,
+)
 from okto_pulse.core.kg.global_discovery.schema import open_global_connection
+from okto_pulse.core.kg.schema import VECTOR_INDEX_TYPES
 from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.outbox")
@@ -41,9 +48,12 @@ BOARD_READ_ERROR_MARKERS = (
 )
 
 # Node types mirrored into the global discovery layer as DecisionDigest.
-# Matches the per-board VECTOR_INDEX_TYPES — only nodes with an HNSW-backed
-# embedding are worth digesting for cross-board semantic search.
-DIGESTED_NODE_TYPES = ("Decision", "Entity", "Criterion", "Constraint", "Learning")
+# DERIVED from the per-board VECTOR_INDEX_TYPES (TR1, spec 849d6292): only nodes
+# with an HNSW-backed embedding are worth digesting for cross-board semantic
+# search, and aliasing the schema tuple keeps the two lists from drifting again
+# (the old hand-maintained subset omitted Requirement/APIContract/TestScenario/
+# Bug, so those canonical types were never globally searchable).
+DIGESTED_NODE_TYPES: tuple[str, ...] = VECTOR_INDEX_TYPES
 
 
 class OutboxWorker:
@@ -335,6 +345,12 @@ class OutboxWorker:
                      "emb": emb, "n": nodes_added, "ts": ts},
                 )
 
+            current_node_ids = self._read_board_digestable_node_ids(board_id)
+            if current_node_ids is not None:
+                self._prune_stale_board_digests(
+                    gconn, board_id, current_node_ids,
+                )
+
             if not refs:
                 return
 
@@ -379,6 +395,7 @@ class OutboxWorker:
                             "layer": node["graph_layer"],
                         },
                     )
+                    digest_outcome = DIGEST_UPSERT_UPDATED
                 else:
                     gconn.execute(
                         "CREATE (d:DecisionDigest {"
@@ -398,6 +415,14 @@ class OutboxWorker:
                             "ts": ts,
                         },
                     )
+                    digest_outcome = DIGEST_UPSERT_CREATED
+                # or_38b60fe1: record the digest upsert per node_type so a
+                # regression that stops digesting a vector type is detectable.
+                emit_digest_upsert(
+                    board_id=board_id,
+                    node_type=node["node_type"],
+                    outcome=digest_outcome,
+                )
                 # Idempotent edge: MATCH both endpoints, then MERGE the rel.
                 # MERGE on a relationship does not touch indexed node properties.
                 gconn.execute(
@@ -408,6 +433,77 @@ class OutboxWorker:
                 )
         finally:
             del gconn, gdb
+
+    @staticmethod
+    def _read_board_digestable_node_ids(board_id: str) -> set[str] | None:
+        """Return current digestable node ids in the board graph.
+
+        ``None`` means the source graph could not be read and pruning must not
+        run. An empty set is meaningful: the board currently has no digestable
+        nodes, so all old global digests for that board are stale.
+        """
+
+        from okto_pulse.core.kg.schema import open_board_connection
+
+        ids: set[str] = set()
+        try:
+            with open_board_connection(board_id) as (_db, conn):
+                for ntype in DIGESTED_NODE_TYPES:
+                    res = conn.execute(f"MATCH (n:{ntype}) RETURN n.id", {})
+                    while res.has_next():
+                        row = res.get_next()
+                        if row and row[0]:
+                            ids.add(str(row[0]))
+        except Exception as exc:
+            logger.warning(
+                "outbox.digest_reconcile_board_read_failed board=%s err=%s",
+                board_id, exc,
+                extra={
+                    "event": "outbox.digest_reconcile_board_read_failed",
+                    "board_id": board_id,
+                },
+            )
+            return None
+        return ids
+
+    @staticmethod
+    def _prune_stale_board_digests(
+        gconn,
+        board_id: str,
+        current_node_ids: set[str],
+    ) -> int:
+        """Delete DecisionDigest rows whose source node vanished from the board."""
+
+        res = gconn.execute(
+            "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
+            "RETURN d.id, d.original_node_id",
+            {"bid": board_id},
+        )
+        stale_digest_ids: list[str] = []
+        while res.has_next():
+            row = res.get_next()
+            digest_id = row[0]
+            original_node_id = row[1]
+            if digest_id and str(original_node_id) not in current_node_ids:
+                stale_digest_ids.append(str(digest_id))
+
+        for digest_id in stale_digest_ids:
+            gconn.execute(
+                "MATCH (d:DecisionDigest {id: $did}) DETACH DELETE d",
+                {"did": digest_id},
+            )
+
+        if stale_digest_ids:
+            logger.warning(
+                "outbox.digest_reconcile_pruned_stale board=%s count=%d",
+                board_id, len(stale_digest_ids),
+                extra={
+                    "event": "outbox.digest_reconcile_pruned_stale",
+                    "board_id": board_id,
+                    "count": len(stale_digest_ids),
+                },
+            )
+        return len(stale_digest_ids)
 
     @staticmethod
     def _fsync_if_file(path: Path) -> None:
@@ -478,19 +574,44 @@ class OutboxWorker:
         try:
             with open_board_connection(board_id) as (_db, conn):
                 for ntype, ids in by_type.items():
+                    # FR3/TR2 (spec 849d6292): do NOT silently drop NULL-embedding
+                    # nodes with a WHERE filter. Read every requested node and
+                    # partition — nodes with an embedding are digested; an
+                    # eligible node missing its embedding is SKIPPED with a
+                    # structured diagnostic + counter (kg_global_discovery_
+                    # missing_embedding_skipped_total, or_a921cc64) so legacy
+                    # data without embeddings is visible, not invisible, and the
+                    # remaining nodes keep processing.
                     cypher = (
                         f"MATCH (n:{ntype}) WHERE n.id IN $ids "
-                        f"AND n.embedding IS NOT NULL "
                         f"RETURN n.id, n.title, n.embedding, "
                         f"coalesce(n.graph_layer, 'canonical') AS graph_layer"
                     )
                     res = conn.execute(cypher, {"ids": ids})
                     while res.has_next():
                         row = res.get_next()
+                        embedding = row[2]
+                        if embedding is None:
+                            emit_missing_embedding_skipped(
+                                board_id=board_id, node_type=ntype
+                            )
+                            logger.warning(
+                                "global_discovery.missing_embedding_skipped "
+                                "board=%s node_type=%s original_node_id=%s",
+                                board_id, ntype, row[0],
+                                extra={
+                                    "event":
+                                        "global_discovery.missing_embedding_skipped",
+                                    "board_id": board_id,
+                                    "node_type": ntype,
+                                    "original_node_id": row[0],
+                                },
+                            )
+                            continue
                         out.append({
                             "id": row[0],
                             "title": row[1],
-                            "embedding": row[2],
+                            "embedding": embedding,
                             "graph_layer": row[3],
                             "node_type": ntype,
                         })

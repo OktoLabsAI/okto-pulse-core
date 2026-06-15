@@ -55,6 +55,27 @@ from typing import Any
 logger = logging.getLogger("okto_pulse.kg.board_source_store")
 
 
+# Spec source manifest versioning (spec eaf185c9 / card 5ec8c75c). V2 adds
+# integration_requirements + observability_requirements to the spec content
+# hash. V1 is kept so a legacy board's stored baseline can be PROVEN
+# schema-rebaseline (the v1-compatible hash is unchanged) versus genuinely
+# drifted (real content change). This module only EXPOSES both hashes + the
+# version; the drift-vs-rebaseline decision lives in the rebuild pipeline
+# (rebuild_sources/rebuild_service), never here or in the deterministic worker.
+SPEC_SOURCE_MANIFEST_VERSION = 2
+_SPEC_CONTENT_COLUMNS_BASE: tuple[str, ...] = (
+    "title", "description", "context", "version",
+    "functional_requirements", "technical_requirements",
+    "acceptance_criteria", "test_scenarios",
+    "business_rules", "api_contracts", "decisions",
+)
+SPEC_CONTENT_COLUMNS_V1: tuple[str, ...] = _SPEC_CONTENT_COLUMNS_BASE
+SPEC_CONTENT_COLUMNS_V2: tuple[str, ...] = _SPEC_CONTENT_COLUMNS_BASE + (
+    "integration_requirements",
+    "observability_requirements",
+)
+
+
 # Artifact types read directly from dedicated tables. Cards are read below
 # through a polymorphic query that maps card_type normal/test/bug to
 # source artifact_type task/test/bug.
@@ -82,12 +103,7 @@ ARTIFACT_QUERIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         "spec",
         "specs",
         "status",
-        (
-            "title", "description", "context", "version",
-            "functional_requirements", "technical_requirements",
-            "acceptance_criteria", "test_scenarios",
-            "business_rules", "api_contracts", "decisions",
-        ),
+        SPEC_CONTENT_COLUMNS_V2,
     ),
     (
         "refinement",
@@ -443,6 +459,17 @@ class BoardSourceStore:
                         "source_artifact_status": _row_status(row, status_col),
                         "has_minimal_evidence": True,
                     }
+                    if artifact_type == "spec":
+                        # content_hash above is the manifest-v2 hash (incl.
+                        # IR/OR). Also carry the v1-compatible hash + version so
+                        # the rebuild pipeline can PROVE schema-rebaseline vs
+                        # real content drift (card 5ec8c75c, dec_c8e418e7).
+                        source_row["content_hash_v1"] = _canonical_content_hash(
+                            row, SPEC_CONTENT_COLUMNS_V1
+                        )
+                        source_row["source_manifest_version"] = (
+                            SPEC_SOURCE_MANIFEST_VERSION
+                        )
                     if working_ttl_days is not None:
                         source_row["working_ttl_days"] = working_ttl_days
                     out.append(source_row)
@@ -489,4 +516,11 @@ class BoardSourceStore:
         return out
 
 
-__all__ = ["BoardSourceStore", "ARTIFACT_QUERIES", "CARD_CONTENT_COLUMNS"]
+__all__ = [
+    "BoardSourceStore",
+    "ARTIFACT_QUERIES",
+    "CARD_CONTENT_COLUMNS",
+    "SPEC_CONTENT_COLUMNS_V1",
+    "SPEC_CONTENT_COLUMNS_V2",
+    "SPEC_SOURCE_MANIFEST_VERSION",
+]

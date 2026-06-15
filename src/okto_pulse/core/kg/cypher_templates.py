@@ -47,7 +47,12 @@ GET_RELATED_CONTEXT = """
 MATCH (center)-[r1]-(hop1)
 WHERE center.source_artifact_ref = $artifact_id
   AND center.source_confidence >= $min_confidence
+  AND ($graph_layer = 'all'
+       OR coalesce(hop1.graph_layer, 'canonical') = $graph_layer)
 OPTIONAL MATCH (hop1)-[r2]-(hop2)
+WHERE (hop2 IS NULL
+       OR $graph_layer = 'all'
+       OR coalesce(hop2.graph_layer, 'canonical') = $graph_layer)
 RETURN center.id AS center_id, center.title AS center_title,
        hop1.id AS hop1_id, hop1.title AS hop1_title,
        hop2.id AS hop2_id, hop2.title AS hop2_title,

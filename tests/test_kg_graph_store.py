@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from okto_pulse.core.kg.schema import SCHEMA_VERSION
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters, SemanticGraphStore
@@ -49,7 +50,7 @@ class TestSemanticGraphStore:
         store = InMemoryGraphStore()
         assert store.get_schema_version("b1") is None
         store.bootstrap("b1")
-        assert store.get_schema_version("b1") == "0.3.5"
+        assert store.get_schema_version("b1") == SCHEMA_VERSION
 
     def test_create_and_find_by_topic(self):
         store = InMemoryGraphStore()
@@ -148,7 +149,7 @@ class TestSemanticGraphStore:
     def test_get_schema_info(self):
         store = InMemoryGraphStore()
         info = store.get_schema_info("b1")
-        assert info["schema_version"] == "0.3.5"
+        assert info["schema_version"] == SCHEMA_VERSION
         assert len(info["stable_node_types"]) == 11
         assert len(info["stable_rel_types"]) == 13
         rel_names = {rel["name"] for rel in info["stable_rel_types"]}

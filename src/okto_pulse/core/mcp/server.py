@@ -12791,6 +12791,11 @@ async def okto_pulse_kg_canonical_debt_list(
             offset=bounded_offset,
         )
 
+    from okto_pulse.core.kg.rebuild_audit import emit_operational_inspection_sample
+    emit_operational_inspection_sample(
+        signal="canonical_debt", surface="mcp", outcome="success",
+        board_id=board_id, item_count=len(result.items),
+    )
     return json.dumps({
         "board_id": board_id,
         "items": result.items,
@@ -12990,6 +12995,11 @@ async def okto_pulse_kg_dead_letter_list(
         data = await list_dead_letter_rows(
             db, board_id, limit=limit, offset=offset,
         )
+    from okto_pulse.core.kg.rebuild_audit import emit_operational_inspection_sample
+    emit_operational_inspection_sample(
+        signal="dead_letter", surface="mcp", outcome="success",
+        board_id=board_id, item_count=len(data.get("rows", [])),
+    )
     return json.dumps(data, default=str)
 
 

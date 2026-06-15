@@ -117,7 +117,6 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "default_score_count",
         "default_score_ratio",
         "avg_relevance",
-        "top_disconnected_nodes",
         "schema_version",
         "health_schema_version",
         "graph_schema_version",
@@ -179,7 +178,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert result["schema_version"] == "1.0"
     assert isinstance(result["queue_depth"], int)
     assert isinstance(result["oldest_pending_age_s"], float)
-    assert isinstance(result["top_disconnected_nodes"], list)
+    assert "top_disconnected_nodes" not in result
     assert result["last_decay_tick_at"] is None or isinstance(result["last_decay_tick_at"], str)
     assert result["last_tick_status"] is None or isinstance(result["last_tick_status"], str)
     assert result["last_tick_error"] is None or isinstance(result["last_tick_error"], str)
@@ -275,7 +274,6 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
             "total_nodes": 10,
             "default_score_count": 0,
             "avg_relevance": 0.75,
-            "top_disconnected_nodes": [],
         },
     )
     monkeypatch.setattr(
@@ -422,7 +420,6 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
             "total_nodes": 7,
             "default_score_count": 1,
             "avg_relevance": 0.61,
-            "top_disconnected_nodes": [],
         }
 
     svc._aggregate_kuzu_metrics = _metrics
@@ -492,7 +489,6 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
             "total_nodes": 3,
             "default_score_count": 0,
             "avg_relevance": 0.8,
-            "top_disconnected_nodes": [],
         }
 
     svc._aggregate_kuzu_metrics = _metrics
@@ -541,7 +537,6 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
             "total_nodes": 5,
             "default_score_count": 0,
             "avg_relevance": 0.7,
-            "top_disconnected_nodes": [],
         },
     )
     monkeypatch.setattr(svc, "_get_graph_schema_version", lambda _board_id: "0.3.5")
@@ -1066,7 +1061,6 @@ async def test_default_score_ratio_skew_emits_alarm_log(
             "total_nodes": 10,
             "default_score_count": 8,
             "avg_relevance": 0.5,
-            "top_disconnected_nodes": [],
         }
 
     svc._aggregate_kuzu_metrics = _stub
