@@ -24,8 +24,11 @@ from okto_pulse.core.telemetry.emitters import (  # noqa: E402
     emit_mcp_event,
     emit_pipeline_transition_event,
 )
+from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION  # noqa: E402
 from okto_pulse.core.telemetry.sender import TelemetryBeaconSender  # noqa: E402
 from okto_pulse.core.telemetry.service import TelemetryService  # noqa: E402
+from okto_pulse.core.telemetry.settings import resolve_telemetry_config  # noqa: E402
+from okto_pulse.core.telemetry.store import LocalTelemetryStore  # noqa: E402
 
 
 def _settings(tmp_path: Path, monkeypatch) -> CoreSettings:
@@ -112,3 +115,29 @@ def test_aggregate_keys_carry_no_secret_pii_or_ids(tmp_path: Path, monkeypatch) 
     assert metrics["cli_counts"] == {"serve": 1}
     # the path-like kg operation was rejected (never became a bounded key)
     assert metrics.get("kg_operation_counts", {}) in ({}, {"unknown": 1})
+
+
+def test_unknown_event_type_is_not_silently_dropped(tmp_path: Path, monkeypatch) -> None:
+    # A legacy/unknown event_type cannot go through record_event (the closed schema
+    # rejects an unsupported type), so inject it directly into the local store as a
+    # stale event would appear after a schema change. It must NOT vanish from the
+    # delta batch — it surfaces in a bounded diagnostic bucket keyed by the TYPE.
+    settings = _settings(tmp_path, monkeypatch)
+    metrics_dir = resolve_telemetry_config(settings).metrics_dir
+    LocalTelemetryStore(metrics_dir).append_event(
+        {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "event_id": "legacy-1",
+            "event_type": "legacy_unknown",
+            "occurred_at": "2026-06-15T12:00:00Z",
+            "payload": {"command": "should_not_leak", "secret_token": "sk-deadbeef"},
+        }
+    )
+    metrics = _metrics(settings)
+    # not silently dropped: keyed by event_type, with the correct count.
+    assert metrics["unknown_event_type_counts"] == {"legacy_unknown": 1}
+    # the bounded key is the event_type — never the payload label or a secret.
+    blob = json.dumps(metrics)
+    assert "should_not_leak" not in blob
+    assert "sk-deadbeef" not in blob
+    assert "secret_token" not in blob
