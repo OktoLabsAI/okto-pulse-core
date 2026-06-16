@@ -154,12 +154,14 @@ class TelemetryService:
                     "source": publish_health_mod.SOURCE_LOCAL,
                 },
             )
-            return {
-                "error": publish_health_mod.HEALTH_SOURCE_UNAVAILABLE,
-                "source": publish_health_mod.SOURCE_LOCAL,
-                "message": "No publish-health source could be read.",
-                "redaction_applied": True,
-            }
+            return publish_health_mod.redact_health_payload(
+                {
+                    "error": publish_health_mod.HEALTH_SOURCE_UNAVAILABLE,
+                    "source": publish_health_mod.SOURCE_LOCAL,
+                    "message": "No publish-health source could be read.",
+                    "redaction_applied": True,
+                }
+            )
         # R5C-C: compose the four distinguished sources. local + install_lifecycle
         # are REAL client signals; aws_ingest / report_athena have no adapter in the
         # core client (downstream R5B/R4) so they enter as an explicit gap and can
@@ -177,11 +179,16 @@ class TelemetryService:
             "metrics.publish_health",
             extra={
                 "metric_name": "metrics_publish_health_total",
-                "outcome": dto.status,
+                "outcome": dto.status,  # enum only — never the DTO/state itself
                 "source": dto.source,
             },
         )
-        return dto.to_dict()
+        # R5C-E guardrail: every surface (API/MCP/UI) gets ONLY redacted data —
+        # recursively scrub forbidden keys + secret values (incl. any from the
+        # source state) before the payload leaves the process.
+        return publish_health_mod.redact_health_payload(
+            dto.to_dict(), secret_values=publish_health_mod.collect_health_secret_values(state)
+        )
 
     def update_settings(
         self,

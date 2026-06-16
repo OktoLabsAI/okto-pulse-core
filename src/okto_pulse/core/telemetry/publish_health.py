@@ -29,6 +29,7 @@ never healthy.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -536,3 +537,96 @@ def discover_external_sources(settings: Any) -> tuple[Any, Any]:
         report = configured.get(SOURCE_REPORT_ATHENA, {"availability": SRC_GAP})
         return aws, report
     return {"availability": SRC_GAP}, {"availability": SRC_GAP}
+
+
+# --- R5C-E redaction guardrail (API / MCP / UI / logs) -------------------------
+# Defense-in-depth: every health payload that leaves the process (DTO, API/MCP
+# response, anything logged) passes through this recursive guard, so a secret can
+# never surface even if a future code path puts one into the DTO/sources/debug
+# metadata. It is NOT a substitute for the allowlist construction — it backstops it.
+
+REDACTED = "[REDACTED]"
+
+# VALUE-level secret patterns: catch a secret VALUE even under an innocent key,
+# precise enough NOT to redact descriptive words like "token"/"install" that appear
+# in the bounded catalog messages (validator complement #2 vs #4).
+_SECRET_VALUE_PATTERNS = (
+    re.compile(r"oat_[A-Za-z0-9._-]{3,}"),  # opaque (Clerk-style) tokens
+    re.compile(r"(?:sk|pk|tok|key|secret)_[A-Za-z0-9]{6,}", re.IGNORECASE),
+    re.compile(r"eyJ[A-Za-z0-9._-]{10,}"),  # JWT
+    re.compile(r"\b[0-9a-fA-F]{32,}\b"),  # full nonce / hash / signature hex
+)
+
+
+def _is_forbidden_health_key(key: Any) -> bool:
+    """Keys whose value must never surface: the failure_state secret keys plus the
+    RAW install_id, a full nonce, and any sensitive payload."""
+    k = str(key).lower()
+    if fs.is_secret_key(k):
+        return True
+    if k == "install_id":  # the RAW install id (NOT the redacted iid_ form)
+        return True
+    if "nonce" in k or "payload" in k:
+        return True
+    return False
+
+
+def collect_health_secret_values(state: Any) -> set[str]:
+    """Gather the VALUES stored under forbidden keys anywhere in a state dict, so the
+    guardrail can scrub them even if they later appear under an innocent key."""
+    found: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if _is_forbidden_health_key(key) and isinstance(value, str) and len(value) >= 6:
+                    found.add(value)
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(state)
+    return found
+
+
+def _scrub_string(value: str, secret_values: tuple[str, ...]) -> str:
+    out = value
+    for secret in secret_values:
+        if secret and secret in out:
+            out = out.replace(secret, REDACTED)
+    for pattern in _SECRET_VALUE_PATTERNS:
+        out = pattern.sub(REDACTED, out)
+    return out
+
+
+def redact_health_payload(payload: Any, *, secret_values: Any = ()) -> Any:
+    """Recursively redact a health payload before it reaches API/MCP/UI/logs.
+
+    Redacts forbidden KEYS (install_token/token_hash/signature/nonce/payload and the
+    raw install_id) AND scrubs secret VALUES (known state secrets + opaque-token /
+    JWT / full-nonce-hash patterns) under ANY key, recursing through dicts and lists
+    (sources[], freshness, future fields). The raw install_id is converted to the
+    safe ``iid_`` form. Idempotent and non-destructive on a legitimate DTO: static
+    messages, ``iid_`` ids, timestamps and enums are preserved (the value patterns do
+    not match descriptive words like ``token``/``install``)."""
+    secrets = tuple(s for s in secret_values if isinstance(s, str) and len(s) >= 6)
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            out: dict[Any, Any] = {}
+            for key, value in node.items():
+                if str(key).lower() == "install_id" and isinstance(value, str):
+                    out[key] = fs.redact_install_id(value) or REDACTED
+                elif _is_forbidden_health_key(key):
+                    out[key] = REDACTED
+                else:
+                    out[key] = walk(value)
+            return out
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        if isinstance(node, str):
+            return _scrub_string(node, secrets)
+        return node
+
+    return walk(payload)
