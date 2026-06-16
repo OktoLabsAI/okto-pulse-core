@@ -163,6 +163,37 @@ def test_legacy_state_migrates_failure_state_with_safe_defaults() -> None:
     assert state.retry_count == 0 and state.reason_code is None
 
 
+def test_failure_state_transition_log_explains_last_send_without_secret(tmp_path: Path, monkeypatch, caplog) -> None:
+    # ts_4d061c7c: the local structured log explains the last send outcome
+    # (status / reason_code / when to retry), secret-free.
+    caplog.set_level("INFO", logger="okto_pulse.telemetry.sender")
+    settings = _settings(tmp_path, monkeypatch)
+    _enable_with_token(tmp_path, settings)
+    _append_event(settings)
+
+    TelemetryBeaconSender(settings, session=_Session(_Resp(503))).send_once()
+
+    transitions = [
+        record.__dict__
+        for record in caplog.records
+        if record.__dict__.get("metric_name") == "metrics_failure_state_transition_total"
+    ]
+    assert transitions, "no metrics.failure_state_transition log emitted"
+    rec = transitions[-1]
+    assert rec["action"] == "failed"
+    logged = rec["failure_state"]
+    # the log explains the LAST SEND: outcome (degraded), why (USAGE_503), when to retry.
+    assert logged["status"] == fs.STATUS_DEGRADED
+    assert logged["reason_code"] == "USAGE_503"
+    assert logged["last_failure_at"] and logged["next_retry_at"]
+    # secret-free: only the allowlisted projection, never a token/secret.
+    blob = json.dumps(logged)
+    assert _SECRET_TOKEN not in blob
+    for key in logged:
+        assert not fs.is_secret_key(key), key
+    assert set(logged) <= set(fs.PUBLIC_FAILURE_STATE_FIELDS)
+
+
 def test_legacy_disabled_mode_migrates_blocked_consent_and_no_secret() -> None:
     legacy = {"mode": "disabled"}
     state = fs.read_failure_state(legacy)
