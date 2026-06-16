@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.telemetry import failure_state
+from okto_pulse.core.telemetry import publish_health as publish_health_mod
 from okto_pulse.core.telemetry.product import PRODUCT_AGGREGATE_FAMILIES
 from okto_pulse.core.telemetry.schema import normalize_event, now_utc
 from okto_pulse.core.telemetry.settings import (
@@ -126,6 +128,47 @@ class TelemetryService:
             },
             "resolved_precedence": list(cfg.resolved_precedence),
         }
+
+    def publish_health(self, *, now: datetime | None = None) -> dict[str, Any]:
+        """R5C-A: compose the publish-health DTO for the MCP/UI health surface.
+
+        Consumes the R5A PUBLIC failure-state projection (the allowlisted,
+        already-redacted boundary surfaced by ``summary()['publish_status']``)
+        and only CLASSIFIES the health status / source / freshness on top — no
+        producer logic, no trust recomputation, no parallel schema, no
+        re-derived redaction (see ``docs/architecture/telemetry_r5a_r5c_boundary.md``).
+        When NO health source can be read, returns the structured
+        ``HEALTH_SOURCE_UNAVAILABLE`` error instead of a (misleading) health DTO.
+        """
+        resolved_now = now or datetime.now(timezone.utc)
+        try:
+            cfg = self.config()
+            projection = failure_state.public_status_projection(cfg.state)
+        except Exception:
+            logger.info(
+                "metrics.publish_health",
+                extra={
+                    "metric_name": "metrics_publish_health_total",
+                    "outcome": "source_unavailable",
+                    "source": publish_health_mod.SOURCE_LOCAL,
+                },
+            )
+            return {
+                "error": publish_health_mod.HEALTH_SOURCE_UNAVAILABLE,
+                "source": publish_health_mod.SOURCE_LOCAL,
+                "message": "No publish-health source could be read.",
+                "redaction_applied": True,
+            }
+        dto = publish_health_mod.resolve_publish_health(projection, now=resolved_now)
+        logger.info(
+            "metrics.publish_health",
+            extra={
+                "metric_name": "metrics_publish_health_total",
+                "outcome": dto.status,
+                "source": dto.source,
+            },
+        )
+        return dto.to_dict()
 
     def update_settings(
         self,

@@ -1156,6 +1156,27 @@ async def okto_pulse_list_my_boards() -> str:
 
 
 @mcp.tool()
+async def okto_pulse_get_publish_health() -> str:
+    """Get the local telemetry publish-health status (R5C-A).
+
+    Reports whether this install's anonymous usage publishing is healthy,
+    degraded, recovering, failing, stale, disabled, or unavailable — plus the
+    last success/failure timestamps, the scheduled next retry, and freshness.
+    This is the agent-facing twin of the `GET /metrics/publish-health` endpoint;
+    it reads the install-local failure-state and is NOT board-scoped. The
+    response is the allowlisted, redacted projection only (install id appears
+    solely as `install_id_redacted` — never a token/secret). No parameters."""
+    agent = await _get_authenticated_agent()
+    if not agent:
+        return json.dumps({"error": "Authentication failed"})
+
+    from okto_pulse.core.telemetry.service import TelemetryService
+
+    result = TelemetryService(get_settings()).publish_health()
+    return json.dumps(result, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_list_my_mentions(board_id: str, include_seen: str = "false") -> str:
     """
     List comments and Q&A items where you are mentioned via @name.
