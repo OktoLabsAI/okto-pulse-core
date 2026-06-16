@@ -143,7 +143,8 @@ class TelemetryService:
         resolved_now = now or datetime.now(timezone.utc)
         try:
             cfg = self.config()
-            projection = failure_state.public_status_projection(cfg.state)
+            state = dict(cfg.state)
+            projection = failure_state.public_status_projection(state)
         except Exception:
             logger.info(
                 "metrics.publish_health",
@@ -159,7 +160,19 @@ class TelemetryService:
                 "message": "No publish-health source could be read.",
                 "redaction_applied": True,
             }
-        dto = publish_health_mod.resolve_publish_health(projection, now=resolved_now)
+        # R5C-C: compose the four distinguished sources. local + install_lifecycle
+        # are REAL client signals; aws_ingest / report_athena have no adapter in the
+        # core client (downstream R5B/R4) so they enter as an explicit gap and can
+        # never be inferred healthy from a local send.
+        install_lifecycle = publish_health_mod.derive_install_lifecycle(state, now=resolved_now)
+        aws_ingest, report_athena = publish_health_mod.discover_external_sources(self.settings)
+        dto = publish_health_mod.resolve_publish_health(
+            projection,
+            now=resolved_now,
+            install_lifecycle=install_lifecycle,
+            aws_ingest=aws_ingest,
+            report_athena=report_athena,
+        )
         logger.info(
             "metrics.publish_health",
             extra={

@@ -82,6 +82,11 @@ REASON_STALE_INGEST = "stale_ingest"
 REASON_STALE_REPORT = "stale_report"
 REASON_SOURCE_UNAVAILABLE = "source_unavailable"
 REASON_SOURCE_EXPIRED = "source_expired"
+# R5C-C: a promised source whose ADAPTER is absent in this build (the real AWS
+# ingest / Athena report integration lives downstream). It is an observability
+# GAP — never healthy, but classified as ``degraded`` (not full ``unavailable``)
+# so it floors the overall at degraded when the local client is otherwise OK.
+REASON_SOURCE_GAP = "source_gap"
 REASON_CATEGORIES = frozenset(
     {
         REASON_NONE,
@@ -94,6 +99,7 @@ REASON_CATEGORIES = frozenset(
         REASON_STALE_REPORT,
         REASON_SOURCE_UNAVAILABLE,
         REASON_SOURCE_EXPIRED,
+        REASON_SOURCE_GAP,
     }
 )
 
@@ -107,11 +113,14 @@ HEALTH_SOURCES = frozenset(
     {SOURCE_LOCAL, SOURCE_INSTALL_LIFECYCLE, SOURCE_AWS_INGEST, SOURCE_REPORT_ATHENA, SOURCE_COMBINED}
 )
 
-# Synthetic availability of an external source (R5C-B: no real adapter — R5C-C).
+# Availability of an external source.
 SRC_AVAILABLE = "available"
 SRC_UNAVAILABLE = "unavailable"
 SRC_EXPIRED = "expired"
 SRC_STALE = "stale"
+# R5C-C: the source's real adapter is absent in this build (downstream-only) —
+# an explicit observability gap, never inferred healthy from a local send.
+SRC_GAP = "gap"
 
 # Structured error when NO health source can be read at all.
 HEALTH_SOURCE_UNAVAILABLE = "HEALTH_SOURCE_UNAVAILABLE"
@@ -159,6 +168,11 @@ _REASON_MESSAGES: dict[str, str] = {
     REASON_SOURCE_EXPIRED: (
         "A required health source's window/credentials expired; refresh it to restore "
         "reporting."
+    ),
+    REASON_SOURCE_GAP: (
+        "This health source has no adapter in this build (the real AWS ingest / report "
+        "freshness is provided by the downstream pipeline); freshness cannot be "
+        "confirmed, so it is reported as an observability gap, not healthy."
     ),
 }
 _STATUS_MESSAGES: dict[str, str] = {
@@ -362,13 +376,22 @@ def _classify_external_source(name: str, descriptor: Any, *, now: datetime) -> S
     if descriptor is None:
         return None
     availability, last_success = _external_descriptor(descriptor)
-    stale_reason = REASON_STALE_INGEST if name == SOURCE_AWS_INGEST else REASON_STALE_REPORT
+    if name == SOURCE_AWS_INGEST:
+        stale_reason = REASON_STALE_INGEST
+    elif name == SOURCE_REPORT_ATHENA:
+        stale_reason = REASON_STALE_REPORT
+    else:
+        stale_reason = REASON_SOURCE_GAP
     if availability == SRC_AVAILABLE:
         status, reason_category, available = HEALTHY, REASON_NONE, True
     elif availability == SRC_STALE:
         status, reason_category, available = STALE, stale_reason, True
     elif availability == SRC_EXPIRED:
         status, reason_category, available = DEGRADED, REASON_SOURCE_EXPIRED, False
+    elif availability == SRC_GAP:
+        # adapter absent: never healthy, but a DEGRADED observability gap (not a
+        # full unavailable) so a healthy local client floors the overall at degraded.
+        status, reason_category, available = DEGRADED, REASON_SOURCE_GAP, False
     else:  # unavailable / unknown -> treat as unavailable, never healthy
         status, reason_category, available = UNAVAILABLE, REASON_SOURCE_UNAVAILABLE, False
     return SourceHealth(
@@ -415,6 +438,7 @@ def resolve_publish_health(
     *,
     now: datetime,
     stale_threshold_seconds: int = DEFAULT_STALE_THRESHOLD_SECONDS,
+    install_lifecycle: Any = None,
     aws_ingest: Any = None,
     report_athena: Any = None,
     required_sources: tuple[str, ...] = (),
@@ -424,13 +448,20 @@ def resolve_publish_health(
     ``public_projection`` MUST be the allowlisted, already-redacted dict from
     :func:`failure_state.public_status_projection` (or ``FailureState.to_public_dict``)
     — never raw state. The local source is always classified from it; optional
-    synthetic ``aws_ingest`` / ``report_athena`` descriptors (and any
+    ``install_lifecycle`` / ``aws_ingest`` / ``report_athena`` descriptors (and any
     ``required_sources`` that are missing) contribute to the COMBINED status so a
-    missing/unavailable/expired/stale source can never read as ``healthy``."""
+    missing/unavailable/expired/stale/gap source can never read as ``healthy``.
+
+    R5C-C: ``aws_ingest`` / ``report_athena`` are classified ONLY from their own
+    descriptor — never inferred healthy from the local send (the local failure-state
+    proves the client published, NOT that AWS ingested or the report is fresh)."""
     local, freshness = _classify_local_source(
         public_projection, now=now, stale_threshold_seconds=stale_threshold_seconds
     )
     sources: list[SourceHealth] = [local]
+    lifecycle = _classify_external_source(SOURCE_INSTALL_LIFECYCLE, install_lifecycle, now=now)
+    if lifecycle is not None:
+        sources.append(lifecycle)
     aws = _classify_external_source(SOURCE_AWS_INGEST, aws_ingest, now=now)
     if aws is not None:
         sources.append(aws)
@@ -462,3 +493,46 @@ def resolve_publish_health(
         sources=[s.to_dict() for s in sources],
         redaction_applied=True,
     )
+
+
+# --- R5C-C source discovery (real local/lifecycle signals + declared gaps) -----
+
+def derive_install_lifecycle(state: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    """Derive the install-lifecycle source descriptor from REAL local state signals.
+
+    Uses only non-secret signals: the PRESENCE of an install token (a boolean — the
+    value is never read/surfaced), the non-secret ``install_token_expires_at`` and
+    ``last_handshake_at`` timestamps, and the consent mode. Distinguishes the install
+    handshake/token lifecycle from the local publish outcome (the ``local`` source)."""
+    mode = state.get("mode")
+    if mode in (None, "", "disabled"):
+        # publishing off — lifecycle is moot (the local source short-circuits to
+        # disabled); report available so it does not raise a spurious alarm.
+        return {"availability": SRC_AVAILABLE}
+    has_token = bool(state.get("install_token"))  # PRESENCE only, never the value
+    handshaked_at = state.get("last_handshake_at")
+    expires_at = state.get("install_token_expires_at")
+    expiry = _parse_iso(expires_at)
+    if has_token and expiry is not None and expiry <= now:
+        return {"availability": SRC_EXPIRED, "last_success_at": handshaked_at if isinstance(handshaked_at, str) else None}
+    if has_token or isinstance(handshaked_at, str):
+        return {"availability": SRC_AVAILABLE, "last_success_at": handshaked_at if isinstance(handshaked_at, str) else None}
+    # beacon enabled but the install never handshaked -> lifecycle not established.
+    return {"availability": SRC_UNAVAILABLE}
+
+
+def discover_external_sources(settings: Any) -> tuple[Any, Any]:
+    """Discover the real aws_ingest / report_athena source descriptors.
+
+    There is NO real AWS ingest / Athena report adapter in the core client today —
+    those live in the downstream pipeline (R5B / R4 in ``okto_labs_community_metrics``).
+    So by default both are an explicit observability GAP (``SRC_GAP`` -> degraded,
+    never healthy). A deployment that wires real adapters can supply descriptors via
+    a ``metrics_health_external_sources`` mapping on settings (forward-compatible),
+    but the default can NEVER mask the missing AWS/report visibility as healthy."""
+    configured = getattr(settings, "metrics_health_external_sources", None)
+    if isinstance(configured, dict):
+        aws = configured.get(SOURCE_AWS_INGEST, {"availability": SRC_GAP})
+        report = configured.get(SOURCE_REPORT_ATHENA, {"availability": SRC_GAP})
+        return aws, report
+    return {"availability": SRC_GAP}, {"availability": SRC_GAP}
