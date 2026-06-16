@@ -16,6 +16,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -177,6 +179,70 @@ def test_all_sources_healthy_combines_healthy() -> None:
     assert dto.status == ph.HEALTHY
     assert dto.source == ph.SOURCE_COMBINED
     assert len(dto.sources) == 3
+
+
+# --- ts_60131b20 reinforced: AWS not-healthy across every state, cause-isolated --
+
+# (aws descriptor, overall status, overall+source reason_category, aws available)
+_AWS_NOT_HEALTHY_CASES = [
+    ({"availability": ph.SRC_UNAVAILABLE}, ph.UNAVAILABLE, ph.REASON_SOURCE_UNAVAILABLE, False),
+    ({"availability": ph.SRC_EXPIRED}, ph.DEGRADED, ph.REASON_SOURCE_EXPIRED, False),
+    ({"availability": ph.SRC_STALE}, ph.STALE, ph.REASON_STALE_INGEST, True),
+    ({"availability": ph.SRC_GAP}, ph.DEGRADED, ph.REASON_SOURCE_GAP, False),
+]
+
+
+@pytest.mark.parametrize("descriptor,exp_status,exp_reason,exp_available", _AWS_NOT_HEALTHY_CASES)
+def test_ts_60131b20_aws_states_never_healthy_cause_isolated(descriptor, exp_status, exp_reason, exp_available) -> None:
+    # local is HEALTHY: the ONLY cause of overall != healthy is AWS (cause isolation).
+    dto = ph.resolve_publish_health(_projection(status=fs.STATUS_OK), now=_NOW, aws_ingest=descriptor)
+
+    # never healthy, never recovering; the degraded family with the exact status.
+    assert dto.status not in {ph.HEALTHY, ph.RECOVERING}
+    assert dto.status in {ph.DEGRADED, ph.UNAVAILABLE, ph.STALE}
+    assert dto.status == exp_status
+    assert dto.reason_category == exp_reason
+    assert dto.severity != ph.SEVERITY_NONE  # a non-healthy overall is never severity none
+    assert dto.source == ph.SOURCE_COMBINED
+
+    by_name = {s["name"]: s for s in dto.sources}
+    # local source stayed healthy (so AWS is provably the sole cause).
+    assert by_name[ph.SOURCE_LOCAL]["status"] == ph.HEALTHY
+    # aws_ingest is present (NOT dropped) with a coherent per-source tuple.
+    aws = by_name[ph.SOURCE_AWS_INGEST]
+    assert aws["status"] != ph.HEALTHY
+    assert aws["reason_category"] == exp_reason
+    assert aws["severity"] in ph.SEVERITIES and aws["severity"] != ph.SEVERITY_NONE
+    assert aws["message"] and aws["message"] in _CATALOG
+    assert aws["available"] is exp_available
+
+
+def test_ts_60131b20_missing_required_aws_is_unavailable_cause_isolated() -> None:
+    dto = ph.resolve_publish_health(
+        _projection(status=fs.STATUS_OK), now=_NOW, required_sources=(ph.SOURCE_AWS_INGEST,)
+    )
+    assert dto.status == ph.UNAVAILABLE
+    assert dto.status not in {ph.HEALTHY, ph.RECOVERING}
+    assert dto.source == ph.SOURCE_COMBINED
+    by_name = {s["name"]: s for s in dto.sources}
+    assert by_name[ph.SOURCE_LOCAL]["status"] == ph.HEALTHY  # cause isolation
+    aws = by_name[ph.SOURCE_AWS_INGEST]
+    assert aws["reason_category"] == ph.REASON_SOURCE_UNAVAILABLE
+    assert aws["available"] is False
+
+
+def test_ts_60131b20_aws_availability_toggles_overall_health() -> None:
+    # TEETH (criterion 6): flip aws available <-> unavailable on the SAME healthy
+    # local; the overall must flip healthy <-> not-healthy (no vacuous always-degraded).
+    local = _projection(status=fs.STATUS_OK)
+    healthy = ph.resolve_publish_health(
+        local, now=_NOW, aws_ingest={"availability": ph.SRC_AVAILABLE}, report_athena={"availability": ph.SRC_AVAILABLE}
+    )
+    assert healthy.status == ph.HEALTHY  # positive control
+    flipped = ph.resolve_publish_health(
+        local, now=_NOW, aws_ingest={"availability": ph.SRC_UNAVAILABLE}, report_athena={"availability": ph.SRC_AVAILABLE}
+    )
+    assert flipped.status != ph.HEALTHY  # only aws changed -> overall no longer healthy
 
 
 def test_local_disabled_short_circuits_over_stale_aws() -> None:
