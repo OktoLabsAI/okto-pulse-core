@@ -110,6 +110,21 @@ def _log_beacon_outcome(*, reason: str, outcome: str = "skipped") -> None:
     )
 
 
+def _log_failure_transition(failure_state: "fs.FailureState", *, action: str) -> None:
+    """R5A-D: structured, secret-free log of a failure-state transition (send /
+    retry / refresh / duplicate / permanent failure). The payload is the
+    allowlisted public projection — no install_token / token_hash / signature /
+    nonce / payload — so the transition log can never leak a secret."""
+    logger.info(
+        "metrics.failure_state_transition",
+        extra={
+            "metric_name": "metrics_failure_state_transition_total",
+            "action": action,
+            "failure_state": failure_state.to_public_dict(),
+        },
+    )
+
+
 def _log_watermark_state(
     *,
     component: str,
@@ -541,6 +556,14 @@ class TelemetryBeaconSender:
             pass
         return outcome
 
+    def _redacted_install_id(self) -> str | None:
+        """R5A-D instrumentation: the non-reversible redacted install token for the
+        failure-state. Never the raw install_id / a secret; never raises."""
+        try:
+            return fs.redact_install_id(get_or_create_install_id(self.settings))
+        except Exception:
+            return None
+
     def _open_circuit(
         self, state: dict[str, Any], cfg, code: str, *, http_status: int | None = None, status: str = fs.STATUS_DEGRADED
     ) -> None:
@@ -561,12 +584,14 @@ class TelemetryBeaconSender:
             next_retry_at=next_retry_at,
             retry_count=retry_count,
             recovered_at=None,
+            install_id_redacted=self._redacted_install_id(),
         )
         state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
         state["circuit_open_until"] = next_retry_at
         state["last_failure_code"] = code
         save_state(cfg.metrics_dir, state)
         self._store().append_sent({"failed_at": now_utc(), "code": code}, failed=True)
+        _log_failure_transition(updated, action="failed")
 
     def _record_success(
         self,
@@ -591,8 +616,10 @@ class TelemetryBeaconSender:
             next_retry_at=None,
             retry_count=0,
             recovered_at=now_iso if was_failing else current.recovered_at,
+            install_id_redacted=self._redacted_install_id(),
         )
         state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
+        _log_failure_transition(updated, action="recovered" if was_failing else "succeeded")
         state["last_send_at"] = now_iso
         state["next_batch_seq"] = batch_seq + 1
         state.pop("circuit_open_until", None)
@@ -724,6 +751,17 @@ class TelemetryBeaconSender:
             self._open_circuit(state, cfg, "INVALID_SIGNATURE", http_status=401, status=fs.STATUS_FATAL)
             _log_beacon_outcome(reason="fatal")
             return {"sent": False, "reason": "invalid_signature"}
+        if resp.status_code == 401 and code == "TOKEN_EXPIRED":
+            # R5A-D: recoverable auth failure — the backend rejected an EXPIRED token
+            # (e.g. a clock skew the preventive refresh missed). Drop the token so the
+            # next cycle re-handshakes for a fresh one, and degrade with backoff
+            # (next_retry_at). Not fatal, not a blind retry loop. Previously this fell
+            # through to raise_for_status -> an unhandled exception in send_once.
+            state.pop("install_token", None)
+            state.pop("install_token_expires_at", None)
+            self._open_circuit(state, cfg, "TOKEN_EXPIRED", http_status=401, status=fs.STATUS_DEGRADED)
+            _log_beacon_outcome(reason="token_expired")
+            return {"sent": False, "reason": "token_expired"}
         if resp.status_code == 409 and code == "DUPLICATE_NONCE_OR_BATCH_SEQ":
             # R3A-C (br_4659bfcc / tr_067c08e6): a DUPLICATE_NONCE_OR_BATCH_SEQ is
             # the backend reporting it ALREADY committed this batch. The nonce is
@@ -813,8 +851,10 @@ class TelemetryBeaconSender:
             next_retry_at=None,
             retry_count=0,
             recovered_at=now_iso if was_failing else current.recovered_at,
+            install_id_redacted=self._redacted_install_id(),
         )
         state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
+        _log_failure_transition(updated, action="duplicate")
         state["next_batch_seq"] = batch_seq + 1
         state.pop("circuit_open_until", None)
         state.pop("last_failure_code", None)
@@ -844,8 +884,10 @@ class TelemetryBeaconSender:
             recovered_at=None,
             publish_enabled=False,
             consent_state=fs.CONSENT_BLOCKED,
+            install_id_redacted=self._redacted_install_id(),
         )
         state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
+        _log_failure_transition(updated, action="blocked")
         state["circuit_open_until"] = next_retry_at
         state["last_failure_code"] = reason_code
         save_state(cfg.metrics_dir, state)

@@ -20,6 +20,7 @@ cards mutate the state through :func:`merge`.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -57,6 +58,10 @@ PUBLIC_FAILURE_STATE_FIELDS: tuple[str, ...] = (
     "recovered_at",
     "publish_enabled",
     "consent_state",
+    # R5A instrumentation extension (br_14606103: extends the base schema, does
+    # not redefine it). A NON-reversible redacted install token for correlating a
+    # failing publish to an install without storing the raw id (never a secret).
+    "install_id_redacted",
 )
 
 # Keys that must NEVER appear in any public projection or structured log of
@@ -82,6 +87,15 @@ def is_secret_key(key: str) -> bool:
     return False
 
 
+def redact_install_id(install_id: str | None) -> str | None:
+    """Non-reversible, stable short token correlating failure-state to an install
+    WITHOUT storing the raw id (R5A instrumentation). ``None`` when no install id is
+    known. A sha256 prefix — not the install_id, not a secret, not reversible."""
+    if not install_id:
+        return None
+    return "iid_" + hashlib.sha256(install_id.encode("utf-8")).hexdigest()[:12]
+
+
 @dataclass(frozen=True)
 class FailureState:
     """Base failure-state of the telemetry publish lifecycle.
@@ -100,6 +114,9 @@ class FailureState:
     recovered_at: str | None = None
     publish_enabled: bool = False
     consent_state: str = CONSENT_UNKNOWN
+    # R5A instrumentation extension: a non-reversible redacted install token (never
+    # the raw install_id / a secret). None until a publish outcome records it.
+    install_id_redacted: str | None = None
 
     def to_public_dict(self) -> dict[str, Any]:
         """Allowlisted, secret-free dict of the schema fields.
@@ -185,6 +202,7 @@ def read_failure_state(state: dict[str, Any]) -> FailureState:
         recovered_at=_coerce_opt_str(raw.get("recovered_at")),
         publish_enabled=publish_enabled,
         consent_state=consent,
+        install_id_redacted=_coerce_opt_str(raw.get("install_id_redacted")),
     )
 
 
