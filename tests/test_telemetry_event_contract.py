@@ -56,30 +56,44 @@ def test_wired_types_have_real_emitter_and_live_aggregate() -> None:
         # a wired aggregate must really be one the sender materialises
         assert entry.aggregate in LIVE_AGGREGATE_MAPS
         assert entry.aggregate in sender_src, f"{entry.aggregate} not produced by sender.py"
-    # the two wired emitters exist in code today
-    assert 'record_event("http"' in app_src  # http emitted by the app middleware
-    assert "record_event(" in metrics_src     # guided_help via the generic event endpoint
+    # the wired emitters exist in code: http via the app middleware, guided_help via
+    # the generic event endpoint, and cli/mcp/kg/lifecycle/pipeline via the R5A-B
+    # runtime emitter helpers.
+    assert 'record_event("http"' in app_src
+    assert "record_event(" in metrics_src
+    emitters_src = _src("telemetry/emitters.py")
+    for fn in (
+        "def emit_cli_event",
+        "def emit_mcp_event",
+        "def emit_kg_event",
+        "def emit_lifecycle_event",
+        "def emit_pipeline_transition_event",
+    ):
+        assert fn in emitters_src, f"missing real emitter {fn}"
     # every live aggregate name is actually a sender metrics key (no ghost in the set)
     for aggregate in LIVE_AGGREGATE_MAPS:
         assert aggregate in sender_src, f"LIVE_AGGREGATE_MAPS lists {aggregate} but sender.py never emits it"
 
 
-# --- ts_e8f6c83d: pending wiring is EXPLICIT, never silent --------------------
+# --- ts_e8f6c83d: after R5A-B every maintained type is wired (no pending) ------
 
-def test_pending_types_are_explicitly_tracked_not_silent() -> None:
-    for event_type in ("cli", "mcp", "kg", "lifecycle", "pipeline_transition"):
-        entry = TELEMETRY_EVENT_CONTRACT[event_type]
-        assert is_pending(entry.coverage), f"{event_type} pending wiring must be explicit"
-        assert entry.producer and entry.aggregate  # the target is declared, not a hole
+def test_no_maintained_type_is_pending_after_r5a_b() -> None:
+    # R5A-B closes the pending wiring: every maintained type must be wired with a
+    # real emitter + live aggregate, so the contract test FAILS if any maintained
+    # type still carries pending:R5A-B.
+    for event_type, entry in TELEMETRY_EVENT_CONTRACT.items():
+        if entry.status != "maintained":
+            continue
+        assert not is_pending(entry.coverage), f"{event_type} is still pending after R5A-B"
+        assert entry.coverage == COVERAGE_WIRED
 
 
-def test_lifecycle_and_pipeline_have_no_live_aggregate_yet() -> None:
-    # the known R5A-B gap, made explicit by the contract: these declared types have
-    # NO dedicated aggregate map today, so they are dropped from the delta batch.
+def test_lifecycle_and_pipeline_now_have_live_aggregates() -> None:
+    # R5A-B added the dedicated maps that used to be missing (the closed gap).
     sender_src = _src("telemetry/sender.py")
     for aggregate in ("lifecycle_counts", "pipeline_transition_counts"):
-        assert aggregate not in LIVE_AGGREGATE_MAPS
-        assert aggregate not in sender_src  # not yet wired anywhere
+        assert aggregate in LIVE_AGGREGATE_MAPS
+        assert aggregate in sender_src  # the sender materialises them now
 
 
 # --- tr_8c6167d8: the contract test FAILS on each violation mode --------------

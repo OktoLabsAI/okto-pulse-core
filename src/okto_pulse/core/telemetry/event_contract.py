@@ -35,11 +35,10 @@ COVERAGE_WIRED = "wired"  # emitter + aggregate live AND tested today
 _PENDING_PREFIX = "pending:"  # declared; real emitter/aggregate lands in <card>
 
 # The delta-batch aggregate maps the sender (sender.py `_build_delta_batch`)
-# materialises TODAY. A ``wired`` contract aggregate MUST be one of these — so a
-# "wired" claim can never point at a non-existent (ghost) aggregate. lifecycle /
-# pipeline_transition are deliberately ABSENT here: they have no dedicated map yet
-# (they fall into the generic bucket and are dropped), which is exactly the gap
-# R5A-B closes — the contract marks them pending so the gap is not silent.
+# materialises. A ``wired`` contract aggregate MUST be one of these — so a "wired"
+# claim can never point at a non-existent (ghost) aggregate. R5A-B added dedicated
+# lifecycle_counts / pipeline_transition_counts maps (they used to fall into the
+# generic bucket and be dropped — the phantom-schema gap is now closed).
 LIVE_AGGREGATE_MAPS = frozenset(
     {
         "cli_counts",
@@ -47,6 +46,8 @@ LIVE_AGGREGATE_MAPS = frozenset(
         "mcp_tool_counts",
         "kg_operation_counts",
         "guided_help_counts",
+        "lifecycle_counts",
+        "pipeline_transition_counts",
     }
 )
 
@@ -61,12 +62,12 @@ class EventTypeContract:
     note: str = ""
 
 
-# Classification of every declared EventType. Snapshot of reality (R5A-A): http and
-# guided_help are wired+tested today; cli/mcp/kg have a live aggregate map but no
-# in-core emitter yet; lifecycle/pipeline_transition have neither emitter nor a
-# dedicated aggregate. All are MAINTAINED (intended) — the pending wiring is R5A-B
-# (emitters/aggregators) and R5A-C (HTTP /mcp /health /docs policy). None is removed
-# now (guided_help especially has existing tests — do not remove).
+# Classification of every declared EventType. After R5A-B all maintained types are
+# WIRED: each has a real emitter (the telemetry.emitters helpers, or the app.py /
+# api.metrics emit points for http / guided_help) and a live aggregate map proven
+# emit->store->aggregate by the R5A-B tests. None is removed (guided_help especially
+# has existing tests — do not remove). HTTP path policy (/api /mcp /health /docs) is
+# still R5A-C; the contract keeps that visible in the http note.
 TELEMETRY_EVENT_CONTRACT: dict[str, EventTypeContract] = {
     "http": EventTypeContract(
         event_type="http",
@@ -87,45 +88,44 @@ TELEMETRY_EVENT_CONTRACT: dict[str, EventTypeContract] = {
     "cli": EventTypeContract(
         event_type="cli",
         status=STATUS_MAINTAINED,
-        producer="okto-pulse CLI command wrapper (record_event('cli'))",
+        producer="telemetry.emitters.emit_cli_event (CLI command wrapper)",
         aggregate="cli_counts",
-        coverage="pending:R5A-B",
-        note="Aggregate map exists; the real CLI emitter + emit->aggregate test is R5A-B.",
+        coverage=COVERAGE_WIRED,
+        note="Keyed by the bounded command name (never args). Wired in R5A-B.",
     ),
     "mcp": EventTypeContract(
         event_type="mcp",
         status=STATUS_MAINTAINED,
-        producer="MCP server tool dispatch (record_event('mcp'))",
+        producer="telemetry.emitters.emit_mcp_event (MCP tool dispatch)",
         aggregate="mcp_tool_counts",
-        coverage="pending:R5A-B",
-        note="Aggregate map exists; the real MCP emitter + test is R5A-B.",
+        coverage=COVERAGE_WIRED,
+        note="Keyed by the bounded tool name (never the tool input). Wired in R5A-B.",
     ),
     "kg": EventTypeContract(
         event_type="kg",
         status=STATUS_MAINTAINED,
-        producer="KG operation hook (record_event('kg'))",
+        producer="telemetry.emitters.emit_kg_event (KG operation hook)",
         aggregate="kg_operation_counts",
-        coverage="pending:R5A-B",
-        note="Aggregate map exists; the real KG emitter + test is R5A-B.",
+        coverage=COVERAGE_WIRED,
+        note="Keyed by the bounded operation type (never a free node/artifact/payload). Wired in R5A-B.",
     ),
     "lifecycle": EventTypeContract(
         event_type="lifecycle",
         status=STATUS_MAINTAINED,
-        producer="board/spec/card lifecycle hook (record_event('lifecycle'))",
+        producer="telemetry.emitters.emit_lifecycle_event (board/spec/card lifecycle hook)",
         aggregate="lifecycle_counts",
-        coverage="pending:R5A-B",
-        note="NO dedicated aggregate map yet: lifecycle events fall into the generic "
-        "bucket and are DROPPED from the delta batch today. R5A-B adds lifecycle_counts "
-        "(and the emitter) so this stops being a phantom schema.",
+        coverage=COVERAGE_WIRED,
+        note="R5A-B added the dedicated lifecycle_counts map (it used to fall into the "
+        "generic bucket and be dropped). Keyed by the bounded action (never an id/payload).",
     ),
     "pipeline_transition": EventTypeContract(
         event_type="pipeline_transition",
         status=STATUS_MAINTAINED,
-        producer="pipeline phase-transition hook (record_event('pipeline_transition'))",
+        producer="telemetry.emitters.emit_pipeline_transition_event (pipeline phase-transition hook)",
         aggregate="pipeline_transition_counts",
-        coverage="pending:R5A-B",
-        note="NO dedicated aggregate map yet: dropped from the delta batch today. "
-        "R5A-B adds pipeline_transition_counts (and the emitter).",
+        coverage=COVERAGE_WIRED,
+        note="R5A-B added the dedicated pipeline_transition_counts map (previously dropped). "
+        "Keyed by the bounded phase (never an id/payload).",
     ),
 }
 

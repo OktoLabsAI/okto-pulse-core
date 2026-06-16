@@ -367,6 +367,13 @@ class TelemetryBeaconSender:
         }
         if guided_help_counts:
             metrics["guided_help_counts"] = dict(sorted(guided_help_counts.items()))
+        # R5A-B: lifecycle / pipeline_transition get DEDICATED aggregate maps (they
+        # used to fall into the generic bucket and be dropped — a phantom schema).
+        # An unrecognized event_type is NOT silently dropped either: it lands in a
+        # bounded diagnostic bucket keyed by the TYPE (never the label/payload).
+        lifecycle_counts: Counter[str] = Counter()
+        pipeline_transition_counts: Counter[str] = Counter()
+        unknown_event_type_counts: Counter[str] = Counter()
         for key, counts in buckets.items():
             event_type, _ = key.split(":", 1)
             if event_type == "cli":
@@ -377,6 +384,20 @@ class TelemetryBeaconSender:
                 metrics["mcp_tool_counts"].update(counts)
             elif event_type == "kg":
                 metrics["kg_operation_counts"].update(counts)
+            elif event_type == "lifecycle":
+                lifecycle_counts.update(counts)
+            elif event_type == "pipeline_transition":
+                pipeline_transition_counts.update(counts)
+            else:
+                unknown_event_type_counts[event_type] += sum(counts.values())
+        # Conditional families (like guided_help_counts): present only when events
+        # exist, so the batch shape is unchanged when there is nothing to report.
+        if lifecycle_counts:
+            metrics["lifecycle_counts"] = dict(sorted(lifecycle_counts.items()))
+        if pipeline_transition_counts:
+            metrics["pipeline_transition_counts"] = dict(sorted(pipeline_transition_counts.items()))
+        if unknown_event_type_counts:
+            metrics["unknown_event_type_counts"] = dict(sorted(unknown_event_type_counts.items()))
         batch = {
             "schema_version": cfg.schema_version,
             "install_id": get_or_create_install_id(self.settings),
