@@ -82,15 +82,39 @@ def test_ts_a81de6bc_distinct_actionable_reasons() -> None:
         assert dto.status == exp_status, label
         assert dto.reason_category == exp_reason, label
         assert dto.severity == exp_sev, label
-        # actionable: non-empty, from the bounded catalog (keyed by category).
-        assert dto.message and dto.message in _CATALOG, label
+        assert dto.message  # non-empty
         assert "{" not in dto.message  # no unformatted placeholder
+        # item 2/3: the SPECIFIC actionable message for the category (from the real
+        # classifier `actionable_message`), NEVER the generic _STATUS_MESSAGES
+        # fallback of the bare status.
+        assert dto.message == ph.actionable_message(exp_status, exp_reason), label
+        assert dto.message != ph._STATUS_MESSAGES.get(exp_status), label
+        # item 1: source asserted (local-only projection -> the local source).
+        assert dto.source == ph.SOURCE_LOCAL, label
         reason_categories.add(dto.reason_category)
         messages.add(dto.message)
 
     # all five reason categories AND all five messages are pairwise distinct.
     assert len(reason_categories) == 5
     assert len(messages) == 5
+
+
+def test_ts_a81de6bc_collapsed_reason_messages_break_uniqueness(monkeypatch) -> None:
+    # TEETH (item 6): if two reason categories ever collapse to the SAME actionable
+    # message, the scenario's distinctness contract must break. Force a collapse and
+    # prove the uniqueness assertion goes red (direction of failure).
+    monkeypatch.setitem(
+        ph._REASON_MESSAGES, ph.REASON_TOKEN_EXPIRED, ph._REASON_MESSAGES[ph.REASON_UNKNOWN_INSTALL]
+    )
+    projections = [
+        _projection(status=fs.STATUS_DEGRADED, reason_code="UNKNOWN_INSTALL", http_status=401),
+        _projection(status=fs.STATUS_DEGRADED, reason_code="TOKEN_EXPIRED", http_status=401),
+        _projection(status=fs.STATUS_FATAL, reason_code="INVALID_SIGNATURE", http_status=401),
+        _projection(status=fs.STATUS_DEGRADED, reason_code="USAGE_503", http_status=503),
+        _projection(status=fs.STATUS_BLOCKED, publish_enabled=False, consent_state=fs.CONSENT_BLOCKED),
+    ]
+    messages = {ph.resolve_publish_health(p, now=_NOW).message for p in projections}
+    assert len(messages) < 5  # unknown_install + token_expired collapsed -> not unique
 
 
 # --- ts_60131b20: AWS/R5B unavailable/expired/stale -> never healthy -----------
