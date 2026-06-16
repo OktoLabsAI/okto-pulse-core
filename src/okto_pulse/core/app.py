@@ -16,6 +16,7 @@ from okto_pulse.core.infra.config import CoreSettings, configure_settings
 from okto_pulse.core.infra.database import create_database, init_db, close_db, get_session_factory
 from okto_pulse.core.infra.storage import StorageProvider, configure_storage
 from okto_pulse.core.api import api_router
+from okto_pulse.core.telemetry.http_policy import safe_route_template, should_count_http
 from okto_pulse.core.telemetry.service import TelemetryService
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,10 @@ class _TelemetryASGIMiddleware:
         self.settings = settings
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http" or not scope.get("path", "").startswith("/api/"):
+        # R5A-C: explicit, testable HTTP telemetry policy (counts /api + /mcp; excludes
+        # /health /docs /openapi.json /redoc; no lookalike false positives) replaces
+        # the old implicit startswith('/api/') filter.
+        if scope["type"] != "http" or not should_count_http(scope.get("path", "")):
             await self.app(scope, receive, send)
             return
 
@@ -56,9 +60,10 @@ class _TelemetryASGIMiddleware:
             raise
         finally:
             # O router popula scope["route"] durante o dispatch — disponível
-            # aqui depois que o downstream rodou.
+            # aqui depois que o downstream rodou. safe_route_template prefere o
+            # PADRÃO da rota resolvida (placeholders) e nunca emite path concreto.
             route = scope.get("route")
-            route_template = getattr(route, "path", scope.get("path", ""))
+            route_template = safe_route_template(route, scope.get("path", ""))
             payload = {
                 "method": scope.get("method", ""),
                 "route_template": route_template,

@@ -18,6 +18,13 @@ from okto_pulse.core.app import _TelemetryASGIMiddleware
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+class _Route:
+    """Stand-in for a Starlette/FastAPI resolved route (carries .path PATTERN)."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+
 class _RecordingTelemetry:
     events: list[tuple[str, dict]] = []
 
@@ -34,8 +41,11 @@ def _patch_telemetry(monkeypatch):
     monkeypatch.setattr(app_module, "TelemetryService", _RecordingTelemetry)
 
 
-def _scope(path: str, method: str = "GET") -> dict:
-    return {"type": "http", "path": path, "method": method, "headers": []}
+def _scope(path: str, method: str = "GET", *, route: _Route | None = None) -> dict:
+    scope = {"type": "http", "path": path, "method": method, "headers": []}
+    if route is not None:
+        scope["route"] = route
+    return scope
 
 
 async def _ok_app(scope, receive, send):
@@ -53,10 +63,15 @@ async def _collect_send(messages):
     return send
 
 
-async def test_records_api_request_with_status():
+async def test_records_api_request_with_resolved_route_template():
     mw = _TelemetryASGIMiddleware(_ok_app, settings=object())
     messages: list = []
-    await mw(_scope("/api/v1/boards"), _noop_receive, await _collect_send(messages))
+    # a resolved route -> the bounded PATTERN is used (placeholder, never a value).
+    await mw(
+        _scope("/api/v1/cards/abc123", route=_Route("/api/v1/cards/{card_id}")),
+        _noop_receive,
+        await _collect_send(messages),
+    )
 
     assert messages[0]["status"] == 200
     assert len(_RecordingTelemetry.events) == 1
@@ -64,17 +79,42 @@ async def test_records_api_request_with_status():
     assert kind == "http"
     assert payload["method"] == "GET"
     assert payload["status_code"] == 200
-    assert payload["route_template"] == "/api/v1/boards"
+    assert payload["route_template"] == "/api/v1/cards/{card_id}"
     assert payload["duration_ms"] >= 0
     assert "error_class" not in payload
 
 
-async def test_non_api_path_not_recorded():
+async def test_mcp_surface_is_recorded():
     mw = _TelemetryASGIMiddleware(_ok_app, settings=object())
-    messages: list = []
-    await mw(_scope("/kg-health"), _noop_receive, await _collect_send(messages))
-    assert messages[0]["status"] == 200
+    await mw(_scope("/mcp/tools/call", route=_Route("/mcp/tools/call")), _noop_receive, await _collect_send([]))
+    assert len(_RecordingTelemetry.events) == 1
+    assert _RecordingTelemetry.events[0][1]["route_template"] == "/mcp/tools/call"
+
+
+async def test_health_and_docs_surfaces_not_recorded():
+    mw = _TelemetryASGIMiddleware(_ok_app, settings=object())
+    for path in ("/health", "/docs", "/openapi.json", "/redoc", "/kg-health"):
+        await mw(_scope(path), _noop_receive, await _collect_send([]))
     assert _RecordingTelemetry.events == []
+
+
+async def test_lookalike_prefixes_are_not_recorded():
+    mw = _TelemetryASGIMiddleware(_ok_app, settings=object())
+    for path in ("/apiary", "/api-keys", "/mcping", "/healthz", "/health-internal", "/docs-admin"):
+        await mw(_scope(path), _noop_receive, await _collect_send([]))
+    assert _RecordingTelemetry.events == []
+
+
+async def test_unresolved_malicious_path_collapses_to_bounded_template():
+    mw = _TelemetryASGIMiddleware(_ok_app, settings=object())
+    # no resolved route + a concrete id/secret/query: must NOT leak into the key.
+    await mw(
+        _scope("/api/cards/SECRET?token=xxx"), _noop_receive, await _collect_send([])
+    )
+    assert len(_RecordingTelemetry.events) == 1
+    template = _RecordingTelemetry.events[0][1]["route_template"]
+    assert template == "/api/{unresolved}"
+    assert "SECRET" not in template and "token" not in template and "xxx" not in template
 
 
 async def test_downstream_exception_recorded_and_reraised():
