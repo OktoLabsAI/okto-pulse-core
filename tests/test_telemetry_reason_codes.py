@@ -19,9 +19,12 @@ import requests
 from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.telemetry import failure_state as fs
 from okto_pulse.core.telemetry import sender as sender_mod
+from okto_pulse.core.telemetry import watermark as wm
 from okto_pulse.core.telemetry.sender import TelemetryBeaconSender
 from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION
 from okto_pulse.core.telemetry.service import TelemetryService
+from okto_pulse.core.telemetry.settings import resolve_telemetry_config
+from okto_pulse.core.telemetry.store import LocalTelemetryStore
 
 FIXED_NOW = datetime(2026, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
 HANDSHAKE_URL = "/v1/handshake"
@@ -177,3 +180,177 @@ def test_duplicate_is_idempotent_advances_seq_and_not_fatal(tmp_path, monkeypatc
     fstate = fs.read_failure_state(state)
     assert fstate.status == fs.STATUS_OK  # not fatal
     assert "circuit_open_until" not in state
+
+
+def test_duplicate_confirms_events_idempotently_no_replay(tmp_path, monkeypatch):
+    """ts_a5c846e0 (R3A-C) — a DUPLICATE is treated as idempotent CONFIRMATION of
+    the batch's events (br_4659bfcc): the durable ledger + watermark advance, and
+    a second send_once finds nothing pending — no replay loop, no cursor loss."""
+    settings = _prepare(tmp_path, monkeypatch, with_consent=True)
+    metrics_dir = resolve_telemetry_config(settings).metrics_dir
+    event_ids = {e["event_id"] for e in LocalTelemetryStore(metrics_dir).iter_events()}
+    assert len(event_ids) == 1
+
+    session = ScriptedSession(usage=[_err(409, "DUPLICATE_NONCE_OR_BATCH_SEQ")])
+    result = TelemetryBeaconSender(settings, session=session).send_once()  # type: ignore[arg-type]
+    assert result == {"sent": False, "reason": "duplicate", "batch_seq": 5}
+
+    # The duplicate confirmed the events durably (ledger) and advanced the cursor.
+    assert LocalTelemetryStore(metrics_dir).confirmed_event_ids() == event_ids
+    wmark = wm.load_watermark(metrics_dir)
+    assert not wmark.is_empty
+    assert wmark.watermark_event_id in event_ids
+
+    # No replay: a second send_once has nothing pending and never hits the wire.
+    second_session = ScriptedSession(usage=[])
+    second = TelemetryBeaconSender(settings, session=second_session).send_once()  # type: ignore[arg-type]
+    assert second == {"sent": False, "reason": "empty"}
+    assert second_session.calls == []
+
+
+def test_regression_r3a_g_duplicate_confirms_only_original_intent(tmp_path, monkeypatch):
+    """R3A-G regression (test card 6e9840f0) — exercises the data-loss edge the
+    R3A-C validation surfaced: a DUPLICATE on retry must confirm ONLY the events
+    of the ORIGINAL intent, never events added to the store after the original
+    attempt.
+
+    Steps (validator criteria): batch_seq=N intent persisted for {A}; accept +
+    crash before the full local advance; event {B} enters the store before the
+    retry; the retry gets DUPLICATE for the original batch_seq; only {A} is
+    confirmed, {B} stays pending/re-eligible, and next_batch_seq advances to N+1.
+    """
+    settings = _prepare(tmp_path, monkeypatch, with_consent=True)  # next_batch_seq=5
+    metrics_dir = resolve_telemetry_config(settings).metrics_dir
+    a_id = next(iter({e["event_id"] for e in LocalTelemetryStore(metrics_dir).iter_events()}))
+
+    # (1)+(2) Durable intent for batch_seq=5 carrying ONLY {A}, as persisted
+    # pre-POST; the process then crashed after the backend accepted batch_seq=5
+    # but before the local confirmation/advance (A not in the ledger, seq still 5).
+    state_path = Path(settings.metrics_dir) / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["in_flight_batch"] = {"batch_seq": 5, "nonce": "nonce-original", "event_ids": [a_id]}
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    # (3) A new event B enters the store before the retry.
+    TelemetryService(settings).record_event("cli", {"command": "build"})
+    b_id = next(
+        e["event_id"]
+        for e in LocalTelemetryStore(metrics_dir).iter_events()
+        if e["event_id"] != a_id
+    )
+
+    # (4) The retry hits DUPLICATE for the original batch_seq.
+    session = ScriptedSession(usage=[_err(409, "DUPLICATE_NONCE_OR_BATCH_SEQ")])
+    result = TelemetryBeaconSender(settings, session=session).send_once()  # type: ignore[arg-type]
+    assert result["reason"] == "duplicate"
+
+    # (5) ONLY {A} confirmed; {B} stays pending; seq advanced to N+1.
+    confirmed = LocalTelemetryStore(metrics_dir).confirmed_event_ids()
+    assert a_id in confirmed
+    assert b_id not in confirmed, "data loss: B confirmed without backend ever receiving it"
+    assert _state(settings)["next_batch_seq"] == 6
+    sender = TelemetryBeaconSender(settings)
+    _batch, included = sender._build_delta_batch(resolve_telemetry_config(settings))
+    included_ids = {e["event_id"] for e in included}
+    assert b_id in included_ids  # B re-eligible for a future batch
+    assert a_id not in included_ids  # A is confirmed, no longer pending
+
+
+def test_failure_before_accept_preserves_watermark_and_window(tmp_path, monkeypatch):
+    """ts_4619cebd (R3A-C) — a 5xx before accept does NOT confirm/advance: the
+    watermark stays empty and the same window remains eligible (events pending)."""
+    settings = _prepare(tmp_path, monkeypatch, with_consent=True)
+    metrics_dir = resolve_telemetry_config(settings).metrics_dir
+    event_ids = {e["event_id"] for e in LocalTelemetryStore(metrics_dir).iter_events()}
+
+    session = ScriptedSession(usage=[FakeResponse(503, {})])
+    result = TelemetryBeaconSender(settings, session=session).send_once()  # type: ignore[arg-type]
+    assert result == {"sent": False, "reason": "retryable"}
+
+    # Window preserved: nothing confirmed, watermark untouched (br_7bced648).
+    assert LocalTelemetryStore(metrics_dir).confirmed_event_ids() == set()
+    assert wm.load_watermark(metrics_dir).is_empty
+
+    # The same events are still pending → re-eligible for a future retry.
+    sender = TelemetryBeaconSender(settings)
+    _batch, included = sender._build_delta_batch(resolve_telemetry_config(settings))
+    assert {e["event_id"] for e in included} == event_ids
+
+
+# --- R3A-E: secret-free watermark/retention audit signals (or_8f51cac2) ------
+
+_SECRET_TOKEN = "tok-current"  # _prepare sets state["install_token"] to this
+
+
+def _watermark_audit(caplog):
+    return [r.__dict__ for r in caplog.records if r.__dict__.get("metric_name") == "MetricsClientWatermarkState"]
+
+
+def _assert_audit_secret_free(records) -> None:
+    for rec in records:
+        assert _SECRET_TOKEN not in repr(rec), "install_token value leaked into an audit log"
+        for projection in (rec.get("watermark_state"), rec.get("publish_status")):
+            assert isinstance(projection, dict)
+            assert not any(k in projection for k in ("install_token", "token_hash", "signature", "token"))
+
+
+def test_audit_send_once_2xx_emits_secret_free_advanced_state(tmp_path, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="okto_pulse.telemetry.sender")
+    settings = _prepare(tmp_path, monkeypatch, with_consent=True)
+    session = ScriptedSession(usage=[FakeResponse(202, {"accepted": True})])
+
+    TelemetryBeaconSender(settings, session=session).send_once()  # type: ignore[arg-type]
+
+    records = _watermark_audit(caplog)
+    components = {rec["component"] for rec in records}
+    assert "send_once" in components and "prune_old" in components  # both transitions audited
+    send = [rec for rec in records if rec["component"] == "send_once"][-1]
+    assert send["action"] == "advanced"
+    assert send["reason_code"] == "accepted"
+    assert send["watermark_state"]["watermark_event_id"] is not None  # cursor advanced
+    _assert_audit_secret_free(records)
+
+
+def test_audit_duplicate_emits_reconciled_state(tmp_path, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="okto_pulse.telemetry.sender")
+    settings = _prepare(tmp_path, monkeypatch, with_consent=True)
+    session = ScriptedSession(usage=[_err(409, "DUPLICATE_NONCE_OR_BATCH_SEQ")])
+
+    TelemetryBeaconSender(settings, session=session).send_once()  # type: ignore[arg-type]
+
+    records = _watermark_audit(caplog)
+    send = [rec for rec in records if rec["component"] == "send_once"][-1]
+    assert send["action"] == "duplicate_reconciled"
+    assert send["reason_code"] == "duplicate"
+    _assert_audit_secret_free(records)
+
+
+def test_audit_5xx_emits_preserved_state_without_advancing(tmp_path, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="okto_pulse.telemetry.sender")
+    settings = _prepare(tmp_path, monkeypatch, with_consent=True)
+    session = ScriptedSession(usage=[FakeResponse(503, {})])
+
+    TelemetryBeaconSender(settings, session=session).send_once()  # type: ignore[arg-type]
+
+    records = _watermark_audit(caplog)
+    send = [rec for rec in records if rec["component"] == "send_once"][-1]
+    assert send["action"] == "preserved"  # cursor stayed put on the error
+    assert send["reason_code"] == "retryable"
+    assert send["watermark_state"]["watermark_event_id"] is None  # not advanced
+    _assert_audit_secret_free(records)
+
+
+def test_audit_prune_emits_retention_state(tmp_path, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="okto_pulse.telemetry.sender")
+    settings = _prepare(tmp_path, monkeypatch, with_consent=True)
+    session = ScriptedSession(usage=[FakeResponse(202, {"accepted": True})])
+
+    TelemetryBeaconSender(settings, session=session).send_once()  # type: ignore[arg-type]
+
+    records = _watermark_audit(caplog)
+    prune = [rec for rec in records if rec["component"] == "prune_old"][-1]
+    assert prune["action"] == "pruned"
+    assert prune["reason_code"] == "retention_sweep"
+    # The retention-sweep counts are carried for diagnosis.
+    assert "removed_confirmed_events" in prune and "preserved_pending_events" in prune
+    _assert_audit_secret_free(records)

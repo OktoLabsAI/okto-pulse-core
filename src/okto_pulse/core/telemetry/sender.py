@@ -23,6 +23,8 @@ from okto_pulse.core.telemetry.settings import (
     save_state,
 )
 from okto_pulse.core.telemetry import failure_state as fs
+from okto_pulse.core.telemetry import watermark as wm
+from okto_pulse.core.telemetry.era import POST_FIX_DELTA_MARKER, POST_FIX_SNAPSHOT_MARKER
 from okto_pulse.core.telemetry.store import LocalTelemetryStore, add_guided_help_counts, parse_iso
 
 logger = logging.getLogger("okto_pulse.telemetry.sender")
@@ -108,6 +110,36 @@ def _log_beacon_outcome(*, reason: str, outcome: str = "skipped") -> None:
     )
 
 
+def _log_watermark_state(
+    *,
+    component: str,
+    reason_code: str,
+    action: str,
+    state: dict[str, Any],
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """R3A-E: emit a secret-free audit signal of the local watermark/retention state.
+
+    Built strictly from allowlisted projections (the watermark schema fields +
+    the publish-status failure_state fields), so it can NEVER carry
+    ``install_token``/``token_hash``/``signature`` or any derived secret
+    (``or_8f51cac2``). This lets an agent explain why the cursor advanced, stayed
+    put on an error, reconciled a duplicate, or pruned — each ``send_once`` /
+    ``prune_old`` transition records its final state and ``reason_code``.
+    """
+    payload: dict[str, Any] = {
+        "metric_name": "MetricsClientWatermarkState",
+        "component": component,
+        "action": action,
+        "reason_code": reason_code,
+        "watermark_state": wm.public_watermark_projection(state),
+        "publish_status": fs.public_status_projection(state),
+    }
+    if extra:
+        payload.update(extra)
+    logger.info("metrics.watermark_state", extra=payload)
+
+
 class TelemetryBeaconSender:
     def __init__(self, settings: CoreSettings, session: requests.Session | None = None):
         self.settings = settings
@@ -180,16 +212,107 @@ class TelemetryBeaconSender:
             _log_runtime_skip(reason="disabled")
             _log_beacon_outcome(reason="disabled")
             return None
+        batch, _included = self._build_delta_batch(cfg)
+        return batch
+
+    def build_product_snapshot(self) -> dict[str, Any] | None:
+        """R3A-F: build product telemetry as a SNAPSHOT payload, never a delta.
+
+        product_metrics is cumulative/snapshot (current spec/card/sprint shapes,
+        domain-event counts), so it is marked ``era=post_fix``/``semantics=snapshot``
+        and kept OUT of the delta batch — a consumer must never sum it as a
+        ``trusted_delta``. Returns None when there is no product telemetry.
+        """
+        cfg = resolve_telemetry_config(self.settings)
+        try:
+            product_metrics = ProductTelemetryAggregator(self.settings, cfg.metrics_dir).aggregate()
+        except Exception:
+            product_metrics = {}
+        if not product_metrics:
+            return None
+        return {
+            "schema_version": cfg.schema_version,
+            "install_id": get_or_create_install_id(self.settings),
+            **POST_FIX_SNAPSHOT_MARKER,
+            "snapshot_at": now_utc(),
+            "metrics": product_metrics,
+        }
+
+    def publish_product_snapshot(self) -> dict[str, Any]:
+        """R3A-F: persist the product snapshot locally; do NOT transmit it.
+
+        There is no safe snapshot ingest contract today: the deployed backend
+        ``validate_usage_batch`` rejects unknown top-level fields (so a snapshot,
+        like the era/semantics markers, would be 422 UNKNOWN_FIELDS), and
+        product_metrics is forbidden inside the delta batch (it would be summed as
+        a trusted_delta). Rather than silently drop product telemetry or fake a
+        send, the client records the snapshot auditably and reports an explicit
+        ``no_snapshot_ingest_endpoint`` outcome. Real transmission stays blocked by
+        a SEPARATE consumer-side bug in okto_labs_community_metrics.
+        """
+        cfg = resolve_telemetry_config(self.settings)
+        if cfg.mode != "anonymous_beacon":
+            _log_runtime_skip(reason="disabled")
+            return {"sent": False, "reason": "not_enabled"}
+        snapshot = self.build_product_snapshot()
+        if snapshot is None:
+            return {"sent": False, "reason": "empty"}
+        path = self._store().append_snapshot(snapshot)
+        logger.info(
+            "metrics.product_snapshot",
+            extra={
+                "metric_name": "MetricsClientProductSnapshot",
+                "outcome": "persisted_local",
+                "reason_code": "no_snapshot_ingest_endpoint",
+                "era": snapshot["era"],
+                "semantics": snapshot["semantics"],
+                "family_count": len(snapshot["metrics"]),
+            },
+        )
+        return {
+            "sent": False,
+            "reason": "no_snapshot_ingest_endpoint",
+            "persisted": str(path),
+            "semantics": snapshot["semantics"],
+        }
+
+    def _build_delta_batch(
+        self, cfg, *, restrict_to: set[str] | None = None
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        """Assemble the steady-state delta batch from UNCONFIRMED events only.
+
+        R3A-B selection is by backend CONFIRMATION of ``event_id`` (the durable
+        ledger in :meth:`LocalTelemetryStore.confirmed_event_ids`), NOT by the
+        watermark keyset order: an event that lands with a clock-skewed old
+        ``occurred_at`` is included as long as it is unconfirmed (``ts_07d9a8b2``),
+        and a confirmed event never re-enters as a new delta (``fr_fe9b844d``).
+        ``bucket_start`` is the earliest PENDING event, so it is never pinned to
+        the oldest historical confirmed event (``tr_f6f84016`` / ``ts_2ec547b9``).
+
+        Returns ``(wire_batch, included_events)`` where each included event is a
+        minimal ``{event_id, occurred_at}`` dict used to confirm + advance the
+        watermark once the backend accepts the batch.
+        """
         store = self._store()
+        confirmed = store.confirmed_event_ids()
         buckets: dict[str, Counter[str]] = defaultdict(Counter)
         bucket_starts: list[str] = []
         guided_help_counts: Counter[str] = Counter()
         duration_buckets: Counter[str] = Counter()
         error_class_counts: Counter[str] = Counter()
+        included: list[dict[str, Any]] = []
         for event in store.iter_events():
+            event_id = str(event.get("event_id") or "")
+            if event_id and event_id in confirmed:
+                continue  # already confirmed → not a new delta (fr_fe9b844d)
+            if restrict_to is not None and event_id not in restrict_to:
+                continue  # R3A-G: re-send ONLY the original in-flight intent's events
             occurred = parse_iso(str(event.get("occurred_at", "")))
             if not occurred:
                 continue
+            included.append(
+                {"event_id": event_id, "occurred_at": str(event.get("occurred_at", ""))}
+            )
             bucket = occurred.replace(minute=0, second=0, microsecond=0)
             key = bucket.isoformat().replace("+00:00", "Z")
             bucket_starts.append(key)
@@ -216,13 +339,15 @@ class TelemetryBeaconSender:
                     pass
             if payload.get("error_class"):
                 error_class_counts[str(payload["error_class"])] += 1
-        product_metrics: dict[str, Any] = {}
-        try:
-            product_metrics = ProductTelemetryAggregator(self.settings, cfg.metrics_dir).aggregate()
-        except Exception:
-            product_metrics = {}
-        if not buckets and not product_metrics and not guided_help_counts:
-            return None
+        # product_metrics is DELIBERATELY excluded from this delta batch (codex
+        # decision, R3A-B): it is a cumulative/snapshot re-aggregation of the live
+        # DB, so carrying it inside a semantics=delta payload would make R4 sum a
+        # cumulative as a delta and inflate reports (fr_cfa32c6b "apenas eventos";
+        # fr_fe9b844d / br_660cdac7). Product telemetry gets its own snapshot path
+        # (tracked follow-up). A delta batch carries ONLY unconfirmed event-stream
+        # events.
+        if not buckets and not guided_help_counts:
+            return None, []
         if bucket_starts:
             bucket_start = sorted(bucket_starts)[0]
         else:
@@ -240,7 +365,6 @@ class TelemetryBeaconSender:
             "duration_buckets": dict(duration_buckets),
             "error_class_counts": dict(error_class_counts),
         }
-        metrics.update(product_metrics)
         if guided_help_counts:
             metrics["guided_help_counts"] = dict(sorted(guided_help_counts.items()))
         for key, counts in buckets.items():
@@ -253,13 +377,17 @@ class TelemetryBeaconSender:
                 metrics["mcp_tool_counts"].update(counts)
             elif event_type == "kg":
                 metrics["kg_operation_counts"].update(counts)
-        return {
+        batch = {
             "schema_version": cfg.schema_version,
             "install_id": get_or_create_install_id(self.settings),
+            # Explicit post-fix delta marker so reports/backfill never infer
+            # semantics from a date/path (fr_169be135 / br_8d26d92e / ir_d7bcef31).
+            **POST_FIX_DELTA_MARKER,
             "bucket_start": bucket_start,
             "bucket_duration_seconds": 3600,
             "metrics": metrics,
         }
+        return batch, included
 
     def send_once(self) -> dict[str, Any]:
         cfg = resolve_telemetry_config(self.settings)
@@ -320,23 +448,76 @@ class TelemetryBeaconSender:
         if not token:
             _log_beacon_outcome(reason="ack_missing")
             return {"sent": False, "reason": "missing_token"}
-        batch = self.hourly_batch()
-        if not batch:
-            return {"sent": False, "reason": "empty"}
         batch_seq = int(state.get("next_batch_seq") or 1)
+        # R3A-G: an unresolved durable intent for THIS batch_seq means a prior
+        # attempt's batch may already be committed remotely (crash between the
+        # backend accept and the local confirmation). Re-send EXACTLY that intent's
+        # events (reusing its nonce) so a DUPLICATE confirms only what the backend
+        # could hold — events added since the original attempt stay pending and
+        # are never confirmed without receipt. Otherwise build a fresh batch and
+        # record a new intent BEFORE posting.
+        intent = state.get("in_flight_batch")
+        if isinstance(intent, dict) and intent.get("batch_seq") == batch_seq:
+            restrict = {str(i) for i in (intent.get("event_ids") or [])}
+            nonce = str(intent.get("nonce") or uuid.uuid4())
+            batch, included = self._build_delta_batch(cfg, restrict_to=restrict)
+        else:
+            nonce = str(uuid.uuid4())
+            batch, included = self._build_delta_batch(cfg)
+        if not batch:
+            # Nothing left to send (e.g. the intent's events are all confirmed).
+            if "in_flight_batch" in state:
+                state.pop("in_flight_batch", None)
+                save_state(cfg.metrics_dir, state)
+            return {"sent": False, "reason": "empty"}
+        # Durable intent persisted BEFORE the POST (crash-safe): a later DUPLICATE
+        # confirms ONLY these event_ids, never a grown batch (R3A-G data-loss fix).
+        state["in_flight_batch"] = {
+            "batch_seq": batch_seq,
+            "nonce": nonce,
+            "event_ids": [str(e["event_id"]) for e in included if e.get("event_id")],
+        }
+        save_state(cfg.metrics_dir, state)
         try:
-            resp = self._sign_and_post_usage(cfg, token, batch, batch_seq)
+            resp = self._sign_and_post_usage(cfg, token, batch, batch_seq, nonce=nonce)
         except requests.RequestException:
             self._open_circuit(state, cfg, "USAGE_NETWORK")
             _log_beacon_outcome(reason="transport_failed")
+            # R3A-E: a transport failure before accept preserves the cursor.
+            _log_watermark_state(
+                component="send_once", reason_code="USAGE_NETWORK", action="preserved", state=state
+            )
             return {"sent": False, "reason": "network"}
         outcome = self._handle_usage_response(
-            resp, state, cfg, batch=batch, batch_seq=batch_seq, allow_rehandshake=True
+            resp, state, cfg, batch=batch, batch_seq=batch_seq, allow_rehandshake=True, included=included
         )
         if outcome.get("sent") and refresh_status is not None:
             outcome["refresh"] = refresh_status
             if refresh_next_retry_at is not None:
                 outcome["refresh_next_retry_at"] = refresh_next_retry_at
+        # R3A-E: audit the cursor transition (advanced / duplicate-reconciled /
+        # preserved-on-error) with a secret-free state signal.
+        if outcome.get("sent"):
+            action, reason_code = "advanced", "accepted"
+        elif outcome.get("reason") == "duplicate":
+            action, reason_code = "duplicate_reconciled", "duplicate"
+        else:
+            action, reason_code = "preserved", str(outcome.get("reason") or "unknown")
+        _log_watermark_state(component="send_once", reason_code=reason_code, action=action, state=state)
+        # R3A-D: run the retention sweep in the normal publish flow, preserving
+        # pending events (fr_f3425329). Best-effort — a prune failure must never
+        # block publishing. The injected clock keeps it testable. R3A-E: audit it.
+        try:
+            prune_result = self._store().prune_old(now=_utcnow())
+            _log_watermark_state(
+                component="prune_old",
+                reason_code="retention_sweep",
+                action="pruned",
+                state=state,
+                extra=prune_result,
+            )
+        except Exception:
+            pass
         return outcome
 
     def _open_circuit(
@@ -366,13 +547,19 @@ class TelemetryBeaconSender:
         save_state(cfg.metrics_dir, state)
         self._store().append_sent({"failed_at": now_utc(), "code": code}, failed=True)
 
-    def _record_success(self, state: dict[str, Any], cfg, *, batch_seq: int) -> None:
+    def _record_success(
+        self,
+        state: dict[str, Any],
+        cfg,
+        *,
+        batch_seq: int,
+        included: list[dict[str, Any]],
+        now_iso: str,
+    ) -> None:
         # R1-B: record a successful publish in the failure-state schema, marking
         # recovery when the previous state was failing, and clear the legacy
-        # circuit gate. next_batch_seq/send-time seq stays here (R1 scope); event
-        # watermark/delta is R3.
+        # circuit gate.
         current = fs.read_failure_state(state)
-        now_iso = now_utc()
         was_failing = current.status in (fs.STATUS_DEGRADED, fs.STATUS_FATAL) or current.retry_count > 0
         updated = fs.merge(
             current,
@@ -389,11 +576,49 @@ class TelemetryBeaconSender:
         state["next_batch_seq"] = batch_seq + 1
         state.pop("circuit_open_until", None)
         state.pop("last_failure_code", None)
+        state.pop("in_flight_batch", None)  # R3A-G: this batch's intent is resolved
+        # R3A-B: advance the watermark audit cursor to the newest confirmed event
+        # and refresh the pending counter from the durable ledger (which already
+        # carries this batch — the sent record was appended before this call).
+        # Selection itself uses the confirmed-id ledger, NOT this cursor.
+        self._apply_watermark_advance(
+            state, cfg, included=included, updated_at=now_iso, next_batch_seq=batch_seq + 1
+        )
         save_state(cfg.metrics_dir, state)
 
-    def _sign_and_post_usage(self, cfg, token, batch: dict[str, Any], batch_seq: int):
+    def _apply_watermark_advance(
+        self,
+        state: dict[str, Any],
+        cfg,
+        *,
+        included: list[dict[str, Any]],
+        updated_at: str,
+        next_batch_seq: int,
+    ) -> None:
+        advanced = wm.read_watermark(state)
+        for event in included or []:
+            event_id = str(event.get("event_id") or "")
+            occurred_at = str(event.get("occurred_at") or "")
+            if event_id and occurred_at:
+                advanced = wm.advance(
+                    advanced, event_id=event_id, occurred_at=occurred_at, updated_at=updated_at
+                )
+        store = self._store()
+        confirmed = store.confirmed_event_ids()
+        pending = sum(
+            1 for event in store.iter_events() if str(event.get("event_id") or "") not in confirmed
+        )
+        advanced = wm.set_counters(
+            advanced,
+            pending_event_count=pending,
+            next_batch_seq=next_batch_seq,
+            retention_days=int(getattr(cfg, "retention_days", wm.DEFAULT_RETENTION_DAYS)),
+        )
+        state.update(advanced.to_state_fields())
+
+    def _sign_and_post_usage(self, cfg, token, batch: dict[str, Any], batch_seq: int, *, nonce: str | None = None):
         timestamp = str(int(_utcnow().timestamp()))
-        nonce = str(uuid.uuid4())
+        nonce = nonce or str(uuid.uuid4())
         signature = sign_payload(str(token), timestamp, nonce, batch_seq, batch)
         body = canonical_json(batch).encode("utf-8")
         headers = {
@@ -429,6 +654,7 @@ class TelemetryBeaconSender:
         batch: dict[str, Any],
         batch_seq: int,
         allow_rehandshake: bool,
+        included: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if resp.status_code in {410, 426}:
             state["mode"] = "disabled"
@@ -441,14 +667,23 @@ class TelemetryBeaconSender:
             _log_beacon_outcome(reason="transport_failed")
             return {"sent": False, "reason": "retryable"}
         if 200 <= resp.status_code < 300:
-            self._record_success(state, cfg, batch_seq=batch_seq)
+            now_iso = now_utc()
+            confirmed_ids = [str(e["event_id"]) for e in (included or []) if e.get("event_id")]
+            # Durable confirmation ledger FIRST: the sent record is the source of
+            # truth for selection, so a crash after this point still excludes the
+            # confirmed events on reload (fr_fe9b844d, crash-durable). The
+            # watermark advance below is only the denormalized audit marker.
             self._store().append_sent(
                 {
-                    "sent_at": state["last_send_at"],
+                    "sent_at": now_iso,
                     "batch_seq": batch_seq,
                     "payload": batch,
                     "response_status": resp.status_code,
+                    "confirmed_event_ids": confirmed_ids,
                 }
+            )
+            self._record_success(
+                state, cfg, batch_seq=batch_seq, included=included or [], now_iso=now_iso
             )
             _log_beacon_outcome(reason="sent", outcome="sent")
             return {"sent": True, "batch_seq": batch_seq}
@@ -456,7 +691,12 @@ class TelemetryBeaconSender:
         code = self._response_code(resp)
         if resp.status_code == 401 and code == "UNKNOWN_INSTALL":
             return self._recover_unknown_install(
-                state, cfg, batch=batch, batch_seq=batch_seq, allow_rehandshake=allow_rehandshake
+                state,
+                cfg,
+                batch=batch,
+                batch_seq=batch_seq,
+                allow_rehandshake=allow_rehandshake,
+                included=included,
             )
         if resp.status_code == 401 and code == "INVALID_SIGNATURE":
             # Integrity/auth failure: actionable/fatal, never a blind re-handshake loop.
@@ -464,9 +704,28 @@ class TelemetryBeaconSender:
             _log_beacon_outcome(reason="fatal")
             return {"sent": False, "reason": "invalid_signature"}
         if resp.status_code == 409 and code == "DUPLICATE_NONCE_OR_BATCH_SEQ":
-            # Idempotent: backend already claimed this batch; advance the send-time
-            # seq so we stop replaying it. Event watermark/delta stays in R3.
-            self._record_duplicate(state, cfg, batch_seq=batch_seq)
+            # R3A-C (br_4659bfcc / tr_067c08e6): a DUPLICATE_NONCE_OR_BATCH_SEQ is
+            # the backend reporting it ALREADY committed this batch. The nonce is
+            # fresh per send, so a duplicate is a batch_seq collision = a prior
+            # accept — treat it as IDEMPOTENT CONFIRMATION of this batch's events:
+            # confirm them in the durable ledger and advance the watermark just
+            # like a 2xx, so they never replay (no loop) and the cursor is not
+            # lost / left pending. br_7bced648: the watermark only ever reflects
+            # backend-confirmed events, so this is not an optimistic advance.
+            now_iso = now_utc()
+            confirmed_ids = [str(e["event_id"]) for e in (included or []) if e.get("event_id")]
+            self._store().append_sent(
+                {
+                    "sent_at": now_iso,
+                    "batch_seq": batch_seq,
+                    "duplicate": True,
+                    "response_status": resp.status_code,
+                    "confirmed_event_ids": confirmed_ids,
+                }
+            )
+            self._record_duplicate(
+                state, cfg, batch_seq=batch_seq, included=included or [], now_iso=now_iso
+            )
             _log_beacon_outcome(reason="duplicate")
             return {"sent": False, "reason": "duplicate", "batch_seq": batch_seq}
         resp.raise_for_status()
@@ -480,6 +739,7 @@ class TelemetryBeaconSender:
         batch: dict[str, Any],
         batch_seq: int,
         allow_rehandshake: bool,
+        included: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not allow_rehandshake:
             # Already re-handshaked + retried once and STILL unknown: persistent
@@ -507,13 +767,21 @@ class TelemetryBeaconSender:
             _log_beacon_outcome(reason="transport_failed")
             return {"sent": False, "reason": "network"}
         outcome = self._handle_usage_response(
-            retry, state, cfg, batch=batch, batch_seq=batch_seq, allow_rehandshake=False
+            retry, state, cfg, batch=batch, batch_seq=batch_seq, allow_rehandshake=False, included=included
         )
         if outcome.get("sent"):
             outcome["recovered"] = "rehandshake"
         return outcome
 
-    def _record_duplicate(self, state: dict[str, Any], cfg, *, batch_seq: int) -> None:
+    def _record_duplicate(
+        self,
+        state: dict[str, Any],
+        cfg,
+        *,
+        batch_seq: int,
+        included: list[dict[str, Any]],
+        now_iso: str,
+    ) -> None:
         current = fs.read_failure_state(state)
         was_failing = current.status in (fs.STATUS_DEGRADED, fs.STATUS_FATAL) or current.retry_count > 0
         updated = fs.merge(
@@ -523,12 +791,20 @@ class TelemetryBeaconSender:
             http_status=None,
             next_retry_at=None,
             retry_count=0,
-            recovered_at=now_utc() if was_failing else current.recovered_at,
+            recovered_at=now_iso if was_failing else current.recovered_at,
         )
         state[fs.FAILURE_STATE_KEY] = updated.to_public_dict()
         state["next_batch_seq"] = batch_seq + 1
         state.pop("circuit_open_until", None)
         state.pop("last_failure_code", None)
+        state.pop("in_flight_batch", None)  # R3A-G: this batch's intent is resolved
+        # R3A-C: a confirmed DUPLICATE is idempotent confirmation of this batch's
+        # events for the watermark (br_4659bfcc) — advance the cursor and refresh
+        # the pending count from the durable ledger (already appended), so the
+        # window is NOT left pending (no replay) nor the cursor lost.
+        self._apply_watermark_advance(
+            state, cfg, included=included, updated_at=now_iso, next_batch_seq=batch_seq + 1
+        )
         save_state(cfg.metrics_dir, state)
 
     def _record_blocked(self, state: dict[str, Any], cfg, *, reason_code: str) -> None:

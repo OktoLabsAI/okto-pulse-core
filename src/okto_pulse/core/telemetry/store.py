@@ -58,9 +58,37 @@ class LocalTelemetryStore:
     def exports_dir(self) -> Path:
         return self.metrics_dir / "exports"
 
+    @property
+    def snapshots_dir(self) -> Path:
+        return self.metrics_dir / "snapshots"
+
     def ensure_dirs(self) -> None:
-        for path in (self.metrics_dir, self.events_dir, self.sent_dir, self.failures_dir, self.exports_dir):
+        for path in (
+            self.metrics_dir,
+            self.events_dir,
+            self.sent_dir,
+            self.failures_dir,
+            self.exports_dir,
+            self.snapshots_dir,
+        ):
             path.mkdir(parents=True, exist_ok=True)
+
+    def append_snapshot(self, record: dict[str, Any]) -> Path:
+        """Persist a product-telemetry SNAPSHOT locally, append-only (R3A-F).
+
+        Product metrics are cumulative/snapshot and MUST NOT ride inside a
+        ``semantics=delta`` batch. There is no safe snapshot ingest endpoint yet
+        (the backend ``validate_usage_batch`` rejects unknown fields), so the
+        snapshot is recorded here — auditable and never silently dropped — until a
+        snapshot ingestion contract exists. Filed by ``snapshot_at`` date.
+        """
+        self.ensure_dirs()
+        dt = str(record.get("snapshot_at", ""))[:10] or datetime.now(timezone.utc).date().isoformat()
+        path = self.snapshots_dir / f"snapshot-{dt}.jsonl"
+        with path.open("a", encoding="utf-8", newline="\n") as f:
+            f.write(canonical_json(record))
+            f.write("\n")
+        return path
 
     def append_event(self, event: dict[str, Any]) -> Path:
         self.ensure_dirs()
@@ -82,6 +110,44 @@ class LocalTelemetryStore:
             f.write(canonical_json(record))
             f.write("\n")
         return path
+
+    def confirmed_event_ids(self) -> set[str]:
+        """Set of local ``event_id``s the backend has confirmed (R3A-B/C).
+
+        The durable confirmation ledger is the append-only ``sent/`` store: each
+        accepted batch is recorded with a ``confirmed_event_ids`` list, so the
+        confirmed set is rebuilt here from disk and SURVIVES a restart — a
+        confirmed event never re-enters a delta after reload (``fr_fe9b844d``).
+        Confirmation is tracked per stable ``event_id``, not by timestamp, so an
+        event that lands with a clock-skewed old ``occurred_at`` is still only
+        excluded once it is genuinely confirmed (``br_5b182761`` / ``ts_07d9a8b2``).
+
+        Bounded footprint: the ``sent/`` records are pruned with the events they
+        confirm by :meth:`prune_old`, so the set never grows past the retention
+        window.
+        """
+        confirmed: set[str] = set()
+        if not self.sent_dir.exists():
+            return confirmed
+        for path in sorted(self.sent_dir.glob("sent-*.jsonl")):
+            ensure_inside(self.metrics_dir, path)
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                for event_id in record.get("confirmed_event_ids") or []:
+                    if isinstance(event_id, str) and event_id:
+                        confirmed.add(event_id)
+        return confirmed
 
     def iter_events(self, *, since: datetime | None = None) -> Iterable[dict[str, Any]]:
         if not self.events_dir.exists():
@@ -131,23 +197,133 @@ class LocalTelemetryStore:
             "files_count": files,
         }
 
-    def prune_old(self) -> int:
-        cutoff = datetime.now(timezone.utc).date() - timedelta(days=self.retention_days)
-        removed = 0
-        for root in (self.events_dir, self.sent_dir, self.failures_dir):
-            if not root.exists():
+    @staticmethod
+    def _file_date(path: Path):
+        try:
+            return datetime.strptime("-".join(path.stem.split("-")[-3:]), "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    def _read_jsonl(self, path: Path) -> list[dict[str, Any]]:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+        records: list[dict[str, Any]] = []
+        for line in lines:
+            if not line.strip():
                 continue
-            for path in root.glob("*.jsonl"):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                records.append(record)
+        return records
+
+    def _atomic_write_jsonl(self, path: Path, records: list[dict[str, Any]]) -> None:
+        tmp = path.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8", newline="\n") as out:
+            for record in records:
+                out.write(canonical_json(record))
+                out.write("\n")
+        tmp.replace(path)
+
+    def prune_old(self, *, now: datetime | None = None) -> dict[str, int]:
+        """Retention sweep that NEVER deletes an unconfirmed (pending) event.
+
+        Past the retention window, CONFIRMED events are removed but PENDING ones
+        are preserved (``br_0cac38aa`` / ``fr_f3425329``): an old events file is
+        atomically rewritten keeping only its pending events (deleted only if none
+        remain), so a pending event outside the window is never silently lost. The
+        ``sent/`` confirmation ledger is then pruned in lockstep — ``confirmed_
+        event_ids`` that no longer back a stored event are dropped (and emptied
+        ledger records removed), keeping the confirmed set bounded by retention.
+        ``failures/`` are pruned by file date (diagnostic logs only). ``now`` is
+        injectable so the publish flow can drive the sweep with a testable clock.
+        """
+        reference = (now or datetime.now(timezone.utc)).date()
+        cutoff = reference - timedelta(days=self.retention_days)
+        confirmed = self.confirmed_event_ids()
+        removed_confirmed = 0
+        preserved_pending = 0
+
+        # 1) Events past the cutoff: keep pending, drop confirmed. Recent files
+        #    (within retention) are left entirely untouched.
+        if self.events_dir.exists():
+            for path in sorted(self.events_dir.glob("events-*.jsonl")):
                 ensure_inside(self.metrics_dir, path)
-                date_part = path.stem.split("-")[-3:]
-                try:
-                    file_date = datetime.strptime("-".join(date_part), "%Y-%m-%d").date()
-                except ValueError:
+                file_date = self._file_date(path)
+                if file_date is None or file_date >= cutoff:
                     continue
-                if file_date < cutoff:
+                events = self._read_jsonl(path)
+                pending = [e for e in events if str(e.get("event_id") or "") not in confirmed]
+                removed_confirmed += len(events) - len(pending)
+                preserved_pending += len(pending)
+                if pending:
+                    self._atomic_write_jsonl(path, pending)
+                else:
                     path.unlink(missing_ok=True)
-                    removed += 1
-        return removed
+
+        # 2) Confirmation ledger pruned in lockstep with the retention window:
+        #    a sent/ file past the cutoff only ever confirmed events whose
+        #    occurred_at <= sent_at < cutoff (you cannot send an event before it
+        #    occurs), so those events are already pruned in (1) — the file is
+        #    deleted to bound footprint. Files within retention are orphan-cleaned:
+        #    confirmed ids whose event was pruned elsewhere are dropped, never
+        #    un-confirming a surviving event.
+        surviving = {str(e.get("event_id") or "") for e in self.iter_events()}
+        pruned_ledger_ids = 0
+        removed_sent_files = 0
+        if self.sent_dir.exists():
+            for path in sorted(self.sent_dir.glob("sent-*.jsonl")):
+                ensure_inside(self.metrics_dir, path)
+                file_date = self._file_date(path)
+                records = self._read_jsonl(path)
+                kept: list[dict[str, Any]] = []
+                changed = False
+                confirms_survivor = False
+                for record in records:
+                    ids = record.get("confirmed_event_ids")
+                    if isinstance(ids, list):
+                        filtered = [i for i in ids if i in surviving]
+                        if filtered:
+                            confirms_survivor = True
+                        if len(filtered) != len(ids):
+                            pruned_ledger_ids += len(ids) - len(filtered)
+                            record = {**record, "confirmed_event_ids": filtered}
+                            changed = True
+                    kept.append(record)
+                # R3A-H (fr_303c29b9 / br_e316c9bc): an old sent file is deleted ONLY
+                # when it no longer confirms ANY surviving event — NEVER just because
+                # it fell outside the retention window. A forward clock-skewed event
+                # (future occurred_at) survives the events prune while its sole
+                # confirmation may sit in an out-of-window sent file; deleting that
+                # file by date alone would un-confirm a live event and make
+                # _build_delta_batch re-send it as a new delta (fr_9e225ef2).
+                if file_date is not None and file_date < cutoff and not confirms_survivor:
+                    path.unlink(missing_ok=True)
+                    removed_sent_files += 1
+                elif changed:
+                    self._atomic_write_jsonl(path, kept)
+
+        # 3) failures/: diagnostic logs only, pruned by file date.
+        removed_failure_files = 0
+        if self.failures_dir.exists():
+            for path in self.failures_dir.glob("*.jsonl"):
+                ensure_inside(self.metrics_dir, path)
+                file_date = self._file_date(path)
+                if file_date is not None and file_date < cutoff:
+                    path.unlink(missing_ok=True)
+                    removed_failure_files += 1
+
+        return {
+            "removed_confirmed_events": removed_confirmed,
+            "preserved_pending_events": preserved_pending,
+            "pruned_ledger_ids": pruned_ledger_ids,
+            "removed_sent_files": removed_sent_files,
+            "removed_failure_files": removed_failure_files,
+        }
 
     def export_local(self, output_path: Path | None = None) -> Path:
         self.ensure_dirs()

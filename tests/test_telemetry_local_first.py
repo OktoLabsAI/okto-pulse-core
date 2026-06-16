@@ -1140,7 +1140,14 @@ def test_metrics_settings_normalizes_legacy_local_only_and_preserves_acknowledge
     assert service.summary()["consent"]["acknowledged_items"] == ["schema", "privacy_policy"]
 
 
-def test_hourly_batch_adds_product_aggregates_without_identifiers(tmp_path: Path, monkeypatch) -> None:
+def test_hourly_batch_excludes_product_aggregates_from_delta_batch(tmp_path: Path, monkeypatch) -> None:
+    # R3A-B (codex decision ev=3804): product_metrics is a cumulative/snapshot
+    # re-aggregation of the live DB and MUST NOT ride inside a semantics=delta
+    # batch — doing so would make R4 sum a cumulative as a delta and inflate
+    # reports (fr_cfa32c6b "apenas eventos"; fr_fe9b844d / br_660cdac7). Even with
+    # a FULLY-POPULATED product DB, the delta batch carries ONLY unconfirmed
+    # event-stream events; no product_* family leaks in. (Product telemetry gets
+    # its own snapshot path — tracked follow-up.)
     db_path = tmp_path / "pulse.db"
     conn = sqlite3.connect(db_path)
     conn.executescript(
@@ -1161,10 +1168,6 @@ def test_hourly_batch_adds_product_aggregates_without_identifiers(tmp_path: Path
         ("spec.created", json.dumps({"spec_id": "secret-spec-id", "source": "derived_ideation"})),
     )
     conn.execute(
-        "INSERT INTO domain_events VALUES (?, ?)",
-        ("card.created", json.dumps({"card_id": "secret-card-id", "card_type": "bug"})),
-    )
-    conn.execute(
         "INSERT INTO specs VALUES (?, ?, ?, ?, ?, ?)",
         ("secret-spec-id", "done", "secret-ideation-id", None, json.dumps([{"id": "test-1"}]), json.dumps([{"id": "decision-1"}])),
     )
@@ -1180,33 +1183,41 @@ def test_hourly_batch_adds_product_aggregates_without_identifiers(tmp_path: Path
         metrics_mode="anonymous_beacon",
         database_url=f"sqlite+aiosqlite:///{db_path}",
     )
+    # A real event so the delta batch is non-empty.
+    TelemetryService(settings).record_event("cli", {"command": "serve"})
 
     batch = TelemetryBeaconSender(settings).hourly_batch()
 
     assert batch is not None
-    assert batch["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert batch["semantics"] == "delta"
     metrics = batch["metrics"]
-    assert metrics["product_flow_origin_counts"]["current.story"] == 1
-    assert metrics["product_flow_completion_counts"]["story"] == 1
-    assert metrics["product_work_item_type_counts"]["bug"] == 1
-    assert metrics["product_quality_signal_counts"]["test_scenarios_total"] == 1
+    # The event-stream delta is present...
+    assert metrics["cli_counts"] == {"serve": 1}
+    # ...but NO product_* family leaked into the delta batch (the exclusion).
+    assert not any(key.startswith("product_") for key in metrics), metrics
     serialized = json.dumps(batch)
     assert "secret-" not in serialized
 
 
-def test_hourly_batch_fail_open_when_product_aggregation_fails(tmp_path: Path, monkeypatch) -> None:
+def test_delta_batch_is_decoupled_from_product_db(tmp_path: Path, monkeypatch) -> None:
+    # R3A-B: the delta path no longer aggregates product telemetry at all, so even
+    # a poisoned/unavailable product DB cannot affect the event-stream delta batch.
+    # The aggregator is poisoned at the source; if the delta path called it the
+    # batch would error — instead the batch builds and carries no product family.
     settings = _settings(tmp_path, metrics_mode="anonymous_beacon")
     monkeypatch.setenv("OKTO_PULSE_INSTALL_ID_PATH", str(tmp_path / "install_id"))
     service = TelemetryService(settings)
     service.record_event("cli", {"command": "serve", "exit_code": 0})
 
-    def boom(self):
+    import okto_pulse.core.telemetry.product as product_mod
+
+    def boom(self):  # pragma: no cover - must never be reached by the delta path
         raise RuntimeError("local db busy")
 
-    monkeypatch.setattr("okto_pulse.core.telemetry.sender.ProductTelemetryAggregator.aggregate", boom)
+    monkeypatch.setattr(product_mod.ProductTelemetryAggregator, "aggregate", boom)
 
     batch = TelemetryBeaconSender(settings).hourly_batch()
 
     assert batch is not None
     assert batch["metrics"]["cli_counts"] == {"serve": 1}
-    assert "product_flow_origin_counts" not in batch["metrics"]
+    assert not any(key.startswith("product_") for key in batch["metrics"])
