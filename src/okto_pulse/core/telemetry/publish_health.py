@@ -1,22 +1,35 @@
-"""Publish-health DTO for the agent/UI health surface (spec R5C, card R5C-A).
+"""Publish-health classifier for the agent/UI health surface (spec R5C).
 
-This is the R5C CONSUMER of the R5A producer boundary
-(`docs/architecture/telemetry_r5a_r5c_boundary.md`). The DTO is built strictly as
-an allowlist projection of the R5A PUBLIC failure-state
-(`failure_state.public_status_projection`) — R5C does NOT recompute trust /
-failure-state, does NOT redefine the sensitive fields, and does NOT re-derive
-redaction. The only R5C logic here is CLASSIFYING the health `status` vocabulary,
-deriving `freshness`, and labelling the `source` — over the already-safe,
-already-redacted R5A projection.
+R5C-A introduced the DTO as an allowlist projection of the R5A PUBLIC
+failure-state (`failure_state.public_status_projection`). R5C-B EVOLVES the
+classifier: it maps each `reason`/`source` to a distinct, actionable category
+(UNKNOWN_INSTALL, TOKEN_EXPIRED, INVALID_SIGNATURE, transport/5xx, disabled,
+stale_ingest, stale_report), assigns a severity, and composes multiple health
+sources so that the absence of a source — or a mandatory source that is
+unavailable/expired/stale — can NEVER be reported as ``healthy``.
 
-ts_4c7fd83a: given a local failure-state with last success/failure + a scheduled
-retry, the response carries status, reason_code, last_success_at, last_failure_at,
-next_retry_at, retry_count, freshness and the REDACTED install id.
+Boundary (`docs/architecture/telemetry_r5a_r5c_boundary.md`): R5C does NOT
+recompute trust / failure-state, does NOT redefine the sensitive fields, does
+NOT re-derive redaction, and adds NO real AWS/report integration (the synthetic
+source classification here is pure; real adapters are R5C-C). The only R5C logic
+is CLASSIFYING status/severity/source and producing the actionable message.
+
+SECURITY (R5C-B complement): the actionable messages are keyed SOLELY by the
+bounded reason/source category — they NEVER interpolate a value read from the
+state/projection (install id, token, signature, nonce, payload, raw id). So a
+message is secret-free by construction even when the source state carries a
+secret.
+
+ts_4c7fd83a: a degraded local failure-state yields the actionable DTO.
+ts_a81de6bc: UNKNOWN_INSTALL / TOKEN_EXPIRED / INVALID_SIGNATURE / transport-5xx /
+disabled produce distinct, actionable status+severity+message.
+ts_60131b20: AWS/R5B unavailable or expired yields degraded/unavailable/stale —
+never healthy.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -34,6 +47,56 @@ HEALTH_STATUSES = frozenset(
     {HEALTH_DISABLED, HEALTHY, DEGRADED, RECOVERING, FAILING, STALE, UNAVAILABLE}
 )
 
+# Ordering used to pick the WORST contributing source (higher = more severe).
+# ``disabled`` is handled by a short-circuit (publishing is deliberately off).
+_STATUS_RANK: dict[str, int] = {
+    HEALTHY: 0,
+    RECOVERING: 1,
+    STALE: 2,
+    DEGRADED: 3,
+    UNAVAILABLE: 4,
+    FAILING: 5,
+}
+
+# --- severity (coarse UI/alert axis) -------------------------------------------
+SEVERITY_NONE = "none"
+SEVERITY_INFO = "info"
+SEVERITY_WARNING = "warning"
+SEVERITY_CRITICAL = "critical"
+SEVERITIES = frozenset({SEVERITY_NONE, SEVERITY_INFO, SEVERITY_WARNING, SEVERITY_CRITICAL})
+_SEVERITY_RANK: dict[str, int] = {
+    SEVERITY_NONE: 0,
+    SEVERITY_INFO: 1,
+    SEVERITY_WARNING: 2,
+    SEVERITY_CRITICAL: 3,
+}
+
+# --- reason / source categories ------------------------------------------------
+REASON_NONE = "none"
+REASON_UNKNOWN_INSTALL = "unknown_install"
+REASON_TOKEN_EXPIRED = "token_expired"
+REASON_INVALID_SIGNATURE = "invalid_signature"
+REASON_TRANSPORT_5XX = "transport_5xx"
+REASON_DISABLED = "disabled"
+REASON_STALE_INGEST = "stale_ingest"
+REASON_STALE_REPORT = "stale_report"
+REASON_SOURCE_UNAVAILABLE = "source_unavailable"
+REASON_SOURCE_EXPIRED = "source_expired"
+REASON_CATEGORIES = frozenset(
+    {
+        REASON_NONE,
+        REASON_UNKNOWN_INSTALL,
+        REASON_TOKEN_EXPIRED,
+        REASON_INVALID_SIGNATURE,
+        REASON_TRANSPORT_5XX,
+        REASON_DISABLED,
+        REASON_STALE_INGEST,
+        REASON_STALE_REPORT,
+        REASON_SOURCE_UNAVAILABLE,
+        REASON_SOURCE_EXPIRED,
+    }
+)
+
 # --- health source vocabulary --------------------------------------------------
 SOURCE_LOCAL = "local"
 SOURCE_INSTALL_LIFECYCLE = "install_lifecycle"
@@ -44,6 +107,12 @@ HEALTH_SOURCES = frozenset(
     {SOURCE_LOCAL, SOURCE_INSTALL_LIFECYCLE, SOURCE_AWS_INGEST, SOURCE_REPORT_ATHENA, SOURCE_COMBINED}
 )
 
+# Synthetic availability of an external source (R5C-B: no real adapter — R5C-C).
+SRC_AVAILABLE = "available"
+SRC_UNAVAILABLE = "unavailable"
+SRC_EXPIRED = "expired"
+SRC_STALE = "stale"
+
 # Structured error when NO health source can be read at all.
 HEALTH_SOURCE_UNAVAILABLE = "HEALTH_SOURCE_UNAVAILABLE"
 
@@ -51,12 +120,65 @@ HEALTH_SOURCE_UNAVAILABLE = "HEALTH_SOURCE_UNAVAILABLE"
 # threshold for the health surface, NOT a backend SLA). 6h >> the hourly cadence.
 DEFAULT_STALE_THRESHOLD_SECONDS = 6 * 3600
 
+# Bounded, STATIC actionable messages keyed ONLY by the reason/source category.
+# They never interpolate a value from the state/projection -> secret-free by
+# construction (R5C-B complement). Keep these short and operator-actionable.
+_REASON_MESSAGES: dict[str, str] = {
+    REASON_UNKNOWN_INSTALL: (
+        "The server does not recognize this install; the next cycle re-handshakes "
+        "to obtain a new install token. No action needed unless it persists."
+    ),
+    REASON_TOKEN_EXPIRED: (
+        "The install token expired and was dropped; the next cycle re-handshakes "
+        "automatically. No action needed."
+    ),
+    REASON_INVALID_SIGNATURE: (
+        "The request signature was rejected (integrity/auth failure). Publishing is "
+        "halted and will not auto-recover; investigate the signing key and clock skew."
+    ),
+    REASON_TRANSPORT_5XX: (
+        "The ingest endpoint returned a transport/server error; a retry is scheduled "
+        "with backoff. No action needed unless it persists."
+    ),
+    REASON_DISABLED: (
+        "Publishing is disabled (telemetry off or consent not granted). Enable "
+        "anonymous telemetry to resume."
+    ),
+    REASON_STALE_INGEST: (
+        "The AWS ingest source has not advanced within the freshness window; recent "
+        "usage may be missing downstream. Check the ingest pipeline."
+    ),
+    REASON_STALE_REPORT: (
+        "The report (Athena) source is stale; the latest report may not reflect "
+        "recent data. Re-run the report once ingest is fresh."
+    ),
+    REASON_SOURCE_UNAVAILABLE: (
+        "A required health source is unavailable; status cannot be confirmed healthy "
+        "until it returns."
+    ),
+    REASON_SOURCE_EXPIRED: (
+        "A required health source's window/credentials expired; refresh it to restore "
+        "reporting."
+    ),
+}
+_STATUS_MESSAGES: dict[str, str] = {
+    HEALTHY: "Publishing is healthy; the last publish succeeded.",
+    RECOVERING: "Publishing recovered after a prior failure; monitoring the next cycles.",
+    STALE: "Last successful publish is stale; no recent success within the freshness window.",
+    UNAVAILABLE: "No publish outcome has been recorded yet.",
+    DEGRADED: "Publishing is degraded; a retry is scheduled.",
+    FAILING: "Publishing is failing; manual action may be required.",
+    HEALTH_DISABLED: "Publishing is disabled.",
+}
+
 # The DTO fields R5C exposes. The underlying failure-state fields are copied
 # VERBATIM from the R5A public projection; the rest is R5C classification.
 PUBLISH_HEALTH_FIELDS: tuple[str, ...] = (
     "status",
     "source",
+    "severity",
     "reason_code",
+    "reason_category",
     "http_status",
     "last_success_at",
     "last_failure_at",
@@ -65,15 +187,42 @@ PUBLISH_HEALTH_FIELDS: tuple[str, ...] = (
     "freshness",
     "install_id_redacted",
     "message",
+    "sources",
     "redaction_applied",
 )
+
+
+@dataclass(frozen=True)
+class SourceHealth:
+    """Per-source health classification (local or an external/synthetic source)."""
+
+    name: str
+    status: str
+    severity: str
+    reason_category: str
+    message: str
+    available: bool
+    last_success_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "status": self.status,
+            "severity": self.severity,
+            "reason_category": self.reason_category,
+            "message": self.message,
+            "available": self.available,
+            "last_success_at": self.last_success_at,
+        }
 
 
 @dataclass(frozen=True)
 class PublishHealth:
     status: str
     source: str
+    severity: str
     reason_code: str | None
+    reason_category: str
     http_status: int | None
     last_success_at: str | None
     last_failure_at: str | None
@@ -82,6 +231,7 @@ class PublishHealth:
     freshness: dict[str, Any]
     install_id_redacted: str | None
     message: str
+    sources: list[dict[str, Any]] = field(default_factory=list)
     redaction_applied: bool = True
 
     def to_dict(self) -> dict[str, Any]:
@@ -131,44 +281,176 @@ def _classify(projection: dict[str, Any], *, is_stale: bool) -> str:
     return UNAVAILABLE
 
 
-def _message(status: str, projection: dict[str, Any]) -> str:
-    reason = projection.get("reason_code")
-    if status == HEALTH_DISABLED:
-        return "Publishing is disabled (telemetry off or consent not granted)."
-    if status == FAILING:
-        return f"Publishing is failing ({reason}); manual action may be required."
-    if status == DEGRADED:
-        return f"Publishing is degraded ({reason}); a retry is scheduled."
-    if status == STALE:
-        return "Last successful publish is stale; no recent success within the freshness window."
-    if status == RECOVERING:
-        return "Publishing recovered after a prior failure."
-    if status == HEALTHY:
-        return "Publishing is healthy; the last publish succeeded."
-    return "No publish outcome has been recorded yet."
+def classify_reason_category(health_status: str, reason_code: Any, http_status: Any) -> str:
+    """Map an R5A ``reason_code`` (+ http status) to a distinct R5C reason category.
+
+    Pure over bounded inputs; never reads a secret. ``reason_code`` is itself a
+    bounded backend code (e.g. ``USAGE_503``, ``INVALID_SIGNATURE``), not a secret.
+    """
+    if health_status == HEALTH_DISABLED:
+        return REASON_DISABLED
+    code = str(reason_code or "").upper()
+    if code == "UNKNOWN_INSTALL":
+        return REASON_UNKNOWN_INSTALL
+    if code == "TOKEN_EXPIRED":
+        return REASON_TOKEN_EXPIRED
+    if code == "INVALID_SIGNATURE":
+        return REASON_INVALID_SIGNATURE
+    if code.startswith("USAGE_") or (isinstance(http_status, int) and 500 <= http_status <= 599):
+        return REASON_TRANSPORT_5XX
+    return REASON_NONE
+
+
+def severity_for(health_status: str) -> str:
+    """Coarse severity for a health status (keeps status<->severity coherent)."""
+    if health_status == FAILING:
+        return SEVERITY_CRITICAL
+    if health_status in (DEGRADED, STALE, UNAVAILABLE):
+        return SEVERITY_WARNING
+    if health_status in (RECOVERING, HEALTH_DISABLED):
+        return SEVERITY_INFO
+    return SEVERITY_NONE  # healthy
+
+
+def actionable_message(health_status: str, reason_category: str) -> str:
+    """Bounded, STATIC actionable message keyed by reason/source category.
+
+    Never interpolates a state/projection value -> secret-free by construction.
+    """
+    if reason_category in _REASON_MESSAGES:
+        return _REASON_MESSAGES[reason_category]
+    return _STATUS_MESSAGES.get(health_status, _STATUS_MESSAGES[UNAVAILABLE])
+
+
+def _classify_local_source(
+    projection: dict[str, Any], *, now: datetime, stale_threshold_seconds: int
+) -> tuple[SourceHealth, dict[str, Any]]:
+    freshness = _freshness(
+        projection.get("last_success_at"), now=now, threshold_seconds=stale_threshold_seconds
+    )
+    status = _classify(projection, is_stale=freshness["is_stale"])
+    reason_category = classify_reason_category(
+        status, projection.get("reason_code"), projection.get("http_status")
+    )
+    src = SourceHealth(
+        name=SOURCE_LOCAL,
+        status=status,
+        severity=severity_for(status),
+        reason_category=reason_category,
+        message=actionable_message(status, reason_category),
+        available=True,  # the local source was readable (we have the projection)
+        last_success_at=projection.get("last_success_at"),
+    )
+    return src, freshness
+
+
+def _external_descriptor(descriptor: Any) -> tuple[str, str | None]:
+    """Normalize an external source descriptor to (availability, last_success_at)."""
+    if isinstance(descriptor, dict):
+        availability = str(descriptor.get("availability") or SRC_UNAVAILABLE)
+        last = descriptor.get("last_success_at")
+        return availability, last if isinstance(last, str) else None
+    return str(descriptor or SRC_UNAVAILABLE), None
+
+
+def _classify_external_source(name: str, descriptor: Any, *, now: datetime) -> SourceHealth | None:
+    """Classify a synthetic external source (aws_ingest / report_athena).
+
+    ``descriptor`` is None when the source does not contribute. Otherwise it is an
+    availability string or ``{"availability": ..., "last_success_at": ...}``. No
+    real adapter / network call here (R5C-C owns the real integration)."""
+    if descriptor is None:
+        return None
+    availability, last_success = _external_descriptor(descriptor)
+    stale_reason = REASON_STALE_INGEST if name == SOURCE_AWS_INGEST else REASON_STALE_REPORT
+    if availability == SRC_AVAILABLE:
+        status, reason_category, available = HEALTHY, REASON_NONE, True
+    elif availability == SRC_STALE:
+        status, reason_category, available = STALE, stale_reason, True
+    elif availability == SRC_EXPIRED:
+        status, reason_category, available = DEGRADED, REASON_SOURCE_EXPIRED, False
+    else:  # unavailable / unknown -> treat as unavailable, never healthy
+        status, reason_category, available = UNAVAILABLE, REASON_SOURCE_UNAVAILABLE, False
+    return SourceHealth(
+        name=name,
+        status=status,
+        severity=severity_for(status),
+        reason_category=reason_category,
+        message=actionable_message(status, reason_category),
+        available=available,
+        last_success_at=last_success,
+    )
+
+
+def _missing_required_source(name: str) -> SourceHealth:
+    """A required source that was not provided/readable -> unavailable (never healthy)."""
+    return SourceHealth(
+        name=name,
+        status=UNAVAILABLE,
+        severity=severity_for(UNAVAILABLE),
+        reason_category=REASON_SOURCE_UNAVAILABLE,
+        message=actionable_message(UNAVAILABLE, REASON_SOURCE_UNAVAILABLE),
+        available=False,
+        last_success_at=None,
+    )
+
+
+def _combine(sources: list[SourceHealth]) -> tuple[str, str, str, str]:
+    """Combine per-source health into (status, reason_category, severity, message).
+
+    The local source (always first) being ``disabled`` short-circuits to disabled
+    — publishing is deliberately off, so external staleness is moot. Otherwise the
+    WORST source by status rank wins, and the overall is healthy ONLY when every
+    contributing source is healthy."""
+    local = sources[0]
+    if local.status == HEALTH_DISABLED:
+        return (HEALTH_DISABLED, REASON_DISABLED, severity_for(HEALTH_DISABLED), local.message)
+    worst = max(sources, key=lambda s: _STATUS_RANK.get(s.status, 0))
+    severity = severity_for(worst.status)
+    return (worst.status, worst.reason_category, severity, worst.message)
 
 
 def resolve_publish_health(
     public_projection: dict[str, Any],
     *,
     now: datetime,
-    source: str = SOURCE_LOCAL,
     stale_threshold_seconds: int = DEFAULT_STALE_THRESHOLD_SECONDS,
+    aws_ingest: Any = None,
+    report_athena: Any = None,
+    required_sources: tuple[str, ...] = (),
 ) -> PublishHealth:
     """Build the publish-health DTO from the R5A PUBLIC failure-state projection.
 
     ``public_projection`` MUST be the allowlisted, already-redacted dict from
     :func:`failure_state.public_status_projection` (or ``FailureState.to_public_dict``)
-    — never raw state. The underlying fields are copied verbatim; only the health
-    ``status``, ``freshness``, ``source`` and ``message`` are R5C classification."""
-    freshness = _freshness(
-        public_projection.get("last_success_at"), now=now, threshold_seconds=stale_threshold_seconds
+    — never raw state. The local source is always classified from it; optional
+    synthetic ``aws_ingest`` / ``report_athena`` descriptors (and any
+    ``required_sources`` that are missing) contribute to the COMBINED status so a
+    missing/unavailable/expired/stale source can never read as ``healthy``."""
+    local, freshness = _classify_local_source(
+        public_projection, now=now, stale_threshold_seconds=stale_threshold_seconds
     )
-    status = _classify(public_projection, is_stale=freshness["is_stale"])
+    sources: list[SourceHealth] = [local]
+    aws = _classify_external_source(SOURCE_AWS_INGEST, aws_ingest, now=now)
+    if aws is not None:
+        sources.append(aws)
+    report = _classify_external_source(SOURCE_REPORT_ATHENA, report_athena, now=now)
+    if report is not None:
+        sources.append(report)
+    present = {s.name for s in sources}
+    for required in required_sources:
+        if required not in present:
+            sources.append(_missing_required_source(required))
+            present.add(required)
+
+    status, reason_category, severity, message = _combine(sources)
+    source_label = SOURCE_LOCAL if len(sources) == 1 else SOURCE_COMBINED
     return PublishHealth(
         status=status,
-        source=source,
+        source=source_label,
+        severity=severity,
         reason_code=public_projection.get("reason_code"),
+        reason_category=reason_category,
         http_status=public_projection.get("http_status"),
         last_success_at=public_projection.get("last_success_at"),
         last_failure_at=public_projection.get("last_failure_at"),
@@ -176,6 +458,7 @@ def resolve_publish_health(
         retry_count=int(public_projection.get("retry_count") or 0),
         freshness=freshness,
         install_id_redacted=public_projection.get("install_id_redacted"),
-        message=_message(status, public_projection),
+        message=message,
+        sources=[s.to_dict() for s in sources],
         redaction_applied=True,
     )
