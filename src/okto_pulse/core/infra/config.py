@@ -126,6 +126,13 @@ class CoreSettings(BaseSettings):
     # Recovery scan periodicity (TR6); operators can lower for tests but
     # production values below 30s start to compete with normal traffic.
     kg_queue_recovery_scan_interval_s: int = Field(60, ge=10, le=600)
+    # S1.3 Cognitive Closure rollout — the FIRST blocking activation of the
+    # CognitiveReadinessService done-transition enforcement sits behind this
+    # feature flag, default-OFF so existing boards stay advisory until skip
+    # ledger-only + no-mask-DLQ are proven green (fr_9d42c5e2 / dec_41db6a36).
+    # Even with the per-board policy set to "blocking", enforcement activates
+    # ONLY when this global flag is True.
+    cognitive_readiness_blocking_enabled: bool = Field(False)
 
     # Spec R2c (FR5/TR5/TR6/TR7) — DLQ auto-drain opt-in defaults.
     # The feature is disabled by default (board-level flag controls opt-in).

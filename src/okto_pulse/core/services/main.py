@@ -179,6 +179,40 @@ def _board_skip_cognitive_consolidation(board: Board | None) -> bool:
     return bool(settings.get("skip_cognitive_consolidation", False))
 
 
+# S1.3 Cognitive Closure rollout — per-board policy + global feature flag.
+COGNITIVE_READINESS_POLICY_ADVISORY = "advisory"
+COGNITIVE_READINESS_POLICY_BLOCKING = "blocking"
+
+
+def _board_cognitive_readiness_policy(board: Board | None) -> str:
+    """Per-board cognitive readiness policy (fr_9d42c5e2). Default ``advisory``
+    so existing boards never begin blocking on rollout."""
+    settings = (board.settings or {}) if board else {}
+    value = str(
+        settings.get("cognitive_readiness_policy", COGNITIVE_READINESS_POLICY_ADVISORY)
+    ).lower()
+    if value not in (
+        COGNITIVE_READINESS_POLICY_ADVISORY,
+        COGNITIVE_READINESS_POLICY_BLOCKING,
+    ):
+        return COGNITIVE_READINESS_POLICY_ADVISORY
+    return value
+
+
+def _cognitive_readiness_blocking_active(board: Board | None) -> bool:
+    """True only when BOTH the global feature flag is enabled AND the board
+    policy is ``blocking`` — the two-key safe rollout (dec_41db6a36). Default-off:
+    any failure or unset value resolves to advisory (non-blocking)."""
+    if _board_cognitive_readiness_policy(board) != COGNITIVE_READINESS_POLICY_BLOCKING:
+        return False
+    try:
+        from okto_pulse.core.infra.config import get_settings
+
+        return bool(get_settings().cognitive_readiness_blocking_enabled)
+    except Exception:
+        return False
+
+
 def _board_qa_require_role_separation(board: Board | None) -> bool:
     """Return True if the board requires that Q&A answers come from a different
     principal than the one who asked the question (qa_require_role_separation)."""
@@ -510,6 +544,95 @@ def _evaluate_cognitive_closeout_or_raise(
         f"{reason}: {target_label} done transition blocked {detail} "
         f"({blocking_count})"
     )
+
+
+def _build_default_cognitive_readiness_service() -> Any:
+    """Default ``CognitiveReadinessService`` over the shared cognitive item
+    store (S1.2/S1.3). Injectable factory mirrors
+    ``_build_default_cognitive_closeout_gate`` so tests can swap a fake."""
+
+    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
+    from okto_pulse.core.kg.rebuild_audit import (
+        CognitiveConsolidationItemStore,
+        default_rebuild_base_dir,
+    )
+
+    return CognitiveReadinessService(
+        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    )
+
+
+async def _evaluate_cognitive_readiness_or_raise(
+    *,
+    service_factory: Callable[[], Any],
+    db: AsyncSession,
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    entity: Any,
+    target_label: str,
+    policy_blocking: bool,
+) -> None:
+    """S1.3 production wiring: consult the single ``CognitiveReadinessService``
+    on a ``done`` transition and block on the readiness tiers the legacy gate
+    does NOT cover — technical DLQ, canonical_debt OPEN, and a lapsed
+    revisit-required skip — BEFORE any status / conclusion / snapshot / activity
+    mutation. The legacy ``CognitiveCloseoutGate`` still governs active cognitive
+    items.
+
+    Rollout safety (fr_9d42c5e2 / dec_41db6a36): when ``policy_blocking`` is
+    False (the default for existing boards, or the global flag off) this is a
+    NO-OP — readiness stays advisory. Carve-out: a task/test (no reusable
+    cognition) never blocks on the cognitive/advisory tiers, but the technical
+    no-mask tiers (DLQ / open canonical_debt) still block when policy is active.
+
+    Fail-safe (mirrors ``_resolve_closeout_graph_state``): any resolution failure
+    skips the readiness block rather than crashing the transition.
+    """
+
+    if not policy_blocking:
+        return
+
+    from okto_pulse.core.kg.cognitive_closeout_gate import resolve_cognitive_source_refs
+    from okto_pulse.core.kg.cognitive_readiness import ReadinessTier
+
+    try:
+        refs = resolve_cognitive_source_refs(
+            entity_type=entity_type, entity=entity, entity_id=entity_id,
+        ).source_refs
+    except Exception:
+        return
+    if not refs:
+        return
+
+    # Carve-out: the entity's own ref is refs[0] (``<normalized_type>:<id>``).
+    # task/test carry no reusable cognition → advisory for cognitive tiers (the
+    # technical DLQ/debt no-mask tiers still apply via compose_readiness).
+    primary_type = refs[0].split(":", 1)[0]
+    has_reusable_cognition = primary_type not in ("task", "test")
+
+    service = service_factory()
+    blocking_tiers = {
+        ReadinessTier.TECHNICAL_DLQ.value,
+        ReadinessTier.CANONICAL_DEBT_OPEN.value,
+        ReadinessTier.SKIP_EXPIRED.value,
+    }
+    for ref in refs:
+        try:
+            verdict = await service.evaluate_artifact(
+                db,
+                board_id=board_id,
+                source_ref=ref,
+                has_reusable_cognition=has_reusable_cognition,
+            )
+        except Exception:
+            continue
+        if verdict.blocking and verdict.tier in blocking_tiers:
+            raise ValueError(
+                f"{verdict.tier}: {target_label} done transition blocked by "
+                "cognitive readiness "
+                f"({verdict.readiness_signal or verdict.reason_code or verdict.tier})"
+            )
 
 
 async def _resolve_closeout_graph_state(
@@ -1067,6 +1190,9 @@ class CardService:
         self._cognitive_closeout_gate_factory: Callable[
             [], Any
         ] = _build_default_cognitive_closeout_gate
+        self._cognitive_readiness_service_factory: Callable[
+            [], Any
+        ] = _build_default_cognitive_readiness_service
 
     async def create_card(
         self, board_id: str, user_id: str, data: CardCreate, skip_ownership_check: bool = False
@@ -1658,6 +1784,16 @@ class CardService:
                 entity=card,
                 target_label="card",
                 graph_state=graph_state,
+            )
+            await _evaluate_cognitive_readiness_or_raise(
+                service_factory=self._cognitive_readiness_service_factory,
+                db=self.db,
+                board_id=card.board_id,
+                entity_type=_card_cognitive_entity_type(card),
+                entity_id=card.id,
+                entity=card,
+                target_label="card",
+                policy_blocking=_cognitive_readiness_blocking_active(board),
             )
 
         # Build validation entry.
@@ -2680,6 +2816,16 @@ class CardService:
                 target_label="card",
                 graph_state=graph_state,
             )
+            await _evaluate_cognitive_readiness_or_raise(
+                service_factory=self._cognitive_readiness_service_factory,
+                db=self.db,
+                board_id=card.board_id,
+                entity_type=_card_cognitive_entity_type(card),
+                entity_id=card.id,
+                entity=card,
+                target_label="card",
+                policy_blocking=_cognitive_readiness_blocking_active(board),
+            )
 
         report_target = None
         if data.status == CardStatus.DONE:
@@ -3656,6 +3802,9 @@ class SpecService:
         self._cognitive_closeout_gate_factory: Callable[
             [], Any
         ] = _build_default_cognitive_closeout_gate
+        self._cognitive_readiness_service_factory: Callable[
+            [], Any
+        ] = _build_default_cognitive_readiness_service
 
     # ---- Status progression order ----
     _STATUS_ORDER = {
@@ -4769,6 +4918,16 @@ class SpecService:
                 entity=spec,
                 target_label="spec",
                 graph_state=graph_state,
+            )
+            await _evaluate_cognitive_readiness_or_raise(
+                service_factory=self._cognitive_readiness_service_factory,
+                db=self.db,
+                board_id=spec.board_id,
+                entity_type="spec",
+                entity_id=spec.id,
+                entity=spec,
+                target_label="spec",
+                policy_blocking=_cognitive_readiness_blocking_active(board),
             )
 
             resource_gate = ResourceGateService(self.db)
@@ -7128,6 +7287,9 @@ class RefinementService:
         self._cognitive_done_guard_factory: Callable[
             [], Any
         ] = _build_default_refinement_cognitive_done_guard
+        self._cognitive_readiness_service_factory: Callable[
+            [], Any
+        ] = _build_default_cognitive_readiness_service
 
     _STATUS_ORDER = {
         RefinementStatus.DRAFT: 0,
@@ -7497,6 +7659,16 @@ class RefinementService:
                 entity=refinement,
                 target_label="refinement",
                 graph_state=graph_state,
+            )
+            await _evaluate_cognitive_readiness_or_raise(
+                service_factory=self._cognitive_readiness_service_factory,
+                db=self.db,
+                board_id=refinement.board_id,
+                entity_type="refinement",
+                entity_id=refinement.id,
+                entity=refinement,
+                target_label="refinement",
+                policy_blocking=_cognitive_readiness_blocking_active(board),
             )
 
         # Snapshot on done
