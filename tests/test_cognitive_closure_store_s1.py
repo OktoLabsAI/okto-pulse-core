@@ -26,6 +26,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
     compute_cognitive_item_id,
     normalize_cognitive_artifact_id,
+    project_item_for_api,
+    project_item_for_update_api,
 )
 
 UUID_A = "11111111-1111-1111-1111-111111111111"
@@ -236,3 +238,61 @@ def test_update_item_persists_and_preserves_new_fields(tmp_path):
     assert reread.reason_code == "revisit_required"
     assert reread.revisit_at == "2026-07-01T00:00:00+00:00"
     assert reread.artifact_id == f"card:{UUID_A}"
+
+
+# ---------------------------------------------------------------------------
+# Rework S1.1 (F1) — as projeções API/MCP ecoam o reason_code persistido
+# ---------------------------------------------------------------------------
+
+
+def test_projections_echo_persisted_reason_code(tmp_path):
+    """Rework F1: project_item_for_api e project_item_for_update_api projetam
+    item.reason_code (não mais hardcode None) quando o store o carrega; item
+    legacy sem reason_code continua projetando None; e a shape API NÃO expõe
+    artifact_id/source_ref_original (carry-forward do S3 Action Center)."""
+    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    board, gen = "b3", "gen-3"
+    src = f"bug:{UUID_A}"
+    iid = compute_cognitive_item_id(board, gen, src)
+    _write_record(store, board, gen, [{
+        "item_id": iid,
+        "board_id": board,
+        "kg_generation_id": gen,
+        "source_ref": src,
+        "artifact_type": "bug",
+        "status": CognitiveItemStatus.PENDING.value,
+        "recorded_at": "2026-06-17T00:00:00+00:00",
+    }])
+
+    updated = store.update_item(
+        board_id=board,
+        kg_generation_id=gen,
+        item_id=iid,
+        new_status=CognitiveItemStatus.SKIPPED.value,
+        updated_by_agent_id="agent-1",
+        reason_code="revisit_required",
+    )
+    assert updated is not None
+    # ambas as projeções ecoam o reason_code armazenado
+    assert project_item_for_api(updated)["reason_code"] == "revisit_required"
+    assert project_item_for_update_api(updated)["reason_code"] == "revisit_required"
+
+    # item legacy/sem reason_code → projeção continua None (nunca inventado)
+    legacy = CognitiveConsolidationItem(
+        item_id="leg",
+        board_id=board,
+        kg_generation_id=gen,
+        source_ref=f"card:{UUID_A}",
+        artifact_type="card",
+        status=CognitiveItemStatus.PENDING.value,
+        recorded_at="t",
+    )
+    assert legacy.reason_code is None
+    assert project_item_for_api(legacy)["reason_code"] is None
+    assert project_item_for_update_api(legacy)["reason_code"] is None
+
+    # carry-forward S3 — a shape API/MCP NÃO expõe artifact_id/source_ref_original
+    # agora (extensão de contrato fica no Action Center/read-model).
+    api_shape = project_item_for_api(updated)
+    assert "artifact_id" not in api_shape
+    assert "source_ref_original" not in api_shape

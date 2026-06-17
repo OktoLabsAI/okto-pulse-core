@@ -1036,8 +1036,10 @@ def project_item_for_update_api(
     Differs from ``project_item_for_api`` only in semantic emphasis —
     ``updated_at`` and ``updated_by_agent_id`` are populated for an
     updated item, but the projection itself returns the same bounded
-    shape. Free-text ``reason`` is never echoed; bounded ``reason_code``
-    is the only narrative field exposed.
+    shape. Free-text ``reason`` is never echoed; the bounded
+    ``item.reason_code`` — persisted on the item since S1 card 9aeeaebd —
+    is echoed as the only narrative field so a caller can confirm what was
+    stored without an extra round-trip.
 
     KG-03A.3 rework (Codex audit val_44b86726): the bounded outcome
     metadata persisted by the update path is echoed back so callers can
@@ -1054,7 +1056,7 @@ def project_item_for_update_api(
         "updated_at": item.updated_at,
         "updated_by_agent_id": item.updated_by_agent_id,
         "consolidation_session_id": item.consolidation_session_id,
-        "reason_code": None,
+        "reason_code": item.reason_code,
         "outcome_type": item.outcome_type,
         "evidence_refs": list(item.evidence_refs),
         "generated_candidate_decision_ids": list(
@@ -1186,11 +1188,11 @@ def project_item_for_api(
     """Safe API projection of a storage item per api_ae3a932a + api_cce40fa6.
 
     Codex audit val_ead80fbd: the MCP/REST list response MUST NOT echo
-    the storage ``reason`` field (potentially free-text agent input). We
-    expose ``reason_code`` only — a bounded code that the KG-03.3 update
-    tool will eventually set. For now (KG-03.2 read-only) ``reason_code``
-    is always ``None`` because storage does not yet carry it; KG-03.3
-    will populate it on terminal transitions.
+    the storage free-text ``reason`` field (potentially free-text agent
+    input). We expose the bounded ``reason_code`` only. Since S1 card
+    9aeeaebd the storage item carries ``reason_code``, so this projection
+    echoes ``item.reason_code`` (``None`` until the readiness service /
+    update path sets a bounded code on a terminal transition).
 
     No board_id, kg_generation_id, event_ref or raw artifact metadata
     leaks through this projection (br_858a0859).
@@ -1205,7 +1207,7 @@ def project_item_for_api(
         "updated_at": item.updated_at,
         "updated_by_agent_id": item.updated_by_agent_id,
         "consolidation_session_id": item.consolidation_session_id,
-        "reason_code": None,
+        "reason_code": item.reason_code,
     }
 
 
