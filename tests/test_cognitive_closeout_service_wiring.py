@@ -573,3 +573,74 @@ async def test_blocking_policy_no_debt_passes(
         assert result["card_status"] == CardStatus.DONE.value
 
     assert (await _card_row(card_id)).status == CardStatus.DONE
+
+
+class _ExplodingReadiness:
+    """Readiness service whose evaluation always fails — to prove blocking-active
+    enforcement is fail-CLOSED (visible) rather than a silent skip."""
+
+    async def evaluate_artifact(self, *_a, **_k):
+        raise RuntimeError("readiness backend down")
+
+
+@pytest.mark.asyncio
+async def test_blocking_active_fails_closed_when_readiness_service_errors(
+    isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # blocking policy + flag on + readiness service explodes → done MUST block
+    # with cognitive_readiness_unavailable BEFORE any status/validation mutation.
+    board_id, _, card_id = await _seed_card(
+        CardType.NORMAL, CardStatus.VALIDATION,
+        board_settings={"cognitive_readiness_policy": "blocking"},
+    )
+    _enable_global_blocking_flag(monkeypatch)
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        service._cognitive_readiness_service_factory = lambda: _ExplodingReadiness()
+        with pytest.raises(ValueError, match="cognitive_readiness_unavailable"):
+            await service.submit_task_validation(
+                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                data=_APPROVE_VALIDATION,
+            )
+        await db.rollback()
+
+    card = await _card_row(card_id)
+    assert card.status == CardStatus.VALIDATION
+    assert card.validations in (None, [])
+
+
+@pytest.mark.asyncio
+async def test_advisory_default_does_not_instantiate_readiness_service(
+    isolated_closeout_kg_dir: Path,
+) -> None:
+    # default (advisory) board → the wiring is a NO-OP that never even touches
+    # the readiness factory; done succeeds even if the factory would explode.
+    board_id, _, card_id = await _seed_card(CardType.NORMAL, CardStatus.VALIDATION)
+
+    def _boom_factory():
+        raise AssertionError(
+            "readiness factory must not be called under advisory policy"
+        )
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        service._cognitive_readiness_service_factory = _boom_factory
+        result = await service.submit_task_validation(
+            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            data=_APPROVE_VALIDATION,
+        )
+        await db.commit()
+        assert result["card_status"] == CardStatus.DONE.value
+
+    assert (await _card_row(card_id)).status == CardStatus.DONE

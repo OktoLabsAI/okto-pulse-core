@@ -586,22 +586,43 @@ async def _evaluate_cognitive_readiness_or_raise(
     cognition) never blocks on the cognitive/advisory tiers, but the technical
     no-mask tiers (DLQ / open canonical_debt) still block when policy is active.
 
-    Fail-safe (mirrors ``_resolve_closeout_graph_state``): any resolution failure
-    skips the readiness block rather than crashing the transition.
+    Failure semantics: while ``policy_blocking`` is False this is a NO-OP. Once
+    blocking is ACTIVE, a resolution/evaluation failure is fail-CLOSED with a
+    visible ``cognitive_readiness_unavailable`` error BEFORE any mutation — a
+    silent skip would make the enforcement point an appearance of control
+    (validator carry-forward).
     """
 
     if not policy_blocking:
         return
 
-    from okto_pulse.core.kg.cognitive_closeout_gate import resolve_cognitive_source_refs
+    from okto_pulse.core.kg.cognitive_closeout_gate import (
+        CognitiveCloseoutGateError,
+        resolve_cognitive_source_refs,
+    )
     from okto_pulse.core.kg.cognitive_readiness import ReadinessTier
+
+    def _unavailable(reason: str) -> ValueError:
+        return ValueError(
+            f"cognitive_readiness_unavailable: {target_label} done transition "
+            f"blocked — {reason} (blocking policy active)"
+        )
 
     try:
         refs = resolve_cognitive_source_refs(
             entity_type=entity_type, entity=entity, entity_id=entity_id,
         ).source_refs
-    except Exception:
-        return
+    except CognitiveCloseoutGateError as exc:
+        # An entity type that is genuinely NOT eligible for cognitive closeout is
+        # a safe no-op; any other gate error on a covered type is fail-closed.
+        if getattr(exc, "code", "") == "unsupported_entity_type":
+            return
+        raise _unavailable(
+            "source resolution failed "
+            f"({getattr(exc, 'code', None) or type(exc).__name__})"
+        ) from exc
+    except Exception as exc:
+        raise _unavailable(f"source resolution failed ({type(exc).__name__})") from exc
     if not refs:
         return
 
@@ -611,7 +632,12 @@ async def _evaluate_cognitive_readiness_or_raise(
     primary_type = refs[0].split(":", 1)[0]
     has_reusable_cognition = primary_type not in ("task", "test")
 
-    service = service_factory()
+    try:
+        service = service_factory()
+    except Exception as exc:
+        raise _unavailable(
+            f"readiness service unavailable ({type(exc).__name__})"
+        ) from exc
     blocking_tiers = {
         ReadinessTier.TECHNICAL_DLQ.value,
         ReadinessTier.CANONICAL_DEBT_OPEN.value,
@@ -625,8 +651,10 @@ async def _evaluate_cognitive_readiness_or_raise(
                 source_ref=ref,
                 has_reusable_cognition=has_reusable_cognition,
             )
-        except Exception:
-            continue
+        except Exception as exc:
+            raise _unavailable(
+                f"readiness evaluation failed for {ref} ({type(exc).__name__})"
+            ) from exc
         if verdict.blocking and verdict.tier in blocking_tiers:
             raise ValueError(
                 f"{verdict.tier}: {target_label} done transition blocked by "
