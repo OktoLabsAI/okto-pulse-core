@@ -12827,6 +12827,74 @@ async def okto_pulse_kg_canonical_debt_list(
     }, default=str)
 
 
+@mcp.tool()
+async def okto_pulse_kg_evaluate_bug_cognitive_closure(
+    board_id: str,
+    bug_id: str,
+    evidence: dict[str, Any] | None = None,
+    requested_action: str = "evaluate",
+    reason_code: str | None = None,
+    justification: str | None = None,
+    evidence_refs: list[str] | None = None,
+    revisit_at: str | None = None,
+) -> str:
+    """
+    Bug cognitive-closure evidence evaluation — MCP twin of
+    `POST /api/v1/bugs/{bug_id}/cognitive-closure/evaluate` (api_8c29ce5d).
+
+    Runs the SAME classification as the REST/UI path and obtains
+    readiness_effect / blocking / precedence_explanation from the central
+    CognitiveReadinessService (mirrored, never recomputed). Any resulting
+    skip/no_action goes through the central write-path:
+      - a revisit-required reason (e.g. path_b_pending) without a future
+        revisit_at returns 400 revisit_at_required;
+      - an open DLQ / canonical_debt for the same normalized artifact_id returns
+        409 technical_debt_cannot_be_skipped (a card:<uuid> debt blocks a
+        bug:<uuid> skip);
+      - a missing bug node NEVER fabricates a relationship — it surfaces
+        technical remediation.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.kg.bug_cognitive_closure import (
+        evaluate_bug_cognitive_closure,
+    )
+    from okto_pulse.core.kg.cognitive_readiness import (
+        CognitiveReadinessError,
+        CognitiveReadinessService,
+    )
+    from okto_pulse.core.kg.rebuild_audit import (
+        CognitiveConsolidationItemStore,
+        default_rebuild_base_dir,
+    )
+
+    service = CognitiveReadinessService(
+        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    )
+    async with get_db_for_mcp() as db:
+        try:
+            return json.dumps(
+                await evaluate_bug_cognitive_closure(
+                    service,
+                    db,
+                    board_id=board_id,
+                    bug_id=bug_id,
+                    evidence=evidence or {},
+                    requested_action=requested_action,
+                    reason_code=reason_code,
+                    actor=ctx.agent_id,
+                    justification=justification,
+                    evidence_refs=evidence_refs,
+                    revisit_at=revisit_at,
+                ),
+                default=str,
+            )
+        except CognitiveReadinessError as exc:
+            return json.dumps(exc.to_dict())
+
+
 # ============================================================================
 # KG ORPHAN INTEGRITY (spec KG-ZO-02 — FR6/TR4)
 # ============================================================================

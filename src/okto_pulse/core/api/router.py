@@ -33,6 +33,9 @@ from okto_pulse.core.api.kg_orphan_integrity import (
 from okto_pulse.core.api.kg_cognitive_pending import (
     router as kg_cognitive_pending_router,
 )
+from okto_pulse.core.api.bug_cognitive_closure import (
+    router as bug_cognitive_closure_router,
+)
 from okto_pulse.core.api.kg_cognitive_candidates import (
     router as kg_cognitive_candidates_router,
 )
@@ -78,6 +81,9 @@ api_router.include_router(
 )
 api_router.include_router(
     kg_cognitive_pending_router, tags=["kg-cognitive-pending"]
+)
+api_router.include_router(
+    bug_cognitive_closure_router, tags=["bug-cognitive-closure"]
 )
 api_router.include_router(
     kg_cognitive_candidates_router, tags=["kg-cognitive-pending"]

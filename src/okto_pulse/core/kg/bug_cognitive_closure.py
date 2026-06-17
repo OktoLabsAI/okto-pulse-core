@@ -22,14 +22,17 @@ never a new on-disk enum, store, table, queue, or a Path B store of their own
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import Enum
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.cognitive_readiness import (
+    CognitiveReadinessError,
     CognitiveReadinessService,
     CognitiveReasonCode,
+    CognitiveReadinessVerdict,
 )
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
@@ -161,11 +164,198 @@ def build_bug_path_b_remediation(
     )
 
 
+# --- bug evidence evaluation (card 13b43f3d) -------------------------------
+
+# Requested action vocabulary for the evaluate surface (REST + MCP twin).
+EVALUATE = "evaluate"
+SKIP = "skip"
+NO_ACTION = "no_action"
+CREATE_LEARNING = "create_learning"
+_SKIP_ACTIONS = frozenset({SKIP, NO_ACTION})
+
+# fr_2e10da4e — the deterministic bug-evidence categories classified by evaluate.
+_EVIDENCE_CATEGORIES: tuple[str, ...] = (
+    "root_cause",
+    "fix_narrative",
+    "impact",
+    "regression_proof",
+    "validation",
+    "technical_comments",
+    "test_scenarios",
+    "lineage",
+)
+
+
+def classify_bug_evidence(evidence: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Classify bug evidence by the deterministic categories (fr_2e10da4e).
+
+    ``has_reusable_learning`` is True ONLY when the deterministic preconditions
+    for a reusable Learning/Decision are present — at minimum a root cause AND a
+    fix narrative (fr_85b5f425). No reusable learning ⇒ the closure is a
+    no_action, never a fabricated Learning (dec_6d34ae43).
+    """
+
+    ev = evidence or {}
+    present = {cat: bool(ev.get(cat)) for cat in _EVIDENCE_CATEGORIES}
+    has_reusable_learning = present["root_cause"] and present["fix_narrative"]
+    return {
+        "categories_present": present,
+        "has_reusable_learning": has_reusable_learning,
+    }
+
+
+def _evaluate_response(
+    *,
+    status: str,
+    outcome_type: str | None,
+    reason_code: str | None,
+    graph_commit_required: bool,
+    verdict: CognitiveReadinessVerdict,
+    evidence_classification: dict[str, Any],
+    bug_action_label: str | None,
+    remediation: str | None = None,
+) -> dict[str, Any]:
+    # readiness_effect / blocking / precedence_explanation are MIRRORED from the
+    # central CognitiveReadinessService verdict — never recomputed (tr_28465cc7).
+    return {
+        "status": status,
+        "outcome_type": outcome_type,
+        "reason_code": reason_code,
+        "graph_commit_required": graph_commit_required,
+        "readiness_effect": verdict.readiness_effect,
+        "blocking": verdict.blocking,
+        "precedence_explanation": dict(verdict.precedence_explanation),
+        "artifact_id": verdict.artifact_id,
+        "bug_action_label": bug_action_label,
+        "evidence_classification": evidence_classification,
+        "technical_remediation": remediation,
+    }
+
+
+async def evaluate_bug_cognitive_closure(
+    service: CognitiveReadinessService,
+    db: AsyncSession,
+    *,
+    board_id: str,
+    bug_id: str,
+    evidence: Mapping[str, Any] | None,
+    requested_action: str = EVALUATE,
+    reason_code: str | None = None,
+    actor: str = "system",
+    justification: str | None = None,
+    evidence_refs: Sequence[str] | None = None,
+    revisit_at: str | None = None,
+    kg_generation_id: str | None = None,
+) -> dict[str, Any]:
+    """Bug cognitive-closure evidence evaluation (api_8c29ce5d / br_4f1fedd9 /
+    dec_7b75ce29). The SAME classification the REST/UI and the MCP twin run.
+
+    Readiness (readiness_effect / blocking / precedence_explanation) is obtained
+    from ``CognitiveReadinessService.evaluate_artifact`` and mirrored verbatim —
+    the bug branch never recomputes precedence (tr_28465cc7). Any resulting
+    skip/no_action goes through the central write-path
+    (``record_bug_cognitive_skip``), so its refusals are unchanged: 400
+    ``revisit_at_required`` (revisit-required reason w/o revisit_at) and 409
+    ``technical_debt_cannot_be_skipped`` (open DLQ / canonical_debt). A missing
+    bug node or a technical failure NEVER fabricates a relationship nor converts
+    to no_action — it surfaces as technical remediation / blocking.
+    """
+
+    if not evidence:
+        raise CognitiveReadinessError(
+            "missing_bug_evidence",
+            "Bug evidence is required to evaluate cognitive closure.",
+            http_status=400,
+        )
+
+    source_ref = bug_cognitive_source_ref(bug_id)
+    classification = classify_bug_evidence(evidence)
+    action = str(requested_action or EVALUATE)
+
+    # Skip / no_action → delegate to the central write-path (400/409 there).
+    if action in _SKIP_ACTIONS:
+        item = await record_bug_cognitive_skip(
+            service, db,
+            board_id=board_id, bug_id=bug_id,
+            reason_code=str(reason_code or ""), actor=actor,
+            justification=justification, evidence_refs=evidence_refs,
+            revisit_at=revisit_at, kg_generation_id=kg_generation_id,
+        )
+        verdict = await service.evaluate_artifact(
+            db, board_id=board_id, source_ref=source_ref,
+            kg_generation_id=kg_generation_id,
+        )
+        return _evaluate_response(
+            status=item.status,
+            outcome_type=item.outcome_type,
+            reason_code=item.reason_code,
+            graph_commit_required=False,
+            verdict=verdict,
+            evidence_classification=classification,
+            bug_action_label=project_bug_action_label(
+                reason_code=item.reason_code, outcome_type=item.outcome_type,
+            ),
+        )
+
+    verdict = await service.evaluate_artifact(
+        db, board_id=board_id, source_ref=source_ref,
+        kg_generation_id=kg_generation_id,
+    )
+
+    if action == CREATE_LEARNING:
+        # Open technical debt/DLQ blocks any graph commit — stays blocking, never
+        # silently converted to no_action.
+        if verdict.blocking and verdict.readiness_effect == "blocking_technical":
+            return _evaluate_response(
+                status="blocked", outcome_type=None, reason_code=None,
+                graph_commit_required=True, verdict=verdict,
+                evidence_classification=classification, bug_action_label=None,
+                remediation="resolve_technical_debt_before_commit",
+            )
+        # No reusable learning ⇒ closure is no_action, NOT a fabricated Learning.
+        if not classification["has_reusable_learning"]:
+            return _evaluate_response(
+                status="no_reusable_learning", outcome_type=None,
+                reason_code=CognitiveReasonCode.NO_REUSABLE_LEARNING.value,
+                graph_commit_required=False, verdict=verdict,
+                evidence_classification=classification,
+                bug_action_label=BugCognitiveActionLabel.NO_REUSABLE_LEARNING.value,
+            )
+        # Missing bug node ⇒ NO fabricated relation; technical remediation/debt.
+        if not service.cognitive_items_for(board_id, source_ref, kg_generation_id):
+            return _evaluate_response(
+                status="technical_remediation_required", outcome_type=None,
+                reason_code=None, graph_commit_required=True, verdict=verdict,
+                evidence_classification=classification, bug_action_label=None,
+                remediation="bug_node_absent",
+            )
+        # Reusable learning + node present ⇒ a real commit is required downstream.
+        return _evaluate_response(
+            status="ready_to_commit", outcome_type=None, reason_code=None,
+            graph_commit_required=True, verdict=verdict,
+            evidence_classification=classification,
+            bug_action_label=BugCognitiveActionLabel.CREATE_LEARNING_VALIDATES_BUG.value,
+        )
+
+    # Pure classification (no write) — surfaces readiness + recommendation.
+    return _evaluate_response(
+        status="evaluated", outcome_type=None, reason_code=None,
+        graph_commit_required=False, verdict=verdict,
+        evidence_classification=classification, bug_action_label=None,
+    )
+
+
 __all__ = [
     "BugCognitiveActionLabel",
     "BugWorkflowRemediationPath",
+    "CREATE_LEARNING",
+    "EVALUATE",
+    "NO_ACTION",
+    "SKIP",
     "build_bug_path_b_remediation",
     "bug_cognitive_source_ref",
+    "classify_bug_evidence",
+    "evaluate_bug_cognitive_closure",
     "project_bug_action_label",
     "record_bug_cognitive_skip",
 ]

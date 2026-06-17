@@ -35,7 +35,7 @@ readiness signals / error causes only — NEVER selectable reason_codes
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -133,6 +133,22 @@ class CognitiveReadinessError(Exception):
         return {"error": self.code, "message": self.message, "status_code": self.http_status}
 
 
+# Bounded readiness_effect per precedence tier — more specific than a bare
+# ready|blocking so consumers (bug evaluate REST/MCP, Action Center) can render
+# WHY without recomputing precedence. This service is the ONLY source of
+# readiness_effect / precedence_explanation (tr_28465cc7).
+_READINESS_EFFECT_BY_TIER: dict[str, str] = {
+    ReadinessTier.TECHNICAL_DLQ.value: "blocking_technical",
+    ReadinessTier.CANONICAL_DEBT_OPEN.value: "blocking_technical",
+    ReadinessTier.COGNITIVE_ACTIVE.value: "blocking_cognitive",
+    ReadinessTier.SKIP_EXPIRED.value: "blocking_revisit_lapsed",
+    ReadinessTier.SKIP_VALID.value: "ready_skip",
+    ReadinessTier.TERMINAL_HISTORY.value: "ready_committed",
+    ReadinessTier.ADVISORY_NO_COGNITION.value: "advisory",
+    ReadinessTier.READY.value: "ready",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class CognitiveReadinessVerdict:
     """Composed readiness for ONE normalized artifact_id."""
@@ -145,6 +161,25 @@ class CognitiveReadinessVerdict:
     reason_code: str | None = None
     revisit_at: str | None = None
     detail: str = ""
+    # Derived from the deciding tier (single source for downstream surfaces —
+    # the bug evaluate must mirror these, never recompute precedence).
+    readiness_effect: str = ""
+    precedence_explanation: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.readiness_effect:
+            object.__setattr__(
+                self,
+                "readiness_effect",
+                _READINESS_EFFECT_BY_TIER.get(self.tier, "ready"),
+            )
+        if not self.precedence_explanation:
+            object.__setattr__(self, "precedence_explanation", {
+                "tier": self.tier,
+                "readiness_signal": self.readiness_signal,
+                "reason_code": self.reason_code,
+                "detail": self.detail,
+            })
 
     def to_api(self) -> dict[str, Any]:
         return {
@@ -156,6 +191,8 @@ class CognitiveReadinessVerdict:
             "reason_code": self.reason_code,
             "revisit_at": self.revisit_at,
             "detail": self.detail,
+            "readiness_effect": self.readiness_effect,
+            "precedence_explanation": dict(self.precedence_explanation),
         }
 
 
@@ -390,6 +427,21 @@ class CognitiveReadinessService:
             cognitive_items=items,
             has_reusable_cognition=has_reusable_cognition,
             now=self._now(),
+        )
+
+    def cognitive_items_for(
+        self,
+        board_id: str,
+        source_ref: str,
+        kg_generation_id: str | None = None,
+    ) -> list[CognitiveConsolidationItem]:
+        """Public read of the cognitive items for one artifact (by normalized
+        artifact_id). Lets the bug evaluate detect a MISSING bug node without
+        reimplementing store access or precedence."""
+        return self._items_for_artifact(
+            board_id,
+            normalize_cognitive_artifact_id(source_ref),
+            kg_generation_id,
         )
 
     async def record_cognitive_skip(
