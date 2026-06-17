@@ -644,3 +644,41 @@ async def test_advisory_default_does_not_instantiate_readiness_service(
         assert result["card_status"] == CardStatus.DONE.value
 
     assert (await _card_row(card_id)).status == CardStatus.DONE
+
+
+@pytest.mark.asyncio
+async def test_blocking_active_fails_closed_when_source_ref_resolution_errors(
+    isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # blocking policy + flag on + source-ref resolution explodes (non-unsupported)
+    # → done MUST fail-closed with cognitive_readiness_unavailable, no mutation.
+    board_id, _, card_id = await _seed_card(
+        CardType.NORMAL, CardStatus.VALIDATION,
+        board_settings={"cognitive_readiness_policy": "blocking"},
+    )
+    _enable_global_blocking_flag(monkeypatch)
+
+    import okto_pulse.core.kg.cognitive_closeout_gate as ccg_mod
+
+    def _boom_resolve(**_kwargs):
+        raise RuntimeError("source ref backend down")
+
+    monkeypatch.setattr(ccg_mod, "resolve_cognitive_source_refs", _boom_resolve)
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        with pytest.raises(ValueError, match="cognitive_readiness_unavailable"):
+            await service.submit_task_validation(
+                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                data=_APPROVE_VALIDATION,
+            )
+        await db.rollback()
+
+    card = await _card_row(card_id)
+    assert card.status == CardStatus.VALIDATION
+    assert card.validations in (None, [])
