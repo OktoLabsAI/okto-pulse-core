@@ -255,3 +255,40 @@ async def test_ts494731f9_mcp_twin_matches_central_writepath(tmp_path, db_factor
     assert out2["status"] == "skipped"
     assert out2["outcome_type"] == "no_action_required"
     assert out2["readiness_effect"]  # readiness do service presente
+
+
+# ---------------------------------------------------------------------------
+# ts_c4f11007 (reforço) — falha técnica permanece debt/blocking, nunca no_action
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tsc4f11007_create_learning_with_open_debt_stays_blocked(tmp_path, db_factory):
+    # Uma falha técnica de Bug/Learning/relationship vira canonical_debt/DLQ. Quando
+    # esse sinal técnico está OPEN, o evaluate de create_learning permanece BLOCKING
+    # (status=blocked, blocking_technical) — NUNCA convertido em no_action e NUNCA
+    # fabricando relação (graph_commit_required continua True; sem outcome).
+    board, gen = "be-techdebt", generate_kg_generation_id()
+    await _board(db_factory, board)
+    store = _store(tmp_path)
+    _seed_bug_pending(store, board, gen)
+    async with db_factory() as db:
+        await upsert_canonical_debt(
+            db, board_id=board, artifact_type="card", artifact_id=UUID_A,
+            source_ref=f"card:{UUID_A}", content_hash="h",
+            target_status="done", canonical_state="failed",  # OPEN = falha técnica
+        )
+        await db.commit()
+    svc = CognitiveReadinessService(store)
+    async with db_factory() as db:
+        resp = await evaluate_bug_cognitive_closure(
+            svc, db, board_id=board, bug_id=UUID_A, evidence=GOOD_EVIDENCE,
+            requested_action="create_learning",
+        )
+    assert resp["status"] == "blocked"
+    assert resp["readiness_effect"] == "blocking_technical"
+    assert resp["blocking"] is True
+    assert resp["graph_commit_required"] is True
+    assert resp["outcome_type"] is None          # nada fabricado
+    assert resp["reason_code"] is None            # NÃO virou no_action
+    assert resp["technical_remediation"] == "resolve_technical_debt_before_commit"
