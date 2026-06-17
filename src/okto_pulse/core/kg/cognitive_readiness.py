@@ -401,6 +401,7 @@ class CognitiveReadinessService:
         reason_code: str,
         actor: str,
         justification: str | None = None,
+        evidence_refs: Sequence[str] | None = None,
         revisit_at: str | None = None,
         kg_generation_id: str | None = None,
     ) -> CognitiveConsolidationItem:
@@ -452,6 +453,7 @@ class CognitiveReadinessService:
             outcome_type=CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value,
             reason_code=reason_code,
             justification=justification,
+            evidence_refs=evidence_refs,
             actor=actor,
             revisit_at=revisit_at,
         )

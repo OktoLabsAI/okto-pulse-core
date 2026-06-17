@@ -22,10 +22,24 @@ never a new on-disk enum, store, table, queue, or a Path B store of their own
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
 
-from okto_pulse.core.kg.cognitive_readiness import CognitiveReasonCode
-from okto_pulse.core.kg.rebuild_audit import CognitivePendingOutcomeType
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from okto_pulse.core.kg.cognitive_readiness import (
+    CognitiveReadinessService,
+    CognitiveReasonCode,
+)
+from okto_pulse.core.kg.rebuild_audit import (
+    CognitiveConsolidationItem,
+    CognitivePendingOutcomeType,
+)
+from okto_pulse.core.services.bug_workflow_remediation import (
+    BugWorkflowRemediationMessage,
+    BugWorkflowRemediationMessageBuilder,
+    BugWorkflowRemediationPath,
+)
 
 
 class BugCognitiveActionLabel(str, Enum):
@@ -83,7 +97,75 @@ def project_bug_action_label(
     return None
 
 
+def bug_cognitive_source_ref(bug_id: str) -> str:
+    """Cognitive source_ref for a bug card — the canonical ``bug:<id>`` alias
+    that normalizes (S1.1) to the same artifact_id as a canonical-debt
+    ``card:<id>``."""
+    return f"bug:{bug_id}"
+
+
+async def record_bug_cognitive_skip(
+    service: CognitiveReadinessService,
+    db: AsyncSession,
+    *,
+    board_id: str,
+    bug_id: str,
+    reason_code: str,
+    actor: str,
+    justification: str | None = None,
+    evidence_refs: Sequence[str] | None = None,
+    revisit_at: str | None = None,
+    kg_generation_id: str | None = None,
+) -> CognitiveConsolidationItem:
+    """THIN bug-specific wrapper over the central write-path
+    :meth:`CognitiveReadinessService.record_cognitive_skip` (fr_8c95dd95).
+
+    Adds NO local precedence / store / enum / Path B lineage store: it only maps
+    the bug to ``source_ref=bug:<id>`` and forwards reason_code / justification /
+    evidence_refs / actor / revisit_at. Every refusal comes from the central
+    write-path, unchanged:
+      * 400 ``invalid_reason_code`` (reason not in the closed cognitive registry);
+      * 400 ``revisit_at_required`` (e.g. ``path_b_pending`` without revisit_at —
+        tr_e004a794);
+      * 409 ``technical_debt_cannot_be_skipped`` when an open DLQ / canonical_debt
+        exists for the SAME normalized artifact_id (a card:<uuid> debt blocks the
+        bug:<uuid> skip — tr_f550ab3f / no-mask).
+
+    duplicate_bug / trivial_fix / no_reusable_learning record ``skipped`` +
+    ``no_action_required`` WITHOUT a fabricated Learning (br_4113fbc0 /
+    dec_6d34ae43).
+    """
+
+    return await service.record_cognitive_skip(
+        db,
+        board_id=board_id,
+        source_ref=bug_cognitive_source_ref(bug_id),
+        reason_code=reason_code,
+        actor=actor,
+        justification=justification,
+        evidence_refs=evidence_refs,
+        revisit_at=revisit_at,
+        kg_generation_id=kg_generation_id,
+    )
+
+
+def build_bug_path_b_remediation(
+    *, reason_code: str = CognitiveReasonCode.PATH_B_PENDING.value
+) -> BugWorkflowRemediationMessage:
+    """Consume the EXISTING ``BugWorkflowRemediationPath.PATH_B_SEMANTIC_GAP`` for
+    a locked-spec bug semantic gap (fr_0092774e / dec_085b0f9e). Reuses the
+    canonical remediation builder — it never merges with
+    ``PATH_C_HOTFIX_LANE`` and never creates a Path B lineage store of its own."""
+    return BugWorkflowRemediationMessageBuilder().build_semantic_gap(
+        reason_code=reason_code,
+    )
+
+
 __all__ = [
     "BugCognitiveActionLabel",
+    "BugWorkflowRemediationPath",
+    "build_bug_path_b_remediation",
+    "bug_cognitive_source_ref",
     "project_bug_action_label",
+    "record_bug_cognitive_skip",
 ]
