@@ -439,6 +439,55 @@ def compute_cognitive_item_id(
     return f"cogn_{digest[:32]}"
 
 
+# Artifact-type prefixes that denote the SAME underlying Card row. A bug IS a
+# Card (card_type=bug), so a canonical-debt ref ``card:<uuid>`` and a cognitive
+# ref ``bug:<uuid>`` for the same uuid must collapse to ONE artifact_id so the
+# readiness precedence (later cards) can be applied without a silent no-op
+# (fr_43ea6e97 / ac_50e4d48e).
+_CARD_ALIAS_PREFIXES: frozenset[str] = frozenset({"card", "bug"})
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def normalize_cognitive_artifact_id(source_ref: str) -> str:
+    """Canonical per-ARTIFACT identity for cognitive readiness grouping
+    (fr_43ea6e97).
+
+    Collapses equivalent ``source_ref`` aliases so a canonical-debt
+    ``card:<uuid>`` and a cognitive ``bug:<uuid>`` for the SAME uuid resolve to
+    one ``artifact_id``. The caller preserves the untouched ref in
+    ``source_ref_original``; this returns only the canonical grouping key.
+
+    Rules (pure + deterministic — same input always yields the same output,
+    never raises):
+    - ``card:<uuid>`` / ``bug:<uuid>`` (second token a UUID) -> ``card:<uuid-lower>``.
+    - any other ``<type>:<rest>`` -> ``<type-lower>:<rest>`` (uuid tail lowercased
+      for stability; non-uuid rest preserved verbatim, e.g. ``decision:<spec>:<id>``).
+    - no colon / empty -> the input trimmed, verbatim.
+
+    This is NOT a replacement for :func:`compute_cognitive_item_id` (the
+    per-ITEM identity); it is the per-ARTIFACT key used to reconcile aliases.
+    """
+
+    ref = str(source_ref or "").strip()
+    if ":" not in ref:
+        return ref
+    prefix, rest = ref.split(":", 1)
+    prefix_norm = prefix.strip().lower()
+    rest = rest.strip()
+    if prefix_norm in _CARD_ALIAS_PREFIXES and _is_uuid(rest):
+        return f"card:{rest.lower()}"
+    if _is_uuid(rest):
+        return f"{prefix_norm}:{rest.lower()}"
+    return f"{prefix_norm}:{rest}"
+
+
 # Counter for OR or_3b71e3c1 — kg_cognitive_pending_items_materialized_total.
 #
 # Contract (Codex audit val_036cb81e + or_3b71e3c1):
@@ -1221,6 +1270,34 @@ class CognitiveConsolidationItem:
     # marker can dedupe across generations and detect ``reopen`` when the
     # underlying artifact's content changes between rebuilds.
     content_hash: str | None = None
+    # S1 Cognitive Closure (fr_a74b3bc5) — readiness metadata persisted on the
+    # EXISTING item (dec_effa4634: no parallel closure ledger). reason_code is
+    # cognitive + closed-validated by the readiness service / later cards
+    # (dec_25557d9a) — here the field merely exists. revisit_at is an ISO-8601
+    # string so the frozen row stays JSON-serializable.
+    reason_code: str | None = None
+    justification: str | None = None
+    actor: str | None = None
+    revisit_at: str | None = None
+    # source_ref_original preserves the untouched ref for audit; artifact_id is
+    # the canonical per-artifact grouping key (fr_43ea6e97 / ac_50e4d48e). Both
+    # default safely from source_ref in __post_init__ so legacy rows stay
+    # readable WITHOUT a silent disk mutation (tr_3db366b6).
+    source_ref_original: str | None = None
+    artifact_id: str = ""
+
+    def __post_init__(self) -> None:
+        # In-memory safe defaults only — never written back by construction;
+        # only mark/update persist (tr_3db366b6). frozen dataclass → setattr via
+        # object to seed the derived identity fields when absent.
+        if not self.source_ref_original:
+            object.__setattr__(self, "source_ref_original", self.source_ref)
+        if not self.artifact_id:
+            object.__setattr__(
+                self,
+                "artifact_id",
+                normalize_cognitive_artifact_id(self.source_ref),
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1245,6 +1322,12 @@ class CognitiveConsolidationItem:
                 self.promoted_formal_decision_ids
             ),
             "content_hash": self.content_hash,
+            "reason_code": self.reason_code,
+            "justification": self.justification,
+            "actor": self.actor,
+            "revisit_at": self.revisit_at,
+            "source_ref_original": self.source_ref_original,
+            "artifact_id": self.artifact_id,
         }
 
     @staticmethod
@@ -1276,6 +1359,15 @@ class CognitiveConsolidationItem:
                 payload.get("promoted_formal_decision_ids")
             ),
             content_hash=payload.get("content_hash"),
+            # S1: new readiness fields. Absent on legacy rows → safe defaults
+            # (artifact_id/source_ref_original derived in __post_init__) without
+            # rewriting the stored payload (tr_3db366b6).
+            reason_code=payload.get("reason_code"),
+            justification=payload.get("justification"),
+            actor=payload.get("actor"),
+            revisit_at=payload.get("revisit_at"),
+            source_ref_original=payload.get("source_ref_original"),
+            artifact_id=str(payload.get("artifact_id") or ""),
         )
 
 
@@ -1802,6 +1894,10 @@ class CognitiveConsolidationItemStore:
         evidence_refs: Sequence[str] | None = None,
         generated_candidate_decision_ids: Sequence[str] | None = None,
         promoted_formal_decision_ids: Sequence[str] | None = None,
+        reason_code: str | None = None,
+        justification: str | None = None,
+        actor: str | None = None,
+        revisit_at: str | None = None,
     ) -> CognitiveConsolidationItem | None:
         """Single-item atomic update per br_d544da65 + FR3 + AC6.
 
@@ -1867,8 +1963,10 @@ class CognitiveConsolidationItemStore:
                 if promoted_formal_decision_ids
                 else []
             )
+            existing = items_raw[target_idx]
+            src_ref = str(existing.get("source_ref", ""))
             items_raw[target_idx] = {
-                **items_raw[target_idx],
+                **existing,
                 "status": new_status,
                 "updated_at": now,
                 "updated_by_agent_id": updated_by_agent_id,
@@ -1878,6 +1976,27 @@ class CognitiveConsolidationItemStore:
                 "evidence_refs": evidence_refs_list,
                 "generated_candidate_decision_ids": generated_candidates_list,
                 "promoted_formal_decision_ids": promoted_decisions_list,
+                # S1: canonical artifact identity persisted on this EXPLICIT
+                # mutation (not a silent read-time write) + readiness metadata
+                # preserved when the caller omits it, so a concurrent update
+                # never drops reason_code/justification/actor/revisit_at
+                # (tr_3d6b29fe). The lock + temp-replace below keep it atomic.
+                "source_ref_original": existing.get("source_ref_original") or src_ref,
+                "artifact_id": existing.get("artifact_id")
+                or normalize_cognitive_artifact_id(src_ref),
+                "reason_code": (
+                    reason_code if reason_code is not None
+                    else existing.get("reason_code")
+                ),
+                "justification": (
+                    justification if justification is not None
+                    else existing.get("justification")
+                ),
+                "actor": actor if actor is not None else existing.get("actor"),
+                "revisit_at": (
+                    revisit_at if revisit_at is not None
+                    else existing.get("revisit_at")
+                ),
             }
 
             # Recompute aggregate counts from items (br_d544da65 keeps
