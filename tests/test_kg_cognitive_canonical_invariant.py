@@ -115,7 +115,7 @@ def _get_decision_layer_maturity(
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
             "MATCH (n:Decision) WHERE n.source_artifact_ref = $ref "
-            "RETURN coalesce(n.graph_layer, 'canonical'), n.maturity_status",
+            "RETURN coalesce(n.graph_layer, 'legacy_unknown'), n.maturity_status",
             {"ref": source_ref},
         )
         try:

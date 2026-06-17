@@ -331,14 +331,10 @@ class KuzuGraphStore:
         # requested anchor and is always returned; only the EXPANDED neighbors
         # (hop1, hop2) are layer-scoped so a canonical view never pulls in
         # working nodes. hop2 is optional so a null hop2 (no second hop) is kept.
-        hop1_layer = (
-            "($graph_layer = 'all' "
-            "OR coalesce(hop1.graph_layer, 'canonical') = $graph_layer)"
-        )
-        hop2_layer = (
-            "(hop2 IS NULL OR $graph_layer = 'all' "
-            "OR coalesce(hop2.graph_layer, 'canonical') = $graph_layer)"
-        )
+        # Fail-closed layer scoping (bug 07bdf670) via the single-source helper:
+        # a hop with NULL/absent graph_layer is NOT treated as canonical.
+        hop1_layer = tpl.layer_filter_clause("hop1")
+        hop2_layer = f"(hop2 IS NULL OR {tpl.layer_filter_clause('hop2')})"
         if rel_types:
             # Kùzu doesn't expose `label(r)` as a parameter-safe filter, so we
             # inline a whitelist check via :<type1>|:<type2> pattern syntax.

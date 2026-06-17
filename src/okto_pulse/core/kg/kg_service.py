@@ -700,7 +700,7 @@ class KGService:
                 "created_at": r[4], "source_confidence": r[5],
                 "relevance_score": r[6] if r[6] is not None else 0.5,
                 "source_artifact_ref": r[7],
-                "graph_layer": r[8] if len(r) > 8 and r[8] else GRAPH_LAYER_CANONICAL,
+                "graph_layer": r[8] if len(r) > 8 and r[8] else "legacy_unknown",
                 "maturity_status": r[9] if len(r) > 9 else None,
             }
             for r in rows
@@ -1206,10 +1206,10 @@ class KGService:
                     "WITH node, distance "
                     "MATCH (b:Board)-[:CONTAINS_DECISION]->(node) "
                     "WHERE b.board_id IN $boards "
-                    "AND ($graph_layer = 'all' OR coalesce(node.graph_layer, 'canonical') = $graph_layer) "
+                    f"AND {tpl.layer_filter_clause('node')} "
                     "RETURN b.board_id, node.id, node.original_node_id, "
                     "node.title, node.one_line_summary, node.node_type, "
-                    "coalesce(node.graph_layer, 'canonical') AS graph_layer, distance "
+                    f"{tpl.layer_label_projection('node')}, distance "
                     "ORDER BY distance ASC LIMIT $search_k"
                 )
                 res = conn.execute(
@@ -1269,10 +1269,10 @@ class KGService:
                 cypher = (
                     "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
                     "WHERE b.board_id IN $boards AND d.embedding IS NOT NULL "
-                    "AND ($graph_layer = 'all' OR coalesce(d.graph_layer, 'canonical') = $graph_layer) "
+                    f"AND {tpl.layer_filter_clause('d')} "
                     "RETURN b.board_id, d.id, d.original_node_id, d.title, "
                     "d.one_line_summary, d.node_type, "
-                    "coalesce(d.graph_layer, 'canonical') AS graph_layer, d.embedding LIMIT 500"
+                    f"{tpl.layer_label_projection('d')}, d.embedding LIMIT 500"
                 )
                 res = conn.execute(cypher, {"boards": scope, "graph_layer": layer})
                 scored: list[dict] = []

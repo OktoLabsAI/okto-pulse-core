@@ -7,8 +7,9 @@ Diferente de ``test_kg_spec_children_canonicalization`` (que inspeciona a emiss�
 em memória do worker) e de ``test_kg_layer_propagation`` (que semeia nodes
 direto), esta regressão exercita o caminho REAL de enqueue → consolidation →
 materialization via ``_process_queue_entry``, persiste no grafo do board e LÊ com
-o mesmo predicado canonical-only de produção (``coalesce(n.graph_layer,
-'canonical') = 'canonical'``, idêntico a ``cypher_templates.GET_ALL_NODES``).
+o mesmo predicado canonical-only FAIL-CLOSED de produção, via o helper
+centralizado ``cypher_templates.layer_filter_clause`` (``graph_layer =
+'canonical'`` estrito; NULL/ausente não é canonical — bug 07bdf670).
 Sem source-inspection: o veredito vem do grafo persistido em disco.
 """
 
@@ -19,6 +20,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+from okto_pulse.core.kg.cypher_templates import layer_filter_clause
 from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
 from okto_pulse.core.models.db import Board, ConsolidationQueue, Spec
@@ -95,17 +97,20 @@ async def _materialize_spec(db_factory, status: str) -> tuple[str, str]:
 def _count_spec_nodes(board_id: str, spec_id: str, *, canonical_only: bool) -> int:
     """Conta nodes do grafo cujo source_artifact_ref pertence à spec.
 
-    Quando ``canonical_only`` aplica o MESMO predicado de produção
-    (``coalesce(n.graph_layer, 'canonical') = 'canonical'``) que a leitura
-    canonical-only usa em GET_ALL_NODES / get_related_context / query_global.
+    Quando ``canonical_only`` aplica o MESMO predicado FAIL-CLOSED de produção
+    via o helper centralizado ``cypher_templates.layer_filter_clause`` (bug
+    07bdf670: ``graph_layer = $graph_layer`` estrito, NULL/ausente NÃO é
+    canonical) — idêntico a GET_ALL_NODES / get_related_context / query_global.
     """
     ref_prefix = f"spec:{spec_id}"
     cypher = "MATCH (n) WHERE n.source_artifact_ref STARTS WITH $ref "
+    params: dict = {"ref": ref_prefix}
     if canonical_only:
-        cypher += "AND coalesce(n.graph_layer, 'canonical') = 'canonical' "
+        cypher += f"AND {layer_filter_clause('n')} "
+        params["graph_layer"] = "canonical"
     cypher += "RETURN count(n)"
     with open_board_connection(board_id) as (_db, conn):
-        res = conn.execute(cypher, {"ref": ref_prefix})
+        res = conn.execute(cypher, params)
         try:
             return int(res.get_next()[0]) if res.has_next() else 0
         finally:

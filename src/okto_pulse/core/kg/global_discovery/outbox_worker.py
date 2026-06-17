@@ -21,6 +21,7 @@ from okto_pulse.core.kg.global_discovery.metrics import (
     emit_digest_upsert,
     emit_missing_embedding_skipped,
 )
+from okto_pulse.core.kg.cypher_templates import layer_label_projection
 from okto_pulse.core.kg.global_discovery.schema import open_global_connection
 from okto_pulse.core.kg.schema import VECTOR_INDEX_TYPES
 from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
@@ -582,10 +583,14 @@ class OutboxWorker:
                     # missing_embedding_skipped_total, or_a921cc64) so legacy
                     # data without embeddings is visible, not invisible, and the
                     # remaining nodes keep processing.
+                    # Fail-safe layer label (bug 07bdf670): a source node with
+                    # NULL/absent graph_layer mirrors into the digest as
+                    # legacy_unknown, NEVER implicit canonical, so a canonical-only
+                    # query_global cannot pull it in.
                     cypher = (
                         f"MATCH (n:{ntype}) WHERE n.id IN $ids "
                         f"RETURN n.id, n.title, n.embedding, "
-                        f"coalesce(n.graph_layer, 'canonical') AS graph_layer"
+                        f"{layer_label_projection('n')}"
                     )
                     res = conn.execute(cypher, {"ids": ids})
                     while res.has_next():

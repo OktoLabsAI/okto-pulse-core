@@ -187,7 +187,7 @@ def _read_decision(board_id, source_ref):
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
             "MATCH (n:Learning) WHERE n.source_artifact_ref = $ref "
-            "RETURN count(n), coalesce(n.graph_layer, 'canonical'), "
+            "RETURN count(n), coalesce(n.graph_layer, 'legacy_unknown'), "
             "n.maturity_status, n.title, n.content",
             {"ref": source_ref},
         )
