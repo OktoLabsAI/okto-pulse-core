@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -34,9 +35,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.kg.cognitive_readiness import (
     CANONICAL_DEBT_OPEN_SIGNAL,
     REVISIT_REQUIRED_REASON_CODES,
+    SELECTABLE_REASON_CODES,
     TECHNICAL_DLQ_SIGNAL,
     CognitiveReadinessError,
     CognitiveReadinessService,
+    CognitiveReadinessVerdict,
     ReadinessTier,
 )
 from okto_pulse.core.kg.rebuild_audit import (
@@ -138,6 +141,7 @@ class _RawSignal:
     reason_code: str | None
     error_cause: str | None
     revisit_at: str | None
+    recorded_at: str | None = None
 
 
 def _cognitive_item_signal(item: Any) -> str:
@@ -269,6 +273,7 @@ class CognitiveActionCenterReadModel:
                     reason_code=item.reason_code,
                     error_cause=None,
                     revisit_at=item.revisit_at,
+                    recorded_at=getattr(item, "recorded_at", None),
                 ))
 
         debt_rows = (await db.execute(
@@ -366,10 +371,173 @@ class CognitiveActionCenterReadModel:
             "cognitive_pending_signals": cognitive_pending,
         }
 
+    async def metrics(
+        self,
+        db: AsyncSession,
+        *,
+        board_id: str,
+        kg_generation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Bounded readiness metrics DERIVED from the read-model (fr_9ae21310 /
+        or_25486844). Every label is bounded — status / outcome_type / a bounded
+        reason_code class / artifact_type / readiness_effect / signal /
+        signal_source / age bucket. Free-text (justification, evidence_refs, raw
+        long source_ref, error messages) is NEVER a label (br_3a55b609).
+        Precedence is read from the central service, never recomputed here."""
+
+        try:
+            raw = await self._gather(db, board_id, kg_generation_id)
+        except Exception as exc:
+            raise CognitiveReadinessError(
+                "readiness_source_unavailable",
+                f"a readiness source could not be read ({type(exc).__name__})",
+                http_status=503,
+            ) from exc
+
+        now = self._service._now()
+        verdict_cache: dict[str, CognitiveReadinessVerdict] = {}
+        by_status: dict[str, int] = {}
+        by_outcome: dict[str, int] = {}
+        by_reason: dict[str, int] = {}
+        by_type: dict[str, int] = {}
+        by_effect: dict[str, int] = {}
+        by_signal: dict[str, int] = {}
+        by_source: dict[str, int] = {}
+        by_age: dict[str, int] = {}
+
+        def _bump(bucket: dict[str, int], key: str) -> None:
+            bucket[key] = bucket.get(key, 0) + 1
+
+        for r in raw:
+            verdict = verdict_cache.get(r.artifact_id)
+            if verdict is None:
+                primary_type = (
+                    r.artifact_type or r.source_ref_original.split(":", 1)[0]
+                ).lower()
+                verdict = await self._service.evaluate_artifact(
+                    db, board_id=board_id, source_ref=r.source_ref_original,
+                    kg_generation_id=kg_generation_id,
+                    has_reusable_cognition=primary_type not in ("task", "test"),
+                )
+                verdict_cache[r.artifact_id] = verdict
+            _bump(by_status, r.status or "unknown")
+            _bump(by_outcome, r.outcome_type or "none")
+            _bump(by_reason, _bounded_reason(r.reason_code))
+            _bump(by_type, r.artifact_type or "unknown")
+            _bump(by_effect, verdict.readiness_effect)
+            _bump(by_signal, r.signal)
+            _bump(by_source, r.signal_source)
+            _bump(by_age, _age_bucket(r.recorded_at, now))
+
+        summary = self._summarize(raw)
+        return {
+            "board_id": board_id,
+            "total": len(raw),
+            "by_status": by_status,
+            "by_outcome_type": by_outcome,
+            "by_reason_code": by_reason,
+            "by_artifact_type": by_type,
+            "by_readiness_effect": by_effect,
+            "by_signal": by_signal,
+            "by_signal_source": by_source,
+            "by_age_bucket": by_age,
+            "technical_blocking_signals": summary["technical_blocking_signals"],
+            "cognitive_pending_signals": summary["cognitive_pending_signals"],
+            "expired_revisit_skips": by_effect.get("blocking_revisit_lapsed", 0),
+            "open_canonical_debt": by_signal.get(SIGNAL_OPEN_CANONICAL_DEBT, 0),
+            "technical_dlq": by_signal.get(SIGNAL_DLQ, 0),
+            "terminal_history": by_signal.get(SIGNAL_TERMINAL_HISTORY, 0),
+        }
+
+
+def _bounded_reason(reason_code: str | None) -> str:
+    """Clamp a reason_code to a BOUNDED metric label: a member of the closed
+    cognitive registry, else ``none`` (absent) / ``other`` (unexpected)."""
+    if not reason_code:
+        return "none"
+    return reason_code if reason_code in SELECTABLE_REASON_CODES else "other"
+
+
+def _age_bucket(recorded_at: str | None, now: datetime) -> str:
+    """Coarse, bounded age bucket from an ISO timestamp."""
+    if not recorded_at:
+        return "unknown"
+    try:
+        dt = datetime.fromisoformat(str(recorded_at).replace("Z", "+00:00"))
+    except ValueError:
+        return "unknown"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    age = now - dt
+    if age <= timedelta(days=1):
+        return "lt_1d"
+    if age <= timedelta(days=7):
+        return "1d_7d"
+    return "gt_7d"
+
+
+def _skip_classification(reason_code: str | None) -> str:
+    return (
+        "revisit_required" if reason_code in REVISIT_REQUIRED_REASON_CODES
+        else "terminal"
+    )
+
+
+def build_skip_response(
+    item: Any,
+    verdict: CognitiveReadinessVerdict,
+    *,
+    actor: str,
+    would_block_done: bool,
+) -> dict[str, Any]:
+    """Single source for the record-skip response shape so REST and the MCP twin
+    never diverge (tr_d9f9f65e). justification / evidence_refs are echoed back to
+    the actor who submitted them (audit), never used as a metric label."""
+    return {
+        "item_id": item.item_id,
+        "status": item.status,
+        "outcome_type": item.outcome_type,
+        "reason_code": item.reason_code,
+        "justification": getattr(item, "justification", None),
+        "evidence_refs": list(getattr(item, "evidence_refs", []) or []),
+        "actor": getattr(item, "actor", None) or actor,
+        "revisit_at": getattr(item, "revisit_at", None),
+        "updated_at": item.updated_at,
+        "classification": _skip_classification(item.reason_code),
+        "readiness_effect": verdict.readiness_effect,
+        "blocking": verdict.blocking,
+        "would_block_done": would_block_done,
+        "precedence_explanation": dict(verdict.precedence_explanation),
+    }
+
+
+def build_clear_response(
+    item: Any,
+    verdict: CognitiveReadinessVerdict,
+    *,
+    actor: str,
+    would_block_done: bool,
+) -> dict[str, Any]:
+    """Single source for the clear/reopen response shape (REST + MCP parity)."""
+    return {
+        "item_id": item.item_id,
+        "status": item.status,
+        "reason_code": item.reason_code,
+        "revisit_at": getattr(item, "revisit_at", None),
+        "actor": getattr(item, "actor", None) or actor,
+        "updated_at": item.updated_at,
+        "readiness_effect": verdict.readiness_effect,
+        "blocking": verdict.blocking,
+        "would_block_done": would_block_done,
+        "precedence_explanation": dict(verdict.precedence_explanation),
+    }
+
 
 __all__ = [
     "ActionCenterSignal",
     "CognitiveActionCenterReadModel",
+    "build_clear_response",
+    "build_skip_response",
     "PRECEDENCE_ORDER",
     "SIGNAL_ALL",
     "SIGNAL_COGNITIVE_PENDING",

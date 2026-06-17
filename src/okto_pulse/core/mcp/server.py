@@ -13092,10 +13092,8 @@ async def okto_pulse_kg_record_cognitive_skip(
     if ctx is None:
         return _auth_error()
 
-    from okto_pulse.core.kg.cognitive_readiness import (
-        CognitiveReadinessError,
-        REVISIT_REQUIRED_REASON_CODES,
-    )
+    from okto_pulse.core.kg.cognitive_action_center import build_skip_response
+    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
 
     service = _build_cognitive_readiness_service()
     async with get_db_for_mcp() as db:
@@ -13119,26 +13117,11 @@ async def okto_pulse_kg_record_cognitive_skip(
         except CognitiveReadinessError as exc:
             return json.dumps(exc.to_dict())
 
-    classification = (
-        "revisit_required" if reason_code in REVISIT_REQUIRED_REASON_CODES
-        else "terminal"
-    )
-    return json.dumps({
-        "item_id": item.item_id,
-        "status": item.status,
-        "outcome_type": item.outcome_type,
-        "reason_code": item.reason_code,
-        "justification": getattr(item, "justification", None),
-        "evidence_refs": list(getattr(item, "evidence_refs", []) or []),
-        "actor": getattr(item, "actor", None) or ctx.agent_id,
-        "revisit_at": getattr(item, "revisit_at", None),
-        "updated_at": item.updated_at,
-        "classification": classification,
-        "readiness_effect": verdict.readiness_effect,
-        "blocking": verdict.blocking,
-        "would_block_done": _would_block_done(verdict.tier, enforcement_active),
-        "precedence_explanation": verdict.precedence_explanation,
-    }, default=str)
+    # Shared response builder — REST and MCP never diverge (tr_d9f9f65e).
+    return json.dumps(build_skip_response(
+        item, verdict, actor=ctx.agent_id,
+        would_block_done=_would_block_done(verdict.tier, enforcement_active),
+    ), default=str)
 
 
 @mcp.tool()
@@ -13160,6 +13143,7 @@ async def okto_pulse_kg_clear_cognitive_skip(
     if ctx is None:
         return _auth_error()
 
+    from okto_pulse.core.kg.cognitive_action_center import build_clear_response
     from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
 
     service = _build_cognitive_readiness_service()
@@ -13180,18 +13164,11 @@ async def okto_pulse_kg_clear_cognitive_skip(
         except CognitiveReadinessError as exc:
             return json.dumps(exc.to_dict())
 
-    return json.dumps({
-        "item_id": item.item_id,
-        "status": item.status,
-        "reason_code": item.reason_code,
-        "revisit_at": getattr(item, "revisit_at", None),
-        "actor": getattr(item, "actor", None) or ctx.agent_id,
-        "updated_at": item.updated_at,
-        "readiness_effect": verdict.readiness_effect,
-        "blocking": verdict.blocking,
-        "would_block_done": _would_block_done(verdict.tier, enforcement_active),
-        "precedence_explanation": verdict.precedence_explanation,
-    }, default=str)
+    # Shared response builder — REST and MCP never diverge (tr_d9f9f65e).
+    return json.dumps(build_clear_response(
+        item, verdict, actor=ctx.agent_id,
+        would_block_done=_would_block_done(verdict.tier, enforcement_active),
+    ), default=str)
 
 
 @mcp.tool()
