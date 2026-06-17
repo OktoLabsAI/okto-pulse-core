@@ -119,6 +119,19 @@ class ReadinessTier(str, Enum):
     READY = "ready"                            # no pending cognitive work
 
 
+# The deterministic subset of tiers the DONE-GATE actually ENFORCES when a
+# board's blocking policy is active (services/main.py). A COGNITIVE_ACTIVE
+# verdict is ``blocking=True`` at the verdict level but ADVISORY at the gate —
+# which is exactly why a task/test cognitive-pending never blocks done. Kept as
+# a single shared source so the gate AND the MCP report enforcement WITHOUT
+# recomputing it (S3.2 carry-forward: never recompute enforcement in the MCP).
+GATE_BLOCKING_TIERS: frozenset[str] = frozenset({
+    ReadinessTier.TECHNICAL_DLQ.value,
+    ReadinessTier.CANONICAL_DEBT_OPEN.value,
+    ReadinessTier.SKIP_EXPIRED.value,
+})
+
+
 class CognitiveReadinessError(Exception):
     """Typed error carrying the bounded ``code`` + HTTP status the API/MCP
     surfaces echo verbatim (api_159e9cd0 / api_08c667c7)."""
@@ -517,6 +530,76 @@ class CognitiveReadinessService:
             )
         return updated
 
+    async def clear_cognitive_skip(
+        self,
+        db: AsyncSession,
+        *,
+        board_id: str,
+        source_ref: str,
+        actor: str,
+        kg_generation_id: str | None = None,
+    ) -> CognitiveConsolidationItem:
+        """Clear a cognitive skip / no_action, reopening the item to PENDING via
+        the SAME central store path (fr_2112ce8c). Ledger-only — never touches
+        the KG worker / node / edge / connectivity guard.
+
+        Reopening only INCREASES readiness pressure (an active item blocks), so —
+        unlike record — it carries NO technical DLQ/debt 409 guard. The clear is
+        an explicit mutation: ``clear_readiness_metadata`` drops the stale
+        reason_code / justification / revisit_at and stamps the clearing actor so
+        the audit trail (updated_by_agent_id / updated_at) is preserved.
+
+        Errors (before any write):
+          * 404 ``generation_not_found``      — no cognitive generation for the board;
+          * 404 ``cognitive_item_not_found``  — no item for the source_ref;
+          * 409 ``cognitive_item_not_skipped`` — the item is not in a skipped state.
+        """
+
+        gen = kg_generation_id or self._store.latest_generation(board_id)
+        if not gen:
+            raise CognitiveReadinessError(
+                "generation_not_found",
+                "No cognitive generation exists for this board; nothing to clear.",
+                http_status=404,
+            )
+        item_id = compute_cognitive_item_id(board_id, gen, source_ref)
+        existing = next(
+            (i for i in self._store.list_items(board_id, gen) if i.item_id == item_id),
+            None,
+        )
+        if existing is None:
+            raise CognitiveReadinessError(
+                "cognitive_item_not_found",
+                f"No cognitive item {item_id!r} for source_ref {source_ref!r}.",
+                http_status=404,
+            )
+        if existing.status != CognitiveItemStatus.SKIPPED.value:
+            raise CognitiveReadinessError(
+                "cognitive_item_not_skipped",
+                (
+                    f"cognitive item {item_id!r} is {existing.status!r}, not skipped; "
+                    "only a skipped item can be cleared/reopened."
+                ),
+                http_status=409,
+            )
+        updated = self._store.update_item(
+            board_id=board_id,
+            kg_generation_id=gen,
+            item_id=item_id,
+            new_status=CognitiveItemStatus.PENDING.value,
+            updated_by_agent_id=actor,
+            outcome_type=None,
+            actor=actor,
+            clear_readiness_metadata=True,
+        )
+        if updated is None:
+            raise CognitiveReadinessError(
+                "cognitive_item_not_found",
+                f"No cognitive item {item_id!r} for source_ref {source_ref!r}.",
+                http_status=404,
+            )
+        return updated
+
 
 __all__ = [
     "CANONICAL_DEBT_OPEN_SIGNAL",
@@ -525,6 +608,7 @@ __all__ = [
     "CognitiveReadinessService",
     "CognitiveReadinessVerdict",
     "CognitiveReasonCode",
+    "GATE_BLOCKING_TIERS",
     "ReadinessTier",
     "REVISIT_REQUIRED_REASON_CODES",
     "SELECTABLE_REASON_CODES",

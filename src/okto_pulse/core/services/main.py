@@ -600,7 +600,7 @@ async def _evaluate_cognitive_readiness_or_raise(
         CognitiveCloseoutGateError,
         resolve_cognitive_source_refs,
     )
-    from okto_pulse.core.kg.cognitive_readiness import ReadinessTier
+    from okto_pulse.core.kg.cognitive_readiness import GATE_BLOCKING_TIERS
 
     def _unavailable(reason: str) -> ValueError:
         return ValueError(
@@ -638,11 +638,7 @@ async def _evaluate_cognitive_readiness_or_raise(
         raise _unavailable(
             f"readiness service unavailable ({type(exc).__name__})"
         ) from exc
-    blocking_tiers = {
-        ReadinessTier.TECHNICAL_DLQ.value,
-        ReadinessTier.CANONICAL_DEBT_OPEN.value,
-        ReadinessTier.SKIP_EXPIRED.value,
-    }
+    blocking_tiers = GATE_BLOCKING_TIERS
     for ref in refs:
         try:
             verdict = await service.evaluate_artifact(

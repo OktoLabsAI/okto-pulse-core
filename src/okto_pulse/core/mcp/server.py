@@ -12896,6 +12896,384 @@ async def okto_pulse_kg_evaluate_bug_cognitive_closure(
 
 
 # ============================================================================
+# COGNITIVE ACTION CENTER — operational MCP tools (spec 2731a346, card 3979c220)
+#
+# Agent-facing surface over the S3.1 read-model + the central
+# CognitiveReadinessService. NEVER reimplements precedence (tr_b9595c79 /
+# dec_af630079): list/evaluate mirror the service verbatim; write tools (skip /
+# clear) drive the central ledger-only path — no own store, no KG node/edge, no
+# connectivity guard for skip/no_action. Enforcement (would-this-block-done) is
+# NOT inferred from ``blocking`` alone: it is delegated to the existing two-key
+# wiring (``_cognitive_readiness_blocking_active`` + ``GATE_BLOCKING_TIERS``),
+# never recomputed here (S3.1 validator carry-forward).
+# ============================================================================
+
+
+def _build_cognitive_readiness_service():
+    """Central readiness service over the shared item store (no own store)."""
+    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
+    from okto_pulse.core.kg.rebuild_audit import (
+        CognitiveConsolidationItemStore,
+        default_rebuild_base_dir,
+    )
+
+    return CognitiveReadinessService(
+        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    )
+
+
+async def _cognitive_enforcement_active(db, board_id: str) -> bool:
+    """Whether the board's done-gate is ACTUALLY enforcing cognitive readiness
+    (two-key rollout). Delegates to the existing helper — never recomputed."""
+    from okto_pulse.core.models.db import Board
+    from okto_pulse.core.services.main import _cognitive_readiness_blocking_active
+
+    board = await db.get(Board, board_id)
+    return _cognitive_readiness_blocking_active(board)
+
+
+def _would_block_done(item_or_tier, enforcement_active: bool) -> bool:
+    """``blocking`` means a pending/unresolved verdict; it does NOT by itself mean
+    the done-gate will block (S3.1 validator carry-forward). The gate only
+    enforces GATE_BLOCKING_TIERS, and only when the board policy is active."""
+    from okto_pulse.core.kg.cognitive_readiness import GATE_BLOCKING_TIERS
+
+    if isinstance(item_or_tier, dict):
+        tier = (item_or_tier.get("precedence_explanation") or {}).get("tier")
+    else:
+        tier = item_or_tier
+    return bool(enforcement_active and tier in GATE_BLOCKING_TIERS)
+
+
+@mcp.tool()
+async def okto_pulse_kg_list_cognitive_readiness_items(
+    board_id: str,
+    signal: str = "all",
+    artifact_id: str | None = None,
+    source_ref: str | None = None,
+    reason_code: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    kg_generation_id: str | None = None,
+) -> str:
+    """
+    List the board's cognitive readiness signals — MCP twin of the S3.1
+    read-model (`GET /api/v1/kg/{board_id}/cognitive-readiness/items`).
+
+    Read-only projection of cognitive items + canonical debt + technical DLQ,
+    reconciled by normalized artifact_id (card:/bug: collapse, aggregated
+    `aliases`). Each row mirrors the central CognitiveReadinessService verdict
+    verbatim (`readiness_effect` / `precedence_explanation` / `blocking`) — never
+    recomputed. A cognitive `reason_code` is kept distinct from a technical
+    `error_cause` (`technical_dlq` / `canonical_debt_open`).
+
+    `would_block_done` is enforcement-aware: `blocking` alone does NOT mean the
+    done-gate blocks — only GATE_BLOCKING_TIERS under an active board policy do
+    (so a task/test cognitive-pending shows blocking_cognitive but
+    would_block_done=False).
+
+    Filters (agent-safe, bounded): `signal`
+    (all|cognitive_pending|skipped|revisit_required|open_canonical_debt|
+    terminal_history|dlq), `artifact_id` (normalized), `source_ref`,
+    `reason_code`, `status`, `search`, `limit` (<=200), `offset`.
+    Invalid `signal` -> 400 invalid_filter; source read failure -> 503.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.kg.cognitive_action_center import (
+        CognitiveActionCenterReadModel,
+    )
+    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
+
+    read_model = CognitiveActionCenterReadModel(_build_cognitive_readiness_service())
+    async with get_db_for_mcp() as db:
+        try:
+            result = await read_model.list_signals(
+                db,
+                board_id=board_id,
+                signal=signal,
+                artifact_id=artifact_id or None,
+                source_ref=source_ref or None,
+                reason_code=reason_code or None,
+                status=status or None,
+                search=search or None,
+                limit=limit,
+                offset=offset,
+                kg_generation_id=kg_generation_id or None,
+            )
+        except CognitiveReadinessError as exc:
+            return json.dumps(exc.to_dict())
+
+        enforcement_active = await _cognitive_enforcement_active(db, board_id)
+
+    for item in result["items"]:
+        item["would_block_done"] = _would_block_done(item, enforcement_active)
+    result["summary"]["enforcement_active"] = enforcement_active
+    result["board_id"] = board_id
+    return json.dumps(result, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_evaluate_cognitive_readiness(
+    board_id: str,
+    source_ref: str,
+    kg_generation_id: str | None = None,
+) -> str:
+    """
+    Evaluate ONE artifact's cognitive readiness via the central service.
+
+    Returns the 6-tier verdict verbatim (`readiness_effect`, `blocking`,
+    `tier`, `readiness_signal`, `reason_code`, `revisit_at`,
+    `precedence_explanation` = the blocked-by source) — precedence is NEVER
+    recomputed here. `would_block_done` is enforcement-aware (see the list tool).
+
+    `source_ref` is `<type>:<id>` (a `bug:<uuid>` reconciles to its
+    `card:<uuid>`). task/test carry no reusable cognition -> advisory.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
+
+    primary_type = str(source_ref).split(":", 1)[0].lower()
+    service = _build_cognitive_readiness_service()
+    async with get_db_for_mcp() as db:
+        try:
+            verdict = await service.evaluate_artifact(
+                db,
+                board_id=board_id,
+                source_ref=source_ref,
+                kg_generation_id=kg_generation_id or None,
+                has_reusable_cognition=primary_type not in ("task", "test"),
+            )
+        except CognitiveReadinessError as exc:
+            return json.dumps(exc.to_dict())
+        enforcement_active = await _cognitive_enforcement_active(db, board_id)
+
+    payload = verdict.to_api()
+    payload["would_block_done"] = _would_block_done(verdict.tier, enforcement_active)
+    payload["enforcement_active"] = enforcement_active
+    return json.dumps(payload, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_record_cognitive_skip(
+    board_id: str,
+    source_ref: str,
+    reason_code: str,
+    justification: str | None = None,
+    evidence_refs: list[str] | None = None,
+    revisit_at: str | None = None,
+    kg_generation_id: str | None = None,
+) -> str:
+    """
+    Record a cognitive skip / no_action via the CENTRAL ledger-only write-path
+    (CognitiveReadinessService.record_cognitive_skip). NEVER touches the KG
+    worker / node / edge / connectivity guard.
+
+    Rejects BEFORE any write with canonical errors (tr_a5239f63):
+      - 400 invalid_reason_code — reason outside the closed cognitive registry
+        (a technical signal like technical_dlq is NEVER a selectable reason_code);
+      - 400 revisit_at_required — a revisit-required reason without a valid,
+        future revisit_at;
+      - 409 technical_debt_cannot_be_skipped — an open DLQ / canonical_debt for
+        the same normalized artifact_id (a skip can never mask technical debt).
+
+    On success returns the skip (reason_code, justification, evidence_refs,
+    actor, revisit_at, terminal/revisit `classification`) plus the resulting
+    readiness verdict from the central service.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.kg.cognitive_readiness import (
+        CognitiveReadinessError,
+        REVISIT_REQUIRED_REASON_CODES,
+    )
+
+    service = _build_cognitive_readiness_service()
+    async with get_db_for_mcp() as db:
+        try:
+            item = await service.record_cognitive_skip(
+                db,
+                board_id=board_id,
+                source_ref=source_ref,
+                reason_code=reason_code,
+                actor=ctx.agent_id,
+                justification=justification,
+                evidence_refs=evidence_refs,
+                revisit_at=revisit_at,
+                kg_generation_id=kg_generation_id or None,
+            )
+            verdict = await service.evaluate_artifact(
+                db, board_id=board_id, source_ref=source_ref,
+                kg_generation_id=kg_generation_id or None,
+            )
+            enforcement_active = await _cognitive_enforcement_active(db, board_id)
+        except CognitiveReadinessError as exc:
+            return json.dumps(exc.to_dict())
+
+    classification = (
+        "revisit_required" if reason_code in REVISIT_REQUIRED_REASON_CODES
+        else "terminal"
+    )
+    return json.dumps({
+        "item_id": item.item_id,
+        "status": item.status,
+        "outcome_type": item.outcome_type,
+        "reason_code": item.reason_code,
+        "justification": getattr(item, "justification", None),
+        "evidence_refs": list(getattr(item, "evidence_refs", []) or []),
+        "actor": getattr(item, "actor", None) or ctx.agent_id,
+        "revisit_at": getattr(item, "revisit_at", None),
+        "updated_at": item.updated_at,
+        "classification": classification,
+        "readiness_effect": verdict.readiness_effect,
+        "blocking": verdict.blocking,
+        "would_block_done": _would_block_done(verdict.tier, enforcement_active),
+        "precedence_explanation": verdict.precedence_explanation,
+    }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_clear_cognitive_skip(
+    board_id: str,
+    source_ref: str,
+    kg_generation_id: str | None = None,
+) -> str:
+    """
+    Clear a cognitive skip / no_action, REOPENING the item to pending via the
+    central ledger path (CognitiveReadinessService.clear_cognitive_skip). The
+    clearing actor + timestamp are stamped so the audit trail is preserved; the
+    stale reason_code / revisit_at are dropped. Ledger-only — no KG mutation.
+
+    Errors: 404 generation_not_found / cognitive_item_not_found;
+    409 cognitive_item_not_skipped (only a skipped item can be cleared).
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
+
+    service = _build_cognitive_readiness_service()
+    async with get_db_for_mcp() as db:
+        try:
+            item = await service.clear_cognitive_skip(
+                db,
+                board_id=board_id,
+                source_ref=source_ref,
+                actor=ctx.agent_id,
+                kg_generation_id=kg_generation_id or None,
+            )
+            verdict = await service.evaluate_artifact(
+                db, board_id=board_id, source_ref=source_ref,
+                kg_generation_id=kg_generation_id or None,
+            )
+            enforcement_active = await _cognitive_enforcement_active(db, board_id)
+        except CognitiveReadinessError as exc:
+            return json.dumps(exc.to_dict())
+
+    return json.dumps({
+        "item_id": item.item_id,
+        "status": item.status,
+        "reason_code": item.reason_code,
+        "revisit_at": getattr(item, "revisit_at", None),
+        "actor": getattr(item, "actor", None) or ctx.agent_id,
+        "updated_at": item.updated_at,
+        "readiness_effect": verdict.readiness_effect,
+        "blocking": verdict.blocking,
+        "would_block_done": _would_block_done(verdict.tier, enforcement_active),
+        "precedence_explanation": verdict.precedence_explanation,
+    }, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_list_cognitive_dlq(
+    board_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """
+    List the board's TECHNICAL dead-letter (DLQ) blockers for cognitive
+    consolidation — diagnosis + action surface, no UI dependency.
+
+    Each row carries the normalized `artifact_id`, the `errors` history, and the
+    central readiness framing (`error_cause`=technical_dlq, `signal`=dlq,
+    `readiness_effect`=blocking_technical). A technical DLQ is NEVER a selectable
+    cognitive reason_code; resolve it (don't skip it). Open canonical-debt
+    blockers are surfaced by `okto_pulse_kg_list_cognitive_readiness_items`
+    (signal=open_canonical_debt) and `okto_pulse_kg_canonical_debt_list`.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    try:
+        bounded_limit = max(1, min(int(limit), 200))
+        bounded_offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        return json.dumps({
+            "error": "invalid_pagination",
+            "detail": "limit and offset must be integers",
+        })
+
+    from sqlalchemy import func, select as sa_select
+
+    from okto_pulse.core.kg.cognitive_readiness import TECHNICAL_DLQ_SIGNAL
+    from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
+    from okto_pulse.core.models.db import ConsolidationDeadLetter
+
+    async with get_db_for_mcp() as db:
+        total = (await db.execute(
+            sa_select(func.count()).select_from(ConsolidationDeadLetter)
+            .where(ConsolidationDeadLetter.board_id == board_id)
+        )).scalar_one()
+        rows = (await db.execute(
+            sa_select(ConsolidationDeadLetter)
+            .where(ConsolidationDeadLetter.board_id == board_id)
+            .order_by(ConsolidationDeadLetter.id)
+            .limit(bounded_limit).offset(bounded_offset)
+        )).scalars().all()
+
+    items = []
+    for row in rows:
+        ref = f"{row.artifact_type}:{row.artifact_id}"
+        items.append({
+            "id": row.id,
+            "artifact_type": str(row.artifact_type or ""),
+            "artifact_id": normalize_cognitive_artifact_id(ref),
+            "source_ref_original": ref,
+            "original_queue_id": getattr(row, "original_queue_id", None),
+            "attempts": getattr(row, "attempts", None),
+            "errors": getattr(row, "errors", None),
+            "signal": "dlq",
+            "signal_source": "dlq",
+            "error_cause": TECHNICAL_DLQ_SIGNAL,
+            "readiness_effect": "blocking_technical",
+            "blocking": True,
+        })
+    return json.dumps({
+        "board_id": board_id,
+        "items": items,
+        "total": total,
+        "limit": bounded_limit,
+        "offset": bounded_offset,
+        "note": (
+            "Technical DLQ — resolve/reprocess; never skippable as a cognitive "
+            "reason_code. Open canonical debt is in the readiness list "
+            "(signal=open_canonical_debt) and okto_pulse_kg_canonical_debt_list."
+        ),
+    }, default=str)
+
+
+# ============================================================================
 # KG ORPHAN INTEGRITY (spec KG-ZO-02 — FR6/TR4)
 # ============================================================================
 

@@ -1900,6 +1900,7 @@ class CognitiveConsolidationItemStore:
         justification: str | None = None,
         actor: str | None = None,
         revisit_at: str | None = None,
+        clear_readiness_metadata: bool = False,
     ) -> CognitiveConsolidationItem | None:
         """Single-item atomic update per br_d544da65 + FR3 + AC6.
 
@@ -1986,17 +1987,23 @@ class CognitiveConsolidationItemStore:
                 "source_ref_original": existing.get("source_ref_original") or src_ref,
                 "artifact_id": existing.get("artifact_id")
                 or normalize_cognitive_artifact_id(src_ref),
+                # S3.2: an explicit clear/reopen (``clear_readiness_metadata``)
+                # DROPS the stale skip metadata; otherwise the preserve-when-None
+                # default holds (tr_3d6b29fe) so a concurrent update never loses it.
                 "reason_code": (
-                    reason_code if reason_code is not None
+                    None if clear_readiness_metadata
+                    else reason_code if reason_code is not None
                     else existing.get("reason_code")
                 ),
                 "justification": (
-                    justification if justification is not None
+                    None if clear_readiness_metadata
+                    else justification if justification is not None
                     else existing.get("justification")
                 ),
                 "actor": actor if actor is not None else existing.get("actor"),
                 "revisit_at": (
-                    revisit_at if revisit_at is not None
+                    None if clear_readiness_metadata
+                    else revisit_at if revisit_at is not None
                     else existing.get("revisit_at")
                 ),
             }
