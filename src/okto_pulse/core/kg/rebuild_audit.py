@@ -2034,6 +2034,108 @@ class CognitiveConsolidationItemStore:
             return CognitiveConsolidationItem.from_dict(items_raw[target_idx])
 
 
+def _cognitive_hold_artifact_type(
+    hold_payload: Mapping[str, Any], source_ref: str
+) -> str:
+    """Resolve a store-acceptable artifact_type for an R7 hold row.
+
+    Prefers the payload's inferred type; falls back to the bug:* heuristic
+    (a working-only canonical Learning hold is always bug-derived)."""
+    declared = str(hold_payload.get("artifact_type") or "")
+    if declared in CONSOLIDABLE_ARTIFACT_TYPES:
+        return declared
+    if (
+        source_ref.startswith("bug:")
+        or source_ref.startswith("card:bug:")
+        or ":bug:" in source_ref
+    ):
+        return "bug"
+    return declared
+
+
+def record_cognitive_working_only_hold(
+    *,
+    board_id: str,
+    hold_payload: Mapping[str, Any],
+    actor_id: str,
+    base_dir: Path | None = None,
+) -> dict[str, str] | None:
+    """Persist an R7 working-only canonical Learning go-forward HOLD as a
+    cognitive pending item (NEVER CanonicalDebt / DLQ / a parallel store).
+
+    Reuses the existing CognitiveConsolidationItemStore: it materializes one
+    pending row for the held source and stamps the R7 ``reason_code`` via
+    ``update_item``. The store is file-backed (rebuild base dir), so this needs
+    no SQL db and is safe to call from any caller that catches the structured
+    ``KGPrimitiveError`` (MCP commit tool, live consolidation, adapters).
+
+    Generation resolution follows the read-side fallback chain and never
+    promotes the ``current`` pointer because of a live hold:
+    ``KGGenerationRepository.get_current`` -> ``store.latest_generation``
+    -> ``generate_kg_generation_id`` (first live ledger).
+
+    Returns ``{generation_id, item_id, artifact_type}`` on success, or None
+    when the payload is unusable / the artifact_type is not consolidable (the
+    structured error has already surfaced to the caller in that case).
+    """
+    source_ref = str(hold_payload.get("source_ref") or "")
+    reason_code = str(hold_payload.get("reason_code") or "")
+    if not source_ref or not reason_code:
+        return None
+    artifact_type = _cognitive_hold_artifact_type(hold_payload, source_ref)
+    if artifact_type not in CONSOLIDABLE_ARTIFACT_TYPES:
+        # The store silently skips a non-consolidable row; do not pretend a hold
+        # was recorded. The caller still surfaces the structured error.
+        logger.warning(
+            "kg.r7_hold.non_consolidable_artifact board=%s source_ref=%s type=%s",
+            board_id,
+            source_ref,
+            artifact_type,
+        )
+        return None
+
+    base = base_dir or default_rebuild_base_dir()
+    from okto_pulse.core.kg.rebuild_generation import (
+        KGGenerationRepository,
+        generate_kg_generation_id,
+    )
+
+    store = CognitiveConsolidationItemStore(base_dir=base)
+    generation_id = (
+        KGGenerationRepository(base).get_current(board_id)
+        or store.latest_generation(board_id)
+        or generate_kg_generation_id()
+    )
+    session_id = str(hold_payload.get("session_id") or "")
+    store.materialize_from_marker(
+        board_id=board_id,
+        kg_generation_id=generation_id,
+        event_ref=f"r7_cognitive_hold:{session_id}",
+        source_set=[{"source_ref": source_ref, "artifact_type": artifact_type}],
+    )
+    item_id = compute_cognitive_item_id(board_id, generation_id, source_ref)
+    updated = store.update_item(
+        board_id=board_id,
+        kg_generation_id=generation_id,
+        item_id=item_id,
+        new_status=CognitiveItemStatus.PENDING.value,
+        updated_by_agent_id=actor_id,
+        consolidation_session_id=session_id or None,
+        reason_code=reason_code,
+        reason=(
+            "R7: canonical Learning held — bug evidence is working-only "
+            "(awaiting canonical Bug)."
+        ),
+    )
+    if updated is None:
+        return None
+    return {
+        "generation_id": generation_id,
+        "item_id": item_id,
+        "artifact_type": artifact_type,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Cognitive pending marker (KG-02.7) — now integrates with item store
 # ---------------------------------------------------------------------------
@@ -2735,6 +2837,7 @@ __all__ = [
     "default_rebuild_base_dir",
     "detect_unsafe_update_payload",
     "empty_status_counts",
+    "record_cognitive_working_only_hold",
     "project_item_for_api",
     "project_item_for_update_api",
     "get_audit_count",

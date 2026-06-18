@@ -354,7 +354,10 @@ def test_dual_origin_owner_table_enforces_writer_polarity_for_core_types():
         nodes=[_node("learning-1", "Learning", "card:bug:bug-1:learning:0")],
         edges=[_edge("e-1", "validates", "learning-1", "kg:bug_1")],
         existing_node_refs=[
-            KGNodeRef(ref_id="bug_1", node_type="Bug"),
+            # R7: a bug-derived canonical Learning only reaches completeness
+            # through a CANONICAL Bug, so the endpoint is stamped canonical
+            # (fixture correction, not a relaxation of the invariant).
+            KGNodeRef(ref_id="bug_1", node_type="Bug", graph_layer="canonical"),
         ],
     )
 

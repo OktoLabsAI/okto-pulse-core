@@ -12,8 +12,23 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Literal, Protocol
 
+from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_CANONICAL
+
 
 CONNECTIVITY_ERROR_CODE = "kg_node_connectivity_violation"
+
+# R7 (canonical Learning layer integrity) — reason codes for the layer-aware
+# bug_learning completeness check. Closed vocabulary; the guard is the single
+# classifier and the async/worker layer persists the go-forward hold.
+CANONICAL_LEARNING_WORKING_ONLY_REASON = (
+    "canonical_learning_working_only_bug_evidence_pending"
+)
+CANONICAL_LEARNING_MIXED_DEFERRED_REASON = (
+    "canonical_learning_mixed_working_edge_deferred"
+)
+CANONICAL_LEARNING_PROVENANCE_ONLY_REASON = (
+    "canonical_learning_provenance_only_observed"
+)
 
 SAFE_CONNECTIVITY_METRIC_LABELS: tuple[str, ...] = (
     "board_id",
@@ -100,10 +115,17 @@ class KGConnectivityEdgeRequirement:
     direction: Literal["outgoing", "incoming", "any"] = "outgoing"
     target_node_types: tuple[str, ...] = ()
     description: str = ""
+    # R7: when set, the resolved endpoint must carry this graph_layer to count
+    # toward completeness. Missing/NULL/other layer is fail-closed (does NOT
+    # satisfy the requirement) — consistent with cypher_templates.layer_filter.
+    required_target_layer: str | None = None
 
     def label(self) -> str:
         target = "|".join(self.target_node_types) if self.target_node_types else "*"
-        return f"{self.edge_type}:{self.direction}:{target}"
+        base = f"{self.edge_type}:{self.direction}:{target}"
+        if self.required_target_layer:
+            base = f"{base}:layer={self.required_target_layer}"
+        return base
 
 
 @dataclass(frozen=True)
@@ -156,6 +178,10 @@ class KGNodeRef:
     ref_id: str
     node_type: str
     source_artifact_ref: str | None = None
+    # R7: endpoint layer metadata so the guard can enforce canonical
+    # completeness without re-querying the graph. None = unknown (fail-closed).
+    graph_layer: str | None = None
+    maturity_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +190,8 @@ class _NodeSnapshot:
     node_type: str
     source_artifact_ref: str | None
     raw: Any
+    graph_layer: str | None = None
+    maturity_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -181,6 +209,10 @@ class _RequirementResolution:
     status: SourceResolutionStatus
     missing_endpoint: str
     reason: str
+    # R7: bounded endpoint descriptors ("<ref>@<layer>") observed at a
+    # non-canonical layer. On a failure this is the working-only evidence; on a
+    # pass it is the deferred working edge(s) of a mixed-evidence candidate.
+    observed_endpoints: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,8 +227,11 @@ class KGConnectivityViolation:
     remediation_hint: str
     reason: str
     error_code: str = CONNECTIVITY_ERROR_CODE
+    # R7: bounded ("<ref>@<layer>") descriptors of the non-canonical endpoints
+    # that were observed for this violation (e.g. validates -> working Bug).
+    observed_endpoints: tuple[str, ...] = ()
 
-    def to_safe_dict(self) -> dict[str, str | None]:
+    def to_safe_dict(self) -> dict[str, Any]:
         return {
             "error_code": self.error_code,
             "node_type": self.node_type,
@@ -208,6 +243,7 @@ class KGConnectivityViolation:
             "source_resolution_status": self.source_resolution_status.value,
             "remediation_hint": self.remediation_hint,
             "reason": self.reason,
+            "observed_endpoints": list(self.observed_endpoints),
         }
 
     def safe_for_api(self) -> bool:
@@ -224,6 +260,11 @@ class KGConnectivityValidationResult:
     allowlisted_roots: tuple[str, ...] = ()
     materializable_edges: tuple[dict[str, str], ...] = ()
     outcome: KGConnectivityOutcome = KGConnectivityOutcome.PASSED
+    # R7: non-blocking notes. Mixed-evidence canonical Learning that was
+    # accepted because it has >=1 canonical Bug but also carries working Bug
+    # edges surfaces them here (reason canonical_learning_mixed_working_edge_deferred)
+    # so the working edges are visibly deferred and never counted as completeness.
+    advisories: tuple[dict[str, Any], ...] = ()
 
     @property
     def rejected_nodes(self) -> int:
@@ -242,6 +283,7 @@ class KGConnectivityValidationResult:
             "allowlisted_roots": list(self.allowlisted_roots),
             "materializable_edges": list(self.materializable_edges),
             "outcome": self.outcome.value,
+            "advisories": [dict(a) for a in self.advisories],
         }
 
 
@@ -313,11 +355,20 @@ def _learning_bug_group() -> KGConnectivityEdgeGroup:
     return KGConnectivityEdgeGroup(
         name="bug_learning",
         alternatives=(
-            KGConnectivityEdgeRequirement("validates", "outgoing", ("Bug",)),
+            # R7: a bug-derived canonical Learning only counts a validates edge
+            # toward completeness when it points to a *canonical* Bug. A working
+            # Bug endpoint is fail-closed (working-only hold, never satisfies).
+            KGConnectivityEdgeRequirement(
+                "validates",
+                "outgoing",
+                ("Bug",),
+                required_target_layer=GRAPH_LAYER_CANONICAL,
+            ),
         ),
         remediation_hint=(
-            "Provide Learning -> validates -> Bug when the learning is derived "
-            "from a known bug."
+            "Provide Learning -> validates -> canonical Bug when the learning is "
+            "derived from a known bug; a working-layer Bug holds the learning as "
+            "cognitive pending until its source bug matures to canonical."
         ),
     )
 
@@ -517,6 +568,7 @@ class KGNodeConnectivityGuard:
 
         violations: list[KGConnectivityViolation] = []
         allowlisted_roots: list[str] = []
+        advisories: list[dict[str, Any]] = []
         writer_class = classify_writer_path(writer_path)
         for node in node_snapshots:
             try:
@@ -589,14 +641,29 @@ class KGNodeConnectivityGuard:
                             status=resolution.status,
                             remediation_hint=group.remediation_hint,
                             reason=resolution.reason,
+                            observed_endpoints=resolution.observed_endpoints,
                         )
                     )
                     break
+                if resolution.observed_endpoints:
+                    # R7 mixed evidence: the group passed on a canonical endpoint
+                    # but also carried working-layer endpoints — record them as
+                    # deferred (never counted as completeness).
+                    advisories.append(
+                        {
+                            "reason": CANONICAL_LEARNING_MIXED_DEFERRED_REASON,
+                            "node_type": node.node_type,
+                            "candidate_id": node.candidate_id,
+                            "source_artifact_ref": node.source_artifact_ref,
+                            "deferred_endpoints": list(resolution.observed_endpoints),
+                        }
+                    )
 
         result = KGConnectivityValidationResult(
             passed=not violations,
             violations=tuple(violations),
             allowlisted_roots=tuple(allowlisted_roots),
+            advisories=tuple(advisories),
             outcome=(
                 KGConnectivityOutcome.ALLOWLISTED
                 if allowlisted_roots and len(allowlisted_roots) == len(node_snapshots)
@@ -617,9 +684,19 @@ class KGNodeConnectivityGuard:
         existing_refs: tuple[KGNodeRef, ...],
     ) -> _RequirementResolution:
         node_types_by_candidate = {item.candidate_id: item.node_type for item in nodes}
+        node_layers_by_candidate = {
+            item.candidate_id: item.graph_layer for item in nodes
+        }
         existing_by_ref = _existing_ref_index(existing_refs)
         touched_unresolved = False
         touched_unsupported = False
+        layer_required = any(req.required_target_layer for req in group.alternatives)
+        # R7: classify across ALL edges before deciding so a mixed-evidence
+        # candidate (>=1 canonical Bug + some working Bugs) is accepted while the
+        # working endpoints are reported as deferred, and a working-only
+        # candidate is held instead of silently satisfying completeness.
+        satisfying_status: SourceResolutionStatus | None = None
+        working_observed: list[str] = []
         for edge in edges:
             if edge.from_candidate_id == node.candidate_id:
                 direction = "outgoing"
@@ -635,9 +712,10 @@ class KGNodeConnectivityGuard:
                     continue
                 if req.direction != "any" and req.direction != direction:
                     continue
-                endpoint_type, status = _resolve_endpoint_type(
+                endpoint_type, endpoint_layer, status = _resolve_endpoint_with_layer(
                     other_ref,
                     node_types_by_candidate,
+                    node_layers_by_candidate,
                     existing_by_ref,
                 )
                 if status in (
@@ -649,13 +727,39 @@ class KGNodeConnectivityGuard:
                 if req.target_node_types and endpoint_type not in req.target_node_types:
                     touched_unsupported = True
                     continue
-                return _RequirementResolution(
-                    passed=True,
-                    status=status,
-                    missing_endpoint="",
-                    reason="ok",
-                )
+                if (
+                    req.required_target_layer is None
+                    or endpoint_layer == req.required_target_layer
+                ):
+                    # Legacy (no layer constraint) or canonical-satisfying
+                    # endpoint. Keep scanning so deferred working edges of a
+                    # mixed-evidence candidate are still collected.
+                    if satisfying_status is None:
+                        satisfying_status = status
+                else:
+                    # R7: endpoint type matches but layer is non-canonical
+                    # (working / NULL) — fail-closed; never counts toward
+                    # canonical completeness.
+                    working_observed.append(
+                        f"{other_ref}@{endpoint_layer or 'unknown'}"
+                    )
 
+        if satisfying_status is not None:
+            return _RequirementResolution(
+                passed=True,
+                status=satisfying_status,
+                missing_endpoint="",
+                reason="ok",
+                observed_endpoints=tuple(working_observed),
+            )
+        if layer_required and working_observed:
+            return _RequirementResolution(
+                passed=False,
+                status=SourceResolutionStatus.SOURCE_TYPE_NOT_SUPPORTED,
+                missing_endpoint=group.label(),
+                reason=CANONICAL_LEARNING_WORKING_ONLY_REASON,
+                observed_endpoints=tuple(working_observed),
+            )
         if touched_unresolved:
             return _RequirementResolution(
                 passed=False,
@@ -720,6 +824,7 @@ def _violation(
     status: SourceResolutionStatus,
     remediation_hint: str,
     reason: str,
+    observed_endpoints: tuple[str, ...] = (),
 ) -> KGConnectivityViolation:
     return KGConnectivityViolation(
         node_type=node.node_type,
@@ -731,6 +836,7 @@ def _violation(
         source_resolution_status=status,
         remediation_hint=remediation_hint,
         reason=reason,
+        observed_endpoints=observed_endpoints,
     )
 
 
@@ -740,6 +846,8 @@ def _snapshot_node(node: Any) -> _NodeSnapshot:
         node_type=_enum_value(_get_field(node, "node_type", "")),
         source_artifact_ref=_optional_str(_get_field(node, "source_artifact_ref", None)),
         raw=node,
+        graph_layer=_layer_value(_get_field(node, "graph_layer", None)),
+        maturity_status=_layer_value(_get_field(node, "maturity_status", None)),
     )
 
 
@@ -766,6 +874,8 @@ def _snapshot_existing_ref(ref: Any) -> KGNodeRef:
         ref_id=str(node_id),
         node_type=_enum_value(_get_field(ref, "node_type", "")),
         source_artifact_ref=_optional_str(_get_field(ref, "source_artifact_ref", None)),
+        graph_layer=_layer_value(_get_field(ref, "graph_layer", None)),
+        maturity_status=_layer_value(_get_field(ref, "maturity_status", None)),
     )
 
 
@@ -795,21 +905,34 @@ def _canonical_ref_id(ref_id: str) -> str:
     return ref_id[3:] if ref_id.startswith("kg:") else ref_id
 
 
-def _resolve_endpoint_type(
+def _resolve_endpoint_with_layer(
     ref: str,
     node_types_by_candidate: dict[str, str],
+    node_layers_by_candidate: dict[str, str | None],
     existing_by_ref: dict[str, list[KGNodeRef]],
-) -> tuple[str | None, SourceResolutionStatus]:
+) -> tuple[str | None, str | None, SourceResolutionStatus]:
+    """Resolve an edge endpoint to its (node_type, graph_layer, status).
+
+    graph_layer is None when unknown (in-batch candidate without a layer, or an
+    existing ref whose layer could not be resolved) — the R7 layer check treats
+    that as fail-closed (non-canonical).
+    """
     if ref in node_types_by_candidate:
-        return node_types_by_candidate[ref], SourceResolutionStatus.RESOLVED_IN_BATCH
+        return (
+            node_types_by_candidate[ref],
+            node_layers_by_candidate.get(ref),
+            SourceResolutionStatus.RESOLVED_IN_BATCH,
+        )
     matches = existing_by_ref.get(ref, ())
     if len(matches) == 1:
-        return matches[0].node_type, SourceResolutionStatus.RESOLVED_EXISTING_NODE
+        return (
+            matches[0].node_type,
+            matches[0].graph_layer,
+            SourceResolutionStatus.RESOLVED_EXISTING_NODE,
+        )
     if len(matches) > 1:
-        return None, SourceResolutionStatus.AMBIGUOUS_SOURCE_REF
-    if ref.startswith("kg:"):
-        return None, SourceResolutionStatus.UNRESOLVED_SOURCE_REF
-    return None, SourceResolutionStatus.UNRESOLVED_SOURCE_REF
+        return None, None, SourceResolutionStatus.AMBIGUOUS_SOURCE_REF
+    return None, None, SourceResolutionStatus.UNRESOLVED_SOURCE_REF
 
 
 def _candidate_has_known_bug(raw: Any) -> bool:
@@ -845,7 +968,21 @@ def _optional_str(value: Any) -> str | None:
     return text if text else None
 
 
+def _layer_value(value: Any) -> str | None:
+    """Normalize a graph_layer/maturity_status to a plain string or None.
+
+    Preserves None (so the guard stays fail-closed on missing layer) instead of
+    coercing it to the literal string ``"None"`` the way ``_enum_value`` would.
+    """
+    if value is None:
+        return None
+    return _optional_str(_enum_value(value))
+
+
 __all__ = [
+    "CANONICAL_LEARNING_MIXED_DEFERRED_REASON",
+    "CANONICAL_LEARNING_PROVENANCE_ONLY_REASON",
+    "CANONICAL_LEARNING_WORKING_ONLY_REASON",
     "CONNECTIVITY_ERROR_CODE",
     "DEGRADED_KG_STATES",
     "SAFE_CONNECTIVITY_METRIC_LABELS",

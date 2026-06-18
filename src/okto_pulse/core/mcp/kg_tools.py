@@ -14,6 +14,7 @@ Each tool:
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from pydantic import ValidationError
@@ -51,6 +52,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     empty_status_counts,
     project_item_for_api,
     project_item_for_update_api,
+    record_cognitive_working_only_hold,
 )
 
 from okto_pulse.core.kg.schemas import (
@@ -81,6 +83,36 @@ def _err(code: str, message: str, **extra: Any) -> str:
 
 def _ok(response) -> str:
     return response.model_dump_json()
+
+
+logger = logging.getLogger("okto_pulse.mcp.kg_tools")
+
+
+def _maybe_record_r7_cognitive_hold(
+    *, board_id: str, error: KGPrimitiveError, actor_id: str
+) -> None:
+    """Persist an R7 working-only canonical Learning go-forward hold when a
+    commit is rejected with the bounded hold payload.
+
+    Non-blocking: a persistence failure must NEVER mask the structured error
+    that the agent needs to see. The hold lands in the cognitive pending
+    ledger only (never CanonicalDebt / DLQ)."""
+    details = getattr(error, "details", None)
+    if not isinstance(details, dict):
+        return
+    payload = details.get("r7_cognitive_hold_candidate")
+    if not isinstance(payload, dict):
+        return
+    try:
+        record_cognitive_working_only_hold(
+            board_id=board_id,
+            hold_payload=payload,
+            actor_id=actor_id,
+        )
+    except Exception:
+        logger.warning(
+            "kg.r7_hold.persist_failed board=%s", board_id, exc_info=True
+        )
 
 
 def register_kg_tools(mcp, *, get_agent, get_db) -> None:
@@ -339,6 +371,13 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
                 )
                 return _ok(resp)
             except KGPrimitiveError as e:
+                # R7: a working-only canonical Learning bug-derived commit is an
+                # EXPECTED semantic hold — materialize the go-forward hold in the
+                # cognitive pending ledger (never CanonicalDebt/DLQ) before
+                # surfacing the structured error back to the agent.
+                _maybe_record_r7_cognitive_hold(
+                    board_id=session.board_id, error=e, actor_id=agent.id
+                )
                 return _err(e.code, e.message, session_id=e.session_id,
                             details=e.details)
 

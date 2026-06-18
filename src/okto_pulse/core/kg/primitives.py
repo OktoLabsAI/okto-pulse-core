@@ -28,6 +28,7 @@ from functools import partial
 
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.kg.connectivity_guard import (
+    CANONICAL_LEARNING_WORKING_ONLY_REASON,
     CONNECTIVITY_ERROR_CODE,
     DEGRADED_KG_STATES,
     KGConnectivityEdgeGroup,
@@ -894,12 +895,68 @@ def _validate_kuzu_connectivity_before_commit(
             },
         )
 
+    details: dict = {"connectivity": response}
+    # R7: a working-only canonical Learning bug-derived candidate is an EXPECTED
+    # semantic hold, not a generic orphan. Attach a bounded hold payload so the
+    # async worker can materialize the go-forward hold in the
+    # CognitiveConsolidationItemStore (never CanonicalDebt/DLQ). The guard stays
+    # a pure policy function: it does not touch the store/db here.
+    r7_hold = _r7_cognitive_hold_payload(result, session_id=session_id)
+    if r7_hold is not None:
+        details["r7_cognitive_hold_candidate"] = r7_hold
     raise KGPrimitiveError(
         CONNECTIVITY_ERROR_CODE,
         "KG node connectivity guard rejected the commit before graph mutation.",
         session_id=session_id,
-        details={"connectivity": response},
+        details=details,
     )
+
+
+def _infer_artifact_type_from_source_ref(source_ref: str | None) -> str | None:
+    """Best-effort, bounded artifact_type from a source_artifact_ref.
+
+    bug:* / card:bug:* / *:bug:* → "bug" (the bug_learning hold is always
+    bug-derived); otherwise the leading known-type prefix, else None. The worker
+    re-derives the store-acceptable type, so this is only a hint.
+    """
+    s = source_ref or ""
+    if s.startswith("bug:") or s.startswith("card:bug:") or ":bug:" in s:
+        return "bug"
+    if ":" in s:
+        prefix = s.split(":", 1)[0]
+        if prefix in {
+            "spec",
+            "decision",
+            "refinement",
+            "task",
+            "test",
+            "bug",
+            "card",
+            "story",
+            "ideation",
+            "sprint",
+        }:
+            return prefix
+    return None
+
+
+def _r7_cognitive_hold_payload(result, *, session_id: str) -> dict | None:
+    """Build the bounded r7_cognitive_hold_candidate payload from the first
+    working-only canonical Learning violation, or None when no such violation
+    is present. No content/PII — only refs, ids and layer descriptors."""
+    for violation in result.violations:
+        if violation.reason == CANONICAL_LEARNING_WORKING_ONLY_REASON:
+            source_ref = violation.source_artifact_ref or ""
+            return {
+                "reason_code": CANONICAL_LEARNING_WORKING_ONLY_REASON,
+                "node_type": violation.node_type,
+                "candidate_id": violation.candidate_id,
+                "source_ref": source_ref,
+                "artifact_type": _infer_artifact_type_from_source_ref(source_ref),
+                "observed_endpoints": list(violation.observed_endpoints),
+                "session_id": session_id,
+            }
+    return None
 
 
 def _auto_attach_provenance_edges(
@@ -1128,9 +1185,20 @@ def _existing_refs_for_edge_endpoints(
             node_type = resolved_type or _lookup_node_type_by_id(kconn, node_id)
             if not node_type:
                 continue
-            refs.append(KGNodeRef(ref_id=endpoint, node_type=node_type))
-            refs.append(KGNodeRef(ref_id=node_id, node_type=node_type))
-            refs.append(KGNodeRef(ref_id=f"kg:{node_id}", node_type=node_type))
+            # R7: carry the endpoint's graph_layer so the layer-aware guard can
+            # tell a canonical Bug from a working one for explicit edge endpoints.
+            node_layer = _lookup_node_layer_by_id(kconn, node_type, node_id)
+            refs.append(
+                KGNodeRef(ref_id=endpoint, node_type=node_type, graph_layer=node_layer)
+            )
+            refs.append(
+                KGNodeRef(ref_id=node_id, node_type=node_type, graph_layer=node_layer)
+            )
+            refs.append(
+                KGNodeRef(
+                    ref_id=f"kg:{node_id}", node_type=node_type, graph_layer=node_layer
+                )
+            )
     return refs
 
 
@@ -1150,17 +1218,22 @@ def _existing_connectivity_edges_for_candidate(
         return []
 
     if node_type == "Learning" and _candidate_has_known_bug_source(cand):
+        from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_CANONICAL
+
+        # Mirrors connectivity_guard._learning_bug_group: a bug-derived canonical
+        # Learning only reaches completeness through a *canonical* Bug (R7).
         groups = [
             KGConnectivityEdgeGroup(
                 name="bug_learning",
                 alternatives=(
                     KGConnectivityEdgeRequirement(
                         "validates", "outgoing", ("Bug",),
+                        required_target_layer=GRAPH_LAYER_CANONICAL,
                     ),
                 ),
                 remediation_hint=(
-                    "Provide Learning -> validates -> Bug when the learning "
-                    "is derived from a known bug."
+                    "Provide Learning -> validates -> canonical Bug when the "
+                    "learning is derived from a known bug."
                 ),
             )
         ]
@@ -1170,20 +1243,43 @@ def _existing_connectivity_edges_for_candidate(
     synthesized: list[dict[str, str]] = []
     for group in groups:
         for req in group.alternatives:
-            match = _find_existing_connectivity_match(
-                kconn=kconn,
-                node_type=node_type,
-                node_id=node_id,
-                edge_type=req.edge_type,
-                direction=req.direction,
-                target_node_types=req.target_node_types,
-            )
+            match = None
+            if req.required_target_layer is not None:
+                # R7: prefer a canonical endpoint for completeness; only fall
+                # back to ANY existing endpoint so a working-only existing edge
+                # is still surfaced to the guard (its real layer rides the ref).
+                match = _find_existing_connectivity_match(
+                    kconn=kconn,
+                    node_type=node_type,
+                    node_id=node_id,
+                    edge_type=req.edge_type,
+                    direction=req.direction,
+                    target_node_types=req.target_node_types,
+                    required_target_layer=req.required_target_layer,
+                )
+            if match is None:
+                match = _find_existing_connectivity_match(
+                    kconn=kconn,
+                    node_type=node_type,
+                    node_id=node_id,
+                    edge_type=req.edge_type,
+                    direction=req.direction,
+                    target_node_types=req.target_node_types,
+                )
             if match is None:
                 continue
-            other_id, other_type, direction = match
+            other_id, other_type, direction, other_layer = match
             endpoint_ref = f"kg:{other_id}"
-            existing_refs.append(KGNodeRef(ref_id=endpoint_ref, node_type=other_type))
-            existing_refs.append(KGNodeRef(ref_id=other_id, node_type=other_type))
+            existing_refs.append(
+                KGNodeRef(
+                    ref_id=endpoint_ref,
+                    node_type=other_type,
+                    graph_layer=other_layer,
+                )
+            )
+            existing_refs.append(
+                KGNodeRef(ref_id=other_id, node_type=other_type, graph_layer=other_layer)
+            )
             if direction == "outgoing":
                 from_ref = candidate_id
                 to_ref = endpoint_ref
@@ -1222,26 +1318,42 @@ def _find_existing_connectivity_match(
     edge_type: str,
     direction: str,
     target_node_types: tuple[str, ...],
-) -> tuple[str, str, str] | None:
+    required_target_layer: str | None = None,
+) -> tuple[str, str, str, str | None] | None:
+    """Find an existing connectivity edge for ``node_id``.
+
+    Returns ``(other_id, other_type, direction, other_graph_layer)`` or None.
+    When ``required_target_layer`` is set the match is restricted to endpoints
+    on that graph_layer (R7: prefer a canonical Bug for canonical Learning
+    completeness); a NULL layer therefore never matches a canonical filter.
+    """
     directions = ("outgoing", "incoming") if direction == "any" else (direction,)
     targets = target_node_types or tuple(_kg_node_types())
+    params: dict[str, str] = {"node_id": node_id}
+    layer_clause = ""
+    if required_target_layer is not None:
+        layer_clause = " AND m.graph_layer = $layer"
+        params["layer"] = required_target_layer
     for actual_direction in directions:
         for target_type in targets:
             if actual_direction == "outgoing":
                 cypher = (
                     f"MATCH (n:{node_type})-[r:{edge_type}]->(m:{target_type}) "
-                    "WHERE n.id = $node_id RETURN m.id LIMIT 1"
+                    f"WHERE n.id = $node_id{layer_clause} "
+                    "RETURN m.id, m.graph_layer LIMIT 1"
                 )
             else:
                 cypher = (
                     f"MATCH (m:{target_type})-[r:{edge_type}]->(n:{node_type}) "
-                    "WHERE n.id = $node_id RETURN m.id LIMIT 1"
+                    f"WHERE n.id = $node_id{layer_clause} "
+                    "RETURN m.id, m.graph_layer LIMIT 1"
                 )
             try:
-                res = kconn.execute(cypher, {"node_id": node_id})
+                res = kconn.execute(cypher, params)
                 try:
                     if res.has_next():
-                        return res.get_next()[0], target_type, actual_direction
+                        row = res.get_next()
+                        return row[0], target_type, actual_direction, row[1]
                 finally:
                     try:
                         res.close()
@@ -1249,6 +1361,33 @@ def _find_existing_connectivity_match(
                         pass
             except Exception:
                 continue
+    return None
+
+
+def _lookup_node_layer_by_id(kconn, node_type: str, node_id: str) -> str | None:
+    """Return a node's graph_layer (or None if unknown/unreadable).
+
+    None is fail-closed downstream: the R7 layer-aware guard treats an
+    unresolved layer as non-canonical.
+    """
+    if not node_id or not node_type:
+        return None
+    try:
+        res = kconn.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.graph_layer LIMIT 1",
+            {"id": node_id},
+        )
+        try:
+            if res.has_next():
+                value = res.get_next()[0]
+                return str(value) if value is not None else None
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    except Exception:
+        return None
     return None
 
 

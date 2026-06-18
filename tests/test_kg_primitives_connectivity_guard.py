@@ -24,28 +24,39 @@ from okto_pulse.core.kg.schemas import (
 )
 
 
-def _seed_node(kconn, orch, node_type: str, node_id: str, source_ref: str) -> None:
-    _apply_kuzu_node_create_with_timestamp(
-        orch,
-        node_type,
-        node_id,
-        {
-            "title": f"Seed {node_type}",
-            "content": "",
-            "context": "",
-            "justification": "",
-            "source_artifact_ref": source_ref,
-            "created_at": "2026-06-08T00:00:00+00:00",
-            "created_by_agent": "test",
-            "source_confidence": 1.0,
-            "relevance_score": 0.5,
-            "query_hits": 0,
-            "last_queried_at": None,
-            "priority_boost": 0.0,
-            "human_curated": False,
-            "embedding": [0.0] * 384,
-        },
-    )
+def _seed_node(
+    kconn,
+    orch,
+    node_type: str,
+    node_id: str,
+    source_ref: str,
+    *,
+    graph_layer: str | None = None,
+    maturity_status: str | None = None,
+) -> None:
+    attrs = {
+        "title": f"Seed {node_type}",
+        "content": "",
+        "context": "",
+        "justification": "",
+        "source_artifact_ref": source_ref,
+        "created_at": "2026-06-08T00:00:00+00:00",
+        "created_by_agent": "test",
+        "source_confidence": 1.0,
+        "relevance_score": 0.5,
+        "query_hits": 0,
+        "last_queried_at": None,
+        "priority_boost": 0.0,
+        "human_curated": False,
+        "embedding": [0.0] * 384,
+    }
+    # R7: tests that exercise the layer-aware guard stamp an explicit
+    # graph_layer/maturity_status; legacy seeds leave them unset (NULL).
+    if graph_layer is not None:
+        attrs["graph_layer"] = graph_layer
+    if maturity_status is not None:
+        attrs["maturity_status"] = maturity_status
+    _apply_kuzu_node_create_with_timestamp(orch, node_type, node_id, attrs)
 
 
 def _seed_learning_with_optional_parent(
@@ -119,12 +130,15 @@ def _count_learning_belongs_to(board_id: str, source_ref: str) -> int:
     return 0
 
 
-def _seed_bug_with_parent(board_id: str) -> str:
+def _seed_bug_with_parent(board_id: str, *, graph_layer: str = "canonical") -> str:
     from okto_pulse.core.kg.schema import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     bug_id = f"bug_seed_{uuid.uuid4().hex[:12]}"
     entity_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
+    maturity = (
+        "canonical_eligible" if graph_layer == "canonical" else "working_immature"
+    )
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
             kuzu_conn=kconn,
@@ -132,7 +146,17 @@ def _seed_bug_with_parent(board_id: str) -> str:
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
-        _seed_node(kconn, orch, "Bug", bug_id, f"bug:{bug_id}")
+        # R7: a bug-derived canonical Learning only reaches completeness through
+        # a CANONICAL Bug, so the seeded bug is canonical by default.
+        _seed_node(
+            kconn,
+            orch,
+            "Bug",
+            bug_id,
+            f"bug:{bug_id}",
+            graph_layer=graph_layer,
+            maturity_status=maturity,
+        )
         _seed_node(kconn, orch, "Entity", entity_id, f"entity:{entity_id}")
         orch.create_edge(
             edge_type="belongs_to",
