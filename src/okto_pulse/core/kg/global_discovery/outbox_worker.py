@@ -365,6 +365,36 @@ class OutboxWorker:
             if not per_board:
                 return
 
+            # R7 IMP5 — canonical-only completeness. A canonical Learning whose
+            # mandatory Bug evidence is working-only, or which carries an open
+            # canonical_debt / active cognitive_pending hold, must NOT be
+            # published as complete canonical. We correct the DIGEST publication
+            # layer (to 'working') so canonical-only query_global skips it, while
+            # all/working keep it diagnostically. The board-graph source node and
+            # its maturity are NEVER touched here. Overlay (debt/pending) is only
+            # fetched when a canonical Learning is actually being digested.
+            from okto_pulse.core.kg.canonical_partition_integrity import (
+                evaluate_canonical_learning_publication,
+                pending_or_debt_exclusions,
+            )
+            from okto_pulse.core.kg.global_discovery.metrics import (
+                emit_canonical_incomplete_excluded,
+            )
+            from okto_pulse.core.kg.rebuild_audit import (
+                normalize_cognitive_artifact_id,
+            )
+
+            has_canonical_learning = any(
+                n.get("node_type") == "Learning"
+                and n.get("graph_layer") == "canonical"
+                for n in per_board
+            )
+            learning_exclusions = (
+                await pending_or_debt_exclusions(db, board_id=board_id)
+                if has_canonical_learning
+                else {}
+            )
+
             # 3) Create one DecisionDigest per node + CONTAINS_DECISION edge.
             # Kuzu's HNSW-indexed columns (DecisionDigest.embedding) cannot be
             # mutated via SET after node creation — attempting it raises
@@ -376,6 +406,34 @@ class OutboxWorker:
             for node in per_board:
                 digest_id = f"dd_{board_id[:8]}_{node['id']}"
                 title = node["title"] or ""
+                # Default: mirror the source node's own layer. For a canonical
+                # Learning, override to the publication layer the completeness
+                # rule dictates (publication-layer only — NOT a source demotion).
+                effective_layer = node["graph_layer"]
+                if (
+                    node.get("node_type") == "Learning"
+                    and effective_layer == "canonical"
+                ):
+                    artifact_id = normalize_cognitive_artifact_id(
+                        node.get("source_artifact_ref") or ""
+                    )
+                    publishable, exclusion_reason = (
+                        evaluate_canonical_learning_publication(
+                            source_artifact_ref=node.get("source_artifact_ref") or "",
+                            canonical_bug_count=int(
+                                node.get("canonical_bug_count") or 0
+                            ),
+                            overlay_exclusion_reason=learning_exclusions.get(
+                                artifact_id
+                            ),
+                        )
+                    )
+                    if not publishable:
+                        effective_layer = "working"
+                        emit_canonical_incomplete_excluded(
+                            board_id=board_id,
+                            reason_code=exclusion_reason or "",
+                        )
                 existing_d = gconn.execute(
                     "MATCH (d:DecisionDigest {id: $did}) RETURN d.id",
                     {"did": digest_id},
@@ -393,7 +451,7 @@ class OutboxWorker:
                             "title": title,
                             "summary": title[:280],
                             "ntype": node["node_type"],
-                            "layer": node["graph_layer"],
+                            "layer": effective_layer,
                         },
                     )
                     digest_outcome = DIGEST_UPSERT_UPDATED
@@ -411,7 +469,7 @@ class OutboxWorker:
                             "title": title,
                             "summary": title[:280],
                             "ntype": node["node_type"],
-                            "layer": node["graph_layer"],
+                            "layer": effective_layer,
                             "emb": node["embedding"],
                             "ts": ts,
                         },
@@ -620,12 +678,65 @@ class OutboxWorker:
                             "graph_layer": row[3],
                             "node_type": ntype,
                         })
+                # R7 IMP5: enrich digested Learning nodes with the data the
+                # canonical-only completeness rule needs (source_artifact_ref +
+                # canonical/working Bug evidence degree), scoped to the ids being
+                # digested and read on this SAME board connection (no 2nd open).
+                learning_ids = by_type.get("Learning")
+                if learning_ids:
+                    OutboxWorker._attach_learning_completeness(
+                        conn, out, learning_ids
+                    )
         except Exception as exc:
             logger.warning(
                 "outbox.read_board_failed board=%s err=%s", board_id, exc,
             )
             return None
         return out
+
+    @staticmethod
+    def _attach_learning_completeness(conn, out: list[dict], learning_ids: list[str]) -> None:
+        """Attach ``source_artifact_ref`` + ``canonical_bug_count`` /
+        ``working_bug_count`` to each digested Learning entry in ``out``.
+
+        Two scoped reads over the SAME open board connection: the Learning's
+        source ref, then its ``validates -> Bug`` endpoints bucketed by the Bug's
+        layer. ``_apply_event`` feeds these into the central completeness rule;
+        no decision is made here.
+        """
+        meta: dict[str, dict] = {}
+        res = conn.execute(
+            "MATCH (l:Learning) WHERE l.id IN $ids "
+            "RETURN l.id, l.source_artifact_ref",
+            {"ids": learning_ids},
+        )
+        while res.has_next():
+            row = res.get_next()
+            meta[str(row[0])] = {
+                "source_artifact_ref": str(row[1] or ""),
+                "canonical_bug_count": 0,
+                "working_bug_count": 0,
+            }
+        res = conn.execute(
+            "MATCH (l:Learning)-[:validates]->(b:Bug) WHERE l.id IN $ids "
+            "RETURN l.id, b.graph_layer",
+            {"ids": learning_ids},
+        )
+        while res.has_next():
+            row = res.get_next()
+            entry = meta.get(str(row[0]))
+            if entry is None:
+                continue
+            if str(row[1] or "") == "canonical":
+                entry["canonical_bug_count"] += 1
+            else:
+                entry["working_bug_count"] += 1
+        for node in out:
+            if node.get("node_type") != "Learning":
+                continue
+            m = meta.get(str(node["id"]))
+            if m is not None:
+                node.update(m)
 
     @staticmethod
     def _board_graph_is_queryable(board_id: str) -> bool:

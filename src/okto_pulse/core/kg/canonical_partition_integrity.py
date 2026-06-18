@@ -143,6 +143,100 @@ def _store() -> CognitiveConsolidationItemStore:
     return CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
 
 
+# ---------------------------------------------------------------------------
+# R7 IMP5 — canonical-only completeness publication rule (FR8/AC8).
+#
+# Single source of the ``complete_canonical`` decision for a bug-derived
+# Learning, reused by Global Discovery (outbox_worker) so a Learning whose
+# mandatory semantic (Bug) evidence is working-only / pending / debt is NOT
+# published as complete canonical. ``connected_all`` (the diagnostic "is it
+# connected in the working+canonical graph") is NOT the rule — this is.
+# ---------------------------------------------------------------------------
+
+# Statuses that, while OPEN, must keep a Learning out of complete-canonical
+# publication regardless of its current graph edges (#3 never-masked).
+_ACTIVE_PENDING_STATUSES: frozenset[str] = frozenset({"pending", "in_progress", "failed"})
+
+
+def evaluate_canonical_learning_publication(
+    *,
+    source_artifact_ref: str,
+    canonical_bug_count: int,
+    overlay_exclusion_reason: str | None = None,
+) -> tuple[bool, str | None]:
+    """Return ``(publishable_as_complete_canonical, exclusion_reason_code)``.
+
+    Pure policy (no IO). Working evidence NEVER counts toward canonical
+    completeness — only canonical Bug endpoints do.
+
+    * an OPEN canonical_debt / active cognitive_pending overlay for this
+      artifact => NOT publishable (#3 never mask), reason = the overlay reason;
+    * a non-bug-derived (provenance-only) Learning => publishable (#4 not newly
+      blocked by IMP5);
+    * a bug-derived Learning with >=1 canonical Bug evidence => publishable
+      (#2 mixed allowed because at least one semantic endpoint is canonical);
+    * a bug-derived Learning with 0 canonical Bug evidence (working-only) =>
+      NOT publishable (#1), reason = working-only.
+    """
+    if overlay_exclusion_reason:
+        return (False, overlay_exclusion_reason)
+    if not _is_bug_derived_ref(str(source_artifact_ref or "")):
+        return (True, None)
+    if int(canonical_bug_count) >= 1:
+        return (True, None)
+    return (False, CANONICAL_LEARNING_WORKING_ONLY_REASON)
+
+
+async def pending_or_debt_exclusions(
+    db: AsyncSession, *, board_id: str
+) -> dict[str, str]:
+    """Map ``normalized artifact_id -> exclusion reason_code`` for the board's
+    OPEN canonical debt (IMP2) and active cognitive holds (IMP1).
+
+    Debt OUTRANKS a pending hold for the same artifact. Both source_refs are
+    collapsed via :func:`normalize_cognitive_artifact_id` so the caller can match
+    a graph Learning's ``source_artifact_ref`` against debt/cognitive refs in the
+    SAME normalized space (handles ``card:``/``bug:`` aliasing). Best-effort: a
+    degraded debt/store source returns the partial map it could read — the graph
+    completeness check still excludes genuine working-only Learnings, so a missing
+    overlay never *masks* an incomplete fact, it only narrows the #3 belt.
+    """
+    out: dict[str, str] = {}
+
+    # canonical_debt (open) — outranks.
+    try:
+        debt = await list_canonical_debt(db, board_id=board_id, limit=200)
+        for row in debt.items:
+            if str(row.get("failure_reason") or "") != HISTORICAL_DEBT_REASON:
+                continue
+            if str(row.get("canonical_state") or "") not in OPEN_STATES:
+                continue
+            aid = normalize_cognitive_artifact_id(str(row.get("source_ref") or ""))
+            if aid:
+                out[aid] = HISTORICAL_DEBT_REASON
+    except Exception:  # pragma: no cover - defensive; overlay is best-effort
+        pass
+
+    # cognitive_pending holds (working-only reason, still active).
+    try:
+        store = _store()
+        gen = store.latest_generation(board_id)
+        if gen:
+            for it in store.list_items(board_id, gen):
+                if (
+                    it.status in _ACTIVE_PENDING_STATUSES
+                    and str(getattr(it, "reason_code", "") or "")
+                    == CANONICAL_LEARNING_WORKING_ONLY_REASON
+                ):
+                    aid = normalize_cognitive_artifact_id(str(it.source_ref or ""))
+                    if aid and aid not in out:  # debt outranks
+                        out[aid] = CANONICAL_LEARNING_WORKING_ONLY_REASON
+    except Exception:  # pragma: no cover - defensive; overlay is best-effort
+        pass
+
+    return out
+
+
 def _scan_graph_learnings(board_id: str) -> dict[str, dict[str, Any]]:
     """Scan the board graph for canonical Learnings and their validates->Bug
     endpoints (with layers). Returns ``{node_id: {source_ref, canonical_bug_refs,
@@ -534,9 +628,11 @@ __all__ = [
     "STATUS_MIXED_DEFERRED",
     "STATUS_PROVENANCE_ONLY",
     "emit_canonical_partition_integrity_sample",
+    "evaluate_canonical_learning_publication",
     "get_canonical_partition_integrity_count",
     "get_canonical_partition_integrity_counter_labels",
     "get_canonical_partition_integrity_detail",
     "list_canonical_partition_integrity",
+    "pending_or_debt_exclusions",
     "reset_canonical_partition_integrity_counter",
 ]

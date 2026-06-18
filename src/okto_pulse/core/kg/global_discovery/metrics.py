@@ -118,10 +118,63 @@ def reset_digest_upsert_counter() -> None:
         _digest_upsert_samples.clear()
 
 
+# ---------------------------------------------------------------------------
+# or_e7c41a05 — kg_global_discovery_canonical_incomplete_excluded_total (R7-IMP5)
+# ---------------------------------------------------------------------------
+# Count canonical Learning digests whose PUBLICATION layer was downgraded to
+# 'working' because the Learning is not complete-canonical (working-only Bug
+# evidence, or an open canonical_debt / active cognitive_pending hold). This is
+# a digest publication-layer correction — the board-graph source node is NOT
+# demoted. Bounded labels: board_id (matches the existing GD metric convention
+# above) + reason_code (closed R7 vocab). A clean board emits nothing.
+
+_CANONICAL_INCOMPLETE_EXCLUDED_LABELS = ("board_id", "reason_code")
+_canonical_incomplete_excluded_samples: list[dict[str, Any]] = []
+_canonical_incomplete_excluded_lock = threading.Lock()
+
+
+def emit_canonical_incomplete_excluded(*, board_id: str, reason_code: str) -> None:
+    """Record one canonical Learning digest excluded from complete-canonical
+    publication (downgraded to the 'working' diagnostic layer)."""
+    with _canonical_incomplete_excluded_lock:
+        _canonical_incomplete_excluded_samples.append(
+            {"board_id": board_id, "reason_code": reason_code}
+        )
+
+
+def get_canonical_incomplete_excluded_count(
+    *,
+    board_id: str | None = None,
+    reason_code: str | None = None,
+) -> int:
+    with _canonical_incomplete_excluded_lock:
+        return sum(
+            1
+            for s in _canonical_incomplete_excluded_samples
+            if (board_id is None or s["board_id"] == board_id)
+            and (reason_code is None or s["reason_code"] == reason_code)
+        )
+
+
+def get_canonical_incomplete_excluded_labels() -> tuple[str, ...]:
+    return _CANONICAL_INCOMPLETE_EXCLUDED_LABELS
+
+
+def get_canonical_incomplete_excluded_samples() -> list[dict[str, Any]]:
+    with _canonical_incomplete_excluded_lock:
+        return [dict(s) for s in _canonical_incomplete_excluded_samples]
+
+
+def reset_canonical_incomplete_excluded_counter() -> None:
+    with _canonical_incomplete_excluded_lock:
+        _canonical_incomplete_excluded_samples.clear()
+
+
 def reset_global_discovery_metrics() -> None:
     """Reset every Global Discovery outbox counter (test helper)."""
     reset_missing_embedding_skipped_counter()
     reset_digest_upsert_counter()
+    reset_canonical_incomplete_excluded_counter()
 
 
 __all__ = [
@@ -137,5 +190,10 @@ __all__ = [
     "get_digest_upsert_labels",
     "get_digest_upsert_samples",
     "reset_digest_upsert_counter",
+    "emit_canonical_incomplete_excluded",
+    "get_canonical_incomplete_excluded_count",
+    "get_canonical_incomplete_excluded_labels",
+    "get_canonical_incomplete_excluded_samples",
+    "reset_canonical_incomplete_excluded_counter",
     "reset_global_discovery_metrics",
 ]
