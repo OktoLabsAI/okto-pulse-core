@@ -1069,6 +1069,25 @@ async def _process_queue_entry(
             "canonical_debt.resolve_failed board=%s artifact=%s:%s",
             entry.board_id, entry.artifact_type, entry.artifact_id,
         )
+
+    # R7 IMP2: keep the canonical Learning partition-integrity ledger current —
+    # open CanonicalDebt for historical violations (canonical bug-derived
+    # Learning without a canonical Bug) and close debt whose bug evidence is now
+    # canonical (canonical-only evidence pre-filter). Reuses canonical_debt_service;
+    # never cognitive pending/DLQ. Best effort — must never fail a good commit.
+    try:
+        from okto_pulse.core.kg.canonical_learning_partition import (
+            run_canonical_learning_partition_maintenance,
+        )
+
+        await run_canonical_learning_partition_maintenance(
+            db, board_id=entry.board_id, actor_id=AGENT_ID
+        )
+    except Exception:
+        logger.exception(
+            "kg.clp.maintenance_failed board=%s artifact=%s:%s",
+            entry.board_id, entry.artifact_type, entry.artifact_id,
+        )
     return True
 
 
