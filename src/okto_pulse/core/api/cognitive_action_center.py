@@ -150,6 +150,11 @@ async def record_cognitive_skip_endpoint(
             source_ref=payload.source_ref,
             reason_code=payload.reason_code,
             actor=actor,
+            # REST is the HUMAN surface: actor comes from require_user
+            # (authenticated human). This is NOT a client-supplied/spoofable
+            # field — the MCP/agent twin never sets it (fail-closed default
+            # False), so R7 holds/debt stay human-only (AC9 / IR3).
+            actor_is_human=True,
             justification=payload.justification,
             evidence_refs=payload.evidence_refs,
             revisit_at=payload.revisit_at,
@@ -187,6 +192,9 @@ async def clear_cognitive_skip_endpoint(
             board_id=board_id,
             source_ref=payload.source_ref,
             actor=actor,
+            # REST = authenticated human (require_user); not spoofable from the
+            # client. The MCP/agent twin never sets this, so R7 stays human-only.
+            actor_is_human=True,
             kg_generation_id=payload.kg_generation_id,
         )
         verdict = await service.evaluate_artifact(

@@ -54,6 +54,11 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_cognitive_item_id,
     normalize_cognitive_artifact_id,
 )
+from okto_pulse.core.kg.connectivity_guard import (
+    CANONICAL_LEARNING_MIXED_DEFERRED_REASON,
+    CANONICAL_LEARNING_WORKING_ONLY_REASON,
+)
+from okto_pulse.core.kg.canonical_learning_partition import HISTORICAL_DEBT_REASON
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +108,17 @@ TECHNICAL_READINESS_SIGNALS: frozenset[str] = frozenset({
     TECHNICAL_DLQ_SIGNAL,
     CANONICAL_DEBT_OPEN_SIGNAL,
     CONNECTIVITY_GUARD_SIGNAL,
+})
+
+# R7 (canonical Learning layer integrity) HOLD reason codes — guard-generated,
+# NOT selectable. An item carrying one of these is an R7 go-forward hold /
+# remediation debt that ONLY an explicit human action may skip/clear; an
+# agent-facing skip/clear must FAIL CLOSED (AC9 / IR3). provenance-only is
+# observed / non-blocking and is intentionally excluded.
+R7_HOLD_REASON_CODES: frozenset[str] = frozenset({
+    CANONICAL_LEARNING_WORKING_ONLY_REASON,
+    CANONICAL_LEARNING_MIXED_DEFERRED_REASON,
+    HISTORICAL_DEBT_REASON,
 })
 
 
@@ -259,6 +275,30 @@ def validate_skip_reason(reason_code: Any, revisit_at: Any, *, now: datetime | N
                 ),
                 http_status=400,
             )
+
+
+def _assert_human_for_r7_hold(reason_code: Any, *, actor_is_human: bool) -> None:
+    """Fail closed (403 ``human_only_reason_code``) when an AGENT-facing action
+    targets an item that is an R7 canonical-partition-integrity hold/debt.
+
+    AC9 / IR3: only an explicit human action may skip or clear an item carrying
+    an R7 reason code; an agent must never mask the hold. ``actor_is_human`` is
+    a fail-closed flag set ONLY by the human-authenticated REST surface
+    (require_user); the agent-facing MCP path leaves it False. Non-R7 items pass
+    so existing safe skips are unaffected."""
+    if actor_is_human:
+        return
+    if str(reason_code or "") in R7_HOLD_REASON_CODES:
+        raise CognitiveReadinessError(
+            "human_only_reason_code",
+            (
+                "This item is an R7 canonical Learning partition-integrity "
+                "hold/debt and can only be skipped or cleared by an explicit "
+                "human action — not by an agent. Resolve it with canonical "
+                "evidence or escalate to a human operator."
+            ),
+            http_status=403,
+        )
 
 
 def compose_readiness(
@@ -465,6 +505,7 @@ class CognitiveReadinessService:
         source_ref: str,
         reason_code: str,
         actor: str,
+        actor_is_human: bool = False,
         justification: str | None = None,
         evidence_refs: Sequence[str] | None = None,
         revisit_at: str | None = None,
@@ -507,6 +548,16 @@ class CognitiveReadinessService:
                 http_status=404,
             )
         item_id = compute_cognitive_item_id(board_id, gen, source_ref)
+        # 2b. AC9 / IR3 — an R7 canonical partition-integrity HOLD (the target
+        # item already carries an R7 reason code) may only be skipped by an
+        # explicit human action. Fail-closed for agents (actor_is_human=False);
+        # the human REST surface sets it True via require_user. Non-R7 unaffected.
+        current = next(
+            (i for i in self._store.list_items(board_id, gen) if i.item_id == item_id),
+            None,
+        )
+        if current is not None:
+            _assert_human_for_r7_hold(current.reason_code, actor_is_human=actor_is_human)
         # 3. Ledger-only write — store.update_item ONLY. No KG worker / node /
         # edge / connectivity guard (dec_2cc65238).
         updated = self._store.update_item(
@@ -537,6 +588,7 @@ class CognitiveReadinessService:
         board_id: str,
         source_ref: str,
         actor: str,
+        actor_is_human: bool = False,
         kg_generation_id: str | None = None,
     ) -> CognitiveConsolidationItem:
         """Clear a cognitive skip / no_action, reopening the item to PENDING via
@@ -582,6 +634,8 @@ class CognitiveReadinessService:
                 ),
                 http_status=409,
             )
+        # AC9 / IR3 — only an explicit human may clear an R7 hold/debt skip.
+        _assert_human_for_r7_hold(existing.reason_code, actor_is_human=actor_is_human)
         updated = self._store.update_item(
             board_id=board_id,
             kg_generation_id=gen,
@@ -609,6 +663,7 @@ __all__ = [
     "CognitiveReadinessVerdict",
     "CognitiveReasonCode",
     "GATE_BLOCKING_TIERS",
+    "R7_HOLD_REASON_CODES",
     "ReadinessTier",
     "REVISIT_REQUIRED_REASON_CODES",
     "SELECTABLE_REASON_CODES",

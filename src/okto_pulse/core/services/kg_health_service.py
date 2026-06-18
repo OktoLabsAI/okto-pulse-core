@@ -1283,6 +1283,111 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             )
             health_diagnostics["operator_action"] = "inspect_cognitive_pending"
 
+    # FR6 / AC5 (R7): canonical Learning partition integrity is exposed as ONE
+    # AGGREGATE health issue. Per-node detail (mixed-evidence deferred,
+    # provenance-only observed) lives ONLY in the read-only drilldown — Health
+    # uses cheap COUNTs (a SQL count + a file-backed store read off the event
+    # loop), never a graph scan, so it stays light per tick. Counts are disjoint
+    # (a go-forward HOLD and a historical DEBT are mutually exclusive per
+    # artifact), so there is no internal double-count; precedence_explanation
+    # documents the relationship to the broader canonical_debt_open /
+    # cognitive_consolidation_pending signals.
+    def _count_r7_partition_cognitive_pending(_board_id: str) -> int:
+        from okto_pulse.core.kg.cognitive_readiness import R7_HOLD_REASON_CODES
+        from okto_pulse.core.kg.rebuild_audit import (
+            CognitiveConsolidationItemStore,
+            default_rebuild_base_dir,
+        )
+
+        store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        gen = store.latest_generation(_board_id)
+        if not gen:
+            return 0
+        active = {"pending", "in_progress", "failed"}
+        return sum(
+            1
+            for it in store.list_items(_board_id, gen)
+            if it.status in active
+            and str(getattr(it, "reason_code", "") or "") in R7_HOLD_REASON_CODES
+        )
+
+    partition_debt_open = 0
+    try:
+        from sqlalchemy import func as _func
+        from sqlalchemy import select as _select
+
+        from okto_pulse.core.kg.canonical_learning_partition import (
+            PARTITION_TARGET_STATUS,
+        )
+        from okto_pulse.core.models.db import CanonicalDebt as _CanonicalDebt
+        from okto_pulse.core.services.canonical_debt_service import (
+            OPEN_STATES as _OPEN_STATES,
+        )
+
+        partition_debt_open = int(
+            await db.scalar(
+                _select(_func.count())
+                .select_from(_CanonicalDebt)
+                .where(
+                    _CanonicalDebt.board_id == board_id,
+                    _CanonicalDebt.target_status == PARTITION_TARGET_STATUS,
+                    _CanonicalDebt.canonical_state.in_(tuple(_OPEN_STATES)),
+                )
+            )
+            or 0
+        )
+    except Exception as exc:  # pragma: no cover - defensive health path
+        logger.warning(
+            "kg.health.partition_integrity_debt_failed board=%s err=%s",
+            board_id, exc,
+        )
+        partition_debt_open = 0
+    try:
+        partition_cognitive_pending = await asyncio.to_thread(
+            _count_r7_partition_cognitive_pending, board_id,
+        )
+    except Exception as exc:  # pragma: no cover - defensive health path
+        logger.warning(
+            "kg.health.partition_integrity_cognitive_failed board=%s err=%s",
+            board_id, exc,
+        )
+        partition_cognitive_pending = 0
+    partition_blocking = partition_debt_open + partition_cognitive_pending
+    if partition_blocking > 0:
+        health_diagnostics["health_issues"].append({
+            "code": "canonical_partition_integrity",
+            "component": "canonical_graph",
+            "severity": "warning",
+            "reason": "canonical_partition_integrity_open_gt_zero",
+            "description": (
+                f"{partition_blocking} canonical Learning partition-integrity "
+                "signal(s): bug-derived canonical Learning lacking canonical Bug "
+                "evidence (go-forward holds + historical remediation debt). "
+                "Per-node detail is in the drilldown."
+            ),
+            "operator_action": "inspect_canonical_partition_integrity",
+            "drill_down_tool": "okto_pulse_kg_canonical_partition_integrity_list",
+            "counts": {
+                "cognitive_pending": partition_cognitive_pending,
+                "canonical_debt": partition_debt_open,
+            },
+            "precedence_explanation": (
+                "Aggregate of R7 go-forward cognitive_pending (IMP1) + historical "
+                "canonical_debt (IMP2), which are mutually exclusive per artifact "
+                "(no internal double-count). These items are also reflected in the "
+                "broader cognitive_consolidation_pending / canonical_debt_open "
+                "signals; this entry is the partition-integrity (R7) lens, not an "
+                "additional blocker. DLQ is counted separately."
+            ),
+        })
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = (
+                "canonical_partition_integrity"
+            )
+            health_diagnostics["operator_action"] = (
+                "inspect_canonical_partition_integrity"
+            )
+
     if orphan_integrity.get("integrity_warning"):
         if _STATE_SEVERITY[graph_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
             graph_state = HealthState.AT_RISK

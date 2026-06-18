@@ -12828,6 +12828,67 @@ async def okto_pulse_kg_canonical_debt_list(
 
 
 @mcp.tool()
+async def okto_pulse_kg_canonical_partition_integrity_list(
+    board_id: str,
+    reason_code: str | None = None,
+    graph_layer: str | None = None,
+    source_ref: str | None = None,
+    node_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """
+    List canonical Learning partition-integrity signals for KG health drill-down
+    (R7). READ-ONLY: surfaces go-forward cognitive holds, historical canonical
+    debt, mixed-evidence deferred and provenance-only observed Learnings.
+
+    Mirrors REST `GET /api/v1/kg/{board_id}/canonical-partition-integrity`. This
+    tool NEVER skips, clears, force-closes or resolves an R7 hold/debt — those are
+    human-only (use the human REST surface). Filters: reason_code, graph_layer,
+    source_ref, node_id, status.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    try:
+        bounded_limit = max(1, min(int(limit), 200))
+        bounded_offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        return json.dumps({
+            "error": "invalid_pagination",
+            "detail": "limit and offset must be integers",
+        })
+
+    from okto_pulse.core.kg.canonical_partition_integrity import (
+        list_canonical_partition_integrity,
+    )
+    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
+
+    try:
+        async with get_db_for_mcp() as db:
+            result = await list_canonical_partition_integrity(
+                db,
+                board_id=board_id,
+                reason_code=reason_code or None,
+                graph_layer=graph_layer or None,
+                source_ref=source_ref or None,
+                node_id=node_id or None,
+                status=status or None,
+                limit=bounded_limit,
+                offset=bounded_offset,
+            )
+    except CognitiveReadinessError as exc:
+        return json.dumps(exc.to_dict())
+
+    # OR1 metric (kg_canonical_partition_integrity_total) is emitted inside
+    # list_canonical_partition_integrity (the single enumeration point), so REST
+    # and MCP share the same dedicated signal without double-emitting here.
+    return json.dumps(result, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_kg_evaluate_bug_cognitive_closure(
     board_id: str,
     bug_id: str,

@@ -54,6 +54,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     project_item_for_update_api,
     record_cognitive_working_only_hold,
 )
+from okto_pulse.core.kg.cognitive_readiness import R7_HOLD_REASON_CODES
 
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
@@ -727,6 +728,33 @@ labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg.""
         store = CognitiveConsolidationItemStore(
             base_dir=default_rebuild_base_dir()
         )
+
+        # AC9 / IR3 — this MCP tool is AGENT-facing (get_agent). An R7 canonical
+        # Learning partition-integrity HOLD/debt item (item.reason_code in
+        # R7_HOLD_REASON_CODES) may ONLY be skipped/cleared by an explicit human
+        # action via the REST surface; an agent must never mutate it here and
+        # mask the hold. Fail-closed BEFORE the ledger write.
+        _r7_current = next(
+            (
+                it
+                for it in store.list_items(board_id, kg_generation_id)
+                if it.item_id == item_id
+            ),
+            None,
+        )
+        if (
+            _r7_current is not None
+            and str(_r7_current.reason_code or "") in R7_HOLD_REASON_CODES
+        ):
+            return _reject(
+                "human_only_reason_code",
+                (
+                    "this item is an R7 canonical Learning partition-integrity "
+                    "hold/debt; only an explicit human action may skip or clear it"
+                ),
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.NONE.value,
+            )
 
         try:
             updated_item = store.update_item(

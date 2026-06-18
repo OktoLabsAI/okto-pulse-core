@@ -27,6 +27,9 @@ from okto_pulse.core.api.kg_rebuild import router as kg_rebuild_router
 from okto_pulse.core.api.kg_canonical_debt import (
     router as kg_canonical_debt_router,
 )
+from okto_pulse.core.api.kg_canonical_partition_integrity import (
+    router as kg_canonical_partition_integrity_router,
+)
 from okto_pulse.core.api.kg_orphan_integrity import (
     router as kg_orphan_integrity_router,
 )
@@ -79,6 +82,10 @@ api_router.include_router(queue_health_router, tags=["queue-health"])
 api_router.include_router(kg_health_router, tags=["kg-health"])
 api_router.include_router(kg_rebuild_router, tags=["kg-rebuild"])
 api_router.include_router(kg_canonical_debt_router, tags=["kg-canonical-debt"])
+api_router.include_router(
+    kg_canonical_partition_integrity_router,
+    tags=["kg-canonical-partition-integrity"],
+)
 api_router.include_router(
     kg_orphan_integrity_router, tags=["kg-orphan-integrity"]
 )
