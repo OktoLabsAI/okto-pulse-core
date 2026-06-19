@@ -213,6 +213,22 @@ def classify_active_queue(
     return "transient"
 
 
+def _active_queue_next_action(classification: str, worker_mode: str) -> str:
+    """Suggested next action for the active-queue drill-down (SPEC4 card
+    2e913ac3, AC ac_26acf1db) — actionable without local-file forensics."""
+    if classification == "backpressure":
+        return "investigate_backpressure_pause_writes_or_scale"
+    if classification == "stuck":
+        return (
+            "start_consolidation_worker"
+            if worker_mode == "stopped"
+            else "inspect_stuck_queue_check_worker"
+        )
+    if classification == "transient":
+        return "monitor_transient_inflight_work"
+    return "none"
+
+
 async def get_active_queue_drilldown(
     db: AsyncSession, board_id: str | None = None,
 ) -> dict[str, Any]:
@@ -301,6 +317,9 @@ async def get_active_queue_drilldown(
         "worker_mode": worker_mode,
         "total_active_depth": total_active_depth,
         "classification": overall,
+        # SPEC4 (card 2e913ac3, AC ac_26acf1db): bounded suggested next action so
+        # the active-queue drill-down is actionable from the payload alone.
+        "next_action": _active_queue_next_action(overall, worker_mode),
         "alert_threshold": alert_threshold,
         "stuck_age_seconds": stuck_age_s,
         "drill_down_tool": "okto_pulse_kg_queue_drilldown",

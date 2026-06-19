@@ -219,6 +219,11 @@ class KGHealthResponse(BaseModel):
     # R6-IMP5: deduplicated 3-domain separation (active_queue / dead_letter /
     # canonical_debt), each with its own count + drill_down_tool. Additive.
     operational_domains: dict = Field(default_factory=dict)
+    # SPEC4 (card 2e913ac3): structured bounded recovery root-cause —
+    # distinguishes wal_or_commit / empty_after_materialized_history /
+    # source_enumeration_failure / safe_write_drain_failure with bounded fields
+    # (materialized node count, source count, queue state, last safe-write). Additive.
+    root_cause: dict = Field(default_factory=dict)
 
     # Additive UI diagnosis: separates "board graph is actually unreadable or
     # empty after prior materialization" from conservative at_risk states caused

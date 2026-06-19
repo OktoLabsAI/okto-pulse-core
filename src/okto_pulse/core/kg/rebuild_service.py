@@ -102,6 +102,9 @@ class RebuildBlockReason(str, Enum):
     REPORT_PERSIST_SENSITIVE_REJECTED = "report_persist_sensitive_rejected"
     GENERATION_PROMOTION_BLOCKED = "generation_promotion_blocked"
     ORPHAN_VALIDATION_FAILED = "orphan_validation_failed"
+    # SPEC4 card 619e58e1 (G1): the rebuild consumed sources but materialized an
+    # empty graph — partition materialization failed, refuse to promote.
+    MATERIALIZED_LAYER_MISMATCH = "materialized_layer_mismatch"
     OK = "ok"
 
 
@@ -112,6 +115,88 @@ class RebuildBlockReason(str, Enum):
 # with UNSUPPORTED_OPERATION BEFORE the lock is taken so we never
 # emit a silent "completed" for a destructive op.
 SUPPORTED_REBUILD_OPERATIONS: frozenset[str] = frozenset({"rebuild"})
+
+
+def _materialized_layer_counts(board_id: str) -> dict[str, int]:
+    """G1 (SPEC4 card 619e58e1): bounded read-only per-``graph_layer`` node count
+    of the REAL board graph.
+
+    The deterministic structural materialiser is an identity placeholder, so the
+    materialized graph is the only authoritative per-partition state. Mirrors
+    ``kg_health._aggregate_kg_layer_counts``' safe per-NODE_TYPE pattern (one
+    ``MATCH (n:Label)`` per type — never the unsupported generic ``MATCH (n)``).
+    Called by the orchestrator AFTER the safe-write lifecycle (checkpoint/flush/
+    fsync/close-reopen probe), so opening the graph here cannot interfere with
+    that durability gate. Degrades to ``{}`` on a Kuzu/schema error.
+    """
+    counts: dict[str, int] = {}
+    try:
+        from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+
+        with open_board_connection(board_id) as (_db, conn):
+            for node_type in NODE_TYPES:
+                res = None
+                try:
+                    res = conn.execute(
+                        f"MATCH (n:{node_type}) RETURN n.graph_layer, count(n)"
+                    )
+                    while res.has_next():
+                        row = res.get_next()
+                        layer = str(row[0] or "unclassified")
+                        counts[layer] = counts.get(layer, 0) + int(row[1] or 0)
+                except Exception:
+                    continue
+                finally:
+                    if res is not None:
+                        try:
+                            res.close()
+                        except Exception:
+                            pass
+    except Exception as exc:
+        logger.warning(
+            "kg.rebuild.materialized_layer_probe_failed board=%s err=%s",
+            board_id, exc,
+        )
+        return {}
+    return counts
+
+
+def _verify_materialized_layers(
+    board_id: str, step_result: RebuildStepResult
+) -> tuple[str, dict[str, int]] | None:
+    """G1 (SPEC4 card 619e58e1): partition-aware materialization guard.
+
+    Every graph layer the resolved source set expected to materialize
+    (``expected_by_layer[layer] > 0``, produced deterministically by the adapter)
+    MUST be present in the REAL board graph (queried here, AFTER safe-write).
+    source->node is NOT 1:1, so this is a PRESENCE check, not exact equality;
+    both maps are returned for audit. ``empty_after_materialized`` is the subcase
+    where every expected layer is missing (e.g. canonical sources resolved but
+    the canonical partition is empty after the rebuild). Returns
+    ``(detail, materialized)`` when the guard trips, else ``None``. Never
+    promotes a mismatch.
+    """
+    counts = getattr(step_result, "counts", None) or {}
+    expected = counts.get("expected_by_layer") or {}
+    if not expected:
+        # No source partition resolved → no materialization claim to verify.
+        return None
+    materialized = _materialized_layer_counts(board_id)
+    missing = sorted(
+        layer
+        for layer, n in expected.items()
+        if int(n or 0) > 0 and int(materialized.get(layer, 0) or 0) == 0
+    )
+    if missing:
+        detail = (
+            "materialized_layer_mismatch: expected partitions "
+            f"{dict(expected)} but materialized {dict(materialized)} — "
+            f"missing/empty layer(s) {missing}. Refusing to promote a rebuild "
+            "that did not materialize an expected partition "
+            "(empty_after_materialized guard)."
+        )
+        return detail, materialized
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -610,6 +695,40 @@ class KGRebuildService:
                 detail=f"orchestrator_exception={type(exc).__name__}",
                 triggered_by=actor_id,
                 step_result=step_result_holder.get("result"),
+                candidate_kg_generation_id=candidate_generation_id,
+            )
+
+        # 5c. G1 (SPEC4 card 619e58e1): per-layer materialization guard. The graph
+        # is materialized + safe-written; before promoting the generation, verify
+        # every partition the resolved source set expected actually materialized.
+        # Fail closed (FAILED, no promotion) on a missing layer — never promote a
+        # rebuild that silently lost a partition (empty_after_materialized).
+        _final_step = step_result_holder.get("result")
+        _layer_check = (
+            _verify_materialized_layers(board_id, _final_step)
+            if _final_step is not None
+            else None
+        )
+        if _layer_check is not None:
+            _layer_detail, _materialized = _layer_check
+            return self._finalise_with_release(
+                run_id=run_id,
+                outcome=RebuildOutcome.FAILED,
+                reason=RebuildBlockReason.MATERIALIZED_LAYER_MISMATCH,
+                board_id=board_id,
+                actor_id=actor_id,
+                operation=operation,
+                confirmation_id=confirmation_id,
+                manifest_ref=manifest_ref,
+                user_reason=reason,
+                started_at=started_at,
+                owner_token=owner_token,
+                affected_files=affected,
+                previous_kg_generation_id=previous_generation,
+                current_kg_generation_id=None,  # do NOT promote a partition loss
+                detail=_layer_detail,
+                triggered_by=actor_id,
+                step_result=_final_step,
                 candidate_kg_generation_id=candidate_generation_id,
             )
 

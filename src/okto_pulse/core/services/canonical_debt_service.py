@@ -62,12 +62,35 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat()
 
 
+def _canonical_debt_next_action(canonical_state: str | None, dlq_ref: str | None) -> str:
+    """Suggested next action for a canonical-debt row (SPEC4 card 2e913ac3,
+    AC ac_26acf1db). Lets an agent act from the drill-down alone, without local
+    file forensics."""
+    state = (canonical_state or "").lower()
+    if state == "retry_scheduled":
+        return "wait_for_scheduled_retry"
+    if state == "blocked":
+        return "resolve_blocker_then_retry"
+    if state in RETRYABLE_STATES:
+        return (
+            "reprocess_via_okto_pulse_kg_dead_letter_reprocess"
+            if dlq_ref
+            else "retry_eligible_inspect_failure_reason"
+        )
+    if state in TERMINAL_STATES:
+        return "inspect_terminal_debt_no_auto_retry"
+    return "inspect_canonical_debt"
+
+
 def canonical_debt_to_dict(row: CanonicalDebt) -> dict[str, Any]:
     return {
         "id": row.id,
         "board_id": row.board_id,
         "artifact_type": row.artifact_type,
         "artifact_id": row.artifact_id,
+        # SPEC4 (card 2e913ac3): bounded suggested next action so the drill-down
+        # row is actionable without reading local files (AC ac_26acf1db).
+        "next_action": _canonical_debt_next_action(row.canonical_state, row.dlq_ref),
         "source_ref": row.source_ref,
         "source_version": row.source_version,
         "content_hash": row.content_hash,

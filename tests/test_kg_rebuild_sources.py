@@ -215,7 +215,12 @@ def test_ideation_and_intermediate_statuses_stay_out_of_canonical():
         _row(artifact_type="spec", id_="s-validated", status="validated", created_at="2026-06-12"),
         _row(artifact_type="refinement", id_="r-review", status="review", created_at="2026-06-12"),
     ]
-    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    # working_ttl_days=0 isolates the MATURITY/PARTITION contract from the working
+    # TTL (which is covered deterministically by test_working_ttl_expiry_* /
+    # _override). Without it this fixture's created_at would silently cross the
+    # default 7-day TTL as wall-clock advances and the working sources would be
+    # mis-asserted as skipped_expired (bug 5187f991: time-dependent fixture).
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows, working_ttl_days=0)
     result = enum.enumerate(board_id="b1")
 
     assert result.sources == ()
@@ -266,7 +271,9 @@ def test_rebuild_partitions_cancelled_and_immature_sources_separately():
             created_at="2026-06-12T00:00:03Z",
         ),
     ]
-    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    # working_ttl_days=0: isolate maturity/partition from the working TTL (bug
+    # 5187f991 — time-dependent fixture; TTL has its own deterministic tests).
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows, working_ttl_days=0)
     result = enum.enumerate(board_id="b1")
 
     assert [r.id for r in result.sources] == ["s-done"]
@@ -294,6 +301,37 @@ def test_rebuild_legacy_missing_hash_is_not_canonical():
     assert [r.id for r in result.legacy_unknown] == ["legacy-no-hash"]
     assert result.legacy_unknown[0].reason_code == "missing_status_or_content_hash"
     assert result.has_non_deterministic_inputs is True
+
+
+def test_regression_fresh_working_sources_are_not_dropped_from_partition():
+    """Regression for SPEC4 bug 5187f991 (test card 7414f1a7 / ts_df112b35).
+
+    A working-partition source (ideation, or an intermediate-status spec) MUST
+    land in working_sources / skipped_by_maturity AND in materializable_sources —
+    never silently dropped — so a confirmed rebuild materializes the full
+    canonical+working partition. DETERMINISTIC (working_ttl_days=0 + an ANCIENT
+    created_at) so it cannot rot like the time-dependent fixtures that exposed
+    the bug: it fails closed if the enumerator ever drops/misclassifies a working
+    source regardless of wall-clock.
+    """
+    rows = [
+        _row(artifact_type="ideation", id_="i-1", status="done", created_at="2020-01-01T00:00:00Z"),
+        _row(artifact_type="spec", id_="s-approved", status="approved", created_at="2020-01-01T00:00:00Z"),
+        _row(artifact_type="spec", id_="s-done", status="done", created_at="2020-01-01T00:00:00Z"),
+    ]
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows, working_ttl_days=0)
+    result = enum.enumerate(board_id="b1")
+
+    # The working partition survives an ancient created_at (TTL disabled here;
+    # TTL expiry is covered separately + deterministically).
+    assert [r.id for r in result.working_sources] == ["i-1"]
+    assert [r.id for r in result.skipped_by_maturity] == ["s-approved"]
+    assert [r.id for r in result.sources] == ["s-done"]
+    assert result.skipped_expired_working == ()
+    # canonical + working are both materializable — none dropped.
+    assert {r.id for r in result.materializable_sources} == {"i-1", "s-approved", "s-done"}
+    assert result.working_source_count == 1
+    assert result.skipped_by_maturity_count == 1
 
 
 def test_working_ttl_expiry_does_not_touch_canonical_sources():
@@ -663,7 +701,8 @@ def test_manifest_source_set_hash_changes_when_maturity_partition_changes(
     approved_set = RebuildSourceEnumerator(
         source_store=lambda _b: [
             _row(id_="s1", status="approved", created_at="2026-06-12T00:00:00Z")
-        ]
+        ],
+        working_ttl_days=0,  # isolate maturity partition from TTL (bug 5187f991)
     ).enumerate(board_id="b1")
     done_set = RebuildSourceEnumerator(
         source_store=lambda _b: [

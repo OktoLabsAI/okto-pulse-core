@@ -70,6 +70,19 @@ def _queue_artifact_type(source_artifact_type: str) -> str:
     return "card" if source_artifact_type in _CARD_SOURCE_ARTIFACT_TYPES else source_artifact_type
 
 
+def _expected_layers_from_sources(sources) -> dict[str, int]:
+    """G1 (SPEC4 card 619e58e1): the per-graph_layer partition presence the
+    resolved source set expects to materialize. Deterministic: counts resolved
+    sources by ``graph_layer``. Used (with the materialized count) to refuse
+    promoting a rebuild that silently dropped an expected partition."""
+    out: dict[str, int] = {}
+    for row in sources or ():
+        layer = row.get("graph_layer") if hasattr(row, "get") else getattr(row, "graph_layer", None)
+        key = str(layer or "unclassified")
+        out[key] = out.get(key, 0) + 1
+    return out
+
+
 @dataclass(frozen=True, slots=True)
 class BoardRebuildIngestionAdapter:
     """Sync rebuild step adapter that enqueues sources for the existing
@@ -371,6 +384,18 @@ class BoardRebuildIngestionAdapter:
                     },
                 )
 
+            # G1 (SPEC4 card 619e58e1): record the per-layer partition presence the
+            # resolved source set EXPECTS to materialize (deterministic, no graph
+            # touch). The orchestrator counts the REAL materialized layers AFTER
+            # the safe-write lifecycle and refuses to promote a rebuild that
+            # dropped an expected partition. The materialized count must NOT be
+            # taken here — opening the graph before the safe-write checkpoint/
+            # close-reopen probe would interfere with that durability gate.
+            merged_counts = {
+                **merged_counts,
+                "expected_by_layer": _expected_layers_from_sources(sources),
+            }
+
             success_drilldown = {
                 **base_result.drilldown,
                 "graph_prepare": {
@@ -380,6 +405,9 @@ class BoardRebuildIngestionAdapter:
                 "queue_drain": drain,
                 "ingestion_mode": "sync_wait_for_worker_drain",
                 "cognitive_preservation": cog_preservation,
+                "layer_materialization": {
+                    "expected_by_layer": merged_counts["expected_by_layer"],
+                },
             }
 
             if cog_preservation["status"] == STATUS_INTEGRITY_ERROR:

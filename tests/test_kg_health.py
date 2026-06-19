@@ -175,6 +175,8 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "active_queue",
         # R6-IMP5: deduplicated 3-domain operational separation (additive).
         "operational_domains",
+        # SPEC4 (card 2e913ac3): structured bounded recovery root-cause (additive).
+        "root_cause",
     }
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == HEALTH_SCHEMA_VERSION

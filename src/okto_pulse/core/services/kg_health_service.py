@@ -1592,6 +1592,45 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         },
     }
 
+    # SPEC4 (card 2e913ac3): structured, bounded recovery root-cause block.
+    # The safe-write probe reads an in-memory counter (cheap). The source
+    # enumeration probe reads SQLite, so it runs only when recovery root-cause
+    # actually matters (degraded board or zero materialized nodes) — a healthy
+    # board's hot health path stays cheap.
+    safe_write_diag = _probe_safe_write_diagnostics(board_id)
+    _needs_source_probe = (
+        empty_after_materialized_history
+        or total_nodes == 0
+        or overall_state != HealthState.HEALTHY
+    )
+    source_diag = (
+        _probe_rebuild_source_diagnostics(board_id)
+        if _needs_source_probe
+        else {
+            "source_count": None,
+            "canonical_source_count": None,
+            "working_source_count": None,
+            "enumeration_failure": False,
+            "error": None,
+            "skipped": "board_healthy",
+        }
+    )
+    root_cause = _build_kg_root_cause(
+        total_nodes=total_nodes,
+        queue_depth=queue_depth,
+        dead_letter_count=dead_letter_count,
+        active_queue=active_queue,
+        empty_after_materialized_history=empty_after_materialized_history,
+        combined_reasons=combined_reasons,
+        source_diag=source_diag,
+        safe_write_diag=safe_write_diag,
+    )
+    # Card detail #4: an unavailable recovery drill-down must NOT read as healthy.
+    if overall_state == HealthState.HEALTHY and root_cause["drilldown_unavailable"]:
+        overall_state = HealthState.AT_RISK
+        combined_reasons.append("drilldown.source_enumeration.unavailable")
+        classification_reason = ";".join(combined_reasons)
+
     return {
         # --- KG-01 REST contract api_3ed9037f ---
         "board_id": board_id,
@@ -1614,6 +1653,11 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         # R6-IMP5: deduplicated 3-domain separation (active_queue / dead_letter /
         # canonical_debt), each with its own count + drill-down tool.
         "operational_domains": operational_domains,
+        # SPEC4 (card 2e913ac3): structured bounded recovery root-cause —
+        # distinguishes wal_or_commit / empty_after_materialized_history /
+        # source_enumeration_failure / safe_write_drain_failure with materialized
+        # node count, source count, queue state and last safe-write outcome.
+        "root_cause": root_cause,
         "total_nodes": total_nodes,
         "default_score_count": default_score_count,
         "default_score_ratio": round(default_score_ratio, 4),
@@ -1707,6 +1751,204 @@ async def _has_materialized_kg_history(db: AsyncSession, board_id: str) -> bool:
             board_id, exc,
         )
         return False
+
+
+# ---------------------------------------------------------------------------
+# SPEC4 (card 2e913ac3): structured recovery root-cause diagnostics.
+# Read-only probes that distinguish the FOUR recovery_needed root causes with
+# bounded fields, reusing the deterministic rebuild source enumerator and the
+# safe-write lifecycle counter. Never mutate, never rebuild.
+# ---------------------------------------------------------------------------
+
+#: Safe-write lifecycle outcomes that signal a drain/commit failure.
+_SAFE_WRITE_FAILURE_OUTCOMES: frozenset[str] = frozenset(
+    {"failed", "boundary_violation"}
+)
+#: Severity rank to pick the worst observed safe-write outcome. The bounded
+#: counter has no per-event timestamp, so "last" is reported as "worst observed".
+_SAFE_WRITE_OUTCOME_SEVERITY: dict[str, int] = {
+    "applied": 0,
+    "blocked": 1,
+    "owner_token_required": 2,
+    "failed": 3,
+    "boundary_violation": 3,
+}
+
+
+def _bounded_probe_error(exc: BaseException) -> str:
+    """Bounded, body-free description of a probe failure (type + short msg)."""
+    msg = str(exc).replace("\n", " ").strip()
+    if len(msg) > 200:
+        msg = msg[:200] + "…"
+    return f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__
+
+
+def _health_pulse_db_path():
+    """Resolve the SQLite file the async engine targets (read-only). Mirrors
+    api.kg_rebuild._resolve_pulse_db_path without the api dependency."""
+    from pathlib import Path
+
+    try:
+        from okto_pulse.core.infra.database import get_engine
+
+        url = str(get_engine().url)
+    except Exception:
+        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
+    idx = url.rfind(":///")
+    if idx < 0:
+        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
+    return Path(url[idx + 4 :])
+
+
+def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
+    """Read-only probe of the deterministic rebuild source enumeration (D1/D3).
+
+    Returns bounded source counts + an ``enumeration_failure`` flag. Reuses the
+    SAME ``RebuildSourceEnumerator`` the formal preflight uses, so the count is
+    the reexecutable source set (NOT the materialized KuzuNodeRef count). Never
+    raises, never rebuilds.
+    """
+    try:
+        from okto_pulse.core.kg.board_source_store import BoardSourceStore
+        from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
+
+        store = BoardSourceStore(db_path=_health_pulse_db_path())
+        source_set = RebuildSourceEnumerator(source_store=store.fetch).enumerate(
+            board_id=board_id
+        )
+        canonical = int(source_set.canonical_source_count)
+        working = int(source_set.working_source_count)
+        return {
+            "source_count": canonical + working,
+            "canonical_source_count": canonical,
+            "working_source_count": working,
+            "enumeration_failure": False,
+            "error": None,
+        }
+    except Exception as exc:  # bounded — source store unavailable / schema drift
+        logger.warning(
+            "kg.health.source_enumeration_probe_failed board=%s err=%s",
+            board_id, exc,
+        )
+        return {
+            "source_count": None,
+            "canonical_source_count": None,
+            "working_source_count": None,
+            "enumeration_failure": True,
+            "error": _bounded_probe_error(exc),
+        }
+
+
+def _probe_safe_write_diagnostics(board_id: str) -> dict[str, Any]:
+    """Read-only summary of safe-write lifecycle outcomes for the board (D2).
+
+    Derives the outcome from the EXISTING bounded lifecycle counter. The counter
+    has no per-event timestamp, so ``last_safe_write_outcome`` reports the WORST
+    observed outcome (a conservative recovery signal) or ``"unknown"`` when no
+    safe-write was recorded. NEVER touches the write-path.
+    """
+    try:
+        from okto_pulse.core.kg.safe_write_lifecycle import (
+            get_lifecycle_counter_samples,
+        )
+
+        outcomes: dict[str, int] = {}
+        for s in get_lifecycle_counter_samples():
+            if s.get("board_id") != board_id:
+                continue
+            count = int(s.get("count") or 0)
+            if count <= 0:
+                continue
+            out = str(s.get("outcome"))
+            outcomes[out] = outcomes.get(out, 0) + count
+        if not outcomes:
+            return {
+                "last_safe_write_outcome": "unknown",
+                "drain_failure": False,
+                "outcomes": {},
+            }
+        worst = max(
+            outcomes, key=lambda o: _SAFE_WRITE_OUTCOME_SEVERITY.get(o, 0)
+        )
+        drain_failure = any(o in _SAFE_WRITE_FAILURE_OUTCOMES for o in outcomes)
+        return {
+            "last_safe_write_outcome": worst,
+            "drain_failure": drain_failure,
+            "outcomes": outcomes,
+        }
+    except Exception as exc:  # bounded — counter unreadable
+        logger.warning(
+            "kg.health.safe_write_probe_failed board=%s err=%s", board_id, exc,
+        )
+        return {
+            "last_safe_write_outcome": "unknown",
+            "drain_failure": False,
+            "outcomes": {},
+            "probe_error": _bounded_probe_error(exc),
+        }
+
+
+def _build_kg_root_cause(
+    *,
+    total_nodes: int,
+    queue_depth: int,
+    dead_letter_count: int,
+    active_queue: dict[str, Any],
+    empty_after_materialized_history: bool,
+    combined_reasons: list[str],
+    source_diag: dict[str, Any],
+    safe_write_diag: dict[str, Any],
+) -> dict[str, Any]:
+    """Assemble the structured, bounded recovery root-cause block (FR fr_66eeff50,
+    TR tr_be1dc85d).
+
+    Distinguishes the FOUR root causes — wal_or_commit_errors,
+    empty_after_materialized_history, source_enumeration_failure and
+    safe_write_drain_failure — each with ``present`` + bounded detail, plus the
+    bounded fields (materialized node count, source count, queue state, last
+    safe-write outcome). Additive: never replaces ``classification_reason``.
+    """
+    wal_or_commit_present = any(
+        r == "graph:wal_or_commit_errors.present" for r in combined_reasons
+    )
+    source_enum_failure = bool(source_diag.get("enumeration_failure"))
+    safe_write_drain_failure = bool(safe_write_diag.get("drain_failure"))
+    categories = {
+        "wal_or_commit_errors": {"present": wal_or_commit_present},
+        "empty_after_materialized_history": {
+            "present": bool(empty_after_materialized_history),
+            "materialized_node_count": int(total_nodes),
+            "source_count": source_diag.get("source_count"),
+        },
+        "source_enumeration_failure": {
+            "present": source_enum_failure,
+            "error": source_diag.get("error"),
+        },
+        "safe_write_drain_failure": {
+            "present": safe_write_drain_failure,
+            "outcomes": safe_write_diag.get("outcomes", {}),
+        },
+    }
+    return {
+        "materialized_node_count": int(total_nodes),
+        "source_count": source_diag.get("source_count"),
+        "queue_state": {
+            "queue_depth": int(queue_depth),
+            "active_classification": active_queue.get("classification"),
+            "active_depth": int(active_queue.get("total_active_depth") or 0),
+            "dead_letter_count": int(dead_letter_count),
+        },
+        "last_safe_write_outcome": safe_write_diag.get(
+            "last_safe_write_outcome", "unknown"
+        ),
+        "categories": categories,
+        # When the source-enumeration recovery drill-down can't be read, the
+        # recovery surface is incomplete and must NOT read as healthy (#4).
+        "drilldown_unavailable": source_enum_failure,
+        "present_categories": [
+            name for name, c in categories.items() if c.get("present")
+        ],
+    }
 
 
 def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
