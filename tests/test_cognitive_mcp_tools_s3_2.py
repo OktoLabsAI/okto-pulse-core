@@ -195,9 +195,11 @@ async def test_ts_e1b66ffa_skip_blocked_by_dlq_409_no_write(tmp_path, db_factory
         mcp_server, "okto_pulse_kg_record_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}", reason_code="trivial_fix",
     )
-    assert out["error"] == "technical_debt_cannot_be_skipped"
-    assert out["status_code"] == 409
-    # sem write: item segue pending.
+    # R5-IMP1: the agent-facing MCP skip is HUMAN-only — it fails closed BEFORE the
+    # service, so the DLQ-409 guard now runs on the human REST path (covered in
+    # test_cognitive_action_center_rest_s3_3). No ledger write either way.
+    assert out["code"] == "human_control_required"
+    assert out["details"]["mutation_allowed"] is False
     iid = compute_cognitive_item_id(board, gen, f"bug:{UUID_A}")
     persisted = {i.item_id: i for i in store.list_items(board, gen)}
     assert persisted[iid].status == CognitiveItemStatus.PENDING.value
@@ -224,7 +226,9 @@ async def test_skip_blocked_by_open_debt_409(tmp_path, db_factory, monkeypatch):
         mcp_server, "okto_pulse_kg_record_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}", reason_code="duplicate_bug",
     )
-    assert out["error"] == "technical_debt_cannot_be_skipped" and out["status_code"] == 409
+    # R5-IMP1: MCP skip is human-only (the debt-409 guard now runs on REST, S3.3).
+    assert out["code"] == "human_control_required"
+    assert out["details"]["mutation_allowed"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -242,19 +246,19 @@ async def test_ts_87b584b4_reason_code_registry_closed(tmp_path, db_factory, mon
     ])
     mcp_server = _wire(monkeypatch, tmp_path, db_factory)
 
-    # reason desconhecido → 400 invalid_reason_code
+    # R5-IMP1: MCP skip is human-only — reason_code validation now runs on the human
+    # REST path (S3.3 covers invalid_reason_code). The agent surface refuses first.
     out = await _call(
         mcp_server, "okto_pulse_kg_record_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}", reason_code="made_up",
     )
-    assert out["error"] == "invalid_reason_code" and out["status_code"] == 400
+    assert out["code"] == "human_control_required"
 
-    # sinal técnico NUNCA é reason_code selecionável → 400
     out2 = await _call(
         mcp_server, "okto_pulse_kg_record_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}", reason_code="technical_dlq",
     )
-    assert out2["error"] == "invalid_reason_code" and out2["status_code"] == 400
+    assert out2["code"] == "human_control_required"
 
     # na listagem, DLQ aparece como error_cause técnico, reason_code cognitivo None.
     async with db_factory() as db:
@@ -282,23 +286,25 @@ async def test_revisit_required_needs_future_revisit_at(tmp_path, db_factory, mo
     ])
     mcp_server = _wire(monkeypatch, tmp_path, db_factory)
 
-    # ausente → 400 revisit_at_required
+    # R5-IMP1: MCP skip is human-only — both the revisit_at_required guard AND the
+    # valid skip run on the human REST path (S3.3). The agent surface refuses and
+    # never writes the ledger.
     out = await _call(
         mcp_server, "okto_pulse_kg_record_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}", reason_code="path_b_pending",
     )
-    assert out["error"] == "revisit_at_required" and out["status_code"] == 400
+    assert out["code"] == "human_control_required"
 
-    # futuro válido → skipped, classification revisit_required
     out2 = await _call(
         mcp_server, "okto_pulse_kg_record_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}", reason_code="path_b_pending",
         revisit_at=FUTURE,
     )
-    assert out2["status"] == "skipped"
-    assert out2["classification"] == "revisit_required"
-    assert out2["reason_code"] == "path_b_pending"
-    assert out2["revisit_at"] == FUTURE
+    assert out2["code"] == "human_control_required"
+    # No write: the item never became skipped via the agent surface.
+    iid = compute_cognitive_item_id(board, gen, f"bug:{UUID_A}")
+    persisted = {i.item_id: i for i in store.list_items(board, gen)}
+    assert persisted[iid].status == CognitiveItemStatus.PENDING.value
 
 
 # ---------------------------------------------------------------------------
@@ -316,29 +322,23 @@ async def test_record_then_clear_reopen_central(tmp_path, db_factory, monkeypatc
     ])
     mcp_server = _wire(monkeypatch, tmp_path, db_factory)
 
+    # R5-IMP1: both the agent MCP record AND clear refuse (human-only); the central
+    # write/reopen path is exercised by the human REST surface (S3.3 parity test).
     rec = await _call(
         mcp_server, "okto_pulse_kg_record_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}", reason_code="trivial_fix",
         justification="nothing reusable", evidence_refs=["e1"],
     )
-    assert rec["status"] == "skipped"
-    assert rec["outcome_type"] == CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value
-    assert rec["classification"] == "terminal"
-    assert rec["readiness_effect"] == "ready_skip"
-    assert rec["justification"] == "nothing reusable" and rec["evidence_refs"] == ["e1"]
-    assert rec["actor"] == "mcp-agent"
+    assert rec["code"] == "human_control_required"
+    assert rec["details"]["mutation_allowed"] is False
 
-    # clear → reopen pending; metadata cognitiva limpa; readiness volta a cognitivo.
     cleared = await _call(
         mcp_server, "okto_pulse_kg_clear_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}",
     )
-    assert cleared["status"] == CognitiveItemStatus.PENDING.value
-    assert cleared["reason_code"] is None and cleared["revisit_at"] is None
-    assert cleared["readiness_effect"] == "blocking_cognitive"
-    assert cleared["actor"] == "mcp-agent"
+    assert cleared["code"] == "human_control_required"
 
-    # persistido de fato pelo caminho central.
+    # No write by EITHER agent call — the item stays PENDING (never skipped).
     iid = compute_cognitive_item_id(board, gen, f"bug:{UUID_A}")
     persisted = {i.item_id: i for i in store.list_items(board, gen)}[iid]
     assert persisted.status == CognitiveItemStatus.PENDING.value
@@ -358,7 +358,8 @@ async def test_clear_non_skipped_409(tmp_path, db_factory, monkeypatch):
         mcp_server, "okto_pulse_kg_clear_cognitive_skip",
         board_id=board, source_ref=f"bug:{UUID_A}",
     )
-    assert out["error"] == "cognitive_item_not_skipped" and out["status_code"] == 409
+    # R5-IMP1: MCP clear is human-only (the not_skipped-409 guard runs on REST, S3.3).
+    assert out["code"] == "human_control_required"
 
 
 # ---------------------------------------------------------------------------

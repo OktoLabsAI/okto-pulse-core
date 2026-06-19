@@ -20,6 +20,7 @@ from okto_pulse.core.models.db import (
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
     ArchitectureDesignUpdate,
+    ArchitectureWarningAcknowledgementRequest,
     BoardSettings,
     BoardUpdate,
     CardCreate,
@@ -558,6 +559,16 @@ async def _seed_board_spec_card(db, *, resource_types: tuple[str, ...]) -> dict[
     return {"board_id": board_id, "actor_id": actor_id, "spec_id": spec_id, "card_id": card_id}
 
 
+def _author_ack() -> ArchitectureWarningAcknowledgementRequest:
+    """Genuine authoring acknowledgement (accepted, no key list -> no mismatch).
+    The synthetic design carries real critic warnings; the author accepts them so
+    the warning-ack gate is satisfied legitimately (not bypassed)."""
+    return ArchitectureWarningAcknowledgementRequest(
+        accepted=True,
+        statement="Test author acknowledges the synthetic architecture critic warnings.",
+    )
+
+
 async def _arch_create_payload() -> ArchitectureDesignCreate:
     return ArchitectureDesignCreate(
         title="Service layer arch",
@@ -572,6 +583,7 @@ async def _arch_create_payload() -> ArchitectureDesignCreate:
         ],
         interfaces=[],
         diagrams=[],
+        architecture_warning_acknowledgement=_author_ack(),
     )
 
 
@@ -625,6 +637,7 @@ async def test_architecture_update_via_repository_propagates_to_linked_cards(db_
                     }
                 ],
                 change_summary="Renamed entity",
+                architecture_warning_acknowledgement=_author_ack(),
             ),
             ctx["actor_id"],
         )
@@ -777,6 +790,7 @@ async def test_disabled_auto_derive_skips_all_service_layer_propagation(db_facto
             ArchitectureDesignUpdate(
                 entities=[{"id": "svc-api", "name": "Renamed", "entity_type": "api", "responsibility": "x"}],
                 change_summary="rename",
+                architecture_warning_acknowledgement=_author_ack(),
             ),
             ctx["actor_id"],
         )

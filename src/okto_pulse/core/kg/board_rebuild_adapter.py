@@ -241,6 +241,16 @@ class BoardRebuildIngestionAdapter:
             # KG-02.5's RebuildStepResult doesn't carry raw sources; a
             # second call keeps the layering clean.
             sources = tuple(source_resolver(req))
+
+            # R2-IMP2: snapshot canonical cognitive knowledge (Learning/Alternative/
+            # Assumption + relevant edges) BEFORE the purge so the deterministic
+            # rebuild cannot silently drop it. Best-effort read; an unreadable graph
+            # is recorded (readable=False), never a silent skip.
+            from okto_pulse.core.kg.canonical_cognitive_preservation import (
+                snapshot_canonical_cognitive,
+            )
+            cognitive_snapshot = snapshot_canonical_cognitive(req.board_id)
+
             try:
                 affected_files = self.prepare_board_graph_storage(
                     board_id=req.board_id,
@@ -328,6 +338,68 @@ class BoardRebuildIngestionAdapter:
                     },
                 )
 
+            # R2-IMP2: restore canonical cognitive knowledge AFTER deterministic
+            # re-materialization. Anything unrestorable is TRACED (degraded — never
+            # a silent clean success) + a bug-derived Learning gets a traceable R7
+            # hold. A broken preservation mechanism fails the rebuild CLOSED.
+            from okto_pulse.core.kg.canonical_cognitive_preservation import (
+                STATUS_DEGRADED,
+                STATUS_INTEGRITY_ERROR,
+                STATUS_UNREADABLE,
+                preservation_summary,
+                record_cognitive_loss_fallback,
+                restore_canonical_cognitive,
+            )
+            cog_restore = restore_canonical_cognitive(req.board_id, cognitive_snapshot)
+            cog_preservation = preservation_summary(cognitive_snapshot, cog_restore)
+            if cog_preservation["status"] in (STATUS_DEGRADED, STATUS_UNREADABLE):
+                cog_preservation["fallback_holds_recorded"] = (
+                    record_cognitive_loss_fallback(req.board_id, cog_preservation)
+                )
+                logger.warning(
+                    "kg.rebuild.cognitive_preservation_degraded board=%s status=%s "
+                    "unrestorable=%d readable=%s",
+                    req.board_id, cog_preservation["status"],
+                    cog_preservation["unrestorable_count"],
+                    cog_preservation["readable"],
+                    extra={
+                        "event": "kg.rebuild.cognitive_preservation_degraded",
+                        "board_id": req.board_id,
+                        "status": cog_preservation["status"],
+                        "unrestorable_count": cog_preservation["unrestorable_count"],
+                        "readable": cog_preservation["readable"],
+                    },
+                )
+
+            success_drilldown = {
+                **base_result.drilldown,
+                "graph_prepare": {
+                    "quarantined_files": len(affected_files),
+                },
+                "enqueue": counts_q,
+                "queue_drain": drain,
+                "ingestion_mode": "sync_wait_for_worker_drain",
+                "cognitive_preservation": cog_preservation,
+            }
+
+            if cog_preservation["status"] == STATUS_INTEGRITY_ERROR:
+                # Fail closed: the preservation mechanism could not even produce a
+                # trace — do NOT report a possibly-lossy rebuild as success.
+                return RebuildStepResult(
+                    ok=False,
+                    detail="cognitive_preservation_integrity_error",
+                    current_kg_generation_id=base_result.current_kg_generation_id,
+                    previous_kg_generation_id=base_result.previous_kg_generation_id,
+                    affected_files=(
+                        tuple(base_result.affected_files) + affected_files
+                    ),
+                    structural_hash=base_result.structural_hash,
+                    source_hash=base_result.source_hash,
+                    counts=merged_counts,
+                    reconciliation_decisions=base_result.reconciliation_decisions,
+                    drilldown=success_drilldown,
+                )
+
             return RebuildStepResult(
                 ok=True,
                 current_kg_generation_id=base_result.current_kg_generation_id,
@@ -339,15 +411,7 @@ class BoardRebuildIngestionAdapter:
                 source_hash=base_result.source_hash,
                 counts=merged_counts,
                 reconciliation_decisions=base_result.reconciliation_decisions,
-                drilldown={
-                    **base_result.drilldown,
-                    "graph_prepare": {
-                        "quarantined_files": len(affected_files),
-                    },
-                    "enqueue": counts_q,
-                    "queue_drain": drain,
-                    "ingestion_mode": "sync_wait_for_worker_drain",
-                },
+                drilldown=success_drilldown,
             )
 
         return _adapter

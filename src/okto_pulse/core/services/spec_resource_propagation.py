@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.models.db import ActivityLog, Board, Card, Spec, SpecKnowledgeBase
-from okto_pulse.core.models.schemas import ArchitectureDesignUpdate
+from okto_pulse.core.models.schemas import (
+    ArchitectureDesignUpdate,
+    ArchitectureWarningAcknowledgementRequest,
+)
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitecturePropagationService,
@@ -400,6 +403,17 @@ class SpecResourcePropagationService:
                 source_version=spec_version,
                 source_design_id=design.id,
                 change_summary=f"Refresh from spec design {design.id} v{spec_version}",
+                # Bug eded2f0e (R3, option B): the card design is an internal
+                # snapshot of an already-acknowledged spec design (source_design_id
+                # set) — re-syncing it is NOT new authoring, so carry a system
+                # acknowledgement. The authoring gate is unchanged for direct saves.
+                architecture_warning_acknowledgement=ArchitectureWarningAcknowledgementRequest(
+                    accepted=True,
+                    statement=(
+                        "internal snapshot re-sync of an already-acknowledged spec "
+                        "architecture design"
+                    ),
+                ),
             )
             await repository.update(target.id, patch, actor_id)
             copied_count += 1
@@ -411,7 +425,20 @@ class SpecResourcePropagationService:
                 self.db,
                 repository=repository,
             )
-            new_designs = await propagation_service.copy_spec_to_card(spec.id, card.id, actor_id)
+            new_designs = await propagation_service.copy_spec_to_card(
+                spec.id, card.id, actor_id,
+                # Bug eded2f0e (R3, option B): system-supplied copy-scoped ack for
+                # the internal snapshot of an already-acknowledged spec design. The
+                # gate is intact — copy_from_parent still requires an explicit ack
+                # (this is one), and a direct authoring save still raises without.
+                architecture_warning_acknowledgement=ArchitectureWarningAcknowledgementRequest(
+                    accepted=True,
+                    statement=(
+                        "internal snapshot copy of an already-acknowledged spec "
+                        "architecture design"
+                    ),
+                ),
+            )
             copied_ids.extend(design.id for design in new_designs if design.id not in copied_ids)
 
         return {

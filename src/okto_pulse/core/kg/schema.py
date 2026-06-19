@@ -194,6 +194,17 @@ _COMMON_NODE_ATTRS = """
     embedding DOUBLE[384]
 """.strip()
 
+# R6-IMP3: the stable scalar properties guaranteed on EVERY canonical node label —
+# every node table is created from _COMMON_NODE_ATTRS, so these are the ONLY
+# schema-safe properties to query on any label. Derived from the DDL above (drift-
+# safe). ``embedding`` is excluded: it is the 384-d vector, surfaced via
+# vector_indexes / has_vector_index, not a scalar property an agent filters on.
+STABLE_NODE_PROPERTIES: tuple[str, ...] = tuple(
+    line.strip().split()[0]
+    for line in _COMMON_NODE_ATTRS.splitlines()
+    if line.strip() and line.strip().split()[0] != "embedding"
+)
+
 # Columns added in v0.3.0 — used by the migration probe and ALTER TABLE path
 # when the node table already exists but lacks the new columns. Kùzu accepts
 # ALTER TABLE ADD for nullable columns without DEFAULT, which is enough since

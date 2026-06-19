@@ -1,9 +1,14 @@
 """Card b682b5de (ts_2b024c93) — E2E coverage of the MCP skip tool itself.
 
 Invokes okto_pulse_set_ideation_ambiguity_gate_skip through the real MCP tool
-surface (with a stubbed agent auth context) and asserts payload equivalence
-with the REST endpoint — not just a shared service path. Satisfies the
-validator's explicit requirement for FR14/BR7.
+surface (with a stubbed agent auth context).
+
+R5-IMP1 (card e9a6b251) supersedes the original agent-mutable contract: the
+ambiguity-gate skip is now a HUMAN-only control. The agent-facing MCP tool fails
+closed with ``human_control_required`` (no skip_ambiguity_gate mutation); the
+human REST surface (PATCH /ambiguity-gate-skip via require_user) remains the path
+and still persists the skip. These E2E tests assert the new contract: MCP refuses
+fail-closed, REST persists.
 """
 
 from __future__ import annotations
@@ -97,48 +102,53 @@ def _rest_client():
 
 
 @pytest.mark.asyncio
-async def test_mcp_skip_tool_persists_while_evaluating(db_factory):
+async def test_mcp_skip_tool_is_human_only_and_does_not_persist(db_factory):
+    # R5-IMP1: the agent-facing MCP tool fails closed and never persists the skip.
     board_id, ideation_id = await _seed(db_factory)
 
     res = await _call(SKIP_TOOL, board_id=board_id, ideation_id=ideation_id, skip_ambiguity_gate=True)
 
-    assert res["success"] is True
-    assert res["id"] == ideation_id
-    assert res["status"] == "evaluating"
-    assert res["skip_ambiguity_gate"] is True
-    assert "updated_at" in res
+    assert res["code"] == "human_control_required"
+    d = res["details"]
+    assert d["mutation_allowed"] is False
+    assert d["state_changed"] is False
+    assert d["required_actor"] == "human"
+    assert d["required_surface"] == "ui|human_rest"
+    assert d["target_ref"] == f"ideation:{ideation_id}"
 
-    # Persisted through the real service path.
+    # TEETH: skip_ambiguity_gate was NOT mutated by the agent surface.
     async with db_factory() as db:
         reloaded = await db.get(Ideation, ideation_id)
-        assert reloaded.skip_ambiguity_gate is True
+        assert reloaded.skip_ambiguity_gate is False
 
 
 @pytest.mark.asyncio
-async def test_mcp_skip_tool_rejects_archived(db_factory):
+async def test_mcp_skip_tool_archived_still_human_only(db_factory):
+    # R5-IMP1: the MCP tool refuses BEFORE the service, so even an archived ideation
+    # surfaces human_control_required (the archived guard now runs on the human path).
     board_id, ideation_id = await _seed(db_factory, archived=True)
 
     res = await _call(SKIP_TOOL, board_id=board_id, ideation_id=ideation_id, skip_ambiguity_gate=True)
 
-    assert "error" in res
-    assert "archived" in res["error"].lower()
+    assert res["code"] == "human_control_required"
+    assert res["details"]["mutation_allowed"] is False
 
 
 @pytest.mark.asyncio
-async def test_mcp_skip_tool_unknown_ideation_returns_not_found(db_factory):
+async def test_mcp_skip_tool_unknown_ideation_still_human_only(db_factory):
+    # R5-IMP1: fail-closed BEFORE any lookup — an unknown ideation also refuses
+    # (the agent cannot mutate regardless of existence).
     board_id, _ = await _seed(db_factory)
 
     res = await _call(SKIP_TOOL, board_id=board_id, ideation_id=_id("missing"), skip_ambiguity_gate=True)
 
-    assert "error" in res
-    assert "not found" in res["error"].lower()
+    assert res["code"] == "human_control_required"
 
 
 @pytest.mark.asyncio
-async def test_mcp_and_rest_skip_payloads_are_equivalent(db_factory):
-    # Two ideations with identical starting state on identically-configured boards:
-    # one toggled via the MCP tool, one via the REST endpoint. The overlapping
-    # response fields must match (same skip semantics, same status).
+async def test_rest_persists_while_mcp_refuses(db_factory):
+    # R5-IMP1: the human REST surface still persists the skip; the agent MCP surface
+    # refuses fail-closed. No payload parity (by design).
     mcp_board, mcp_ideation = await _seed(db_factory)
     _, rest_ideation = await _seed(db_factory)
 
@@ -150,8 +160,12 @@ async def test_mcp_and_rest_skip_payloads_are_equivalent(db_factory):
         json={"skip_ambiguity_gate": True},
     ).json()
 
-    assert mcp_res["skip_ambiguity_gate"] is True
+    # REST (human) persists ...
     assert rest_res["skip_ambiguity_gate"] is True
-    assert mcp_res["status"] == rest_res["status"] == "evaluating"
-    assert mcp_res["id"] == mcp_ideation
+    assert rest_res["status"] == "evaluating"
     assert rest_res["id"] == rest_ideation
+    # ... MCP (agent) refuses, and its ideation was NOT mutated.
+    assert mcp_res["code"] == "human_control_required"
+    async with db_factory() as db:
+        reloaded = await db.get(Ideation, mcp_ideation)
+        assert reloaded.skip_ambiguity_gate is False

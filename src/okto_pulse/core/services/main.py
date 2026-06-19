@@ -761,6 +761,25 @@ def _compile_qa_context(qa_items: list) -> str | None:
     return "## Q&A Decisions\n" + "\n\n".join(lines)
 
 
+_PROPAGATED_KB_PREFIX = "[propagated from parent]"
+
+
+def _propagated_kb_description(description: str | None) -> str:
+    """R6-IMP1 (FR1/AC1) — apply the propagation marker AT MOST ONCE.
+
+    In a multi-hop chain (ideation -> refinement -> spec -> card) the source KB
+    already carries the prefix from the previous hop, because every hop copies the
+    parent's (already-prefixed) description through this same path. Prepending
+    again would stack ``[propagated from parent] [propagated from parent] ...``.
+    Idempotent: if the stripped description already starts with the marker, return
+    it unchanged; otherwise prepend once. Origin metadata (source_*/source_kb_id)
+    is untouched — only the human-readable marker is normalized."""
+    body = (description or "").strip()
+    if body.startswith(_PROPAGATED_KB_PREFIX):
+        return body
+    return f"{_PROPAGATED_KB_PREFIX} {body}".strip()
+
+
 async def propagate_artifacts(
     db: AsyncSession,
     source_mockups: list[dict] | None,
@@ -807,17 +826,26 @@ async def propagate_artifacts(
                 kb_payload = {
                     target_id_field: target_entity.id,
                     "title": _get("title"),
-                    "description": f"[propagated from parent] {_get('description') or ''}".strip(),
+                    # R6-IMP1: idempotent prefix — never stack across multi-hop chains.
+                    "description": _propagated_kb_description(_get("description")),
                     "content": _get("content"),
                     "mime_type": _get("mime_type") or "text/markdown",
                     "created_by": user_id,
                 }
+                # R6-IMP4: multi-hop KB lineage. The immediate parent is the KB
+                # being copied; the root is the parent's OWN root when it already
+                # has one (so a 3rd hop keeps the canonical origin), else the
+                # parent itself. source_kb_id stays == immediate parent (back-compat).
+                parent_kb_id = _get("id")
+                parent_root = _get("root_source_kb_id")
                 source_values = {
                     "source_type": source_type,
                     "source_id": source_id,
                     "source_title": source_title,
                     "source_version": source_version,
-                    "source_kb_id": _get("id"),
+                    "source_kb_id": parent_kb_id,
+                    "immediate_parent_kb_id": parent_kb_id,
+                    "root_source_kb_id": parent_root or parent_kb_id,
                 }
                 for attr, value in source_values.items():
                     if value is not None and hasattr(target_kb_class, attr):
@@ -927,8 +955,15 @@ async def propagate_architecture_designs(
     if normalized in {"reference_only", "none"}:
         return []
 
+    from okto_pulse.core.models.schemas import ArchitectureWarningAcknowledgementRequest
     from okto_pulse.core.services.architecture import ArchitecturePropagationService
 
+    # Bug eded2f0e (R3, option B): SDLC artifact propagation is an INTERNAL
+    # snapshot copy of an already-acknowledged source architecture design — not a
+    # new authoring action. The copy still gets its OWN copy-scoped acknowledgement
+    # record (copy_from_parent enforces an explicit ack for warning-bearing copies;
+    # the gate is NOT weakened), supplied here by the system on the artifact's
+    # behalf so legitimate propagation is not blocked.
     return await ArchitecturePropagationService(db).copy_from_parent(
         source_parent_type=source_parent_type,
         source_parent_id=source_parent_id,
@@ -936,6 +971,13 @@ async def propagate_architecture_designs(
         target_parent_id=target_parent_id,
         actor_id=actor_id,
         design_ids=design_ids,
+        architecture_warning_acknowledgement=ArchitectureWarningAcknowledgementRequest(
+            accepted=True,
+            statement=(
+                f"internal snapshot propagation of an already-acknowledged "
+                f"{source_parent_type} architecture design"
+            ),
+        ),
     )
 
 
@@ -1754,7 +1796,14 @@ class CardService:
         old_status = card.status
 
         if getattr(card, "card_type", CardType.NORMAL) == CardType.TEST:
-            raise ValueError("Card type 'test' is not subject to validation gate.")
+            # R4-IMP1: normalized contract pointing at the test-card operational
+            # path (scenario status update + move_card done). Same rejection.
+            from okto_pulse.core.services.gate_contracts import (
+                task_validation_unsupported_for_test_card_error,
+            )
+            raise task_validation_unsupported_for_test_card_error(
+                card_id=card.id, board_id=card.board_id, spec_id=card.spec_id,
+            )
 
         # Resolve thresholds from hierarchy
         board = await self.db.get(Board, card.board_id)
@@ -2468,15 +2517,24 @@ class CardService:
                 for sid in (card.test_scenario_ids or []):
                     sc = all_scenarios.get(sid)
                     if sc and sc.get("status") in ("draft", "ready"):
-                        stale.append(sc.get("title", sid))
+                        stale.append({
+                            "id": sid,
+                            "title": sc.get("title", sid),
+                            "status": sc.get("status"),
+                        })
                 if stale:
-                    titles = ", ".join(f'"{t}"' for t in stale[:3])
-                    suffix = f" and {len(stale) - 3} more" if len(stale) > 3 else ""
-                    raise ValueError(
-                        f"Cannot complete this test card: {len(stale)} linked scenario(s) "
-                        f"still have status 'draft' or 'ready' ({titles}{suffix}). "
-                        f"Update scenario statuses to 'automated' or 'passed' using "
-                        f"okto_pulse_update_test_scenario_status before completing the card."
+                    # R4-IMP1: normalized test_card_completion contract with the
+                    # actionable pending scenarios. Same block (draft/ready scenarios
+                    # prevent done); no auto-promotion.
+                    from okto_pulse.core.services.gate_contracts import (
+                        incomplete_test_card_completion_error,
+                    )
+                    raise incomplete_test_card_completion_error(
+                        card_id=card.id,
+                        current_status=old_status.value if old_status else None,
+                        pending_scenarios=stale,
+                        board_id=card.board_id,
+                        spec_id=card.spec_id,
                     )
 
         # --- Bug card: block in_progress/done without properly linked test tasks ---
@@ -4807,11 +4865,13 @@ class SpecService:
                 spec.status == SpecStatus.APPROVED
                 and board_settings.get("require_spec_validation", True)
             ):
-                raise ValueError(
-                    "Spec Validation Gate is enabled on this board. Direct "
-                    "approved→validated is blocked — submit a spec validation "
-                    "via okto_pulse_submit_spec_validation (or the IDE Validate "
-                    "button) to go through the semantic quality gate."
+                # R4-IMP1: same block, normalized operational contract (GateContractError
+                # subclasses ValueError — no state-machine change, no auto-promotion).
+                from okto_pulse.core.services.gate_contracts import (
+                    spec_validation_gate_error,
+                )
+                raise spec_validation_gate_error(
+                    spec_id=spec.id, current_status=spec.status.value,
                 )
 
         # Re-execute coverage gates + qualitative validation when moving to in_progress
@@ -6851,13 +6911,19 @@ class IdeationService:
         if score is None:
             raise AmbiguityGateError(
                 "Max ambiguity gate failed: ambiguity has not been evaluated. "
-                "Evaluate ideation ambiguity or skip this gate for the ideation."
+                "Evaluate the ideation's ambiguity (e.g. via Q&A). Skipping the gate "
+                "for this ideation is a human decision applied through the authorized "
+                "UI/REST control — an agent cannot apply the skip and should request a "
+                "human decision."
             )
         if score > threshold:
             raise AmbiguityGateError(
                 f"Max ambiguity gate failed: ambiguity score {score} exceeds "
-                f"configured max {threshold}. Reduce ambiguity through Q&A, raise "
-                f"the threshold, disable the board gate, or skip this ideation."
+                f"configured max {threshold}. Reduce ambiguity through Q&A, or raise "
+                f"the threshold / disable the board gate. Skipping the gate for this "
+                f"ideation is a human decision applied through the authorized UI/REST "
+                f"control — an agent cannot apply the skip and should request a human "
+                f"decision."
             )
 
     async def move_ideation(

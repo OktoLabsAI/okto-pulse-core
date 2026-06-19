@@ -1004,6 +1004,47 @@ async def _migrate_add_knowledge_source_columns() -> None:
                         pass
 
 
+async def _migrate_add_kb_lineage_columns() -> None:
+    """R6-IMP4: add multi-hop KB lineage columns to the entity KB tables.
+
+    ``root_source_kb_id`` = the INITIAL canonical origin KB (preserved across
+    ideation->refinement->spec hops); ``immediate_parent_kb_id`` = the direct
+    parent KB. Additive + idempotent; ``source_kb_id`` stays the immediate parent
+    for back-compat. Mirrors ``_migrate_add_knowledge_source_columns``."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    tables = [
+        "ideation_knowledge_bases",
+        "refinement_knowledge_bases",
+        "spec_knowledge_bases",
+    ]
+    columns = [
+        ("root_source_kb_id", "VARCHAR(36)"),
+        ("immediate_parent_kb_id", "VARCHAR(36)"),
+    ]
+    async with get_engine().begin() as conn:
+        for table in tables:
+            if dialect == "postgresql":
+                table_check = await conn.execute(sa_text(
+                    f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}')"
+                ))
+                if not table_check.scalar():
+                    continue
+                for col_name, col_type in columns:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                    ))
+            else:
+                for col_name, col_type in columns:
+                    try:
+                        await conn.execute(sa_text(
+                            f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                        ))
+                    except Exception:
+                        pass
+
+
 async def _migrate_add_kg_tick_boards_failed() -> None:
     """Add boards_failed column to kg_tick_runs table (spec R2b, IMPL-2/TR4).
 
@@ -1207,6 +1248,7 @@ async def init_db() -> None:
     await _migrate_add_card_sprint_id()
     await _migrate_add_card_knowledge_bases()
     await _migrate_add_knowledge_source_columns()
+    await _migrate_add_kb_lineage_columns()
     await _migrate_add_sprint_scope_fields()
     await _migrate_add_sprint_lane_fields()
     await _migrate_agent_boards()

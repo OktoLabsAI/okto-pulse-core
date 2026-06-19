@@ -1,0 +1,231 @@
+"""R3-IMP2 (card 67eb2096) — copy tools fall back to the EFFECTIVE inherited
+resource when a manual/legacy spec has no direct resource, with an identity the
+Resource Gate reads; a provided-but-unresolvable resource yields a structured
+actionable error (never a generic "no resources to copy").
+
+Anti-test-theater: the copy is the REAL MCP tool over a REAL spec→refinement
+lineage; the end-to-end teeth is that the Resource Gate's spec→task coverage flips
+to satisfied after the fallback copy (proving the copied identity is the one the
+gate matches), and that WITHOUT a resource the tool returns an honest empty (not a
+generic error) while a provided-but-unresolvable obligation returns the structured
+error.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from sqlalchemy import select
+
+from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.models.db import (
+    ArchitectureDesign,
+    Board,
+    Card,
+    CardStatus,
+    CardType,
+    Ideation,
+    Refinement,
+    RefinementKnowledgeBase,
+    Spec,
+)
+from okto_pulse.core.mcp.server import _effective_empty_copy_response
+from okto_pulse.core.services.resource_gate import ResourceGateService
+
+USER_ID = "user-r3-imp2"
+
+
+def _id(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+class _Ctx:
+    def __init__(self):
+        self.agent_id = USER_ID
+        self.agent_name = "r3 tester"
+        self.permissions = object()
+
+
+async def _call(name: str, **kwargs) -> dict:
+    from okto_pulse.core.infra.database import get_session_factory
+
+    mcp_server.register_session_factory(get_session_factory())
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
+         patch.object(mcp_server, "check_permission", return_value=None), \
+         patch.object(mcp_server, "_mcp_check_architecture_copy_permission", return_value=None):
+        tool = await mcp_server.mcp.get_tool(name)
+        raw = await tool.fn(**kwargs)
+    return json.loads(raw)
+
+
+async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=False,
+                                  with_architecture=False):
+    """A manual/legacy spec (NO direct resources) linked to a refinement that
+    DOES carry the requested resource(s) — the effective inherited case."""
+    board_id = _id("board")
+    ideation_id = _id("idea")
+    refinement_id = _id("ref")
+    spec_id = _id("spec")
+    card_id = _id("card")
+    ref_kb_id = _id("refkb")
+    ref_mockup_id = _id("refmock")
+    ref_design_id = _id("refdesign")
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="r3 imp2", owner_id=USER_ID))
+        db.add(Ideation(id=ideation_id, board_id=board_id, title="idea", created_by=USER_ID))
+        db.add(Refinement(
+            id=refinement_id, board_id=board_id, ideation_id=ideation_id,
+            title="refinement", created_by=USER_ID,
+            screen_mockups=(
+                [{"id": ref_mockup_id, "title": "Ref mockup", "screen_type": "form",
+                  "html_content": "<div/>"}] if with_mockup else []
+            ),
+        ))
+        if with_kb:
+            db.add(RefinementKnowledgeBase(
+                id=ref_kb_id, refinement_id=refinement_id, title="Ref KB",
+                description="d", content="ref content", mime_type="text/markdown",
+                created_by=USER_ID,
+            ))
+        if with_architecture:
+            db.add(ArchitectureDesign(
+                id=ref_design_id, board_id=board_id, parent_type="refinement",
+                refinement_id=refinement_id, title="Ref design", global_description="g",
+                entities=[], interfaces=[], diagrams=[], created_by=USER_ID,
+            ))
+        # The spec is linked to the refinement but has NO direct resources.
+        db.add(Spec(id=spec_id, board_id=board_id, refinement_id=refinement_id,
+                    ideation_id=ideation_id, title="Legacy manual spec",
+                    created_by=USER_ID))
+        db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="impl card",
+                    status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL,
+                    created_by=USER_ID))
+        await db.commit()
+    return {"board_id": board_id, "refinement_id": refinement_id, "spec_id": spec_id,
+            "card_id": card_id, "ref_kb_id": ref_kb_id, "ref_mockup_id": ref_mockup_id,
+            "ref_design_id": ref_design_id}
+
+
+# ===========================================================================
+# AC: knowledge fallback to effective inherited + gate coverage flips satisfied
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_copy_knowledge_falls_back_to_effective_and_gate_is_covered(db_factory):
+    seed = await _legacy_spec_inheriting(db_factory, with_kb=True)
+
+    result = await _call(
+        "okto_pulse_copy_knowledge_to_card",
+        board_id=seed["board_id"], spec_id=seed["spec_id"], card_id=seed["card_id"],
+    )
+    assert result.get("success") is True, result
+    assert result["fallback"] is True
+    assert result["copied"] >= 1
+
+    # The card KB carries the gate identity == the effective refinement kb id.
+    async with db_factory() as db:
+        card = await db.get(Card, seed["card_id"])
+        kbs = list(card.knowledge_bases or [])
+    assert any(kb.get("source_kb_id") == seed["ref_kb_id"] for kb in kbs), kbs
+
+    # END-TO-END TEETH: the spec's inherited KB obligation is now covered by the
+    # card (the copied identity is exactly the one the gate matches).
+    async with db_factory() as db:
+        coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
+            seed["board_id"], seed["spec_id"],
+        )
+    kb_uncovered = [
+        r for r in coverage["uncovered_resources"]
+        if r["resource_type"] == "knowledge_base"
+    ]
+    assert kb_uncovered == [], coverage["uncovered_resources"]
+
+
+@pytest.mark.asyncio
+async def test_copy_mockups_falls_back_to_effective(db_factory):
+    seed = await _legacy_spec_inheriting(db_factory, with_mockup=True)
+
+    result = await _call(
+        "okto_pulse_copy_mockups_to_card",
+        board_id=seed["board_id"], spec_id=seed["spec_id"], card_id=seed["card_id"],
+    )
+    assert result.get("success") is True, result
+    assert result["fallback"] is True and result["copied"] >= 1
+
+    async with db_factory() as db:
+        card = await db.get(Card, seed["card_id"])
+        mockups = list(card.screen_mockups or [])
+    # Mockup keeps its id (the gate identity) == the effective refinement mockup.
+    assert any(m.get("id") == seed["ref_mockup_id"] for m in mockups), mockups
+
+
+@pytest.mark.asyncio
+async def test_copy_architecture_falls_back_to_effective(db_factory):
+    seed = await _legacy_spec_inheriting(db_factory, with_architecture=True)
+
+    result = await _call(
+        "okto_pulse_copy_architecture_to_card",
+        board_id=seed["board_id"], spec_id=seed["spec_id"], card_id=seed["card_id"],
+    )
+    assert "error" not in result, result
+
+    async with db_factory() as db:
+        designs = (await db.execute(
+            select(ArchitectureDesign).where(
+                ArchitectureDesign.parent_type == "card",
+                ArchitectureDesign.card_id == seed["card_id"],
+            )
+        )).scalars().all()
+    # The card design carries source_design_id == the effective refinement design.
+    assert any(getattr(d, "source_design_id", None) == seed["ref_design_id"]
+               for d in designs), [getattr(d, "source_design_id", None) for d in designs]
+
+
+# ===========================================================================
+# Point 6 — honest empty vs structured error (never generic "no resources")
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_copy_knowledge_no_resource_required_is_clean_empty(db_factory):
+    # Neither the spec nor the refinement has any KB -> no obligation.
+    seed = await _legacy_spec_inheriting(db_factory)  # no resources anywhere
+
+    result = await _call(
+        "okto_pulse_copy_knowledge_to_card",
+        board_id=seed["board_id"], spec_id=seed["spec_id"], card_id=seed["card_id"],
+    )
+    # Honest empty — NOT a generic "No knowledge bases to copy" error.
+    assert result.get("success") is True, result
+    assert result.get("copied") == 0
+    assert result.get("reason") == "no_resource_required"
+    assert "error" not in result
+
+
+def test_effective_empty_copy_response_branches():
+    # N/A -> success not_applicable (no error).
+    na = json.loads(_effective_empty_copy_response(
+        "knowledge_base", {"not_applicable": True, "has_obligation": True}))
+    assert na["success"] is True and na["reason"] == "not_applicable"
+
+    # No obligation -> honest empty success.
+    none = json.loads(_effective_empty_copy_response(
+        "mockup", {"not_applicable": False, "has_obligation": False}))
+    assert none["success"] is True and none["reason"] == "no_resource_required"
+
+    # Provided obligation but unresolvable -> structured actionable error.
+    err = json.loads(_effective_empty_copy_response(
+        "architecture",
+        {"not_applicable": False, "has_obligation": True,
+         "coverage_obligation_id": "architecture:design-x",
+         "accepted_identity_fields": ["source_design_id", "source_ref", "id"]},
+    ))
+    assert err["error"] == "resource_propagation_failed"
+    assert err["resource_type"] == "architecture"
+    assert err["coverage_obligation_id"] == "architecture:design-x"
+    assert "source_design_id" in err["accepted_identity_fields"]
+    assert err["retryable"] is True

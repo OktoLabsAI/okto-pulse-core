@@ -830,6 +830,14 @@ class ResolvedResourceLineageService:
         return {
             "unique_resources_count": len(unique_resources),
             "attachment_count": len(attachments),
+            # R6-IMP4 (FR4/AC4): unambiguous raw-vs-effective labels so a raw total
+            # is never read as effective coverage. `unique_effective_count` is the
+            # deduped effective resource count (coverage basis); `raw_attachment_count`
+            # is the raw attachment total (NOT coverage). Additive aliases — the
+            # legacy keys above are preserved for back-compat.
+            "unique_effective_count": len(unique_resources),
+            "raw_attachment_count": len(attachments),
+            "coverage_basis": "unique_effective",
             "direct_resources_count": sum(
                 1 for item in attachments if item.attachment_kind == "direct"
             ),

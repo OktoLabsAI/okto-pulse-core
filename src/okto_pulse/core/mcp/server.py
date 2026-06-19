@@ -45,6 +45,21 @@ from okto_pulse.core.services.main import (
     TopicOperationError,
 )
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
+from okto_pulse.core.services.gate_contracts import (
+    GateContractError,
+    human_control_required_envelope,
+    operational_flow_for_test_card,
+    spec_evaluation_success_envelope,
+    spec_gate_readiness,
+    task_gate_readiness,
+)
+from okto_pulse.core.services.human_control_metrics import (
+    emit_human_control_required,
+)
+from okto_pulse.core.services.skip_overrides import (
+    ideation_skip_overrides,
+    spec_skip_overrides,
+)
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitectureDiagramAdapterRegistry,
@@ -527,6 +542,21 @@ def _auth_error() -> str:
 
 def _perm_error(msg: str) -> str:
     return json.dumps({"error": msg})
+
+
+def _refuse_human_control(
+    *, board_id: str, blocked_tool: str, blocked_action: str, target_ref: str | None = None,
+) -> str:
+    """R5-IMP5 — single agent-boundary choke point for a human-only skip/no_action
+    refusal. Emits the bounded-label rejection counter, then returns the read-only
+    ``human_control_required`` envelope (gate_contracts stays pure). Fail-closed: no
+    DB / ledger / skip_ambiguity_gate mutation — the metric is in-process only."""
+    emit_human_control_required(
+        board_id=board_id, blocked_tool=blocked_tool, blocked_action=blocked_action,
+    )
+    return json.dumps(human_control_required_envelope(
+        blocked_tool=blocked_tool, blocked_action=blocked_action, target_ref=target_ref,
+    ))
 
 
 def _mcp_permission_error_response(msg: str) -> str:
@@ -2327,7 +2357,22 @@ async def okto_pulse_get_task_context(
     (card body + spec requirement texts + this card's scenarios + validations) and
     deduplicates resolved references; `full`/`legacy` return the complete prior
     payload. **Before doing card work or a status-changing move, call with
-    `profile=full`** (see okto-pulse://reference/projection-profiles)."""
+    `profile=full`** (see okto-pulse://reference/projection-profiles).
+
+    For `card_type='test'` the payload includes a read-only `test_card_operational_flow`
+    block (R4): test cards are NOT subject to the task-validation gate — complete them
+    by setting each linked scenario to automated/passed via
+    `okto_pulse_update_test_scenario_status`, then `okto_pulse_move_card(status='done')`.
+    The block lists `linked_scenarios`, `pending_scenarios`, `would_block_done` and the
+    operational `next_action` (it never bypasses or auto-skips a scenario).
+
+    Every payload also carries a read-only `gate_readiness` block (R4-IMP4): the board's
+    `cognitive_enforcement_active`/`cognitive_enforcement_mode` (advisory|enforced), the
+    card's own `cognitive_readiness` verdict (with an enforcement-aware `would_block_done`
+    — a `blocking` verdict under an advisory policy does NOT block done), the single
+    `active_gate` relevant to completing the card (`gate_type`/`required_tool`/
+    `would_block_done`) and a `consistency` self-check. It mirrors what the done-gate
+    enforces; it never induces a skip (`mutation_allowed=false`)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2559,10 +2604,44 @@ async def okto_pulse_get_task_context(
         )
 
         from okto_pulse.core.mcp.context_projection import project_task_context
-        return json.dumps(
-            project_task_context(result, card_id=card_id, profile=profile),
-            default=str,
+        projected = project_task_context(result, card_id=card_id, profile=profile)
+        # R4-IMP3: proactive read-only operational-flow block for test cards (reuses
+        # the R4-IMP1 test_card_completion contract). Injected AFTER projection so it
+        # is present in every profile — the operator sees the completion path before
+        # hitting the gate. No state-machine change.
+        operational_flow = None
+        if card.card_type and card.card_type.value == "test":
+            linked_scenarios = []
+            if spec and card.test_scenario_ids:
+                linked_scenarios = [
+                    ts for ts in (spec.test_scenarios or [])
+                    if ts.get("id") in card.test_scenario_ids
+                ]
+            operational_flow = operational_flow_for_test_card(
+                card_id=card.id,
+                board_id=board_id,
+                spec_id=card.spec_id,
+                current_status=card.status.value,
+                linked_scenarios=linked_scenarios,
+            )
+            projected["test_card_operational_flow"] = operational_flow
+
+        # R4-IMP4: read-only gate/readiness block — surfaces the SAME enforcement /
+        # cognitive verdict / gate fields the done-gate enforces (parity by
+        # construction), so an agent sees would_block_done (enforcement-aware), the
+        # active gate and its required tool BEFORE acting. Injected post-projection so
+        # it survives every profile. No state-machine change; mutation_allowed=False.
+        cognitive_enforcement_active = await _cognitive_enforcement_active(db, board_id)
+        cognitive_verdict = await _evaluate_card_cognitive_verdict(
+            db, board_id, card, cognitive_enforcement_active
         )
+        projected["gate_readiness"] = task_gate_readiness(
+            card_status=card.status.value,
+            cognitive_enforcement_active=cognitive_enforcement_active,
+            cognitive_verdict=cognitive_verdict,
+            operational_flow=operational_flow,
+        )
+        return json.dumps(projected, default=str)
 
 
 @mcp.tool()
@@ -2802,6 +2881,8 @@ async def okto_pulse_move_card(
                 **e.to_dict(),
                 "blocked_by_dependencies": True,
             })
+        except GateContractError as e:
+            return json.dumps(e.to_dict())
         except ResourceGateError as e:
             return _resource_gate_error_response(e)
         except ValueError as e:
@@ -4653,6 +4734,8 @@ async def okto_pulse_get_ideation_context(
             "created_at": ideation.created_at.isoformat() if ideation.created_at else None,
             "updated_at": ideation.updated_at.isoformat() if ideation.updated_at else None,
             "labels": ideation.labels or [],
+            # R5-IMP2: read-only skip-override read-model (ambiguity gate skip).
+            "skip_overrides": await ideation_skip_overrides(db, ideation, board_id),
             "refinements": [
                 {"id": r.id, "title": r.title, "status": r.status.value, "version": r.version}
                 for r in ideation.refinements
@@ -4841,14 +4924,13 @@ async def okto_pulse_set_ideation_ambiguity_gate_skip(
     board_id: str, ideation_id: str, skip_ambiguity_gate: bool
 ) -> str:
     """
-    Set the per-ideation Max ambiguity gate skip override (spec 2485780b).
+    Human-only control (R5-IMP1): the per-ideation Max ambiguity gate skip is a
+    human decision and is NOT applicable from the agent-facing MCP surface.
 
-    Mirror of PATCH /api/v1/ideations/{ideation_id}/ambiguity-gate-skip: it
-    calls the same service path, persists the same skip state, returns the same
-    semantics and writes the same audit entry. Works while the ideation is in
-    evaluating status. Use this to execute the 'skip this ideation' remediation
-    advertised by okto_pulse_move_ideation when the board Max ambiguity gate
-    blocks the evaluating -> done transition."""
+    This tool fails closed with ``human_control_required`` (mutation_allowed=false,
+    state_changed=false) and never touches ``skip_ambiguity_gate``. To skip an
+    ideation's ambiguity gate, a human operator uses the IDE control / the human
+    REST surface (PATCH /api/v1/ideations/{ideation_id}/ambiguity-gate-skip)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4857,43 +4939,15 @@ async def okto_pulse_set_ideation_ambiguity_gate_skip(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        service = IdeationService(db)
-        existing = await service.get_ideation(ideation_id)
-        if not existing or existing.board_id != board_id:
-            return json.dumps({"error": "Ideation not found."})
-        try:
-            ideation = await service.set_ambiguity_gate_skip(
-                ideation_id,
-                ctx.agent_id,
-                skip_ambiguity_gate,
-                source="mcp",
-                actor_name=ctx.agent_name,
-            )
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
-
-        if not ideation:
-            return json.dumps({"error": "Ideation not found."})
-        await db.commit()
-        # Reload after commit within the async context. updated_at uses a
-        # server-side onupdate=func.now(), so SQLAlchemy expires that column
-        # after the UPDATE flush even though the session is
-        # expire_on_commit=False; reading it during the (sync) json.dumps below
-        # would otherwise trigger an async lazy-load outside the greenlet and
-        # raise MissingGreenlet.
-        await db.refresh(ideation)
-
-        return json.dumps(
-            {
-                "success": True,
-                "id": ideation.id,
-                "status": ideation.status.value,
-                "skip_ambiguity_gate": ideation.skip_ambiguity_gate,
-                "updated_at": ideation.updated_at,
-            },
-            default=str,
-        )
+    # R5-IMP1: fail closed BEFORE any service call — no skip_ambiguity_gate
+    # mutation, no state change. The human UI / REST surface remains the path.
+    # R5-IMP5: the choke point also emits the bounded-label rejection counter.
+    return _refuse_human_control(
+        board_id=board_id,
+        blocked_tool="okto_pulse_set_ideation_ambiguity_gate_skip",
+        blocked_action="set_ambiguity_gate_skip",
+        target_ref=f"ideation:{ideation_id}",
+    )
 
 
 @mcp.tool()
@@ -6169,28 +6223,57 @@ async def okto_pulse_create_spec(
         spec = await service.create_spec(
             board_id, ctx.agent_id, spec_data, skip_ownership_check=True
         )
-        await db.commit()
 
         if not spec:
             return json.dumps({"error": "Failed to create spec"})
 
-        return json.dumps(
-            {
-                "success": True,
-                "spec": {
-                    "id": spec.id,
-                    "title": spec.title,
-                    "status": spec.status.value,
-                    "version": spec.version,
-                    "functional_requirements": spec.functional_requirements,
-                    "technical_requirements": spec.technical_requirements,
-                    "acceptance_criteria": spec.acceptance_criteria,
-                    "integration_requirements": getattr(spec, "integration_requirements", None) or [],
-                    "observability_requirements": getattr(spec, "observability_requirements", None) or [],
-                },
+        # R3-IMP1: a manual spec linked to a refinement must INHERIT the
+        # refinement's effective resources (Q&A/KB/mockup/Architecture) — not just
+        # carry refinement_id — so the Resource Gate sees them as provided and the
+        # copy tools can carry them into cards. Reuses the same propagation
+        # primitives derive_spec uses, with effective (inherited) fallback. A
+        # lineage/propagation failure fails the create transactionally (no commit
+        # -> the just-flushed spec rolls back); never a silent half-resourced spec.
+        resource_propagation = None
+        if refinement_id:
+            from okto_pulse.core.services.effective_resource_propagation import (
+                ResourceLineageResolutionError,
+                ResourcePropagationError,
+                propagate_effective_resources_to_spec,
+            )
+
+            try:
+                resource_propagation = await propagate_effective_resources_to_spec(
+                    db,
+                    board_id=board_id,
+                    spec=spec,
+                    refinement_id=refinement_id,
+                    user_id=ctx.agent_id,
+                )
+            except ResourceLineageResolutionError as exc:
+                return json.dumps(exc.to_error_dict())
+            except ResourcePropagationError as exc:
+                return json.dumps(exc.to_error_dict(spec_id=spec.id))
+
+        await db.commit()
+
+        response: dict[str, Any] = {
+            "success": True,
+            "spec": {
+                "id": spec.id,
+                "title": spec.title,
+                "status": spec.status.value,
+                "version": spec.version,
+                "functional_requirements": spec.functional_requirements,
+                "technical_requirements": spec.technical_requirements,
+                "acceptance_criteria": spec.acceptance_criteria,
+                "integration_requirements": getattr(spec, "integration_requirements", None) or [],
+                "observability_requirements": getattr(spec, "observability_requirements", None) or [],
             },
-            default=str,
-        )
+        }
+        if resource_propagation is not None:
+            response["resource_propagation"] = resource_propagation
+        return json.dumps(response, default=str)
 
 
 @mcp.tool()
@@ -6278,7 +6361,15 @@ async def okto_pulse_get_spec_context(
     `profile` (R2): `summary` (default) keeps the structured requirement content
     and omits semantically-empty fields; `full`/`legacy` return the complete prior
     payload. **Before evaluating, moving, or deriving cards from a spec, call with
-    `profile=full`** (see okto-pulse://reference/projection-profiles)."""
+    `profile=full`** (see okto-pulse://reference/projection-profiles).
+
+    The payload carries a read-only `gate_readiness` block (R4-IMP4): the board's
+    `cognitive_enforcement_active`/`cognitive_enforcement_mode` plus the spec's OWN
+    transition gates in `active_gates` (e.g. `spec_validation` when the spec is
+    `approved` and the board requires validation — derived from the same builder
+    `okto_pulse_move_spec` raises). Cognitive readiness is per-card and is NOT
+    aggregated here (`note` says so); call `okto_pulse_get_task_context` for each
+    card's verdict. `mutation_allowed=false`; a `consistency` self-check is included."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6321,6 +6412,10 @@ async def okto_pulse_get_spec_context(
             "created_at": spec.created_at.isoformat() if spec.created_at else None,
             "updated_at": spec.updated_at.isoformat() if spec.updated_at else None,
             "labels": spec.labels or [],
+            # R5-IMP2: read-only skip-override read-model (cognitive skips on this
+            # spec/its cards). Parent ideation ambiguity skip is lineage, not an
+            # effective override of the spec, so it is excluded here.
+            "skip_overrides": await spec_skip_overrides(db, spec, board_id),
             "ideation_id": spec.ideation_id,
             "refinement_id": spec.refinement_id,
             # Requirements
@@ -6459,10 +6554,27 @@ async def okto_pulse_get_spec_context(
             pass
 
         from okto_pulse.core.mcp.context_projection import project_spec_context
-        return json.dumps(
-            project_spec_context(result, profile=profile),
-            default=str,
+        projected = project_spec_context(result, profile=profile)
+        # R4-IMP4: read-only gate/readiness block. Spec context does NOT aggregate
+        # per-card cognitive verdicts (codex Q1) — cognitive readiness is per-card and
+        # lives in get_task_context. Here: the board's cognitive enforcement posture +
+        # the spec's OWN spec_validation gate (derived from the SAME builder move_spec
+        # raises). Injected post-projection so it survives every profile.
+        from okto_pulse.core.models.db import Board as _Board
+        board_obj = await db.get(_Board, spec.board_id)
+        board_settings = (board_obj.settings or {}) if board_obj else {}
+        cognitive_enforcement_active = await _cognitive_enforcement_active(
+            db, spec.board_id
         )
+        projected["gate_readiness"] = spec_gate_readiness(
+            spec_id=spec.id,
+            spec_status=spec.status.value,
+            require_spec_validation=bool(
+                board_settings.get("require_spec_validation", True)
+            ),
+            cognitive_enforcement_active=cognitive_enforcement_active,
+        )
+        return json.dumps(projected, default=str)
 
 
 @mcp.tool()
@@ -6586,6 +6698,8 @@ async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
             spec = await service.move_spec(
                 spec_id, ctx.agent_id, SpecMove(status=spec_status), actor_name=ctx.agent_name
             )
+        except GateContractError as e:
+            return json.dumps(e.to_dict())
         except ValueError as e:
             return json.dumps({"error": str(e)})
         await db.commit()
@@ -7881,15 +7995,48 @@ async def okto_pulse_copy_architecture_to_card(
 
     async with get_db_for_mcp() as db:
         service = ArchitecturePropagationService(db)
+        repo = ArchitectureDesignRepository(db)
+        # R3-IMP2: copy DIRECT spec designs, or fall back to the effective parent
+        # (refinement/ideation) when the spec has none direct. copy_from_parent
+        # persists source_design_id (the gate-readable identity == effective id).
+        from okto_pulse.core.services.effective_resource_propagation import (
+            ResourceLineageResolutionError,
+            resolve_effective_card_copy_plan,
+        )
         try:
-            designs = await service.copy_spec_to_card(
-                spec_id,
-                card_id,
-                ctx.agent_id,
-                design_ids=ids,
-                architecture_warning_acknowledgement=acknowledgement,
+            plan = await resolve_effective_card_copy_plan(
+                db, board_id=board_id, spec_id=spec_id, resource_type="architecture",
             )
-            repo = ArchitectureDesignRepository(db)
+        except ResourceLineageResolutionError as exc:
+            return json.dumps(exc.to_error_dict())
+        try:
+            if plan["fallback"]:
+                designs = await service.copy_from_parent(
+                    source_parent_type=plan["source_entity_type"],
+                    source_parent_id=plan["source_entity_id"],
+                    target_parent_type="card",
+                    target_parent_id=card_id,
+                    actor_id=ctx.agent_id,
+                    design_ids=ids,
+                    architecture_warning_acknowledgement=acknowledgement,
+                )
+            elif (
+                not plan["has_direct"]
+                and plan["has_obligation"]
+                and not plan["not_applicable"]
+            ):
+                # Gate reports architecture provided but nothing copyable resolved.
+                return _effective_empty_copy_response("architecture", plan)
+            else:
+                # Direct designs (or a genuinely empty/N/A spec) -> existing path
+                # (preserves the empty-projection contract when there is nothing).
+                designs = await service.copy_spec_to_card(
+                    spec_id,
+                    card_id,
+                    ctx.agent_id,
+                    design_ids=ids,
+                    architecture_warning_acknowledgement=acknowledgement,
+                )
             payload = [_dump_model(repo.to_response(design)) for design in designs]
             # Total Architecture Designs on the card after the copy (no payloads —
             # we only need the count for the summary metadata).
@@ -7911,7 +8058,11 @@ async def okto_pulse_copy_mockups_to_card(
 ) -> str:
     """
     Copy screen mockups from a spec to a card. Use this when creating implementation
-    cards to carry the relevant mockups into the card for the implementer's context."""
+    cards to carry the relevant mockups into the card for the implementer's context.
+
+    R3-IMP2: when the spec has no DIRECT mockup, falls back to the effective
+    inherited mockup (refinement/ideation), preserving the mockup ``id`` (the
+    identity the Resource Gate reads)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7927,7 +8078,29 @@ async def okto_pulse_copy_mockups_to_card(
         if not card:
             return json.dumps({"error": "Card not found"})
 
-        source_mockups = list(spec.screen_mockups or [])
+        source_mockups = [m for m in (spec.screen_mockups or []) if isinstance(m, dict)]
+        fallback = False
+        if not source_mockups:
+            from okto_pulse.core.services.effective_resource_propagation import (
+                ResourceLineageResolutionError,
+                load_effective_mockup_items,
+                resolve_effective_card_copy_plan,
+            )
+            try:
+                plan = await resolve_effective_card_copy_plan(
+                    db, board_id=board_id, spec_id=spec_id, resource_type="mockup",
+                )
+            except ResourceLineageResolutionError as exc:
+                return json.dumps(exc.to_error_dict())
+            if not plan["fallback"]:
+                return _effective_empty_copy_response("mockup", plan)
+            source_mockups = await load_effective_mockup_items(
+                db, plan["source_entity_type"], plan["source_entity_id"]
+            )
+            if not source_mockups:
+                return _effective_empty_copy_response("mockup", plan)
+            fallback = True
+
         if screen_ids:
             try:
                 ids = set(coerce_to_list_str(screen_ids))
@@ -7935,22 +8108,48 @@ async def okto_pulse_copy_mockups_to_card(
                 return json.dumps({"error": f"Invalid screen_ids: {e}"})
             source_mockups = [m for m in source_mockups if m.get("id") in ids]
 
-        if not source_mockups:
-            return json.dumps({"error": "No mockups to copy"})
-
         existing = list(card.screen_mockups or [])
-        existing_ids = {m.get("id") for m in existing}
+        existing_ids = {m.get("id") for m in existing if isinstance(m, dict)}
         copied = 0
         for m in source_mockups:
             if m.get("id") not in existing_ids:
                 existing.append(m)
+                existing_ids.add(m.get("id"))
                 copied += 1
 
         from okto_pulse.core.models.schemas import CardUpdate
         await card_service.update_card(card_id, ctx.agent_id, CardUpdate(screen_mockups=existing))
         await db.commit()
 
-    return json.dumps({"success": True, "copied": copied, "total_on_card": len(existing)})
+    return json.dumps({"success": True, "copied": copied, "total_on_card": len(existing), "fallback": fallback})
+
+
+def _effective_empty_copy_response(resource_type: str, plan: dict) -> str:
+    """R3-IMP2 shared resolution of a copy with no DIRECT and no effective
+    fallback resource: an N/A or genuinely-absent resource is an honest empty
+    (NOT an error); a resource the gate reports provided but that cannot be
+    resolved is an actionable error — never a generic "no resources to copy"."""
+    if plan.get("not_applicable"):
+        return json.dumps({
+            "success": True, "copied": 0, "reason": "not_applicable",
+            "resource_type": resource_type,
+        })
+    if not plan.get("has_obligation"):
+        return json.dumps({
+            "success": True, "copied": 0, "reason": "no_resource_required",
+            "resource_type": resource_type,
+        })
+    return json.dumps({
+        "error": "resource_propagation_failed",
+        "resource_type": resource_type,
+        "coverage_obligation_id": plan.get("coverage_obligation_id"),
+        "accepted_identity_fields": plan.get("accepted_identity_fields", []),
+        "retryable": True,
+        "detail": (
+            f"Spec {resource_type} is reported provided by the Resource Gate but no "
+            "copyable resource (direct or effective/inherited) could be resolved."
+        ),
+    })
 
 
 @mcp.tool()
@@ -7959,10 +8158,20 @@ async def okto_pulse_copy_knowledge_to_card(
 ) -> str:
     """
     Copy knowledge base entries from a spec to a card as inline card KEs.
-    Each copied entry is stored in Card.knowledge_bases with stable provenance."""
+    Each copied entry is stored in Card.knowledge_bases with stable provenance.
+
+    R3-IMP2: when the spec has no DIRECT knowledge base, falls back to the
+    effective inherited resource (refinement/ideation) so a card linked to a
+    manual/legacy spec still carries the gate-required knowledge with an identity
+    the Resource Gate reads (``source_kb_id``)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
+
+    try:
+        id_filter = set(coerce_to_list_str(knowledge_ids)) if knowledge_ids else None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid knowledge_ids: {e}"})
 
     async with get_db_for_mcp() as db:
         spec_service = SpecService(db)
@@ -7976,16 +8185,41 @@ async def okto_pulse_copy_knowledge_to_card(
             return json.dumps({"error": "Card not found"})
 
         kb_service = SpecKnowledgeService(db)
-        kbs = await kb_service.list_knowledge(spec_id)
-        if knowledge_ids:
-            try:
-                ids = set(coerce_to_list_str(knowledge_ids))
-            except ValueError as e:
-                return json.dumps({"error": f"Invalid knowledge_ids: {e}"})
-            kbs = [kb for kb in kbs if kb.id in ids]
+        direct_kbs = await kb_service.list_knowledge(spec_id)
 
-        if not kbs:
-            return json.dumps({"error": "No knowledge bases to copy"})
+        fallback = False
+        if direct_kbs:
+            src_type, src_id = "spec", spec_id
+            items = [
+                {"id": kb.id, "title": kb.title,
+                 "description": getattr(kb, "description", None), "content": kb.content,
+                 "mime_type": getattr(kb, "mime_type", None) or "text/markdown"}
+                for kb in direct_kbs
+            ]
+        else:
+            from okto_pulse.core.services.effective_resource_propagation import (
+                ResourceLineageResolutionError,
+                load_effective_kb_items,
+                resolve_effective_card_copy_plan,
+            )
+            try:
+                plan = await resolve_effective_card_copy_plan(
+                    db, board_id=board_id, spec_id=spec_id, resource_type="knowledge_base",
+                )
+            except ResourceLineageResolutionError as exc:
+                return json.dumps(exc.to_error_dict())
+            if not plan["fallback"]:
+                return _effective_empty_copy_response("knowledge_base", plan)
+            items = await load_effective_kb_items(
+                db, plan["source_entity_type"], plan["source_entity_id"]
+            )
+            if not items:
+                return _effective_empty_copy_response("knowledge_base", plan)
+            src_type, src_id = plan["source_entity_type"], plan["source_entity_id"]
+            fallback = True
+
+        if id_filter is not None:
+            items = [it for it in items if it["id"] in id_filter]
 
         from okto_pulse.core.models.schemas import CardUpdate
 
@@ -7994,19 +8228,27 @@ async def okto_pulse_copy_knowledge_to_card(
         existing_ids = {str(kb.get("id") or "") for kb in existing if isinstance(kb, dict)}
         copied = 0
         copied_ids: list[str] = []
-        for kb in kbs:
-            source = f"copied_from_spec:{spec_id}:{kb.id}"
-            card_kb_id = f"cardkb_{kb.id}"
+        for it in items:
+            # Direct spec copies keep the canonical `copied_from_spec:` provenance
+            # the removal path + gate origin-matching expect; the effective
+            # fallback records its real source entity (refinement/ideation).
+            if src_type == "spec":
+                source = f"copied_from_spec:{src_id}:{it['id']}"
+            else:
+                source = f"copied_from_{src_type}:{src_id}:{it['id']}"
+            card_kb_id = f"cardkb_{it['id']}"
             if source in existing_sources or card_kb_id in existing_ids:
                 continue
             existing.append(
                 {
                     "id": card_kb_id,
-                    "title": kb.title,
-                    "description": getattr(kb, "description", None),
-                    "content": kb.content,
-                    "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
+                    "title": it["title"],
+                    "description": it.get("description"),
+                    "content": it["content"],
+                    "mime_type": it.get("mime_type") or "text/markdown",
                     "source": source,
+                    # Gate-readable identity == the effective kb id (AC1/AC3/AC6).
+                    "source_kb_id": it["id"],
                     "author_id": ctx.agent_id,
                 }
             )
@@ -8018,7 +8260,10 @@ async def okto_pulse_copy_knowledge_to_card(
         await card_service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=existing))
         await db.commit()
 
-    return json.dumps({"success": True, "copied": copied, "knowledge_ids": copied_ids, "total_on_card": len(existing)})
+    return json.dumps({
+        "success": True, "copied": copied, "knowledge_ids": copied_ids,
+        "total_on_card": len(existing), "fallback": fallback,
+    })
 
 
 # ============================================================================
@@ -11004,6 +11249,10 @@ async def okto_pulse_submit_spec_evaluation(
         from okto_pulse.core.services.main import SpecService
 
         service = SpecService(db)
+        # R4-IMP1: capture status BEFORE the append-only submit so a future
+        # auto-transition regression surfaces as state_changed in the envelope.
+        spec_before = await service.get_spec(spec_id)
+        status_before = spec_before.status.value if spec_before else "validated"
         try:
             evaluation = await service.submit_spec_evaluation(
                 spec_id,
@@ -11034,9 +11283,20 @@ async def okto_pulse_submit_spec_evaluation(
             })
         except ValueError as exc:
             return json.dumps({"error": str(exc)})
+        # R4-IMP1: evaluation is append-only — capture status AFTER independently;
+        # the envelope reports both (state_changed=false in the happy path) and the
+        # operator's next step (move_spec to in_progress), never an auto-transition.
+        spec_after = await service.get_spec(spec_id)
+        status_after = spec_after.status.value if spec_after else status_before
         await db.commit()
 
-    return json.dumps({"success": True, "evaluation": evaluation}, default=str)
+    return json.dumps(
+        spec_evaluation_success_envelope(
+            spec_id=spec_id, status_before=status_before, status_after=status_after,
+            evaluation=evaluation,
+        ),
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -12548,6 +12808,8 @@ async def okto_pulse_submit_task_validation(
             )
             await db.commit()
             return json.dumps(result, default=str)
+        except GateContractError as e:
+            return json.dumps(e.to_dict())
         except ResourceGateError as e:
             return _resource_gate_error_response(e)
         except ValueError as e:
@@ -12889,6 +13151,88 @@ async def okto_pulse_kg_canonical_partition_integrity_list(
 
 
 @mcp.tool()
+async def okto_pulse_kg_digest_layer_mismatch_list(
+    board_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """
+    List Global Discovery DecisionDigest rows whose published graph_layer diverges
+    from the expected_digest_layer recomputed from the board graph
+    (digest_vs_board_layer_mismatch, R1). READ-ONLY drill-down for the KG Health
+    issue. Mirrors REST `GET /api/v1/kg/{board_id}/digest-layer-mismatch`. Each
+    item carries board_id, digest_id, original_node_id, node_type, expected_layer,
+    actual_layer, source_artifact_ref. NEVER mutates / remediates (the R1-IMP1
+    reconciler corrects mismatches on drain).
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    try:
+        bounded_limit = max(1, min(int(limit), 200))
+        bounded_offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        return json.dumps({
+            "error": "invalid_pagination",
+            "detail": "limit and offset must be integers",
+        })
+
+    from okto_pulse.core.kg.global_discovery.layer_parity import (
+        list_digest_layer_mismatches,
+    )
+
+    async with get_db_for_mcp() as db:
+        result = await list_digest_layer_mismatches(
+            db, board_id=board_id, limit=bounded_limit, offset=bounded_offset,
+        )
+    # kg_discovery_digest_layer_mismatch_total is emitted inside
+    # list_digest_layer_mismatches (single enumeration point) so REST + MCP share
+    # the metric without double-emitting here.
+    return json.dumps(result, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_stale_canonical_parity_list(
+    board_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """
+    List stale-canonical parity signals for KG health drill-down (R2). READ-ONLY:
+    canonical deterministic board-graph nodes whose SQL source regressed below
+    canonical eligibility, each annotated with whether its Global Discovery digest
+    is also stale (R1 parity). Mirrors REST
+    `GET /api/v1/kg/{board_id}/stale-canonical-parity`. Items carry board_graph_stale,
+    global_discovery_stale_digest, expected_graph_layer, expected_maturity_status,
+    current_source_status, recommended_action. NEVER demotes/reconciles/syncs — this
+    is a diagnostic only (no mutating path).
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    try:
+        bounded_limit = max(1, min(int(limit), 200))
+        bounded_offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        return json.dumps({
+            "error": "invalid_pagination",
+            "detail": "limit and offset must be integers",
+        })
+
+    from okto_pulse.core.kg.stale_canonical_parity import (
+        list_stale_canonical_parity,
+    )
+
+    async with get_db_for_mcp() as db:
+        result = await list_stale_canonical_parity(
+            db, board_id=board_id, limit=bounded_limit, offset=bounded_offset,
+        )
+    return json.dumps(result, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_kg_evaluate_bug_cognitive_closure(
     board_id: str,
     bug_id: str,
@@ -12905,27 +13249,45 @@ async def okto_pulse_kg_evaluate_bug_cognitive_closure(
 
     Runs the SAME classification as the REST/UI path and obtains
     readiness_effect / blocking / precedence_explanation from the central
-    CognitiveReadinessService (mirrored, never recomputed). Any resulting
-    skip/no_action goes through the central write-path:
-      - a revisit-required reason (e.g. path_b_pending) without a future
-        revisit_at returns 400 revisit_at_required;
-      - an open DLQ / canonical_debt for the same normalized artifact_id returns
-        409 technical_debt_cannot_be_skipped (a card:<uuid> debt blocks a
-        bug:<uuid> skip);
-      - a missing bug node NEVER fabricates a relationship — it surfaces
-        technical remediation.
+    CognitiveReadinessService (mirrored, never recomputed).
+
+    R5-IMP1 — a ``requested_action`` of ``skip`` / ``no_action`` is a HUMAN-only
+    decision: this agent-facing tool fails closed with ``human_control_required``
+    (mutation_allowed=false, state_changed=false) and never writes the ledger. An
+    agent should surface the read-only readiness state and request a human
+    decision; a human applies the skip/no_action via the authorized UI / human
+    REST control. ``evaluate`` (read-only classification) and ``create_learning``
+    (no skip persistence) stay agent-facing. On the human REST path the
+    skip/no_action write keeps its refusals: 400 revisit_at_required, 409
+    technical_debt_cannot_be_skipped (an open DLQ / canonical_debt for the
+    normalized artifact_id is never masked), and a missing bug node never
+    fabricates a relationship.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
 
     from okto_pulse.core.kg.bug_cognitive_closure import (
+        NO_ACTION,
+        SKIP,
         evaluate_bug_cognitive_closure,
     )
     from okto_pulse.core.kg.cognitive_readiness import (
         CognitiveReadinessError,
         CognitiveReadinessService,
     )
+
+    # R5-IMP1: a skip / no_action requested_action is a HUMAN-only mutation. Fail
+    # closed BEFORE the write-path so no skip/no_action is persisted (state
+    # unchanged). evaluate / create_learning (no skip persistence) stay
+    # agent-facing — only the mutating actions are human-only.
+    if str(requested_action or "").strip().lower() in (SKIP, NO_ACTION):
+        return _refuse_human_control(
+            board_id=board_id,
+            blocked_tool="okto_pulse_kg_evaluate_bug_cognitive_closure",
+            blocked_action=f"evaluate_bug_cognitive_closure:{str(requested_action).strip().lower()}",
+            target_ref=f"bug:{bug_id}",
+        )
     from okto_pulse.core.kg.rebuild_audit import (
         CognitiveConsolidationItemStore,
         default_rebuild_base_dir,
@@ -13004,6 +13366,51 @@ def _would_block_done(item_or_tier, enforcement_active: bool) -> bool:
     else:
         tier = item_or_tier
     return bool(enforcement_active and tier in GATE_BLOCKING_TIERS)
+
+
+async def _evaluate_card_cognitive_verdict(db, board_id: str, card, enforcement_active: bool):
+    """R4-IMP4 — the card's OWN per-artifact cognitive readiness verdict, mirroring
+    the done-gate's evaluation (``resolve_cognitive_source_refs`` + the central
+    ``CognitiveReadinessService`` on the card's own ref) — NEVER a duplicate store.
+
+    Read-only and best-effort: returns ``None`` on any failure, so the context tool
+    can never break because readiness is momentarily unavailable. ``would_block_done``
+    is enforcement-aware via the shared ``_would_block_done`` (``blocking`` alone is
+    advisory)."""
+    try:
+        from okto_pulse.core.kg.cognitive_closeout_gate import (
+            resolve_cognitive_source_refs,
+        )
+        from okto_pulse.core.services.main import _card_cognitive_entity_type
+
+        refs = resolve_cognitive_source_refs(
+            entity_type=_card_cognitive_entity_type(card),
+            entity=card,
+            entity_id=card.id,
+        ).source_refs
+        if not refs:
+            return None
+        ref = refs[0]
+        # Carve-out identical to the done-gate: task/test carry no reusable
+        # cognition -> advisory (never blocks on cognitive tiers).
+        has_reusable = ref.split(":", 1)[0] not in ("task", "test")
+        verdict = await _build_cognitive_readiness_service().evaluate_artifact(
+            db, board_id=board_id, source_ref=ref, has_reusable_cognition=has_reusable,
+        )
+    except Exception:
+        return None
+    return {
+        "source_ref": ref,
+        "readiness_effect": getattr(verdict, "readiness_effect", None),
+        "readiness_signal": getattr(verdict, "readiness_signal", None),
+        "tier": getattr(verdict, "tier", None),
+        "reason_code": getattr(verdict, "reason_code", None),
+        "blocking": bool(getattr(verdict, "blocking", False)),
+        "revisit_at": getattr(verdict, "revisit_at", None),
+        "would_block_done": _would_block_done(
+            getattr(verdict, "tier", None), enforcement_active
+        ),
+    }
 
 
 @mcp.tool()
@@ -13145,44 +13552,24 @@ async def okto_pulse_kg_record_cognitive_skip(
       - 409 technical_debt_cannot_be_skipped — an open DLQ / canonical_debt for
         the same normalized artifact_id (a skip can never mask technical debt).
 
-    On success returns the skip (reason_code, justification, evidence_refs,
-    actor, revisit_at, terminal/revisit `classification`) plus the resulting
-    readiness verdict from the central service.
+    R5-IMP1 — HUMAN-only control: recording a cognitive skip / no_action is a
+    human decision and is NOT applicable from the agent-facing MCP surface. This
+    tool fails closed with ``human_control_required`` (mutation_allowed=false,
+    state_changed=false) and never writes the cognitive ledger. A human operator
+    records the skip via the IDE control / the human REST surface.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
 
-    from okto_pulse.core.kg.cognitive_action_center import build_skip_response
-    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
-
-    service = _build_cognitive_readiness_service()
-    async with get_db_for_mcp() as db:
-        try:
-            item = await service.record_cognitive_skip(
-                db,
-                board_id=board_id,
-                source_ref=source_ref,
-                reason_code=reason_code,
-                actor=ctx.agent_id,
-                justification=justification,
-                evidence_refs=evidence_refs,
-                revisit_at=revisit_at,
-                kg_generation_id=kg_generation_id or None,
-            )
-            verdict = await service.evaluate_artifact(
-                db, board_id=board_id, source_ref=source_ref,
-                kg_generation_id=kg_generation_id or None,
-            )
-            enforcement_active = await _cognitive_enforcement_active(db, board_id)
-        except CognitiveReadinessError as exc:
-            return json.dumps(exc.to_dict())
-
-    # Shared response builder — REST and MCP never diverge (tr_d9f9f65e).
-    return json.dumps(build_skip_response(
-        item, verdict, actor=ctx.agent_id,
-        would_block_done=_would_block_done(verdict.tier, enforcement_active),
-    ), default=str)
+    # Fail closed BEFORE the central write-path — no ledger mutation, no state
+    # change. The human REST surface (actor_is_human) remains the path.
+    return _refuse_human_control(
+        board_id=board_id,
+        blocked_tool="okto_pulse_kg_record_cognitive_skip",
+        blocked_action="record_cognitive_skip",
+        target_ref=source_ref,
+    )
 
 
 @mcp.tool()
@@ -13197,39 +13584,24 @@ async def okto_pulse_kg_clear_cognitive_skip(
     clearing actor + timestamp are stamped so the audit trail is preserved; the
     stale reason_code / revisit_at are dropped. Ledger-only — no KG mutation.
 
-    Errors: 404 generation_not_found / cognitive_item_not_found;
-    409 cognitive_item_not_skipped (only a skipped item can be cleared).
+    R5-IMP1 — HUMAN-only control: clearing/reopening a cognitive skip is a human
+    decision and is NOT applicable from the agent-facing MCP surface. This tool
+    fails closed with ``human_control_required`` (mutation_allowed=false,
+    state_changed=false) and never reopens the ledger item. A human operator
+    clears the skip via the IDE control / the human REST surface.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
 
-    from okto_pulse.core.kg.cognitive_action_center import build_clear_response
-    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
-
-    service = _build_cognitive_readiness_service()
-    async with get_db_for_mcp() as db:
-        try:
-            item = await service.clear_cognitive_skip(
-                db,
-                board_id=board_id,
-                source_ref=source_ref,
-                actor=ctx.agent_id,
-                kg_generation_id=kg_generation_id or None,
-            )
-            verdict = await service.evaluate_artifact(
-                db, board_id=board_id, source_ref=source_ref,
-                kg_generation_id=kg_generation_id or None,
-            )
-            enforcement_active = await _cognitive_enforcement_active(db, board_id)
-        except CognitiveReadinessError as exc:
-            return json.dumps(exc.to_dict())
-
-    # Shared response builder — REST and MCP never diverge (tr_d9f9f65e).
-    return json.dumps(build_clear_response(
-        item, verdict, actor=ctx.agent_id,
-        would_block_done=_would_block_done(verdict.tier, enforcement_active),
-    ), default=str)
+    # Fail closed BEFORE the central write-path — no ledger mutation, no state
+    # change. The human REST surface (actor_is_human) remains the path.
+    return _refuse_human_control(
+        board_id=board_id,
+        blocked_tool="okto_pulse_kg_clear_cognitive_skip",
+        blocked_action="clear_cognitive_skip",
+        target_ref=source_ref,
+    )
 
 
 @mcp.tool()
@@ -13505,6 +13877,40 @@ async def okto_pulse_kg_dead_letter_list(
         signal="dead_letter", surface="mcp", outcome="success",
         board_id=board_id, item_count=len(data.get("rows", [])),
     )
+    return json.dumps(data, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_queue_drilldown(board_id: str) -> str:
+    """Drill down into the ACTIVE operational queue depth (R6-IMP2).
+
+    Use this when `okto_pulse_kg_health` reports an `active_queue` backlog (a
+    health issue with `drill_down_tool='okto_pulse_kg_queue_drilldown'`) and you
+    need to know WHERE the queue depth comes from. Read-only.
+
+    Returns `worker_mode`, `total_active_depth`, an overall `classification`
+    (transient | stuck | backpressure | idle) and per-source breakdowns:
+      - `consolidation_queue` — pending/claimed by status + by artifact category +
+        oldest_age_seconds;
+      - `global_update_outbox` — pending (retry-window) depth + oldest_age_seconds.
+
+    This is the ACTIVE queue only: dead-letter (DLQ), outbox dead_letter and
+    canonical debt are TERMINAL and intentionally NOT counted here — inspect those
+    via `okto_pulse_kg_dead_letter_list` / `okto_pulse_kg_canonical_debt_list`."""
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.services.queue_health_service import (
+        get_active_queue_drilldown,
+    )
+
+    async with get_db_for_mcp() as db:
+        data = await get_active_queue_drilldown(db, board_id)
     return json.dumps(data, default=str)
 
 

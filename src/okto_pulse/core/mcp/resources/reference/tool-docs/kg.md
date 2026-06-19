@@ -467,6 +467,16 @@ Args:
 Layer contract:
     Node rows use `graph_layer` as the persisted node property. Do not query
     `kg_layer` on nodes; `kg_layer_counts` appears only in KG health payloads.
+    This tool scopes layer visibility with `include_working` (boolean), NOT a
+    `graph_layer` selector — the `graph_layer` canonical|working|all selector
+    applies to `okto_pulse_kg_query_global` and `okto_pulse_kg_get_related_context`.
+
+Schema-safe queries:
+    Properties are NOT universal across labels in semantics — introspect with
+    `okto_pulse_kg_schema_info` first and query ONLY the `stable_properties` it
+    lists per label (e.g. `id`, `title`, `content`, `graph_layer`,
+    `source_confidence`, `relevance_score`). There is no `name` property — use
+    `title`. Never assume an ad-hoc property exists on a label.
 
 Returns:
     JSON with rows, row_count, truncated, row_bounds, sanitization,
@@ -483,9 +493,14 @@ Args:
     board_id: Optional board_id to restrict search (empty = all boards)
     nl_query: Natural language query string
     top_k: Maximum results (default 10)
+    graph_layer: `canonical` (default) | `working` | `all`. Filters which graph
+        layer the cross-board search reads. Default `canonical` never leaks
+        working nodes; an invalid value fails closed with a structured error.
 
 Returns:
-    JSON with results: [{board_id, id, title, similarity}]
+    JSON `{results: [{board_id, id, title, similarity, graph_layer}], count,
+    applied_graph_layer}`. `applied_graph_layer` echoes the layer actually
+    applied; each result also carries its own `graph_layer`.
 
 ## `okto_pulse_kg_query_natural`
 
@@ -547,7 +562,14 @@ Args:
 
 Returns:
     JSON with schema_version, stable_node_types, stable_rel_types,
-    vector_indexes, optionally internal_*_types
+    vector_indexes, label_properties, optionally internal_*_types.
+
+    `label_properties` (R6-IMP3) maps each canonical node label to its
+    `stable_properties` (the schema-guaranteed scalar properties — the SAME set
+    on every label, since all node tables share the common attributes) plus
+    `has_vector_index`. Query ONLY these stable properties; never assume an
+    ad-hoc/universal property. There is no `name` property — use `title`/`content`.
+    Use this map to write schema-safe Cypher (okto_pulse_kg_query_cypher).
 
 ## `okto_pulse_kg_tick_run_now`
 

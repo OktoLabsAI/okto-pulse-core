@@ -1088,6 +1088,24 @@ async def _process_queue_entry(
             "kg.clp.maintenance_failed board=%s artifact=%s:%s",
             entry.board_id, entry.artifact_type, entry.artifact_id,
         )
+
+    # R2-IMP3: maturity replay of CanonicalDebt — close open debts whose canonical
+    # evidence is now available after this commit (a status/maturity move that
+    # re-consolidated, or a rebuild drain). Concrete trigger over the existing
+    # verified reconcile contract; never cognitive pending/DLQ. Best effort — must
+    # never fail a good commit, and a replay failure is logged, not silently
+    # treated as success (only the verified contract commits anything).
+    try:
+        from okto_pulse.core.kg.canonical_debt_replay import (
+            replay_canonical_debt_post_commit,
+        )
+
+        await replay_canonical_debt_post_commit(db, board_id=entry.board_id)
+    except Exception:
+        logger.exception(
+            "kg.canonical_debt_replay.post_commit_failed board=%s artifact=%s:%s",
+            entry.board_id, entry.artifact_type, entry.artifact_id,
+        )
     return True
 
 

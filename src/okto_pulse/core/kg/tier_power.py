@@ -26,6 +26,7 @@ from typing import Any
 from okto_pulse.core.kg.schema import (
     NODE_TYPES,
     SCHEMA_VERSION,
+    STABLE_NODE_PROPERTIES,
     VECTOR_INDEX_TYPES,
     open_board_connection,
     stable_rel_type_entries,
@@ -1137,28 +1138,47 @@ def get_schema_info(
 
     store = get_kg_registry().graph_store
     if store is not None:
-        return store.get_schema_info(board_id, include_internal=include_internal)
+        result = store.get_schema_info(board_id, include_internal=include_internal)
+    else:
+        # Fallback: static schema from constants
+        stable_nodes = [
+            {"name": nt, "stable": True}
+            for nt in NODE_TYPES
+        ]
+        stable_rels = stable_rel_type_entries()
+        vector_indexes = [
+            {"node_type": nt, "attribute": "embedding",
+             "dimension": 384, "similarity_metric": "cosine",
+             "index_name": vector_index_name(nt)}
+            for nt in VECTOR_INDEX_TYPES
+        ]
 
-    # Fallback: static schema from constants
-    stable_nodes = [
-        {"name": nt, "stable": True}
-        for nt in NODE_TYPES
-    ]
-    stable_rels = stable_rel_type_entries()
-    vector_indexes = [
-        {"node_type": nt, "attribute": "embedding",
-         "dimension": 384, "similarity_metric": "cosine",
-         "index_name": vector_index_name(nt)}
-        for nt in VECTOR_INDEX_TYPES
-    ]
+        result = {
+            "schema_version": SCHEMA_VERSION,
+            "stable_node_types": stable_nodes,
+            "stable_rel_types": stable_rels,
+            "vector_indexes": vector_indexes,
+        }
+        if include_internal:
+            result["internal_node_types"] = [{"name": "BoardMeta", "stable": False}]
+            result["internal_rel_types"] = []
 
-    result: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "stable_node_types": stable_nodes,
-        "stable_rel_types": stable_rels,
-        "vector_indexes": vector_indexes,
-    }
-    if include_internal:
-        result["internal_node_types"] = [{"name": "BoardMeta", "stable": False}]
-        result["internal_rel_types"] = []
+    # R6-IMP3 (FR3/AC3): additive per-label stable-property map so agents introspect
+    # which properties are schema-safe instead of assuming a universal property.
+    # Every canonical node label shares _COMMON_NODE_ATTRS, so stable_properties is
+    # the same guaranteed set on each label; per-label variation is carried by
+    # has_vector_index. Additive — the global keys above are unchanged.
+    result["label_properties"] = _label_properties_map()
     return result
+
+
+def _label_properties_map() -> dict[str, Any]:
+    """Per-label stable-property map for schema_info (R6-IMP3). Derived from the
+    canonical schema constants — never assumes an ad-hoc/universal property."""
+    return {
+        nt: {
+            "stable_properties": list(STABLE_NODE_PROPERTIES),
+            "has_vector_index": nt in VECTOR_INDEX_TYPES,
+        }
+        for nt in NODE_TYPES
+    }

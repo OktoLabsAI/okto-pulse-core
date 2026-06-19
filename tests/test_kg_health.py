@@ -171,6 +171,10 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "kg_layer_counts",
         "canonical_debt",
         "rebuild_diagnostics",
+        # R6-IMP2: active operational-queue drill-down (additive).
+        "active_queue",
+        # R6-IMP5: deduplicated 3-domain operational separation (additive).
+        "operational_domains",
     }
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == HEALTH_SCHEMA_VERSION

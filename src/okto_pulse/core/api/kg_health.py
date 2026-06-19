@@ -213,6 +213,12 @@ class KGHealthResponse(BaseModel):
     kg_layer_counts: dict = Field(default_factory=dict)
     canonical_debt: dict = Field(default_factory=dict)
     rebuild_diagnostics: dict = Field(default_factory=dict)
+    # R6-IMP2: active operational-queue drill-down (worker_mode + per-source
+    # counts/classification). Additive; DLQ/canonical debt are NOT counted here.
+    active_queue: dict = Field(default_factory=dict)
+    # R6-IMP5: deduplicated 3-domain separation (active_queue / dead_letter /
+    # canonical_debt), each with its own count + drill_down_tool. Additive.
+    operational_domains: dict = Field(default_factory=dict)
 
     # Additive UI diagnosis: separates "board graph is actually unreadable or
     # empty after prior materialization" from conservative at_risk states caused

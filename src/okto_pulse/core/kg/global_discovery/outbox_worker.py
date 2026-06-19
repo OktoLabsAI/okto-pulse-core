@@ -352,6 +352,19 @@ class OutboxWorker:
                     gconn, board_id, current_node_ids,
                 )
 
+            # R1-IMP1 — parity reconciler (FR1/FR2). Correctness of
+            # DecisionDigest.graph_layer cannot depend on a fresh `add` ref: in
+            # EVERY event we re-derive the expected publication layer of the
+            # board's already-published digests from the CURRENT board graph and
+            # correct drift in place, preserving original_node_id. This runs
+            # BEFORE the empty-refs early return so an out-of-band layer change
+            # (e.g. a source promoted working->canonical, or a Learning whose
+            # evidence matured) is reconciled even with no add refs this session.
+            add_node_ids = {r.kuzu_node_id for r in refs}
+            await self._reconcile_board_digest_layers(
+                gconn, board_id, db, skip_node_ids=add_node_ids,
+            )
+
             if not refs:
                 return
 
@@ -374,8 +387,10 @@ class OutboxWorker:
             # its maturity are NEVER touched here. Overlay (debt/pending) is only
             # fetched when a canonical Learning is actually being digested.
             from okto_pulse.core.kg.canonical_partition_integrity import (
-                evaluate_canonical_learning_publication,
                 pending_or_debt_exclusions,
+            )
+            from okto_pulse.core.kg.global_discovery.layer_parity import (
+                resolve_expected_digest_layer,
             )
             from okto_pulse.core.kg.global_discovery.metrics import (
                 emit_canonical_incomplete_excluded,
@@ -406,34 +421,24 @@ class OutboxWorker:
             for node in per_board:
                 digest_id = f"dd_{board_id[:8]}_{node['id']}"
                 title = node["title"] or ""
-                # Default: mirror the source node's own layer. For a canonical
-                # Learning, override to the publication layer the completeness
-                # rule dictates (publication-layer only — NOT a source demotion).
-                effective_layer = node["graph_layer"]
-                if (
-                    node.get("node_type") == "Learning"
-                    and effective_layer == "canonical"
-                ):
-                    artifact_id = normalize_cognitive_artifact_id(
-                        node.get("source_artifact_ref") or ""
+                # R1-IMP1: the published layer is the expected_digest_layer
+                # (publication layer), NOT the raw board node layer. The shared
+                # resolver applies the R7 completeness carve-out for a canonical
+                # Learning — publication-layer only, NEVER a source demotion.
+                artifact_id = normalize_cognitive_artifact_id(
+                    node.get("source_artifact_ref") or ""
+                )
+                effective_layer, exclusion_reason = resolve_expected_digest_layer(
+                    node_type=node["node_type"],
+                    raw_graph_layer=node["graph_layer"],
+                    source_artifact_ref=node.get("source_artifact_ref") or "",
+                    canonical_bug_count=int(node.get("canonical_bug_count") or 0),
+                    overlay_exclusion_reason=learning_exclusions.get(artifact_id),
+                )
+                if exclusion_reason:
+                    emit_canonical_incomplete_excluded(
+                        board_id=board_id, reason_code=exclusion_reason,
                     )
-                    publishable, exclusion_reason = (
-                        evaluate_canonical_learning_publication(
-                            source_artifact_ref=node.get("source_artifact_ref") or "",
-                            canonical_bug_count=int(
-                                node.get("canonical_bug_count") or 0
-                            ),
-                            overlay_exclusion_reason=learning_exclusions.get(
-                                artifact_id
-                            ),
-                        )
-                    )
-                    if not publishable:
-                        effective_layer = "working"
-                        emit_canonical_incomplete_excluded(
-                            board_id=board_id,
-                            reason_code=exclusion_reason or "",
-                        )
                 existing_d = gconn.execute(
                     "MATCH (d:DecisionDigest {id: $did}) RETURN d.id",
                     {"did": digest_id},
@@ -737,6 +742,175 @@ class OutboxWorker:
             m = meta.get(str(node["id"]))
             if m is not None:
                 node.update(m)
+
+    async def _reconcile_board_digest_layers(
+        self,
+        gconn,
+        board_id: str,
+        db: AsyncSession,
+        *,
+        skip_node_ids: set[str],
+    ) -> int:
+        """R1-IMP1 — re-derive the expected publication layer for the board's
+        already-published digests and correct drift in place.
+
+        Runs in EVERY event regardless of add refs (FR1/FR2). Preserves
+        ``original_node_id`` (global identity); only the ``graph_layer`` metadata
+        is mutated. ``skip_node_ids`` are the ids the add-path upsert below
+        already handles this session (avoids double work / double metric).
+        Returns the count of digests corrected.
+        """
+        from okto_pulse.core.kg.canonical_partition_integrity import (
+            pending_or_debt_exclusions,
+        )
+        from okto_pulse.core.kg.global_discovery.layer_parity import (
+            resolve_expected_digest_layer,
+        )
+        from okto_pulse.core.kg.global_discovery.metrics import (
+            emit_canonical_incomplete_excluded,
+        )
+        from okto_pulse.core.kg.rebuild_audit import (
+            normalize_cognitive_artifact_id,
+        )
+
+        res = gconn.execute(
+            "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
+            "RETURN d.id, d.original_node_id, d.node_type, "
+            "coalesce(d.graph_layer, 'legacy_unknown')",
+            {"bid": board_id},
+        )
+        targets: list[dict] = []
+        while res.has_next():
+            row = res.get_next()
+            oid = str(row[1]) if row[1] is not None else ""
+            if not oid or oid in skip_node_ids:
+                continue
+            targets.append({
+                "digest_id": str(row[0]),
+                "original_node_id": oid,
+                "node_type": str(row[2] or ""),
+                "current_layer": str(row[3] or "legacy_unknown"),
+            })
+        if not targets:
+            return 0
+
+        board_meta = self._read_board_layer_meta(
+            board_id, {t["original_node_id"]: t["node_type"] for t in targets},
+        )
+        if board_meta is None:
+            # Board unreadable: do not guess a layer; leave digests for the next
+            # drain (a transient storage state must not silently rewrite layers).
+            return 0
+
+        needs_overlay = any(
+            m.get("node_type") == "Learning" and m.get("graph_layer") == "canonical"
+            for m in board_meta.values()
+        )
+        overlay = (
+            await pending_or_debt_exclusions(db, board_id=board_id)
+            if needs_overlay else {}
+        )
+
+        corrected = 0
+        for t in targets:
+            meta = board_meta.get(t["original_node_id"])
+            if meta is None:
+                continue  # node vanished after prune; skip (prune handles it)
+            artifact_id = normalize_cognitive_artifact_id(
+                meta.get("source_artifact_ref") or ""
+            )
+            expected, exclusion_reason = resolve_expected_digest_layer(
+                node_type=meta["node_type"],
+                raw_graph_layer=meta["graph_layer"],
+                source_artifact_ref=meta.get("source_artifact_ref") or "",
+                canonical_bug_count=int(meta.get("canonical_bug_count") or 0),
+                overlay_exclusion_reason=overlay.get(artifact_id),
+            )
+            if expected != t["current_layer"]:
+                gconn.execute(
+                    "MATCH (d:DecisionDigest {id: $did}) SET d.graph_layer = $layer",
+                    {"did": t["digest_id"], "layer": expected},
+                )
+                corrected += 1
+                if exclusion_reason:
+                    emit_canonical_incomplete_excluded(
+                        board_id=board_id, reason_code=exclusion_reason,
+                    )
+        if corrected:
+            logger.info(
+                "outbox.digest_layer_reconciled board=%s count=%d",
+                board_id, corrected,
+                extra={
+                    "event": "outbox.digest_layer_reconciled",
+                    "board_id": board_id,
+                    "count": corrected,
+                },
+            )
+        return corrected
+
+    @staticmethod
+    def _read_board_layer_meta(
+        board_id: str,
+        node_types_by_id: dict[str, str],
+    ) -> dict[str, dict] | None:
+        """Read the CURRENT effective publication inputs for the given node ids,
+        bucketed by node_type (the digest's recorded type). Returns
+        ``{node_id: {node_type, graph_layer, source_artifact_ref,
+        canonical_bug_count}}`` with ``graph_layer`` fail-closed to
+        ``legacy_unknown``. ``None`` means the board graph could not be read."""
+        from okto_pulse.core.kg.schema import open_board_connection
+
+        by_type: dict[str, list[str]] = {}
+        for nid, ntype in node_types_by_id.items():
+            if ntype:
+                by_type.setdefault(ntype, []).append(nid)
+
+        out: dict[str, dict] = {}
+        try:
+            with open_board_connection(board_id) as (_db, conn):
+                for ntype, ids in by_type.items():
+                    res = conn.execute(
+                        f"MATCH (n:{ntype}) WHERE n.id IN $ids "
+                        f"RETURN n.id, {layer_label_projection('n')}",
+                        {"ids": ids},
+                    )
+                    while res.has_next():
+                        row = res.get_next()
+                        out[str(row[0])] = {
+                            "node_type": ntype,
+                            "graph_layer": str(row[1] or "legacy_unknown"),
+                            "source_artifact_ref": "",
+                            "canonical_bug_count": 0,
+                        }
+                learning_ids = by_type.get("Learning") or []
+                if learning_ids:
+                    res = conn.execute(
+                        "MATCH (l:Learning) WHERE l.id IN $ids "
+                        "RETURN l.id, l.source_artifact_ref",
+                        {"ids": learning_ids},
+                    )
+                    while res.has_next():
+                        row = res.get_next()
+                        m = out.get(str(row[0]))
+                        if m is not None:
+                            m["source_artifact_ref"] = str(row[1] or "")
+                    res = conn.execute(
+                        "MATCH (l:Learning)-[:validates]->(b:Bug) "
+                        "WHERE l.id IN $ids RETURN l.id, b.graph_layer",
+                        {"ids": learning_ids},
+                    )
+                    while res.has_next():
+                        row = res.get_next()
+                        m = out.get(str(row[0]))
+                        if m is not None and str(row[1] or "") == "canonical":
+                            m["canonical_bug_count"] += 1
+        except Exception as exc:
+            logger.warning(
+                "outbox.reconcile_board_read_failed board=%s err=%s",
+                board_id, exc,
+            )
+            return None
+        return out
 
     @staticmethod
     def _board_graph_is_queryable(board_id: str) -> bool:

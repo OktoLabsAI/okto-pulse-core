@@ -170,11 +170,69 @@ def reset_canonical_incomplete_excluded_counter() -> None:
         _canonical_incomplete_excluded_samples.clear()
 
 
+# ---------------------------------------------------------------------------
+# or_d1f2a3b4 — kg_discovery_digest_layer_mismatch_total (R1-IMP2)
+# ---------------------------------------------------------------------------
+# Count DecisionDigest rows whose published graph_layer DIVERGES from the
+# expected_digest_layer recomputed from the board graph (digest_vs_board_layer_
+# mismatch). In steady state the R1-IMP1 reconciler drives this to ~0 on each
+# drain; a non-zero value is a transient/parity-debt signal surfaced by KG Health
+# + the drilldown. Bounded labels only: board_id + expected_layer + actual_layer
+# (closed layer vocab canonical|working|legacy_unknown|none); no node ids.
+
+_DIGEST_LAYER_MISMATCH_LABELS = ("board_id", "expected_layer", "actual_layer")
+_digest_layer_mismatch_samples: list[dict[str, Any]] = []
+_digest_layer_mismatch_lock = threading.Lock()
+
+
+def emit_digest_layer_mismatch(
+    *, board_id: str, expected_layer: str, actual_layer: str
+) -> None:
+    """Record one digest-vs-board layer mismatch observed by a drilldown/Health read."""
+    with _digest_layer_mismatch_lock:
+        _digest_layer_mismatch_samples.append({
+            "board_id": board_id,
+            "expected_layer": expected_layer,
+            "actual_layer": actual_layer,
+        })
+
+
+def get_digest_layer_mismatch_count(
+    *,
+    board_id: str | None = None,
+    expected_layer: str | None = None,
+    actual_layer: str | None = None,
+) -> int:
+    with _digest_layer_mismatch_lock:
+        return sum(
+            1
+            for s in _digest_layer_mismatch_samples
+            if (board_id is None or s["board_id"] == board_id)
+            and (expected_layer is None or s["expected_layer"] == expected_layer)
+            and (actual_layer is None or s["actual_layer"] == actual_layer)
+        )
+
+
+def get_digest_layer_mismatch_labels() -> tuple[str, ...]:
+    return _DIGEST_LAYER_MISMATCH_LABELS
+
+
+def get_digest_layer_mismatch_samples() -> list[dict[str, Any]]:
+    with _digest_layer_mismatch_lock:
+        return [dict(s) for s in _digest_layer_mismatch_samples]
+
+
+def reset_digest_layer_mismatch_counter() -> None:
+    with _digest_layer_mismatch_lock:
+        _digest_layer_mismatch_samples.clear()
+
+
 def reset_global_discovery_metrics() -> None:
     """Reset every Global Discovery outbox counter (test helper)."""
     reset_missing_embedding_skipped_counter()
     reset_digest_upsert_counter()
     reset_canonical_incomplete_excluded_counter()
+    reset_digest_layer_mismatch_counter()
 
 
 __all__ = [
@@ -195,5 +253,10 @@ __all__ = [
     "get_canonical_incomplete_excluded_labels",
     "get_canonical_incomplete_excluded_samples",
     "reset_canonical_incomplete_excluded_counter",
+    "emit_digest_layer_mismatch",
+    "get_digest_layer_mismatch_count",
+    "get_digest_layer_mismatch_labels",
+    "get_digest_layer_mismatch_samples",
+    "reset_digest_layer_mismatch_counter",
     "reset_global_discovery_metrics",
 ]

@@ -1177,7 +1177,13 @@ class KGService:
         embedder = get_kg_registry().embedding_provider
         query_vec = embedder.encode(nl_query)
         scope = list(user_boards)
-        search_k = top_k if layer == GRAPH_LAYER_ALL else max(top_k, min(top_k * 5, 500))
+        # R6-IMP3 rework: widen the HNSW window for EVERY layer (including `all`).
+        # QUERY_VECTOR_INDEX returns the GLOBAL top-k BEFORE the board/layer filter,
+        # so with many same-embedding digests across boards a narrow window can crowd
+        # out the current board's rows (e.g. drop a board's `working` digest under
+        # `graph_layer=all`). A wider window + the linear fallback below keep the
+        # board-scoped result complete.
+        search_k = max(top_k, min(top_k * 5, 500))
 
         try:
             from okto_pulse.core.kg.global_discovery.schema import (
@@ -1254,7 +1260,12 @@ class KGService:
         filtered_hnsw: list[dict] = []
         if results:
             filtered_hnsw = self._filter_global_results_to_existing_nodes(results)
-            if len(filtered_hnsw) == len(results):
+            # R6-IMP3 rework: only trust the HNSW page when it (a) lost NO rows to the
+            # existing-node filter AND (b) actually FILLED the requested top_k. If the
+            # board-scoped HNSW result underfills top_k, the global top-k may have
+            # crowded out board rows (or a layer) — fall through to the complete,
+            # board+layer-scoped linear scan instead of returning a short/partial page.
+            if len(filtered_hnsw) == len(results) and len(filtered_hnsw) >= top_k:
                 return filtered_hnsw[:top_k]
 
         # Fallback: linear scan over DecisionDigest if HNSW returned nothing

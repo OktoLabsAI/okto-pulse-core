@@ -36,6 +36,10 @@ from okto_pulse.core.services import (
     SpecQAService,
     SpecService,
 )
+from okto_pulse.core.services.gate_contracts import (
+    GateContractError,
+    spec_evaluation_success_envelope,
+)
 from okto_pulse.core.services.spec_structured_entities import (
     StructuredSpecEntityCommand,
     StructuredSpecEntityErrorCode,
@@ -507,6 +511,8 @@ async def move_spec(
     service = SpecService(db)
     try:
         spec = await service.move_spec(spec_id, user_id, data)
+    except GateContractError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except ResourceGateError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1154,11 +1160,22 @@ async def submit_spec_evaluation(
             actor_type="user",
             surface="api",
         )
+    except GateContractError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
+    # R4-IMP1: evaluation is append-only; capture status BEFORE (the `spec` fetched
+    # above) and AFTER independently so a future auto-transition surfaces as
+    # state_changed. Same envelope as the MCP twin.
+    status_before = spec.status.value
+    spec_after = await service.get_spec(spec_id)
+    status_after = spec_after.status.value if spec_after else status_before
     await db.commit()
-    return {"success": True, "evaluation": evaluation}
+    return spec_evaluation_success_envelope(
+        spec_id=spec_id, status_before=status_before, status_after=status_after,
+        evaluation=evaluation,
+    )
 
 
 @router.get("/specs/{spec_id}/evaluations")

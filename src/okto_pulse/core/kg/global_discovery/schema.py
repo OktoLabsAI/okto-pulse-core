@@ -14,7 +14,6 @@ from __future__ import annotations
 import gc
 import logging
 import os
-import shutil
 from pathlib import Path
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.schema")
@@ -94,7 +93,15 @@ def _table_column_names(conn, table_name: str) -> set[str]:
 
 
 def _ensure_decision_digest_layer_column(conn) -> list[str]:
-    """Add and backfill graph_layer on existing global DecisionDigest rows."""
+    """Add ``graph_layer`` and fail-CLOSED backfill legacy DecisionDigest rows.
+
+    R1-IMP3 / FR5: a legacy digest that predates the ``graph_layer`` column has
+    NULL after the ALTER. It must NOT be defaulted to ``canonical`` (that would
+    leak an unverified legacy fact into canonical-only discovery). Instead it is
+    stamped ``legacy_unknown`` — outside canonical until the R1-IMP1 parity
+    reconciler maps it to the correct ``expected_digest_layer`` from the board
+    graph. Identity (``original_node_id``/``source_artifact_ref``) is untouched.
+    """
     col_name, col_type = DECISION_DIGEST_GRAPH_LAYER_COLUMN
     added: list[str] = []
     try:
@@ -112,7 +119,7 @@ def _ensure_decision_digest_layer_column(conn) -> list[str]:
         conn.execute(
             "MATCH (d:DecisionDigest) "
             "WHERE d.graph_layer IS NULL "
-            "SET d.graph_layer = 'canonical'"
+            "SET d.graph_layer = 'legacy_unknown'"
         )
     except Exception as exc:
         logger.debug(

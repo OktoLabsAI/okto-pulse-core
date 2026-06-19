@@ -30,6 +30,12 @@ from okto_pulse.core.api.kg_canonical_debt import (
 from okto_pulse.core.api.kg_canonical_partition_integrity import (
     router as kg_canonical_partition_integrity_router,
 )
+from okto_pulse.core.api.kg_digest_layer_mismatch import (
+    router as kg_digest_layer_mismatch_router,
+)
+from okto_pulse.core.api.kg_stale_canonical_parity import (
+    router as kg_stale_canonical_parity_router,
+)
 from okto_pulse.core.api.kg_orphan_integrity import (
     router as kg_orphan_integrity_router,
 )
@@ -85,6 +91,14 @@ api_router.include_router(kg_canonical_debt_router, tags=["kg-canonical-debt"])
 api_router.include_router(
     kg_canonical_partition_integrity_router,
     tags=["kg-canonical-partition-integrity"],
+)
+api_router.include_router(
+    kg_digest_layer_mismatch_router,
+    tags=["kg-digest-layer-mismatch"],
+)
+api_router.include_router(
+    kg_stale_canonical_parity_router,
+    tags=["kg-stale-canonical-parity"],
 )
 api_router.include_router(
     kg_orphan_integrity_router, tags=["kg-orphan-integrity"]

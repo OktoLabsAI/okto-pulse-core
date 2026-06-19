@@ -172,3 +172,154 @@ async def get_queue_health(db: AsyncSession) -> dict[str, Any]:
         "workers_draining_count": workers_draining_count,
         "kuzu_lock_retries_5m": kuzu_lock_retries_5m(now=now),
     }
+
+
+# ---------------------------------------------------------------------------
+# R6-IMP2 — active-queue drill-down (ConsolidationQueue + global_update_outbox)
+#
+# "Active" = work the operational workers will still drain: ConsolidationQueue
+# rows in pending/claimed + GlobalUpdateOutbox rows still in the retry window.
+# DLQ / dead_letter / canonical debt are TERMINAL and deliberately EXCLUDED
+# (their dedup/separation is R6-IMP5). Read-only: SQL aggregates only.
+# ---------------------------------------------------------------------------
+
+_ACTIVE_CQ_STATUSES = ("pending", "claimed")
+# worst-wins ordering for the overall classification.
+_ACTIVE_QUEUE_RANK = {"idle": 0, "transient": 1, "stuck": 2, "backpressure": 3}
+
+
+def _age_seconds(oldest: datetime | None, now: datetime) -> float:
+    if oldest is None:
+        return 0.0
+    if oldest.tzinfo is None:
+        oldest = oldest.replace(tzinfo=timezone.utc)
+    return max(0.0, (now - oldest).total_seconds())
+
+
+def classify_active_queue(
+    *, depth: int, oldest_age_s: float, alert_threshold: int, stuck_age_s: int,
+) -> str:
+    """transient | stuck | backpressure | idle (R6-IMP2).
+
+    backpressure wins on volume (depth at/over the queue alert threshold); stuck
+    on age (oldest active item older than the advisory stuck age); transient when
+    active but under both thresholds; idle when empty."""
+    if depth <= 0:
+        return "idle"
+    if depth >= alert_threshold:
+        return "backpressure"
+    if oldest_age_s >= stuck_age_s:
+        return "stuck"
+    return "transient"
+
+
+async def get_active_queue_drilldown(
+    db: AsyncSession, board_id: str | None = None,
+) -> dict[str, Any]:
+    """Drill-down of the ACTIVE operational queue depth, split by source.
+
+    Board-scoped when ``board_id`` is given (KG Health), else global (ops view).
+    Reuses the existing primitives + the ``global_update_outbox`` retry-window
+    definition from ``kg.health``; never creates a new queue/store. DLQ /
+    canonical debt are NOT counted here (R6-IMP5 owns that separation)."""
+    from okto_pulse.core.infra.config import get_settings
+    from okto_pulse.core.kg.health import (
+        DEAD_LETTER_RETRY_SENTINEL,
+        MAX_OUTBOX_RETRIES,
+    )
+    from okto_pulse.core.models.db import GlobalUpdateOutbox
+
+    settings = get_settings()
+    alert_threshold = int(settings.kg_queue_alert_threshold)
+    stuck_age_s = int(settings.kg_queue_stuck_age_seconds)
+    now = datetime.now(timezone.utc)
+
+    # worker_mode — derived from the consolidation worker singleton (no new state).
+    worker_mode = "unknown"
+    try:
+        from okto_pulse.core.kg.workers.consolidation import (
+            get_consolidation_worker,
+        )
+        worker = get_consolidation_worker()
+        worker_mode = "running" if getattr(worker, "is_running", False) else "stopped"
+    except Exception:
+        worker_mode = "unknown"
+
+    def _cq_where(*extra):
+        clauses = list(extra)
+        if board_id is not None:
+            clauses.append(ConsolidationQueue.board_id == board_id)
+        return clauses
+
+    # --- Source 1: ConsolidationQueue (pending/claimed) ---
+    cq_by_status: dict[str, int] = {}
+    for status in _ACTIVE_CQ_STATUSES:
+        cq_by_status[status] = int(await db.scalar(
+            select(func.count()).where(*_cq_where(ConsolidationQueue.status == status))
+        ) or 0)
+    cq_depth = sum(cq_by_status.values())
+    cat_rows = (await db.execute(
+        select(ConsolidationQueue.artifact_type, func.count())
+        .where(*_cq_where(ConsolidationQueue.status.in_(_ACTIVE_CQ_STATUSES)))
+        .group_by(ConsolidationQueue.artifact_type)
+    )).all()
+    cq_by_category = {str(a or "unknown"): int(n) for a, n in cat_rows}
+    cq_oldest = await db.scalar(
+        select(func.min(ConsolidationQueue.triggered_at))
+        .where(*_cq_where(ConsolidationQueue.status.in_(_ACTIVE_CQ_STATUSES)))
+    )
+    cq_age = _age_seconds(cq_oldest, now)
+    cq_class = classify_active_queue(
+        depth=cq_depth, oldest_age_s=cq_age,
+        alert_threshold=alert_threshold, stuck_age_s=stuck_age_s,
+    )
+
+    # --- Source 2: GlobalUpdateOutbox (still in the retry window; dead_letter excluded) ---
+    ob_active = [
+        GlobalUpdateOutbox.processed_at.is_(None),
+        GlobalUpdateOutbox.retry_count >= 0,
+        GlobalUpdateOutbox.retry_count < MAX_OUTBOX_RETRIES,
+        GlobalUpdateOutbox.retry_count != DEAD_LETTER_RETRY_SENTINEL,
+    ]
+    if board_id is not None:
+        ob_active.append(GlobalUpdateOutbox.board_id == board_id)
+    ob_depth = int(await db.scalar(select(func.count()).where(*ob_active)) or 0)
+    ob_oldest = await db.scalar(
+        select(func.min(GlobalUpdateOutbox.created_at)).where(*ob_active)
+    )
+    ob_age = _age_seconds(ob_oldest, now)
+    ob_class = classify_active_queue(
+        depth=ob_depth, oldest_age_s=ob_age,
+        alert_threshold=alert_threshold, stuck_age_s=stuck_age_s,
+    )
+
+    total_active_depth = cq_depth + ob_depth
+    overall = max((cq_class, ob_class), key=lambda c: _ACTIVE_QUEUE_RANK[c])
+
+    return {
+        "board_id": board_id,
+        "worker_mode": worker_mode,
+        "total_active_depth": total_active_depth,
+        "classification": overall,
+        "alert_threshold": alert_threshold,
+        "stuck_age_seconds": stuck_age_s,
+        "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+        "sources": [
+            {
+                "source": "consolidation_queue",
+                "queue_depth": cq_depth,
+                "by_status": cq_by_status,
+                "by_category": cq_by_category,
+                "oldest_age_seconds": round(cq_age, 3),
+                "classification": cq_class,
+            },
+            {
+                "source": "global_update_outbox",
+                "queue_depth": ob_depth,
+                "by_status": {"pending": ob_depth},
+                "by_category": {},
+                "oldest_age_seconds": round(ob_age, 3),
+                "classification": ob_class,
+            },
+        ],
+    }

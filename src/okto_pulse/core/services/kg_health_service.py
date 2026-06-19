@@ -420,19 +420,10 @@ def _build_health_diagnostics(
             "operator_action": "inspect_telemetry",
         })
 
-    if dead_letter_count > 0:
-        issues.append({
-            "code": "dead_letter_backlog",
-            "component": "consolidation_queue",
-            "severity": "warning",
-            "reason": "dead_letter_count_gt_zero",
-            "description": (
-                f"{dead_letter_count} consolidation dead-letter row(s) remain; "
-                "this is operational debt, not by itself proof that the current "
-                "board graph is corrupt."
-            ),
-            "operator_action": "inspect_dead_letters",
-        })
+    # R6-IMP5: dead_letter_backlog is emitted ONCE below (the FR7 issue with its
+    # own drill_down_tool). The earlier duplicate append (same code, no drill-down)
+    # was removed so retries/re-evaluations never surface two dead_letter_backlog
+    # health issues for the same backlog.
 
     discovery_recovery_required = discovery_state in {
         HealthState.RECOVERY_NEEDED,
@@ -929,6 +920,14 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         )
     ) or 0
 
+    # R6-IMP2: active operational-queue drill-down (ConsolidationQueue pending/
+    # claimed + global_update_outbox retry-window rows). DLQ / canonical debt are
+    # deliberately NOT counted here — that separation is R6-IMP5.
+    from okto_pulse.core.services.queue_health_service import (
+        get_active_queue_drilldown,
+    )
+    active_queue = await get_active_queue_drilldown(db, board_id)
+
     tick_evidence = await _load_tick_evidence(db)
     last_terminal_tick = tick_evidence.get("latest_terminal")
     if last_terminal_tick is not None:
@@ -1388,6 +1387,128 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
                 "inspect_canonical_partition_integrity"
             )
 
+    # R2-IMP4 — stale_canonical_parity: canonical DETERMINISTIC board-graph nodes
+    # whose SQL source regressed below canonical eligibility (read-only diagnostic;
+    # never demotes/reconciles/syncs). DISTINCT category. Ranked BELOW
+    # canonical_debt_open / cognitive_consolidation_pending /
+    # canonical_partition_integrity (and any DLQ/operational failure) so it NEVER
+    # masks an R7/debt/cognitive blocker, and ABOVE digest_vs_board_layer_mismatch
+    # (the source regression is the more specific cause; the digest mismatch is its
+    # R1 consequence).
+    try:
+        from okto_pulse.core.kg.stale_canonical_parity import (
+            list_stale_canonical_parity,
+        )
+        stale_parity = await list_stale_canonical_parity(db, board_id=board_id)
+    except Exception as exc:  # pragma: no cover - defensive; never crash the tick
+        logger.warning(
+            "kg.health.stale_canonical_parity_lookup_failed board=%s err=%s",
+            board_id, exc,
+        )
+        stale_parity = {
+            "count": 0, "items": [], "global_discovery_evaluation": "not_evaluated",
+        }
+    if stale_parity.get("count"):
+        _scp_sample = stale_parity["items"][0]
+        health_diagnostics["health_issues"].append({
+            "code": "stale_canonical_parity",
+            "component": "board_graph",
+            "severity": "warning",
+            "reason": "stale_canonical_parity_count_gt_zero",
+            "description": (
+                f"{stale_parity['count']} canonical deterministic node(s) are stale "
+                "because their SQL source regressed below canonical eligibility. "
+                "Read-only diagnostic; the R2 reconciler demotes them on the next "
+                "maturity/status event or sweep."
+            ),
+            "count": stale_parity["count"],
+            "operator_action": "inspect_stale_canonical_parity",
+            "drill_down_tool": "okto_pulse_kg_stale_canonical_parity_list",
+            # AC5/AC13: read-only diagnostic — the literal contract flag makes the
+            # no-mutation guarantee explicit (no agent-facing mutation tool clears
+            # this; the R2 reconciler is the only internal demotion path).
+            "mutation_allowed": False,
+            "global_discovery_evaluation": stale_parity.get(
+                "global_discovery_evaluation"
+            ),
+            "sample": {
+                "node_id": _scp_sample.get("node_id"),
+                "source_artifact_ref": _scp_sample.get("source_artifact_ref"),
+                "board_graph_stale": _scp_sample.get("board_graph_stale"),
+                "global_discovery_stale_digest": _scp_sample.get(
+                    "global_discovery_stale_digest"
+                ),
+                "expected_graph_layer": _scp_sample.get("expected_graph_layer"),
+                "expected_maturity_status": _scp_sample.get("expected_maturity_status"),
+                "current_source_status": _scp_sample.get("current_source_status"),
+                "recommended_action": _scp_sample.get("recommended_action"),
+            },
+            "precedence_explanation": (
+                "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending, "
+                "canonical_partition_integrity and DLQ/operational failures (never "
+                "masks them) and ABOVE digest_vs_board_layer_mismatch; a distinct "
+                "stale-source category (no double-count)."
+            ),
+        })
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = "stale_canonical_parity"
+            health_diagnostics["operator_action"] = "inspect_stale_canonical_parity"
+
+    # R1-IMP2 — digest_vs_board_layer_mismatch: a published DecisionDigest
+    # graph_layer diverging from the expected_digest_layer recomputed from the
+    # board graph (read-only; the R1-IMP1 reconciler clears these on drain).
+    # Precedence: BELOW canonical_debt_open / cognitive_consolidation_pending /
+    # canonical_partition_integrity (only claims primary if still "none"), ABOVE
+    # orphan_integrity_warning. Distinct cause -> no double-count with those.
+    try:
+        from okto_pulse.core.kg.global_discovery.layer_parity import (
+            detect_digest_layer_mismatches,
+        )
+        digest_layer_mismatches = await detect_digest_layer_mismatches(
+            db, board_id=board_id
+        )
+    except Exception as exc:  # pragma: no cover - defensive; never crash the tick
+        logger.warning(
+            "kg.health.digest_layer_mismatch_lookup_failed board=%s err=%s",
+            board_id, exc,
+        )
+        digest_layer_mismatches = []
+    if digest_layer_mismatches:
+        _ddm_sample = digest_layer_mismatches[0]
+        health_diagnostics["health_issues"].append({
+            "code": "digest_vs_board_layer_mismatch",
+            "component": "global_discovery",
+            "severity": "warning",
+            "reason": "digest_vs_board_layer_mismatch_count_gt_zero",
+            "description": (
+                f"{len(digest_layer_mismatches)} Global Discovery DecisionDigest(s) "
+                "publish a graph_layer that diverges from the expected layer "
+                "computed from the board graph; the parity reconciler corrects "
+                "these on the next drain."
+            ),
+            "count": len(digest_layer_mismatches),
+            "operator_action": "inspect_digest_layer_mismatch",
+            "drill_down_tool": "okto_pulse_kg_digest_layer_mismatch_list",
+            "sample": {
+                "board_id": _ddm_sample["board_id"],
+                "digest_id": _ddm_sample["digest_id"],
+                "original_node_id": _ddm_sample["original_node_id"],
+                "expected_layer": _ddm_sample["expected_layer"],
+                "actual_layer": _ddm_sample["actual_layer"],
+            },
+            "precedence_explanation": (
+                "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending "
+                "and canonical_partition_integrity (never overrides them) and ABOVE "
+                "orphan_integrity_warning; digest publication-layer parity debt, "
+                "distinct from those causes (no double-count)."
+            ),
+        })
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = (
+                "digest_vs_board_layer_mismatch"
+            )
+            health_diagnostics["operator_action"] = "inspect_digest_layer_mismatch"
+
     if orphan_integrity.get("integrity_warning"):
         if _STATE_SEVERITY[graph_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
             graph_state = HealthState.AT_RISK
@@ -1415,6 +1536,62 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             health_diagnostics["primary_health_cause"] = "orphan_integrity_warning"
             health_diagnostics["operator_action"] = "inspect_orphan_integrity_report"
 
+    # R6-IMP2 (FR2/AC2): the ACTIVE operational-queue backlog is its OWN signal
+    # with its own drill-down tool — distinct from dead-letter / canonical debt /
+    # cognitive pending. Surfaced only when there is active depth; only promoted to
+    # primary_health_cause when stuck/backpressure (transient is normal in-flight).
+    if active_queue["total_active_depth"] > 0:
+        _aq_class = active_queue["classification"]
+        health_diagnostics["health_issues"].append({
+            "code": f"active_queue_{_aq_class}",
+            "component": "operational_queue",
+            "severity": "warning" if _aq_class in ("stuck", "backpressure") else "info",
+            "reason": f"active_queue:{_aq_class}",
+            "description": (
+                f"{active_queue['total_active_depth']} active operational-queue "
+                f"item(s) ({_aq_class}) across consolidation_queue + "
+                "global_update_outbox. Distinct from dead-letter and canonical debt."
+            ),
+            "operator_action": "inspect_active_queue",
+            "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+            "counts": {s["source"]: s["queue_depth"] for s in active_queue["sources"]},
+        })
+        if (
+            _aq_class in ("stuck", "backpressure")
+            and health_diagnostics["primary_health_cause"] == "none"
+        ):
+            health_diagnostics["primary_health_cause"] = f"active_queue_{_aq_class}"
+            health_diagnostics["operator_action"] = "inspect_active_queue"
+
+    # R6-IMP5 (FR5/AC5): explicit, deduplicated separation of the THREE operational
+    # domains so a caller never conflates them — each is its OWN counter + drill-down:
+    #   active_queue   = transient operational work (transient|stuck|backpressure),
+    #   dead_letter    = TERMINAL consolidation failures (DLQ),
+    #   canonical_debt = semantic canonicality pendency (retry/cognitive promotion).
+    # Reuses the existing counts (no new store); DLQ is NEVER summed into the active
+    # queue and canonical debt is NEVER reported as DLQ.
+    operational_domains = {
+        "active_queue": {
+            "domain": "active_queue",
+            "semantics": "transient_operational",
+            "count": int(active_queue["total_active_depth"]),
+            "classification": active_queue["classification"],
+            "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+        },
+        "dead_letter": {
+            "domain": "dead_letter",
+            "semantics": "terminal_failure",
+            "count": int(dead_letter_count),
+            "drill_down_tool": "okto_pulse_kg_dead_letter_list",
+        },
+        "canonical_debt": {
+            "domain": "canonical_debt",
+            "semantics": "semantic_canonicality_pending",
+            "count": int(canonical_debt.get("open_count") or 0),
+            "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
+        },
+    }
+
     return {
         # --- KG-01 REST contract api_3ed9037f ---
         "board_id": board_id,
@@ -1431,6 +1608,12 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         "queue_depth": int(queue_depth),
         "oldest_pending_age_s": round(oldest_pending_age_s, 3),
         "dead_letter_count": int(dead_letter_count),
+        # R6-IMP2: active operational-queue drill-down (sources/worker_mode/
+        # classification). Read-only; DLQ/canonical debt excluded.
+        "active_queue": active_queue,
+        # R6-IMP5: deduplicated 3-domain separation (active_queue / dead_letter /
+        # canonical_debt), each with its own count + drill-down tool.
+        "operational_domains": operational_domains,
         "total_nodes": total_nodes,
         "default_score_count": default_score_count,
         "default_score_ratio": round(default_score_ratio, 4),

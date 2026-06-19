@@ -123,6 +123,10 @@ class CoreSettings(BaseSettings):
     kg_queue_claim_timeout_s: int = Field(300, ge=60, le=3600)
     kg_queue_max_attempts: int = Field(5, ge=1, le=10)
     kg_queue_alert_threshold: int = Field(5000, ge=100, le=100000)
+    # R6-IMP2: advisory age (seconds) above which an ACTIVE queue item (oldest
+    # pending/claimed) is classified ``stuck`` in the queue drill-down. Advisory
+    # only — does not change the queue alert/backpressure threshold above.
+    kg_queue_stuck_age_seconds: int = Field(300, ge=1, le=86400)
     # Recovery scan periodicity (TR6); operators can lower for tests but
     # production values below 30s start to compete with normal traffic.
     kg_queue_recovery_scan_interval_s: int = Field(60, ge=10, le=600)

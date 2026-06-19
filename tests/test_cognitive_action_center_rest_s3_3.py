@@ -436,10 +436,16 @@ async def test_rest_mcp_skip_parity(tmp_path, db_factory, monkeypatch):
         board_id=board, source_ref=f"bug:{UUID_B}", reason_code="trivial_fix",
     ))
 
-    # mesmo conjunto de chaves (builder compartilhado garante paridade).
-    assert set(rest.keys()) == set(mcp.keys()) == SKIP_KEYS
-    assert rest["classification"] == mcp["classification"] == "terminal"
-    assert rest["readiness_effect"] == mcp["readiness_effect"] == "ready_skip"
+    # R5-IMP1: the agent-facing MCP skip is HUMAN-only — it no longer mirrors the
+    # REST skip response. REST (the human surface) still returns the full skip
+    # payload; MCP returns the human_control_required refusal. The shared-builder
+    # parity now holds across the HUMAN surfaces (REST + UI), not the agent MCP.
+    assert set(rest.keys()) == SKIP_KEYS
+    assert rest["classification"] == "terminal"
+    assert rest["readiness_effect"] == "ready_skip"
+    assert mcp["code"] == "human_control_required"
+    assert mcp["details"]["mutation_allowed"] is False
+    assert mcp["details"]["state_changed"] is False
 
 
 def test_rest_routes_via_client(tmp_path, db_factory):
