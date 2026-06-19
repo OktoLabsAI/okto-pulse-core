@@ -771,6 +771,7 @@ def execute_natural_query(
     min_confidence: float = 0.5,
     since: str | None = None,
     until: str | None = None,
+    graph_layer: str = "canonical",
     rewrite: str = "none",
     rewrite_llm_fn=None,
     fusion_paraphrases: int = 3,
@@ -808,6 +809,17 @@ def execute_natural_query(
     applied) and ``rewrite_variants_count`` (1 for none/hyde, N for
     decompose/fusion) so callers / audit can tell the stages apart.
     """
+    # graph_layer contract (spec e2598178): fail-closed at the boundary via the
+    # shared normalizer — an invalid value raises BEFORE any retrieval. Reuses
+    # normalize_graph_layer (the single layer allowlist) so there is no second
+    # vocabulary to drift from query_global/get_related_context.
+    from okto_pulse.core.kg.kg_service import KGToolError, normalize_graph_layer
+
+    try:
+        graph_layer = normalize_graph_layer(graph_layer)
+    except KGToolError as exc:
+        raise TierPowerError(exc.code, exc.message, details=exc.details) from exc
+
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
     from okto_pulse.core.kg.query_rewrite import get_rewriter, merge_rrf
@@ -992,6 +1004,13 @@ def execute_natural_query(
             kept.append(r)
         all_results = kept
 
+    # graph_layer contract (spec e2598178): attach each result's layer, audit
+    # leakage across layers, then filter to the requested layer. Fail-closed —
+    # legacy_unknown/metadata only surface under graph_layer='all'.
+    all_results, layer_audit = _apply_graph_layer_to_natural_results(
+        board_id, all_results, graph_layer
+    )
+
     # Final ordering: fusion preserves RRF; others sort by similarity
     # desc (decompose respects union order except for the final
     # deterministic sort by similarity).
@@ -1067,6 +1086,8 @@ def execute_natural_query(
     resp: dict[str, Any] = {
         "nodes": results,
         "total_matches": len(all_results),
+        "applied_graph_layer": graph_layer,
+        "layer_audit": layer_audit,
         "rewrite_strategy": applied_strategy,
         "rewrite_variants_count": len(variants) if variants else 1,
         "parent_context_included": include_parent_context,
@@ -1084,6 +1105,98 @@ def execute_natural_query(
             "filtered_out": filtered_out,
         }
     return resp
+
+
+# Natural-query layer-audit buckets (spec e2598178, ac_6fabaaec). canonical /
+# working are artifact layers; BoardMeta (internal singleton) and any
+# NULL/unknown layer are NON-artifact and never count as canonical/working
+# leakage.
+_NATURAL_LAYER_BUCKETS: tuple[str, ...] = (
+    "canonical",
+    "working",
+    "legacy_unknown",
+    "metadata",
+)
+
+
+def _classify_natural_layer(node_type: str, raw_layer: str | None) -> str:
+    """Bucket a natural-query result into the layer-audit vocabulary.
+
+    BoardMeta (the internal schema-version singleton) is non-artifact metadata;
+    canonical/working pass through; anything else (NULL, 'none', unknown) is the
+    conservative ``legacy_unknown`` bucket — never silently canonical/working.
+    """
+    if node_type == "BoardMeta":
+        return "metadata"
+    layer = (raw_layer or "").strip().lower()
+    if layer == "canonical":
+        return "canonical"
+    if layer == "working":
+        return "working"
+    return "legacy_unknown"
+
+
+def _batch_lookup_graph_layer(board_id: str, node_ids: list[str]) -> dict[str, str]:
+    """Fetch graph_layer for node ids in one pass across all node types.
+
+    Reuses the fail-safe projection ``cypher_templates.layer_label_projection``:
+    a NULL/absent graph_layer is reported as ``'legacy_unknown'`` — never
+    coerced to canonical — so the natural-query layer filter stays fail-closed.
+    """
+    if not node_ids:
+        return {}
+    from okto_pulse.core.kg import cypher_templates as tpl
+
+    out: dict[str, str] = {}
+    with open_board_connection(board_id) as (_db, conn):
+        for node_type in NODE_TYPES:
+            try:
+                result = conn.execute(
+                    f"MATCH (n:{node_type}) WHERE n.id IN $ids "
+                    f"RETURN n.id, {tpl.layer_label_projection('n')}",
+                    {"ids": node_ids},
+                )
+                while result.has_next():
+                    row = result.get_next()
+                    out[row[0]] = str(row[1] or "legacy_unknown")
+            except Exception:
+                continue
+    return out
+
+
+def _apply_graph_layer_to_natural_results(
+    board_id: str, rows: list[dict], graph_layer: str
+) -> tuple[list[dict], dict]:
+    """Attach each result's graph_layer bucket, audit leakage across layers, and
+    filter to the requested layer.
+
+    Fail-closed: under ``canonical``/``working`` only that artifact layer is
+    kept; ``legacy_unknown``/``metadata`` surface ONLY under ``all``. The
+    ``layer_audit.counts_by_layer`` is computed over the FULL retrieved set
+    (pre-filter) so an agent can see what was matched across layers; metadata
+    and legacy_unknown are reported separately and never folded into the
+    canonical/working leakage counts.
+    """
+    counts = {bucket: 0 for bucket in _NATURAL_LAYER_BUCKETS}
+    if not rows:
+        return rows, {"applied_graph_layer": graph_layer, "counts_by_layer": counts}
+    layers = _batch_lookup_graph_layer(board_id, [r["node_id"] for r in rows])
+    for r in rows:
+        bucket = _classify_natural_layer(r.get("node_type", ""), layers.get(r["node_id"]))
+        r["graph_layer"] = bucket
+        counts[bucket] += 1
+    if graph_layer == "all":
+        kept = rows
+    else:
+        kept = [r for r in rows if r["graph_layer"] == graph_layer]
+    audit = {
+        "applied_graph_layer": graph_layer,
+        "counts_by_layer": counts,
+        # metadata / legacy_unknown are non-artifact and never leak into the
+        # canonical or working result set.
+        "non_artifact_excluded": counts["legacy_unknown"] + counts["metadata"],
+    }
+    return kept, audit
 
 
 def _batch_lookup_created_at(board_id: str, node_ids: list[str]) -> dict[str, Any]:

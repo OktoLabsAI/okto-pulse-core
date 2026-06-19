@@ -4360,7 +4360,13 @@ class SpecService:
             else False
         )
         if not skip:
-            ok, missing = validate_test_scenario_evidence(status, evidence)
+            # for_write: a NEW gated write must satisfy the re-executable
+            # evidence contract (spec 9e0bf979) — explicit evidence_class is
+            # strict, and an unclassed run-log-like payload is rejected before
+            # persisting (only a direct test pointer is grandfathered).
+            ok, missing = validate_test_scenario_evidence(
+                status, evidence, for_write=True
+            )
             if not ok:
                 raise ValueError(f"evidence_required: {', '.join(missing)}")
 

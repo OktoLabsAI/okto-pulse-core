@@ -7005,7 +7005,9 @@ okto-pulse://reference/tool-docs/test-scenario."""
         except ValueError as exc:
             msg = str(exc)
             if msg.startswith("evidence_required"):
-                _ok, missing = validate_test_scenario_evidence(status, evidence_dict)
+                _ok, missing = validate_test_scenario_evidence(
+                    status, evidence_dict, for_write=True
+                )
                 return json.dumps({
                     "error": "evidence_required",
                     "required": missing,

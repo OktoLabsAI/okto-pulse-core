@@ -35,7 +35,17 @@ from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.test_scenario_lifecycle import StatusNotMutableError
 
 USER = "tsl-user"
-_VALID_EVIDENCE = {"last_run_at": "2026-01-01T00:00:00", "output_snippet": "1 passed"}
+# A grandfathered direct automated-test-pointer (test_file_path + test_function)
+# so it passes the spec-9e0bf979 write gate; the run-log fields are kept because
+# some assertions read evidence["last_run_at"]. These lifecycle tests exercise
+# status mutability / narrow-persist / REST gating, NOT evidence quality — the
+# re-executable evidence contract itself is covered in test_evidence_class_contract.
+_VALID_EVIDENCE = {
+    "test_file_path": "tests/test_test_scenario_lifecycle.py",
+    "test_function": "test_lifecycle_evidence",
+    "last_run_at": "2026-01-01T00:00:00",
+    "output_snippet": "1 passed",
+}
 
 
 async def _seed_spec(

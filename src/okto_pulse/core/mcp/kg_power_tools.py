@@ -239,14 +239,18 @@ okto-pulse://reference/tool-docs/kg."""
         min_confidence: float = 0.5,
         since: str = "",
         until: str = "",
+        graph_layer: str = "canonical",
     ) -> str:
         """Natural-language search over a board's knowledge graph using hybrid search
 (embedding + HNSW + traversal), falling back to string match if embedding is
 unavailable. Deterministic — invokes NO LLM (local sentence-transformers or stub).
 Args include nl_query, limit (default 20), min_confidence (default 0.5), and optional
-since/until ISO-8601 bounds on created_at. Returns nodes, total_matches, optional
-warning, and temporal_filter metadata when a time bound is active. Full args:
-okto-pulse://reference/tool-docs/kg."""
+since/until ISO-8601 bounds on created_at. graph_layer (canonical|working|all,
+default canonical) scopes results by KG layer; an invalid value fails closed with a
+structured error BEFORE execution. Returns nodes, total_matches, applied_graph_layer
+(echo) and a layer_audit (counts_by_layer) where metadata/legacy_unknown never count
+as canonical/working leakage, plus optional warning and temporal_filter metadata when
+a time bound is active. Full args: okto-pulse://reference/tool-docs/kg."""
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
@@ -276,6 +280,7 @@ okto-pulse://reference/tool-docs/kg."""
                     board_id, nl_query,
                     limit=limit, min_confidence=min_confidence,
                     since=since or None, until=until or None,
+                    graph_layer=graph_layer,
                 ),
                 timeout=30.0,
             )

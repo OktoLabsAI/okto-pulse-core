@@ -320,10 +320,16 @@ class TestNLQuery:
                 "source_confidence: 1.0, relevance_score: 0.5})"
             )
 
+        # This case exercises the exact-match fallback retrieval, not the layer
+        # filter. The fixture Bug is created without a graph_layer (legacy/
+        # un-stamped), so under the spec e2598178 contract it is legacy_unknown
+        # and surfaces only under graph_layer='all' (default canonical fails
+        # closed on un-stamped nodes — no silent fallback to old behavior).
         result = execute_natural_query(
             board_id,
             "Exact bug title",
             min_confidence=0.0,
+            graph_layer="all",
         )
 
         assert any(

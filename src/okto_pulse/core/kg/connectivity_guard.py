@@ -30,6 +30,11 @@ CANONICAL_LEARNING_PROVENANCE_ONLY_REASON = (
     "canonical_learning_provenance_only_observed"
 )
 
+# A semantic edge whose resolved endpoint is the guarded node itself never
+# provides connectivity — a node cannot justify its own existence. Bounded
+# reason (no new enum) so API payloads and metric labels stay closed-vocabulary.
+SELF_LOOP_NOT_CONNECTIVITY_REASON = "self_loop_not_connectivity"
+
 SAFE_CONNECTIVITY_METRIC_LABELS: tuple[str, ...] = (
     "board_id",
     "node_type",
@@ -697,6 +702,10 @@ class KGNodeConnectivityGuard:
         # candidate is held instead of silently satisfying completeness.
         satisfying_status: SourceResolutionStatus | None = None
         working_observed: list[str] = []
+        # A self-loop edge matched a requirement but resolved to the node itself;
+        # tracked so a self-loop-only candidate is rejected with a dedicated
+        # bounded reason instead of the generic missing_required_edge.
+        self_loop_matched = False
         for edge in edges:
             if edge.from_candidate_id == node.candidate_id:
                 direction = "outgoing"
@@ -707,10 +716,23 @@ class KGNodeConnectivityGuard:
             else:
                 continue
 
+            # A self-loop (resolved endpoint is the candidate node itself) can
+            # never provide semantic connectivity for a guarded node.
+            is_self_loop = other_ref == node.candidate_id or (
+                bool(node.source_artifact_ref)
+                and other_ref == node.source_artifact_ref
+            )
+
             for req in group.alternatives:
                 if req.edge_type != edge.edge_type:
                     continue
                 if req.direction != "any" and req.direction != direction:
+                    continue
+                if is_self_loop:
+                    # The edge matches this requirement's shape but its endpoint
+                    # is the node itself; a self-loop can never establish
+                    # connectivity, so record it and never resolve or count it.
+                    self_loop_matched = True
                     continue
                 endpoint_type, endpoint_layer, status = _resolve_endpoint_with_layer(
                     other_ref,
@@ -759,6 +781,15 @@ class KGNodeConnectivityGuard:
                 missing_endpoint=group.label(),
                 reason=CANONICAL_LEARNING_WORKING_ONLY_REASON,
                 observed_endpoints=tuple(working_observed),
+            )
+        if self_loop_matched:
+            # Only self-loop edge(s) would have satisfied the group; a node
+            # cannot establish its own connectivity, so fail closed.
+            return _RequirementResolution(
+                passed=False,
+                status=SourceResolutionStatus.UNRESOLVED_SOURCE_REF,
+                missing_endpoint=group.label(),
+                reason=SELF_LOOP_NOT_CONNECTIVITY_REASON,
             )
         if touched_unresolved:
             return _RequirementResolution(
@@ -986,6 +1017,7 @@ __all__ = [
     "CONNECTIVITY_ERROR_CODE",
     "DEGRADED_KG_STATES",
     "SAFE_CONNECTIVITY_METRIC_LABELS",
+    "SELF_LOOP_NOT_CONNECTIVITY_REASON",
     "InMemoryConnectivityMetricSink",
     "KGConnectivityEdgeGroup",
     "KGConnectivityEdgeRequirement",

@@ -254,15 +254,32 @@ class CommentResponse(BaseSchema):
 
 
 class TestScenarioEvidence(BaseModel):
-    """Structured proof that a test scenario exists or was executed."""
+    """Structured proof that a test scenario exists or was executed.
+
+    Spec 9e0bf979 — re-executable validation evidence contract. ``evidence_class``
+    classifies the KIND of proof (see ``test_scenario_lifecycle.EVIDENCE_CLASSES``)
+    so a validator can rerun or inspect the artifact instead of trusting a raw
+    run log. All new fields are additive and optional; legacy evidence that only
+    carries the minimal automated/passed fields stays valid and readable
+    (backward compatibility, fr_a245e2c7).
+    """
 
     model_config = ConfigDict(extra="allow")
 
+    # Minimal/legacy fields (NC-9). Preserved verbatim for backward compatibility.
     test_file_path: str | None = None
     test_function: str | None = None
     last_run_at: str | None = None
     test_run_id: str | None = None
     output_snippet: str | None = None
+    # Re-executable evidence contract (spec 9e0bf979, tr_61dabab8).
+    evidence_class: str | None = None
+    replay_command: str | None = None
+    mcp_replay_manifest: str | None = None
+    manual_checklist_ref: str | None = None
+    expected_output_snapshot: str | None = None
+    replay_should_exist: bool | None = None
+    non_replayable_justification: str | None = None
 
 
 class TestScenario(BaseModel):

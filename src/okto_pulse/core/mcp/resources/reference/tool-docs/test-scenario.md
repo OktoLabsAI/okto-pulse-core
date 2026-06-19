@@ -129,6 +129,41 @@ Audit log `test_scenario.status_changed` is emitted on every successful
 update with `evidence_provided`, `evidence_gate_skipped`, and
 `changed_by_agent_id`.
 
+**Re-executable evidence contract (spec 9e0bf979):**
+
+Evidence may declare an explicit `evidence_class` so a validator can rerun or
+inspect the artifact instead of trusting a raw log. The six classes and their
+minimum fields (on a gated status) are:
+
+  - `automated_test_pointer`: `test_file_path` + `test_function`.
+  - `replay_command`: `replay_command` + `expected_output_snapshot`.
+  - `mcp_replay_manifest`: `mcp_replay_manifest` + `expected_output_snapshot`.
+  - `manual_checklist`: `manual_checklist_ref` + `expected_output_snapshot`.
+  - `run_log`: `last_run_at` + (`output_snippet` OR `test_run_id`) +
+    `non_replayable_justification` + `expected_output_snapshot`.
+  - `non_replayable_justified`: `non_replayable_justification` +
+    `expected_output_snapshot`.
+
+An `expected_output_snapshot` (expected output / success criteria) is required
+for every class except the direct `automated_test_pointer`. An invalid
+`evidence_class` value fails closed (it is never normalized).
+
+**Cheap/existing replay (when run logs are NOT acceptable):** a deterministic
+replay is treated as cheap or already-existing — so a run log is the wrong
+class — when any of these is present: an existing test (`test_file_path`), an
+existing command/script (`replay_command`), or a deterministic MCP replay
+manifest writable under bounded setup (`mcp_replay_manifest`). A `run_log` /
+`non_replayable_justified` payload is rejected when `replay_should_exist=true`
+OR a cheap/existing signal is present — declare a replayable class instead.
+
+**Write vs read:** on a NEW gated write without `evidence_class`, only the
+legacy direct test pointer (`test_file_path` + `test_function`) is grandfathered;
+a run-log-like payload must carry `expected_output_snapshot` +
+`non_replayable_justification` (or declare `evidence_class`). Already-persisted
+legacy evidence stays readable and can be upgraded with `evidence_class` without
+losing prior fields. The system enforces only the minimum fields; whether a
+`non_replayable_justification` is credible remains a validator judgment.
+
 Validated/done specs keep their semantic content lock. The only post-lock
 status update allowed here is operational evidence for a scenario that is
 already linked to an executable `card_type="test"` card (`started`,
@@ -140,8 +175,11 @@ Args:
     spec_id: Spec ID
     scenario_id: Test scenario ID (e.g. "ts_abc123")
     status: New status — one of: draft, ready, automated, passed, failed
-    evidence: Optional JSON string with keys test_file_path, test_function,
-        last_run_at, test_run_id, output_snippet. Empty string = no evidence.
+    evidence: Optional JSON string. Legacy keys: test_file_path, test_function,
+        last_run_at, test_run_id, output_snippet. Re-executable contract keys
+        (spec 9e0bf979): evidence_class, replay_command, mcp_replay_manifest,
+        manual_checklist_ref, expected_output_snapshot, replay_should_exist,
+        non_replayable_justification. Empty string = no evidence.
 
 Returns:
     JSON. On success: {success, scenario_id, old_status, new_status,
