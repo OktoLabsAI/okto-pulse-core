@@ -409,6 +409,68 @@ async def test_empty_graph_after_materialized_history_requires_recovery(
 
 
 @pytest.mark.asyncio
+async def test_health_stays_recovery_needed_with_actionable_drilldown(
+    monkeypatch, db_factory, kg_health_board
+):
+    """SPEC4 card 89f61f6f / ts_f7c8bcdc (C6 — no false healthy): while the root
+    cause (empty graph after prior materialization) persists, KG Health stays
+    recovery_needed — never a false healthy — and exposes an actionable
+    structured root-cause + per-domain drill-down so an agent can act without
+    local-file forensics.
+    """
+    now = datetime.now(timezone.utc)
+    async with db_factory() as session:
+        session.add(
+            ConsolidationAudit(
+                session_id=f"kgses_{uuid.uuid4().hex}",
+                board_id=kg_health_board,
+                artifact_id="prior-materialization",
+                artifact_type="spec",
+                agent_id="test",
+                started_at=now,
+                committed_at=now,
+                nodes_added=3,
+                edges_added=1,
+                summary_text="prior materialization evidence",
+            )
+        )
+        await session.commit()
+
+    from okto_pulse.core.services import kg_health_service as svc
+
+    monkeypatch.setattr(
+        svc, "_probe_board_graph_telemetry",
+        lambda **_kwargs: svc._telemetry_unavailable("board"),
+    )
+    monkeypatch.setattr(
+        svc, "_probe_global_discovery_telemetry",
+        lambda: svc._telemetry_unavailable("discovery"),
+    )
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    # NO FALSE HEALTHY: an empty-after-materialized graph stays recovery_needed.
+    assert result["overall_state"] == "recovery_needed"
+    assert result["overall_state"] != "healthy"
+    assert "graph:empty_after_materialized_history" in result["classification_reason"]
+    # actionable structured root-cause (SPEC4 card 2e913ac3 block).
+    root_cause = result["root_cause"]
+    assert root_cause["categories"]["empty_after_materialized_history"]["present"] is True
+    assert "empty_after_materialized_history" in root_cause["present_categories"]
+    # actionable per-domain drill-down — every operational domain names a tool.
+    assert result["operational_domains"]
+    for domain in result["operational_domains"].values():
+        assert domain.get("drill_down_tool")
+    # an actionable health issue + operator action while the root cause persists.
+    assert any(
+        issue["code"] == "board_graph_empty_after_materialized_history"
+        for issue in result["health_issues"]
+    )
+    assert result["operator_action"] == "run_explicit_rebuild"
+
+
+@pytest.mark.asyncio
 async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_required(
     monkeypatch, db_factory, kg_health_board
 ):
