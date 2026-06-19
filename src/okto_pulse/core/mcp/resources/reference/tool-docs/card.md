@@ -244,6 +244,23 @@ twin: `POST .../amendment-revisions/{amendment_id}/associate`). Args:
 `no_artifacts_to_associate`). NEVER reparents `origin_bug_id`/`original_spec_id`;
 audit-backed.
 
+## `okto_pulse_transition_amendment_revision`
+
+Promote an amendment's lifecycle for the bug (REST twin: `POST
+.../amendment-revisions/{amendment_id}/lifecycle`) — the agent-facing step that
+takes a created/associated revision to `approved`/`done` + `lineage_state=complete`
+so the bug gate can reach `path_b_ready`. Args: `board_id`, `bug_id`,
+`amendment_id`, and any of `status`, `lineage_state`. Fail-closed: unknown values
+are rejected (`invalid_amendment_status`/`invalid_lineage_state`);
+`lineage_state=complete` needs the declared regression scenario + test-task
+artifacts and the bug's authoritative origin task (`incomplete_lineage_artifacts`);
+`approved`/`done` need complete lineage (`cannot_promote_incomplete_lineage`); a
+`cancelled`/`superseded` revision is terminal and cannot be promoted back
+(`terminal_amendment_revision`). It has NO coverage parameter and **never**
+confirms coverage — that stays validator-only via
+`okto_pulse_confirm_amendment_coverage`, so on its own this tool leaves the bug
+`coverage_pending` (it does not close it).
+
 ## `okto_pulse_confirm_amendment_coverage`
 
 VALIDATOR-ONLY. Records the non-forgeable coverage attestation that lets the gate

@@ -13066,6 +13066,57 @@ async def okto_pulse_associate_amendment_revision_artifacts(
 
 
 @mcp.tool()
+async def okto_pulse_transition_amendment_revision(
+    board_id: str,
+    bug_id: str,
+    amendment_id: str,
+    status: str = "",
+    lineage_state: str = "",
+) -> str:
+    """
+    Transition a Path B amendment's lifecycle (status and/or lineage_state) for a
+    bug (twin of POST .../amendment-revisions/{amendment_id}/lifecycle). This is the
+    agent-facing step that promotes a created/associated amendment toward
+    approved/done + complete lineage so the bug gate can reach path_b_ready.
+
+    Fail-closed: unknown status/lineage are rejected (invalid_amendment_status /
+    invalid_lineage_state); lineage_state=complete needs declared regression
+    artifacts + the bug's authoritative origin task (incomplete_lineage_artifacts);
+    approved/done need lineage complete (cannot_promote_incomplete_lineage);
+    cancelled/superseded are TERMINAL and cannot be promoted back
+    (terminal_amendment_revision) — open a new revision. It NEVER writes coverage:
+    that stays validator-only via okto_pulse_confirm_amendment_coverage, so before
+    the validator confirms, the bug stays coverage_pending (this tool does not close
+    it)."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.services.amendment_revision_api import (
+        AmendmentRevisionApiError,
+        AmendmentRevisionApiService,
+    )
+
+    async with get_db_for_mcp() as db:
+        try:
+            result = await AmendmentRevisionApiService(db).transition_lifecycle(
+                board_id=board_id,
+                bug_id=bug_id,
+                amendment_id=amendment_id,
+                actor=ctx.agent_id,
+                status=status or None,
+                lineage_state=lineage_state or None,
+            )
+            await db.commit()
+            return json.dumps({"success": True, "amendment_revision": result}, default=str)
+        except AmendmentRevisionApiError as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
 async def okto_pulse_list_task_validations(board_id: str, card_id: str) -> str:
     """
     List all validations for a task card in reverse chronological order.

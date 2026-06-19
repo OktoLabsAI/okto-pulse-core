@@ -468,3 +468,161 @@ async def test_ts_5b0f1272_lineage_eligible_unconfirmed_is_coverage_pending():
         "okto_pulse_list_amendment_revisions", board_id=ids["board"], bug_id=ids["bug"]
     )
     assert twin["path_b_resolution"]["coverage_state"] == "coverage_pending"
+
+
+# ---------------------------------------------------------------------------
+# Card 14ddfab0 — agent-facing amendment lifecycle (transition_lifecycle): the
+# missing MCP/API step that promotes a created/associated amendment to
+# approved/done + complete lineage. Fail-closed; NEVER writes coverage.
+# ---------------------------------------------------------------------------
+
+
+async def _create_and_associate(db, ids):
+    """create(draft) + associate the regression test task — the pre-promotion state."""
+    api = AmendmentRevisionApiService(db)
+    created = await api.create(
+        board_id=ids["board"], bug_id=ids["bug"], author=USER_ID,
+        origin_task_ids=[ids["origin"]], regression_scenario_ids=[ids["foreign_scenario"]],
+    )
+    await api.associate(
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=created["id"],
+        actor=USER_ID, regression_test_task_ids=[ids["test"]],
+    )
+    return created["id"]
+
+
+async def test_transition_lifecycle_promotes_to_done_complete_via_agent_surface():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_cross_spec_bug(db, amendment_kwargs=None)
+        amd_id = await _create_and_associate(db, ids)
+        api = AmendmentRevisionApiService(db)
+
+        after_lineage = await api.transition_lifecycle(
+            board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id,
+            actor=USER_ID, lineage_state="complete",
+        )
+        assert after_lineage["lineage_state"] == "complete"
+        after_status = await api.transition_lifecycle(
+            board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id,
+            actor=USER_ID, status="done",
+        )
+        assert after_status["status"] == "done"
+        assert after_status["lineage_state"] == "complete"
+
+
+async def test_transition_rejects_unknown_status_and_lineage():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_cross_spec_bug(db, amendment_kwargs=None)
+        amd_id = await _create_and_associate(db, ids)
+        api = AmendmentRevisionApiService(db)
+        with pytest.raises(AmendmentRevisionApiError) as e1:
+            await api.transition_lifecycle(
+                board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id,
+                actor=USER_ID, status="frozen",
+            )
+        assert e1.value.code == "invalid_amendment_status"
+        with pytest.raises(AmendmentRevisionApiError) as e2:
+            await api.transition_lifecycle(
+                board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id,
+                actor=USER_ID, lineage_state="mostly",
+            )
+        assert e2.value.code == "invalid_lineage_state"
+
+
+async def test_transition_complete_lineage_requires_artifacts():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_cross_spec_bug(db, amendment_kwargs=None)
+        # create WITHOUT associating a regression test task (artifacts insufficient).
+        api = AmendmentRevisionApiService(db)
+        created = await api.create(
+            board_id=ids["board"], bug_id=ids["bug"], author=USER_ID,
+            origin_task_ids=[ids["origin"]], regression_scenario_ids=[ids["foreign_scenario"]],
+        )
+        with pytest.raises(AmendmentRevisionApiError) as e:
+            await api.transition_lifecycle(
+                board_id=ids["board"], bug_id=ids["bug"], amendment_id=created["id"],
+                actor=USER_ID, lineage_state="complete",
+            )
+        assert e.value.code == "incomplete_lineage_artifacts"
+
+
+async def test_transition_cannot_promote_without_complete_lineage():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_cross_spec_bug(db, amendment_kwargs=None)
+        amd_id = await _create_and_associate(db, ids)  # lineage still incomplete
+        api = AmendmentRevisionApiService(db)
+        with pytest.raises(AmendmentRevisionApiError) as e:
+            await api.transition_lifecycle(
+                board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id,
+                actor=USER_ID, status="done",
+            )
+        assert e.value.code == "cannot_promote_incomplete_lineage"
+
+
+async def test_transition_terminal_state_cannot_resurrect():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_cross_spec_bug(db, amendment_kwargs=None)
+        amd_id = await _create_and_associate(db, ids)
+        api = AmendmentRevisionApiService(db)
+        cancelled = await api.transition_lifecycle(
+            board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id,
+            actor=USER_ID, status="cancelled",
+        )
+        assert cancelled["status"] == "cancelled"
+        with pytest.raises(AmendmentRevisionApiError) as e:
+            await api.transition_lifecycle(
+                board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id,
+                actor=USER_ID, status="done",
+            )
+        assert e.value.code == "terminal_amendment_revision"
+
+
+async def test_transition_lifecycle_tool_has_no_coverage_or_bypass_param():
+    # FR5/G2: the lifecycle MCP tool structurally accepts ONLY status + lineage_state
+    # — it can never carry coverage_confirmation/coverage_confirmed nor a bypass field.
+    import inspect
+
+    from okto_pulse.core.services.amendment_revision_api import BYPASS_FIELD_NAMES
+
+    tool = await mcp_server.mcp.get_tool("okto_pulse_transition_amendment_revision")
+    params = set(inspect.signature(tool.fn).parameters)
+    assert params == {"board_id", "bug_id", "amendment_id", "status", "lineage_state"}
+    assert "coverage_confirmation" not in params and "coverage_confirmed" not in params
+    assert not (params & BYPASS_FIELD_NAMES)
+
+
+async def test_mcp_twin_transition_amendment_revision():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_cross_spec_bug(db, amendment_kwargs=None)
+        amd_id = await _create_and_associate(db, ids)
+        await db.commit()
+
+    done = await _call(
+        "okto_pulse_transition_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id, lineage_state="complete",
+    )
+    assert done["success"] is True
+    assert done["amendment_revision"]["lineage_state"] == "complete"
+    promoted = await _call(
+        "okto_pulse_transition_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id, status="done",
+    )
+    assert promoted["amendment_revision"]["status"] == "done"
+    # structured error twin (unknown status), never a raw exception.
+    err = await _call(
+        "okto_pulse_transition_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id, status="frozen",
+    )
+    assert err["code"] == "invalid_amendment_status"

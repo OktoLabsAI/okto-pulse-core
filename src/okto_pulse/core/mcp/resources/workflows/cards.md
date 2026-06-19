@@ -105,7 +105,7 @@ okto_pulse_create_card(
    - **Path A — reuse eligible existing scenario:** use `okto_pulse_resolve_bug_regression_scenarios` or the REST candidate preview to find scenarios on the bug spec that are linked to the bug `origin_task_id` or explicitly supplied `affected_task_ids`. Reuse only those eligible scenarios. Linking an existing eligible scenario is a traceability-only update: leave validated spec content unchanged and create a fresh post-bug test card that references the eligible scenario.
    - **Path B — amendment lineage (the semantic gap remediation for cross-spec regression evidence):** if no eligible same-spec scenario exists, the candidate is unrelated/cross-spec, or expected behavior changed, remediate through a formal `AmendmentHotfixRevision`. NEVER satisfy the gate by linking a same-spec scenario that is not linked to the origin/affected tasks, and there is **no skip/override** — the gate is only remediated, never bypassed. Executable sequence:
      1. **Create/associate the amendment** — `okto_pulse_create_amendment_revision` (binds to the bug's OWN `done`/`validated` (locked) spec and starts as `draft`), or `okto_pulse_associate_amendment_revision_artifacts` to attach regression artifacts onto an existing revision for this bug.
-     2. **Complete the lineage** — exact origin/affected-task membership (authoritative from the bug, not invented by the amendment), revision spec, and the declared regression scenario/test-task artifacts.
+     2. **Complete the lineage + promote the revision** — declare the exact origin/affected-task membership (authoritative from the bug, not invented by the amendment), revision spec, and the declared regression scenario/test-task artifacts, then advance the revision with `okto_pulse_transition_amendment_revision` to `lineage_state=complete` and a non-blocking `status` (`approved`/`done`). Fail-closed: `lineage_state=complete` needs the declared scenario + test-task artifacts and the bug's origin task; `approved`/`done` need complete lineage; a `cancelled`/`superseded` revision is terminal (open a new revision). This promotion **never** confirms coverage — that is the validator's step below.
      3. **Register re-executable evidence** — the regression test card's scenario is `passed`/`automated` with `test_file_path`+`test_function` (or `test_run_id`).
      4. **Validator confirms coverage** — the validator calls `okto_pulse_confirm_amendment_coverage`, the ONLY writer of the non-forgeable `coverage_confirmed` signal (re-executable evidence is necessary but NOT sufficient — a real validator attestation bound to this amendment + artifact is required).
      5. **Gate allows the bug** — only after step 4. Until then the bug is `coverage_pending`: lineage may be eligible but the bug is NOT closure-ready. Inspect at any time with `okto_pulse_list_amendment_revisions` / `okto_pulse_get_amendment_revision`.
@@ -118,6 +118,44 @@ okto_pulse_create_card(
 > **Canonical sources (forward pointers):** eligible-scenario reuse and the Path B amendment-revision tools are defined in `reference/tool-docs/card.md`; content lock behavior is covered by **SpecLockedError** and the Path B error codes (`missing_amendment_revision`, `coverage_pending`, `gate_bypass_not_allowed`, …) in `reference/errors.md`. The steps above intentionally separate Path A (same-spec traceability reuse), Path B (amendment lineage + re-executable evidence + validator coverage confirmation), and Path C (hotfix execution lane — never a substitute for Path B lineage).
 
 **If you get an error moving a bug card:** see the "Common Errors and How to Fix Them" section in the error reference.
+
+### Historical bug closure via Path B — operational checklist
+
+Reprocessing or closing a bug that surfaced AFTER its spec was locked
+(`done`/`validated`) runs through the SAME Path B gate as any other bug — there
+is **no administrative shortcut and no `skip`/`override`/`force` path**. Work the
+checklist below; every item must be green before the bug closes. It is
+re-executable by an agent end to end and is proven by `tests/test_path_b_e2e.py`.
+
+**Pre-conditions**
+
+- [ ] The bug's spec is `done`/`validated` (locked). If it is still `in_progress`, edit the spec directly — no amendment is needed.
+- [ ] You have the bug's authoritative `origin_task_id` (and any real `affected_task_ids`). Membership is authoritative from the bug, never invented by the amendment.
+- [ ] KG health is clean for the board BEFORE you start: `okto_pulse_kg_health` reports no related canonical debt and no related dead-letter (DLQ) entries (cross-check `okto_pulse_kg_canonical_debt_list` and `okto_pulse_kg_dead_letter_list`). Resolve any related debt/DLQ first.
+
+**Closure steps (all via Path B, re-executable)**
+
+1. Create or associate a formal `AmendmentHotfixRevision` for the bug — `okto_pulse_create_amendment_revision` (binds to the bug's own locked spec and starts as `draft`) or `okto_pulse_associate_amendment_revision_artifacts` onto an existing revision for this bug.
+2. Complete the lineage: exact origin/affected-task membership, revision spec, and the declared regression scenario plus a post-bug regression test task.
+3. Register FRESH re-executable evidence: the regression test card's scenario is `passed`/`automated` with `test_file_path`+`test_function` (or `test_run_id`) from a GREEN run. Stale or reused evidence does not count.
+4. The validator confirms coverage — `okto_pulse_confirm_amendment_coverage`, the ONLY writer of the non-forgeable `coverage_confirmed` signal. Re-executable evidence is necessary but NOT sufficient without a real validator attestation bound to this amendment + artifact.
+5. Only now move the bug forward (`move_card`) and close it with a conclusion. Confirm it travelled `coverage_pending` → `path_b_ready` (`okto_pulse_list_amendment_revisions` / `okto_pulse_get_amendment_revision`).
+
+**KG checkpoints (part of Path B regression — not optional)**
+
+- The amendment materializes in the WORKING partition while `draft`/incomplete and becomes canonical ONLY at `done` + complete lineage — verify there is no premature canonical leak.
+- Re-run `okto_pulse_kg_health` after closure: no NEW canonical debt and no NEW DLQ entry attributable to this bug/amendment. If a rebuild ran, the amendment partition must reconcile (no `MATERIALIZED_LAYER_MISMATCH`).
+
+**Do NOT close the bug while any of these hold (fail-closed):**
+
+- The bug is `coverage_pending`: lineage may be eligible but the validator has not confirmed coverage.
+- The amendment is `draft`/`review`/`cancelled`/`superseded`, or its lineage is incomplete (`blocked_amendment_status` / `incomplete_amendment_lineage`).
+- The regression evidence is reused, stale, or missing `test_file_path`/`test_function` (or `test_run_id`).
+- The candidate scenario is cross-spec or unrelated with no formal amendment backing it (`missing_amendment_revision` / `unrelated_scenario` / `cross_spec_scenario`).
+- A hotfix lane (Path C) is being treated as a substitute for amendment lineage — the lane only unblocks execution and never replaces Path B.
+- KG health still shows related canonical debt or DLQ that you have not resolved.
+
+There is no way to close a historical bug without validator-confirmed coverage and a clean KG. The error codes are in `reference/errors.md`, the amendment tools in `reference/tool-docs/card.md`, and the KG health contract in `reference/kg-health.md`.
 
 ## 2.11 Task Validation Workflow — Independent Quality Checkpoint
 

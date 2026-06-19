@@ -47,6 +47,15 @@ class AmendmentRevisionAssociateRequest(BaseModel):
     automated_regression_refs: list[str] | None = None
 
 
+class AmendmentRevisionLifecycleRequest(BaseModel):
+    # extra='forbid' rejects ANY unknown field, including coverage_confirmation /
+    # coverage_confirmed — coverage stays validator-only via confirm_amendment_coverage.
+    model_config = ConfigDict(extra="forbid")
+
+    status: str | None = None
+    lineage_state: str | None = None
+
+
 def _err(exc: AmendmentRevisionApiError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.to_dict())
 
@@ -140,6 +149,36 @@ async def associate_amendment_revision_artifacts(
         raise _invalid_request(exc)
     try:
         result = await AmendmentRevisionApiService(db).associate(
+            board_id=board_id,
+            bug_id=bug_id,
+            amendment_id=amendment_id,
+            actor=actor,
+            **req.model_dump(exclude_none=True),
+        )
+        await db.commit()
+        return result
+    except AmendmentRevisionApiError as exc:
+        raise _err(exc)
+
+
+@router.post("/boards/{board_id}/bugs/{bug_id}/amendment-revisions/{amendment_id}/lifecycle")
+async def transition_amendment_revision(
+    board_id: str,
+    bug_id: str,
+    amendment_id: str,
+    raw: dict[str, Any] = Body(default_factory=dict),
+    db=Depends(get_db),
+    actor: str = Depends(require_user),
+) -> dict[str, Any]:
+    try:
+        reject_bypass_fields(raw)  # FR5: named bypass intents rejected fail-closed
+        req = AmendmentRevisionLifecycleRequest.model_validate(raw)
+    except AmendmentRevisionApiError as exc:
+        raise _err(exc)
+    except ValidationError as exc:
+        raise _invalid_request(exc)
+    try:
+        result = await AmendmentRevisionApiService(db).transition_lifecycle(
             board_id=board_id,
             bug_id=bug_id,
             amendment_id=amendment_id,

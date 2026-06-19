@@ -17,7 +17,10 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.domain.amendment_eligibility import AmendmentRevisionStatus
+from okto_pulse.core.domain.amendment_eligibility import (
+    AmendmentLineageState,
+    AmendmentRevisionStatus,
+)
 from okto_pulse.core.models.db import Card, CardType, Spec, SpecStatus
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_preview import (
@@ -214,7 +217,132 @@ class AmendmentRevisionApiService:
         await self._db.refresh(amendment)  # load onupdate updated_at (no MissingGreenlet)
         return self._serialize_revision(amendment)
 
+    async def transition_lifecycle(
+        self,
+        *,
+        board_id: str,
+        bug_id: str,
+        amendment_id: str,
+        actor: str,
+        status: str | None = None,
+        lineage_state: str | None = None,
+    ) -> dict[str, Any]:
+        """Transition an amendment's lifecycle (status and/or lineage_state) for a
+        bug — the agent-facing step that lets a created/associated amendment reach
+        ``approved``/``done`` + complete lineage (card 14ddfab0). Fail-closed:
+
+        * unknown status/lineage are rejected (``invalid_amendment_status`` /
+          ``invalid_lineage_state``);
+        * ``lineage_state=complete`` needs declared regression artifacts + the bug's
+          authoritative origin-task membership (``incomplete_lineage_artifacts``);
+        * promotion to a non-blocking status (``approved``/``done``) needs lineage
+          already complete (``cannot_promote_incomplete_lineage``);
+        * a ``cancelled``/``superseded`` revision is terminal and can NOT be
+          promoted back to ``approved``/``done`` (``terminal_amendment_revision``) —
+          open a new revision instead;
+        * it NEVER writes coverage (there is no coverage param); the bug stays
+          ``coverage_pending`` until the validator runs
+          ``confirm_amendment_coverage``.
+        """
+        if status is None and lineage_state is None:
+            raise AmendmentRevisionApiError(
+                "no_lifecycle_change",
+                "Provide status and/or lineage_state to transition.",
+                422,
+            )
+        bug = await self._require_bug(board_id, bug_id)
+        amendment = await self._require_scoped_amendment(board_id, bug_id, amendment_id)
+
+        new_status = self._coerce_status_or_error(status) if status is not None else None
+        new_lineage = (
+            self._coerce_lineage_or_error(lineage_state) if lineage_state is not None else None
+        )
+
+        promoted = {AmendmentRevisionStatus.APPROVED.value, AmendmentRevisionStatus.DONE.value}
+        terminal = {AmendmentRevisionStatus.CANCELLED.value, AmendmentRevisionStatus.SUPERSEDED.value}
+        current_status_val = getattr(amendment.status, "value", amendment.status)
+
+        # Q4: a terminal revision can never be resurrected to approved/done.
+        if current_status_val in terminal and new_status is not None and new_status.value in promoted:
+            raise AmendmentRevisionApiError(
+                "terminal_amendment_revision",
+                f"Amendment '{amendment_id}' is '{current_status_val}' (terminal) and cannot be "
+                "promoted to approved/done. Create a new amendment revision instead.",
+                409,
+            )
+
+        effective_lineage_val = (
+            new_lineage.value
+            if new_lineage is not None
+            else getattr(amendment.lineage_state, "value", amendment.lineage_state)
+        )
+
+        # Q2: lineage_state=complete requires sufficient declared artifacts + membership.
+        if new_lineage is AmendmentLineageState.COMPLETE and not self._has_lineage_artifacts(
+            amendment, bug
+        ):
+            raise AmendmentRevisionApiError(
+                "incomplete_lineage_artifacts",
+                "lineage_state=complete requires at least one regression_scenario_id, one "
+                "regression_test_task_id, and the bug's authoritative origin task in "
+                "origin_task_ids/affected_task_ids.",
+                409,
+            )
+
+        # Q2: promotion to a non-blocking status requires complete lineage.
+        if (
+            new_status is not None
+            and new_status.value in promoted
+            and effective_lineage_val != AmendmentLineageState.COMPLETE.value
+        ):
+            raise AmendmentRevisionApiError(
+                "cannot_promote_incomplete_lineage",
+                f"Cannot set status='{new_status.value}' while lineage_state is not complete. "
+                "Complete the lineage first.",
+                409,
+            )
+
+        # Apply lineage before status so a combined call lands consistently. Coverage
+        # is NEVER touched here — it stays validator-only via confirm_amendment_coverage.
+        if new_lineage is not None:
+            amendment = await self._store.set_lineage_state(amendment_id, new_lineage, actor)
+        if new_status is not None:
+            amendment = await self._store.set_status(amendment_id, new_status, actor)
+        await self._db.refresh(amendment)
+        return self._serialize_revision(amendment)
+
     # -- internals ---------------------------------------------------------
+
+    def _coerce_status_or_error(self, value: str) -> AmendmentRevisionStatus:
+        try:
+            return AmendmentRevisionStatus(str(value))
+        except ValueError:
+            raise AmendmentRevisionApiError(
+                "invalid_amendment_status",
+                f"Unknown amendment status '{value}'. Allowed: "
+                f"{[s.value for s in AmendmentRevisionStatus]}.",
+                422,
+            ) from None
+
+    def _coerce_lineage_or_error(self, value: str) -> AmendmentLineageState:
+        try:
+            return AmendmentLineageState(str(value))
+        except ValueError:
+            raise AmendmentRevisionApiError(
+                "invalid_lineage_state",
+                f"Unknown lineage_state '{value}'. Allowed: "
+                f"{[s.value for s in AmendmentLineageState]}.",
+                422,
+            ) from None
+
+    @staticmethod
+    def _has_lineage_artifacts(amendment, bug) -> bool:
+        membership = set(amendment.origin_task_ids or []) | set(amendment.affected_task_ids or [])
+        return (
+            bool(amendment.regression_scenario_ids)
+            and bool(amendment.regression_test_task_ids)
+            and bug.origin_task_id in membership
+        )
 
     async def _require_bug(self, board_id: str, bug_id: str) -> Card:
         bug = await self._db.get(Card, bug_id)

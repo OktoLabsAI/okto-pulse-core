@@ -324,3 +324,79 @@ def test_ac8_every_registered_resource_serves_nonempty_content() -> None:
         if not _srv._load_resource_file(rel).strip()
     ]
     assert not empty, f"Registered resources served EMPTY (missing from package?): {empty}"
+
+
+# ---------------------------------------------------------------------------
+# AC (card d712a2ba) — the historical-bug-closure checklist in workflows/cards.md
+# must enforce real Path B (fresh re-executable evidence, formal amendment lineage,
+# validator-confirmed coverage, clean KG) and must NOT offer an administrative
+# bypass. Scoped to the new section so the prohibition wording ("no skip/override")
+# is allowed while PERMISSIVE bypass instructions are blocked.
+# ---------------------------------------------------------------------------
+
+_CHECKLIST_HEADING = "### Historical bug closure via Path B"
+
+# Gates the checklist MUST carry (lower-cased).
+_CHECKLIST_REQUIRED = (
+    "confirm_amendment_coverage",
+    "coverage_confirmed",
+    "amendmenthotfixrevision",
+    "re-executable",
+    "test_file_path",
+    "canonical debt",
+    "dead-letter",
+    "coverage_pending",
+    "do not close",
+    "no administrative shortcut",
+    "validator-confirmed coverage",
+)
+
+# PERMISSIVE bypass phrasings that must NEVER appear (the prohibition form
+# "no skip/override" is intentionally NOT in this list).
+_CHECKLIST_FORBIDDEN_PERMISSIVE = (
+    "may skip",
+    "can skip",
+    "may close",
+    "force close",
+    "force-close",
+    "skip the validator",
+    "skip validator",
+    "skip coverage",
+    "override the gate",
+    "bypass the gate",
+    "administratively close",
+    "close it without",
+    "without confirming coverage",
+)
+
+
+def _historical_closure_section(cards_md: str) -> str:
+    start = cards_md.find(_CHECKLIST_HEADING)
+    assert start != -1, "historical-closure checklist section missing from cards.md"
+    rest = cards_md[start + len(_CHECKLIST_HEADING):]
+    end = rest.find("\n## ")  # ends at the next top-level (##) heading
+    return _CHECKLIST_HEADING + (rest if end == -1 else rest[:end])
+
+
+def test_ac9_historical_closure_checklist_enforces_path_b_without_bypass() -> None:
+    from okto_pulse.core.mcp import server as _srv
+
+    registry = {uri: rel for uri, rel, _ in _srv._RESOURCE_REGISTRY}
+    # Read the EXPOSED resource (registry + loader), not the raw file.
+    served = _srv._load_resource_file(registry["okto-pulse://workflows/cards"])
+    section = _historical_closure_section(served).lower()
+
+    for needed in _CHECKLIST_REQUIRED:
+        assert needed in section, f"historical-closure checklist missing gate: {needed!r}"
+
+    for permissive in _CHECKLIST_FORBIDDEN_PERMISSIVE:
+        assert permissive not in section, (
+            f"historical-closure checklist carries a permissive bypass: {permissive!r}"
+        )
+
+    # Negative-wiring: the permissive guard is NOT vacuous, and it does NOT trip on
+    # the legitimate prohibition wording the checklist is allowed to use.
+    synthetic_bypass = "An operator may skip validator coverage and force close the bug."
+    assert any(p in synthetic_bypass.lower() for p in _CHECKLIST_FORBIDDEN_PERMISSIVE)
+    allowed_prohibition = "There is no skip/override/force path; never close without coverage."
+    assert not any(p in allowed_prohibition.lower() for p in _CHECKLIST_FORBIDDEN_PERMISSIVE)
