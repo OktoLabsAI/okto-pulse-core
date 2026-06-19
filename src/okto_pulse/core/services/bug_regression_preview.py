@@ -15,11 +15,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.models.db import Card, CardType, Spec
+from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_observability import (
     observe_bug_regression_resolution,
     observe_bug_workflow_remediation,
 )
 from okto_pulse.core.services.bug_regression_scenarios import (
+    AmendmentLineageFact,
     BugRegressionScenarioEligibilityResolver,
     BugRegressionScenarioEligibilityResult,
 )
@@ -126,6 +128,17 @@ class BugRegressionScenarioPreviewService:
             candidate_scenario_ids=candidate_scenario_ids or (),
         )
 
+        # ADJ-D: the preview MUST use the same Path B facts + predicate as the
+        # gate so its verdict can never diverge from the enforced decision.
+        # coverage_confirmed=False mirrors production (ADJ-B) — the preview shows
+        # coverage_pending for a fully lineage-eligible Path B amendment.
+        amendment_rows = await AmendmentRevisionService(self._db).list_for_bug(
+            board_id=board_id,
+            original_spec_id=spec.id,
+            origin_bug_id=bug_card.id,
+        )
+        amendment_facts = [AmendmentLineageFact.from_row(row) for row in amendment_rows]
+
         result = self._resolver.resolve(
             bug_card=bug_card,
             spec=spec,
@@ -133,6 +146,8 @@ class BugRegressionScenarioPreviewService:
             affected_tasks=affected_tasks,
             candidate_scenario_ids=candidate_scenario_ids,
             candidate_spec_ids_by_scenario_id=candidate_spec_ids_by_scenario_id,
+            amendment_facts=amendment_facts,
+            coverage_confirmed=False,
         )
         observe_bug_regression_resolution(
             board_id=board_id,
@@ -259,6 +274,16 @@ class BugRegressionScenarioPreviewService:
             "next_action": result.next_action.value,
             "semantic_gap_required": result.semantic_gap_required,
             "spec_mutation_required": result.spec_mutation_required,
+            # Path B / TR2 payload extensions.
+            "coverage_state": result.coverage_state.value,
+            "coverage_pending_scenarios": list(result.coverage_pending_scenarios),
+            "amendment_revision_id": result.amendment_revision_id,
+            "amendment_status": result.amendment_status,
+            "lineage_state": result.lineage_state,
+            "missing_links": list(result.missing_links),
+            "eligible_regression_artifacts": list(result.eligible_regression_artifacts),
+            "rejected_regression_artifacts": list(result.rejected_regression_artifacts),
+            "safe_next_actions": list(result.safe_next_actions),
             "remediation": serialize_bug_workflow_remediation(remediation),
         }
 

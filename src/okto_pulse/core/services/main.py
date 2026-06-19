@@ -105,7 +105,10 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
+from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_scenarios import (
+    AmendmentLineageFact,
+    BugRegressionCoverageState,
     BugRegressionGateValidator,
 )
 from okto_pulse.core.services.bug_workflow_remediation import (
@@ -2603,6 +2606,25 @@ class CardService:
                 for s in (spec_for_bug.test_scenarios or [])
                 if isinstance(s, dict) and s.get("id") is not None
             } if spec_for_bug else {}
+            # Path B (spec f5a7cae7 / card ead17e4d): amendments formally linked
+            # to THIS bug+spec feed the shared Path A/B predicate so a cross-spec
+            # regression artifact is admissible ONLY with valid amendment lineage.
+            # coverage_confirmed is hardcoded False here — no production path may
+            # confirm coverage before card c9cf9781 (ADJ-B). An empty list means
+            # Path B context is active but no amendment exists -> cross-spec stays
+            # fail-closed (ADJ-C).
+            amendment_rows = (
+                await AmendmentRevisionService(self.db).list_for_bug(
+                    board_id=card.board_id,
+                    original_spec_id=card.spec_id,
+                    origin_bug_id=card.id,
+                )
+                if card.spec_id
+                else []
+            )
+            amendment_facts = [
+                AmendmentLineageFact.from_row(row) for row in amendment_rows
+            ]
             validated_test_tasks: list[Card] = []
             candidate_scenario_ids: list[str] = []
 
@@ -2632,8 +2654,12 @@ class CardService:
                         f"or create a new test task with test_scenario_ids set."
                     )
 
-                # Validate test task belongs to the same spec
-                if test_task.spec_id != card.spec_id:
+                # Validate test task belongs to the same spec (Path A). A
+                # cross-spec test task is admissible ONLY via Path B: when an
+                # amendment formally links this bug we defer the decision to the
+                # shared predicate (which fail-closes); with no amendment context
+                # the cross-spec test task stays blocked (ADJ-C).
+                if test_task.spec_id != card.spec_id and not amendment_facts:
                     raise ValueError(
                         f"Linked test task '{test_task.title}' belongs to spec '{test_task.spec_id}' "
                         f"but this bug belongs to spec '{card.spec_id}'. "
@@ -2685,44 +2711,13 @@ class CardService:
                     if not sc:
                         other_spec_id = candidate_spec_ids_by_scenario_id.get(scenario_id)
                         if other_spec_id:
-                            observe_bug_regression_resolution(
-                                board_id=card.board_id,
-                                result=None,
-                                duration_ms=(time.perf_counter() - bug_gate_started) * 1000,
-                                spec_id=card.spec_id,
-                                error_code="cross_spec_scenario",
-                            )
-                            await record_bug_regression_decision(
-                                board_id=card.board_id,
-                                bug_id=card.id,
-                                spec_id=card.spec_id,
-                                decision="semantic_gap",
-                                reason_code="cross_spec_scenario",
-                                scenario_count=len(candidate_scenario_ids),
-                                test_task_count=len(validated_test_tasks),
-                                actor_id=user_id,
-                                session=self.db,
-                            )
-                            workflow_remediation = (
-                                BugWorkflowRemediationMessageBuilder()
-                                .build_semantic_gap(reason_code="cross_spec_scenario")
-                            )
-                            raise CardOperationError(
-                                "cross_spec_scenario",
-                                f"Test scenario '{scenario_id}' referenced by test task "
-                                f"'{test_task.title}' belongs to spec '{other_spec_id}' "
-                                f"but this bug belongs to spec '{card.spec_id}'. "
-                                "reason=cross_spec_scenario; semantic_gap_required=true; "
-                                "spec_mutation_required=true; next_action=escalate_semantic_gap."
-                                ,
-                                remediation="escalate_semantic_gap",
-                                facts={
-                                    "card_id": card.id,
-                                    "spec_id": card.spec_id,
-                                    "next_action": workflow_remediation.next_action.value,
-                                },
-                                workflow_remediation=workflow_remediation,
-                            )
+                            # TR1: cross-spec evidence is admissible ONLY via Path
+                            # B. Always defer to the shared predicate
+                            # (validate_linked_test_tasks below) — it fail-closes
+                            # with a stable Path B reason (missing_amendment_revision
+                            # when no formal amendment links this bug), replacing
+                            # the old direct same-spec equality reject.
+                            continue
                         observe_bug_regression_resolution(
                             board_id=card.board_id,
                             result=None,
@@ -2806,6 +2801,11 @@ class CardService:
                 spec=spec_for_bug,
                 origin_task=origin_task,
                 candidate_spec_ids_by_scenario_id=candidate_spec_ids_by_scenario_id,
+                amendment_facts=amendment_facts,
+                # ADJ-B: production NEVER confirms coverage here. Validator-
+                # confirmed coverage is the real signal delivered by c9cf9781;
+                # until then a fully lineage-eligible Path B stays coverage_pending.
+                coverage_confirmed=False,
             )
             eligibility = gate_result.eligibility
             observe_bug_regression_resolution(
@@ -2817,6 +2817,8 @@ class CardService:
                 primary_reason = eligibility.rejected_scenarios[0].reason.value
             elif eligibility.eligible_scenarios:
                 primary_reason = eligibility.eligible_scenarios[0].reason.value
+            elif eligibility.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING:
+                primary_reason = "coverage_pending"
             else:
                 primary_reason = "no_eligible_scenarios"
 
@@ -2824,6 +2826,10 @@ class CardService:
                 board_id=card.board_id,
                 bug_id=card.id,
                 spec_id=card.spec_id,
+                # The bounded decision vocabulary (eligible/rejected/semantic_gap)
+                # is owned by the observability schema; extending it belongs to
+                # 966c7e7c. coverage_pending is a non-allow block -> recorded as
+                # "rejected"; the precise signal travels in reason_code below.
                 decision=(
                     "eligible"
                     if gate_result.allowed
@@ -2838,6 +2844,7 @@ class CardService:
             if not gate_result.allowed:
                 rejected = ", ".join(
                     f"{item.scenario_id}:{item.reason.value}"
+                    + (f"({item.detail})" if item.detail else "")
                     for item in eligibility.rejected_scenarios
                 ) or "none"
                 eligible_ids = ", ".join(

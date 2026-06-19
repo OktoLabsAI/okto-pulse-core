@@ -152,6 +152,27 @@ CARD_CONTENT_COLUMNS: tuple[str, ...] = (
 )
 
 
+#: Load-bearing fields for the Path B amendment content hash (spec 7ea1e4be).
+#: Includes the exact-membership lineage sets (origin/affected task ids) so a
+#: lineage change re-hashes and re-enqueues the amendment (stale edges/semantics
+#: would otherwise survive a rebuild). ``validation_metadata`` is intentionally
+#: EXCLUDED: it is external audit/evidence-pointer data, not edge-bearing lineage
+#: — the canonical node + its belongs_to edges derive from the refs + status +
+#: lineage_state below, so audit changes must not force re-materialization.
+AMENDMENT_CONTENT_COLUMNS: tuple[str, ...] = (
+    "original_spec_id",
+    "origin_bug_id",
+    "origin_task_ids",
+    "affected_task_ids",
+    "revision_spec_id",
+    "regression_scenario_ids",
+    "regression_test_task_ids",
+    "automated_regression_refs",
+    "status",
+    "lineage_state",
+)
+
+
 def _canonical_content_hash(row: sqlite3.Row, columns: tuple[str, ...]) -> str:
     """SHA-256 over a canonical-JSON encoding of the load-bearing fields.
 
@@ -507,6 +528,54 @@ class BoardSourceStore:
                         "status": _row_status(row),
                         "source_artifact_status": _row_status(row),
                         "has_minimal_evidence": _bug_has_minimal_evidence(row),
+                    }
+                    if working_ttl_days is not None:
+                        source_row["working_ttl_days"] = working_ttl_days
+                    out.append(source_row)
+            # Path B amendment revisions (spec 7ea1e4be). Existence-guarded so
+            # boards on an older schema (no table) emit zero amendment sources —
+            # backward compatibility (TR4): absence is silent, never fatal.
+            amendments_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='amendment_hotfix_revisions'"
+            ).fetchone()
+            if not amendments_exists:
+                # Silent on legacy boards: the Path B table is absent on every
+                # board created before this feature, so a warning would be pure
+                # operational noise. debug-only (TR4 backward compatibility).
+                logger.debug(
+                    "kg.board_source_store.table_missing "
+                    "table=amendment_hotfix_revisions — skipped (no Path B sources)",
+                )
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM amendment_hotfix_revisions "
+                    "WHERE board_id = ? "
+                    "ORDER BY created_at ASC, id ASC",
+                    (board_id,),
+                ).fetchall()
+                for row in rows:
+                    row_id = str(row["id"])
+                    content_hash = _canonical_content_hash(
+                        row, AMENDMENT_CONTENT_COLUMNS
+                    )
+                    try:
+                        lineage_raw = row["lineage_state"]
+                    except (IndexError, KeyError):
+                        lineage_raw = None
+                    source_row = {
+                        "artifact_type": "amendment_hotfix_revision",
+                        "id": row_id,
+                        "source_ref": f"amendment_hotfix_revision:{row_id}",
+                        "source_version": "1",
+                        "content_hash": content_hash,
+                        "created_at": _to_iso(row["created_at"]),
+                        "updated_at": _updated_at(row),
+                        "status": _row_status(row, "status"),
+                        "source_artifact_status": _row_status(row, "status"),
+                        # Path B: canonical only at done AND complete lineage.
+                        "lineage_complete": str(lineage_raw or "").strip().lower()
+                        == "complete",
                     }
                     if working_ttl_days is not None:
                         source_row["working_ttl_days"] = working_ttl_days

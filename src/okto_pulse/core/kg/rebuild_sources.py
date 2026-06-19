@@ -487,6 +487,10 @@ class RebuildSourceEnumerator:
                     default=self.working_ttl_days,
                 ),
                 has_minimal_evidence=bool(row.get("has_minimal_evidence", True)),
+                # Path B amendment (spec 7ea1e4be): canonical only at done AND
+                # complete lineage. Defaults True so non-amendment sources are
+                # unaffected (they never carry lineage_complete).
+                lineage_complete=bool(row.get("lineage_complete", True)),
             )
             if classification.disposition == DISPOSITION_SKIPPED_CANCELLED:
                 skipped_cancelled += 1

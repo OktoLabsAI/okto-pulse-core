@@ -275,7 +275,12 @@ async def test_preview_service_resolves_mixed_origin_affected_and_rejections(
     assert eligible["ts-affected-linked"]["reason"] == "affected_task_linked_scenario"
     assert eligible["ts-affected-linked"]["source_task_id"] == bug_preview_seed["affected_id"]
     assert rejected["ts-unrelated"]["reason"] == "unrelated_scenario"
-    assert rejected["ts-foreign"]["reason"] == "cross_spec_scenario"
+    # Path B (spec f5a7cae7 / card ead17e4d): a cross-spec scenario with no
+    # formal amendment backing this bug is fail-closed with the precise Path B
+    # reason. Still a block (reject NOT relaxed) — just the shared-predicate
+    # vocabulary replacing the legacy cross_spec_scenario. detail keeps the
+    # foreign spec id.
+    assert rejected["ts-foreign"]["reason"] == "missing_amendment_revision"
     assert rejected["ts-foreign"]["detail"] == bug_preview_seed["foreign_spec_id"]
     assert rejected["ts-missing"]["reason"] == "scenario_not_found"
     assert rejected["ts-deleted"]["reason"] == "deleted_scenario"

@@ -60,6 +60,10 @@ _DETERMINISTIC_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset({
     "test",
     "bug",
     "card",
+    # Path B amendment (spec 7ea1e4be). MUST be enqueued for materialization,
+    # otherwise it is counted in expected_by_layer but never materialized →
+    # guaranteed false MATERIALIZED_LAYER_MISMATCH.
+    "amendment_hotfix_revision",
 })
 _CARD_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset({
     "task", "test", "bug", "card",

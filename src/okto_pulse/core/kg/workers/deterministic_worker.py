@@ -269,12 +269,14 @@ def _layer_attrs_for_artifact(
     status: Any,
     *,
     has_minimal_evidence: bool = True,
+    lineage_complete: bool = True,
 ) -> tuple[str, str]:
     classification = classify_source_for_kg(
         artifact_type=artifact_type,
         artifact_status=status,
         content_hash="deterministic-worker",
         has_minimal_evidence=has_minimal_evidence,
+        lineage_complete=lineage_complete,
     )
     graph_layer = classification.graph_layer
     if graph_layer == GRAPH_LAYER_NONE:
@@ -1632,6 +1634,131 @@ class DeterministicWorker:
         )
         return result
 
+    def process_amendment(self, amendment: dict[str, Any]) -> WorkerResult:
+        """Materialize a Path B AmendmentHotfixRevision (spec 7ea1e4be, FR5).
+
+        Emits a SEPARATE ``Entity`` node (never the original spec's node) with
+        ``belongs_to`` edges — referencing the EXISTING deterministic candidate
+        ids (no placeholders) — to the original spec, the origin bug and each
+        regression test task, plus the board root for guaranteed provenance that
+        resolves regardless of rebuild ordering. The original done/locked spec
+        node is only an edge TARGET, so it is never re-emitted/recanonicalized
+        (AC1). The layer is decided by the source-maturity guard via
+        ``lineage_complete``: working-only before done, canonical only at
+        done + complete lineage. Edge semantics live in the rule_id + node
+        content (codex decision: reuse ``belongs_to``, no ``amends`` DDL).
+        """
+        aid = amendment["id"]
+        board_id = amendment.get("board_id")
+        prefix = f"amendment_{aid[:8]}"
+        artifact_ref = f"amendment_hotfix_revision:{aid}"
+        amendment_cid = f"{prefix}_entity"
+        result = WorkerResult()
+
+        original_spec_id = str(amendment.get("original_spec_id") or "")
+        origin_bug_id = str(amendment.get("origin_bug_id") or "")
+        regression_test_task_ids = [
+            str(t) for t in (amendment.get("regression_test_task_ids") or []) if t
+        ]
+        regression_scenario_ids = [
+            str(s) for s in (amendment.get("regression_scenario_ids") or []) if s
+        ]
+        automated_regression_refs = [
+            str(r) for r in (amendment.get("automated_regression_refs") or []) if r
+        ]
+
+        # Searchable semantics on the node (codex condition 2): make it explicit
+        # this is a Path B correction + carry the regression evidence pointers
+        # that have no standalone deterministic node candidate id (scenario ids
+        # and automated refs) as content rather than dangling placeholder edges.
+        content_lines = [
+            f"Path B amendment / hotfix revision correcting spec {original_spec_id}.",
+            f"Origin bug: {origin_bug_id}.",
+        ]
+        if regression_scenario_ids:
+            content_lines.append(
+                "Regression scenarios: "
+                + json.dumps(regression_scenario_ids, ensure_ascii=False, sort_keys=True)
+            )
+        if automated_regression_refs:
+            content_lines.append(
+                "Automated regression refs: "
+                + json.dumps(
+                    automated_regression_refs, ensure_ascii=False, sort_keys=True
+                )
+            )
+        content = "\n".join(content_lines)
+
+        result.nodes.append(EmittedNode(
+            candidate_id=amendment_cid,
+            node_type="Entity",
+            title=f"Amendment for spec {original_spec_id[:8]}",
+            content=content,
+            source_artifact_ref=artifact_ref,
+            source_confidence=1.0,
+        ))
+
+        if original_spec_id:
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_to_original_spec",
+                edge_type="belongs_to",
+                from_candidate_id=amendment_cid,
+                to_candidate_id=f"spec_{original_spec_id[:8]}_entity",
+                confidence=1.0,
+                rule_id=f"belongs_to/amendment_to_original_spec@{WORKER_VERSION}",
+            ))
+        if origin_bug_id:
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_to_origin_bug",
+                edge_type="belongs_to",
+                from_candidate_id=amendment_cid,
+                to_candidate_id=f"card_{origin_bug_id[:8]}_entity",
+                confidence=1.0,
+                rule_id=f"belongs_to/amendment_to_origin_bug@{WORKER_VERSION}",
+            ))
+        for idx, test_task_id in enumerate(regression_test_task_ids):
+            result.edges.append(EmittedEdge(
+                candidate_id=f"{prefix}_belongs_to_regression_test_task_{idx}",
+                edge_type="belongs_to",
+                from_candidate_id=amendment_cid,
+                to_candidate_id=f"card_{test_task_id[:8]}_entity",
+                confidence=1.0,
+                rule_id=f"belongs_to/amendment_to_regression_test_task@{WORKER_VERSION}",
+            ))
+        # Guaranteed-resolvable provenance (board root is allowlisted + always
+        # materialized) so the connectivity guard passes even if spec/bug nodes
+        # are enqueued in the same rebuild and resolve later (ordering safety).
+        _attach_to_board_root(
+            result,
+            board_id=board_id,
+            child_candidate_id=amendment_cid,
+            rule_slot="amendment",
+        )
+
+        result.raw_content = content
+        result.content_hash = _sha256(content)
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "amendment_hotfix_revision",
+            amendment.get("status"),
+            lineage_complete=str(amendment.get("lineage_state") or "").strip().lower()
+            == "complete",
+        )
+        _apply_layer_to_result(
+            result,
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+        )
+        logger.info(
+            "deterministic_worker.amendment_processed amendment=%s status=%s "
+            "layer=%s nodes=%d edges=%d",
+            aid, amendment.get("status"), graph_layer,
+            len(result.nodes), len(result.edges),
+            extra={"event": "deterministic_worker.amendment_processed",
+                   "amendment_id": aid, "content_hash": result.content_hash,
+                   "graph_layer": graph_layer, "worker_version": WORKER_VERSION},
+        )
+        return result
+
     # ------------------------------------------------------------------
     # Polymorphic dispatch
     # ------------------------------------------------------------------
@@ -1661,6 +1788,8 @@ class DeterministicWorker:
             return self.process_sprint(artifact)
         if artifact_type == "card":
             return self.process_card(artifact)
+        if artifact_type == "amendment_hotfix_revision":
+            return self.process_amendment(artifact)
         raise ValueError(f"unknown artifact_type: {artifact_type}")
 
 

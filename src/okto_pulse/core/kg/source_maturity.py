@@ -37,6 +37,10 @@ CANONICAL_STATUS_BY_ARTIFACT_TYPE: dict[str, frozenset[str]] = {
     "task": frozenset({"done"}),
     "test": frozenset({"done"}),
     "bug": frozenset({"done"}),
+    # Path B amendment (spec 7ea1e4be): canonical only at done — AND only with
+    # complete lineage, enforced by the lineage_complete guard below so it stays
+    # aligned with evaluate_amendment_eligibility.canonicalization_candidate.
+    "amendment_hotfix_revision": frozenset({"done"}),
 }
 
 WORKING_ARTIFACT_TYPES = frozenset({
@@ -48,6 +52,7 @@ WORKING_ARTIFACT_TYPES = frozenset({
     "test",
     "bug",
     "sprint",
+    "amendment_hotfix_revision",
 })
 
 REBUILD_ARTIFACT_TYPES: tuple[str, ...] = (
@@ -59,6 +64,7 @@ REBUILD_ARTIFACT_TYPES: tuple[str, ...] = (
     "task",
     "test",
     "bug",
+    "amendment_hotfix_revision",
 )
 
 CANONICAL_ARTIFACT_TYPES: tuple[str, ...] = (
@@ -67,6 +73,7 @@ CANONICAL_ARTIFACT_TYPES: tuple[str, ...] = (
     "task",
     "test",
     "bug",
+    "amendment_hotfix_revision",
 )
 
 TERMINAL_CANCELLED_STATUSES = frozenset({"cancelled", "archived"})
@@ -122,6 +129,7 @@ def classify_source_for_kg(
     now: datetime | None = None,
     working_ttl_days: int = DEFAULT_WORKING_TTL_DAYS,
     has_minimal_evidence: bool = True,
+    lineage_complete: bool = True,
 ) -> SourceMaturityClassification:
     """Classify one SDLC source into canonical/working/debt partitions.
 
@@ -196,6 +204,21 @@ def classify_source_for_kg(
             maturity_status=MATURITY_WORKING_IMMATURE,
             disposition=DISPOSITION_SKIPPED_BY_MATURITY,
             reason_code="bug_done_without_minimal_evidence",
+        )
+    if kind == "amendment_hotfix_revision" and status == "done" and not lineage_complete:
+        # Path B amendment (spec 7ea1e4be FR5): a done amendment whose lineage is
+        # NOT complete stays working-only — never canonical. This mirrors
+        # evaluate_amendment_eligibility.canonicalization_candidate
+        # (status==done AND lineage_state==complete). A done+complete amendment
+        # falls through to the canonical_statuses match below; any non-done
+        # status falls through to the working fallback (working-only before done).
+        return SourceMaturityClassification(
+            artifact_type=kind,
+            artifact_status=status,
+            graph_layer=GRAPH_LAYER_WORKING,
+            maturity_status=MATURITY_WORKING_IMMATURE,
+            disposition=DISPOSITION_SKIPPED_BY_MATURITY,
+            reason_code="amendment_lineage_incomplete",
         )
     if kind == "sprint":
         return SourceMaturityClassification(

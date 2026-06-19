@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.events import publish as event_publish
 from okto_pulse.core.events.types import BugRegressionScenarioReuseDecision
 from okto_pulse.core.services.bug_regression_scenarios import (
+    BugRegressionCoverageState,
     BugRegressionScenarioEligibilityResult,
 )
 from okto_pulse.core.services.bug_workflow_remediation import (
@@ -321,6 +322,8 @@ def _primary_reason_code(result: BugRegressionScenarioEligibilityResult) -> str 
         return result.rejected_scenarios[0].reason.value
     if result.eligible_scenarios:
         return result.eligible_scenarios[0].reason.value
+    if result.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING:
+        return "coverage_pending"
     if result.semantic_gap_required:
         return "no_eligible_scenarios"
     return None

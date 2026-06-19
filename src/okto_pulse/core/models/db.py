@@ -23,6 +23,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from okto_pulse.core.infra.database import Base
+from okto_pulse.core.domain.amendment_eligibility import (
+    AmendmentLineageState,
+    AmendmentRevisionStatus,
+)
 
 if TYPE_CHECKING:
     pass
@@ -183,6 +187,40 @@ class CardPriorityType(TypeDecorator):
         if value is None:
             return None
         return CardPriority(value)
+
+
+class AmendmentRevisionStatusType(TypeDecorator):
+    """SQLAlchemy type that stores AmendmentRevisionStatus as a string (spec 7ea1e4be)."""
+
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return value.value if isinstance(value, AmendmentRevisionStatus) else value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return AmendmentRevisionStatus(value)
+
+
+class AmendmentLineageStateType(TypeDecorator):
+    """SQLAlchemy type that stores AmendmentLineageState as a string (spec 7ea1e4be)."""
+
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return value.value if isinstance(value, AmendmentLineageState) else value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return AmendmentLineageState(value)
 
 
 class IdeationStatusType(TypeDecorator):
@@ -1805,6 +1843,59 @@ class ActivityLog(Base):
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AmendmentHotfixRevision(Base):
+    """Path B first-class lineage artifact (spec 7ea1e4be, fr_e64e2b28).
+
+    A persisted amendment/hotfix revision that links a bug on a done/locked spec
+    to a revision spec OR regression artifact WITHOUT mutating the original spec
+    (AC1). Eligibility is decided by the pure policy in
+    ``core.domain.amendment_eligibility`` (status x lineage_state); this row only
+    stores the durable lineage + lifecycle state + audit-relevant metadata. New
+    table — created by ``Base.metadata.create_all`` on init (no Alembic here).
+    """
+
+    __tablename__ = "amendment_hotfix_revisions"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # The original done/locked spec the amendment corrects. Plain ref (no FK
+    # cascade) so the amendment record is durable and the original spec is never
+    # mutated or coupled to the amendment's lifecycle.
+    original_spec_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    origin_bug_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    # Exact-membership lineage sets (G1: membership is exact, never loose match).
+    origin_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    affected_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    revision_spec_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    regression_scenario_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    regression_test_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Automated regression artifacts (e.g. a pytest node id) — first-class so a
+    # tooling/test-infra regression counts as evidence, not only a product scenario.
+    automated_regression_refs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[AmendmentRevisionStatus] = mapped_column(
+        AmendmentRevisionStatusType(),
+        default=AmendmentRevisionStatus.DRAFT,
+        nullable=False,
+    )
+    lineage_state: Mapped[AmendmentLineageState] = mapped_column(
+        AmendmentLineageStateType(),
+        default=AmendmentLineageState.INCOMPLETE,
+        nullable=False,
+    )
+    validation_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 

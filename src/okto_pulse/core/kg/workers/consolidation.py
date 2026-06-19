@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from okto_pulse.core.models.db import (
+    AmendmentHotfixRevision,
     Card,
     ConsolidationQueue,
     Ideation,
@@ -399,6 +400,27 @@ def _card_to_dict(card) -> dict:
     }
 
 
+def _amendment_to_dict(amendment) -> dict:
+    """Project an AmendmentHotfixRevision ORM row to the worker dict
+    (spec 7ea1e4be). Enum fields are flattened to their string value."""
+    status = getattr(amendment, "status", None)
+    lineage_state = getattr(amendment, "lineage_state", None)
+    return {
+        "id": amendment.id,
+        "board_id": amendment.board_id,
+        "status": getattr(status, "value", status),
+        "lineage_state": getattr(lineage_state, "value", lineage_state),
+        "original_spec_id": amendment.original_spec_id,
+        "origin_bug_id": amendment.origin_bug_id,
+        "origin_task_ids": getattr(amendment, "origin_task_ids", None) or [],
+        "affected_task_ids": getattr(amendment, "affected_task_ids", None) or [],
+        "revision_spec_id": getattr(amendment, "revision_spec_id", None),
+        "regression_scenario_ids": getattr(amendment, "regression_scenario_ids", None) or [],
+        "regression_test_task_ids": getattr(amendment, "regression_test_task_ids", None) or [],
+        "automated_regression_refs": getattr(amendment, "automated_regression_refs", None) or [],
+    }
+
+
 def _worker_node_to_candidate(node: EmittedNode) -> NodeCandidate:
     return NodeCandidate(
         candidate_id=node.candidate_id,
@@ -419,12 +441,14 @@ def _layer_attrs_for_artifact(
     status: Any,
     *,
     has_minimal_evidence: bool = True,
+    lineage_complete: bool = True,
 ) -> tuple[str, str]:
     classification = classify_source_for_kg(
         artifact_type=artifact_type,
         artifact_status=status,
         content_hash="consolidation-lineage",
         has_minimal_evidence=has_minimal_evidence,
+        lineage_complete=lineage_complete,
     )
     graph_layer = classification.graph_layer
     if graph_layer == GRAPH_LAYER_NONE:
@@ -483,6 +507,8 @@ def _run_deterministic_worker(entry: ConsolidationQueue, artifact) -> WorkerResu
         return worker.process_sprint(_sprint_to_dict(artifact))
     if entry.artifact_type == "card":
         return worker.process_card(_card_to_dict(artifact))
+    if entry.artifact_type == "amendment_hotfix_revision":
+        return worker.process_amendment(_amendment_to_dict(artifact))
     raise ValueError(f"unknown artifact_type: {entry.artifact_type}")
 
 
@@ -963,6 +989,12 @@ async def _process_queue_entry(
             select(Card)
             .options(selectinload(Card.architecture_designs))
             .where(Card.id == entry.artifact_id)
+        )
+    elif entry.artifact_type == "amendment_hotfix_revision":
+        result = await db.execute(
+            select(AmendmentHotfixRevision).where(
+                AmendmentHotfixRevision.id == entry.artifact_id
+            )
         )
     else:
         logger.warning("unknown artifact_type: %s", entry.artifact_type)
