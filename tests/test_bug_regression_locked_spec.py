@@ -7,6 +7,7 @@ import uuid
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
@@ -27,6 +28,7 @@ from okto_pulse.core.models.db import (
     SprintStatus,
 )
 from okto_pulse.core.models.schemas import CardMove, SprintCreate, SprintMove
+from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_preview import (
     BugRegressionScenarioPreviewService,
 )
@@ -1042,6 +1044,7 @@ async def _seed_path_b_board(db, *, amendment_kwargs):
         "origin": f"pb-origin-{suffix}",
         "bug": f"pb-bug-{suffix}",
         "test": f"pb-test-{suffix}",
+        "amendment": f"pb-amd-{suffix}",
         "foreign_scenario": "ts-foreign-pathb",
     }
     now = datetime.now(timezone.utc)
@@ -1081,7 +1084,7 @@ async def _seed_path_b_board(db, *, amendment_kwargs):
         created_by=USER_ID, created_at=now + timedelta(seconds=1),
     ))
     base_amendment = dict(
-        id=f"pb-amd-{suffix}", board_id=ids["board"],
+        id=ids["amendment"], board_id=ids["board"],
         original_spec_id=ids["spec"], origin_bug_id=ids["bug"],
         status=AmendmentRevisionStatus.DONE,
         lineage_state=AmendmentLineageState.COMPLETE,
@@ -1147,4 +1150,218 @@ async def test_bug_gate_path_b_draft_amendment_blocks_blocked_status():
         bug = await db.get(Card, ids["bug"])
 
     assert "blocked_amendment_status" in str(exc.value)
+    assert bug.status == CardStatus.NOT_STARTED
+
+
+# ---------------------------------------------------------------------------
+# G2 coverage_confirmed signal (card c9cf9781): validator-only writer + the
+# non-forgeable persisted attestation that flips the gate to ALLOW.
+# ---------------------------------------------------------------------------
+
+
+async def _make_artifact_ready(db, ids):
+    """Mark the regression test task DONE and its declared scenario
+    passed/automated with SPEC3 reexecutable evidence (the NECESSARY
+    precondition for confirm_amendment_coverage)."""
+    test_task = await db.get(Card, ids["test"])
+    test_task.status = CardStatus.DONE
+    other_spec = await db.get(Spec, ids["other_spec"])
+    scenarios = list(other_spec.test_scenarios or [])
+    for sc in scenarios:
+        if sc.get("id") == ids["foreign_scenario"]:
+            sc["status"] = "automated"
+            sc["evidence"] = {
+                "test_file_path": "tests/test_reg.py",
+                "test_function": "test_reg_case",
+            }
+    other_spec.test_scenarios = scenarios
+    flag_modified(other_spec, "test_scenarios")
+    await db.flush()
+
+
+async def test_confirm_amendment_coverage_enables_gate_allow():
+    # End-to-end G2: a bound validator attestation written via the validator-only
+    # writer flips the bug gate from coverage_pending (BLOCK) to path_b_ready
+    # (ALLOW); the preview agrees (ADJ-D parity).
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed_path_b_board(db, amendment_kwargs={})
+        await _make_artifact_ready(db, ids)
+
+        confirmation = await CardService(db).confirm_amendment_coverage(
+            amendment_id=ids["amendment"],
+            regression_test_task_id=ids["test"],
+            regression_scenario_id=ids["foreign_scenario"],
+            reviewer_id=USER_ID,
+            reviewer_name=USER_ID,
+        )
+        assert confirmation["validator_id"] == USER_ID
+        assert confirmation["amendment_revision_id"] == ids["amendment"]
+        assert confirmation["evidence_ref"] == "tests/test_reg.py::test_reg_case"
+
+        # gate now ALLOWS the bug move (path_b_ready).
+        await CardService(db).move_card(
+            ids["bug"], USER_ID, CardMove(status=CardStatus.IN_PROGRESS)
+        )
+        bug = await db.get(Card, ids["bug"])
+        assert bug.status == CardStatus.IN_PROGRESS
+
+        preview = await BugRegressionScenarioPreviewService(db).resolve(
+            board_id=ids["board"],
+            bug_id=ids["bug"],
+            candidate_scenario_ids=[ids["foreign_scenario"]],
+        )
+    assert preview["coverage_state"] == "path_b_ready"
+
+
+async def test_confirm_rejects_foreign_artifact_binding():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed_path_b_board(db, amendment_kwargs={})
+        await _make_artifact_ready(db, ids)
+        # a test task NOT declared by this amendment cannot be confirmed.
+        with pytest.raises(CardOperationError) as exc:
+            await CardService(db).confirm_amendment_coverage(
+                amendment_id=ids["amendment"],
+                regression_test_task_id="not-declared-tc",
+                regression_scenario_id=ids["foreign_scenario"],
+                reviewer_id=USER_ID,
+                reviewer_name=USER_ID,
+            )
+    assert exc.value.code == "coverage_binding_invalid"
+
+
+async def test_confirm_rejects_unmet_preconditions():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed_path_b_board(db, amendment_kwargs={})
+        # test task still not_started -> precondition unmet.
+        with pytest.raises(CardOperationError) as exc:
+            await CardService(db).confirm_amendment_coverage(
+                amendment_id=ids["amendment"],
+                regression_test_task_id=ids["test"],
+                regression_scenario_id=ids["foreign_scenario"],
+                reviewer_id=USER_ID,
+                reviewer_name=USER_ID,
+            )
+        assert exc.value.code == "coverage_precondition_unmet"
+
+        # test task done BUT scenario has no reexecutable evidence -> still unmet
+        # (lineage/status alone is NOT sufficient — G2).
+        test_task = await db.get(Card, ids["test"])
+        test_task.status = CardStatus.DONE
+        await db.flush()
+        with pytest.raises(CardOperationError) as exc2:
+            await CardService(db).confirm_amendment_coverage(
+                amendment_id=ids["amendment"],
+                regression_test_task_id=ids["test"],
+                regression_scenario_id=ids["foreign_scenario"],
+                reviewer_id=USER_ID,
+                reviewer_name=USER_ID,
+            )
+    assert exc2.value.code == "coverage_precondition_unmet"
+
+
+async def test_create_strips_reserved_coverage_confirmation_key():
+    # NON-FORGEABILITY: a generic create can never inject the coverage attestation
+    # (it is stripped); only confirm_amendment_coverage may write it. Other
+    # validation_metadata is preserved.
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    forged = {
+        "validator_id": "attacker",
+        "amendment_revision_id": "whatever",
+        "regression_test_task_id": "tc",
+        "regression_scenario_id": "ts",
+        "evidence_ref": "x::y",
+    }
+    async with factory() as db:
+        amendment = await AmendmentRevisionService(db).create(
+            board_id="pb-forge-board",
+            original_spec_id="pb-forge-spec",
+            origin_bug_id="pb-forge-bug",
+            author=USER_ID,
+            validation_metadata={"coverage_confirmation": forged, "keep": "ok"},
+        )
+        await db.flush()
+        metadata = amendment.validation_metadata or {}
+    assert "coverage_confirmation" not in metadata
+    assert metadata.get("keep") == "ok"
+
+
+async def test_hotfix_lane_does_not_bypass_cross_spec_without_amendment():
+    # ts_9a56cf73 (AC1): a cross-spec regression test task in an ACTIVE HOTFIX
+    # lane, with NO amendment lineage, is still fail-closed — the hotfix lane is
+    # NOT a Path B bypass. The gate blocks with missing_amendment_revision and the
+    # bug stays not_started.
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    suffix = uuid.uuid4().hex[:8]
+    ids = {
+        "board": f"hl-xspec-board-{suffix}",
+        "spec": f"hl-xspec-spec-{suffix}",
+        "other_spec": f"hl-xspec-other-{suffix}",
+        "origin": f"hl-origin-{suffix}",
+        "bug": f"hl-bug-{suffix}",
+        "test": f"hl-test-{suffix}",
+        "sprint": f"hl-sprint-{suffix}",
+    }
+    foreign_scenario_id = "ts-foreign-hotfix"
+    now = datetime.now(timezone.utc)
+
+    async with factory() as db:
+        db.add(Board(id=ids["board"], name="Hotfix XSpec Board", owner_id=USER_ID))
+        db.add(Spec(
+            id=ids["spec"], board_id=ids["board"], title="Bug spec", status=SpecStatus.DONE,
+            created_by=USER_ID, functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            test_scenarios=[], business_rules=[], api_contracts=[],
+        ))
+        db.add(Spec(
+            id=ids["other_spec"], board_id=ids["board"], title="Other spec",
+            status=SpecStatus.IN_PROGRESS, created_by=USER_ID,
+            functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            test_scenarios=[{
+                "id": foreign_scenario_id, "title": "Foreign", "linked_criteria": [0], "status": "passed",
+            }],
+            business_rules=[], api_contracts=[],
+        ))
+        db.add(Sprint(
+            id=ids["sprint"], board_id=ids["board"], spec_id=ids["spec"], title="Active hotfix lane",
+            status=SprintStatus.ACTIVE, lane_type=SprintLaneType.HOTFIX, created_by=USER_ID,
+        ))
+        db.add(Card(
+            id=ids["origin"], board_id=ids["board"], spec_id=ids["spec"], title="Origin",
+            status=CardStatus.DONE, card_type=CardType.NORMAL, created_by=USER_ID,
+            created_at=now - timedelta(minutes=5),
+        ))
+        db.add(Card(
+            id=ids["bug"], board_id=ids["board"], spec_id=ids["spec"], sprint_id=ids["sprint"],
+            title="Bug in hotfix lane w/ cross-spec task", status=CardStatus.NOT_STARTED,
+            card_type=CardType.BUG, origin_task_id=ids["origin"], severity=BugSeverity.MAJOR,
+            expected_behavior="ok", observed_behavior="bad", linked_test_task_ids=[ids["test"]],
+            created_by=USER_ID, created_at=now,
+        ))
+        db.add(Card(
+            id=ids["test"], board_id=ids["board"], spec_id=ids["spec"], sprint_id=ids["sprint"],
+            title="Cross-spec regression test in hotfix lane", status=CardStatus.NOT_STARTED,
+            card_type=CardType.TEST, test_scenario_ids=[foreign_scenario_id],
+            created_by=USER_ID, created_at=now + timedelta(seconds=1),
+        ))
+        await db.flush()
+
+        with pytest.raises(CardOperationError) as exc:
+            await CardService(db).move_card(
+                ids["bug"], USER_ID, CardMove(status=CardStatus.IN_PROGRESS)
+            )
+        bug = await db.get(Card, ids["bug"])
+
+    assert "missing_amendment_revision" in str(exc.value)
     assert bug.status == CardStatus.NOT_STARTED

@@ -45,6 +45,9 @@ from okto_pulse.core.api.kg_cognitive_pending import (
 from okto_pulse.core.api.bug_cognitive_closure import (
     router as bug_cognitive_closure_router,
 )
+from okto_pulse.core.api.amendment_revisions import (
+    router as amendment_revisions_router,
+)
 from okto_pulse.core.api.cognitive_action_center import (
     router as cognitive_action_center_router,
 )
@@ -108,6 +111,9 @@ api_router.include_router(
 )
 api_router.include_router(
     bug_cognitive_closure_router, tags=["bug-cognitive-closure"]
+)
+api_router.include_router(
+    amendment_revisions_router, tags=["amendment-revisions"]
 )
 api_router.include_router(
     cognitive_action_center_router, tags=["kg-cognitive-action-center"]

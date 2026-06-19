@@ -129,9 +129,9 @@ class BugRegressionScenarioPreviewService:
         )
 
         # ADJ-D: the preview MUST use the same Path B facts + predicate as the
-        # gate so its verdict can never diverge from the enforced decision.
-        # coverage_confirmed=False mirrors production (ADJ-B) — the preview shows
-        # coverage_pending for a fully lineage-eligible Path B amendment.
+        # gate so its verdict can never diverge from the enforced decision. G2
+        # (c9cf9781): coverage is derived from the persisted, artifact-bound
+        # attestation on each amendment fact — identical source as the gate.
         amendment_rows = await AmendmentRevisionService(self._db).list_for_bug(
             board_id=board_id,
             original_spec_id=spec.id,
@@ -147,7 +147,6 @@ class BugRegressionScenarioPreviewService:
             candidate_scenario_ids=candidate_scenario_ids,
             candidate_spec_ids_by_scenario_id=candidate_spec_ids_by_scenario_id,
             amendment_facts=amendment_facts,
-            coverage_confirmed=False,
         )
         observe_bug_regression_resolution(
             board_id=board_id,

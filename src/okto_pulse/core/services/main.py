@@ -2060,6 +2060,146 @@ class CardService:
         flag_modified(card, "validations")
         return True
 
+    async def confirm_amendment_coverage(
+        self,
+        *,
+        amendment_id: str,
+        regression_test_task_id: str,
+        regression_scenario_id: str,
+        reviewer_id: str,
+        reviewer_name: str,
+    ) -> dict:
+        """Validator-only writer of the Path B coverage attestation (G2 / c9cf9781).
+
+        Enforces, fail-closed, BEFORE persisting:
+        * artifact binding — the test task + scenario MUST be declared by THIS
+          amendment (regression_test_task_ids / regression_scenario_ids);
+        * real validator identity — the same critical-context authorization the
+          task-validation gate uses (not a free-text validator_id);
+        * reexecutable evidence (NECESSARY, not sufficient) — the regression test
+          task is DONE and its declared scenario is passed/automated with SPEC3
+          reexecutable evidence (test_file_path+test_function or test_run_id).
+        Persists the bound attestation via the single reserved-key writer. The bug
+        gate later DERIVES coverage_confirmed from this record (never a passed
+        bool), so a generic/forged metadata write cannot grant coverage."""
+        from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
+
+        svc = AmendmentRevisionService(self.db)
+        amendment = await svc.get(amendment_id)
+        if amendment is None:
+            raise ValueError(f"Amendment '{amendment_id}' not found")
+
+        # 1. binding: the artifact MUST be declared by THIS amendment.
+        if regression_test_task_id not in (amendment.regression_test_task_ids or []):
+            raise CardOperationError(
+                "coverage_binding_invalid",
+                f"Regression test task '{regression_test_task_id}' is not declared by "
+                f"amendment '{amendment_id}'. Coverage can only be confirmed for an "
+                "artifact bound to this amendment.",
+                remediation="bind_regression_artifact_to_amendment",
+                facts={"amendment_id": amendment_id},
+            )
+        if regression_scenario_id not in (amendment.regression_scenario_ids or []):
+            raise CardOperationError(
+                "coverage_binding_invalid",
+                f"Regression scenario '{regression_scenario_id}' is not declared by "
+                f"amendment '{amendment_id}'.",
+                remediation="bind_regression_artifact_to_amendment",
+                facts={"amendment_id": amendment_id},
+            )
+
+        test_task = await self.db.get(Card, regression_test_task_id)
+        if not test_task or test_task.board_id != amendment.board_id:
+            raise ValueError(
+                f"Regression test task '{regression_test_task_id}' not found on this board"
+            )
+
+        # 2. real validator identity — same critical-context gate as task validation.
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=amendment.board_id,
+            actor_id=reviewer_id,
+            entity_type="card",
+            entity_id=test_task.id,
+            critical_action=CriticalAction.CARD_SUBMIT_VALIDATION,
+            surface="service",
+            actor_type="agent",
+            actor_name=reviewer_name,
+            card_id=test_task.id,
+        )
+
+        # 3. reexecutable evidence is NECESSARY (not sufficient): test task done +
+        #    declared scenario passed/automated with SPEC3 reexecutable evidence.
+        if test_task.status != CardStatus.DONE:
+            raise CardOperationError(
+                "coverage_precondition_unmet",
+                f"Regression test task '{regression_test_task_id}' is not done "
+                f"(status='{getattr(test_task.status, 'value', test_task.status)}').",
+                remediation="complete_regression_test_task",
+                facts={"amendment_id": amendment_id},
+            )
+        evidence_ref = await self._reexecutable_evidence_ref(
+            test_task, regression_scenario_id
+        )
+        if not evidence_ref:
+            raise CardOperationError(
+                "coverage_precondition_unmet",
+                f"Scenario '{regression_scenario_id}' has no reexecutable evidence "
+                "(needs status passed/automated with test_file_path+test_function or "
+                "test_run_id). Lineage + a generic status are NOT sufficient (G2).",
+                remediation="attach_reexecutable_evidence",
+                facts={"amendment_id": amendment_id},
+            )
+
+        confirmation = {
+            "validator_id": reviewer_id,
+            "amendment_revision_id": amendment.id,
+            "regression_test_task_id": regression_test_task_id,
+            "regression_scenario_id": regression_scenario_id,
+            "evidence_ref": evidence_ref,
+            "confirmed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await svc.set_coverage_confirmation(
+            amendment_id, confirmation=confirmation, actor=reviewer_id
+        )
+        return confirmation
+
+    async def _reexecutable_evidence_ref(self, test_task: Card, scenario_id: str) -> str:
+        """Reexecutable evidence ref for the scenario if it is passed/automated
+        with SPEC3 evidence, else ''. Searches the test task's spec first, then the
+        board's specs (a Path B regression scenario may be cross-spec)."""
+        spec_ids: list[str] = []
+        if test_task.spec_id:
+            spec_ids.append(str(test_task.spec_id))
+        rows = await self.db.execute(
+            select(Spec.id).where(Spec.board_id == test_task.board_id)
+        )
+        spec_ids.extend(str(sid) for (sid,) in rows.all())
+        seen: set[str] = set()
+        for spec_id in spec_ids:
+            if spec_id in seen:
+                continue
+            seen.add(spec_id)
+            spec = await self.db.get(Spec, spec_id)
+            if not spec:
+                continue
+            for sc in (spec.test_scenarios or []):
+                if not isinstance(sc, dict) or str(sc.get("id")) != scenario_id:
+                    continue
+                if str(sc.get("status") or "").lower() not in ("passed", "automated"):
+                    return ""
+                ev = sc.get("evidence")
+                if isinstance(ev, dict):
+                    fp = str(ev.get("test_file_path") or "").strip()
+                    fn = str(ev.get("test_function") or "").strip()
+                    if fp and fn:
+                        return f"{fp}::{fn}"
+                    trid = str(ev.get("test_run_id") or "").strip()
+                    if trid:
+                        return f"test_run:{trid}"
+                return ""
+        return ""
+
     # ---- Coverage gate functions (used by SpecService.move_spec) ----
 
     async def check_ac_scenario_coverage(self, spec: "Spec", board: "Board | None") -> None:
@@ -2801,11 +2941,11 @@ class CardService:
                 spec=spec_for_bug,
                 origin_task=origin_task,
                 candidate_spec_ids_by_scenario_id=candidate_spec_ids_by_scenario_id,
+                # G2 (c9cf9781): coverage is NOT passed in (a bool would be
+                # forgeable). It is derived from the persisted, artifact-bound
+                # validator attestation carried on each amendment fact
+                # (validation_metadata.coverage_confirmation) — fail-closed.
                 amendment_facts=amendment_facts,
-                # ADJ-B: production NEVER confirms coverage here. Validator-
-                # confirmed coverage is the real signal delivered by c9cf9781;
-                # until then a fully lineage-eligible Path B stays coverage_pending.
-                coverage_confirmed=False,
             )
             eligibility = gate_result.eligibility
             observe_bug_regression_resolution(
@@ -2836,6 +2976,7 @@ class CardService:
                     else ("semantic_gap" if eligibility.semantic_gap_required else "rejected")
                 ),
                 reason_code=primary_reason,
+                coverage_state=eligibility.coverage_state.value,
                 scenario_count=len(candidate_scenario_ids),
                 test_task_count=len(validated_test_tasks),
                 actor_id=user_id,

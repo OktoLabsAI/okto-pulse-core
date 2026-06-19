@@ -25,6 +25,7 @@ from okto_pulse.core.services.bug_regression_scenarios import (
     BugRegressionNextAction,
     BugRegressionRejectionReason,
     BugRegressionScenarioEligibilityResolver,
+    CoverageConfirmationFact,
 )
 
 FOREIGN = "ts-foreign"  # a scenario that lives on another spec (cross-spec)
@@ -74,14 +75,29 @@ def _fact(**over) -> AmendmentLineageFact:
         origin_task_ids=("origin-1",),       # exact member of bug authoritative
         affected_task_ids=(),
         regression_scenario_ids=(FOREIGN,),  # declares the artifact
-        regression_test_task_ids=(),
+        regression_test_task_ids=("tc-1",),  # declares the regression test task
         automated_regression_refs=(),
     )
     base.update(over)
     return AmendmentLineageFact(**base)
 
 
-def _resolve(*, facts, coverage_confirmed=False, fact_overrides=None):
+def _confirmation(**over) -> CoverageConfirmationFact:
+    """A valid, artifact-bound validator coverage attestation for _fact() (G2).
+    Coverage is reached ONLY via this persisted bound signal — never a bool."""
+    base = dict(
+        validator_id="claude-validator",
+        amendment_revision_id="amd-1",       # binds to THIS amendment
+        regression_test_task_id="tc-1",      # ∈ amendment.regression_test_task_ids
+        regression_scenario_id=FOREIGN,      # ∈ amendment.regression_scenario_ids
+        evidence_ref="tests/test_x.py::test_y",
+        confirmed_at="2026-06-19T10:00:00Z",
+    )
+    base.update(over)
+    return CoverageConfirmationFact(**base)
+
+
+def _resolve(*, facts, fact_overrides=None):
     spec = _spec()
     origin = _card("origin-1", test_scenario_ids=[])
     bug = _card("bug-1", card_type=CardType.BUG)
@@ -97,7 +113,6 @@ def _resolve(*, facts, coverage_confirmed=False, fact_overrides=None):
         candidate_scenario_ids=[FOREIGN],
         candidate_spec_ids_by_scenario_id={FOREIGN: "other-spec"},
         amendment_facts=amendment_facts,
-        coverage_confirmed=coverage_confirmed,
     )
 
 
@@ -181,7 +196,6 @@ def test_path_b_draft_amendment_blocks_gate():
         origin_task=origin,
         candidate_spec_ids_by_scenario_id={FOREIGN: "other-spec"},
         amendment_facts=[_fact(status="draft", lineage_state="complete")],
-        coverage_confirmed=False,
     )
     assert gate.allowed is False
     assert gate.eligibility.rejected_scenarios[0].reason is (
@@ -254,7 +268,7 @@ def test_adj_a_partial_claim_keeps_only_compatible_membership():
 
 
 def test_p6_full_lineage_without_coverage_is_pending_not_ready():
-    result = _resolve(facts="valid", coverage_confirmed=False)
+    result = _resolve(facts="valid")  # no attestation -> coverage_pending
     assert result.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING
     assert result.coverage_pending_scenarios == (FOREIGN,)
     assert result.eligible_scenarios == ()  # NOT closure-eligible
@@ -266,10 +280,12 @@ def test_p6_full_lineage_without_coverage_is_pending_not_ready():
     assert result.amendment_revision_id == "amd-1"
 
 
-def test_path_b_ready_only_with_coverage_confirmed_seam():
-    # The coverage_confirmed seam is the ONLY way to reach path_b_ready. No
-    # production caller sets it (ADJ-B); it exists for c9cf9781 + tests.
-    result = _resolve(facts="valid", coverage_confirmed=True)
+def test_path_b_ready_only_with_bound_validator_attestation():
+    # G2 (c9cf9781): path_b_ready is reached ONLY via a persisted, artifact-bound
+    # validator attestation carried on the fact — never a caller-supplied bool.
+    result = _resolve(
+        facts="valid", fact_overrides=[{"coverage_confirmation": _confirmation()}]
+    )
     assert result.coverage_state is BugRegressionCoverageState.PATH_B_READY
     assert [s.scenario_id for s in result.eligible_scenarios] == [FOREIGN]
     assert result.eligible_scenarios[0].reason is (
@@ -280,11 +296,57 @@ def test_path_b_ready_only_with_coverage_confirmed_seam():
 
 
 # ---------------------------------------------------------------------------
+# G2 (c9cf9781) — coverage attestation BINDING forge teeth. The positive
+# neighbour above (valid bound attestation -> path_b_ready) flips to
+# coverage_pending when ANY binding field is forged. Proves the gate honours a
+# bound attestation, never a bare/foreign dict.
+# ---------------------------------------------------------------------------
+
+
+def test_coverage_attestation_foreign_amendment_does_not_confirm():
+    # bound to ANOTHER amendment_revision_id -> not confirmed (coverage_pending).
+    result = _resolve(
+        facts="valid",
+        fact_overrides=[{"coverage_confirmation": _confirmation(amendment_revision_id="other-amd")}],
+    )
+    assert result.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING
+    assert result.eligible_scenarios == ()
+
+
+def test_coverage_attestation_foreign_artifact_does_not_confirm():
+    # test task not declared by THIS amendment -> not confirmed.
+    foreign_task = _resolve(
+        facts="valid",
+        fact_overrides=[{"coverage_confirmation": _confirmation(regression_test_task_id="other-tc")}],
+    )
+    assert foreign_task.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING
+    # scenario not declared by THIS amendment (and not the candidate) -> not confirmed.
+    foreign_sc = _resolve(
+        facts="valid",
+        fact_overrides=[{"coverage_confirmation": _confirmation(regression_scenario_id="ts-other")}],
+    )
+    assert foreign_sc.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING
+
+
+def test_coverage_attestation_missing_validator_or_evidence_does_not_confirm():
+    no_validator = _resolve(
+        facts="valid",
+        fact_overrides=[{"coverage_confirmation": _confirmation(validator_id="")}],
+    )
+    assert no_validator.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING
+    no_evidence = _resolve(
+        facts="valid",
+        fact_overrides=[{"coverage_confirmation": _confirmation(evidence_ref="")}],
+    )
+    assert no_evidence.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING
+
+
+# ---------------------------------------------------------------------------
 # Gate decisions through BugRegressionGateValidator (the real gate surface).
 # ---------------------------------------------------------------------------
 
 
-def _gate(*, amendment_facts, coverage_confirmed):
+def _gate(*, amendment_facts):
     spec, origin, bug = _spec(), _card("origin-1"), _card("bug-1", card_type=CardType.BUG)
     test_task = _card("tc-1", spec_id="other-spec", test_scenario_ids=[FOREIGN])
     return BugRegressionGateValidator().validate_linked_test_tasks(
@@ -294,24 +356,24 @@ def _gate(*, amendment_facts, coverage_confirmed):
         origin_task=origin,
         candidate_spec_ids_by_scenario_id={FOREIGN: "other-spec"},
         amendment_facts=amendment_facts,
-        coverage_confirmed=coverage_confirmed,
     )
 
 
 def test_gate_allows_only_path_b_ready():
-    allowed = _gate(amendment_facts=[_fact()], coverage_confirmed=True)
+    # only a bound validator attestation reaches ALLOW.
+    allowed = _gate(amendment_facts=[_fact(coverage_confirmation=_confirmation())])
     assert allowed.allowed is True
     assert allowed.decision is BugRegressionGateDecision.ALLOW
 
 
 def test_gate_blocks_coverage_pending():
-    blocked = _gate(amendment_facts=[_fact()], coverage_confirmed=False)
+    blocked = _gate(amendment_facts=[_fact()])  # lineage ok, no attestation
     assert blocked.allowed is False
     assert blocked.decision is BugRegressionGateDecision.BLOCK_COVERAGE_PENDING
 
 
 def test_gate_blocks_when_no_amendment():
-    blocked = _gate(amendment_facts=[], coverage_confirmed=True)
+    blocked = _gate(amendment_facts=[])
     assert blocked.allowed is False
     # missing amendment -> no reusable lineage at all -> the remediation is to
     # create the formal amendment (the semantic-gap escalation family). The
@@ -341,7 +403,6 @@ def test_predicate_does_not_mutate_inputs():
         candidate_scenario_ids=[FOREIGN],
         candidate_spec_ids_by_scenario_id={FOREIGN: "other-spec"},
         amendment_facts=[fact],
-        coverage_confirmed=True,
     )
     assert spec.test_scenarios == before_spec
     assert fact.regression_scenario_ids == (FOREIGN,)  # fact untouched

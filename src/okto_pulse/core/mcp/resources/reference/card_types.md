@@ -54,7 +54,10 @@ Pass evidence as a JSON string in the `evidence` parameter of `okto_pulse_update
    ├── Path A: reuse an existing scenario only if it is eligible by lineage
    │   (same spec and linked to the bug origin task or affected task)
    └── Path B: if no eligible scenario exists or expected behavior changed,
-       route to amendment, refinement, spec revision, or hotfix spec
+       remediate via a formal AmendmentHotfixRevision — create/associate it,
+       complete lineage, register re-executable evidence, validator confirms
+       coverage (refinement/spec-revision authoring alone does NOT satisfy
+       the bug gate)
 3. Create a fresh test task & link to bug (still started)
    └── okto_pulse_update_card(card_id=bug_id, linked_test_task_ids="<test_task_id>")
 4. Move to in_progress (BLOCKED until step 3 is done)

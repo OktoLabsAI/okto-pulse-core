@@ -10,17 +10,23 @@ and emits audit entries on create/status/lineage changes (TR5).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.domain.amendment_eligibility import (
+    COVERAGE_CONFIRMATION_KEY,
     AmendmentEligibility,
     AmendmentLineageState,
     AmendmentRevisionStatus,
     evaluate_amendment_eligibility,
 )
+
 from okto_pulse.core.models.db import ActivityLog, AmendmentHotfixRevision
+
+logger = logging.getLogger("okto_pulse.services.amendment_revision")
 
 
 class AmendmentRevisionError(ValueError):
@@ -71,6 +77,18 @@ class AmendmentRevisionService:
     ) -> AmendmentHotfixRevision:
         """Persist a new amendment in DRAFT/INCOMPLETE. Never touches the
         original spec (AC1)."""
+        # NON-FORGEABLE (G2 / card c9cf9781): the coverage attestation reserved
+        # key may ONLY be written by ``CardService.confirm_amendment_coverage``.
+        # A generic create can never inject it (would forge validator coverage),
+        # so strip it here regardless of caller input.
+        safe_metadata = dict(validation_metadata) if validation_metadata else None
+        if safe_metadata and COVERAGE_CONFIRMATION_KEY in safe_metadata:
+            safe_metadata.pop(COVERAGE_CONFIRMATION_KEY, None)
+            logger.warning(
+                "amendment_revision.create.stripped_reserved_key key=%s "
+                "(coverage_confirmation is writable only via confirm_amendment_coverage)",
+                COVERAGE_CONFIRMATION_KEY,
+            )
         amendment = AmendmentHotfixRevision(
             board_id=board_id,
             original_spec_id=original_spec_id,
@@ -83,7 +101,7 @@ class AmendmentRevisionService:
             automated_regression_refs=list(automated_regression_refs or []),
             status=AmendmentRevisionStatus.DRAFT,
             lineage_state=AmendmentLineageState.INCOMPLETE,
-            validation_metadata=validation_metadata,
+            validation_metadata=safe_metadata,
             created_by=author,
         )
         self.db.add(amendment)
@@ -158,6 +176,90 @@ class AmendmentRevisionService:
             {
                 "old_lineage_state": getattr(old, "value", old),
                 "new_lineage_state": lineage.value,
+            },
+        )
+        return amendment
+
+    async def set_coverage_confirmation(
+        self,
+        amendment_id: str,
+        *,
+        confirmation: dict[str, Any],
+        actor: str,
+    ) -> AmendmentHotfixRevision:
+        """Persist the validator coverage attestation under the reserved key (G2).
+
+        This is the ONLY writer of ``validation_metadata.coverage_confirmation``.
+        The caller (``CardService.confirm_amendment_coverage``) MUST have already
+        authorized the validator role and validated the artifact binding; this
+        method only persists + audits (non-forgeability is enforced by the caller
+        + the reserved-key strip in ``create``)."""
+        amendment = await self._require(amendment_id)
+        metadata = dict(amendment.validation_metadata or {})
+        metadata[COVERAGE_CONFIRMATION_KEY] = dict(confirmation)
+        amendment.validation_metadata = metadata
+        flag_modified(amendment, "validation_metadata")
+        await self.db.flush()
+        self._audit(
+            amendment,
+            "amendment_coverage_confirmed",
+            actor,
+            {
+                "regression_test_task_id": confirmation.get("regression_test_task_id"),
+                "regression_scenario_id": confirmation.get("regression_scenario_id"),
+            },
+        )
+        return amendment
+
+    async def associate_artifacts(
+        self,
+        amendment_id: str,
+        *,
+        regression_test_task_ids: list[str] | None = None,
+        regression_scenario_ids: list[str] | None = None,
+        automated_regression_refs: list[str] | None = None,
+        actor: str,
+    ) -> AmendmentHotfixRevision:
+        """Additively associate regression artifacts/evidence to an existing
+        amendment (spec be089cd3 / card 4e7e1143). NEVER reparents
+        origin_bug_id/original_spec_id (caller enforces bug/spec scope). Audit-
+        backed, order-preserving de-dup, no silent no-op."""
+        amendment = await self._require(amendment_id)
+
+        def _merge(existing: list[str] | None, incoming: list[str] | None) -> list[str]:
+            out = list(existing or [])
+            seen = set(out)
+            for value in incoming or []:
+                text = str(value)
+                if text not in seen:
+                    seen.add(text)
+                    out.append(text)
+            return out
+
+        amendment.regression_test_task_ids = _merge(
+            amendment.regression_test_task_ids, regression_test_task_ids
+        )
+        amendment.regression_scenario_ids = _merge(
+            amendment.regression_scenario_ids, regression_scenario_ids
+        )
+        amendment.automated_regression_refs = _merge(
+            amendment.automated_regression_refs, automated_regression_refs
+        )
+        for column in (
+            "regression_test_task_ids",
+            "regression_scenario_ids",
+            "automated_regression_refs",
+        ):
+            flag_modified(amendment, column)
+        await self.db.flush()
+        self._audit(
+            amendment,
+            "amendment_revision_artifacts_associated",
+            actor,
+            {
+                "regression_test_task_ids": list(regression_test_task_ids or []),
+                "regression_scenario_ids": list(regression_scenario_ids or []),
+                "automated_regression_refs": list(automated_regression_refs or []),
             },
         )
         return amendment

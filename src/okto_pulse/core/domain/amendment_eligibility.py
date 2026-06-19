@@ -24,6 +24,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum as PyEnum
 
+#: Reserved key inside ``AmendmentHotfixRevision.validation_metadata`` holding the
+#: validator coverage attestation (G2 / card c9cf9781). NON-FORGEABLE: only the
+#: validator-only writer ``CardService.confirm_amendment_coverage`` may persist
+#: it. Every other write path (e.g. ``AmendmentRevisionService.create``) MUST
+#: strip it so a generic/non-validator route can never inject a signal the bug
+#: gate honors.
+COVERAGE_CONFIRMATION_KEY = "coverage_confirmation"
+
 
 class AmendmentRevisionStatus(str, PyEnum):
     """Lifecycle of a Path B amendment/hotfix revision (fr_eb9d83c9)."""

@@ -340,6 +340,9 @@ class BugRegressionScenarioReuseDecision(DomainEvent):
     spec_id: str
     decision: Literal["eligible", "rejected", "semantic_gap"]
     reason_code: str
+    # Path B coverage state (G2 / card 966c7e7c): bounded diagnostic on the audit
+    # event (path_b_ready / coverage_pending / not_applicable). Empty for Path A.
+    coverage_state: str = ""
     scenario_count: int = 0
     test_task_count: int = 0
 

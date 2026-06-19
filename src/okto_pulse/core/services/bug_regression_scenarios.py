@@ -25,10 +25,12 @@ reject — it never relaxes Path A and is fail-closed:
   compatible membership remains, the scenario is rejected
   ``unrelated_cross_spec_scenario`` (fail-closed).
 
-ADJ-B: lineage eligibility is NOT coverage. ``coverage_confirmed`` is a seam for
-the validator-confirmed coverage signal delivered by card c9cf9781; no
-production caller sets it true. Without confirmed coverage a fully lineage-
-eligible Path B scenario returns ``coverage_pending`` and never closure-ready.
+G2 (card c9cf9781): lineage eligibility is NOT coverage. Coverage is confirmed
+ONLY by a persisted, artifact-bound validator attestation (see
+``CoverageConfirmationFact`` / ``_coverage_confirmed_for``) — NEVER a caller-
+supplied bool (that would be forgeable). Without a bound attestation a fully
+lineage-eligible Path B scenario returns ``coverage_pending`` and never
+closure-ready.
 """
 
 from __future__ import annotations
@@ -37,7 +39,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Mapping, Sequence
 
-from okto_pulse.core.domain.amendment_eligibility import amendment_status_is_blocking
+from okto_pulse.core.domain.amendment_eligibility import (
+    COVERAGE_CONFIRMATION_KEY,
+    amendment_status_is_blocking,
+)
 from okto_pulse.core.models.db import Card, Spec
 
 
@@ -79,12 +84,32 @@ class BugRegressionCoverageState(str, Enum):
     PATH_B_READY = "path_b_ready"
 
 
+#: Bounded Path B reason-code catalog (TR3 / card 966c7e7c). ANTI-DRIFT: only
+#: these 7 codes may label the ``pulse_bug_regression_path_b_total`` metric. Built
+#: from the enums above so the catalog can never silently drift from the source.
+PATH_B_REASON_CODES: frozenset[str] = frozenset({
+    BugRegressionRejectionReason.MISSING_AMENDMENT_REVISION.value,
+    BugRegressionRejectionReason.INCOMPLETE_AMENDMENT_LINEAGE.value,
+    BugRegressionRejectionReason.BLOCKED_AMENDMENT_STATUS.value,
+    BugRegressionRejectionReason.UNRELATED_CROSS_SPEC_SCENARIO.value,
+    BugRegressionRejectionReason.MISSING_REGRESSION_ARTIFACT.value,
+    BugRegressionCoverageState.COVERAGE_PENDING.value,
+    BugRegressionCoverageState.PATH_B_READY.value,
+})
+
+
 class BugRegressionNextAction(str, Enum):
     """Deterministic next action for the caller."""
 
     CREATE_REGRESSION_TEST_CARD = "create_regression_test_card"
     ESCALATE_SEMANTIC_GAP = "escalate_semantic_gap"
     CONFIRM_VALIDATOR_COVERAGE = "confirm_validator_coverage"
+    # Path B amendment-lineage remediation actions (tool-aligned, agent-facing).
+    # Added alongside ESCALATE_SEMANTIC_GAP so the API/MCP payload tells an agent
+    # the operational next step is to create/associate amendment lineage without
+    # parsing exception text or docs (card 62f6f196 / spec be089cd3).
+    CREATE_AMENDMENT_REVISION = "create_amendment_revision"
+    ASSOCIATE_AMENDMENT_REVISION_ARTIFACTS = "associate_amendment_revision_artifacts"
 
 
 class BugRegressionGateDecision(str, Enum):
@@ -94,14 +119,6 @@ class BugRegressionGateDecision(str, Enum):
     BLOCK_UNRELATED_SCENARIO = "block_unrelated_scenario"
     BLOCK_SEMANTIC_GAP = "block_semantic_gap"
     BLOCK_COVERAGE_PENDING = "block_coverage_pending"
-
-
-#: Reserved key inside ``AmendmentHotfixRevision.validation_metadata`` that
-#: holds the validator coverage attestation (G2 / card c9cf9781). NON-FORGEABLE:
-#: only the validator-only writer ``CardService.confirm_amendment_coverage`` may
-#: persist it; every other write path (e.g. amendment create) MUST strip it so a
-#: generic/non-validator route can never inject a signal the gate honors.
-COVERAGE_CONFIRMATION_KEY = "coverage_confirmation"
 
 
 @dataclass(frozen=True)
@@ -260,7 +277,6 @@ def evaluate_path_b_for_scenario(
     board_id: str,
     bug_authoritative_task_ids: frozenset[str],
     amendment_facts: Sequence[AmendmentLineageFact],
-    coverage_confirmed: bool,
 ) -> PathBScenarioEvaluation:
     """Pure, fail-closed Path B predicate for a single cross-spec scenario.
 
@@ -296,11 +312,36 @@ def evaluate_path_b_for_scenario(
             fact=fact,
             scenario_id=scenario_id,
             bug_authoritative_task_ids=bug_authoritative_task_ids,
-            coverage_confirmed=coverage_confirmed,
         )
         if rank > best_rank:
             best_rank, best = rank, evaluation
     return best
+
+
+def _coverage_confirmed_for(fact: AmendmentLineageFact, scenario_id: str) -> bool:
+    """G2 (card c9cf9781): coverage is confirmed ONLY by a persisted validator
+    attestation that is bound, fail-closed, to THIS amendment + THIS artifact +
+    real evidence. Mere presence of the dict is never enough.
+
+    Rejected (-> coverage_pending): no attestation; missing validator_id /
+    evidence_ref; attestation bound to ANOTHER amendment (amendment_revision_id
+    mismatch); test task / scenario not declared by this amendment; or the
+    attested scenario is not the candidate being gated."""
+
+    cc = fact.coverage_confirmation
+    if cc is None:
+        return False
+    if not cc.validator_id or not cc.evidence_ref:
+        return False
+    if cc.amendment_revision_id != fact.amendment_revision_id:
+        return False
+    if cc.regression_test_task_id not in set(fact.regression_test_task_ids):
+        return False
+    if cc.regression_scenario_id not in set(fact.regression_scenario_ids):
+        return False
+    if cc.regression_scenario_id != scenario_id:
+        return False
+    return True
 
 
 def _evaluate_single_amendment(
@@ -308,7 +349,6 @@ def _evaluate_single_amendment(
     fact: AmendmentLineageFact,
     scenario_id: str,
     bug_authoritative_task_ids: frozenset[str],
-    coverage_confirmed: bool,
 ) -> tuple[int, PathBScenarioEvaluation]:
     common = {
         "amendment_revision_id": fact.amendment_revision_id,
@@ -362,8 +402,9 @@ def _evaluate_single_amendment(
             **common,
         )
 
-    # 5. Fully lineage-eligible. Coverage (ADJ-B) decides ready vs pending.
-    if coverage_confirmed:
+    # 5. Fully lineage-eligible. Coverage (G2/ADJ-B) is derived from the
+    #    persisted, artifact-bound validator attestation — NEVER a passed bool.
+    if _coverage_confirmed_for(fact, scenario_id):
         return 5, PathBScenarioEvaluation(
             outcome=_PathBOutcome.READY,
             coverage_state=BugRegressionCoverageState.PATH_B_READY,
@@ -401,7 +442,6 @@ class BugRegressionScenarioEligibilityResolver:
         candidate_scenario_ids: Sequence[str] | None = None,
         candidate_spec_ids_by_scenario_id: Mapping[str, str] | None = None,
         amendment_facts: Sequence[AmendmentLineageFact] | None = None,
-        coverage_confirmed: bool = False,
     ) -> BugRegressionScenarioEligibilityResult:
         """Classify candidate scenarios without database access or side effects.
 
@@ -458,7 +498,6 @@ class BugRegressionScenarioEligibilityResolver:
                         board_id=spec.board_id,
                         bug_authoritative_task_ids=bug_authoritative_task_ids,
                         amendment_facts=amendment_facts,
-                        coverage_confirmed=coverage_confirmed,
                     )
                     path_b_evaluations.append(evaluation)
                     if evaluation.outcome is _PathBOutcome.READY:
@@ -570,7 +609,21 @@ class BugRegressionScenarioEligibilityResolver:
 
         eligible_artifacts = tuple(item.scenario_id for item in eligible)
         rejected_artifacts = tuple(item.scenario_id for item in rejected)
-        safe_next_actions = (next_action.value,)
+        # safe_next_actions (AC3): tool-aligned operational steps. For a Path B
+        # blocked bug (semantic gap) the agent must learn from the payload itself
+        # that it can create — and, when an amendment already exists, associate
+        # artifacts to — amendment lineage, without parsing exception text/docs.
+        # escalate_semantic_gap is retained for backcompat; next_action (the
+        # singular headline) is left unchanged.
+        if next_action is BugRegressionNextAction.ESCALATE_SEMANTIC_GAP:
+            path_b_actions = [BugRegressionNextAction.CREATE_AMENDMENT_REVISION.value]
+            if any(ev.amendment_revision_id for ev in path_b_evaluations):
+                path_b_actions.append(
+                    BugRegressionNextAction.ASSOCIATE_AMENDMENT_REVISION_ARTIFACTS.value
+                )
+            safe_next_actions = tuple(path_b_actions) + (next_action.value,)
+        else:
+            safe_next_actions = (next_action.value,)
 
         return BugRegressionScenarioEligibilityResult(
             bug_id=bug_card.id,
@@ -734,7 +787,6 @@ class BugRegressionGateValidator:
         affected_tasks: Sequence[Card] | None = None,
         candidate_spec_ids_by_scenario_id: Mapping[str, str] | None = None,
         amendment_facts: Sequence[AmendmentLineageFact] | None = None,
-        coverage_confirmed: bool = False,
     ) -> BugRegressionGateValidationResult:
         candidate_scenario_ids = self._ordered_unique(
             scenario_id
@@ -749,7 +801,6 @@ class BugRegressionGateValidator:
             candidate_scenario_ids=candidate_scenario_ids,
             candidate_spec_ids_by_scenario_id=candidate_spec_ids_by_scenario_id,
             amendment_facts=amendment_facts,
-            coverage_confirmed=coverage_confirmed,
         )
 
         # ALLOW only on a clean eligible set: Path A lineage OR a Path B amendment

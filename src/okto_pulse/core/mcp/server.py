@@ -12859,6 +12859,213 @@ async def okto_pulse_submit_task_validation(
 
 
 @mcp.tool()
+async def okto_pulse_confirm_amendment_coverage(
+    board_id: str,
+    amendment_id: str,
+    regression_test_task_id: str,
+    regression_scenario_id: str,
+) -> str:
+    """
+    Confirm Path B amendment coverage (validator-only · G2 · card c9cf9781).
+
+    Writes the SINGLE non-forgeable coverage attestation that lets the bug gate
+    treat a cross-spec Path B regression artifact as closure-ready. Fail-closed:
+    the test task + scenario MUST be declared by THIS amendment, the regression
+    test task MUST be done with its declared scenario passed/automated carrying
+    SPEC3 reexecutable evidence (test_file_path+test_function or test_run_id), and
+    the caller MUST pass the validator critical-context authorization. Lineage +
+    a generic status are NECESSARY but NOT sufficient. The bug gate DERIVES
+    coverage from this persisted, artifact-bound attestation — never a bool — so a
+    generic/non-validator metadata write can never forge coverage."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "card.validation.submit")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        card_service = CardService(db)
+        try:
+            result = await card_service.confirm_amendment_coverage(
+                amendment_id=amendment_id,
+                regression_test_task_id=regression_test_task_id,
+                regression_scenario_id=regression_scenario_id,
+                reviewer_id=ctx.agent_id,
+                reviewer_name=ctx.agent_name,
+            )
+            await db.commit()
+            return json.dumps(
+                {"success": True, "coverage_confirmation": result}, default=str
+            )
+        except GateContractError as e:
+            return json.dumps(e.to_dict())
+        except ResourceGateError as e:
+            return _resource_gate_error_response(e)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def okto_pulse_create_amendment_revision(
+    board_id: str,
+    bug_id: str,
+    original_spec_id: str = "",
+    revision_spec_id: str = "",
+    origin_task_ids: list[str] | None = None,
+    affected_task_ids: list[str] | None = None,
+    regression_scenario_ids: list[str] | None = None,
+    regression_test_task_ids: list[str] | None = None,
+    automated_regression_refs: list[str] | None = None,
+) -> str:
+    """
+    Create a Path B AmendmentHotfixRevision for a bug (spec be089cd3 · FR1 ·
+    ir_54ceb69b). Twin of POST /boards/{board_id}/bugs/{bug_id}/amendment-revisions.
+
+    The amendment binds to the bug's OWN done/validated (locked) spec and always
+    starts as 'draft'. This tool ONLY remediates — it NEVER skips/overrides the bug
+    regression gate, and it cannot set coverage confirmation (validator-only).
+    Returns the structured amendment payload (status, lineage_state, eligibility,
+    artifacts) or a structured error (no raw exception text)."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_CREATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.services.amendment_revision_api import (
+        AmendmentRevisionApiError,
+        AmendmentRevisionApiService,
+    )
+
+    async with get_db_for_mcp() as db:
+        try:
+            result = await AmendmentRevisionApiService(db).create(
+                board_id=board_id,
+                bug_id=bug_id,
+                author=ctx.agent_id,
+                original_spec_id=original_spec_id or None,
+                revision_spec_id=revision_spec_id or None,
+                origin_task_ids=origin_task_ids,
+                affected_task_ids=affected_task_ids,
+                regression_scenario_ids=regression_scenario_ids,
+                regression_test_task_ids=regression_test_task_ids,
+                automated_regression_refs=automated_regression_refs,
+            )
+            await db.commit()
+            return json.dumps({"success": True, "amendment_revision": result}, default=str)
+        except AmendmentRevisionApiError as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_list_amendment_revisions(board_id: str, bug_id: str) -> str:
+    """
+    List Path B amendment revisions for a bug + the bug-level lineage/coverage
+    resolution (twin of GET .../amendment-revisions). Read-only. The payload
+    exposes lineage_state, missing_links, safe_next_actions, rejected/eligible
+    regression artifacts and coverage_state so an agent knows the next safe
+    action without parsing raw exceptions (FR2/AC3)."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.services.amendment_revision_api import (
+        AmendmentRevisionApiError,
+        AmendmentRevisionApiService,
+    )
+
+    async with get_db_for_mcp() as db:
+        try:
+            result = await AmendmentRevisionApiService(db).list_for_bug(
+                board_id=board_id, bug_id=bug_id
+            )
+            return json.dumps(result, default=str)
+        except AmendmentRevisionApiError as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_get_amendment_revision(
+    board_id: str, bug_id: str, amendment_id: str
+) -> str:
+    """
+    Get one Path B amendment revision scoped to a bug (twin of GET
+    .../amendment-revisions/{amendment_id}). Read-only. A revision that does not
+    belong to this bug/board fails structured (amendment_bug_mismatch), never
+    leaks as success."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.services.amendment_revision_api import (
+        AmendmentRevisionApiError,
+        AmendmentRevisionApiService,
+    )
+
+    async with get_db_for_mcp() as db:
+        try:
+            result = await AmendmentRevisionApiService(db).get(
+                board_id=board_id, bug_id=bug_id, amendment_id=amendment_id
+            )
+            return json.dumps({"amendment_revision": result}, default=str)
+        except AmendmentRevisionApiError as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_associate_amendment_revision_artifacts(
+    board_id: str,
+    bug_id: str,
+    amendment_id: str,
+    regression_scenario_ids: list[str] | None = None,
+    regression_test_task_ids: list[str] | None = None,
+    automated_regression_refs: list[str] | None = None,
+) -> str:
+    """
+    Additively associate regression artifacts/evidence (scenarios, test tasks,
+    automated refs) to an existing amendment (twin of POST
+    .../amendment-revisions/{amendment_id}/associate). NEVER reparents the bug/spec
+    and NEVER skips the gate. Requires at least one artifact list; audit-backed,
+    structured failure on mismatch/empty (no silent no-op)."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.services.amendment_revision_api import (
+        AmendmentRevisionApiError,
+        AmendmentRevisionApiService,
+    )
+
+    async with get_db_for_mcp() as db:
+        try:
+            result = await AmendmentRevisionApiService(db).associate(
+                board_id=board_id,
+                bug_id=bug_id,
+                amendment_id=amendment_id,
+                actor=ctx.agent_id,
+                regression_scenario_ids=regression_scenario_ids,
+                regression_test_task_ids=regression_test_task_ids,
+                automated_regression_refs=automated_regression_refs,
+            )
+            await db.commit()
+            return json.dumps({"success": True, "amendment_revision": result}, default=str)
+        except AmendmentRevisionApiError as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
 async def okto_pulse_list_task_validations(board_id: str, card_id: str) -> str:
     """
     List all validations for a task card in reverse chronological order.
