@@ -6754,6 +6754,20 @@ async def okto_pulse_add_test_scenario(
         if not spec:
             return json.dumps({"error": "Spec not found"})
 
+        # Fail-closed scenario_type (spec ac16b3c9): reject an unsupported value
+        # BEFORE building/appending the scenario. No silent normalization to
+        # "integration" — that hid caller intent. The default param above already
+        # supplies "integration" when the caller omits the field entirely.
+        if not is_valid_scenario_type(scenario_type):
+            return json.dumps({
+                "error": "invalid_scenario_type",
+                "message": (
+                    f"Invalid scenario_type {scenario_type!r}. "
+                    f"Allowed values: {', '.join(VALID_SCENARIO_TYPES)}. "
+                    f"No scenario was appended."
+                ),
+            })
+
         scenario_id = f"ts_{_uuid.uuid4().hex[:8]}"
         criteria = spec.acceptance_criteria or []
 
@@ -6784,7 +6798,7 @@ async def okto_pulse_add_test_scenario(
             "id": scenario_id,
             "title": title,
             "linked_criteria": criteria_list,
-            "scenario_type": scenario_type if scenario_type in ("unit", "integration", "e2e", "manual") else "integration",
+            "scenario_type": scenario_type,  # already validated fail-closed above
             "given": given.replace("\\n", "\n"),
             "when": when.replace("\\n", "\n"),
             "then": then.replace("\\n", "\n"),
@@ -6884,7 +6898,21 @@ async def okto_pulse_list_test_scenarios(
                 },
                 "summary": {
                     "by_status": {st: sum(1 for s in all_scenarios if s.get("status") == st) for st in ("draft", "ready", "automated", "passed", "failed") if any(s.get("status") == st for s in all_scenarios)},
-                    "by_type": {t: sum(1 for s in all_scenarios if s.get("scenario_type") == t) for t in ("unit", "integration", "e2e", "manual") if any(s.get("scenario_type") == t for s in all_scenarios)},
+                    "by_type": {t: sum(1 for s in all_scenarios if s.get("scenario_type") == t) for t in VALID_SCENARIO_TYPES if any(s.get("scenario_type") == t for s in all_scenarios)},
+                    # Historical/invalid persisted scenario_types are surfaced
+                    # EXPLICITLY (spec ac16b3c9 FR5/AC5) rather than silently
+                    # folded into a supported bucket or dropped — so a stale value
+                    # like 'regression'/'negative' is visible for deliberate
+                    # remediation. New writes already fail closed (card 58844a26).
+                    "unsupported_types": {
+                        st: sum(1 for s in all_scenarios if s.get("scenario_type") == st)
+                        for st in sorted({
+                            s.get("scenario_type")
+                            for s in all_scenarios
+                            if isinstance(s.get("scenario_type"), str)
+                            and not is_valid_scenario_type(s.get("scenario_type"))
+                        })
+                    },
                     "linked": sum(1 for s in all_scenarios if s.get("linked_task_ids")),
                     "unlinked": sum(1 for s in all_scenarios if not s.get("linked_task_ids")),
                 },
@@ -6907,8 +6935,11 @@ async def okto_pulse_list_test_scenarios(
 # (services/test_scenario_lifecycle.py). This file imports from it — never the
 # reverse — so the rule is defined exactly once.
 from okto_pulse.core.services.test_scenario_lifecycle import (  # noqa: E402
+    InvalidScenarioTypeError,
     StatusNotMutableError,
     VALID_SCENARIO_STATUSES,
+    VALID_SCENARIO_TYPES,
+    is_valid_scenario_type,
     validate_test_scenario_evidence,
 )
 
@@ -7061,6 +7092,15 @@ async def okto_pulse_update_test_scenario(
                     "Spec is locked by a passed validation; the scenario body "
                     "cannot be edited. Move the spec back to draft/approved first."
                 ),
+            })
+        except InvalidScenarioTypeError as exc:
+            # Fail-closed scenario_type on the body-edit path (spec ac16b3c9):
+            # an explicit invalid scenario_type is rejected before mutation with
+            # a structured error naming the allowed values. Must precede the
+            # generic ValueError handler (InvalidScenarioTypeError subclasses it).
+            return json.dumps({
+                "error": "invalid_scenario_type",
+                "message": f"{exc} No scenario was updated.",
             })
         except ValueError as exc:
             msg = str(exc)

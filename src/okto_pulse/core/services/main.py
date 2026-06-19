@@ -151,6 +151,8 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
     evidence_invalidated_by_semantic_edit,
     require_test_scenario_status_mutable,
     scenario_has_required_evidence,
+    validate_scenario_type,
+    validate_scenario_types_for_write,
     validate_test_scenario_evidence,
 )
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
@@ -3962,6 +3964,14 @@ class SpecService:
         if not result.scalar_one_or_none():
             return None
 
+        # Fail-closed scenario_type (spec ac16b3c9): every scenario in a NEW spec
+        # is a new write — reject an unsupported type before insert/flush, never
+        # normalize.
+        if data.test_scenarios:
+            validate_scenario_types_for_write(
+                [s.model_dump() for s in data.test_scenarios], None
+            )
+
         spec = Spec(
             board_id=board_id,
             title=data.title,
@@ -4105,6 +4115,12 @@ class SpecService:
         target = next((s for s in scenarios if s.get("id") == scenario_id), None)
         if target is None:
             raise ValueError(f"scenario_not_found: {scenario_id}")
+
+        # Fail-closed scenario_type (spec ac16b3c9): an explicit new value on the
+        # body-edit path must be a supported type — reject before mutation, never
+        # normalize. ``None`` means "leave unchanged" and is not validated.
+        if scenario_type is not None:
+            validate_scenario_type(scenario_type)
 
         clearable = {"notes", "linked_criteria"}
         clear_set = set(clear or [])
@@ -4680,6 +4696,17 @@ class SpecService:
         # collection (incoming value OR current state if untouched) and
         # rejects orphan references with a precise error message.
         await _validate_spec_linked_refs(self.db, spec, update_data)
+
+        # Fail-closed scenario_type service gate — defense in depth (spec
+        # ac16b3c9, FR2/IR). Closes the same whole-list bypass for scenario_type:
+        # any caller (UI full-list, REST PUT or MCP) replacing test_scenarios must
+        # not introduce a new/changed invalid scenario_type. Grandfathers unchanged
+        # historical values (matched by id) so legacy data keeps re-serializing;
+        # runs BEFORE any mutation/flush and never normalizes.
+        if update_data.get("test_scenarios") is not None:
+            validate_scenario_types_for_write(
+                update_data["test_scenarios"], spec.test_scenarios
+            )
 
         # NC-9 (test-theater) service gate — defense in depth (spec 6f1e75bf,
         # FR1/BR2). Closes the bypass where any caller (UI full-list, REST or

@@ -52,6 +52,83 @@ SEMANTIC_FIELDS: tuple[str, ...] = (
 #: Editing only these fields preserves status and evidence.
 COSMETIC_FIELDS: tuple[str, ...] = ("title", "notes")
 
+# --------------------------------------------------------------------------
+# Scenario-type vocabulary (spec ac16b3c9 — fail-closed scenario_type)
+# --------------------------------------------------------------------------
+
+#: The one authoritative scenario_type taxonomy for this initiative. Every write
+#: surface (MCP add/update tools, the REST/spec update path and the service
+#: create/update paths) validates against THIS tuple — there is no second
+#: allowlist. Adding a new type (e.g. ``negative``) is a deliberate taxonomy
+#: change, never a silent fallback.
+VALID_SCENARIO_TYPES: tuple[str, ...] = ("unit", "integration", "e2e", "manual")
+
+#: The default applied when a caller OMITS scenario_type entirely. This is a
+#: true default, NOT a normalization of an invalid value — an invalid value
+#: fails closed (see :func:`validate_scenario_type`).
+DEFAULT_SCENARIO_TYPE: str = "integration"
+
+
+class InvalidScenarioTypeError(ValueError):
+    """Raised when a write supplies a scenario_type outside
+    :data:`VALID_SCENARIO_TYPES`.
+
+    Fail-closed: the value is NEVER normalized to another valid type, because
+    silent normalization hides caller intent — an agent that asked for
+    ``negative`` and got ``integration`` believes a negative scenario exists
+    (spec ac16b3c9). The message names the allowed values so agents and UI
+    clients can correct the request.
+    """
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+        self.allowed = VALID_SCENARIO_TYPES
+        super().__init__(
+            f"Invalid scenario_type {value!r}. "
+            f"Allowed values: {', '.join(VALID_SCENARIO_TYPES)}."
+        )
+
+
+def is_valid_scenario_type(value: object) -> bool:
+    """Whether ``value`` is one of the supported scenario types. Read-tolerant —
+    used by list/report paths that must keep rendering historical data."""
+    return isinstance(value, str) and value in VALID_SCENARIO_TYPES
+
+
+def validate_scenario_type(value: object) -> str:
+    """Fail-closed validator: return ``value`` unchanged when it is a supported
+    scenario_type, else raise :class:`InvalidScenarioTypeError`. Never normalizes.
+    """
+    if not is_valid_scenario_type(value):
+        raise InvalidScenarioTypeError(value)
+    return value  # type: ignore[return-value]
+
+
+def validate_scenario_types_for_write(
+    new_scenarios: object, old_scenarios: object
+) -> None:
+    """Whole-list write guard for the spec create/update persistence paths.
+
+    Validates the scenario_type of every scenario that is NEW or whose
+    scenario_type CHANGED relative to ``old_scenarios`` (matched by ``id``).
+    Scenarios whose scenario_type is unchanged are GRANDFATHERED so historical
+    or legacy values keep reading, listing and re-serializing without breaking
+    (spec ac16b3c9 FR5/AC5; the rule only forbids accepting an invalid value on
+    a *new* write). Raises :class:`InvalidScenarioTypeError` on the first
+    new/changed invalid value BEFORE any mutation; never normalizes.
+    """
+    old_by_id: dict[Any, Any] = {
+        s.get("id"): s for s in (old_scenarios or []) if isinstance(s, dict)
+    }
+    for s in new_scenarios or []:
+        if not isinstance(s, dict) or "scenario_type" not in s:
+            continue
+        new_type = s.get("scenario_type")
+        prev = old_by_id.get(s.get("id"))
+        if prev is None or prev.get("scenario_type") != new_type:
+            validate_scenario_type(new_type)
+
+
 #: Required evidence keys per gated status. Each rule group is AND; a group with
 #: more than one key is one-of (OR). Moved verbatim from mcp/server.py.
 EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
