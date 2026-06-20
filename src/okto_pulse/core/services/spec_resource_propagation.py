@@ -351,6 +351,13 @@ class SpecResourcePropagationService:
             copied += 1
 
         if copied:
+            # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): the spec->card
+            # auto-propagation creates NEW card-level mockup entries — gate them (delta
+            # vs the card's existing mockups) BEFORE persisting so a non-compliant spec
+            # mockup can't be laundered onto a blocking board. card.screen_mockups is
+            # still the pre-copy baseline here (``existing`` is a separate list).
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(self.db, card, existing, entity_type="card")
             card.screen_mockups = existing
             flag_modified(card, "screen_mockups")
             await self.db.flush()

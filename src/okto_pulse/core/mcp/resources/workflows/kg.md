@@ -128,7 +128,7 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 
 | Trigger | Pattern |
 |---|---|
-| Spec reaches `done` | Begin canonical consolidation on the spec: extract Decision + Criterion + Constraint + Assumption + Alternative nodes. `approved` and `validated` remain working/diagnostic only. |
+| Spec reaches `done` | Begin canonical consolidation on the spec. The **cognitive** candidates you may create are `Decision`, `Assumption`, `Alternative`. `Criterion` (from acceptance criteria) and `Constraint` (from technical requirements / business rules) are **deterministic-only**: the deterministic worker materializes them — reference the existing deterministic nodes, never create `Criterion`/`Constraint` on the cognitive path. `approved` and `validated` remain working/diagnostic only. |
 | Sprint closes (moves to `closed`) | Consolidate retrospective Learnings + Bugs + Learning→validates→Bug edges |
 | Q&A on an ideation/refinement/spec gets an answer that contains a decision | Carry decision into next formalized spec first, then consolidate from that spec-side formalization |
 | Bug card moves to `done` with root cause + fix narrative | Consolidate a Learning node that validates the Bug node |
@@ -144,7 +144,7 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 **Mandatory closeout sequence:**
 ```
 1. Read complete context: okto_pulse_get_spec_context or okto_pulse_get_task_context
-2. Identify cognitive candidates: Learning, Decision, Assumption, Risk, Alternative, root cause, rejected alternative, or process gap
+2. Identify cognitive candidates — the cognitive-writable node types are `Decision`, `Assumption`, `Alternative` (spec closeout) and `Learning` (bug closeout). Risk, root cause, rejected alternative, and process gap are *content/classification expressed within those node types*, not new node types. `Criterion` and `Constraint` are **deterministic-only** — reference existing deterministic nodes by id; never add them as cognitive candidates.
 3. okto_pulse_kg_begin_consolidation(board_id, artifact_type, artifact_id, raw_content, deterministic_candidates=[])
 4. If nothing_changed=true: okto_pulse_kg_abort_consolidation and report attempted closeout
 5. okto_pulse_kg_add_node_candidate and okto_pulse_kg_add_edge_candidate for applicable candidates
@@ -158,6 +158,32 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 - nothing_changed: session_id or aborted session, plus evidence that reconciliation found no semantic change
 - not_applicable: objective reason no cognitive candidate existed after context review
 - blocked: the tool/error that prevented closeout
+
+### Node-type ownership by writer path (allowlist)
+
+KG node types are owned by a specific **writer path**. A consolidation candidate is
+rejected when its `node_type` is not permitted for the writer path that proposes it —
+this is distinct from a *missing semantic connectivity* failure.
+
+| Node type | Owner | Created by |
+|---|---|---|
+| `Criterion` (from acceptance criteria), `Constraint` (from technical requirements / business rules) | deterministic | **deterministic worker only** — never the cognitive path |
+| `Decision` | dual | cognitive **or** deterministic |
+| `Learning` | cognitive | cognitive (bug closeout) |
+| `Alternative`, `Assumption` | cognitive | cognitive (spec closeout) |
+
+- The **deterministic worker** materializes `Criterion`/`Constraint` from the spec's
+  structured acceptance criteria / technical requirements / business rules. The
+  **cognitive** consolidation path may create only `Decision`, `Learning`,
+  `Alternative`, `Assumption`.
+- When a cognitive decision needs to cite a `Criterion` or `Constraint`, **reference the
+  existing deterministic node by id** (or wait for the deterministic worker to
+  materialize it) — do **not** recreate the node on the cognitive path.
+- A cognitive session proposing a `Criterion` or `Constraint` candidate fails **before
+  any graph mutation or session commit** with `status=source_type_not_supported`,
+  `reason=writer_not_connectivity_owner`. Remediation: remove the invalid candidate,
+  abort and recreate the session without it, or route the materialization through the
+  deterministic owner.
 
 ## KG Governance — Operator Hygiene
 

@@ -448,6 +448,18 @@ def create_app(
     async def health_check():
         return {"status": "healthy", "version": settings.app_version}
 
+    # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): the gate runs inside the
+    # service-layer entity update methods, so a bulk screen_mockups REST update that
+    # violates a blocking Design System gate raises DesignSystemError. Translate it to a
+    # clean, actionable structured response (FR8) on every REST surface in one place.
+    from fastapi.responses import JSONResponse
+
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    @app.exception_handler(DesignSystemError)
+    async def _design_system_error_handler(_request, exc: DesignSystemError):
+        return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
+
     # API routes
     app.include_router(api_router)
 

@@ -247,6 +247,10 @@ class KGConnectivityViolation:
             "writer_path": self.writer_path,
             "source_resolution_status": self.source_resolution_status.value,
             "remediation_hint": self.remediation_hint,
+            # Alias (spec f24c43f7 / card 4836a25b): expose the actionable remediation
+            # under the contract-stable key `remediation` too, keeping `remediation_hint`
+            # for backward compatibility.
+            "remediation": self.remediation_hint,
             "reason": self.reason,
             "observed_endpoints": list(self.observed_endpoints),
         }
@@ -615,7 +619,11 @@ class KGNodeConnectivityGuard:
                         missing_endpoint=writer_class.value,
                         status=SourceResolutionStatus.SOURCE_TYPE_NOT_SUPPORTED,
                         remediation_hint=(
-                            "Route node creation through the connectivity owner "
+                            "This node_type is owned by a different writer path "
+                            "(not permitted for this writer). Remediate by one of: "
+                            "(1) remove the invalid candidate from the session; "
+                            "(2) abort and recreate the session without it; "
+                            "(3) route node creation through the connectivity owner "
                             "for this node_type, or reference an existing node."
                         ),
                         reason="writer_not_connectivity_owner",

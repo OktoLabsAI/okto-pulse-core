@@ -361,6 +361,12 @@ class Board(Base):
     realm_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     # Board settings (JSON): {max_scenarios_per_card: int, skip_test_coverage_global: bool}
     settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Applied DefaultBoardConfiguration snapshot metadata (spec 9df814bc / FR4).
+    # Lives OUTSIDE Board.settings so it never affects BoardSettings/governance
+    # normalization. Shape: {template_id, template_version, scope, applied_at,
+    # applied_by, override_summary}. Null for boards created via the no-active-template
+    # fallback or legacy boards (no backfill — TR4).
+    default_config_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -1820,10 +1826,102 @@ class BoardGuideline(Base):
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # Default-template provenance (spec 8a2fad91 / FR3). Nullable: links created
+    # manually or before the umbrella keep NULL (legacy/forward-only, TR5).
+    template_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    guideline_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Relationships
     board: Mapped["Board"] = relationship("Board")
     guideline: Mapped["Guideline"] = relationship("Guideline", back_populates="board_links")
+
+
+class DesignSystem(Base):
+    """Reusable Design System — a global catalog entry or a board-inline artifact
+    (spec 3a006f65 / card 1392f59d). Versioned catalog row: ``version`` bumps on a
+    title/payload change (including inline) so the mockup gate can compare a stable
+    persisted version/snapshot. Inline systems require ``board_id`` and are never
+    eligible as a global default."""
+
+    __tablename__ = "design_systems"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'global'")
+    )
+    board_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'active'")
+    )
+    owner_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class BoardDesignSystem(Base):
+    """The single effective Design System linked to a board (spec 3a006f65 / card
+    1392f59d). One row per board (UniqueConstraint) — singular effective cardinality;
+    link/unlink upserts/deletes it. Captures ``design_system_version`` at link time so
+    the gate can compare a stable identity."""
+
+    __tablename__ = "board_design_systems"
+    __table_args__ = (UniqueConstraint("board_id", name="uq_board_design_system"),)
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    design_system_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("design_systems.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    design_system_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DesignSystemGateAudit(Base):
+    """Structured, queryable audit of MockupDesignSystemGate ADVISORY outcomes (spec
+    3a006f65 / card 0192f58d). Advisory persists the mockup but records a warning row
+    so the gate decision is reconstituible by query (mockup_id, board_id, expected
+    Design System identity + reason). Blocking failures abort the transaction and are
+    surfaced as a structured error instead — no row here."""
+
+    __tablename__ = "design_system_gate_audit"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    entity_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    mockup_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    expected_design_system_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    expected_design_system_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provided_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class ActivityLog(Base):
@@ -1841,6 +1939,73 @@ class ActivityLog(Base):
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
     actor_name: Mapped[str] = mapped_column(String(255), nullable=False)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DefaultBoardConfiguration(Base):
+    """Versioned GLOBAL template of default board configuration (spec 9df814bc /
+    card d86f4f96, FR1).
+
+    Snapshot-at-creation source: ``DefaultBoardConfigurationService`` is the single
+    provider that resolves the active template and applies it to a new board's
+    effective settings. The applied snapshot metadata lives on
+    ``Board.default_config_snapshot`` (OUTSIDE ``Board.settings``); future template
+    changes never mutate existing boards (TR5). New table — created by
+    ``Base.metadata.create_all`` on init (no Alembic here).
+    """
+
+    __tablename__ = "default_board_configurations"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Lifecycle status (API contract): draft | active | inactive.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=False, index=True)
+    scope: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="global", index=True
+    )
+    # Effective default settings, validated as BoardSettings by the service (TR1).
+    settings_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # Guideline refs consumed by the guidelines adapter (card #3) — stored here,
+    # materialized there within the same create_board transaction (TR10).
+    guideline_default_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Design System default ref consumed by the design-system adapter (card #4).
+    # Shape: {design_system_id, version, snapshot, gate_mode}.
+    design_system_default_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DefaultBoardConfigurationAudit(Base):
+    """Dedicated audit trail for GLOBAL default-board-configuration template events
+    (spec 9df814bc / card d86f4f96, FR9).
+
+    Templates are global (no ``board_id``), so they cannot use the board-scoped
+    ``ActivityLog``. Board-scoped events (template applied to a board, no-template
+    fallback) stay in ``ActivityLog``. New table — created by ``create_all``.
+    """
+
+    __tablename__ = "default_board_configuration_audit"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    template_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Stable event types: default_board_configuration_created / _activated / _deactivated.
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(String(50), nullable=False, default="global")
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -1703,6 +1703,36 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
                 "agents": len(board_agents),
             },
         }
+
+        # Surface the board's effective Design System + canonical gate mode so an agent
+        # sees the mockup mandate in the board overview (spec 24f2e786, FR1-FR4) instead of
+        # only discovering it by being rejected at the MockupDesignSystemGate. The resolver
+        # dict shape differs by source (board_link carries title/status/scope/exists;
+        # default_snapshot carries gate_mode but NOT title), so normalize to a stable
+        # {design_system_id, title|None, version, source}. gate_mode is read ONLY from
+        # BoardSettings (canonical) — never the snapshot mirror. Read-only: the gate itself
+        # is untouched.
+        from okto_pulse.core.services.design_system import DesignSystemService
+
+        _ds_effective_raw = await DesignSystemService(db).get_board_effective_design_system(
+            board_id
+        )
+        _ds_effective = (
+            {
+                "design_system_id": _ds_effective_raw.get("design_system_id"),
+                "title": _ds_effective_raw.get("title"),
+                "version": _ds_effective_raw.get("version"),
+                "source": _ds_effective_raw.get("source"),
+            }
+            if _ds_effective_raw
+            else None
+        )
+        _ds_gate_mode = (board.settings or {}).get("design_system_gate_mode", "off") or "off"
+        payload["design_system"] = {
+            "effective": _ds_effective,
+            "gate_mode": _ds_gate_mode,
+            "mandate": bool(_ds_effective) and _ds_gate_mode == "blocking",
+        }
         if "ideations" in wanted:
             payload["ideations"] = [
                 {
@@ -10715,6 +10745,15 @@ def _sanitize_html(html: str) -> str:
     return sanitized
 
 
+def _mockup_gate_imports():
+    from okto_pulse.core.services.design_system import (
+        DesignSystemError,
+        MockupDesignSystemGate,
+        normalize_design_system_ref,
+    )
+    return MockupDesignSystemGate, DesignSystemError, normalize_design_system_ref
+
+
 @mcp.tool()
 async def okto_pulse_add_screen_mockup(
     board_id: str,
@@ -10724,10 +10763,20 @@ async def okto_pulse_add_screen_mockup(
     description: str = "",
     screen_type: str = "page",
     html_content: str = "",
+    design_system_ref: str = "",
+    design_system_version: int | None = None,
+    design_system_evidence=None,
 ) -> str:
     """
     Add a screen mockup to any entity (spec, ideation, refinement, card, or story).
-    Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard."""
+    Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard.
+
+    design_system_ref (Design System id), design_system_version and design_system_evidence
+    feed the MockupDesignSystemGate (spec 3a006f65): when the board has an effective Design
+    System and design_system_gate_mode=blocking, an invalid/missing ref is rejected BEFORE
+    persistence (design_system_required / design_system_not_found /
+    design_system_version_mismatch / design_system_evidence_missing); advisory persists +
+    returns a design_system_gate warning; off / no Design System does not block."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10742,6 +10791,7 @@ async def okto_pulse_add_screen_mockup(
     import hashlib
     import time
 
+    Gate, GateErr, normalize_ref = _mockup_gate_imports()
     screen_id = "sm_" + hashlib.md5(f"{entity_id}{title}{time.time()}".encode()).hexdigest()[:8]
 
     screen = {
@@ -10752,12 +10802,22 @@ async def okto_pulse_add_screen_mockup(
         "html_content": _sanitize_html(html_content),
         "annotations": [],
         "order": 0,
+        "design_system_ref": normalize_ref(design_system_ref, design_system_version),
+        "design_system_evidence": design_system_evidence,
     }
 
     async with get_db_for_mcp() as db:
         entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
         if not entity:
             return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+
+        # MockupDesignSystemGate runs BEFORE persistence (blocking aborts the txn).
+        try:
+            gate_outcome = await Gate(db).evaluate_screen(
+                board_id, screen, entity_type=entity_type, entity_id=entity_id
+            )
+        except GateErr as e:
+            return json.dumps(e.to_dict())
 
         screens = list(entity.screen_mockups or [])
         screen["order"] = len(screens)
@@ -10766,7 +10826,10 @@ async def okto_pulse_add_screen_mockup(
         await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
         await db.commit()
 
-    return json.dumps({"success": True, "entity_type": entity_type, "screen": screen}, default=str)
+    return json.dumps(
+        {"success": True, "entity_type": entity_type, "screen": screen, "design_system_gate": gate_outcome},
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -10779,9 +10842,17 @@ async def okto_pulse_update_screen_mockup(
     description: str = "",
     html_content: str = "",
     screen_type: str = "",
+    design_system_ref: str = "",
+    design_system_version: int | None = None,
+    design_system_evidence=None,
 ) -> str:
     """
-    Update an existing screen mockup's fields on any entity."""
+    Update an existing screen mockup's fields on any entity. When a gate-relevant field
+    changes (html_content / design_system_ref / design_system_evidence) the
+    MockupDesignSystemGate re-evaluates this mockup BEFORE persistence (delta-only):
+    blocking rejects an invalid Design System ref/version/evidence with an actionable
+    error; advisory persists + returns a design_system_gate warning; off / no Design
+    System does not block."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10793,6 +10864,8 @@ async def okto_pulse_update_screen_mockup(
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
 
+    Gate, GateErr, normalize_ref = _mockup_gate_imports()
+
     async with get_db_for_mcp() as db:
         entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
         if not entity:
@@ -10803,6 +10876,7 @@ async def okto_pulse_update_screen_mockup(
         if not screen:
             return json.dumps({"error": f"Screen '{screen_id}' not found"})
 
+        original = dict(screen)  # pre-edit snapshot for the delta comparison
         if title:
             screen["title"] = title
         if description:
@@ -10811,11 +10885,26 @@ async def okto_pulse_update_screen_mockup(
             screen["screen_type"] = screen_type
         if html_content:
             screen["html_content"] = _sanitize_html(html_content)
+        if design_system_ref:
+            screen["design_system_ref"] = normalize_ref(design_system_ref, design_system_version)
+        if design_system_evidence is not None:
+            screen["design_system_evidence"] = design_system_evidence
+
+        # delta-only: re-gate this mockup only if a gate-relevant field changed.
+        try:
+            gate_outcomes = await Gate(db).gate_delta(
+                board_id, [original], [screen], entity_type=entity_type, entity_id=entity_id
+            )
+        except GateErr as e:
+            return json.dumps(e.to_dict())
+        gate_outcome = gate_outcomes[0] if gate_outcomes else {"outcome": "not_applicable"}
 
         await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
         await db.commit()
 
-    return json.dumps({"success": True, "screen": screen}, default=str)
+    return json.dumps(
+        {"success": True, "screen": screen, "design_system_gate": gate_outcome}, default=str
+    )
 
 
 @mcp.tool()
@@ -13113,6 +13202,446 @@ async def okto_pulse_transition_amendment_revision(
             await db.commit()
             return json.dumps({"success": True, "amendment_revision": result}, default=str)
         except AmendmentRevisionApiError as e:
+            return json.dumps(e.to_dict())
+
+
+def _default_board_config_imports():
+    from okto_pulse.core.services.default_board_config_api import (
+        DefaultBoardConfigApiService,
+    )
+    from okto_pulse.core.services.default_board_configuration import (
+        DefaultBoardConfigurationError,
+    )
+    return DefaultBoardConfigApiService, DefaultBoardConfigurationError
+
+
+@mcp.tool()
+async def okto_pulse_get_active_default_board_config(board_id: str, scope: str = "global") -> str:
+    """Get the active default board-configuration template for a scope (admin read,
+    spec 9df814bc / FR7). REST twin: GET /default-board-config/active. Returns
+    {scope, active|null}. board_id anchors the agent permission context."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            return json.dumps(await Svc(db).get_active(scope=scope), default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_list_default_board_config_versions(board_id: str, scope: str = "global") -> str:
+    """List default board-configuration template versions for a scope + the active id
+    (admin read). REST twin: GET /default-board-config/versions."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            return json.dumps(await Svc(db).list_versions(scope=scope), default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_get_board_default_config_diff(board_id: str) -> str:
+    """Field-level diff between the template snapshot applied to a board and its
+    current settings (admin read, FR7). REST twin: GET
+    /boards/{board_id}/default-config-diff. board_not_found if the board is missing
+    or inaccessible."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            return json.dumps(await Svc(db).get_board_diff(board_id=board_id), default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_create_default_board_config_version(
+    board_id: str,
+    settings_payload: dict | None = None,
+    scope: str = "global",
+    guideline_default_refs: list | None = None,
+    design_system_default_ref: dict | None = None,
+    activate: bool = False,
+) -> str:
+    """Create a new default board-configuration template version (admin write).
+    REST twin: POST /default-board-config/versions. Validated as BoardSettings;
+    guideline defaults must be global; design_system gate_mode must be valid.
+    activate=True activates it (single-active enforced). Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            result = await Svc(db).create_version(
+                actor=ctx.agent_id,
+                settings_payload=settings_payload,
+                scope=scope,
+                guideline_default_refs=guideline_default_refs,
+                design_system_default_ref=design_system_default_ref,
+                activate=activate,
+            )
+            await db.commit()
+            return json.dumps(result, default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_activate_default_board_config_version(board_id: str, template_id: str) -> str:
+    """Activate a default board-configuration template version (admin write);
+    deactivates every other active version in the scope. REST twin: POST
+    /default-board-config/versions/{template_id}/activate. Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            result = await Svc(db).activate_version(template_id=template_id, actor=ctx.agent_id)
+            await db.commit()
+            return json.dumps(result, default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_deactivate_default_board_config_version(board_id: str, template_id: str) -> str:
+    """Deactivate a default board-configuration template version (admin write).
+    REST twin: POST /default-board-config/versions/{template_id}/deactivate.
+    Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            result = await Svc(db).deactivate_version(template_id=template_id, actor=ctx.agent_id)
+            await db.commit()
+            return json.dumps(result, default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_list_default_guideline_candidates(
+    board_id: str, scope: str = "global", template_id: str | None = None
+) -> str:
+    """List GLOBAL catalog guidelines with derived eligibility + current default
+    status from the umbrella template (spec 8a2fad91 / FR1, admin read). REST twin:
+    GET /guidelines/default-candidates. Uses the active template by default;
+    template_id inspects a specific version. Perm: BOARD_READ."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            return json.dumps(
+                await Svc(db).list_default_candidates(scope=scope, template_id=template_id),
+                default=str,
+            )
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_update_default_guideline_refs(
+    board_id: str, template_id: str, guideline_default_refs: list | None = None
+) -> str:
+    """Update a template's guideline_default_refs using only global catalog guidelines
+    (spec 8a2fad91 / FR1, admin write). REST twin: POST
+    /default-board-configurations/{template_id}/guidelines. Inline/missing/non-global
+    refs are rejected fail-closed (structured error). An ACTIVE template is
+    copy-on-write (a new version is created + activated); a draft mutates in-place.
+    Returns the EFFECTIVE template. Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            result = await Svc(db).update_template_guidelines(
+                template_id=template_id,
+                guideline_default_refs=guideline_default_refs,
+                actor=ctx.agent_id,
+            )
+            await db.commit()
+            return json.dumps(result, default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_set_default_design_system(
+    board_id: str,
+    template_id: str,
+    design_system_id: str,
+    gate_mode: str = "off",
+    version: int | None = None,
+    snapshot: dict | None = None,
+) -> str:
+    """Set the Design System default reference + canonical gate mode on a template
+    (spec 3a006f65 / FR3, admin write). REST twin: POST
+    /default-board-configurations/{template_id}/design-system. The design_system_id must
+    be a real global active DesignSystem (inline/synthetic rejected fail-closed). An
+    active template is copy-on-write (new version). Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err = _default_board_config_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            result = await Svc(db).set_template_design_system(
+                template_id=template_id,
+                design_system_id=design_system_id,
+                actor=ctx.agent_id,
+                version=version,
+                snapshot=snapshot,
+                gate_mode=gate_mode,
+            )
+            await db.commit()
+            return json.dumps(result, default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+def _design_system_imports():
+    from okto_pulse.core.services.design_system import (
+        DesignSystemError,
+        DesignSystemService,
+        serialize_design_system,
+    )
+    return DesignSystemService, DesignSystemError, serialize_design_system
+
+
+@mcp.tool()
+async def okto_pulse_list_design_systems(board_id: str, scope: str = "global") -> str:
+    """List Design Systems (spec 3a006f65 / FR2, admin read). scope='global' lists the
+    global catalog; scope='inline' lists THIS board's inline Design Systems. REST twin:
+    GET /design-systems. Perm: BOARD_READ."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err, ser = _design_system_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            items = await Svc(db).list_catalog(scope=scope, board_id=board_id)
+            return json.dumps([ser(d) for d in items], default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_get_design_system(board_id: str, design_system_id: str) -> str:
+    """Get a Design System by id (admin read). REST twin: GET /design-systems/{id}.
+    Perm: BOARD_READ."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err, ser = _design_system_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            return json.dumps(ser(await Svc(db).require_design_system(design_system_id)), default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_create_design_system(
+    board_id: str,
+    title: str,
+    scope: str = "global",
+    payload: dict | None = None,
+    status: str = "active",
+) -> str:
+    """Create a Design System (spec 3a006f65 / FR1, admin write). scope='global' = a
+    catalog entry; scope='inline' = bound to THIS board (board_id). Inline can never be
+    a global default. REST twin: POST /design-systems. Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err, ser = _design_system_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            ds = await Svc(db).create_design_system(
+                ctx.agent_id,
+                title=title,
+                scope=scope,
+                board_id=board_id if scope == "inline" else None,
+                payload=payload,
+                status=status,
+            )
+            await db.commit()
+            return json.dumps(ser(ds), default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_update_design_system(
+    board_id: str,
+    design_system_id: str,
+    title: str | None = None,
+    payload: dict | None = None,
+    status: str | None = None,
+) -> str:
+    """Update a Design System (admin write); a title/payload change bumps version.
+    REST twin: PATCH /design-systems/{id}. Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err, ser = _design_system_imports()
+    kwargs = {
+        k: v for k, v in (("title", title), ("payload", payload), ("status", status))
+        if v is not None
+    }
+    async with get_db_for_mcp() as db:
+        try:
+            ds = await Svc(db).update_design_system(design_system_id, ctx.agent_id, **kwargs)
+            await db.commit()
+            return json.dumps(ser(ds), default=str)
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_delete_design_system(board_id: str, design_system_id: str) -> str:
+    """Delete a Design System (admin write). REST twin: DELETE /design-systems/{id}.
+    Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err, _ser = _design_system_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            deleted = await Svc(db).delete_design_system(design_system_id, ctx.agent_id)
+            if not deleted:
+                return json.dumps(
+                    {"error": "design_system_not_found", "code": "design_system_not_found"}
+                )
+            await db.commit()
+            return json.dumps({"deleted": True, "id": design_system_id})
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_link_board_design_system(board_id: str, design_system_id: str) -> str:
+    """Set the board's single effective Design System (admin write). REST twin: POST
+    /boards/{board_id}/design-system. Inline systems can only link to their own board.
+    Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err, _ser = _design_system_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            link = await Svc(db).link_design_system_to_board(board_id, design_system_id)
+            await db.commit()
+            return json.dumps(
+                {
+                    "board_id": link.board_id,
+                    "design_system_id": link.design_system_id,
+                    "design_system_version": link.design_system_version,
+                },
+                default=str,
+            )
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_unlink_board_design_system(board_id: str) -> str:
+    """Remove the board's effective Design System link (admin write). REST twin: DELETE
+    /boards/{board_id}/design-system. Perm: SPECS_UPDATE."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err, _ser = _design_system_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            unlinked = await Svc(db).unlink_design_system_from_board(board_id)
+            await db.commit()
+            return json.dumps({"unlinked": unlinked})
+        except Err as e:
+            return json.dumps(e.to_dict())
+
+
+@mcp.tool()
+async def okto_pulse_get_board_design_system(board_id: str) -> str:
+    """Resolve the board's EFFECTIVE Design System from real persisted state (admin
+    read) — explicit board link else umbrella default snapshot, or null. REST twin: GET
+    /boards/{board_id}/design-system. Perm: BOARD_READ."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+    Svc, Err, _ser = _design_system_imports()
+    async with get_db_for_mcp() as db:
+        try:
+            effective = await Svc(db).get_board_effective_design_system(board_id)
+            return json.dumps({"board_id": board_id, "effective": effective}, default=str)
+        except Err as e:
             return json.dumps(e.to_dict())
 
 

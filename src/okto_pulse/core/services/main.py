@@ -62,7 +62,6 @@ from okto_pulse.core.models.schemas import (
     AgentCreate,
     AgentUpdate,
     BoardCreate,
-    BoardSettings,
     BoardShareCreate,
     BoardShareUpdate,
     BoardUpdate,
@@ -810,8 +809,18 @@ async def propagate_artifacts(
     # Propagate mockups
     copied_mockups = _filter_mockups(source_mockups, mockup_ids)
     if copied_mockups:
-        existing = target_entity.screen_mockups or []
-        target_entity.screen_mockups = existing + copied_mockups
+        existing = list(target_entity.screen_mockups or [])
+        new_set = existing + copied_mockups
+        # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): a propagated/copied
+        # mockup is a NEW entry on the target board — gate it (delta vs the existing set)
+        # BEFORE assigning so a non-compliant mockup can't be laundered onto a blocking
+        # board via propagation. Covers create_refinement propagation + copy_mockups_to_card.
+        from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+        target_entity.screen_mockups = existing  # keep baseline for the gate's delta
+        await gate_entity_screen_mockups(
+            db, target_entity, new_set, entity_type=type(target_entity).__name__.lower()
+        )
+        target_entity.screen_mockups = new_set
 
     # Propagate knowledge bases (DB rows) — accepts ORM objects or dicts
     if target_kb_class and source_knowledge_bases:
@@ -994,16 +1003,28 @@ class BoardService:
 
     async def create_board(self, user_id: str, data: BoardCreate, realm_id: str | None = None) -> Board:
         """Create a new board."""
+        from okto_pulse.core.services.default_board_configuration import (
+            BOARD_EVENT_APPLIED,
+            BOARD_EVENT_FALLBACK,
+            DefaultBoardConfigurationService,
+        )
+
+        # FR3: the single provider resolves the active default template (if any)
+        # and produces the effective settings + snapshot metadata in THIS same
+        # transaction. No active template -> graceful fallback (BoardSettings()
+        # default, no snapshot, no error — AC11). Snapshot metadata is persisted on
+        # Board.default_config_snapshot, OUTSIDE Board.settings (FR4).
+        _config_service = DefaultBoardConfigurationService(self.db)
+        effective_settings, snapshot_meta = await _config_service.build_snapshot_for_create(
+            settings_override=getattr(data, "settings", None), applied_by=user_id
+        )
         board = Board(
             name=data.name,
             description=data.description,
             owner_id=user_id,
             realm_id=realm_id,
-            settings=(
-                data.settings.model_dump(mode="json")
-                if getattr(data, "settings", None)
-                else BoardSettings().model_dump(mode="json")
-            ),
+            settings=effective_settings,
+            default_config_snapshot=snapshot_meta,
         )
         self.db.add(board)
         await self.db.flush()
@@ -1016,6 +1037,35 @@ class BoardService:
             actor_name=actor_name,
             details={"name": data.name},
         )
+        # FR9: board-scoped audit of which default-config path created the board.
+        if snapshot_meta is not None:
+            await self._log_activity(
+                board_id=board.id,
+                action=BOARD_EVENT_APPLIED,
+                actor_type="user",
+                actor_id=user_id,
+                actor_name=actor_name,
+                details={
+                    "template_id": snapshot_meta["template_id"],
+                    "template_version": snapshot_meta["template_version"],
+                    "override_summary": snapshot_meta["override_summary"],
+                },
+            )
+        else:
+            await self._log_activity(
+                board_id=board.id,
+                action=BOARD_EVENT_FALLBACK,
+                actor_type="user",
+                actor_id=user_id,
+                actor_name=actor_name,
+                details={"reason": "no_active_default_board_configuration"},
+            )
+        # FR5/FR6/#3/#4: the umbrella service orchestrates every default adapter
+        # (guidelines + design system) onto the new board IN THIS transaction. Any
+        # adapter failure raises default_materialization_failed so the whole
+        # create_board reverts (no partial board/link/snapshot); no active
+        # template -> no-op.
+        await _config_service.apply_default_config_to_board(board.id, actor=user_id)
         # Eagerly bootstrap the per-board Kùzu graph. This keeps board
         # creation on the slow path (~1-2s) so subsequent consolidation /
         # MCP query paths stay on the hot path.
@@ -1563,6 +1613,11 @@ class CardService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
+            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, card, update_data["screen_mockups"], entity_type="card"
+            )
 
         card_json_fields = {"labels", "test_scenario_ids", "conclusions", "screen_mockups", "knowledge_bases"}
         for key, value in update_data.items():
@@ -4133,7 +4188,7 @@ class SpecService:
                 "acceptance_criterion", data.acceptance_criteria
             ),
             test_scenarios=[s.model_dump() for s in data.test_scenarios] if data.test_scenarios else None,
-            screen_mockups=[s.model_dump() for s in data.screen_mockups] if data.screen_mockups else None,
+            screen_mockups=None,  # assigned after the Design System gate (below)
             business_rules=[r.model_dump() for r in data.business_rules] if data.business_rules else None,
             api_contracts=[c.model_dump() for c in data.api_contracts] if data.api_contracts else None,
             integration_requirements=[ir.model_dump() for ir in data.integration_requirements] if data.integration_requirements else None,
@@ -4146,6 +4201,19 @@ class SpecService:
             ideation_id=data.ideation_id,
             refinement_id=data.refinement_id,
         )
+        # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate mockups submitted
+        # at creation BEFORE persistence — the create twin of the update_spec gate. The
+        # baseline is the entity's (empty) mockups, so every submitted screen is
+        # evaluated; assign only if the gate does not raise.
+        _submitted_mockups = (
+            [s.model_dump() for s in data.screen_mockups] if data.screen_mockups else None
+        )
+        if _submitted_mockups:
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, spec, _submitted_mockups, entity_type="spec"
+            )
+            spec.screen_mockups = _submitted_mockups
         self.db.add(spec)
         await self.db.flush()
 
@@ -4870,6 +4938,17 @@ class SpecService:
         if update_data.get("test_scenarios") is not None:
             await self._enforce_test_scenario_evidence_gate(
                 spec, update_data["test_scenarios"], user_id
+            )
+
+        # MockupDesignSystemGate (spec 3a006f65, card 0192f58d) — defense in depth:
+        # gate the bulk screen_mockups write (UI full-list / REST) the same way the MCP
+        # tool does, BEFORE persistence. Delta-only: only new/changed mockups; legacy
+        # untouched mockups are skipped; screens already gated by the MCP tool in this
+        # transaction are skipped. Blocking raises pre-persist; advisory audits.
+        if update_data.get("screen_mockups") is not None:
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, spec, update_data["screen_mockups"], entity_type="spec"
             )
 
         json_fields = {
@@ -6396,11 +6475,20 @@ class StoryService:
             status=data.status,
             assignee_id=data.assignee_id,
             created_by=user_id,
-            screen_mockups=[
-                item.model_dump() if hasattr(item, "model_dump") else item
-                for item in (data.screen_mockups or [])
-            ] or None,
+            screen_mockups=None,  # assigned after the Design System gate (below)
         )
+        # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate mockups submitted
+        # at creation BEFORE persistence (old=[] baseline so every screen is evaluated).
+        _submitted_mockups = [
+            item.model_dump() if hasattr(item, "model_dump") else item
+            for item in (data.screen_mockups or [])
+        ] or None
+        if _submitted_mockups:
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, story, _submitted_mockups, entity_type="story"
+            )
+            story.screen_mockups = _submitted_mockups
         self.db.add(story)
         await self.db.flush()
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
@@ -6491,6 +6579,11 @@ class StoryService:
                 item.model_dump() if hasattr(item, "model_dump") else item
                 for item in update_data["screen_mockups"]
             ]
+            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, story, update_data["screen_mockups"], entity_type="story"
+            )
         for key, value in update_data.items():
             setattr(story, key, value)
             if key in {"labels", "screen_mockups"}:
@@ -6699,9 +6792,19 @@ class StoryService:
             if link:
                 links.append(link)
 
+        _old_ideation_mockups = list(ideation.screen_mockups or [])
         propagated = self._propagate_story_mockups(stories, ideation, data.mockup_ids)
         if propagated:
             flag_modified(ideation, "screen_mockups")
+            # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): convert_stories
+            # rewrites story mockups with FRESH ids onto the ideation — gate the new
+            # entries (delta vs the pre-propagation set) BEFORE flush so a non-compliant
+            # legacy mockup can't be laundered onto a blocking board.
+            from okto_pulse.core.services.design_system import MockupDesignSystemGate
+            await MockupDesignSystemGate(self.db).gate_delta(
+                ideation.board_id, _old_ideation_mockups, list(ideation.screen_mockups or []),
+                entity_type="ideation", entity_id=ideation.id,
+            )
         await self.db.flush()
         await self.db.refresh(ideation)
         for link in links:
@@ -6929,6 +7032,11 @@ class IdeationService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
+            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, ideation, update_data["screen_mockups"], entity_type="ideation"
+            )
 
         ideation_json_fields = {"scope_assessment", "labels", "screen_mockups"}
         for key, value in update_data.items():
@@ -7671,14 +7779,24 @@ class RefinementService:
             out_of_scope=data.out_of_scope,
             analysis=data.analysis,
             decisions=data.decisions,
-            screen_mockups=[
-                item.model_dump() if hasattr(item, "model_dump") else item
-                for item in (data.screen_mockups or [])
-            ] or None,  # manual mockups only; propagation adds via propagate_artifacts
+            screen_mockups=None,  # assigned after the Design System gate (below)
             assignee_id=data.assignee_id,
             created_by=user_id,
             labels=data.labels or ideation.labels,
         )
+        # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate the MANUAL mockups
+        # submitted at creation BEFORE persistence (old=[] baseline). Propagated mockups
+        # added below by propagate_artifacts are gated inside that helper.
+        _submitted_mockups = [
+            item.model_dump() if hasattr(item, "model_dump") else item
+            for item in (data.screen_mockups or [])
+        ] or None
+        if _submitted_mockups:
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, refinement, _submitted_mockups, entity_type="refinement"
+            )
+            refinement.screen_mockups = _submitted_mockups
         self.db.add(refinement)
         await self.db.flush()
 
@@ -7799,6 +7917,11 @@ class RefinementService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
+            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, refinement, update_data["screen_mockups"], entity_type="refinement"
+            )
 
         refinement_json_fields = {"in_scope", "out_scope", "labels", "screen_mockups"}
         for key, value in update_data.items():
@@ -8513,6 +8636,51 @@ class GuidelineService:
         link.priority = priority
         await self.db.flush()
         return True
+
+    async def apply_default_guidelines(
+        self,
+        board_id: str,
+        refs: list,
+        *,
+        template_id: str,
+        template_version: int,
+        actor: str = "system",
+    ) -> list[BoardGuideline]:
+        """Materialize a new board's default guideline links from the active default
+        template's resolved refs (spec 8a2fad91 / card 2803c136 / FR3). Each created
+        link records the priority + the template provenance (template_id,
+        template_version) + the guideline_version captured in the ref. Runs in the
+        CALLER's transaction (TR3 — no commit here), so any failure aborts the whole
+        ``create_board`` with no partial board / orphan links. Idempotent per
+        ``uq_board_guideline``: an existing board/guideline link is preserved untouched;
+        intra-batch duplicate guideline_ids are de-duped first-wins, so the resulting
+        priority/provenance is deterministic and never duplicated (TR4). The umbrella
+        owns resolution + fail-closed validation; this is purely the writer (it is the
+        single materialization point and the ts_a48e70ee failure-injection target)."""
+        existing = await self.db.execute(
+            select(BoardGuideline.guideline_id).where(BoardGuideline.board_id == board_id)
+        )
+        already_linked = set(existing.scalars())
+        created: list[BoardGuideline] = []
+        seen: set[str] = set()
+        for ref in refs or []:
+            guideline_id = ref["guideline_id"]
+            if guideline_id in seen or guideline_id in already_linked:
+                continue  # uq_board_guideline + intra-template de-dup (first wins)
+            seen.add(guideline_id)
+            link = BoardGuideline(
+                board_id=board_id,
+                guideline_id=guideline_id,
+                priority=int(ref.get("priority", 0) or 0),
+                template_id=template_id,
+                template_version=template_version,
+                guideline_version=ref.get("guideline_version"),
+            )
+            self.db.add(link)
+            created.append(link)
+        if created:
+            await self.db.flush()
+        return created
 
 
 # ============================================================================

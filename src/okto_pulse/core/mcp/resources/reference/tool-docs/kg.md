@@ -51,6 +51,17 @@ Add a node candidate to an open consolidation session.
 The candidate stays in-memory until commit_consolidation or expiry.
 candidate_id must be unique within the session.
 
+**Writer-path ownership (allowlist):** the cognitive consolidation path may only create
+`Decision`, `Learning`, `Alternative`, `Assumption`. `Criterion` (from acceptance
+criteria) and `Constraint` (from technical requirements / business rules) are
+**deterministic-only** — materialized by the deterministic worker, not by this tool.
+Reference an existing deterministic `Criterion`/`Constraint` node by id (or wait for the
+deterministic worker); do not recreate it on the cognitive path. A `Criterion`/`Constraint`
+candidate proposed here is rejected **before any graph mutation** with
+`status=source_type_not_supported`, `reason=writer_not_connectivity_owner` (distinct from a
+missing-connectivity failure); remediation: remove the candidate, abort/recreate the
+session without it, or route through the deterministic owner.
+
 Args:
     session_id: Session from begin_consolidation
     candidate: Dict with candidate_id, node_type, title, content, etc.

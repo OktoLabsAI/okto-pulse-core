@@ -38,7 +38,8 @@ BYPASS_FIELD_NAMES = frozenset(
 )
 
 
-@dataclass(frozen=True)
+@dataclass  # NOT frozen: an Exception must stay mutable (Python sets __traceback__ on
+# propagation; a frozen dataclass raises FrozenInstanceError -> 500). See DesignSystemError.
 class AmendmentRevisionApiError(Exception):
     """Structured error for REST + MCP (mirrors BugRegressionScenarioPreviewError).
 

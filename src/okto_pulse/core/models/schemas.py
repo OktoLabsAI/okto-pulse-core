@@ -322,6 +322,13 @@ class ScreenMockup(BaseModel):
     html_content: str = ""
     annotations: list[MockupAnnotation] | None = None
     order: int = 0
+    # Design System consumption metadata (spec 3a006f65 / card 0192f58d). Stored
+    # normalized as {design_system_id, version}; the MockupDesignSystemGate cross-checks
+    # it against the board's REAL effective Design System (the payload is never the
+    # source of identity). Both default None so legacy mockups + off-mode boards are
+    # unaffected.
+    design_system_ref: dict[str, Any] | None = None
+    design_system_evidence: Any | None = None
 
 
 # ============================================================================
@@ -2168,6 +2175,12 @@ class BoardSettings(BaseModel):
     allow_agent_self_answering: bool = False  # explicit opt-in that permits same-principal Q&A answers
     require_full_context_for_critical_actions: bool = True  # if True, critical mutations must resolve full entity context
     qa_require_role_separation: bool = False  # if True, a Q&A question cannot be answered by the same principal who asked it
+    # Design System mockup gate mode (spec 3a006f65 / card 96f76a5f). CANONICAL source
+    # of the board's Design System gate mode (the design_system_default_ref only carries
+    # the DS identity; any gate_mode inside it is a derived mirror). off = no gate;
+    # advisory = warn/audit; blocking = reject mockups without valid DS evidence. Legacy
+    # boards with no field validate as 'off' (TR4 — never breaks an existing board).
+    design_system_gate_mode: Literal["off", "advisory", "blocking"] = "off"
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = True  # if True, cards must pass validation before moving to done
     min_confidence: int = 70  # min reviewer confidence score
@@ -2265,6 +2278,11 @@ class BoardResponse(BaseSchema):
     owner_id: str
     realm_id: str | None = None
     settings: BoardSettings | None = None
+    # Applied DefaultBoardConfiguration snapshot metadata (spec 9df814bc / TR11).
+    # Null/absent for the no-active-template fallback path; the snapshot dict
+    # (template_id, template_version, applied_at, applied_by, override_summary)
+    # when a template was applied. Distinct from settings (governance payload).
+    default_config_snapshot: dict | None = None
     created_at: datetime
     updated_at: datetime
     cards: list[CardResponse] = []

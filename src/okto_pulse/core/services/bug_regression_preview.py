@@ -31,7 +31,8 @@ from okto_pulse.core.services.bug_workflow_remediation import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass  # NOT frozen: an Exception must stay mutable (Python sets __traceback__ on
+# propagation; a frozen dataclass raises FrozenInstanceError -> 500). See DesignSystemError.
 class BugRegressionScenarioPreviewError(Exception):
     """Typed preview error for REST/MCP callers."""
 
