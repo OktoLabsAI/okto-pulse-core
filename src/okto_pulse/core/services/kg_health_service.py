@@ -103,6 +103,12 @@ _SENSITIVE_ERROR_RE = re.compile(
 )
 _KG_DAILY_TICK_JOB_ID = "kg_daily_tick"
 
+_SENSITIVE_ERROR_RE = re.compile(
+    r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.lbug|\.py\b)",
+    re.IGNORECASE,
+)
+_KG_DAILY_TICK_JOB_ID = "kg_daily_tick"
+
 
 class BoardNotFoundError(Exception):
     """Raised when the requested board does not exist."""

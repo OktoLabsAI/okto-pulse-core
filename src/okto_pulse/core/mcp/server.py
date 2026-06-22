@@ -10810,6 +10810,12 @@ async def okto_pulse_list_api_contracts(
             resolve_linked_fr_indices,
         )
 
+        from okto_pulse.core.mcp.payload_compaction import emit_compaction_metric
+        from okto_pulse.core.services.analytics_service import (
+            _structured_ref_text,
+            resolve_linked_fr_indices,
+        )
+
         result = []
         deduped_count = 0
         for c in contracts:
@@ -14718,6 +14724,160 @@ async def okto_pulse_kg_list_cognitive_dlq(
             "reason_code. Open canonical debt is in the readiness list "
             "(signal=open_canonical_debt) and okto_pulse_kg_canonical_debt_list."
         ),
+    }, default=str)
+
+
+# ============================================================================
+# KG ORPHAN INTEGRITY (spec KG-ZO-02 — FR6/TR4)
+# ============================================================================
+
+
+def _kg_orphan_graph_unavailable_payload(board_id: str, exc: Exception) -> dict[str, Any]:
+    return {
+        "error": "kg_orphan_graph_unavailable",
+        "board_id": board_id,
+        "error_type": type(exc).__name__,
+        "operator_action": "inspect_kg_health",
+    }
+
+
+async def _kg_orphan_backfill_health_refusal(board_id: str) -> dict[str, Any] | None:
+    from okto_pulse.core.services.kg_health_service import get_kg_health
+
+    async with get_db_for_mcp() as db:
+        health = await get_kg_health(board_id, db)
+    state = str(health.get("overall_state") or health.get("graph_state") or "")
+    if state in {"recovery_needed", "quarantined"}:
+        return {
+            "error": "kg_orphan_backfill_refused_by_health",
+            "board_id": board_id,
+            "overall_state": health.get("overall_state"),
+            "graph_state": health.get("graph_state"),
+            "operator_action": "inspect_kg_health_recovery_flow",
+        }
+    return None
+
+
+@mcp.tool()
+async def okto_pulse_kg_orphan_report(
+    board_id: str,
+    generation_id: str | None = None,
+    limit: int = 25,
+) -> str:
+    """
+    Return a bounded safe orphan-node report for a board KG.
+
+    The payload intentionally contains only safe identifiers and aggregate
+    counts: board_id, generation_id, orphan_count_by_type, safe samples,
+    unresolved_reasons, backfill_summary and correlation_id. Raw node text,
+    embeddings, prompts and payload bodies are never returned.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.kg.orphan_integrity import (
+        DEFAULT_ORPHAN_SAMPLE_LIMIT,
+        MAX_ORPHAN_SAMPLE_LIMIT,
+        OrphanNodeScanner,
+    )
+
+    bounded_limit = max(
+        0,
+        min(
+            int(limit or DEFAULT_ORPHAN_SAMPLE_LIMIT),
+            MAX_ORPHAN_SAMPLE_LIMIT,
+        ),
+    )
+    try:
+        report = OrphanNodeScanner().scan(
+            board_id=board_id,
+            generation_id=generation_id,
+            limit=bounded_limit,
+        )
+    except Exception as exc:
+        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
+
+    payload = report.to_safe_dict()
+    payload["backfill_summary"] = {
+        "status": "not_run",
+        "dry_run": None,
+        "detected": None,
+        "connected": None,
+        "noop": None,
+        "unresolved": None,
+        "ambiguous": None,
+        "semantic_pending": None,
+    }
+    return json.dumps(payload, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_orphan_backfill(
+    board_id: str,
+    generation_id: str | None = None,
+    dry_run: bool = True,
+    node_ids: list[str] | str = "",
+    limit: int = 25,
+) -> str:
+    """
+    Run explicit orphan backfill for structurally resolvable nodes.
+
+    Defaults to dry_run=True. node_ids accepts the standard MCP multi-value
+    format: JSON array, native list, or pipe-separated string. Backfill is
+    refused when KG Health is recovery_needed/quarantined so operators use the
+    recovery flow instead of mutating a degraded graph.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    try:
+        parsed_node_ids = coerce_to_list_str(node_ids) or None
+    except ValueError as exc:
+        return json.dumps({
+            "error": "invalid_node_ids",
+            "reason": str(exc),
+            "expected_format": "JSON array, native list, or pipe-separated string",
+        })
+
+    try:
+        refusal = await _kg_orphan_backfill_health_refusal(board_id)
+    except Exception as exc:
+        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
+    if refusal is not None:
+        return json.dumps(refusal, default=str)
+
+    from okto_pulse.core.kg.orphan_integrity import (
+        DEFAULT_ORPHAN_SAMPLE_LIMIT,
+        MAX_ORPHAN_SAMPLE_LIMIT,
+        OrphanBackfillReconciler,
+    )
+
+    bounded_limit = max(
+        0,
+        min(
+            int(limit or DEFAULT_ORPHAN_SAMPLE_LIMIT),
+            MAX_ORPHAN_SAMPLE_LIMIT,
+        ),
+    )
+    try:
+        result = OrphanBackfillReconciler().run(
+            board_id=board_id,
+            generation_id=generation_id,
+            dry_run=dry_run,
+            node_ids=parsed_node_ids,
+            limit=bounded_limit,
+        )
+    except Exception as exc:
+        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
+
+    return json.dumps({
+        "board_id": board_id,
+        "generation_id": generation_id,
+        "dry_run": dry_run,
+        "backfill_summary": result.to_safe_dict(),
+        "correlation_id": result.correlation_id,
     }, default=str)
 
 
