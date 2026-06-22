@@ -2118,7 +2118,12 @@ async def okto_pulse_create_card(
     action_plan: str = "",
 ) -> str:
     """
-    Create a new card on the board. Every card MUST be linked to a spec."""
+    Create a new card on the board. Every card MUST be linked to a spec.
+
+    For card_type='test', test_scenario_ids is mandatory and is limited by the
+    board setting max_scenarios_per_card (default 3). Split larger scenario
+    sets into separate test cards before creating/linking them.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2216,9 +2221,15 @@ async def okto_pulse_create_card(
             max_per_card = (board_obj.settings or {}).get("max_scenarios_per_card", 3) if board_obj else 3
             if len(scenario_ids_list) > max_per_card:
                 return json.dumps({
-                    "error": f"Cannot link {len(scenario_ids_list)} scenarios to a single card. "
-                    f"Board limit is {max_per_card} scenarios per card. "
-                    f"Create separate test cards for better traceability."
+                    "error": "max_scenarios_per_card_exceeded",
+                    "message": (
+                        f"Cannot link {len(scenario_ids_list)} scenarios to a single card. "
+                        f"Board limit is {max_per_card} scenarios per card. "
+                        f"Create separate test cards for better traceability."
+                    ),
+                    "provided_count": len(scenario_ids_list),
+                    "max_scenarios_per_card": max_per_card,
+                    "remediation": "Create separate test cards and keep each one within the board limit.",
                 })
 
         card_create = CardCreate(
@@ -2808,7 +2819,8 @@ async def okto_pulse_update_card(
 
     Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
     native list; legacy pipe-separated string is also accepted. Comma-only strings
-    are REJECTED. For bidirectional scenario linking, use okto_pulse_link_task_to_scenario.
+    are REJECTED. For bidirectional scenario linking, use
+    okto_pulse_link_task(target_type='scenario', ...).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -6832,7 +6844,12 @@ async def okto_pulse_add_test_scenario(
 ) -> str:
     """
     Add a test scenario to a spec. Test scenarios translate acceptance criteria into
-    concrete Given/When/Then test plans."""
+    concrete Given/When/Then test plans.
+
+    scenario_type accepts exactly: unit, integration, e2e, manual, negative.
+    Unsupported values fail closed with invalid_scenario_type and no mutation.
+    Use negative for expected denial/error-path behavior.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6997,7 +7014,7 @@ async def okto_pulse_list_test_scenarios(
                     # Historical/invalid persisted scenario_types are surfaced
                     # EXPLICITLY (spec ac16b3c9 FR5/AC5) rather than silently
                     # folded into a supported bucket or dropped — so a stale value
-                    # like 'regression'/'negative' is visible for deliberate
+                    # like 'regression'/'exploratory' is visible for deliberate
                     # remediation. New writes already fail closed (card 58844a26).
                     "unsupported_types": {
                         st: sum(1 for s in all_scenarios if s.get("scenario_type") == st)
@@ -7261,9 +7278,10 @@ async def okto_pulse_delete_test_scenario(
     })
 
 
-_LINK_TASK_TARGET_TYPES = ("scenario", "rule", "decision", "tr", "contract", "ir", "or", "spec")
+_LINK_TASK_TARGET_TYPES = ("scenario", "fr", "rule", "decision", "tr", "contract", "ir", "or", "spec")
 _LINK_TASK_TARGET_ALIASES = {
     "test_scenario": "scenario",
+    "functional_requirement": "fr",
     "business_rule": "rule",
     "technical_requirement": "tr",
     "api_contract": "contract",
@@ -7283,12 +7301,13 @@ async def okto_pulse_link_task(
 ) -> str:
     """
     Generic task-linking tool — dispatches on `target_type`. Short codes
-    (`tr`, `ir`, `or`) and their long names (`technical_requirement`,
-    `integration_requirement`, `observability_requirement`) are accepted.
-    Equivalent to the
-    per-type tools (`okto_pulse_link_task_to_rule`, `…_to_decision`, `…_to_tr`,
-    `…_to_integration_requirement`, `…_to_observability_requirement`,
-    `…_to_scenario`, `…_to_contract`, `okto_pulse_link_card_to_spec`) but
+    (`fr`, `tr`, `ir`, `or`) and their long names (`functional_requirement`,
+    `technical_requirement`, `integration_requirement`,
+    `observability_requirement`) are accepted.
+    Equivalent to the former per-type task-linking tools plus direct Functional
+    Requirement task linking. Note: direct FR task links are traceability links;
+    the FR coverage gate is satisfied by Business Rules linked to FRs, not by
+    FR `linked_task_ids`.
     exposes a single entry point so agents don't have to pre-load eight near-
     identical tool schemas.
 
@@ -7307,6 +7326,8 @@ async def okto_pulse_link_task(
         return json.dumps({"error": f"spec_id is required when target_type='{target_type}'"})
     if target_type == "scenario":
         return await _link_task_to_scenario_internal(board_id, spec_id, target_id, card_id)
+    if target_type == "fr":
+        return await _link_task_to_fr_internal(board_id, spec_id, target_id, card_id)
     if target_type == "rule":
         return await _link_task_to_rule_internal(board_id, spec_id, target_id, card_id)
     if target_type == "decision":
@@ -7380,8 +7401,15 @@ async def _link_task_to_scenario_internal(
                 max_per_card = (board_obj.settings or {}).get("max_scenarios_per_card", 3) if board_obj else 3
                 if len(existing_ids) >= max_per_card:
                     return json.dumps({
-                        "error": f"Card already has {len(existing_ids)} linked scenarios (board limit: {max_per_card}). "
-                        f"Create a separate test card for better traceability."
+                        "error": "max_scenarios_per_card_exceeded",
+                        "message": (
+                            f"Card already has {len(existing_ids)} linked scenarios "
+                            f"(board limit: {max_per_card}). Create a separate test card "
+                            f"for better traceability."
+                        ),
+                        "existing_count": len(existing_ids),
+                        "max_scenarios_per_card": max_per_card,
+                        "remediation": "Create a separate test card before linking this scenario.",
                     })
                 existing_ids.append(scenario_id)
             await card_service.update_card(card_id, ctx.agent_id, CardUpdate(test_scenario_ids=existing_ids))
@@ -7441,6 +7469,68 @@ async def _link_task_to_rule_internal(
 
         cov = _spec_coverage(spec, rules=rules)
         return json.dumps({"success": True, "rule_id": rule_id, "card_id": card_id, **_saturation_or_coverage(cov)})
+
+
+async def _link_task_to_fr_internal(
+    board_id: str, spec_id: str, fr_id: str, card_id: str
+) -> str:
+    """Internal helper for link_task target_type='fr'."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        spec_service = SpecService(db)
+        spec = await spec_service.get_spec(spec_id)
+        if not spec:
+            return json.dumps({"error": "Spec not found"})
+
+        card_service = CardService(db)
+        card = await card_service.get_card(card_id)
+        if not card:
+            return json.dumps({"error": "Card not found"})
+
+        frs = list(spec.functional_requirements or [])
+        found = False
+        for fr in frs:
+            if isinstance(fr, dict) and fr.get("id") == fr_id:
+                task_ids = list(fr.get("linked_task_ids") or [])
+                if card_id not in task_ids:
+                    task_ids.append(card_id)
+                fr["linked_task_ids"] = task_ids
+                found = True
+                break
+
+        if not found:
+            return json.dumps({
+                "error": f"Functional requirement '{fr_id}' not found in spec. "
+                f"FRs may be in legacy string format — update the spec via "
+                f"okto_pulse_update_spec to convert them to objects with IDs."
+            })
+
+        from okto_pulse.core.models.schemas import SpecUpdate
+        _, err = await _safe_spec_update(
+            spec_service, spec_id, ctx.agent_id, SpecUpdate(functional_requirements=frs)
+        )
+        if err:
+            return err
+        await db.commit()
+
+        cov = _spec_coverage(spec)
+        return json.dumps({
+            "success": True,
+            "fr_id": fr_id,
+            "card_id": card_id,
+            "coverage_note": (
+                "Direct FR task link persisted. The FR coverage gate is still "
+                "computed from business_rules[].linked_requirements."
+            ),
+            **_saturation_or_coverage(cov),
+        })
 
 
 async def _link_task_to_contract_internal(
@@ -13841,7 +13931,11 @@ thresholds pass AND recommendation=approve. On SUCCESS the spec is atomically
 promoted approved->validated and content-locked. ANTI-PATTERN WARNING: inflating
 scores to pass the gate is a grave violation — if outcome=failed, iterate on content
 (scenarios, BRs, TRs) rather than just raising numbers. Full details:
-okto-pulse://reference/tool-docs/spec."""
+okto-pulse://reference/tool-docs/spec.
+
+Scores are 0-100 integers, NOT 1-5: completeness/assertiveness are higher-is-better
+and ambiguity is lower-is-better. A 1-5 style value is treated literally and will
+usually violate the configured thresholds."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()

@@ -49,6 +49,7 @@ Architecture Design is the first-class place for system structure. See the full 
 1. **Implementation cards** (`card_type="normal"`) — implement functional/technical requirements from the spec.
 2. **Test cards** (`card_type="test"`, with `test_scenario_ids`) — implement, execute, or validate test scenarios defined in the spec. Key rules:
    - `card_type="test"` **requires** `test_scenario_ids` to be non-empty.
+   - Respect `board.settings.max_scenarios_per_card` (default 3; some boards set 2). If a group exceeds the cap, create multiple test cards before linking.
    - The scenario-coverage gate counts **only cards with `card_type="test"`**. A `card_type="normal"` card with `test_scenario_ids` does NOT count toward scenario coverage.
    - Always use `card_type="test"` when the intent is to cover a scenario.
 3. **Bug cards** (`card_type="bug"`) — track and fix bugs discovered during or after implementation.
@@ -59,8 +60,8 @@ Architecture Design is the first-class place for system structure. See the full 
 2. **Read test scenarios**: `okto_pulse_list_test_scenarios(board_id, spec_id)`.
 3. **Read business rules and API contracts**: `okto_pulse_list_business_rules(board_id, spec_id)` and `okto_pulse_list_api_contracts(board_id, spec_id)`.
 4. **Review conclusions of dependencies**: for every card this one will depend on, call `okto_pulse_get_task_conclusions(board_id, dep_card_id)`.
-5. **Create test cards FIRST** — one per test scenario, with `card_type="test"`, `test_scenario_ids`, and `spec_id`.
-6. **IMMEDIATELY link each test card to its scenario(s)** via `okto_pulse_link_task_to_scenario(board_id, spec_id, scenario_id, card_id)`.
+5. **Create test cards FIRST** — one per test scenario or per small group within `max_scenarios_per_card`, with `card_type="test"`, `test_scenario_ids`, and `spec_id`.
+6. **IMMEDIATELY link each test card to its scenario(s)** via `okto_pulse_link_task(target_type="scenario", board_id, spec_id, target_id=<scenario_id>, card_id)`.
 7. **Verify full linkage**: run `okto_pulse_list_test_scenarios` — every scenario must show at least one linked task.
 8. **THEN create implementation cards** (`card_type="normal"`) — always pass `spec_id`.
 9. **MANDATORY — Copy artifacts into every card**. Use `okto_pulse_copy_mockups_to_card`, `okto_pulse_copy_knowledge_to_card`, `okto_pulse_copy_architecture_to_card`, and `okto_pulse_copy_qa_to_card`.
@@ -74,7 +75,7 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 | Anti-pattern | Why it's bad | What to do instead |
 |---|---|---|
 | One big test card for all scenarios | No granular traceability | Create one test card per scenario or per small group of closely related scenarios |
-| Test card without `okto_pulse_link_task_to_scenario` | Scenario shows "no tasks" — no way to know which card validates it | Always call `okto_pulse_link_task_to_scenario` after creating a test card |
+| Test card without `okto_pulse_link_task(target_type="scenario", ...)` | Scenario shows "no tasks" — no way to know which card validates it | Always call `okto_pulse_link_task(target_type="scenario", ...)` after creating a test card |
 | Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with all include flags BEFORE any work |
 | Card still `not_started` while writing code | Board is inaccurate | Move to `in_progress` BEFORE first line of code |
 

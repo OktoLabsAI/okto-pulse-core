@@ -130,27 +130,23 @@ Returns:
 ## `okto_pulse_link_task`
 
 Generic task-linking tool — dispatches on `target_type`. Equivalent to the
-per-type tools, each annotated with the `target_type` short code it maps to:
-`okto_pulse_link_task_to_rule` (target_type="rule"), `…_to_decision`
-(target_type="decision"), `…_to_tr` (target_type="tr"),
-`…_to_integration_requirement` (target_type="ir"),
-`…_to_observability_requirement` (target_type="or"), `…_to_scenario`
-(target_type="scenario"), `…_to_contract` (target_type="contract"), and
-`okto_pulse_link_card_to_spec` (target_type="spec"). It exposes a single entry
-point so agents don't have to pre-load eight near-identical tool schemas. The
-`target_type` Args line below is the single source of truth for accepted codes
-and long-name aliases.
+former per-type tools and accepts short codes/aliases for each link family. It
+exposes a single entry point so agents don't have to pre-load near-identical
+tool schemas. The `target_type` Args line below is the single source of truth
+for accepted codes and long-name aliases.
 
 Ideação MCP-token-optimization Story 5.
 
 Args:
     board_id: Board ID.
-    target_type: One of: rule, business_rule, decision, tr,
+    target_type: One of: fr, functional_requirement, rule, business_rule, decision, tr,
         technical_requirement, ir, integration_requirement, or,
         observability_requirement, scenario, test_scenario, contract,
         api_contract, spec.
-        Keywords link rule decision tr ir or scenario contract spec.
-    target_id: ID of the target artifact (rule_id, decision_id, tr_id,
+        Keywords link fr rule decision tr ir or scenario contract spec.
+        Direct FR task links are traceability only; the FR coverage gate reads
+        business_rules[].linked_requirements.
+    target_id: ID of the target artifact (fr_id, rule_id, decision_id, tr_id,
         ir_id/requirement_id, or_id/requirement_id, scenario_id,
         contract_id, or spec_id when target_type=='spec').
     card_id: ID of the card to link.

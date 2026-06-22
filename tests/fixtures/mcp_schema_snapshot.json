@@ -1,5 +1,5 @@
 {
-  "version": "0.2.1",
+  "version": "0.2.5",
   "tools": {
     "okto_pulse_get_card": {
       "title": "Get card details.",
@@ -185,7 +185,7 @@
             }
           ],
           "default": null,
-          "description": "Novos IDs de test scenarios vinculados ao card.",
+          "description": "Novos IDs de test scenarios vinculados ao card; respeita board.settings.max_scenarios_per_card.",
           "title": "Test Scenario Ids"
         },
         "screen_mockups": {

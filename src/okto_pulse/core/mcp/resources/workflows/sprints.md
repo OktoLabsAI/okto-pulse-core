@@ -65,7 +65,7 @@ A sprint's scope is computed from its assigned cards' relationships to the paren
 - **Technical Requirements**: Spec TRs where `linked_task_ids` includes any sprint card
 - **API Contracts**: Spec contracts where `linked_task_ids` includes any sprint card
 
-For scope to resolve correctly, **you MUST link spec artifacts to cards** using `okto_pulse_link_task_to_scenario`, `okto_pulse_link_task_to_rule`, `okto_pulse_link_task_to_contract`, `okto_pulse_link_task_to_tr`.
+For scope to resolve correctly, **you MUST link spec artifacts to cards** using `okto_pulse_link_task` with the correct `target_type` (`scenario`, `rule`, `contract`, `tr`, `ir`, `or`, `decision`, or `fr`).
 
 ### Sprint Gates
 

@@ -55,6 +55,10 @@ Args:
         See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
     test_scenario_ids: Multi-value test scenario IDs (e.g. ``["ts_abc", "ts_def"]``)
         — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
+        A single card is capped by the board's ``max_scenarios_per_card`` setting
+        (default 3; some boards use 2). If the list exceeds the cap, creation
+        fails with ``max_scenarios_per_card_exceeded`` and you must split the
+        scenarios across separate test cards.
         When provided, automatically creates bidirectional links between the
         card and the scenarios. Linking to an existing scenario is a
         traceability update that leaves validated spec content unchanged, but
@@ -199,7 +203,8 @@ Update card details. Pass only the fields you want to change; omit the rest.
 
 Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
 native list; legacy pipe-separated string is also accepted. Comma-only strings
-are REJECTED. For bidirectional scenario linking, use okto_pulse_link_task_to_scenario.
+are REJECTED. For bidirectional scenario linking, use
+`okto_pulse_link_task(target_type="scenario", ...)`.
 
 ## Path B amendment revisions (cross-spec regression evidence)
 

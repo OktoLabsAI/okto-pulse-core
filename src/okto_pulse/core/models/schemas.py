@@ -288,7 +288,7 @@ class TestScenario(BaseModel):
     id: str
     title: str
     linked_criteria: list[str] | None = None  # indices or text of acceptance criteria
-    scenario_type: str = "integration"  # unit | integration | e2e | manual
+    scenario_type: str = "integration"  # unit | integration | e2e | manual | negative
     given: str = ""  # precondition
     when: str = ""  # action
     then: str = ""  # expected result
@@ -1818,7 +1818,14 @@ class CardCreate(BaseModel):
     labels: list[str] | None = Field(None, description="Tags de categorizacao para filtragem e busca.")
     spec_id: str | None = Field(None, description="ID da spec a qual este card esta vinculado.")
     sprint_id: str | None = Field(None, description="ID do sprint ao qual este card pertence.")
-    test_scenario_ids: list[str] | None = Field(None, description="IDs dos test scenarios associados a este card.")
+    test_scenario_ids: list[str] | None = Field(
+        None,
+        description=(
+            "IDs dos test scenarios associados a este card. Para card_type='test', "
+            "e obrigatorio e limitado por board.settings.max_scenarios_per_card "
+            "(default 3; boards podem configurar 2 ou outro valor)."
+        ),
+    )
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela vinculados ao card.")
     # Card type: "normal", "test", or "bug".
     card_type: str = Field("normal", description="Tipo do card: 'normal', 'test' ou 'bug'.")
@@ -1844,7 +1851,13 @@ class CardUpdate(BaseModel):
     labels: list[str] | None = Field(None, description="Novas tags de categorizacao do card.")
     spec_id: str | None = Field(None, description="Novo ID da spec vinculada ao card.")
     sprint_id: str | None = Field(None, description="Novo ID do sprint ao qual o card pertence.")
-    test_scenario_ids: list[str] | None = Field(None, description="Novos IDs de test scenarios vinculados ao card.")
+    test_scenario_ids: list[str] | None = Field(
+        None,
+        description=(
+            "Novos IDs de test scenarios vinculados ao card; respeita "
+            "board.settings.max_scenarios_per_card."
+        ),
+    )
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela vinculados ao card.")
     knowledge_bases: list[dict] | None = Field(None, description="Base de conhecimento vinculada ao card (lista de dicts).")
     # Bug card fields (only updatable, not card_type or origin_task_id)

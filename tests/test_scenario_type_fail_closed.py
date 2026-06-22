@@ -121,12 +121,12 @@ async def test_add_invalid_scenario_type_fails_closed_no_mutation(db_factory):
     payload = await _call_tool(
         db_factory, "okto_pulse_add_test_scenario",
         board_id=board_id, spec_id=spec_id, title="S",
-        given="g", when="w", then="t", scenario_type="negative",
+        given="g", when="w", then="t", scenario_type="regression",
     )
     assert payload.get("error") == "invalid_scenario_type", payload
     for t in VALID_SCENARIO_TYPES:
         assert t in payload["message"], payload
-    assert "negative" in payload["message"]
+    assert "regression" in payload["message"]
     assert "No scenario was appended" in payload["message"]
     # fail-closed: nothing persisted, NOT silently normalized to integration.
     assert await _stored(db_factory, spec_id) == []
@@ -137,11 +137,11 @@ async def test_add_valid_scenario_type_persists_exactly(db_factory):
     payload = await _call_tool(
         db_factory, "okto_pulse_add_test_scenario",
         board_id=board_id, spec_id=spec_id, title="S",
-        given="g", when="w", then="t", scenario_type="e2e",
+        given="g", when="w", then="t", scenario_type="negative",
     )
     assert payload.get("success") is True, payload
-    assert payload["scenario"]["scenario_type"] == "e2e"
-    assert [s["scenario_type"] for s in await _stored(db_factory, spec_id)] == ["e2e"]
+    assert payload["scenario"]["scenario_type"] == "negative"
+    assert [s["scenario_type"] for s in await _stored(db_factory, spec_id)] == ["negative"]
 
 
 async def test_add_omitted_scenario_type_defaults_integration(db_factory):
@@ -166,7 +166,7 @@ async def test_update_invalid_scenario_type_fails_closed(db_factory):
     )
     payload = await _call_tool(
         db_factory, "okto_pulse_update_test_scenario",
-        board_id=board_id, spec_id=spec_id, scenario_id="ts_keep", scenario_type="negative",
+        board_id=board_id, spec_id=spec_id, scenario_id="ts_keep", scenario_type="regression",
     )
     assert payload.get("error") == "invalid_scenario_type", payload
     assert "No scenario was updated" in payload["message"]

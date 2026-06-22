@@ -59,9 +59,15 @@ COSMETIC_FIELDS: tuple[str, ...] = ("title", "notes")
 #: The one authoritative scenario_type taxonomy for this initiative. Every write
 #: surface (MCP add/update tools, the REST/spec update path and the service
 #: create/update paths) validates against THIS tuple — there is no second
-#: allowlist. Adding a new type (e.g. ``negative``) is a deliberate taxonomy
-#: change, never a silent fallback.
-VALID_SCENARIO_TYPES: tuple[str, ...] = ("unit", "integration", "e2e", "manual")
+#: allowlist. Adding a new type is a deliberate taxonomy change, never a silent
+#: fallback.
+VALID_SCENARIO_TYPES: tuple[str, ...] = (
+    "unit",
+    "integration",
+    "e2e",
+    "manual",
+    "negative",
+)
 
 #: The default applied when a caller OMITS scenario_type entirely. This is a
 #: true default, NOT a normalization of an invalid value — an invalid value
@@ -74,10 +80,8 @@ class InvalidScenarioTypeError(ValueError):
     :data:`VALID_SCENARIO_TYPES`.
 
     Fail-closed: the value is NEVER normalized to another valid type, because
-    silent normalization hides caller intent — an agent that asked for
-    ``negative`` and got ``integration`` believes a negative scenario exists
-    (spec ac16b3c9). The message names the allowed values so agents and UI
-    clients can correct the request.
+    silent normalization hides caller intent. The message names the allowed
+    values so agents and UI clients can correct the request.
     """
 
     def __init__(self, value: object) -> None:

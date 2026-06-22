@@ -20,10 +20,12 @@ version: "1.0"
 ## Test Card Rules
 
 - `card_type="test"` **requires** `test_scenario_ids` to be non-empty — the server rejects card creation without it.
+- A single test card may link at most `board.settings.max_scenarios_per_card` scenarios (default 3; some boards configure 2). Split larger sets before creation; the API rejects over-limit requests with `max_scenarios_per_card_exceeded`.
 - Spec must be in `approved`, `validated`, `in_progress`, or `done` for test card creation.
 - The scenario-coverage gate counts **only cards with `card_type="test"`**. A `card_type="normal"` card with `test_scenario_ids` does NOT count toward scenario coverage.
 - **Always use `card_type="test"` when the intent is to cover a scenario.**
 - Test cards skip `okto_pulse_submit_task_validation` — moving to `done` is controlled by scenario status.
+- Test cards may move `not_started` → `started` → `in_progress`, and the API also accepts direct `not_started` → `in_progress` when the same prerequisites are met.
 - When moving test card to `done`, `okto_pulse_move_card` requires: `conclusion`, `completeness`, `completeness_justification`, `drift`, `drift_justification`.
 - **Before moving to `done`**: ALL linked test scenarios must be `passed` or `automated` (not `draft` or `ready`). Call `okto_pulse_update_test_scenario_status` first. If the spec is already `validated` or `done`, this status update is allowed only for a scenario already linked to an executable test card (`started`, `in_progress`, `validation`, or `done`); it records operational evidence and does not unlock semantic spec content.
 

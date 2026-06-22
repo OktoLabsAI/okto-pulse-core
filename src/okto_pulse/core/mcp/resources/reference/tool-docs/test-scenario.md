@@ -18,12 +18,13 @@ Args:
     given: Precondition (e.g. "User has a valid JWT token")
     when: Action (e.g. "GET /api/v1/boards with Bearer token")
     then: Expected result (e.g. "Returns 200 with board list")
-    scenario_type: unit | integration | e2e | manual (default: integration).
-        STRICT contract: an unsupported value (e.g. ``negative``) is rejected
+    scenario_type: unit | integration | e2e | manual | negative (default: integration).
+        Use ``negative`` for expected denial, validation failure, error-path, or
+        abuse-case behavior. STRICT contract: an unsupported value (e.g.
+        ``regression``) is rejected
         with a structured ``invalid_scenario_type`` error naming the allowed
         values and NO scenario is appended — it is NEVER silently normalized to
-        ``integration``. Express negative-path intent in given/when/then, not in
-        scenario_type.
+        ``integration``.
     linked_criteria: Multi-value (pipe ``"0|2"`` or JSON-array ``'["0","2"]'``)
         references to the acceptance criteria this scenario validates. Each
         token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
@@ -66,7 +67,7 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     status: Filter by scenario status (optional) — one of: draft, ready, automated, passed, failed
-    scenario_type: Filter by type (optional) — one of: unit, integration, e2e, manual
+    scenario_type: Filter by type (optional) — one of: unit, integration, e2e, manual, negative
     linked: Filter by task linkage (optional) — "linked" = only scenarios with tasks, "unlinked" = only scenarios without tasks
     offset: Skip first N scenarios (default 0)
     limit: Max scenarios to return (default 50, max 200)
@@ -95,7 +96,8 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
         spec_id: Spec ID.
         scenario_id: Test scenario ID (e.g. "ts_abc123").
         title/given/when/then/scenario_type/notes: New value, or "" to leave as-is.
-            scenario_type follows the same STRICT contract as add — an
+            scenario_type follows the same STRICT contract as add — valid values
+            are unit, integration, e2e, manual, negative. An
             unsupported value is rejected (``invalid_scenario_type``) before any
             mutation, never normalized.
         linked_criteria: Pipe-separated AC index/id/text (resolved to AC ids).

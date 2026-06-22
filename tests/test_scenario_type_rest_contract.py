@@ -65,14 +65,14 @@ def test_rest_patch_spec_invalid_scenario_type_fails_closed(rest_spec):
     client, _board, spec_id = rest_spec
     resp = client.patch(
         f"/api/v1/specs/{spec_id}",
-        json={"test_scenarios": [_scenario("negative")]},
+        json={"test_scenarios": [_scenario("regression")]},
     )
     assert resp.status_code == 422, resp.text
     detail = resp.json()["detail"]
-    # same allowed-value contract as MCP: the 4 supported types are named.
-    for t in ("unit", "integration", "e2e", "manual"):
+    # same allowed-value contract as MCP: the supported types are named.
+    for t in ("unit", "integration", "e2e", "manual", "negative"):
         assert t in detail, detail
-    assert "negative" in detail
+    assert "regression" in detail
     # fail-closed: NO mutation — the spec still has zero scenarios.
     got = client.get(f"/api/v1/specs/{spec_id}")
     assert got.status_code == 200, got.text
@@ -83,8 +83,8 @@ def test_rest_patch_spec_valid_scenario_type_persists(rest_spec):
     client, _board, spec_id = rest_spec
     resp = client.patch(
         f"/api/v1/specs/{spec_id}",
-        json={"test_scenarios": [_scenario("e2e")]},
+        json={"test_scenarios": [_scenario("negative")]},
     )
     assert resp.status_code == 200, resp.text
     scenarios = resp.json().get("test_scenarios") or []
-    assert [s["scenario_type"] for s in scenarios] == ["e2e"]
+    assert [s["scenario_type"] for s in scenarios] == ["negative"]

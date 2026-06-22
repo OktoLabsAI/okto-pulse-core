@@ -2,7 +2,7 @@
 
 okto_pulse_list_test_scenarios must surface persisted scenario_types that are
 OUTSIDE the supported enum EXPLICITLY (FR5/AC5) — a stale value like
-``regression``/``negative`` is reported in ``summary.unsupported_types`` instead
+``regression``/``exploratory`` is reported in ``summary.unsupported_types`` instead
 of being silently folded into a supported bucket or dropped. Supported counts
 stay in ``summary.by_type``. Reads stay tolerant (the list never rejects).
 
@@ -63,13 +63,13 @@ async def test_list_summary_reports_unsupported_historical_types(db_factory):
         {"id": "ts_a", "title": "a", "scenario_type": "unit", "status": "draft"},
         {"id": "ts_b", "title": "b", "scenario_type": "integration", "status": "draft"},
         {"id": "ts_c", "title": "c", "scenario_type": "regression", "status": "draft"},
-        {"id": "ts_d", "title": "d", "scenario_type": "negative", "status": "draft"},
+        {"id": "ts_d", "title": "d", "scenario_type": "exploratory", "status": "draft"},
     ])
     summary = (await _list(db_factory, board_id, spec_id))["summary"]
     # supported types counted normally; invalid NOT folded into a supported bucket.
     assert summary["by_type"] == {"unit": 1, "integration": 1}
     # historical/invalid persisted types surfaced explicitly (sorted keys).
-    assert summary["unsupported_types"] == {"negative": 1, "regression": 1}
+    assert summary["unsupported_types"] == {"exploratory": 1, "regression": 1}
 
 
 async def test_list_summary_no_unsupported_when_all_valid(db_factory):

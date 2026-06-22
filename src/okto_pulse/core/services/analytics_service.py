@@ -286,6 +286,9 @@ def _coverage_row_for_spec(spec: Spec, cards: list | None = None) -> dict:
     frs = spec.functional_requirements or []
     total_frs = len(frs)
 
+    # FR coverage is semantic: a Functional Requirement is covered only when a
+    # Business Rule references it. FR.linked_task_ids is direct task traceability
+    # and intentionally does not satisfy the FR->BR coverage gate.
     fr_indices_with_rules: set[int] = set()
     for br in brs:
         if isinstance(br, dict):
@@ -778,6 +781,8 @@ def spec_coverage_summary(
     ac_total = len(acs)
     ac_covered = len(covered_ac & set(range(ac_total)))
 
+    # FR coverage is driven by BR.linked_requirements. Direct FR task links are
+    # traceability only and must not satisfy the FR->BR coverage gate.
     covered_fr = set()
     for br in _brs:
         if isinstance(br, dict):

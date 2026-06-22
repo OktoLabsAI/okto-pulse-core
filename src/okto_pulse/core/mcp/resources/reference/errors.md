@@ -40,6 +40,7 @@ This table is the **single source of truth** for MCP-level errors. Before any ad
 | `"Every task must be linked to a spec"` | `spec_id` missing on `okto_pulse_create_card` | Always pass `spec_id`. |
 | `"<Type> cards can only be created for specs in <list> status. Spec '<title>' is currently '<status>'."` | Spec status doesn't accept card creation of this `card_type` | See card type governance rules. Move the spec forward with `okto_pulse_move_spec`. |
 | `"Test scenario(s) not found in spec '<title>': [...]"` | Passed `test_scenario_ids` that don't exist on that spec | List scenarios with `okto_pulse_list_test_scenarios` and use a valid id. |
+| `max_scenarios_per_card_exceeded` | A test-card create/link request exceeded `board.settings.max_scenarios_per_card` | Split the scenarios across multiple `card_type="test"` cards and keep each card within the board cap. |
 
 ## Bug Cards
 
@@ -48,7 +49,7 @@ This table is the **single source of truth** for MCP-level errors. Before any ad
 | `"origin_task_id is required for bug cards"` | Missing `origin_task_id` | Pass the id of the task where the bug was found. |
 | `"Bug cards can only be created with status not_started or started"` | Tried to create in a later status | Create as `not_started`, then advance via `okto_pulse_move_card`. |
 | `"Bug card requires at least 1 new test task linked"` / `reason=missing_regression_test_task` | Moving a bug to `in_progress` without a linked regression test card | First run `okto_pulse_resolve_bug_regression_scenarios` or the REST candidate preview. If an eligible existing scenario exists, use Path A: create a fresh post-bug `card_type="test"` card that references that scenario and link it to the bug. If none exists, use Path B. |
-| `"Linked test task has no test_scenario_ids"` | The linked card is not a proper test task | Link it to a scenario via `okto_pulse_link_task_to_scenario`, or recreate with `card_type="test"` + `test_scenario_ids`. |
+| `"Linked test task has no test_scenario_ids"` | The linked card is not a proper test task | Link it to a scenario via `okto_pulse_link_task(target_type="scenario", ...)`, or recreate with `card_type="test"` + `test_scenario_ids`. |
 | `"Test task belongs to a different spec"` | The linked test task is on another spec | Create the test task on the same spec as the bug. |
 | `"Linked test task must be created after this bug card"` | The linked regression task predates the bug | Create a new `card_type="test"` card after the bug. |
 | `"Test scenario does not exist in spec"` / `reason=scenario_not_found` | The scenario id is wrong, was deleted, or the bug reveals missing canonical coverage | First list/preview candidates with `okto_pulse_resolve_bug_regression_scenarios`. If an eligible existing scenario exists, create a fresh post-bug test card referencing it. If no eligible scenario exists, treat this as Path B: create/associate a formal `AmendmentHotfixRevision`, complete its lineage, register re-executable evidence, and have the validator confirm coverage (`okto_pulse_confirm_amendment_coverage`). Refinement or spec-revision authoring may produce the revisional artifact but does not satisfy the bug gate without amendment lineage + confirmed coverage. Leave the current validated spec content unchanged for simple Path A reuse. |
@@ -74,9 +75,9 @@ This table is the **single source of truth** for MCP-level errors. Before any ad
 
 | Error message | Cause | Fix |
 |---|---|---|
-| `"Cannot start this card: N test scenario(s) have no linked task cards"` | Scenarios have no test cards linked | For each uncovered scenario, create a test card (`card_type="test"` + `test_scenario_ids`) and/or call `okto_pulse_link_task_to_scenario`. |
+| `"Cannot start this card: N test scenario(s) have no linked task cards"` | Scenarios have no test cards linked | For each uncovered scenario, create a test card (`card_type="test"` + `test_scenario_ids`) and/or call `okto_pulse_link_task(target_type="scenario", ...)`. |
 | `"Cannot start this card: N functional requirement(s) have no linked business rules"` | FR→BR coverage incomplete | Call `okto_pulse_add_business_rule` with `linked_requirements` referencing the uncovered FR indices. |
-| `"Cannot start this card: N business rule(s) have no linked task cards"` | BR→Task coverage incomplete | Call `okto_pulse_link_task_to_rule` for each unlinked BR. |
+| `"Cannot start this card: N business rule(s) have no linked task cards"` | BR→Task coverage incomplete | Call `okto_pulse_link_task(target_type="rule", ...)` for each unlinked BR. |
 | `"Cannot validate spec: N business rule(s) have no linked task cards"` | Same, at validation time | Same fix — link implementation tasks to every BR. |
 | `"Cannot validate spec: N test scenario(s) have no linked test cards"` | Scenario side | Create/link test cards for every scenario. |
 | `"Cannot move spec to 'done': N acceptance criteria lack test scenarios"` | AC→Scenario coverage incomplete | Create a scenario for every uncovered AC (use `linked_criteria` with the 0-based index). |
