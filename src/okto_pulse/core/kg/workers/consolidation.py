@@ -1701,11 +1701,6 @@ class ConsolidationWorker:
                 debt_exc,
             )
 
-        FR3 (spec R2c): when the entry is routed to the dead-letter queue,
-        a FailureEvent with ``event_kind="kg.commit.failed"`` is recorded
-        in the collector ring-buffer so the MemoryPressureCorrelator
-        receives a real commit-failure signal.  Non-blocking/non-raising.
-        """
         entry.attempts = (entry.attempts or 0) + 1
         entry.last_error = error_text
         if entry.attempts >= max_attempts:
