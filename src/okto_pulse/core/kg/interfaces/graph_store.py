@@ -71,6 +71,9 @@ class SemanticGraphStore(Protocol):
     def create_edge(
         self, board_id: str, edge_type: str, from_id: str, to_id: str,
         attrs: dict[str, Any] | None = None,
+        *,
+        from_type: str | None = None,
+        to_type: str | None = None,
     ) -> None: ...
 
     def delete_nodes_by_session(self, board_id: str, session_id: str) -> int: ...

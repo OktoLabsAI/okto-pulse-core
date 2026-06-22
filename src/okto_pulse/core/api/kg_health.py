@@ -29,12 +29,6 @@ from okto_pulse.core.services.kg_health_service import (
 router = APIRouter()
 
 
-class TopDisconnectedNode(BaseModel):
-    id: str
-    type: str
-    degree: int
-
-
 class RecentHealthEvent(BaseModel):
     """One row in `recent_events`. KG-01 contract api_3ed9037f."""
 
@@ -58,6 +52,14 @@ class HealthIssue(BaseModel):
     reason: str
     description: str
     operator_action: str
+    # FR7 (spec 007d1308 / dec_68fd26a2): the MCP tool an agent/operator should
+    # call to drill into THIS operational signal — dead_letter_list for the
+    # DLQ, list_cognitive_pending_items for cognitive pending, canonical_debt_list
+    # for canonical debt. Keeps the three operational signals separately
+    # actionable instead of hiding them behind one generic operator_action.
+    # None for signals whose drill-down is a non-MCP action (rebuild, orphan
+    # report, telemetry).
+    drill_down_tool: str | None = None
 
 
 class DecaySchedulerDiagnostics(BaseModel):
@@ -163,7 +165,6 @@ class KGHealthResponse(BaseModel):
     default_score_count: int
     default_score_ratio: float
     avg_relevance: float
-    top_disconnected_nodes: list[TopDisconnectedNode]
     schema_version: str
     health_schema_version: str = "1.0"
     graph_schema_version: str | None = None
@@ -209,6 +210,20 @@ class KGHealthResponse(BaseModel):
     orphan_integrity: OrphanIntegrityProjection = Field(
         default_factory=OrphanIntegrityProjection
     )
+    kg_layer_counts: dict = Field(default_factory=dict)
+    canonical_debt: dict = Field(default_factory=dict)
+    rebuild_diagnostics: dict = Field(default_factory=dict)
+    # R6-IMP2: active operational-queue drill-down (worker_mode + per-source
+    # counts/classification). Additive; DLQ/canonical debt are NOT counted here.
+    active_queue: dict = Field(default_factory=dict)
+    # R6-IMP5: deduplicated 3-domain separation (active_queue / dead_letter /
+    # canonical_debt), each with its own count + drill_down_tool. Additive.
+    operational_domains: dict = Field(default_factory=dict)
+    # SPEC4 (card 2e913ac3): structured bounded recovery root-cause —
+    # distinguishes wal_or_commit / empty_after_materialized_history /
+    # source_enumeration_failure / safe_write_drain_failure with bounded fields
+    # (materialized node count, source count, queue state, last safe-write). Additive.
+    root_cause: dict = Field(default_factory=dict)
 
     # Additive UI diagnosis: separates "board graph is actually unreadable or
     # empty after prior materialization" from conservative at_risk states caused

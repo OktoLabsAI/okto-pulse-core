@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from okto_pulse.core.services.bug_regression_scenarios import (
+    BugRegressionCoverageState,
     BugRegressionNextAction,
     BugRegressionScenarioEligibilityResult,
 )
@@ -22,6 +23,7 @@ class BugWorkflowRemediationPath(str, Enum):
 
     PATH_A_REUSE_SCENARIO = "path_a_reuse_existing_scenario"
     PATH_B_SEMANTIC_GAP = "path_b_semantic_gap"
+    PATH_B_AMENDMENT_LINEAGE = "path_b_amendment_lineage"
     PATH_C_HOTFIX_LANE = "path_c_hotfix_lane"
     STANDARD_SPRINT = "standard_sprint"
     NONE = "none"
@@ -32,6 +34,7 @@ class BugWorkflowNextAction(str, Enum):
 
     CREATE_REGRESSION_TEST_CARD = "create_regression_test_card"
     ESCALATE_SEMANTIC_GAP = "escalate_semantic_gap"
+    CONFIRM_VALIDATOR_COVERAGE = "confirm_validator_coverage"
     ASSIGN_HOTFIX_LANE = "assign_hotfix_lane"
     ACTIVATE_HOTFIX_LANE = "activate_hotfix_lane"
     ASSIGN_SPRINT = "assign_sprint"
@@ -123,6 +126,15 @@ class BugWorkflowRemediationMessageBuilder:
                 eligible_count=len(result.eligible_scenarios),
             )
 
+        if result.coverage_state in {
+            BugRegressionCoverageState.COVERAGE_PENDING,
+            BugRegressionCoverageState.PATH_B_READY,
+        }:
+            return self._path_b_amendment_message(
+                result,
+                reason_code=reason_code or self._primary_eligible_reason(result),
+            )
+
         return BugWorkflowRemediationMessage(
             reason_code=reason_code or self._primary_eligible_reason(result),
             remediation_path=BugWorkflowRemediationPath.PATH_A_REUSE_SCENARIO,
@@ -194,6 +206,61 @@ class BugWorkflowRemediationMessageBuilder:
                     primary=True,
                 ),
             ),
+        )
+
+    def _path_b_amendment_message(
+        self,
+        result: BugRegressionScenarioEligibilityResult,
+        *,
+        reason_code: str,
+    ) -> BugWorkflowRemediationMessage:
+        if result.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING:
+            return BugWorkflowRemediationMessage(
+                reason_code=BugRegressionCoverageState.COVERAGE_PENDING.value,
+                remediation_path=BugWorkflowRemediationPath.PATH_B_AMENDMENT_LINEAGE,
+                next_action=BugWorkflowNextAction.CONFIRM_VALIDATOR_COVERAGE,
+                semantic_gap_required=False,
+                eligible_scenarios_count=len(result.eligible_scenarios),
+                hotfix_lane_status=BugWorkflowHotfixLaneStatus.NOT_APPLICABLE,
+                message=(
+                    "Path B amendment lineage is eligible, but validator coverage "
+                    "has not been confirmed."
+                ),
+                detail=(
+                    "Register re-executable evidence on the declared regression "
+                    "scenario, then have the validator run "
+                    "okto_pulse_confirm_amendment_coverage. Amendment promotion "
+                    "alone never closes coverage."
+                ),
+                actions=(
+                    BugWorkflowRemediationAction(
+                        action_id=BugWorkflowNextAction.CONFIRM_VALIDATOR_COVERAGE.value,
+                        label="Confirm validator coverage",
+                        description=(
+                            "Validate the declared regression artifact and persist "
+                            "the bound amendment coverage attestation."
+                        ),
+                        primary=True,
+                    ),
+                ),
+                facts=self._path_b_facts(result),
+            )
+
+        return BugWorkflowRemediationMessage(
+            reason_code=reason_code,
+            remediation_path=BugWorkflowRemediationPath.PATH_B_AMENDMENT_LINEAGE,
+            next_action=BugWorkflowNextAction.NONE,
+            semantic_gap_required=False,
+            eligible_scenarios_count=len(result.eligible_scenarios),
+            hotfix_lane_status=BugWorkflowHotfixLaneStatus.NOT_APPLICABLE,
+            message="Path B amendment lineage has validator-confirmed coverage.",
+            detail=(
+                "The regression artifact is backed by a complete amendment lineage "
+                "and the validator coverage attestation is present. Continue the "
+                "bug workflow; no additional scenario-reuse action is required."
+            ),
+            actions=(),
+            facts=self._path_b_facts(result),
         )
 
     def build_from_sprint_lane_block(
@@ -333,6 +400,7 @@ class BugWorkflowRemediationMessageBuilder:
         labels = {
             BugWorkflowNextAction.CREATE_REGRESSION_TEST_CARD: "Create regression test card",
             BugWorkflowNextAction.ESCALATE_SEMANTIC_GAP: "Escalate semantic gap",
+            BugWorkflowNextAction.CONFIRM_VALIDATOR_COVERAGE: "Confirm validator coverage",
             BugWorkflowNextAction.ASSIGN_HOTFIX_LANE: "Assign hotfix lane",
             BugWorkflowNextAction.ACTIVATE_HOTFIX_LANE: "Activate hotfix lane",
             BugWorkflowNextAction.ASSIGN_SPRINT: "Assign sprint",
@@ -350,6 +418,9 @@ class BugWorkflowRemediationMessageBuilder:
             BugWorkflowNextAction.ESCALATE_SEMANTIC_GAP: (
                 "Create the required amendment/refinement/spec revision/hotfix spec."
             ),
+            BugWorkflowNextAction.CONFIRM_VALIDATOR_COVERAGE: (
+                "Confirm the declared Path B regression coverage as validator."
+            ),
             BugWorkflowNextAction.ASSIGN_HOTFIX_LANE: (
                 "Create or choose a hotfix sprint lane and assign the bug and test card."
             ),
@@ -365,6 +436,26 @@ class BugWorkflowRemediationMessageBuilder:
             BugWorkflowNextAction.NONE: "Review the returned facts and choose a valid path.",
         }
         return descriptions[action]
+
+    @staticmethod
+    def _path_b_facts(
+        result: BugRegressionScenarioEligibilityResult,
+    ) -> dict[str, object]:
+        facts: dict[str, object] = {
+            "spec_id": result.spec_id,
+            "bug_id": result.bug_id,
+            "coverage_state": result.coverage_state.value,
+            "coverage_pending_scenarios_count": len(result.coverage_pending_scenarios),
+            "eligible_scenarios_count": len(result.eligible_scenarios),
+            "rejected_scenarios_count": len(result.rejected_scenarios),
+        }
+        if result.amendment_revision_id:
+            facts["amendment_revision_id"] = result.amendment_revision_id
+        if result.amendment_status:
+            facts["amendment_status"] = result.amendment_status
+        if result.lineage_state:
+            facts["lineage_state"] = result.lineage_state
+        return facts
 
     @staticmethod
     def _bounded_facts(facts: Mapping[str, Any]) -> dict[str, object]:

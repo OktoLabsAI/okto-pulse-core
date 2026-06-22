@@ -101,11 +101,13 @@ version: "1.0"
 
 | Tool | Args | Purpose |
 |------|------|---------|
-| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms? | Read-only Cypher directly on LadybugDB |
+| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms?, include_working? | Read-only Cypher directly on LadybugDB. Defaults to canonical-only rows; pass `include_working=true` when validating working graph ingestion. |
 | `okto_pulse_kg_query_natural` | board_id, nl_query, limit?, min_confidence? | Natural language search via embedding + HNSW |
 | `okto_pulse_kg_schema_info` | board_id?, include_internal? | Schema introspection: node types, rel types, vector indexes |
 
 **Safety rails:** Timeout: 5s default, 30s max. Max rows: 1000 default, 10000 max. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
+
+**Layer contract:** Graph nodes expose `graph_layer` (`canonical` or `working`). `kg_layer_counts` is a health payload aggregate, not a node property. `okto_pulse_kg_query_cypher` enforces canonical-only visibility by default and should be called with `include_working=true` for working graph checks, rebuild validation, or E2E ingestion tests.
 
 ### Cypher Hit-Counting & RETURN Contract
 
@@ -126,7 +128,7 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 
 | Trigger | Pattern |
 |---|---|
-| Spec reaches `approved`, `validated`, or `done` | Begin consolidation on the spec: extract Decision + Criterion + Constraint + Assumption + Alternative nodes |
+| Spec reaches `done` | Begin canonical consolidation on the spec. The **cognitive** candidates you may create are `Decision`, `Assumption`, `Alternative`. `Criterion` (from acceptance criteria) and `Constraint` (from technical requirements / business rules) are **deterministic-only**: the deterministic worker materializes them — reference the existing deterministic nodes, never create `Criterion`/`Constraint` on the cognitive path. `approved` and `validated` remain working/diagnostic only. |
 | Sprint closes (moves to `closed`) | Consolidate retrospective Learnings + Bugs + Learning→validates→Bug edges |
 | Q&A on an ideation/refinement/spec gets an answer that contains a decision | Carry decision into next formalized spec first, then consolidate from that spec-side formalization |
 | Bug card moves to `done` with root cause + fix narrative | Consolidate a Learning node that validates the Bug node |
@@ -142,7 +144,7 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 **Mandatory closeout sequence:**
 ```
 1. Read complete context: okto_pulse_get_spec_context or okto_pulse_get_task_context
-2. Identify cognitive candidates: Learning, Decision, Assumption, Risk, Alternative, root cause, rejected alternative, or process gap
+2. Identify cognitive candidates — the cognitive-writable node types are `Decision`, `Assumption`, `Alternative` (spec closeout) and `Learning` (bug closeout). Risk, root cause, rejected alternative, and process gap are *content/classification expressed within those node types*, not new node types. `Criterion` and `Constraint` are **deterministic-only** — reference existing deterministic nodes by id; never add them as cognitive candidates.
 3. okto_pulse_kg_begin_consolidation(board_id, artifact_type, artifact_id, raw_content, deterministic_candidates=[])
 4. If nothing_changed=true: okto_pulse_kg_abort_consolidation and report attempted closeout
 5. okto_pulse_kg_add_node_candidate and okto_pulse_kg_add_edge_candidate for applicable candidates
@@ -156,6 +158,32 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 - nothing_changed: session_id or aborted session, plus evidence that reconciliation found no semantic change
 - not_applicable: objective reason no cognitive candidate existed after context review
 - blocked: the tool/error that prevented closeout
+
+### Node-type ownership by writer path (allowlist)
+
+KG node types are owned by a specific **writer path**. A consolidation candidate is
+rejected when its `node_type` is not permitted for the writer path that proposes it —
+this is distinct from a *missing semantic connectivity* failure.
+
+| Node type | Owner | Created by |
+|---|---|---|
+| `Criterion` (from acceptance criteria), `Constraint` (from technical requirements / business rules) | deterministic | **deterministic worker only** — never the cognitive path |
+| `Decision` | dual | cognitive **or** deterministic |
+| `Learning` | cognitive | cognitive (bug closeout) |
+| `Alternative`, `Assumption` | cognitive | cognitive (spec closeout) |
+
+- The **deterministic worker** materializes `Criterion`/`Constraint` from the spec's
+  structured acceptance criteria / technical requirements / business rules. The
+  **cognitive** consolidation path may create only `Decision`, `Learning`,
+  `Alternative`, `Assumption`.
+- When a cognitive decision needs to cite a `Criterion` or `Constraint`, **reference the
+  existing deterministic node by id** (or wait for the deterministic worker to
+  materialize it) — do **not** recreate the node on the cognitive path.
+- A cognitive session proposing a `Criterion` or `Constraint` candidate fails **before
+  any graph mutation or session commit** with `status=source_type_not_supported`,
+  `reason=writer_not_connectivity_owner`. Remediation: remove the invalid candidate,
+  abort and recreate the session without it, or route the materialization through the
+  deterministic owner.
 
 ## KG Governance — Operator Hygiene
 
@@ -178,6 +206,20 @@ Before creating any Decision or Constraint, run:
 `okto_pulse_kg_health(board_id)` — returns a JSON health snapshot. It carries the KG-01 contract fields (`board_id`, `graph_state`, `discovery_state`, `overall_state`, `metric_status`, `correlation_id`, `checked_at`, …) alongside the legacy aggregation fields (`queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `schema_version`, `contradict_warn_count`), the daily-tick fields `last_decay_tick_at` / `nodes_recomputed_in_last_tick`, `decay_scheduler_diagnostics`, and `storage_footprint_proxy`.
 
 **When to consult:** before long consolidation cycles, after flagging contradictions, when debugging stale ranking (`default_score_ratio > 0.7`).
+
+### Operational Signals — Separate Domains + Drill-Down (spec 007d1308)
+
+Cognitive consolidation produces **canonical** knowledge by construction: a cognitive `okto_pulse_kg_add_node_candidate` with `graph_layer=working` is rejected (`cognitive_node_candidates_must_be_canonical`) BEFORE the session is mutated, and accepted candidates are persisted as `canonical` / `maturity_status=canonical_eligible`. Working-layer nodes are the Layer 1 deterministic worker's responsibility only (`source_maturity`), never the cognitive agent's.
+
+KG Health surfaces three **distinct** operational signals — never merged into one bucket (dec_68fd26a2). When a signal is present, its `health_issues[]` row names the correct drill-down MCP tool in `drill_down_tool`:
+
+| Signal (`health_issues[].code`) | Domain | Drill-down tool |
+|---|---|---|
+| `cognitive_consolidation_pending` | Cognitive items awaiting agent action (pending/in_progress/failed) | `okto_pulse_kg_list_cognitive_pending_items` |
+| `dead_letter_backlog` | Consolidation rows that exhausted retries | `okto_pulse_kg_dead_letter_list` → `okto_pulse_kg_dead_letter_reprocess` after fixing the root cause |
+| `canonical_debt_open` | Artifacts still outside canonical consolidation | `okto_pulse_kg_canonical_debt_list` |
+
+Each tool lists ONLY its own domain — do NOT infer one signal's backlog from another's counters, and do not reprocess the wrong queue. `okto_pulse_kg_dead_letter_list` exposes both `rows`/`id` (legacy) and the additive `items`/`dead_letter_id` + `last_error`/`error_text` (full `errors[]` history preserved). The three listings emit the bounded `kg_operational_inspection_list_total` counter (labels: `signal`=`cognitive_pending`/`dead_letter`/`canonical_debt`, `surface`, `outcome`) so the **absence** of operational drill-down is itself diagnosable.
 
 ### Consolidation Hygiene Checklist
 

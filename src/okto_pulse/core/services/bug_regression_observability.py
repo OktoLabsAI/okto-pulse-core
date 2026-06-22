@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.events import publish as event_publish
 from okto_pulse.core.events.types import BugRegressionScenarioReuseDecision
 from okto_pulse.core.services.bug_regression_scenarios import (
+    PATH_B_REASON_CODES,
+    BugRegressionCoverageState,
     BugRegressionScenarioEligibilityResult,
 )
 from okto_pulse.core.services.bug_workflow_remediation import (
@@ -30,6 +32,10 @@ METRIC_SEMANTIC_GAP_TOTAL = "bug_regression_semantic_gap_total"
 METRIC_RESOLVE_LATENCY_MS = "bug_regression_scenario_resolve_latency_ms"
 METRIC_NO_UNLOCK_INVARIANT = "bug_regression_no_unlock_invariant"
 METRIC_WORKFLOW_REMEDIATION_TOTAL = "bug_workflow_remediation_build_total"
+#: OR (card 966c7e7c): bounded Path B outcome counter. Born cardinality-safe —
+#: labels are ONLY reason_code/coverage_state/outcome/surface (NO entity ids,
+#: not even spec_id), enforced by ``_METRIC_LABEL_ALLOWLIST`` below.
+METRIC_PATH_B_TOTAL = "pulse_bug_regression_path_b_total"
 
 BUG_REGRESSION_METRIC_NAMES = frozenset(
     {
@@ -39,6 +45,7 @@ BUG_REGRESSION_METRIC_NAMES = frozenset(
         METRIC_RESOLVE_LATENCY_MS,
         METRIC_NO_UNLOCK_INVARIANT,
         METRIC_WORKFLOW_REMEDIATION_TOTAL,
+        METRIC_PATH_B_TOTAL,
     }
 )
 
@@ -49,12 +56,29 @@ _ALLOWED_LABEL_KEYS = frozenset(
         "outcome",
         "decision",
         "reason_code",
+        "coverage_state",
         "next_action",
         "remediation_path",
         "hotfix_lane_status",
         "surface",
     }
 )
+#: Per-metric STRICTER allowlist. The new Path B OR is cardinality-safe by
+#: construction: it accepts ONLY bounded codes, never an entity id (spec_id,
+#: bug_id, amendment_revision_id, regression_*_id, ...). Legacy metrics keep the
+#: global allowlist (board_id/spec_id) — not refactored, out of this card's scope.
+_PATH_B_METRIC_LABEL_KEYS = frozenset(
+    {"reason_code", "coverage_state", "outcome", "surface"}
+)
+_METRIC_LABEL_ALLOWLIST: dict[str, frozenset[str]] = {
+    METRIC_PATH_B_TOTAL: _PATH_B_METRIC_LABEL_KEYS,
+}
+#: The 5 Path B REJECT codes (catalog minus the 2 coverage states) — derived from
+#: PATH_B_REASON_CODES so it cannot drift from the resolver's source of truth.
+_PATH_B_REJECT_CODES = PATH_B_REASON_CODES - {
+    BugRegressionCoverageState.COVERAGE_PENDING.value,
+    BugRegressionCoverageState.PATH_B_READY.value,
+}
 _FORBIDDEN_LABEL_FRAGMENTS = (
     "description",
     "expected",
@@ -118,11 +142,14 @@ def sanitize_bug_regression_metric_event(
     if event.metric_name not in BUG_REGRESSION_METRIC_NAMES:
         raise ValueError(f"Unsupported bug regression metric: {event.metric_name}")
 
+    # Per-metric stricter allowlist wins (the Path B OR forbids entity ids); other
+    # metrics fall back to the global bounded allowlist.
+    allowed_keys = _METRIC_LABEL_ALLOWLIST.get(event.metric_name, _ALLOWED_LABEL_KEYS)
     safe_labels: dict[str, Any] = {}
     for key, value in event.labels.items():
         key_text = str(key)
         lowered = key_text.lower()
-        if key_text not in _ALLOWED_LABEL_KEYS:
+        if key_text not in allowed_keys:
             raise ValueError(f"Unsupported bug regression metric label: {key_text}")
         if any(fragment in lowered for fragment in _FORBIDDEN_LABEL_FRAGMENTS):
             raise ValueError(f"Forbidden bug regression metric label: {key_text}")
@@ -196,6 +223,24 @@ def observe_bug_regression_resolution(
             )
         )
 
+    # OR (card 966c7e7c): Path B outcome counter. Emitted from this single point
+    # so gate AND preview produce the SAME metric (parity). Cardinality-safe:
+    # bounded codes only, NO entity ids (not even spec_id) — see
+    # _PATH_B_METRIC_LABEL_KEYS. reason_code is always ∈ PATH_B_REASON_CODES.
+    pb_reason = _path_b_reason_code(result)
+    if pb_reason is not None:
+        sink.emit(
+            BugRegressionMetricEvent(
+                METRIC_PATH_B_TOTAL,
+                1,
+                {
+                    "outcome": outcome,
+                    "reason_code": pb_reason,
+                    "coverage_state": result.coverage_state.value,
+                },
+            )
+        )
+
 
 async def record_bug_regression_decision(
     *,
@@ -206,6 +251,7 @@ async def record_bug_regression_decision(
     reason_code: str,
     scenario_count: int,
     test_task_count: int,
+    coverage_state: str = "",
     actor_id: str | None = None,
     actor_type: str = "user",
     session: AsyncSession | None = None,
@@ -228,6 +274,7 @@ async def record_bug_regression_decision(
         spec_id=spec_id,
         decision=decision,
         reason_code=reason_code,
+        coverage_state=coverage_state,
         scenario_count=max(0, int(scenario_count)),
         test_task_count=max(0, int(test_task_count)),
     )
@@ -321,8 +368,24 @@ def _primary_reason_code(result: BugRegressionScenarioEligibilityResult) -> str 
         return result.rejected_scenarios[0].reason.value
     if result.eligible_scenarios:
         return result.eligible_scenarios[0].reason.value
+    if result.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING:
+        return "coverage_pending"
     if result.semantic_gap_required:
         return "no_eligible_scenarios"
+    return None
+
+
+def _path_b_reason_code(result: BugRegressionScenarioEligibilityResult) -> str | None:
+    """Bounded Path B reason code for the OR metric, or None when the resolution
+    did not engage Path B. Always ∈ PATH_B_REASON_CODES (anti-drift by
+    construction): coverage state wins, else the first Path B reject reason."""
+    if result.coverage_state is BugRegressionCoverageState.PATH_B_READY:
+        return BugRegressionCoverageState.PATH_B_READY.value
+    if result.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING:
+        return BugRegressionCoverageState.COVERAGE_PENDING.value
+    for item in result.rejected_scenarios:
+        if item.reason.value in _PATH_B_REJECT_CODES:
+            return item.reason.value
     return None
 
 

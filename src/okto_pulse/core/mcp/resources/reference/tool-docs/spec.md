@@ -352,6 +352,16 @@ Args:
     general_justification: Overall assessment (min 20 chars)
     recommendation: One of: approve, reject
 
+Scoring contract:
+    Use a 0-100 integer scale, not 1-5. A value like 5 is treated as 5/100 and
+    will usually fail. completeness/assertiveness are higher-is-better;
+    ambiguity is lower-is-better.
+
+Coverage contract:
+    FR coverage is computed from business_rules[].linked_requirements. Direct
+    task links on functional_requirements[].linked_task_ids are traceability
+    only and do not close fr_coverage_pct.
+
 Returns:
     JSON with validation result, outcome, threshold violations, and resolved thresholds.
     On success, spec_status becomes "validated".

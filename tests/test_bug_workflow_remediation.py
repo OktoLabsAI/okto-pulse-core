@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from okto_pulse.core.models.db import Card, CardStatus, CardType, Spec
 from okto_pulse.core.services.bug_regression_scenarios import (
+    BugRegressionCoverageState,
+    BugRegressionEligibilityReason,
+    BugRegressionNextAction,
+    BugRegressionScenarioEligibilityResult,
     BugRegressionScenarioEligibilityResolver,
+    EligibleBugRegressionScenario,
 )
 from okto_pulse.core.services.bug_workflow_remediation import (
     BugWorkflowHotfixLaneStatus,
@@ -91,6 +96,73 @@ def test_builder_formats_path_b_for_unrelated_scenario():
     assert payload["next_action"] == BugWorkflowNextAction.ESCALATE_SEMANTIC_GAP.value
     assert payload["semantic_gap_required"] is True
     assert "unrelated same-spec scenario" in payload["detail"]
+
+
+def test_builder_formats_path_b_coverage_pending_without_path_a_guidance():
+    result = BugRegressionScenarioEligibilityResult(
+        bug_id="bug-1",
+        spec_id="spec-1",
+        eligible_scenarios=(),
+        rejected_scenarios=(),
+        semantic_gap_required=False,
+        spec_mutation_required=False,
+        next_action=BugRegressionNextAction.CONFIRM_VALIDATOR_COVERAGE,
+        coverage_state=BugRegressionCoverageState.COVERAGE_PENDING,
+        coverage_pending_scenarios=("ts-foreign",),
+        amendment_revision_id="amd-1",
+        amendment_status="done",
+        lineage_state="complete",
+        safe_next_actions=(BugRegressionNextAction.CONFIRM_VALIDATOR_COVERAGE.value,),
+    )
+
+    payload = BugWorkflowRemediationMessageBuilder().build_from_eligibility(result).to_dict()
+
+    assert payload["reason_code"] == "coverage_pending"
+    assert payload["remediation_path"] == (
+        BugWorkflowRemediationPath.PATH_B_AMENDMENT_LINEAGE.value
+    )
+    assert payload["next_action"] == BugWorkflowNextAction.CONFIRM_VALIDATOR_COVERAGE.value
+    assert payload["actions"][0]["action_id"] == "confirm_validator_coverage"
+    assert "okto_pulse_confirm_amendment_coverage" in payload["detail"]
+    assert "Path A" not in payload["detail"]
+    assert payload["facts"]["coverage_state"] == "coverage_pending"
+    assert payload["facts"]["amendment_revision_id"] == "amd-1"
+
+
+def test_builder_formats_path_b_ready_without_regression_card_action():
+    result = BugRegressionScenarioEligibilityResult(
+        bug_id="bug-1",
+        spec_id="spec-1",
+        eligible_scenarios=(
+            EligibleBugRegressionScenario(
+                scenario_id="ts-foreign",
+                title="Foreign regression",
+                reason=BugRegressionEligibilityReason.PATH_B_AMENDMENT_LINEAGE,
+                source_task_id="origin-1",
+            ),
+        ),
+        rejected_scenarios=(),
+        semantic_gap_required=False,
+        spec_mutation_required=False,
+        next_action=BugRegressionNextAction.CREATE_REGRESSION_TEST_CARD,
+        coverage_state=BugRegressionCoverageState.PATH_B_READY,
+        eligible_regression_artifacts=("ts-foreign",),
+        amendment_revision_id="amd-1",
+        amendment_status="done",
+        lineage_state="complete",
+    )
+
+    payload = BugWorkflowRemediationMessageBuilder().build_from_eligibility(result).to_dict()
+
+    assert payload["reason_code"] == "path_b_amendment_lineage"
+    assert payload["remediation_path"] == (
+        BugWorkflowRemediationPath.PATH_B_AMENDMENT_LINEAGE.value
+    )
+    assert payload["next_action"] == BugWorkflowNextAction.NONE.value
+    assert payload["actions"] == []
+    assert "Path A" not in payload["message"]
+    assert "Path A" not in payload["detail"]
+    assert payload["facts"]["coverage_state"] == "path_b_ready"
 
 
 def test_builder_formats_path_c_hotfix_lane_without_reopen_guidance():

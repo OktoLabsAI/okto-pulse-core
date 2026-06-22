@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.config import get_settings
+from okto_pulse.core.telemetry.publish_health import HEALTH_SOURCE_UNAVAILABLE
 from okto_pulse.core.telemetry.schema import SchemaReject, count_rejected_payload_fields, sanitize_payload
 from okto_pulse.core.telemetry.service import TelemetryService
 
@@ -79,6 +80,18 @@ async def get_local_metrics_summary(
 ):
     service = TelemetryService(get_settings())
     return service.summary(window_days=window_days)
+
+
+@router.get("/metrics/publish-health")
+async def get_metrics_publish_health(
+    _: str = Depends(require_user),
+):
+    """R5C-A publish-health surface: the allowlisted classification of the R5A
+    local failure-state. No source readable -> 503 HEALTH_SOURCE_UNAVAILABLE."""
+    result = TelemetryService(get_settings()).publish_health()
+    if result.get("error") == HEALTH_SOURCE_UNAVAILABLE:
+        return JSONResponse(status_code=503, content=result)
+    return result
 
 
 @router.post("/metrics/local/events")

@@ -67,6 +67,29 @@ def test_registry_exposes_required_resolution_statuses_and_owner_table():
     assert assumption_rule.semantic_target_policy == "provenance_only_v1"
 
 
+def test_final_report_cognitive_nodes_are_allowlisted_technical_roots():
+    guard = KGNodeConnectivityGuard()
+
+    result = guard.validate(
+        board_id="board-1",
+        writer_path="commit_consolidation",
+        kg_health_state="healthy",
+        generation_id="gen-final-report",
+        nodes=[
+            _node(
+                "report-learning",
+                "Learning",
+                "final_report:e2e-report-20260622-001",
+            )
+        ],
+        edges=[],
+        existing_node_refs=[],
+    )
+
+    assert result.passed is True
+    assert result.outcome == KGConnectivityOutcome.ALLOWLISTED
+
+
 def test_isolated_learning_candidate_fails_with_safe_violation_and_metric():
     sink = InMemoryConnectivityMetricSink()
     guard = KGNodeConnectivityGuard(metric_sink=sink)
@@ -354,7 +377,10 @@ def test_dual_origin_owner_table_enforces_writer_polarity_for_core_types():
         nodes=[_node("learning-1", "Learning", "card:bug:bug-1:learning:0")],
         edges=[_edge("e-1", "validates", "learning-1", "kg:bug_1")],
         existing_node_refs=[
-            KGNodeRef(ref_id="bug_1", node_type="Bug"),
+            # R7: a bug-derived canonical Learning only reaches completeness
+            # through a CANONICAL Bug, so the endpoint is stamped canonical
+            # (fixture correction, not a relaxation of the invariant).
+            KGNodeRef(ref_id="bug_1", node_type="Bug", graph_layer="canonical"),
         ],
     )
 

@@ -71,6 +71,31 @@ Args:
 Returns:
     JSON with list of global guidelines
 
+## `okto_pulse_list_default_guideline_candidates`
+
+List global catalog guidelines eligible to become defaults for new boards.
+
+Only global guidelines can be selected as defaults; inline board guidelines are
+never eligible.
+
+Args:
+    board_id: Board ID used for authentication.
+    tag: Optional tag filter.
+
+Returns:
+    JSON with candidate guidelines and current default selection state.
+
+## `okto_pulse_update_default_guideline_refs`
+
+Replace the global default guideline references applied to future boards.
+
+Args:
+    board_id: Board ID used for authentication.
+    guideline_ids: Multi-value global guideline IDs, or empty/CLEAR to remove.
+
+Returns:
+    JSON with the active default guideline references and rejected IDs, if any.
+
 ## `okto_pulse_unlink_guideline_from_board`
 
 Unlink a guideline from a board. The guideline itself is not deleted.

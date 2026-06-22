@@ -122,6 +122,7 @@ class TestBackwardCompat:
 
     def test_schema_constants_importable(self):
         from okto_pulse.core.kg.schema import (
+            MULTI_REL_TYPES,
             NODE_TYPES,
             REL_TYPES,
             SCHEMA_VERSION,
@@ -129,6 +130,7 @@ class TestBackwardCompat:
 
         assert len(NODE_TYPES) == 11
         assert len(REL_TYPES) == 10
+        assert ("implements", (("APIContract", "Constraint"),)) in MULTI_REL_TYPES
         # SCHEMA_VERSION é bumped a cada migração estrutural do KG; este teste
         # apenas garante que o módulo expõe a constante em formato semver
         # x.y.z. Quando uma migração realmente quebrar compat, fixe o valor

@@ -551,6 +551,7 @@ async def test_bg01_4_inventory_has_no_silent_service_layer_gaps():
         ("CardService", "create_card"),
         ("CardService", "update_card"),
         ("CardService", "submit_task_validation"),
+        ("CardService", "confirm_amendment_coverage"),
         ("CardService", "move_card"),
         ("SpecService", "move_spec"),
         ("SpecService", "submit_spec_validation"),

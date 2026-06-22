@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (
     ConsolidationEnqueuer,
 )
-from okto_pulse.core.events.types import CardMoved
+from okto_pulse.core.events.types import CardMoved, StoryMoved
 from okto_pulse.core.infra.database import Base
 from okto_pulse.core.models.db import Board, ConsolidationQueue
 
@@ -295,3 +295,16 @@ def test_legacy_select_then_insert_idiom_is_gone():
     )
     assert "from sqlalchemy.dialects.sqlite import insert" in src
     assert "from sqlalchemy.dialects.postgresql import insert" in src
+
+
+def test_story_lifecycle_events_enqueue_story_artifact():
+    event = StoryMoved(
+        board_id="board-story",
+        story_id="story-123",
+        from_status="draft",
+        to_status="ready",
+    )
+
+    assert ConsolidationEnqueuer()._map_targets(event) == [
+        ("story", "story-123"),
+    ]

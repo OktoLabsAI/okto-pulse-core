@@ -30,6 +30,9 @@ When the board has `require_spec_validation=true`, advancing from `approved` to 
 
 **Thresholds (default 80/80/30):**
 
+All scores are 0-100 integers, not 1-5. A 1-5-style score is treated literally
+as 1/100 through 5/100 and will usually fail the configured thresholds.
+
 | Dimension | Direction | Default threshold |
 |---|---|---|
 | `completeness` | Higher is better (min) | 80 |
@@ -37,6 +40,8 @@ When the board has `require_spec_validation=true`, advancing from `approved` to 
 | `ambiguity` | LOWER is better (max) | 30 |
 
 **Anti-pattern — GRAVE violation:** Re-submitting with higher numbers without actually improving the spec. The correct response to a failed dimension is to ADD content (new test scenarios, refined BRs, edge cases) until you genuinely believe the score is higher.
+
+**FR coverage source:** the deterministic FR coverage gate is `Functional Requirement -> Business Rule`. It reads `business_rules[].linked_requirements`; direct task links on `functional_requirements[].linked_task_ids` are traceability only and do not close `fr_coverage_pct`.
 
 **MCP tools for the gate:**
 - `okto_pulse_submit_spec_validation(...)` — requires spec in `approved` status.

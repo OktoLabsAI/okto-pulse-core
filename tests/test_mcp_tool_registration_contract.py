@@ -11,6 +11,7 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
 
     required = {
         "okto_pulse_get_traceability_report",
+        "okto_pulse_kg_canonical_debt_list",
         "okto_pulse_kg_dead_letter_list",
         "okto_pulse_kg_dead_letter_reprocess",
         "okto_pulse_create_card",
@@ -65,6 +66,11 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     assert "completeness" in validation_desc
     assert "drift" in validation_desc
     assert "failed remains in" in load("reference/tool-docs/misc.md")
+
+    # canonical-debt list: health drill-down tool must be discoverable.
+    debt_list_desc = tools["okto_pulse_kg_canonical_debt_list"].description
+    assert "canonical-debt" in debt_list_desc.lower()
+    assert "okto_pulse_kg_canonical_debt_list" in load("reference/tool-docs/kg.md")
 
     # dead-letter list: compact summary; the reprocess cross-reference moved to
     # the kg tool-docs resource.

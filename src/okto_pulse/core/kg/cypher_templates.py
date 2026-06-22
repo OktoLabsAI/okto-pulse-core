@@ -22,6 +22,47 @@ _DEFAULT_FILTERS = (
     "AND n.relevance_score >= $min_relevance "
 )
 
+
+# ---------------------------------------------------------------------------
+# Canonical-only layer scoping — SINGLE SOURCE OF TRUTH (bug 07bdf670).
+# Every canonical-only read surface (these templates, kg_service inline
+# queries, the embedded graph-store subgraph, jobs) MUST build its graph_layer
+# predicate from `layer_filter_clause` and its label from
+# `layer_label_projection` so the fail-closed contract can never drift.
+# ---------------------------------------------------------------------------
+
+
+def layer_filter_clause(var: str, *, param: str = "$graph_layer") -> str:
+    """Fail-CLOSED graph_layer filter for node alias ``var`` (bug 07bdf670).
+
+    A node whose ``graph_layer`` is NULL/absent is NOT treated as canonical: it
+    is excluded from BOTH canonical-only and working-only reads and surfaces
+    ONLY under ``<param> = 'all'``. The OLD form
+    ``coalesce(var.graph_layer, 'canonical') = <param>`` was fail-OPEN — a
+    missing layer defaulted to canonical and leaked. The authoritative place
+    that stamps legacy/un-stamped nodes is the migration backfill
+    (``migrate_kg_layer`` / global-discovery layer backfill), never this read.
+
+    ``var.graph_layer = <param>`` is already NULL-safe in Cypher (``NULL =``
+    anything yields NULL → the row is dropped), so this is fail-closed by
+    construction.
+    """
+    return f"({param} = 'all' OR {var}.graph_layer = {param})"
+
+
+def layer_label_projection(var: str, *, alias: str = "graph_layer") -> str:
+    """Fail-SAFE label projection for ``var.graph_layer`` (bug 07bdf670).
+
+    A NULL/absent layer is reported as ``'legacy_unknown'`` — NEVER mislabeled
+    ``'canonical'`` and never a raw ``null`` — so an ``all`` / include_working
+    read can never present an un-stamped node as canonical. ``graph_layer`` is
+    not a strictly binary canonical|working field (it also carries ``'none'``
+    per source_maturity), so the conservative label is the explicit
+    ``legacy_unknown`` bucket, matching ``MATURITY_LEGACY_UNKNOWN`` (codex
+    contract 29611d06 / bug 07bdf670, item 2).
+    """
+    return f"coalesce({var}.graph_layer, 'legacy_unknown') AS {alias}"
+
 # ---------------------------------------------------------------------------
 # 1. get_decision_history — FR-11
 # Variable-length path on :supersedes up to depth 10.
@@ -43,11 +84,14 @@ LIMIT $max_rows
 # 2-hop neighborhood + entity co-occurrence from an artifact_id.
 # ---------------------------------------------------------------------------
 
-GET_RELATED_CONTEXT = """
+GET_RELATED_CONTEXT = f"""
 MATCH (center)-[r1]-(hop1)
 WHERE center.source_artifact_ref = $artifact_id
   AND center.source_confidence >= $min_confidence
+  AND {layer_filter_clause('hop1')}
 OPTIONAL MATCH (hop1)-[r2]-(hop2)
+WHERE (hop2 IS NULL
+       OR {layer_filter_clause('hop2')})
 RETURN center.id AS center_id, center.title AS center_title,
        hop1.id AS hop1_id, hop1.title AS hop1_title,
        hop2.id AS hop2_id, hop2.title AS hop2_title,
@@ -170,25 +214,29 @@ LIMIT $max_rows
 # 10. get_all_nodes — visualization helper (no type filter)
 # ---------------------------------------------------------------------------
 
-GET_ALL_NODES = """
+GET_ALL_NODES = f"""
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND {layer_filter_clause('n')}
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
-       n.source_artifact_ref
+       n.source_artifact_ref, {layer_label_projection('n')},
+       n.maturity_status
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
 
-GET_ALL_NODES_BY_TYPE = """
+GET_ALL_NODES_BY_TYPE = f"""
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND {layer_filter_clause('n')}
   AND label(n) = $node_type
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
-       n.source_artifact_ref
+       n.source_artifact_ref, {layer_label_projection('n')},
+       n.maturity_status
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
@@ -197,44 +245,50 @@ LIMIT $max_rows
 # strict tuple comparison so the next page starts immediately after the
 # last row of the previous page. Mirrors the ORDER BY above so the page
 # boundaries are stable across calls.
-GET_ALL_NODES_AFTER_CURSOR = """
+GET_ALL_NODES_AFTER_CURSOR = f"""
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND {layer_filter_clause('n')}
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
-       n.source_artifact_ref
+       n.source_artifact_ref, {layer_label_projection('n')},
+       n.maturity_status
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
 
-GET_ALL_NODES_BY_TYPE_AFTER_CURSOR = """
+GET_ALL_NODES_BY_TYPE_AFTER_CURSOR = f"""
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND {layer_filter_clause('n')}
   AND label(n) = $node_type
   AND (n.created_at < $cursor_ts
        OR (n.created_at = $cursor_ts AND n.id < $cursor_id))
 RETURN n.id, label(n) AS node_type, n.title, n.content,
        n.created_at, n.source_confidence, n.relevance_score,
-       n.source_artifact_ref
+       n.source_artifact_ref, {layer_label_projection('n')},
+       n.maturity_status
 ORDER BY n.created_at DESC, n.id DESC
 LIMIT $max_rows
 """
 
-COUNT_ALL_NODES = """
+COUNT_ALL_NODES = f"""
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND {layer_filter_clause('n')}
 RETURN count(n)
 """
 
-COUNT_ALL_NODES_BY_TYPE = """
+COUNT_ALL_NODES_BY_TYPE = f"""
 MATCH (n)
 WHERE n.source_confidence >= $min_confidence
   AND n.relevance_score >= $min_relevance
+  AND {layer_filter_clause('n')}
   AND label(n) = $node_type
 RETURN count(n)
 """

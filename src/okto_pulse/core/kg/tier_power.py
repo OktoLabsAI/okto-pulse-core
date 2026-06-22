@@ -26,6 +26,7 @@ from typing import Any
 from okto_pulse.core.kg.schema import (
     NODE_TYPES,
     SCHEMA_VERSION,
+    STABLE_NODE_PROPERTIES,
     VECTOR_INDEX_TYPES,
     open_board_connection,
     stable_rel_type_entries,
@@ -83,6 +84,72 @@ def _strip_string_literals(cypher: str) -> str:
     """Replace string literals with placeholders so keyword check doesn't
     trigger on words inside strings."""
     return re.sub(r"'[^']*'|\"[^\"]*\"", "'__STR__'", cypher)
+
+
+def _mask_literals_and_comments(cypher: str) -> str:
+    """Return a same-length string with comments/literals replaced by spaces."""
+
+    chars = list(cypher)
+    index = 0
+    quote: str | None = None
+    in_line_comment = False
+    in_block_comment = False
+
+    while index < len(chars):
+        char = chars[index]
+        next_char = chars[index + 1] if index + 1 < len(chars) else ""
+
+        if in_line_comment:
+            if char == "\n":
+                in_line_comment = False
+            else:
+                chars[index] = " "
+            index += 1
+            continue
+
+        if in_block_comment:
+            chars[index] = " "
+            if char == "*" and next_char == "/":
+                chars[index + 1] = " "
+                in_block_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if quote:
+            chars[index] = " "
+            if char == "\\":
+                if index + 1 < len(chars):
+                    chars[index + 1] = " "
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+
+        if char in {"'", '"'}:
+            chars[index] = " "
+            quote = char
+            index += 1
+            continue
+        if char == "/" and next_char == "/":
+            chars[index] = " "
+            chars[index + 1] = " "
+            in_line_comment = True
+            index += 2
+            continue
+        if char == "/" and next_char == "*":
+            chars[index] = " "
+            chars[index + 1] = " "
+            in_block_comment = True
+            index += 2
+            continue
+
+        index += 1
+
+    return "".join(chars)
 
 
 def validate_cypher_read_only(cypher: str) -> None:
@@ -325,6 +392,151 @@ def clamp_max_rows(max_rows: int | None) -> int:
     return max(1, min(r, MAX_MAX_ROWS))
 
 
+def _extract_match_node_vars(pattern_part: str) -> tuple[list[str], bool]:
+    """Return node variables found in a MATCH pattern and whether any node is anonymous.
+
+    This intentionally covers the supported Tier Power subset. When a query uses
+    anonymous nodes under canonical-only mode we fail closed instead of returning
+    possibly working rows or counts.
+    """
+
+    variables: list[str] = []
+    anonymous = False
+    for match in re.finditer(r"\(([^()]*)\)", pattern_part):
+        content = match.group(1).strip()
+        if not content or content.startswith(":") or content.startswith("{"):
+            anonymous = True
+            continue
+        first = re.split(r"[\s:{]", content, maxsplit=1)[0].strip()
+        if not first or "." in first or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", first):
+            continue
+        variables.append(first)
+    return sorted(set(variables)), anonymous
+
+
+def _find_clause_end(cypher: str, start: int) -> int:
+    masked = _mask_literals_and_comments(cypher)
+    boundary_re = re.compile(
+        r"\b(OPTIONAL\s+MATCH|MATCH|WITH|RETURN|UNION|ORDER\s+BY|ORDER|LIMIT|CALL)\b",
+        flags=re.IGNORECASE,
+    )
+    for boundary in boundary_re.finditer(masked, start):
+        keyword = " ".join(boundary.group(1).upper().split())
+        if keyword == "WITH":
+            prefix = masked[:boundary.start()].rstrip()
+            previous = re.search(r"([A-Za-z_][A-Za-z0-9_]*)$", prefix)
+            if previous and previous.group(1).upper() in {"STARTS", "ENDS"}:
+                continue
+        return boundary.start()
+    return len(cypher)
+
+
+def _canonical_filter_for_vars(variables: list[str]) -> str:
+    return " AND ".join(f"{var}.graph_layer = 'canonical'" for var in variables)
+
+
+def _rewrite_cypher_canonical_only(cypher: str) -> tuple[str, str]:
+    """Inject graph_layer predicates into supported MATCH clauses.
+
+    If the query shape cannot be filtered safely, raise instead of allowing a
+    working leak. This is deliberately stricter than row projection because
+    arbitrary ``MATCH (n) RETURN n`` rows may not expose ``graph_layer`` after
+    driver normalisation.
+    """
+
+    match_iter = list(re.finditer(r"\b(?:OPTIONAL\s+MATCH|MATCH)\b", cypher, re.IGNORECASE))
+    if not match_iter:
+        return cypher, "no_match"
+
+    out: list[str] = []
+    cursor = 0
+    for idx, match in enumerate(match_iter):
+        out.append(cypher[cursor:match.end()])
+        body_start = match.end()
+        next_match_start = match_iter[idx + 1].start() if idx + 1 < len(match_iter) else len(cypher)
+        clause_end = min(_find_clause_end(cypher, body_start), next_match_start)
+        clause_body = cypher[body_start:clause_end]
+        where_match = re.search(r"\bWHERE\b", clause_body, re.IGNORECASE)
+        pattern_part = clause_body[:where_match.start()] if where_match else clause_body
+        variables, has_anonymous = _extract_match_node_vars(pattern_part)
+        if re.search(r"\[[^\]]*\*", pattern_part):
+            raise TierPowerError(
+                "canonical_filter_unenforceable",
+                "Canonical-only query uses variable-length traversal; name and bound every traversed node or pass include_working=true.",
+                details={"filter_mode": "cypher_rewrite"},
+            )
+        if has_anonymous:
+            raise TierPowerError(
+                "canonical_filter_unenforceable",
+                "Canonical-only query uses anonymous node patterns; name every node or pass include_working=true.",
+                details={"filter_mode": "cypher_rewrite"},
+            )
+        if not variables:
+            out.append(clause_body)
+        else:
+            canonical_filter = _canonical_filter_for_vars(variables)
+            if where_match:
+                original_where = clause_body[where_match.end():].strip()
+                out.append(
+                    f"{pattern_part}WHERE {canonical_filter} AND ({original_where}) "
+                )
+            else:
+                out.append(f"{pattern_part}WHERE {canonical_filter} ")
+        cursor = clause_end
+
+    out.append(cypher[cursor:])
+    return "".join(out), "cypher_rewrite"
+
+
+def _apply_canonical_projection(
+    result: dict,
+    *,
+    include_working: bool,
+    canonical_filter_mode: str | None = None,
+) -> dict:
+    rows = list(result.get("rows") or [])
+    if include_working:
+        return {
+            **result,
+            "query_state": "canonical_and_working",
+            "layers_included": ["canonical", "working"],
+            "canonical_filter_enforced": False,
+            "working_omitted_count": 0,
+        }
+
+    kept: list[Any] = []
+    omitted = 0
+    saw_layer = False
+    for row in rows:
+        layer: str | None = None
+        if isinstance(row, dict):
+            raw = row.get("graph_layer") or row.get("layer")
+            if raw is not None:
+                layer = str(raw)
+        if layer is None:
+            kept.append(row)
+            continue
+        saw_layer = True
+        if layer == "working":
+            omitted += 1
+            continue
+        kept.append(row)
+
+    return {
+        **result,
+        "rows": kept,
+        "row_count": len(kept),
+        "query_state": "canonical_only",
+        "layers_included": ["canonical"],
+        "canonical_filter_enforced": bool(canonical_filter_mode or saw_layer),
+        "canonical_filter_mode": (
+            canonical_filter_mode
+            or ("row_projection" if saw_layer else "partial_no_layer_column")
+        ),
+        "working_omitted_count": omitted,
+    }
+
+
 # ---------------------------------------------------------------------------
 # query_cypher (FR-3, FR-4, FR-10)
 # ---------------------------------------------------------------------------
@@ -337,6 +549,7 @@ def execute_cypher_read_only(
     *,
     max_rows: int | None = None,
     timeout_ms: int | None = None,
+    include_working: bool = False,
 ) -> dict:
     """Execute a validated read-only Cypher query with safety rails.
 
@@ -350,12 +563,24 @@ def execute_cypher_read_only(
     logger.debug("[KG] execute_cypher_read_only cypher=%s", cypher[:200])
 
     max_rows = clamp_max_rows(max_rows)
+    cleaned = _normalize_unicode(cypher)
+    validate_cypher_read_only(cleaned)
+    cleaned = _auto_inject_limit(cleaned, max_rows)
+    cleaned = _auto_bound_var_length_path(cleaned, MAX_TRAVERSAL_DEPTH)
+    canonical_filter_mode = None
+    if not include_working:
+        cleaned, canonical_filter_mode = _rewrite_cypher_canonical_only(cleaned)
 
     executor = get_kg_registry().cypher_executor
     if executor is not None:
         logger.debug("[KG] execute_cypher_read_only delegating to registry.cypher_executor")
-        return executor.execute_read_only(
-            board_id, cypher, params, max_rows=max_rows,
+        result = executor.execute_read_only(
+            board_id, cleaned, params, max_rows=max_rows,
+        )
+        return _apply_canonical_projection(
+            result,
+            include_working=include_working,
+            canonical_filter_mode=canonical_filter_mode,
         )
 
     # Fallback: direct execution (should not happen with proper bootstrap)
@@ -363,15 +588,10 @@ def execute_cypher_read_only(
 
     timeout_ms = clamp_timeout(timeout_ms)
 
-    cleaned = _normalize_unicode(cypher)
-    validate_cypher_read_only(cleaned)
-    cleaned = _auto_inject_limit(cleaned, max_rows)
-    cleaned = _auto_bound_var_length_path(cleaned, MAX_TRAVERSAL_DEPTH)
-
     logger.debug("[KG] execute_cypher_read_only opening board connection board_id=%s", board_id)
     t0 = _time.monotonic()
-    with open_board_connection(board_id) as (_db, conn):
-        try:
+    try:
+        with open_board_connection(board_id) as (_db, conn):
             logger.debug("[KG] execute_cypher_read_only executing cleaned cypher (first 200 chars): %s", cleaned[:200])
             result = conn.execute(cleaned, params or {})
             rows = []
@@ -379,13 +599,21 @@ def execute_cypher_read_only(
                 rows.append(result.get_next())
                 if len(rows) > max_rows:
                     break
-        except Exception as exc:
-            logger.error("[KG] execute_cypher_read_only cypher execution failed: %s", exc)
-            raise TierPowerError(
-                "invalid_cypher",
-                f"Cypher execution failed: {exc}",
-                details={"cypher": cleaned[:200]},
-            ) from exc
+    except TierPowerError:
+        raise
+    except Exception as exc:
+        message = str(exc)
+        logger.error("[KG] execute_cypher_read_only failed: %s", exc)
+        code = "invalid_cypher"
+        details = {"cypher": cleaned[:200]}
+        if "graph" in message.lower() or "lbug" in message.lower() or "kuzu" in message.lower():
+            code = "graph_unavailable"
+            details["graph_state"] = "unavailable"
+        raise TierPowerError(
+            code,
+            f"Cypher execution failed: {exc}",
+            details=details,
+        ) from exc
 
     dur = (_time.monotonic() - t0) * 1000
     truncated = len(rows) > max_rows
@@ -394,12 +622,17 @@ def execute_cypher_read_only(
 
     logger.debug("[KG] execute_cypher_read_only done row_count=%d truncated=%s time_ms=%.1f",
                  len(rows), truncated, dur)
-    return {
+    raw_result = {
         "rows": [list(r) for r in rows],
         "row_count": len(rows),
         "truncated": truncated,
         "execution_time_ms": round(dur, 1),
     }
+    return _apply_canonical_projection(
+        raw_result,
+        include_working=include_working,
+        canonical_filter_mode=canonical_filter_mode,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +771,7 @@ def execute_natural_query(
     min_confidence: float = 0.5,
     since: str | None = None,
     until: str | None = None,
+    graph_layer: str = "canonical",
     rewrite: str = "none",
     rewrite_llm_fn=None,
     fusion_paraphrases: int = 3,
@@ -575,6 +809,17 @@ def execute_natural_query(
     applied) and ``rewrite_variants_count`` (1 for none/hyde, N for
     decompose/fusion) so callers / audit can tell the stages apart.
     """
+    # graph_layer contract (spec e2598178): fail-closed at the boundary via the
+    # shared normalizer — an invalid value raises BEFORE any retrieval. Reuses
+    # normalize_graph_layer (the single layer allowlist) so there is no second
+    # vocabulary to drift from query_global/get_related_context.
+    from okto_pulse.core.kg.kg_service import KGToolError, normalize_graph_layer
+
+    try:
+        graph_layer = normalize_graph_layer(graph_layer)
+    except KGToolError as exc:
+        raise TierPowerError(exc.code, exc.message, details=exc.details) from exc
+
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
     from okto_pulse.core.kg.query_rewrite import get_rewriter, merge_rrf
@@ -759,6 +1004,13 @@ def execute_natural_query(
             kept.append(r)
         all_results = kept
 
+    # graph_layer contract (spec e2598178): attach each result's layer, audit
+    # leakage across layers, then filter to the requested layer. Fail-closed —
+    # legacy_unknown/metadata only surface under graph_layer='all'.
+    all_results, layer_audit = _apply_graph_layer_to_natural_results(
+        board_id, all_results, graph_layer
+    )
+
     # Final ordering: fusion preserves RRF; others sort by similarity
     # desc (decompose respects union order except for the final
     # deterministic sort by similarity).
@@ -834,6 +1086,8 @@ def execute_natural_query(
     resp: dict[str, Any] = {
         "nodes": results,
         "total_matches": len(all_results),
+        "applied_graph_layer": graph_layer,
+        "layer_audit": layer_audit,
         "rewrite_strategy": applied_strategy,
         "rewrite_variants_count": len(variants) if variants else 1,
         "parent_context_included": include_parent_context,
@@ -851,6 +1105,98 @@ def execute_natural_query(
             "filtered_out": filtered_out,
         }
     return resp
+
+
+# Natural-query layer-audit buckets (spec e2598178, ac_6fabaaec). canonical /
+# working are artifact layers; BoardMeta (internal singleton) and any
+# NULL/unknown layer are NON-artifact and never count as canonical/working
+# leakage.
+_NATURAL_LAYER_BUCKETS: tuple[str, ...] = (
+    "canonical",
+    "working",
+    "legacy_unknown",
+    "metadata",
+)
+
+
+def _classify_natural_layer(node_type: str, raw_layer: str | None) -> str:
+    """Bucket a natural-query result into the layer-audit vocabulary.
+
+    BoardMeta (the internal schema-version singleton) is non-artifact metadata;
+    canonical/working pass through; anything else (NULL, 'none', unknown) is the
+    conservative ``legacy_unknown`` bucket — never silently canonical/working.
+    """
+    if node_type == "BoardMeta":
+        return "metadata"
+    layer = (raw_layer or "").strip().lower()
+    if layer == "canonical":
+        return "canonical"
+    if layer == "working":
+        return "working"
+    return "legacy_unknown"
+
+
+def _batch_lookup_graph_layer(board_id: str, node_ids: list[str]) -> dict[str, str]:
+    """Fetch graph_layer for node ids in one pass across all node types.
+
+    Reuses the fail-safe projection ``cypher_templates.layer_label_projection``:
+    a NULL/absent graph_layer is reported as ``'legacy_unknown'`` — never
+    coerced to canonical — so the natural-query layer filter stays fail-closed.
+    """
+    if not node_ids:
+        return {}
+    from okto_pulse.core.kg import cypher_templates as tpl
+
+    out: dict[str, str] = {}
+    with open_board_connection(board_id) as (_db, conn):
+        for node_type in NODE_TYPES:
+            try:
+                result = conn.execute(
+                    f"MATCH (n:{node_type}) WHERE n.id IN $ids "
+                    f"RETURN n.id, {tpl.layer_label_projection('n')}",
+                    {"ids": node_ids},
+                )
+                while result.has_next():
+                    row = result.get_next()
+                    out[row[0]] = str(row[1] or "legacy_unknown")
+            except Exception:
+                continue
+    return out
+
+
+def _apply_graph_layer_to_natural_results(
+    board_id: str, rows: list[dict], graph_layer: str
+) -> tuple[list[dict], dict]:
+    """Attach each result's graph_layer bucket, audit leakage across layers, and
+    filter to the requested layer.
+
+    Fail-closed: under ``canonical``/``working`` only that artifact layer is
+    kept; ``legacy_unknown``/``metadata`` surface ONLY under ``all``. The
+    ``layer_audit.counts_by_layer`` is computed over the FULL retrieved set
+    (pre-filter) so an agent can see what was matched across layers; metadata
+    and legacy_unknown are reported separately and never folded into the
+    canonical/working leakage counts.
+    """
+    counts = {bucket: 0 for bucket in _NATURAL_LAYER_BUCKETS}
+    if not rows:
+        return rows, {"applied_graph_layer": graph_layer, "counts_by_layer": counts}
+    layers = _batch_lookup_graph_layer(board_id, [r["node_id"] for r in rows])
+    for r in rows:
+        bucket = _classify_natural_layer(r.get("node_type", ""), layers.get(r["node_id"]))
+        r["graph_layer"] = bucket
+        counts[bucket] += 1
+    if graph_layer == "all":
+        kept = rows
+    else:
+        kept = [r for r in rows if r["graph_layer"] == graph_layer]
+    audit = {
+        "applied_graph_layer": graph_layer,
+        "counts_by_layer": counts,
+        # metadata / legacy_unknown are non-artifact and never leak into the
+        # canonical or working result set.
+        "non_artifact_excluded": counts["legacy_unknown"] + counts["metadata"],
+    }
+    return kept, audit
 
 
 def _batch_lookup_created_at(board_id: str, node_ids: list[str]) -> dict[str, Any]:
@@ -905,28 +1251,47 @@ def get_schema_info(
 
     store = get_kg_registry().graph_store
     if store is not None:
-        return store.get_schema_info(board_id, include_internal=include_internal)
+        result = store.get_schema_info(board_id, include_internal=include_internal)
+    else:
+        # Fallback: static schema from constants
+        stable_nodes = [
+            {"name": nt, "stable": True}
+            for nt in NODE_TYPES
+        ]
+        stable_rels = stable_rel_type_entries()
+        vector_indexes = [
+            {"node_type": nt, "attribute": "embedding",
+             "dimension": 384, "similarity_metric": "cosine",
+             "index_name": vector_index_name(nt)}
+            for nt in VECTOR_INDEX_TYPES
+        ]
 
-    # Fallback: static schema from constants
-    stable_nodes = [
-        {"name": nt, "stable": True}
-        for nt in NODE_TYPES
-    ]
-    stable_rels = stable_rel_type_entries()
-    vector_indexes = [
-        {"node_type": nt, "attribute": "embedding",
-         "dimension": 384, "similarity_metric": "cosine",
-         "index_name": vector_index_name(nt)}
-        for nt in VECTOR_INDEX_TYPES
-    ]
+        result = {
+            "schema_version": SCHEMA_VERSION,
+            "stable_node_types": stable_nodes,
+            "stable_rel_types": stable_rels,
+            "vector_indexes": vector_indexes,
+        }
+        if include_internal:
+            result["internal_node_types"] = [{"name": "BoardMeta", "stable": False}]
+            result["internal_rel_types"] = []
 
-    result: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "stable_node_types": stable_nodes,
-        "stable_rel_types": stable_rels,
-        "vector_indexes": vector_indexes,
-    }
-    if include_internal:
-        result["internal_node_types"] = [{"name": "BoardMeta", "stable": False}]
-        result["internal_rel_types"] = []
+    # R6-IMP3 (FR3/AC3): additive per-label stable-property map so agents introspect
+    # which properties are schema-safe instead of assuming a universal property.
+    # Every canonical node label shares _COMMON_NODE_ATTRS, so stable_properties is
+    # the same guaranteed set on each label; per-label variation is carried by
+    # has_vector_index. Additive — the global keys above are unchanged.
+    result["label_properties"] = _label_properties_map()
     return result
+
+
+def _label_properties_map() -> dict[str, Any]:
+    """Per-label stable-property map for schema_info (R6-IMP3). Derived from the
+    canonical schema constants — never assumes an ad-hoc/universal property."""
+    return {
+        nt: {
+            "stable_properties": list(STABLE_NODE_PROPERTIES),
+            "has_vector_index": nt in VECTOR_INDEX_TYPES,
+        }
+        for nt in NODE_TYPES
+    }

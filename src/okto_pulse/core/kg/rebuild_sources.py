@@ -41,6 +41,21 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
+from okto_pulse.core.kg.source_maturity import (
+    CANONICAL_ARTIFACT_TYPES,
+    DEFAULT_WORKING_TTL_DAYS,
+    DISPOSITION_CANONICAL,
+    DISPOSITION_LEGACY_UNKNOWN,
+    DISPOSITION_SKIPPED_BY_MATURITY,
+    DISPOSITION_SKIPPED_CANCELLED,
+    DISPOSITION_SKIPPED_EXPIRED_WORKING,
+    DISPOSITION_WORKING,
+    GRAPH_LAYER_CANONICAL,
+    MATURITY_CANONICAL_ELIGIBLE,
+    REBUILD_ARTIFACT_TYPES,
+    classify_source_for_kg,
+)
+
 logger = logging.getLogger("okto_pulse.kg.rebuild_sources")
 
 
@@ -106,22 +121,6 @@ class EnumerationOutcome(str, Enum):
     SOURCE_SET_HASH_MISMATCH = "source_set_hash_mismatch"
 
 
-# Canonical artifact_type vocabulary used for stable ordering.
-# Refinements are semantic-only cognitive sources. Specs and card-derived
-# task/test/bug rows are both deterministic rebuild sources and semantic
-# cognitive sources. Decisions are semantic first-class sources, but their
-# structural KG nodes are still materialized through the owning spec.
-# Ideations are deliberately excluded from this source set.
-CANONICAL_ARTIFACT_TYPES: tuple[str, ...] = (
-    "spec",
-    "decision",
-    "refinement",
-    "task",
-    "test",
-    "bug",
-)
-
-
 @dataclass(frozen=True, slots=True)
 class RebuildSourceRow:
     """One row of the deterministic source set.
@@ -138,6 +137,18 @@ class RebuildSourceRow:
     content_hash: str
     created_at: str  # ISO8601 UTC
     id: str
+    source_artifact_status: str = ""
+    graph_layer: str = GRAPH_LAYER_CANONICAL
+    maturity_status: str = MATURITY_CANONICAL_ELIGIBLE
+    disposition: str = DISPOSITION_CANONICAL
+    reason_code: str = ""
+    expires_at: str | None = None
+    # Spec manifest v2 (card 5ec8c75c / dec_c8e418e7): the v1-compatible content
+    # hash (spec rows only; "" otherwise). TRANSIENT — computed from the live
+    # source set, intentionally NOT in to_dict() so both the v2 source_set_hash
+    # and the persisted manifest JSON shape stay stable. Used only to PROVE a
+    # legacy schema-rebaseline at revalidate time.
+    content_hash_v1: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -147,7 +158,23 @@ class RebuildSourceRow:
             "content_hash": self.content_hash,
             "created_at": self.created_at,
             "id": self.id,
+            "source_artifact_status": self.source_artifact_status,
+            "graph_layer": self.graph_layer,
+            "maturity_status": self.maturity_status,
+            "disposition": self.disposition,
+            "reason_code": self.reason_code,
+            "expires_at": self.expires_at,
         }
+
+    def to_dict_v1(self) -> dict[str, Any]:
+        """Manifest-v1-compatible projection: identical shape to ``to_dict``
+        but carrying the v1 content hash for spec rows, so a freshly
+        enumerated source set can reproduce a legacy board's stored
+        ``source_set_hash`` byte-for-byte (card 5ec8c75c)."""
+        d = self.to_dict()
+        if self.content_hash_v1:
+            d["content_hash"] = self.content_hash_v1
+        return d
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,19 +191,89 @@ class RebuildSourceSet:
     skipped_cancelled_count: int
     has_non_deterministic_inputs: bool
     generated_at: str
+    working_sources: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    legacy_unknown: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
 
     @property
     def eligible_count(self) -> int:
         return len(self.sources)
 
+    @property
+    def materializable_sources(self) -> tuple[RebuildSourceRow, ...]:
+        """Sources that an explicit rebuild should materialize.
+
+        ``sources`` are canonical-eligible rows. ``working_sources`` and
+        ``skipped_by_maturity`` are still non-expired working graph rows, so
+        a corruption recovery rebuild must restore them with their
+        ``graph_layer=working`` metadata instead of dropping all immature
+        context. Expired/legacy/cancelled rows remain excluded.
+        """
+
+        return self.sources + self.working_sources + self.skipped_by_maturity
+
+    @property
+    def canonical_source_count(self) -> int:
+        return len(self.sources)
+
+    @property
+    def working_source_count(self) -> int:
+        return len(self.working_sources)
+
+    @property
+    def skipped_by_maturity_count(self) -> int:
+        return len(self.skipped_by_maturity)
+
+    @property
+    def skipped_expired_working_count(self) -> int:
+        return len(self.skipped_expired_working)
+
+    @property
+    def legacy_unknown_count(self) -> int:
+        return len(self.legacy_unknown)
+
+    @property
+    def layer_counts(self) -> dict[str, int]:
+        return {
+            "canonical": self.canonical_source_count,
+            "working": self.working_source_count + self.skipped_by_maturity_count,
+            "none": self.skipped_cancelled_count + self.legacy_unknown_count,
+            "expired_working": self.skipped_expired_working_count,
+        }
+
+    @property
+    def source_partition_counts(self) -> dict[str, int]:
+        return {
+            DISPOSITION_CANONICAL: self.canonical_source_count,
+            DISPOSITION_WORKING: self.working_source_count,
+            DISPOSITION_SKIPPED_BY_MATURITY: self.skipped_by_maturity_count,
+            DISPOSITION_SKIPPED_EXPIRED_WORKING: self.skipped_expired_working_count,
+            DISPOSITION_LEGACY_UNKNOWN: self.legacy_unknown_count,
+            DISPOSITION_SKIPPED_CANCELLED: self.skipped_cancelled_count,
+        }
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "board_id": self.board_id,
             "sources": [s.to_dict() for s in self.sources],
+            "working_sources": [s.to_dict() for s in self.working_sources],
+            "skipped_by_maturity": [s.to_dict() for s in self.skipped_by_maturity],
+            "skipped_expired_working": [
+                s.to_dict() for s in self.skipped_expired_working
+            ],
+            "legacy_unknown": [s.to_dict() for s in self.legacy_unknown],
             "skipped_cancelled_count": self.skipped_cancelled_count,
             "has_non_deterministic_inputs": self.has_non_deterministic_inputs,
             "generated_at": self.generated_at,
             "eligible_count": self.eligible_count,
+            "canonical_source_count": self.canonical_source_count,
+            "working_source_count": self.working_source_count,
+            "skipped_by_maturity_count": self.skipped_by_maturity_count,
+            "skipped_expired_working_count": self.skipped_expired_working_count,
+            "legacy_unknown_count": self.legacy_unknown_count,
+            "layer_counts": self.layer_counts,
+            "source_partition_counts": self.source_partition_counts,
         }
 
 
@@ -192,6 +289,18 @@ class RebuildSourceManifest:
     skipped_cancelled_count: int
     has_non_deterministic_inputs: bool
     created_at: str
+    # Spec source manifest schema version (card 5ec8c75c). 1 = legacy (spec
+    # hash without IR/OR); 2 = current (IR/OR included). Old manifests load
+    # as 1 so the first post-upgrade rebuild can rebaseline them.
+    manifest_schema_version: int = 1
+    working_sources: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    legacy_unknown: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+
+    @property
+    def materializable_sources(self) -> tuple[RebuildSourceRow, ...]:
+        return self.sources + self.working_sources + self.skipped_by_maturity
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -200,9 +309,21 @@ class RebuildSourceManifest:
             "source_set_hash": self.source_set_hash,
             "preflight_hash": self.preflight_hash,
             "sources": [s.to_dict() for s in self.sources],
+            "working_sources": [s.to_dict() for s in self.working_sources],
+            "skipped_by_maturity": [s.to_dict() for s in self.skipped_by_maturity],
+            "skipped_expired_working": [
+                s.to_dict() for s in self.skipped_expired_working
+            ],
+            "legacy_unknown": [s.to_dict() for s in self.legacy_unknown],
             "skipped_cancelled_count": self.skipped_cancelled_count,
             "has_non_deterministic_inputs": self.has_non_deterministic_inputs,
             "created_at": self.created_at,
+            "manifest_schema_version": self.manifest_schema_version,
+            "canonical_source_count": len(self.sources),
+            "working_source_count": len(self.working_sources),
+            "skipped_by_maturity_count": len(self.skipped_by_maturity),
+            "skipped_expired_working_count": len(self.skipped_expired_working),
+            "legacy_unknown_count": len(self.legacy_unknown),
         }
 
 
@@ -258,6 +379,58 @@ def reset_enumeration_counter() -> None:
 SourceStore = Callable[[str], list[dict[str, Any]]]
 
 
+def _row_from_raw(
+    row: dict[str, Any],
+    *,
+    classification,
+) -> RebuildSourceRow:
+    source_version = str(
+        row.get("source_version") or row.get("version") or ""
+    )
+    return RebuildSourceRow(
+        artifact_type=classification.artifact_type,
+        source_ref=str(row.get("source_ref") or row.get("id") or ""),
+        source_version=source_version,
+        content_hash=str(row.get("content_hash") or ""),
+        created_at=str(row.get("created_at") or ""),
+        id=str(row.get("id") or ""),
+        source_artifact_status=classification.artifact_status,
+        graph_layer=classification.graph_layer,
+        maturity_status=classification.maturity_status,
+        disposition=classification.disposition,
+        reason_code=classification.reason_code,
+        expires_at=classification.expires_at,
+        content_hash_v1=str(row.get("content_hash_v1") or ""),
+    )
+
+
+def _sort_source_rows(rows: list[RebuildSourceRow]) -> None:
+    # Stable ordering by partition vocabulary -> created_at -> id -> version.
+    artifact_rank = {t: i for i, t in enumerate(REBUILD_ARTIFACT_TYPES)}
+    rows.sort(
+        key=lambda r: (
+            artifact_rank.get(r.artifact_type, len(REBUILD_ARTIFACT_TYPES)),
+            r.created_at,
+            r.id,
+            r.source_version,
+        )
+    )
+
+
+def _row_working_ttl_days(row: dict[str, Any], *, default: int) -> int:
+    raw = (
+        row.get("working_ttl_days")
+        or row.get("kg_working_ttl_days")
+        or row.get("kg_working_source_ttl_days")
+        or default
+    )
+    try:
+        ttl = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return ttl if ttl >= 0 else default
+
+
 @dataclass(frozen=True, slots=True)
 class RebuildSourceEnumerator:
     """Stateless enumerator.
@@ -269,6 +442,7 @@ class RebuildSourceEnumerator:
     """
 
     source_store: SourceStore
+    working_ttl_days: int = DEFAULT_WORKING_TTL_DAYS
 
     def enumerate(self, *, board_id: str) -> RebuildSourceSet:
         if not board_id:
@@ -289,45 +463,78 @@ class RebuildSourceEnumerator:
 
         skipped_cancelled = 0
         eligible_rows: list[RebuildSourceRow] = []
+        working_rows: list[RebuildSourceRow] = []
+        skipped_by_maturity_rows: list[RebuildSourceRow] = []
+        skipped_expired_rows: list[RebuildSourceRow] = []
+        legacy_unknown_rows: list[RebuildSourceRow] = []
         non_deterministic = False
         for row in raw:
-            status = (row.get("status") or "").lower()
-            if status == "cancelled":
+            artifact_type = str(row.get("artifact_type") or "").strip().lower()
+            status = (
+                row.get("source_artifact_status")
+                or row.get("artifact_status")
+                or row.get("status")
+                or ""
+            )
+            content_hash = str(row.get("content_hash") or "")
+            classification = classify_source_for_kg(
+                artifact_type=artifact_type,
+                artifact_status=status,
+                content_hash=content_hash,
+                updated_at=row.get("updated_at") or row.get("created_at"),
+                working_ttl_days=_row_working_ttl_days(
+                    row,
+                    default=self.working_ttl_days,
+                ),
+                has_minimal_evidence=bool(row.get("has_minimal_evidence", True)),
+                # Path B amendment (spec 7ea1e4be): canonical only at done AND
+                # complete lineage. Defaults True so non-amendment sources are
+                # unaffected (they never carry lineage_complete).
+                lineage_complete=bool(row.get("lineage_complete", True)),
+            )
+            if classification.disposition == DISPOSITION_SKIPPED_CANCELLED:
                 skipped_cancelled += 1
                 continue
-            artifact_type = str(row.get("artifact_type") or "")
-            if artifact_type not in CANONICAL_ARTIFACT_TYPES:
-                # Unknown artifact_type — skip with audit log (no raise);
-                # surfacing as non-deterministic flips the preflight UI
-                # to confirmation_required.
+            row_model = _row_from_raw(row, classification=classification)
+            if classification.disposition == DISPOSITION_LEGACY_UNKNOWN:
                 non_deterministic = True
                 logger.warning(
-                    "kg.rebuild_sources.unknown_artifact_type board=%s type=%s",
+                    "kg.rebuild_sources.legacy_unknown board=%s type=%s reason=%s",
                     board_id, artifact_type,
+                    classification.reason_code,
                 )
+                legacy_unknown_rows.append(row_model)
                 continue
-            content_hash = str(row.get("content_hash") or "")
-            if not content_hash:
-                non_deterministic = True
-            eligible_rows.append(RebuildSourceRow(
-                artifact_type=artifact_type,
-                source_ref=str(row.get("source_ref") or row.get("id") or ""),
-                source_version=str(row.get("source_version") or row.get("version") or ""),
-                content_hash=content_hash,
-                created_at=str(row.get("created_at") or ""),
-                id=str(row.get("id") or ""),
-            ))
+            if classification.disposition == DISPOSITION_CANONICAL:
+                eligible_rows.append(row_model)
+                continue
+            if classification.disposition == DISPOSITION_WORKING:
+                working_rows.append(row_model)
+                continue
+            if classification.disposition == DISPOSITION_SKIPPED_EXPIRED_WORKING:
+                skipped_expired_rows.append(row_model)
+                continue
+            skipped_by_maturity_rows.append(row_model)
 
-        # TR5: stable ordering by artifact_type rank → created_at → id → version.
-        artifact_rank = {t: i for i, t in enumerate(CANONICAL_ARTIFACT_TYPES)}
-        eligible_rows.sort(
-            key=lambda r: (
-                artifact_rank.get(r.artifact_type, len(CANONICAL_ARTIFACT_TYPES)),
-                r.created_at,
-                r.id,
-                r.source_version,
+        for bucket in (
+            eligible_rows,
+            working_rows,
+            skipped_by_maturity_rows,
+            skipped_expired_rows,
+            legacy_unknown_rows,
+        ):
+            _sort_source_rows(bucket)
+
+        if skipped_by_maturity_rows or skipped_expired_rows:
+            logger.info(
+                "kg.rebuild_sources.maturity_skips board=%s canonical=%d "
+                "working=%d skipped_by_maturity=%d expired_working=%d",
+                board_id,
+                len(eligible_rows),
+                len(working_rows),
+                len(skipped_by_maturity_rows),
+                len(skipped_expired_rows),
             )
-        )
 
         _bump_enum(
             board_id=board_id,
@@ -340,6 +547,10 @@ class RebuildSourceEnumerator:
             skipped_cancelled_count=skipped_cancelled,
             has_non_deterministic_inputs=non_deterministic,
             generated_at=datetime.now(timezone.utc).isoformat(),
+            working_sources=tuple(working_rows),
+            skipped_by_maturity=tuple(skipped_by_maturity_rows),
+            skipped_expired_working=tuple(skipped_expired_rows),
+            legacy_unknown=tuple(legacy_unknown_rows),
         )
 
 
@@ -347,19 +558,163 @@ class RebuildSourceEnumerator:
 
 
 def _compose_source_set_hash(source_set: RebuildSourceSet) -> str:
-    """SHA256 hex 64 chars over the canonical-ordered source list.
+    """SHA256 hex 64 chars over the canonical-ordered source partition.
 
     Excludes ``generated_at`` and ``board_id`` from the input
-    (board_id is implicit; timestamp is non-deterministic). The
-    manifest re-includes board_id at the wrapper level so two boards
-    with the same source set still get distinct manifest_refs.
+    (board_id is implicit; timestamp is non-deterministic). The hash
+    intentionally includes working/debt partitions so a status transition
+    from working->canonical changes the manifest binding even if the
+    content_hash stayed stable.
     """
+    return _compose_source_set_hash_with(source_set, lambda r: r.to_dict())
+
+
+def _compose_source_set_hash_v1(source_set: RebuildSourceSet) -> str:
+    """v1-compatible source_set_hash (card 5ec8c75c): identical composition to
+    :func:`_compose_source_set_hash` but projecting each row through
+    ``to_dict_v1`` so spec rows use the v1 content hash. Reproduces a legacy
+    board's stored hash byte-for-byte, which is how a schema-rebaseline is
+    PROVEN distinct from real content drift."""
+    return _compose_source_set_hash_with(source_set, lambda r: r.to_dict_v1())
+
+
+def _compose_source_set_hash_with(source_set: RebuildSourceSet, project) -> str:
+    payload_dict = {
+        "sources": [project(s) for s in source_set.sources],
+        "working_sources": [project(s) for s in source_set.working_sources],
+        "skipped_by_maturity": [
+            project(s) for s in source_set.skipped_by_maturity
+        ],
+        "skipped_expired_working": [
+            project(s) for s in source_set.skipped_expired_working
+        ],
+        "legacy_unknown": [project(s) for s in source_set.legacy_unknown],
+        "skipped_cancelled_count": source_set.skipped_cancelled_count,
+        "source_partition_counts": source_set.source_partition_counts,
+    }
     payload = json.dumps(
-        [s.to_dict() for s in source_set.sources],
+        payload_dict,
         sort_keys=True,
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+class SourceSetRevalidation(str, Enum):
+    """Typed outcome of revalidating a live source set against a stored
+    manifest (card 5ec8c75c / dec_c8e418e7)."""
+
+    EQUIVALENT = "equivalent"
+    REBASELINE = "rebaseline"
+    MANIFEST_DRIFT = "manifest_drift"
+
+
+@dataclass(frozen=True, slots=True)
+class RevalidationResult:
+    outcome: SourceSetRevalidation
+    rebaselined_source_refs: tuple[str, ...] = ()
+    from_manifest_schema_version: int = 0
+    to_manifest_schema_version: int = 0
+    hash_fields_v1: tuple[str, ...] = ()
+    hash_fields_v2: tuple[str, ...] = ()
+
+    @property
+    def is_drift(self) -> bool:
+        return self.outcome is SourceSetRevalidation.MANIFEST_DRIFT
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "outcome": self.outcome.value,
+            "rebaselined_source_refs": list(self.rebaselined_source_refs),
+            "from_manifest_schema_version": self.from_manifest_schema_version,
+            "to_manifest_schema_version": self.to_manifest_schema_version,
+            "hash_fields_v1": list(self.hash_fields_v1),
+            "hash_fields_v2": list(self.hash_fields_v2),
+        }
+
+
+# Counter OR or_b9c33b77 — kg_spec_source_manifest_rebaseline_total. Bounded
+# labels (board_id, outcome); one sample per spec-manifest rebaseline event.
+_REBASELINE_LABELS = ("board_id", "outcome")
+_rebaseline_counter: dict[tuple[str, str], int] = {}
+_rebaseline_lock = threading.Lock()
+
+
+def _bump_rebaseline(*, board_id: str, outcome: str = "rebaseline") -> None:
+    with _rebaseline_lock:
+        key = (board_id, outcome)
+        _rebaseline_counter[key] = _rebaseline_counter.get(key, 0) + 1
+
+
+def get_spec_manifest_rebaseline_count(
+    board_id: str, *, outcome: str = "rebaseline"
+) -> int:
+    with _rebaseline_lock:
+        return _rebaseline_counter.get((board_id, outcome), 0)
+
+
+def get_spec_manifest_rebaseline_labels() -> tuple[str, ...]:
+    return _REBASELINE_LABELS
+
+
+def reset_spec_manifest_rebaseline_counter() -> None:
+    with _rebaseline_lock:
+        _rebaseline_counter.clear()
+
+
+# FR7 (card 5ec8c75c): a FORMAL, persisted, queryable rebaseline audit record
+# (not just a textual log) — per board, append-only JSONL under the rebuild
+# dir. Each record carries from/to manifest schema version, the spec hash
+# fields considered, and the rebaselined source_refs.
+REBASELINE_AUDIT_DIRNAME = "rebaseline_audit"
+
+
+def _rebaseline_audit_path(base_dir: Path, board_id: str) -> Path:
+    safe = "".join(
+        c if (c.isalnum() or c in "_.-") else "_" for c in board_id
+    ) or "board"
+    return base_dir / REBUILD_DIRNAME / REBASELINE_AUDIT_DIRNAME / f"{safe}.jsonl"
+
+
+def _append_spec_manifest_rebaseline_audit(
+    base_dir: Path,
+    *,
+    board_id: str,
+    manifest_ref: str,
+    result: "RevalidationResult",
+    recorded_at: str,
+) -> None:
+    path = _rebaseline_audit_path(base_dir, board_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "board_id": board_id,
+        "manifest_ref": manifest_ref,
+        "recorded_at": recorded_at,
+        **result.to_dict(),
+    }
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def read_spec_manifest_rebaseline_audit(
+    base_dir: Path, board_id: str,
+) -> list[dict[str, Any]]:
+    """Read back the persisted spec-manifest rebaseline records for a board
+    (FR7 audit evidence — queryable from the rebuild artifacts)."""
+    path = _rebaseline_audit_path(base_dir, board_id)
+    if not path.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,6 +742,10 @@ class KGRebuildSourceManifest:
         # val_d0da4a75 #3: enforce canonical sha256 hex 64 chars.
         validate_preflight_hash(preflight_hash)
 
+        from okto_pulse.core.kg.board_source_store import (
+            SPEC_SOURCE_MANIFEST_VERSION,
+        )
+
         manifest_ref = f"{MANIFEST_REF_PREFIX}{secrets.token_urlsafe(16)}"
         source_set_hash = _compose_source_set_hash(source_set)
         manifest = RebuildSourceManifest(
@@ -398,6 +757,11 @@ class KGRebuildSourceManifest:
             skipped_cancelled_count=source_set.skipped_cancelled_count,
             has_non_deterministic_inputs=source_set.has_non_deterministic_inputs,
             created_at=datetime.now(timezone.utc).isoformat(),
+            manifest_schema_version=SPEC_SOURCE_MANIFEST_VERSION,
+            working_sources=source_set.working_sources,
+            skipped_by_maturity=source_set.skipped_by_maturity,
+            skipped_expired_working=source_set.skipped_expired_working,
+            legacy_unknown=source_set.legacy_unknown,
         )
 
         target_dir = self.base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME
@@ -436,6 +800,37 @@ class KGRebuildSourceManifest:
         except (FileNotFoundError, OSError, ValueError):
             return None
         try:
+            def _rows(key: str) -> tuple[RebuildSourceRow, ...]:
+                return tuple(
+                    RebuildSourceRow(
+                        artifact_type=str(s["artifact_type"]),
+                        source_ref=str(s["source_ref"]),
+                        source_version=str(s["source_version"]),
+                        content_hash=str(s["content_hash"]),
+                        created_at=str(s["created_at"]),
+                        id=str(s["id"]),
+                        source_artifact_status=str(
+                            s.get("source_artifact_status", "")
+                        ),
+                        graph_layer=str(
+                            s.get("graph_layer", GRAPH_LAYER_CANONICAL)
+                        ),
+                        maturity_status=str(
+                            s.get("maturity_status", MATURITY_CANONICAL_ELIGIBLE)
+                        ),
+                        disposition=str(
+                            s.get("disposition", DISPOSITION_CANONICAL)
+                        ),
+                        reason_code=str(s.get("reason_code", "")),
+                        expires_at=(
+                            str(s["expires_at"])
+                            if s.get("expires_at") is not None
+                            else None
+                        ),
+                    )
+                    for s in data.get(key, [])
+                )
+
             sources = tuple(
                 RebuildSourceRow(
                     artifact_type=str(s["artifact_type"]),
@@ -444,6 +839,20 @@ class KGRebuildSourceManifest:
                     content_hash=str(s["content_hash"]),
                     created_at=str(s["created_at"]),
                     id=str(s["id"]),
+                    source_artifact_status=str(
+                        s.get("source_artifact_status", "")
+                    ),
+                    graph_layer=str(s.get("graph_layer", GRAPH_LAYER_CANONICAL)),
+                    maturity_status=str(
+                        s.get("maturity_status", MATURITY_CANONICAL_ELIGIBLE)
+                    ),
+                    disposition=str(s.get("disposition", DISPOSITION_CANONICAL)),
+                    reason_code=str(s.get("reason_code", "")),
+                    expires_at=(
+                        str(s["expires_at"])
+                        if s.get("expires_at") is not None
+                        else None
+                    ),
                 )
                 for s in data["sources"]
             )
@@ -458,6 +867,11 @@ class KGRebuildSourceManifest:
                     data.get("has_non_deterministic_inputs", False)
                 ),
                 created_at=str(data["created_at"]),
+                manifest_schema_version=int(data.get("manifest_schema_version", 1)),
+                working_sources=_rows("working_sources"),
+                skipped_by_maturity=_rows("skipped_by_maturity"),
+                skipped_expired_working=_rows("skipped_expired_working"),
+                legacy_unknown=_rows("legacy_unknown"),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -467,19 +881,79 @@ class KGRebuildSourceManifest:
         *,
         manifest: RebuildSourceManifest,
         current_source_set: RebuildSourceSet,
-    ) -> bool:
-        """Compare the manifest's source_set_hash against a freshly
-        enumerated source set — KG-02.3 calls this before mutation
-        (IR ir_1959b2e1 run_validation contract)."""
+    ) -> RevalidationResult:
+        """Classify the current source set against a stored manifest — KG-02.3
+        calls this before mutation (IR ir_1959b2e1 run_validation contract),
+        extended for spec manifest v2 (card 5ec8c75c / dec_c8e418e7):
+
+        * EQUIVALENT — current v2 hash matches the stored hash.
+        * REBASELINE — the stored manifest is legacy (<v2) AND the
+          v1-compatible hash still matches it byte-for-byte, so the ONLY
+          difference is the v2 schema (IR/OR added to the spec hash). PROVEN,
+          not inferred from "hash changed". Permitted by rebuild_service with
+          audit + counter; never DLQ/canonical-debt.
+        * MANIFEST_DRIFT — real content change (or an already-v2 manifest).
+          Blocks, same as before.
+        """
+        from okto_pulse.core.kg.board_source_store import (
+            SPEC_SOURCE_MANIFEST_VERSION,
+        )
+
         current_hash = _compose_source_set_hash(current_source_set)
-        if current_hash != manifest.source_set_hash:
-            _bump_enum(
-                board_id=manifest.board_id,
-                outcome=EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value,
-                reason="manifest_drift",
-            )
-            return False
-        return True
+        if current_hash == manifest.source_set_hash:
+            return RevalidationResult(SourceSetRevalidation.EQUIVALENT)
+
+        if manifest.manifest_schema_version < SPEC_SOURCE_MANIFEST_VERSION:
+            current_v1 = _compose_source_set_hash_v1(current_source_set)
+            if current_v1 == manifest.source_set_hash:
+                rebaselined = tuple(
+                    row.source_ref
+                    for partition in (
+                        current_source_set.sources,
+                        current_source_set.working_sources,
+                        current_source_set.skipped_by_maturity,
+                        current_source_set.skipped_expired_working,
+                        current_source_set.legacy_unknown,
+                    )
+                    for row in partition
+                    if row.content_hash_v1
+                    and row.content_hash != row.content_hash_v1
+                )
+                from okto_pulse.core.kg.board_source_store import (
+                    SPEC_CONTENT_COLUMNS_V1,
+                    SPEC_CONTENT_COLUMNS_V2,
+                )
+
+                result = RevalidationResult(
+                    SourceSetRevalidation.REBASELINE,
+                    rebaselined_source_refs=rebaselined,
+                    from_manifest_schema_version=manifest.manifest_schema_version,
+                    to_manifest_schema_version=SPEC_SOURCE_MANIFEST_VERSION,
+                    hash_fields_v1=SPEC_CONTENT_COLUMNS_V1,
+                    hash_fields_v2=SPEC_CONTENT_COLUMNS_V2,
+                )
+                _bump_rebaseline(board_id=manifest.board_id)
+                _append_spec_manifest_rebaseline_audit(
+                    self.base_dir,
+                    board_id=manifest.board_id,
+                    manifest_ref=manifest.manifest_ref,
+                    result=result,
+                    recorded_at=datetime.now(timezone.utc).isoformat(),
+                )
+                logger.info(
+                    "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
+                    "from_version=%d to_version=%d rebaselined=%d",
+                    manifest.board_id, manifest.manifest_schema_version,
+                    SPEC_SOURCE_MANIFEST_VERSION, len(rebaselined),
+                )
+                return result
+
+        _bump_enum(
+            board_id=manifest.board_id,
+            outcome=EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value,
+            reason="manifest_drift",
+        )
+        return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
 
 
 __all__ = [
@@ -489,15 +963,22 @@ __all__ = [
     "MANIFEST_DIRNAME",
     "MANIFEST_REF_PREFIX",
     "REBUILD_DIRNAME",
+    "REBUILD_ARTIFACT_TYPES",
     "RebuildSourceEnumerator",
     "RebuildSourceManifest",
     "RebuildSourceRow",
     "RebuildSourceSet",
+    "RevalidationResult",
+    "SourceSetRevalidation",
     "SourceStore",
     "get_enumeration_count",
     "get_enumeration_counter_labels",
     "get_enumeration_samples",
+    "get_spec_manifest_rebaseline_count",
+    "get_spec_manifest_rebaseline_labels",
+    "read_spec_manifest_rebaseline_audit",
     "reset_enumeration_counter",
+    "reset_spec_manifest_rebaseline_counter",
     "validate_manifest_ref",
     "validate_preflight_hash",
 ]

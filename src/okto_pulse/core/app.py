@@ -16,6 +16,7 @@ from okto_pulse.core.infra.config import CoreSettings, configure_settings
 from okto_pulse.core.infra.database import create_database, init_db, close_db, get_session_factory
 from okto_pulse.core.infra.storage import StorageProvider, configure_storage
 from okto_pulse.core.api import api_router
+from okto_pulse.core.telemetry.http_policy import safe_route_template, should_count_http
 from okto_pulse.core.telemetry.service import TelemetryService
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,10 @@ class _TelemetryASGIMiddleware:
         self.settings = settings
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http" or not scope.get("path", "").startswith("/api/"):
+        # R5A-C: explicit, testable HTTP telemetry policy (counts /api + /mcp; excludes
+        # /health /docs /openapi.json /redoc; no lookalike false positives) replaces
+        # the old implicit startswith('/api/') filter.
+        if scope["type"] != "http" or not should_count_http(scope.get("path", "")):
             await self.app(scope, receive, send)
             return
 
@@ -56,9 +60,10 @@ class _TelemetryASGIMiddleware:
             raise
         finally:
             # O router popula scope["route"] durante o dispatch — disponível
-            # aqui depois que o downstream rodou.
+            # aqui depois que o downstream rodou. safe_route_template prefere o
+            # PADRÃO da rota resolvida (placeholders) e nunca emite path concreto.
             route = scope.get("route")
-            route_template = getattr(route, "path", scope.get("path", ""))
+            route_template = safe_route_template(route, scope.get("path", ""))
             payload = {
                 "method": scope.get("method", ""),
                 "route_template": route_template,
@@ -442,6 +447,18 @@ def create_app(
     @app.get("/health")
     async def health_check():
         return {"status": "healthy", "version": settings.app_version}
+
+    # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): the gate runs inside the
+    # service-layer entity update methods, so a bulk screen_mockups REST update that
+    # violates a blocking Design System gate raises DesignSystemError. Translate it to a
+    # clean, actionable structured response (FR8) on every REST surface in one place.
+    from fastapi.responses import JSONResponse
+
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    @app.exception_handler(DesignSystemError)
+    async def _design_system_error_handler(_request, exc: DesignSystemError):
+        return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
 
     # API routes
     app.include_router(api_router)

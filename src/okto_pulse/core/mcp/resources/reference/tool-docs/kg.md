@@ -51,6 +51,17 @@ Add a node candidate to an open consolidation session.
 The candidate stays in-memory until commit_consolidation or expiry.
 candidate_id must be unique within the session.
 
+**Writer-path ownership (allowlist):** the cognitive consolidation path may only create
+`Decision`, `Learning`, `Alternative`, `Assumption`. `Criterion` (from acceptance
+criteria) and `Constraint` (from technical requirements / business rules) are
+**deterministic-only** — materialized by the deterministic worker, not by this tool.
+Reference an existing deterministic `Criterion`/`Constraint` node by id (or wait for the
+deterministic worker); do not recreate it on the cognitive path. A `Criterion`/`Constraint`
+candidate proposed here is rejected **before any graph mutation** with
+`status=source_type_not_supported`, `reason=writer_not_connectivity_owner` (distinct from a
+missing-connectivity failure); remediation: remove the candidate, abort/recreate the
+session without it, or route through the deterministic owner.
+
 Args:
     session_id: Session from begin_consolidation
     candidate: Dict with candidate_id, node_type, title, content, etc.
@@ -92,6 +103,43 @@ Args:
 
 Returns:
     JSON with session_id, status=committed, counts, committed_at
+
+## `okto_pulse_kg_canonical_debt_list`
+
+List canonical-debt ledger rows for a board.
+
+Use this when `okto_pulse_kg_health` reports `canonical_debt.open_count > 0`
+and an agent needs to inspect which artifacts are pending, blocked, failed,
+or retry-scheduled. The tool is read-only and mirrors the REST canonical-debt
+list projection.
+
+Args:
+    board_id: Board UUID.
+    artifact_type: Optional filter such as `spec`, `task`, `test`, or `bug`.
+    state: Optional canonical_state filter such as `pending`, `failed`,
+        `blocked`, or `retry_scheduled`.
+    limit: Max rows to return (1-200, default 50).
+    offset: Skip first N rows (>=0, default 0).
+
+Returns:
+    JSON `{board_id, items, counts, total, limit, offset}`. Each item includes
+    artifact identity, source_ref, target_status, canonical_state, failure
+    reason, last_error, retry metadata, queue/DLQ refs, and evidence_ref.
+
+## `okto_pulse_kg_canonical_partition_integrity_list`
+
+List canonical/working partition integrity issues for a board.
+
+Use this when KG health reports partition drift or when validating that working
+nodes have not leaked into canonical-only surfaces.
+
+Args:
+    board_id: Board ID.
+    limit: Max rows to return.
+    offset: Page offset.
+
+Returns:
+    JSON with partition issue rows and bounded counts.
 
 ## `okto_pulse_kg_dead_letter_list`
 
@@ -294,6 +342,70 @@ Args:
 Returns:
     JSON health snapshot, or {"error": "..."} on auth/not-found.
 
+## `okto_pulse_kg_digest_layer_mismatch_list`
+
+List nodes whose digest/materialization layer metadata is inconsistent.
+
+Args:
+    board_id: Board ID.
+    limit: Max rows to return.
+    offset: Page offset.
+
+Returns:
+    JSON with mismatch rows, expected/actual layer fields, and counts.
+
+## `okto_pulse_kg_stale_canonical_parity_list`
+
+List canonical nodes whose parity with working/source materialization is stale.
+
+Use this after migrations or rebuilds to inspect stale canonical parity without
+mutating the graph.
+
+Args:
+    board_id: Board ID.
+    limit: Max rows to return.
+    offset: Page offset.
+
+Returns:
+    JSON with stale parity rows and diagnostic metadata.
+
+## `okto_pulse_kg_orphan_report`
+
+Return a bounded safe orphan-node report for a board KG.
+
+The payload intentionally exposes safe identifiers and aggregate diagnostics
+only: board_id, generation_id, orphan counts, safe samples, unresolved reasons,
+backfill summary, and correlation_id. It does not return raw node text,
+embeddings, prompts, or payload bodies.
+
+Args:
+    board_id: Board ID.
+    generation_id: Optional KG generation id.
+    limit: Max safe sample count, clamped by the server.
+
+Returns:
+    JSON safe orphan report, or a structured graph-unavailable payload.
+
+## `okto_pulse_kg_orphan_backfill`
+
+Run explicit orphan backfill for structurally resolvable nodes.
+
+Defaults to dry_run=true. The tool refuses writes when KG Health is
+`recovery_needed` or `quarantined`, so operators use the recovery flow instead
+of mutating a degraded graph.
+
+Args:
+    board_id: Board ID.
+    generation_id: Optional KG generation id.
+    dry_run: true to preview, false to write resolvable edges.
+    node_ids: Optional multi-value node IDs as a native list, JSON array, or
+        pipe-separated string.
+    limit: Max nodes to inspect, clamped by the server.
+
+Returns:
+    JSON backfill summary with dry_run, detected, connected, unresolved,
+    ambiguous, semantic_pending, and correlation_id.
+
 ## `okto_pulse_kg_list_alternatives`
 
 List alternatives that were considered and discarded for a decision,
@@ -337,7 +449,103 @@ Args:
     limit: Page size, 1..200, default 100.
     offset: Page offset, ≥ 0, default 0.
     status_filter: Deprecated compatibility alias for ``status``;
-        ``status`` takes precedence when both are provided.
+    ``status`` takes precedence when both are provided.
+
+## `okto_pulse_kg_list_cognitive_readiness_items`
+
+List cognitive-readiness items that can block completion or validation.
+
+Use this to inspect outstanding cognitive closeout work before advancing a bug,
+spec, or refinement through a gate.
+
+Args:
+    board_id: Board ID.
+    entity_type: Optional source entity type filter.
+    entity_id: Optional source entity ID filter.
+    status: Optional readiness status filter.
+    limit: Max rows.
+    offset: Page offset.
+
+Returns:
+    JSON with readiness items, counts, and source references.
+
+## `okto_pulse_kg_evaluate_cognitive_readiness`
+
+Evaluate cognitive-readiness gates for a target entity.
+
+Args:
+    board_id: Board ID.
+    entity_type: Target entity type.
+    entity_id: Target entity ID.
+
+Returns:
+    JSON with readiness outcome, blockers, skip state, and remediation text.
+
+## `okto_pulse_kg_evaluate_bug_cognitive_closure`
+
+Evaluate whether a bug has the required cognitive closeout before closure.
+
+Args:
+    board_id: Board ID.
+    bug_id: Bug card ID.
+
+Returns:
+    JSON with closure readiness, missing cognitive items, and gate outcome.
+
+## `okto_pulse_kg_record_cognitive_skip`
+
+Record a human-authorized cognitive-readiness skip.
+
+This tool records the skip and its bounded reason. It must not be used as a
+silent bypass for technical blockers.
+
+Args:
+    board_id: Board ID.
+    entity_type: Target entity type.
+    entity_id: Target entity ID.
+    reason: Required justification.
+
+Returns:
+    JSON with recorded skip state and audit metadata.
+
+## `okto_pulse_kg_clear_cognitive_skip`
+
+Clear a previously recorded cognitive-readiness skip.
+
+Args:
+    board_id: Board ID.
+    entity_type: Target entity type.
+    entity_id: Target entity ID.
+    reason: Optional audit reason.
+
+Returns:
+    JSON with updated readiness/skip state.
+
+## `okto_pulse_kg_list_cognitive_dlq`
+
+List cognitive-readiness dead-letter or failed extraction items.
+
+Args:
+    board_id: Board ID.
+    limit: Max rows.
+    offset: Page offset.
+
+Returns:
+    JSON with cognitive DLQ rows, error reason codes, and counts.
+
+## `okto_pulse_kg_queue_drilldown`
+
+Inspect active KG queue depth and per-state work distribution.
+
+Use this when KG health reports backlog, at_risk, or backpressure and the agent
+needs to distinguish active queue work from DLQ/debt.
+
+Args:
+    board_id: Board ID.
+    profile: summary or full.
+
+Returns:
+    JSON with active queue counts, dead-letter counts, and queue diagnostics.
 
 ## `okto_pulse_kg_migrate_schema`
 
@@ -401,10 +609,28 @@ Args:
     max_rows: 0 = agent-safe default (50). Pass 1..1000 for an explicit
         bounded page; >1000 is rejected (max_rows_exceeds_hard_cap).
     timeout_ms: Timeout in ms (default 5000, max 30000)
+    include_working: Optional boolean. Default false enforces canonical-only
+        visibility. Pass true to query working + canonical rows during working
+        graph validation, rebuild checks, or E2E ingestion tests.
+
+Layer contract:
+    Node rows use `graph_layer` as the persisted node property. Do not query
+    `kg_layer` on nodes; `kg_layer_counts` appears only in KG health payloads.
+    This tool scopes layer visibility with `include_working` (boolean), NOT a
+    `graph_layer` selector — the `graph_layer` canonical|working|all selector
+    applies to `okto_pulse_kg_query_global` and `okto_pulse_kg_get_related_context`.
+
+Schema-safe queries:
+    Properties are NOT universal across labels in semantics — introspect with
+    `okto_pulse_kg_schema_info` first and query ONLY the `stable_properties` it
+    lists per label (e.g. `id`, `title`, `content`, `graph_layer`,
+    `source_confidence`, `relevance_score`). There is no `name` property — use
+    `title`. Never assume an ad-hoc property exists on a label.
 
 Returns:
     JSON with rows, row_count, truncated, row_bounds, sanitization,
-    execution_time_ms
+    execution_time_ms, query_state, canonical_filter_enforced,
+    working_omitted_count
 
 ## `okto_pulse_kg_query_global`
 
@@ -416,9 +642,14 @@ Args:
     board_id: Optional board_id to restrict search (empty = all boards)
     nl_query: Natural language query string
     top_k: Maximum results (default 10)
+    graph_layer: `canonical` (default) | `working` | `all`. Filters which graph
+        layer the cross-board search reads. Default `canonical` never leaks
+        working nodes; an invalid value fails closed with a structured error.
 
 Returns:
-    JSON with results: [{board_id, id, title, similarity}]
+    JSON `{results: [{board_id, id, title, similarity, graph_layer}], count,
+    applied_graph_layer}`. `applied_graph_layer` echoes the layer actually
+    applied; each result also carries its own `graph_layer`.
 
 ## `okto_pulse_kg_query_natural`
 
@@ -480,7 +711,14 @@ Args:
 
 Returns:
     JSON with schema_version, stable_node_types, stable_rel_types,
-    vector_indexes, optionally internal_*_types
+    vector_indexes, label_properties, optionally internal_*_types.
+
+    `label_properties` (R6-IMP3) maps each canonical node label to its
+    `stable_properties` (the schema-guaranteed scalar properties — the SAME set
+    on every label, since all node tables share the common attributes) plus
+    `has_vector_index`. Query ONLY these stable properties; never assume an
+    ad-hoc/universal property. There is no `name` property — use `title`/`content`.
+    Use this map to write schema-safe Cypher (okto_pulse_kg_query_cypher).
 
 ## `okto_pulse_kg_tick_run_now`
 
@@ -588,7 +826,7 @@ confirmation token. Pass the token to `okto_pulse_kg_rebuild_run`.
 
 Args:
     board_id: UUID of the board (same used in /preflight).
-    operation: Canonical operation (e.g. `'rebuild_full'`).
+    operation: Canonical operation (e.g. `'rebuild'`).
     preflight_hash: SHA-256 hex received from /preflight (64 chars).
     manifest_ref: Manifest identifier received from /preflight.
 

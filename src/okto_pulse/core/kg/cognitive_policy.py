@@ -18,6 +18,11 @@ from __future__ import annotations
 
 from typing import Final
 
+from okto_pulse.core.kg.source_maturity import (
+    GRAPH_LAYER_CANONICAL,
+    GRAPH_LAYER_WORKING,
+)
+
 
 # Edges that only Layer 1 may create. Kept in sync with the rule_id emitters
 # in `workers/deterministic_worker.py`.
@@ -84,6 +89,52 @@ def check_cognitive_edge_allowed(edge_type: str) -> None:
     """
     if edge_type in DETERMINISTIC_EDGE_TYPES:
         raise LayerViolationError(edge_type)
+
+
+# Error code surfaced by the MCP/REST wrappers when the cognitive canonical
+# invariant is violated (spec 007d1308 — FR2/AC4). Distinct from a generic
+# internal failure so agents can branch on it and self-correct the request.
+COGNITIVE_NODE_CANONICAL_CODE: Final[str] = "cognitive_node_candidates_must_be_canonical"
+
+
+class CognitiveNodeLayerError(ValueError):
+    """Raised when a cognitive node candidate carries ``graph_layer=working``.
+
+    The cognitive agent's consolidation output is canonical knowledge by
+    construction (dec_0b3368fe / dec_26c5cc2d, spec 007d1308); working-layer
+    nodes are produced exclusively by the Layer 1 deterministic worker, which
+    materializes immature SDLC sources per ``source_maturity``. Carries the
+    received and required layers so wrappers can build an actionable error
+    without duplicating the message.
+    """
+
+    def __init__(self, graph_layer: str | None):
+        self.graph_layer = graph_layer
+        self.required_graph_layer = GRAPH_LAYER_CANONICAL
+        super().__init__(
+            f"cognitive node candidate has graph_layer={graph_layer!r}; the "
+            f"cognitive path only accepts {GRAPH_LAYER_CANONICAL!r} nodes. "
+            f"Resubmit with graph_layer='canonical' (omitting it also defaults "
+            f"to canonical). Working-layer nodes are the deterministic worker's "
+            f"responsibility, not the cognitive agent's."
+        )
+
+
+def check_cognitive_node_canonical(
+    graph_layer: str | None, *, is_system_worker: bool,
+) -> None:
+    """Enforce the cognitive canonical invariant on a node candidate.
+
+    Raise :class:`CognitiveNodeLayerError` when a cognitive (non-system)
+    caller proposes a working-layer node. The Layer 1 deterministic worker
+    (``agent_id`` prefixed ``system:``) is exempt: it legitimately stages
+    working nodes for immature sources. Cheap string compare — safe in the
+    ``add_node_candidate`` hot path.
+    """
+    if is_system_worker:
+        return
+    if graph_layer == GRAPH_LAYER_WORKING:
+        raise CognitiveNodeLayerError(graph_layer)
 
 
 def clamp_fallback_confidence(

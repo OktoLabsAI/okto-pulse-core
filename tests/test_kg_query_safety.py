@@ -215,7 +215,6 @@ def _full_health_payload() -> dict:
         "health_schema_version": "1.0",  # dup
         "health_issues": [{"code": "x", "description": "long human-readable prose ..."}],
         "diagnostics": {"graph_read_status": "ok", "primary_health_cause": "none"},
-        "top_disconnected_nodes": [{"id": "n1", "type": "Decision", "degree": 0}],
     }
 
 
@@ -240,7 +239,7 @@ def test_health_slim_keeps_stop_fields_and_drops_verbose():
     # Verbose diagnostics, aliases and dups are omitted until full is requested.
     for field in (
         "state", "classification_reasons", "health_issues", "diagnostics",
-        "health_schema_version", "top_disconnected_nodes",
+        "health_schema_version",
     ):
         assert field not in out, field
     assert out["profile"] == "summary"
@@ -340,7 +339,9 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
 
     seen = {"max_rows": None}
 
-    def _spy_cypher(board_id, cypher, params, *, max_rows, timeout_ms):
+    def _spy_cypher(
+        board_id, cypher, params, *, max_rows, timeout_ms, include_working=False,
+    ):
         seen["max_rows"] = max_rows  # agent-safe default must reach the executor
         return {
             "rows": [["dec_1", [0.1 + i for i in range(384)]]],  # bare vector cell

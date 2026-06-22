@@ -439,6 +439,55 @@ def compute_cognitive_item_id(
     return f"cogn_{digest[:32]}"
 
 
+# Artifact-type prefixes that denote the SAME underlying Card row. A bug IS a
+# Card (card_type=bug), so a canonical-debt ref ``card:<uuid>`` and a cognitive
+# ref ``bug:<uuid>`` for the same uuid must collapse to ONE artifact_id so the
+# readiness precedence (later cards) can be applied without a silent no-op
+# (fr_43ea6e97 / ac_50e4d48e).
+_CARD_ALIAS_PREFIXES: frozenset[str] = frozenset({"card", "bug"})
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def normalize_cognitive_artifact_id(source_ref: str) -> str:
+    """Canonical per-ARTIFACT identity for cognitive readiness grouping
+    (fr_43ea6e97).
+
+    Collapses equivalent ``source_ref`` aliases so a canonical-debt
+    ``card:<uuid>`` and a cognitive ``bug:<uuid>`` for the SAME uuid resolve to
+    one ``artifact_id``. The caller preserves the untouched ref in
+    ``source_ref_original``; this returns only the canonical grouping key.
+
+    Rules (pure + deterministic — same input always yields the same output,
+    never raises):
+    - ``card:<uuid>`` / ``bug:<uuid>`` (second token a UUID) -> ``card:<uuid-lower>``.
+    - any other ``<type>:<rest>`` -> ``<type-lower>:<rest>`` (uuid tail lowercased
+      for stability; non-uuid rest preserved verbatim, e.g. ``decision:<spec>:<id>``).
+    - no colon / empty -> the input trimmed, verbatim.
+
+    This is NOT a replacement for :func:`compute_cognitive_item_id` (the
+    per-ITEM identity); it is the per-ARTIFACT key used to reconcile aliases.
+    """
+
+    ref = str(source_ref or "").strip()
+    if ":" not in ref:
+        return ref
+    prefix, rest = ref.split(":", 1)
+    prefix_norm = prefix.strip().lower()
+    rest = rest.strip()
+    if prefix_norm in _CARD_ALIAS_PREFIXES and _is_uuid(rest):
+        return f"card:{rest.lower()}"
+    if _is_uuid(rest):
+        return f"{prefix_norm}:{rest.lower()}"
+    return f"{prefix_norm}:{rest}"
+
+
 # Counter for OR or_3b71e3c1 — kg_cognitive_pending_items_materialized_total.
 #
 # Contract (Codex audit val_036cb81e + or_3b71e3c1):
@@ -641,6 +690,83 @@ def get_list_samples() -> list[dict[str, Any]]:
 def reset_list_counter() -> None:
     with _list_samples_lock:
         _list_samples.clear()
+
+
+# ---------------------------------------------------------------------------
+# Counter for OR or_b8ff0cc2 — kg_operational_inspection_list_total
+# ---------------------------------------------------------------------------
+#
+# Contract (or_b8ff0cc2): count operational-inspection listing calls so the
+# ABSENCE of drill-down usage is diagnosable. One bounded sample per call to
+# the three operational-signal listings KG Health points at — cognitive
+# pending, dead-letter queue, canonical debt (kept as separate `signal`
+# values per dec_68fd26a2). Labels only; no free-form text.
+OPERATIONAL_INSPECTION_SIGNALS: frozenset[str] = frozenset({
+    "cognitive_pending",
+    "dead_letter",
+    "canonical_debt",
+})
+_OPERATIONAL_INSPECTION_LABELS = ("signal", "surface", "outcome", "board_id")
+_operational_inspection_samples: list[dict[str, Any]] = []
+_operational_inspection_lock = threading.Lock()
+
+
+def emit_operational_inspection_sample(
+    *,
+    signal: str,
+    surface: str,
+    outcome: str,
+    board_id: str,
+    item_count: int,
+) -> None:
+    """Emit one sample on ``kg_operational_inspection_list_total`` (or_b8ff0cc2).
+
+    ``signal`` is one of the three separate operational domains
+    (cognitive_pending / dead_letter / canonical_debt); ``surface`` is
+    mcp/rest; ``outcome`` is success/error. ``item_count`` is the sample
+    value (how many rows the caller saw), NOT a label.
+    """
+
+    with _operational_inspection_lock:
+        _operational_inspection_samples.append({
+            "signal": signal,
+            "surface": surface,
+            "outcome": outcome,
+            "board_id": board_id,
+            "item_count": int(item_count),
+        })
+
+
+def get_operational_inspection_event_count(
+    *,
+    signal: str | None = None,
+    surface: str | None = None,
+    outcome: str | None = None,
+    board_id: str | None = None,
+) -> int:
+    with _operational_inspection_lock:
+        return sum(
+            1
+            for sample in _operational_inspection_samples
+            if (signal is None or sample["signal"] == signal)
+            and (surface is None or sample["surface"] == surface)
+            and (outcome is None or sample["outcome"] == outcome)
+            and (board_id is None or sample["board_id"] == board_id)
+        )
+
+
+def get_operational_inspection_counter_labels() -> tuple[str, ...]:
+    return _OPERATIONAL_INSPECTION_LABELS
+
+
+def get_operational_inspection_samples() -> list[dict[str, Any]]:
+    with _operational_inspection_lock:
+        return [dict(sample) for sample in _operational_inspection_samples]
+
+
+def reset_operational_inspection_counter() -> None:
+    with _operational_inspection_lock:
+        _operational_inspection_samples.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -910,8 +1036,10 @@ def project_item_for_update_api(
     Differs from ``project_item_for_api`` only in semantic emphasis —
     ``updated_at`` and ``updated_by_agent_id`` are populated for an
     updated item, but the projection itself returns the same bounded
-    shape. Free-text ``reason`` is never echoed; bounded ``reason_code``
-    is the only narrative field exposed.
+    shape. Free-text ``reason`` is never echoed; the bounded
+    ``item.reason_code`` — persisted on the item since S1 card 9aeeaebd —
+    is echoed as the only narrative field so a caller can confirm what was
+    stored without an extra round-trip.
 
     KG-03A.3 rework (Codex audit val_44b86726): the bounded outcome
     metadata persisted by the update path is echoed back so callers can
@@ -928,7 +1056,7 @@ def project_item_for_update_api(
         "updated_at": item.updated_at,
         "updated_by_agent_id": item.updated_by_agent_id,
         "consolidation_session_id": item.consolidation_session_id,
-        "reason_code": None,
+        "reason_code": item.reason_code,
         "outcome_type": item.outcome_type,
         "evidence_refs": list(item.evidence_refs),
         "generated_candidate_decision_ids": list(
@@ -1060,11 +1188,11 @@ def project_item_for_api(
     """Safe API projection of a storage item per api_ae3a932a + api_cce40fa6.
 
     Codex audit val_ead80fbd: the MCP/REST list response MUST NOT echo
-    the storage ``reason`` field (potentially free-text agent input). We
-    expose ``reason_code`` only — a bounded code that the KG-03.3 update
-    tool will eventually set. For now (KG-03.2 read-only) ``reason_code``
-    is always ``None`` because storage does not yet carry it; KG-03.3
-    will populate it on terminal transitions.
+    the storage free-text ``reason`` field (potentially free-text agent
+    input). We expose the bounded ``reason_code`` only. Since S1 card
+    9aeeaebd the storage item carries ``reason_code``, so this projection
+    echoes ``item.reason_code`` (``None`` until the readiness service /
+    update path sets a bounded code on a terminal transition).
 
     No board_id, kg_generation_id, event_ref or raw artifact metadata
     leaks through this projection (br_858a0859).
@@ -1079,7 +1207,7 @@ def project_item_for_api(
         "updated_at": item.updated_at,
         "updated_by_agent_id": item.updated_by_agent_id,
         "consolidation_session_id": item.consolidation_session_id,
-        "reason_code": None,
+        "reason_code": item.reason_code,
     }
 
 
@@ -1144,6 +1272,34 @@ class CognitiveConsolidationItem:
     # marker can dedupe across generations and detect ``reopen`` when the
     # underlying artifact's content changes between rebuilds.
     content_hash: str | None = None
+    # S1 Cognitive Closure (fr_a74b3bc5) — readiness metadata persisted on the
+    # EXISTING item (dec_effa4634: no parallel closure ledger). reason_code is
+    # cognitive + closed-validated by the readiness service / later cards
+    # (dec_25557d9a) — here the field merely exists. revisit_at is an ISO-8601
+    # string so the frozen row stays JSON-serializable.
+    reason_code: str | None = None
+    justification: str | None = None
+    actor: str | None = None
+    revisit_at: str | None = None
+    # source_ref_original preserves the untouched ref for audit; artifact_id is
+    # the canonical per-artifact grouping key (fr_43ea6e97 / ac_50e4d48e). Both
+    # default safely from source_ref in __post_init__ so legacy rows stay
+    # readable WITHOUT a silent disk mutation (tr_3db366b6).
+    source_ref_original: str | None = None
+    artifact_id: str = ""
+
+    def __post_init__(self) -> None:
+        # In-memory safe defaults only — never written back by construction;
+        # only mark/update persist (tr_3db366b6). frozen dataclass → setattr via
+        # object to seed the derived identity fields when absent.
+        if not self.source_ref_original:
+            object.__setattr__(self, "source_ref_original", self.source_ref)
+        if not self.artifact_id:
+            object.__setattr__(
+                self,
+                "artifact_id",
+                normalize_cognitive_artifact_id(self.source_ref),
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1168,6 +1324,12 @@ class CognitiveConsolidationItem:
                 self.promoted_formal_decision_ids
             ),
             "content_hash": self.content_hash,
+            "reason_code": self.reason_code,
+            "justification": self.justification,
+            "actor": self.actor,
+            "revisit_at": self.revisit_at,
+            "source_ref_original": self.source_ref_original,
+            "artifact_id": self.artifact_id,
         }
 
     @staticmethod
@@ -1199,6 +1361,15 @@ class CognitiveConsolidationItem:
                 payload.get("promoted_formal_decision_ids")
             ),
             content_hash=payload.get("content_hash"),
+            # S1: new readiness fields. Absent on legacy rows → safe defaults
+            # (artifact_id/source_ref_original derived in __post_init__) without
+            # rewriting the stored payload (tr_3db366b6).
+            reason_code=payload.get("reason_code"),
+            justification=payload.get("justification"),
+            actor=payload.get("actor"),
+            revisit_at=payload.get("revisit_at"),
+            source_ref_original=payload.get("source_ref_original"),
+            artifact_id=str(payload.get("artifact_id") or ""),
         )
 
 
@@ -1725,6 +1896,11 @@ class CognitiveConsolidationItemStore:
         evidence_refs: Sequence[str] | None = None,
         generated_candidate_decision_ids: Sequence[str] | None = None,
         promoted_formal_decision_ids: Sequence[str] | None = None,
+        reason_code: str | None = None,
+        justification: str | None = None,
+        actor: str | None = None,
+        revisit_at: str | None = None,
+        clear_readiness_metadata: bool = False,
     ) -> CognitiveConsolidationItem | None:
         """Single-item atomic update per br_d544da65 + FR3 + AC6.
 
@@ -1790,8 +1966,10 @@ class CognitiveConsolidationItemStore:
                 if promoted_formal_decision_ids
                 else []
             )
+            existing = items_raw[target_idx]
+            src_ref = str(existing.get("source_ref", ""))
             items_raw[target_idx] = {
-                **items_raw[target_idx],
+                **existing,
                 "status": new_status,
                 "updated_at": now,
                 "updated_by_agent_id": updated_by_agent_id,
@@ -1801,6 +1979,33 @@ class CognitiveConsolidationItemStore:
                 "evidence_refs": evidence_refs_list,
                 "generated_candidate_decision_ids": generated_candidates_list,
                 "promoted_formal_decision_ids": promoted_decisions_list,
+                # S1: canonical artifact identity persisted on this EXPLICIT
+                # mutation (not a silent read-time write) + readiness metadata
+                # preserved when the caller omits it, so a concurrent update
+                # never drops reason_code/justification/actor/revisit_at
+                # (tr_3d6b29fe). The lock + temp-replace below keep it atomic.
+                "source_ref_original": existing.get("source_ref_original") or src_ref,
+                "artifact_id": existing.get("artifact_id")
+                or normalize_cognitive_artifact_id(src_ref),
+                # S3.2: an explicit clear/reopen (``clear_readiness_metadata``)
+                # DROPS the stale skip metadata; otherwise the preserve-when-None
+                # default holds (tr_3d6b29fe) so a concurrent update never loses it.
+                "reason_code": (
+                    None if clear_readiness_metadata
+                    else reason_code if reason_code is not None
+                    else existing.get("reason_code")
+                ),
+                "justification": (
+                    None if clear_readiness_metadata
+                    else justification if justification is not None
+                    else existing.get("justification")
+                ),
+                "actor": actor if actor is not None else existing.get("actor"),
+                "revisit_at": (
+                    None if clear_readiness_metadata
+                    else revisit_at if revisit_at is not None
+                    else existing.get("revisit_at")
+                ),
             }
 
             # Recompute aggregate counts from items (br_d544da65 keeps
@@ -1827,6 +2032,108 @@ class CognitiveConsolidationItemStore:
             # KG-03.3 (``kg_cognitive_item_update_total``), implemented
             # by the MCP update tool that wraps this primitive.
             return CognitiveConsolidationItem.from_dict(items_raw[target_idx])
+
+
+def _cognitive_hold_artifact_type(
+    hold_payload: Mapping[str, Any], source_ref: str
+) -> str:
+    """Resolve a store-acceptable artifact_type for an R7 hold row.
+
+    Prefers the payload's inferred type; falls back to the bug:* heuristic
+    (a working-only canonical Learning hold is always bug-derived)."""
+    declared = str(hold_payload.get("artifact_type") or "")
+    if declared in CONSOLIDABLE_ARTIFACT_TYPES:
+        return declared
+    if (
+        source_ref.startswith("bug:")
+        or source_ref.startswith("card:bug:")
+        or ":bug:" in source_ref
+    ):
+        return "bug"
+    return declared
+
+
+def record_cognitive_working_only_hold(
+    *,
+    board_id: str,
+    hold_payload: Mapping[str, Any],
+    actor_id: str,
+    base_dir: Path | None = None,
+) -> dict[str, str] | None:
+    """Persist an R7 working-only canonical Learning go-forward HOLD as a
+    cognitive pending item (NEVER CanonicalDebt / DLQ / a parallel store).
+
+    Reuses the existing CognitiveConsolidationItemStore: it materializes one
+    pending row for the held source and stamps the R7 ``reason_code`` via
+    ``update_item``. The store is file-backed (rebuild base dir), so this needs
+    no SQL db and is safe to call from any caller that catches the structured
+    ``KGPrimitiveError`` (MCP commit tool, live consolidation, adapters).
+
+    Generation resolution follows the read-side fallback chain and never
+    promotes the ``current`` pointer because of a live hold:
+    ``KGGenerationRepository.get_current`` -> ``store.latest_generation``
+    -> ``generate_kg_generation_id`` (first live ledger).
+
+    Returns ``{generation_id, item_id, artifact_type}`` on success, or None
+    when the payload is unusable / the artifact_type is not consolidable (the
+    structured error has already surfaced to the caller in that case).
+    """
+    source_ref = str(hold_payload.get("source_ref") or "")
+    reason_code = str(hold_payload.get("reason_code") or "")
+    if not source_ref or not reason_code:
+        return None
+    artifact_type = _cognitive_hold_artifact_type(hold_payload, source_ref)
+    if artifact_type not in CONSOLIDABLE_ARTIFACT_TYPES:
+        # The store silently skips a non-consolidable row; do not pretend a hold
+        # was recorded. The caller still surfaces the structured error.
+        logger.warning(
+            "kg.r7_hold.non_consolidable_artifact board=%s source_ref=%s type=%s",
+            board_id,
+            source_ref,
+            artifact_type,
+        )
+        return None
+
+    base = base_dir or default_rebuild_base_dir()
+    from okto_pulse.core.kg.rebuild_generation import (
+        KGGenerationRepository,
+        generate_kg_generation_id,
+    )
+
+    store = CognitiveConsolidationItemStore(base_dir=base)
+    generation_id = (
+        KGGenerationRepository(base).get_current(board_id)
+        or store.latest_generation(board_id)
+        or generate_kg_generation_id()
+    )
+    session_id = str(hold_payload.get("session_id") or "")
+    store.materialize_from_marker(
+        board_id=board_id,
+        kg_generation_id=generation_id,
+        event_ref=f"r7_cognitive_hold:{session_id}",
+        source_set=[{"source_ref": source_ref, "artifact_type": artifact_type}],
+    )
+    item_id = compute_cognitive_item_id(board_id, generation_id, source_ref)
+    updated = store.update_item(
+        board_id=board_id,
+        kg_generation_id=generation_id,
+        item_id=item_id,
+        new_status=CognitiveItemStatus.PENDING.value,
+        updated_by_agent_id=actor_id,
+        consolidation_session_id=session_id or None,
+        reason_code=reason_code,
+        reason=(
+            "R7: canonical Learning held — bug evidence is working-only "
+            "(awaiting canonical Bug)."
+        ),
+    )
+    if updated is None:
+        return None
+    return {
+        "generation_id": generation_id,
+        "item_id": item_id,
+        "artifact_type": artifact_type,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2530,6 +2837,7 @@ __all__ = [
     "default_rebuild_base_dir",
     "detect_unsafe_update_payload",
     "empty_status_counts",
+    "record_cognitive_working_only_hold",
     "project_item_for_api",
     "project_item_for_update_api",
     "get_audit_count",

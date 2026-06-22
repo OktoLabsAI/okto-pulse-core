@@ -36,7 +36,7 @@ Okto Pulse currently documents and enforces **17 named governance gates**:
 | Execution quality | Task start/spec readiness; task conclusion; cognitive closeout; architecture-findings done; test evidence; bug test-first/traceability |
 | Sprint health | Sprint closure/evaluation |
 
-The two execution-quality additions in 0.2.3 — **cognitive closeout** (a `done` transition is blocked while active cognitive-consolidation items remain) and the **architecture-findings done gate** (active architecture warnings block `spec`/card `done`) — moved from defined to enforced in this release.
+The two execution-quality additions introduced in 0.2.3 — **cognitive closeout** (a `done` transition is blocked while active cognitive-consolidation items remain) and the **architecture-findings done gate** (active architecture warnings block `spec`/card `done`) — remain enforced in the current release.
 
 ## Architecture
 
@@ -83,7 +83,20 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-### 0.2.3 — current
+### 0.2.5 — current
+
+Scope is taken from the finalized specs on the **Okto Pulse 0.2.5** board and the `feature/0.2.5` branch diff over `feature/0.2.3`: `311 files changed, +59,295 / -1,104`. This release turns the 0.2.3 KG durability base into a governed operating layer for canonical graph maturity, cognitive closeout, board defaults, Design System consumption, Path B amendment remediation and AWS metrics publication health.
+
+- **KG canonical/working partitioning and recovery** — maturity-aware source classification, layer-aware rebuild/preflight diagnostics, canonical-only query defaults with explicit working opt-in, canonical source manifests, global-discovery parity, natural-query layer audits, self-loop/connectivity safeguards, stale-canonical demotion/reconcile paths and `recovery_needed` rebuild safety.
+- **Canonical debt and operational visibility** — `CanonicalDebt` tracking for failed/deferred promotion, replay contracts, canonical-partition integrity checks, stale-canonical parity and digest-layer mismatch endpoints, active queue/DLQ separation, lineage/count diagnostics and KG health reporting that distinguishes canonical debt from cognitive closeout work.
+- **Cognitive readiness and closeout governance** — shared cognitive closeout store/readiness service, deterministic-only ownership for Criterion/Constraint closeout, human-only skip/no-action ledgers, skip/clear controls, technical-blocker metrics, read-only MCP/API exposure and the Cognitive Action Center read model.
+- **Board defaults, guidelines and Design System governance** — versioned `DefaultBoardConfiguration` templates, default global-guideline materialization for new boards, global/inline Design System catalog, board association/default selection, effective Design System surfacing in board context/preflight and `MockupDesignSystemGate` advisory/blocking enforcement with audit.
+- **Metrics publication health for AWS ingestion** — explicit telemetry event contracts, real emitters for CLI/MCP/KG/lifecycle/pipeline activity, semantic event eras, delta batching, watermark/retention, HTTP/token policy, local failure-state, redacted publish-health DTOs over API/MCP and a triage runbook that reports AWS/reporting gaps as actionable states instead of healthy.
+- **Path B amendment remediation for bug regression** — `AmendmentHotfixRevision` model, service, REST/MCP lifecycle, eligibility policy, artifact association, validator coverage confirmation and KG rebuild handling so post-bug semantic gaps are closed through formal amendment lineage rather than untracked spec edits.
+- **Gate and MCP contract hardening from E2E** — docs/schema now surface Design System evidence fields on mockups, direct `okto_pulse_link_task(target_type="fr")` traceability, strict scenario-type behavior, re-executable test evidence classes, 0-100 validation/evaluation scales, test-card scenario caps, direct test-card `not_started -> in_progress` support and the FR coverage dependency on `business_rules[].linked_requirements`.
+- **Regression coverage and docs** — new pytest coverage spans telemetry publish-health, default board config, Design System gates, Path B, amendment revisions, cognitive readiness/action-center flows, KG layer/canonical-debt behavior, MCP contract drift and E2E-discovered edge cases. The MCP workflow/reference docs were refreshed in lockstep.
+
+### 0.2.3
 
 The largest release since 0.2.0. Scope is taken from the **53 finalized specs on the Okto Pulse 0.2.3 board** (the platform dogfooded its own SDLC), landing **64 new core modules** across eight subsystems. `335 files changed, +103,183 / −4,532` over `0.2.2`; every subsystem ships with its pytest suite. The package grew to **52 models / 28 services / 33 API modules / 215 MCP tools / 17 named gates**.
 

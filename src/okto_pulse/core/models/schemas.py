@@ -254,15 +254,32 @@ class CommentResponse(BaseSchema):
 
 
 class TestScenarioEvidence(BaseModel):
-    """Structured proof that a test scenario exists or was executed."""
+    """Structured proof that a test scenario exists or was executed.
+
+    Spec 9e0bf979 — re-executable validation evidence contract. ``evidence_class``
+    classifies the KIND of proof (see ``test_scenario_lifecycle.EVIDENCE_CLASSES``)
+    so a validator can rerun or inspect the artifact instead of trusting a raw
+    run log. All new fields are additive and optional; legacy evidence that only
+    carries the minimal automated/passed fields stays valid and readable
+    (backward compatibility, fr_a245e2c7).
+    """
 
     model_config = ConfigDict(extra="allow")
 
+    # Minimal/legacy fields (NC-9). Preserved verbatim for backward compatibility.
     test_file_path: str | None = None
     test_function: str | None = None
     last_run_at: str | None = None
     test_run_id: str | None = None
     output_snippet: str | None = None
+    # Re-executable evidence contract (spec 9e0bf979, tr_61dabab8).
+    evidence_class: str | None = None
+    replay_command: str | None = None
+    mcp_replay_manifest: str | None = None
+    manual_checklist_ref: str | None = None
+    expected_output_snapshot: str | None = None
+    replay_should_exist: bool | None = None
+    non_replayable_justification: str | None = None
 
 
 class TestScenario(BaseModel):
@@ -271,7 +288,7 @@ class TestScenario(BaseModel):
     id: str
     title: str
     linked_criteria: list[str] | None = None  # indices or text of acceptance criteria
-    scenario_type: str = "integration"  # unit | integration | e2e | manual
+    scenario_type: str = "integration"  # unit | integration | e2e | manual | negative
     given: str = ""  # precondition
     when: str = ""  # action
     then: str = ""  # expected result
@@ -305,6 +322,13 @@ class ScreenMockup(BaseModel):
     html_content: str = ""
     annotations: list[MockupAnnotation] | None = None
     order: int = 0
+    # Design System consumption metadata (spec 3a006f65 / card 0192f58d). Stored
+    # normalized as {design_system_id, version}; the MockupDesignSystemGate cross-checks
+    # it against the board's REAL effective Design System (the payload is never the
+    # source of identity). Both default None so legacy mockups + off-mode boards are
+    # unaffected.
+    design_system_ref: dict[str, Any] | None = None
+    design_system_evidence: Any | None = None
 
 
 # ============================================================================
@@ -491,7 +515,7 @@ class BusinessRule(BaseModel):
     rule: str
     when: str
     then: str
-    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_requirements: list[str] | None = None  # canonical FR ids
     linked_task_ids: list[str] | None = None  # Card IDs linked to this rule
     status: Literal["active", "superseded", "revoked"] = "active"
     notes: str | None = None
@@ -597,6 +621,7 @@ IntegrationRequirementType = Literal[
     "data_contract",
     "event",
     "file",
+    "external_service",
     "other",
 ]
 
@@ -614,7 +639,7 @@ class IntegrationRequirement(BaseModel):
     endpoint: str | None = None
     method: str | None = None
     data_contract: dict[str, Any] | None = None
-    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_requirements: list[str] | None = None  # canonical FR/TR ids
     linked_api_contracts: list[str] | None = None  # ApiContract IDs
     linked_task_ids: list[str] | None = None  # Card IDs linked to this IR
     status: IntegrationRequirementStatus = "active"
@@ -653,7 +678,7 @@ class ObservabilityRequirement(BaseModel):
     threshold: str | None = None
     severity: str | None = None
     owner: str | None = None
-    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_requirements: list[str] | None = None  # canonical FR/TR ids
     linked_integration_requirements: list[str] | None = None  # IntegrationRequirement IDs
     linked_task_ids: list[str] | None = None  # Card IDs linked to this OR
     status: ObservabilityRequirementStatus = "active"
@@ -686,7 +711,7 @@ class Decision(BaseModel):
     context: str | None = None  # when/where it applies
     alternatives_considered: list[str] | None = None
     supersedes_decision_id: str | None = None  # id of a Decision on the same spec
-    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_requirements: list[str] | None = None  # canonical FR ids
     linked_task_ids: list[str] | None = None
     status: DecisionStatus = "active"
     notes: str | None = None
@@ -964,6 +989,20 @@ class IdeationMove(BaseModel):
     status: IdeationStatus
 
 
+class IdeationAmbiguityGateSkipUpdate(BaseModel):
+    """Dedicated payload for the per-ideation Max ambiguity gate skip write path.
+
+    Spec 2485780b (TR5/FR5): this is the ONLY field this endpoint accepts —
+    extra='forbid' guarantees the path cannot be used to smuggle unrelated
+    edits past the generic update_ideation draft-only guard. The write works
+    while the ideation is in evaluating status.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    skip_ambiguity_gate: bool
+
+
 class IdeationSummary(BaseSchema):
     """Schema for ideation summary."""
 
@@ -989,6 +1028,8 @@ class IdeationSummary(BaseSchema):
     architecture_designs: list[ArchitectureDesignSummary] = []
     archived: bool = False
     pre_archive_status: str | None = None
+    # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
+    skip_ambiguity_gate: bool = False
 
 
 # ============================================================================
@@ -1198,7 +1239,7 @@ class RefinementCreate(BaseModel):
     mockup_ids: list[str] | None = Field(None, description="IDs dos mockups a propagar da ideacao (None = propagar todos).")
     kb_ids: list[str] | None = Field(None, description="IDs dos KB items a propagar da ideacao (None = propagar todos).")
     architecture_design_ids: list[str] | None = Field(None, description="IDs dos architecture designs a propagar (None = propagar todos).")
-    architecture_propagation_mode: str = Field("copy", description="Modo de propagacao de arquitetura: 'copy' (padrao) ou 'reference'.")
+    architecture_propagation_mode: str = Field("copy", description="Modo de propagacao de arquitetura: 'copy'/'derive' copiam snapshots; 'reference_only'/'none' mantem apenas a ligacao com o pai.")
 
     @field_validator("in_scope")
     @classmethod
@@ -1526,6 +1567,8 @@ class IdeationResponse(BaseSchema):
     labels: list[str] | None
     archived: bool = False
     pre_archive_status: str | None = None
+    # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
+    skip_ambiguity_gate: bool = False
     refinements: list[RefinementSummary] = []
     stories: list[StorySummary] = []
     specs: list[SpecSummary] = []
@@ -1775,7 +1818,14 @@ class CardCreate(BaseModel):
     labels: list[str] | None = Field(None, description="Tags de categorizacao para filtragem e busca.")
     spec_id: str | None = Field(None, description="ID da spec a qual este card esta vinculado.")
     sprint_id: str | None = Field(None, description="ID do sprint ao qual este card pertence.")
-    test_scenario_ids: list[str] | None = Field(None, description="IDs dos test scenarios associados a este card.")
+    test_scenario_ids: list[str] | None = Field(
+        None,
+        description=(
+            "IDs dos test scenarios associados a este card. Para card_type='test', "
+            "e obrigatorio e limitado por board.settings.max_scenarios_per_card "
+            "(default 3; boards podem configurar 2 ou outro valor)."
+        ),
+    )
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela vinculados ao card.")
     # Card type: "normal", "test", or "bug".
     card_type: str = Field("normal", description="Tipo do card: 'normal', 'test' ou 'bug'.")
@@ -1801,7 +1851,13 @@ class CardUpdate(BaseModel):
     labels: list[str] | None = Field(None, description="Novas tags de categorizacao do card.")
     spec_id: str | None = Field(None, description="Novo ID da spec vinculada ao card.")
     sprint_id: str | None = Field(None, description="Novo ID do sprint ao qual o card pertence.")
-    test_scenario_ids: list[str] | None = Field(None, description="Novos IDs de test scenarios vinculados ao card.")
+    test_scenario_ids: list[str] | None = Field(
+        None,
+        description=(
+            "Novos IDs de test scenarios vinculados ao card; respeita "
+            "board.settings.max_scenarios_per_card."
+        ),
+    )
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Novos mockups de tela vinculados ao card.")
     knowledge_bases: list[dict] | None = Field(None, description="Base de conhecimento vinculada ao card (lista de dicts).")
     # Bug card fields (only updatable, not card_type or origin_task_id)
@@ -2133,6 +2189,12 @@ class BoardSettings(BaseModel):
     allow_agent_self_answering: bool = False  # explicit opt-in that permits same-principal Q&A answers
     require_full_context_for_critical_actions: bool = True  # if True, critical mutations must resolve full entity context
     qa_require_role_separation: bool = False  # if True, a Q&A question cannot be answered by the same principal who asked it
+    # Design System mockup gate mode (spec 3a006f65 / card 96f76a5f). CANONICAL source
+    # of the board's Design System gate mode (the design_system_default_ref only carries
+    # the DS identity; any gate_mode inside it is a derived mirror). off = no gate;
+    # advisory = warn/audit; blocking = reject mockups without valid DS evidence. Legacy
+    # boards with no field validate as 'off' (TR4 — never breaks an existing board).
+    design_system_gate_mode: Literal["off", "advisory", "blocking"] = "off"
     # Task Validation Gate — board-level defaults (overridable at spec/sprint)
     require_task_validation: bool = True  # if True, cards must pass validation before moving to done
     min_confidence: int = 70  # min reviewer confidence score
@@ -2143,6 +2205,12 @@ class BoardSettings(BaseModel):
     min_spec_completeness: int = 80  # min spec completeness score
     min_spec_assertiveness: int = 80  # min spec assertiveness score
     max_spec_ambiguity: int = 30  # max spec ambiguity score (lower is better)
+    # Max ambiguity gate for ideation completion — opt-in (spec 2485780b).
+    # When enabled, blocks ONLY the evaluating→done transition if the ideation
+    # has no ambiguity score or scope_assessment.ambiguity exceeds the
+    # configured threshold. Default disabled; threshold validated to 1-5.
+    require_ideation_ambiguity_gate: bool = False
+    max_ideation_ambiguity: int = 3  # max allowed ideation ambiguity (1-5)
     # Resource Gate - Level 2 spec resource-to-task coverage.
     require_spec_resource_task_coverage: bool = True
     # Spec resource automation — when enabled, selected resources are copied
@@ -2160,9 +2228,12 @@ class BoardSettings(BaseModel):
     # Test Theater Prevention Gate — Wave 2 NC-9 (spec 873e98cc).
     # When False (default), update_test_scenario_status with status in
     # {automated, passed, failed} requires structured evidence (test_file_path,
-    # test_function for automated; last_run_at + (output_snippet|test_run_id)
-    # for passed/failed). When True, gate is bypass — any status accepted
-    # without evidence; audit log records every bypass for forensics.
+    # test_function for automated; explicit evidence_class with its required
+    # replayable fields, or unclassed run-log evidence with last_run_at +
+    # (output_snippet|test_run_id) + expected_output_snapshot +
+    # non_replayable_justification for passed/failed). When True, gate is bypass
+    # — any status accepted without evidence; audit log records every bypass for
+    # forensics.
     skip_test_evidence_global: bool = False
     # Cognitive Extraction LLM config — opt-in (spec 3d907a87, FR7 / D5).
     # Schema (free-form dict so it can evolve without a migration):
@@ -2190,6 +2261,14 @@ class BoardSettings(BaseModel):
             )
         return self
 
+    @field_validator("max_ideation_ambiguity")
+    @classmethod
+    def _validate_max_ideation_ambiguity(cls, value: int) -> int:
+        """Reject ideation ambiguity thresholds outside 1-5 (spec 2485780b TR2)."""
+        if not 1 <= value <= 5:
+            raise ValueError("max_ideation_ambiguity must be between 1 and 5")
+        return value
+
 
 class BoardCreate(BaseModel):
     """Schema for creating a board."""
@@ -2216,6 +2295,11 @@ class BoardResponse(BaseSchema):
     owner_id: str
     realm_id: str | None = None
     settings: BoardSettings | None = None
+    # Applied DefaultBoardConfiguration snapshot metadata (spec 9df814bc / TR11).
+    # Null/absent for the no-active-template fallback path; the snapshot dict
+    # (template_id, template_version, applied_at, applied_by, override_summary)
+    # when a template was applied. Distinct from settings (governance payload).
+    default_config_snapshot: dict | None = None
     created_at: datetime
     updated_at: datetime
     cards: list[CardResponse] = []

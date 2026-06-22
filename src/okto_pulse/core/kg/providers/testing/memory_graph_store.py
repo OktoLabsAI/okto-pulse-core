@@ -48,12 +48,19 @@ class InMemoryGraphStore:
     def create_edge(
         self, board_id: str, edge_type: str, from_id: str, to_id: str,
         attrs: dict[str, Any] | None = None,
+        *,
+        from_type: str | None = None,
+        to_type: str | None = None,
     ) -> None:
         edges = self._board_edges(board_id)
         edge = dict(attrs or {})
         edge["_type"] = edge_type
         edge["_from"] = from_id
         edge["_to"] = to_id
+        if from_type:
+            edge["_from_type"] = from_type
+        if to_type:
+            edge["_to_type"] = to_type
         edges.append(edge)
 
     def delete_nodes_by_session(self, board_id: str, session_id: str) -> int:

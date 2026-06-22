@@ -33,7 +33,12 @@ from typing import Any, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.kg.schema import MULTI_REL_TYPES, NODE_TYPES, REL_TYPES
+from okto_pulse.core.kg.schema import (
+    MULTI_REL_TYPES,
+    NODE_TYPES,
+    REL_TYPES,
+    resolve_relationship_endpoint_pair,
+)
 
 logger = logging.getLogger("okto_pulse.kg.transaction")
 
@@ -251,11 +256,11 @@ class TransactionOrchestrator:
     ) -> None:
         """Insert a relationship between two existing nodes.
 
-        For single-pair rels (REL_TYPES) the from/to node types are resolved
-        automatically from the registry. For multi-pair rels (MULTI_REL_TYPES,
-        e.g. ``belongs_to``) the caller MUST pass ``from_type``/``to_type``
-        because the same rel name accepts many endpoint combinations and the
-        Cypher MATCH needs the concrete node labels.
+        For single-pair rels the from/to node types are resolved automatically
+        from the registry. For rel names with multiple endpoint pairs
+        (including names present in both REL_TYPES and MULTI_REL_TYPES, such as
+        ``implements``), the caller MUST pass ``from_type``/``to_type`` because
+        the Cypher MATCH needs the concrete node labels.
         """
         self._guard_fresh()
         edge_attrs: dict[str, Any] = dict(attrs or {})
@@ -270,29 +275,11 @@ class TransactionOrchestrator:
         edge_attrs.setdefault("created_by", self.session_id)
         edge_attrs.setdefault("fallback_reason", "")
 
-        # Resolve from/to types: REL_TYPES single-pair → auto; otherwise honour
-        # the caller-supplied hints (multi-pair rels like `belongs_to`).
-        rel_row = next((r for r in REL_TYPES if r[0] == edge_type), None)
-        if rel_row is not None:
-            _, resolved_from, resolved_to = rel_row
-        else:
-            from okto_pulse.core.kg.schema import MULTI_REL_TYPES
-            multi = next((m for m in MULTI_REL_TYPES if m[0] == edge_type), None)
-            if multi is None:
-                raise ValueError(f"unknown edge_type: {edge_type}")
-            if not from_type or not to_type:
-                raise ValueError(
-                    f"multi-pair edge_type '{edge_type}' requires explicit "
-                    f"from_type/to_type hints; got {from_type!r}/{to_type!r}"
-                )
-            valid_pairs = multi[1]
-            if (from_type, to_type) not in valid_pairs:
-                raise ValueError(
-                    f"edge_type '{edge_type}' does not accept pair "
-                    f"({from_type}, {to_type}); valid pairs: {valid_pairs}"
-                )
-            resolved_from, resolved_to = from_type, to_type
-        from_type, to_type = resolved_from, resolved_to
+        from_type, to_type = resolve_relationship_endpoint_pair(
+            edge_type,
+            from_type=from_type,
+            to_type=to_type,
+        )
 
         if self._edge_exists(edge_type, from_type, to_type, from_id, to_id):
             logger.info(

@@ -31,6 +31,7 @@ from okto_pulse.core.kg.rebuild_sources import (
     reset_enumeration_counter,
 )
 from okto_pulse.core.kg.board_source_store import BoardSourceStore
+from okto_pulse.core.kg.source_maturity import classify_source_for_kg
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ def _row(
     created_at: str = "2026-05-01T00:00:00Z",
     version: str = "v1",
     content_hash: str = "h",
-    status: str = "validated",
+    status: str = "done",
 ) -> dict:
     return {
         "artifact_type": artifact_type,
@@ -132,31 +133,265 @@ def test_enumerate_filters_out_cancelled_specs():
     assert result.eligible_count == 2
 
 
+@pytest.mark.parametrize(
+    ("artifact_type", "status"),
+    [
+        ("spec", "draft"),
+        ("spec", "review"),
+        ("spec", "validated"),
+        ("story", "ready"),
+        ("refinement", "review"),
+        ("task", "in_progress"),
+    ],
+)
+def test_source_classifier_blocks_immature_canonical(
+    artifact_type: str,
+    status: str,
+) -> None:
+    result = classify_source_for_kg(
+        artifact_type=artifact_type,
+        artifact_status=status,
+        content_hash="h",
+    )
+
+    assert result.graph_layer == "working"
+    if artifact_type == "story":
+        assert result.disposition == "working"
+        assert result.reason_code == "story_never_canonical"
+    else:
+        assert result.disposition == "skipped_by_maturity"
+        assert result.reason_code == f"{artifact_type}_{status}_not_canonical"
+
+
 def test_enumerate_orders_by_artifact_type_then_created_at_then_id_then_version():
-    """TR5: stable ordering — spec→decision→refinement→task→test→bug, then
-    created_at, then id, then version."""
+    """TR5: stable ordering over canonical-eligible rows.
+
+    Decisions are no longer independent rebuild sources; they inherit the
+    owning spec's maturity and stay out of the canonical source list.
+    """
     rows = [
-        _row(artifact_type="bug", id_="b-1", created_at="2026-05-03"),
+        _row(artifact_type="bug", id_="b-1", created_at="2026-05-03", status="done"),
         _row(artifact_type="spec", id_="s-2", created_at="2026-05-02"),
         _row(artifact_type="spec", id_="s-1", created_at="2026-05-01"),
         _row(artifact_type="decision", id_="s-1:d-1", created_at="2026-05-01"),
-        _row(artifact_type="refinement", id_="r-1", created_at="2026-05-01"),
-        _row(artifact_type="test", id_="tc-1", created_at="2026-05-01"),
-        _row(artifact_type="task", id_="t-1", created_at="2026-05-01"),
+        _row(artifact_type="refinement", id_="r-1", created_at="2026-05-01", status="done"),
+        _row(artifact_type="test", id_="tc-1", created_at="2026-05-01", status="done"),
+        _row(artifact_type="task", id_="t-1", created_at="2026-05-01", status="done"),
     ]
     enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
     result = enum.enumerate(board_id="b1")
     sequence = [(r.artifact_type, r.id) for r in result.sources]
-    # Specs first (sorted by created_at then id), then refinement, task, test, bug.
+    # Partition order, then created_at/id/version within type.
     assert sequence == [
+        ("refinement", "r-1"),
         ("spec", "s-1"),
         ("spec", "s-2"),
-        ("decision", "s-1:d-1"),
-        ("refinement", "r-1"),
         ("task", "t-1"),
         ("test", "tc-1"),
         ("bug", "b-1"),
     ]
+    assert [r.id for r in result.legacy_unknown] == ["s-1:d-1"]
+
+
+def test_closed_sprint_is_working_not_canonical():
+    rows = [
+        _row(artifact_type="sprint", id_="sp-1", status="closed"),
+        _row(artifact_type="spec", id_="s-1", status="done"),
+    ]
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    result = enum.enumerate(board_id="b1")
+
+    assert [r.id for r in result.sources] == ["s-1"]
+    assert [r.id for r in result.skipped_by_maturity] == ["sp-1"]
+    assert result.skipped_by_maturity[0].reason_code == "sprint_not_canonical"
+
+
+def test_ideation_and_intermediate_statuses_stay_out_of_canonical():
+    rows = [
+        _row(artifact_type="ideation", id_="i-1", status="done", created_at="2026-06-12"),
+        _row(artifact_type="spec", id_="s-draft", status="draft", created_at="2026-06-12"),
+        _row(artifact_type="spec", id_="s-review", status="review", created_at="2026-06-12"),
+        _row(artifact_type="spec", id_="s-approved", status="approved", created_at="2026-06-12"),
+        _row(artifact_type="spec", id_="s-validated", status="validated", created_at="2026-06-12"),
+        _row(artifact_type="refinement", id_="r-review", status="review", created_at="2026-06-12"),
+    ]
+    # working_ttl_days=0 isolates the MATURITY/PARTITION contract from the working
+    # TTL (which is covered deterministically by test_working_ttl_expiry_* /
+    # _override). Without it this fixture's created_at would silently cross the
+    # default 7-day TTL as wall-clock advances and the working sources would be
+    # mis-asserted as skipped_expired (bug 5187f991: time-dependent fixture).
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows, working_ttl_days=0)
+    result = enum.enumerate(board_id="b1")
+
+    assert result.sources == ()
+    assert [r.id for r in result.working_sources] == ["i-1"]
+    skipped_ids = {r.id for r in result.skipped_by_maturity}
+    assert skipped_ids == {
+        "s-draft",
+        "s-review",
+        "s-approved",
+        "s-validated",
+        "r-review",
+    }
+    assert all(r.graph_layer == "working" for r in result.skipped_by_maturity)
+    assert {r.id for r in result.materializable_sources} == {
+        "i-1",
+        "s-draft",
+        "s-review",
+        "s-approved",
+        "s-validated",
+        "r-review",
+    }
+
+
+def test_rebuild_partitions_cancelled_and_immature_sources_separately():
+    rows = [
+        _row(
+            artifact_type="spec",
+            id_="s-cancelled",
+            status="cancelled",
+            created_at="2026-06-12T00:00:00Z",
+        ),
+        _row(
+            artifact_type="spec",
+            id_="s-approved",
+            status="approved",
+            created_at="2026-06-12T00:00:01Z",
+        ),
+        _row(
+            artifact_type="spec",
+            id_="s-validated",
+            status="validated",
+            created_at="2026-06-12T00:00:02Z",
+        ),
+        _row(
+            artifact_type="spec",
+            id_="s-done",
+            status="done",
+            created_at="2026-06-12T00:00:03Z",
+        ),
+    ]
+    # working_ttl_days=0: isolate maturity/partition from the working TTL (bug
+    # 5187f991 — time-dependent fixture; TTL has its own deterministic tests).
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows, working_ttl_days=0)
+    result = enum.enumerate(board_id="b1")
+
+    assert [r.id for r in result.sources] == ["s-done"]
+    assert [r.id for r in result.skipped_by_maturity] == [
+        "s-approved",
+        "s-validated",
+    ]
+    assert result.skipped_cancelled_count == 1
+    assert result.canonical_source_count == 1
+    assert result.skipped_by_maturity_count == 2
+    assert result.source_partition_counts["canonical"] == 1
+    assert result.source_partition_counts["skipped_by_maturity"] == 2
+    assert result.source_partition_counts["skipped_cancelled"] == 1
+
+
+def test_rebuild_legacy_missing_hash_is_not_canonical():
+    rows = [
+        _row(id_="legacy-no-hash", content_hash=""),
+        _row(id_="canonical", status="done"),
+    ]
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    result = enum.enumerate(board_id="b1")
+
+    assert [r.id for r in result.sources] == ["canonical"]
+    assert [r.id for r in result.legacy_unknown] == ["legacy-no-hash"]
+    assert result.legacy_unknown[0].reason_code == "missing_status_or_content_hash"
+    assert result.has_non_deterministic_inputs is True
+
+
+def test_regression_fresh_working_sources_are_not_dropped_from_partition():
+    """Regression for SPEC4 bug 5187f991 (test card 7414f1a7 / ts_df112b35).
+
+    A working-partition source (ideation, or an intermediate-status spec) MUST
+    land in working_sources / skipped_by_maturity AND in materializable_sources —
+    never silently dropped — so a confirmed rebuild materializes the full
+    canonical+working partition. DETERMINISTIC (working_ttl_days=0 + an ANCIENT
+    created_at) so it cannot rot like the time-dependent fixtures that exposed
+    the bug: it fails closed if the enumerator ever drops/misclassifies a working
+    source regardless of wall-clock.
+    """
+    rows = [
+        _row(artifact_type="ideation", id_="i-1", status="done", created_at="2020-01-01T00:00:00Z"),
+        _row(artifact_type="spec", id_="s-approved", status="approved", created_at="2020-01-01T00:00:00Z"),
+        _row(artifact_type="spec", id_="s-done", status="done", created_at="2020-01-01T00:00:00Z"),
+    ]
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows, working_ttl_days=0)
+    result = enum.enumerate(board_id="b1")
+
+    # The working partition survives an ancient created_at (TTL disabled here;
+    # TTL expiry is covered separately + deterministically).
+    assert [r.id for r in result.working_sources] == ["i-1"]
+    assert [r.id for r in result.skipped_by_maturity] == ["s-approved"]
+    assert [r.id for r in result.sources] == ["s-done"]
+    assert result.skipped_expired_working == ()
+    # canonical + working are both materializable — none dropped.
+    assert {r.id for r in result.materializable_sources} == {"i-1", "s-approved", "s-done"}
+    assert result.working_source_count == 1
+    assert result.skipped_by_maturity_count == 1
+
+
+def test_working_ttl_expiry_does_not_touch_canonical_sources():
+    rows = [
+        _row(
+            id_="approved-old",
+            status="approved",
+            created_at="2026-05-01T00:00:00Z",
+        ),
+        _row(
+            id_="done-current",
+            status="done",
+            created_at="2026-06-12T00:00:00Z",
+        ),
+    ]
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    result = enum.enumerate(board_id="b1")
+
+    assert [r.id for r in result.sources] == ["done-current"]
+    assert [r.id for r in result.skipped_expired_working] == ["approved-old"]
+    assert result.skipped_expired_working[0].reason_code == (
+        "spec_approved_working_expired"
+    )
+
+
+def test_working_ttl_override_keeps_recent_effective_working_source():
+    rows = [
+        {
+            **_row(
+                id_="approved-old-default",
+                status="approved",
+                created_at="2026-05-01T00:00:00Z",
+            ),
+            "working_ttl_days": 7,
+        },
+        {
+            **_row(
+                id_="approved-old-override",
+                status="approved",
+                created_at="2026-05-01T00:00:00Z",
+            ),
+            "working_ttl_days": 90,
+        },
+        _row(
+            id_="done-current",
+            status="done",
+            created_at="2026-06-12T00:00:00Z",
+        ),
+    ]
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    result = enum.enumerate(board_id="b1")
+
+    assert [r.id for r in result.sources] == ["done-current"]
+    assert [r.id for r in result.skipped_expired_working] == [
+        "approved-old-default"
+    ]
+    assert [r.id for r in result.skipped_by_maturity] == [
+        "approved-old-override"
+    ]
+    assert result.skipped_by_maturity[0].expires_at is not None
 
 
 def test_enumerate_stable_for_repeated_runs():
@@ -220,10 +455,10 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
     tmp_path: Path,
 ) -> None:
     """Production source store policy:
-    refinement is present as semantic-only source, while normal/test/bug
-    cards are exposed as task/test/bug source_refs. Formal active spec
-    decisions are emitted as decision source_refs. Ideations are not read
-    into the rebuild source set."""
+    ideation/refinement/spec/card rows are exposed to the maturity
+    enumerator. Active decisions are emitted as semantic source rows, and
+    cancelled/archived rows are included so the enumerator can count
+    deterministic skips."""
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
@@ -242,13 +477,19 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
             "id TEXT, board_id TEXT, status TEXT, created_at TEXT, title TEXT)"
         )
         conn.execute(
+            "CREATE TABLE stories ("
+            "id TEXT, board_id TEXT, topic_id TEXT, status TEXT, "
+            "created_at TEXT, title TEXT, description TEXT, actor TEXT, "
+            "goal TEXT, benefit TEXT, labels TEXT)"
+        )
+        conn.execute(
             "CREATE TABLE cards ("
             "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
             "title TEXT, description TEXT, card_type TEXT, archived INTEGER)"
         )
         conn.execute(
             "INSERT INTO specs VALUES "
-            "('s1', 'b1', 'validated', '2026-05-01T00:00:00Z', 'Spec', 'D', 2, ?)",
+            "('s1', 'b1', 'done', '2026-05-01T00:00:00Z', 'Spec', 'D', 2, ?)",
             (json.dumps([
                 {"id": "dec-active", "title": "Use hosted KG", "status": "active"},
                 {"id": "dec-old", "title": "Use local KG", "status": "superseded"},
@@ -261,6 +502,11 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
         conn.execute(
             "INSERT INTO ideations VALUES "
             "('i1', 'b1', 'done', '2026-05-01T00:00:02Z', 'Idea')"
+        )
+        conn.execute(
+            "INSERT INTO stories VALUES ("
+            "'st1', 'b1', 'topic1', 'ready', '2026-05-01T00:00:02Z', "
+            "'Story', 'D', 'Actor', 'Goal', 'Benefit', '[]')"
         )
         conn.executemany(
             "INSERT INTO cards VALUES (?, 'b1', ?, ?, ?, 'D', ?, ?)",
@@ -277,21 +523,77 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
     rows = BoardSourceStore(db_path=db_path).fetch("b1")
     refs = {row["source_ref"] for row in rows}
     assert refs == {
+        "ideation:i1",
+        "story:st1",
         "spec:s1",
-        "decision:s1:dec-active",
         "refinement:r1",
         "task:t1",
         "test:tc1",
         "bug:b1c",
+        "task:old",
+        "bug:arch",
+        "decision:s1:dec-active",
     }
+    assert "decision:s1:dec-old" not in refs
     assert {row["artifact_type"] for row in rows} == {
+        "ideation",
+        "story",
         "spec",
-        "decision",
-        "refinement",
-        "task",
-        "test",
-        "bug",
+            "refinement",
+            "task",
+            "test",
+            "bug",
+            "decision",
+        }
+
+    enum = RebuildSourceEnumerator(source_store=lambda _b: rows)
+    source_set = enum.enumerate(board_id="b1")
+    assert {row.source_ref for row in source_set.sources} == {
+        "refinement:r1",
+        "spec:s1",
+        "task:t1",
+        "test:tc1",
     }
+    assert {row.source_ref for row in source_set.skipped_expired_working} == {
+        "ideation:i1",
+    }
+    assert {row.source_ref for row in source_set.working_sources} == {
+        "story:st1",
+    }
+    assert source_set.skipped_cancelled_count == 2
+
+
+def test_board_source_store_propagates_working_ttl_board_override(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "pulse.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "CREATE TABLE boards (id TEXT, settings TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE specs ("
+            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
+            "updated_at TEXT, title TEXT, description TEXT, version INTEGER, "
+            "functional_requirements TEXT, technical_requirements TEXT, "
+            "acceptance_criteria TEXT, test_scenarios TEXT, business_rules TEXT, "
+            "api_contracts TEXT, decisions TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO boards VALUES (?, ?)",
+            ("b1", json.dumps({"kg_working_ttl_days": 30})),
+        )
+        conn.execute(
+            "INSERT INTO specs VALUES ("
+            "'s1', 'b1', 'approved', '2026-05-01T00:00:00Z', "
+            "'2026-05-01T00:00:00Z', 'Spec', 'D', 1, '[]', '[]', '[]', "
+            "'[]', '[]', '[]', '[]')"
+        )
+        conn.commit()
+
+    rows = BoardSourceStore(db_path=db_path).fetch("b1")
+
+    assert rows[0]["working_ttl_days"] == 30
 
 
 # --- OR or_2d295e26 counter shape -------------------------------------------
@@ -346,6 +648,9 @@ def test_manifest_load_returns_none_for_missing(tmp_path: Path):
 
 
 def test_manifest_revalidate_detects_drift(tmp_path: Path):
+    # revalidate is typed (card 5ec8c75c): EQUIVALENT / REBASELINE / MANIFEST_DRIFT.
+    from okto_pulse.core.kg.rebuild_sources import SourceSetRevalidation
+
     enum_a = RebuildSourceEnumerator(source_store=lambda _b: [_row(id_="a")])
     source_a = enum_a.enumerate(board_id="b1")
     enum_b = RebuildSourceEnumerator(
@@ -354,8 +659,13 @@ def test_manifest_revalidate_detects_drift(tmp_path: Path):
     source_b = enum_b.enumerate(board_id="b1")
     store = KGRebuildSourceManifest(base_dir=tmp_path)
     manifest = store.build(source_set=source_a, preflight_hash="c" * 64)
-    assert store.revalidate(manifest=manifest, current_source_set=source_a) is True
-    assert store.revalidate(manifest=manifest, current_source_set=source_b) is False
+    assert (
+        store.revalidate(manifest=manifest, current_source_set=source_a).outcome
+        is SourceSetRevalidation.EQUIVALENT
+    )
+    drift = store.revalidate(manifest=manifest, current_source_set=source_b)
+    assert drift.is_drift
+    assert drift.outcome is SourceSetRevalidation.MANIFEST_DRIFT
     assert (
         get_enumeration_count("b1", EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value)
         >= 1
@@ -382,6 +692,40 @@ def test_manifest_source_set_hash_is_deterministic(tmp_path: Path):
     assert manifest_a.source_set_hash == manifest_b.source_set_hash
     # But the manifest_refs are unique (each build produces a fresh id).
     assert manifest_a.manifest_ref != manifest_b.manifest_ref
+
+
+def test_manifest_source_set_hash_changes_when_maturity_partition_changes(
+    tmp_path: Path,
+):
+    store = KGRebuildSourceManifest(base_dir=tmp_path)
+    approved_set = RebuildSourceEnumerator(
+        source_store=lambda _b: [
+            _row(id_="s1", status="approved", created_at="2026-06-12T00:00:00Z")
+        ],
+        working_ttl_days=0,  # isolate maturity partition from TTL (bug 5187f991)
+    ).enumerate(board_id="b1")
+    done_set = RebuildSourceEnumerator(
+        source_store=lambda _b: [
+            _row(id_="s1", status="done", created_at="2026-06-12T00:00:00Z")
+        ]
+    ).enumerate(board_id="b1")
+
+    approved_manifest = store.build(
+        source_set=approved_set,
+        preflight_hash="d" * 64,
+    )
+    done_manifest = store.build(
+        source_set=done_set,
+        preflight_hash="d" * 64,
+    )
+
+    assert approved_manifest.source_set_hash != done_manifest.source_set_hash
+    assert len(approved_manifest.sources) == 0
+    assert len(approved_manifest.skipped_by_maturity) == 1
+    assert [r.id for r in approved_manifest.materializable_sources] == ["s1"]
+    assert len(done_manifest.sources) == 1
+    assert len(done_manifest.skipped_by_maturity) == 0
+    assert [r.id for r in done_manifest.materializable_sources] == ["s1"]
 
 
 # --- Confirmation store ------------------------------------------------------

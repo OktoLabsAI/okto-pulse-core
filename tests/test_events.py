@@ -44,6 +44,7 @@ from okto_pulse.core.events.types import (
     RefinementSemanticChanged,
     SpecSemanticChanged,
     SpecVersionBumped,
+    StoryLinkedToIdeation,
 )
 from okto_pulse.core.kg.schema import (
     bootstrap_board_graph,
@@ -152,14 +153,15 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
 # --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_twenty_five_events():
+def test_registry_has_twenty_nine_events():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
     Ideação #3 — card.conclusion_added) + 4 (spec 28583299, Ideação #4 —
     kg.hit_flushed, card.priority_changed, card.severity_changed, kg.tick.daily)
     + 3 (structured-entity canonicalization — structured_entity.{created,
-    updated,revoked}) + 1 (bug regression reuse decision audit) = 25.
+    updated,revoked}) + 1 (bug regression reuse decision audit)
+    + 4 Story lifecycle events for working-graph ingestion = 29.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -168,7 +170,7 @@ def test_registry_has_twenty_five_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 25
+    assert len(EVENT_TYPES) == 29
     operational_kg_events = {
         "kg.hit_flushed",
         "card.priority_changed",
@@ -816,6 +818,52 @@ async def test_semantic_burst_dedup_to_single_queue_row(db_factory, clean_tables
 
 
 @pytest.mark.asyncio
+async def test_story_linked_to_ideation_enqueues_story_and_ideation(
+    db_factory,
+    clean_tables,
+):
+    """Story→Ideation conversion must materialize both working artifacts.
+
+    The Story status/link changed, and the target Ideation is often created in
+    the same conversion transaction. Dropping the Ideation target leaves the KG
+    missing working lineage until a later ideation event happens.
+    """
+
+    story_id = "story-linked-kg"
+    ideation_id = "ideation-linked-kg"
+    async with db_factory() as session:
+        await publish(
+            StoryLinkedToIdeation(
+                board_id=BOARD_ID,
+                actor_id=USER_ID,
+                story_id=story_id,
+                ideation_id=ideation_id,
+            ),
+            session=session,
+        )
+        await session.commit()
+
+    dispatcher = EventDispatcher(db_factory)
+    try:
+        await dispatcher.start()
+        await asyncio.sleep(0.8)
+    finally:
+        await dispatcher.stop(timeout=2.0)
+
+    async with db_factory() as session:
+        rows = (await session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == BOARD_ID,
+            )
+        )).scalars().all()
+        targets = {(row.artifact_type, row.artifact_id) for row in rows}
+        assert targets == {
+            ("story", story_id),
+            ("ideation", ideation_id),
+        }
+
+
+@pytest.mark.asyncio
 async def test_refinement_artifact_materializes_lineage_in_worker(db_factory, clean_tables):
     """artifact_type='refinement' completes the queue cycle without crash.
 
@@ -1208,7 +1256,7 @@ def test_human_curated_column_declared_in_schema():
     # Schema bumped to 0.3.2 (Ideação #5) to mark this column on bootstrap;
     # subsequent additive bumps (e.g. 0.3.3 for last_recomputed_at — Ideação
     # #4) preserve the column, so we assert the floor with set membership.
-    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5"}
+    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
 
 
 def test_human_curated_migration_helper_exists_and_is_called():

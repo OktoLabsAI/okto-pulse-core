@@ -11,9 +11,14 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from typing import Any
+
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.services.queue_health_service import get_queue_health
+from okto_pulse.core.services.queue_health_service import (
+    get_active_queue_drilldown,
+    get_queue_health,
+)
 
 router = APIRouter()
 
@@ -50,3 +55,19 @@ async def get_kg_queue_health(
     """
     data = await get_queue_health(db)
     return QueueHealthResponse(**data)
+
+
+@router.get("/kg/queue/drilldown")
+async def get_kg_queue_drilldown(
+    board_id: str | None = None,
+    _: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """R6-IMP2 read-only twin of the MCP `okto_pulse_kg_queue_drilldown` tool.
+
+    Drill-down of the ACTIVE operational queue depth (ConsolidationQueue
+    pending/claimed + global_update_outbox retry-window rows), split by source,
+    with worker_mode + transient|stuck|backpressure|idle classification. Global
+    when `board_id` is omitted; board-scoped otherwise. DLQ / canonical debt are
+    NOT counted here. SQL aggregates only — no new store, no Kùzu I/O."""
+    return await get_active_queue_drilldown(db, board_id)

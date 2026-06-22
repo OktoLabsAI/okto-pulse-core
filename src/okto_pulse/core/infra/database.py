@@ -340,6 +340,73 @@ async def _migrate_add_realm_id() -> None:
                 pass
 
 
+async def _migrate_add_default_config_snapshot() -> None:
+    """Add default_config_snapshot JSON column to boards (spec 9df814bc / FR4).
+
+    Stores the applied DefaultBoardConfiguration snapshot metadata OUTSIDE
+    Board.settings. New table create happens via create_all; this only ALTERs the
+    pre-existing boards table. Idempotent on Postgres (IF NOT EXISTS) and SQLite
+    (swallow duplicate-column error)."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'boards')"
+            ))
+            if not table_check.scalar():
+                return
+            await conn.execute(sa_text(
+                "ALTER TABLE boards ADD COLUMN IF NOT EXISTS default_config_snapshot JSON"
+            ))
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE boards ADD COLUMN default_config_snapshot JSON"
+                ))
+            except Exception:
+                pass
+
+
+async def _migrate_add_board_guideline_provenance() -> None:
+    """Add template provenance columns to board_guidelines (spec 8a2fad91 / FR3).
+
+    ``template_id`` / ``template_version`` / ``guideline_version`` record which
+    DefaultBoardConfiguration template (and guideline version) materialized a
+    default link. All nullable — legacy/inline links keep NULL provenance (TR5,
+    forward-only). Idempotent on Postgres (IF NOT EXISTS) and SQLite (swallow the
+    duplicate-column error)."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    columns = (
+        ("template_id", "VARCHAR(36)"),
+        ("template_version", "INTEGER"),
+        ("guideline_version", "INTEGER"),
+    )
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'board_guidelines')"
+            ))
+            if not table_check.scalar():
+                return
+            for name, sql_type in columns:
+                await conn.execute(sa_text(
+                    f"ALTER TABLE board_guidelines ADD COLUMN IF NOT EXISTS {name} {sql_type}"
+                ))
+        else:
+            for name, sql_type in columns:
+                try:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE board_guidelines ADD COLUMN {name} {sql_type}"
+                    ))
+                except Exception:
+                    pass
+
+
 async def _migrate_add_comment_choice_columns() -> None:
     """Add choice board columns to comments table if they don't exist."""
     from sqlalchemy import text as sa_text
@@ -1004,6 +1071,47 @@ async def _migrate_add_knowledge_source_columns() -> None:
                         pass
 
 
+async def _migrate_add_kb_lineage_columns() -> None:
+    """R6-IMP4: add multi-hop KB lineage columns to the entity KB tables.
+
+    ``root_source_kb_id`` = the INITIAL canonical origin KB (preserved across
+    ideation->refinement->spec hops); ``immediate_parent_kb_id`` = the direct
+    parent KB. Additive + idempotent; ``source_kb_id`` stays the immediate parent
+    for back-compat. Mirrors ``_migrate_add_knowledge_source_columns``."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    tables = [
+        "ideation_knowledge_bases",
+        "refinement_knowledge_bases",
+        "spec_knowledge_bases",
+    ]
+    columns = [
+        ("root_source_kb_id", "VARCHAR(36)"),
+        ("immediate_parent_kb_id", "VARCHAR(36)"),
+    ]
+    async with get_engine().begin() as conn:
+        for table in tables:
+            if dialect == "postgresql":
+                table_check = await conn.execute(sa_text(
+                    f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}')"
+                ))
+                if not table_check.scalar():
+                    continue
+                for col_name, col_type in columns:
+                    await conn.execute(sa_text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                    ))
+            else:
+                for col_name, col_type in columns:
+                    try:
+                        await conn.execute(sa_text(
+                            f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                        ))
+                    except Exception:
+                        pass
+
+
 async def _migrate_add_kg_tick_boards_failed() -> None:
     """Add boards_failed column to kg_tick_runs table (spec R2b, IMPL-2/TR4).
 
@@ -1101,6 +1209,37 @@ async def _migrate_add_consolidation_resilience_columns() -> None:
                     pass
 
 
+async def _migrate_add_ideation_skip_ambiguity_gate() -> None:
+    """Add skip_ambiguity_gate column to the ideations table if it doesn't exist.
+
+    Spec 2485780b (Max ambiguity gate) — TR3/TR13: an explicit top-level
+    per-ideation boolean opt-out of the board ambiguity gate, default false.
+    Idempotent: ADD COLUMN IF NOT EXISTS on Postgres; try/except on SQLite
+    (which lacks IF NOT EXISTS for ADD COLUMN). Existing ideations read as
+    false after migration (legacy-safe).
+    """
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ideations')"
+            ))
+            if not table_check.scalar():
+                return
+            await conn.execute(sa_text(
+                "ALTER TABLE ideations ADD COLUMN IF NOT EXISTS skip_ambiguity_gate BOOLEAN DEFAULT false NOT NULL"
+            ))
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE ideations ADD COLUMN skip_ambiguity_gate BOOLEAN DEFAULT 0 NOT NULL"
+                ))
+            except Exception:
+                pass
+
+
 async def _migrate_story_ideation_single_link() -> None:
     """Enforce one Ideation link per Story while preserving many Stories per Ideation."""
     from sqlalchemy import text as sa_text
@@ -1165,6 +1304,7 @@ async def init_db() -> None:
     await _migrate_add_spec_validation_columns()
     await _migrate_add_ir_or_columns()
     await _migrate_add_spec_validation_gate_columns()
+    await _migrate_add_ideation_skip_ambiguity_gate()
     await _migrate_heal_task_validation_field_names()
     await _migrate_status_renames()
     await _migrate_add_permission_columns()
@@ -1175,6 +1315,7 @@ async def init_db() -> None:
     await _migrate_add_card_sprint_id()
     await _migrate_add_card_knowledge_bases()
     await _migrate_add_knowledge_source_columns()
+    await _migrate_add_kb_lineage_columns()
     await _migrate_add_sprint_scope_fields()
     await _migrate_add_sprint_lane_fields()
     await _migrate_agent_boards()
@@ -1182,6 +1323,8 @@ async def init_db() -> None:
     await _migrate_add_consolidation_resilience_columns()
     await _migrate_add_kg_tick_boards_failed()
     await _migrate_drop_spec_skills()
+    await _migrate_add_default_config_snapshot()
+    await _migrate_add_board_guideline_provenance()
     await _seed_builtin_presets()
     await _migrate_agent_permissions()
     await _reconcile_builtin_presets()

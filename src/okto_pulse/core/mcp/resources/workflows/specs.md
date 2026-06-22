@@ -71,6 +71,8 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
 - `assertiveness` (0-100, higher is better): is every statement measurable and testable?
 - `ambiguity` (0-100, LOWER is better, max threshold): how many sentences admit multiple interpretations?
 
+Use a 0-100 scale, not a 1-5 scale. A value like `5` is treated literally as 5/100 and will usually fail the gate.
+
 ## 2.3b Spec Evaluation — Quality Gate for Execution
 
 After a spec reaches `validated` status, it must undergo **qualitative evaluation** before moving to `in_progress`.
@@ -102,9 +104,11 @@ Every tool that feeds into a coverage gate **automatically returns a `coverage` 
 |------|------------------------|-----------|
 | `okto_pulse_add_test_scenario` | `ac_coverage_pct` + `ac_uncovered_indices` | `ac_coverage_pct = 100` or `skip_test_coverage = true` |
 | `okto_pulse_add_business_rule` | `fr_coverage_pct` + `fr_uncovered_indices` | `fr_coverage_pct = 100` or `skip_rules_coverage = true` |
-| `okto_pulse_link_task_to_scenario` | `scenario_task_linkage_pct` | `scenario_task_linkage_pct = 100` |
-| `okto_pulse_link_task_to_rule` | `br_task_linkage_pct` | `br_task_linkage_pct = 100` |
+| `okto_pulse_link_task(target_type="scenario", ...)` | `scenario_task_linkage_pct` | `scenario_task_linkage_pct = 100` |
+| `okto_pulse_link_task(target_type="rule", ...)` | `br_task_linkage_pct` | `br_task_linkage_pct = 100` |
 
 **The `skip_*` flags tell you if full coverage is mandatory:**
 - `skip_test_coverage = false` → AC coverage MUST reach 100% before spec can advance
 - `skip_test_coverage = true` → AC coverage is tracked but not enforced
+
+**FR coverage source:** `fr_coverage_pct` is computed from `business_rules[].linked_requirements`. Direct links on `functional_requirements[].linked_task_ids` are useful task traceability, but they do not satisfy the FR→BR coverage gate.

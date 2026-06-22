@@ -38,6 +38,7 @@ _SPEC_EVENT_PREFIX = "spec."
 _STRUCTURED_ENTITY_EVENT_PREFIX = "structured_entity."
 _SPRINT_EVENT_PREFIX = "sprint."
 _REFINEMENT_EVENT_PREFIX = "refinement."
+_STORY_EVENT_PREFIX = "story."
 _DERIVED_EVENTS = {
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
@@ -81,6 +82,10 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "sprint.closed",
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
+    "story.created",
+    "story.updated",
+    "story.moved",
+    "story.linked_to_ideation",
     "bug_regression_scenario_reuse_decision",
 )
 class ConsolidationEnqueuer:
@@ -319,6 +324,19 @@ class ConsolidationEnqueuer:
             rid = getattr(event, "refinement_id", None)
             if rid:
                 targets.append(("refinement", rid))
+            return targets
+        if et == "story.linked_to_ideation":
+            story_id = getattr(event, "story_id", None)
+            if story_id:
+                targets.append(("story", story_id))
+            ideation_id = getattr(event, "ideation_id", None)
+            if ideation_id:
+                targets.append(("ideation", ideation_id))
+            return targets
+        if et.startswith(_STORY_EVENT_PREFIX):
+            story_id = getattr(event, "story_id", None)
+            if story_id:
+                targets.append(("story", story_id))
             return targets
         if et.startswith(_SPRINT_EVENT_PREFIX):
             spid = getattr(event, "sprint_id", None)

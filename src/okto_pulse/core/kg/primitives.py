@@ -28,6 +28,7 @@ from functools import partial
 
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.kg.connectivity_guard import (
+    CANONICAL_LEARNING_WORKING_ONLY_REASON,
     CONNECTIVITY_ERROR_CODE,
     DEGRADED_KG_STATES,
     KGConnectivityEdgeGroup,
@@ -49,8 +50,10 @@ from okto_pulse.core.kg.schemas import (
     BeginConsolidationResponse,
     CommitConsolidationRequest,
     CommitConsolidationResponse,
+    EdgeCandidate,
     GetSimilarNodesRequest,
     GetSimilarNodesResponse,
+    KGEdgeType,
     ProposeReconciliationRequest,
     ProposeReconciliationResponse,
     ReconciliationHint,
@@ -388,20 +391,67 @@ async def add_node_candidate(
     *,
     agent_id: str,
 ) -> AddNodeCandidateResponse:
+    from okto_pulse.core.kg.cognitive_policy import (
+        COGNITIVE_NODE_CANONICAL_CODE,
+        CognitiveNodeLayerError,
+        check_cognitive_node_canonical,
+    )
+    from okto_pulse.core.kg.source_maturity import (
+        GRAPH_LAYER_CANONICAL,
+        MATURITY_CANONICAL_ELIGIBLE,
+    )
+
     session = await _require_open_session(req.session_id, agent_id)
     store = get_kg_registry().session_store
+    cand = req.candidate
+
+    # Cognitive canonical invariant (spec 007d1308 — FR1/FR3/FR4,
+    # dec_0b3368fe/dec_26c5cc2d). The cognitive agent only ever produces
+    # canonical knowledge; a working-layer node may originate solely from the
+    # Layer 1 deterministic worker (agent_id prefixed "system:"), which
+    # materializes immature sources per source_maturity (FR5). Enforce in the
+    # core primitive — not just the MCP wrapper — so an internal caller cannot
+    # bypass it, and BEFORE mutating the session so a rejected candidate leaves
+    # no trace in session.node_candidates (TR1/TR4).
+    is_system_worker = agent_id.startswith("system:")
+    graph_layer_value = (
+        cand.graph_layer.value if hasattr(cand.graph_layer, "value") else cand.graph_layer
+    )
+    try:
+        check_cognitive_node_canonical(
+            graph_layer_value, is_system_worker=is_system_worker,
+        )
+    except CognitiveNodeLayerError as exc:
+        raise KGPrimitiveError(
+            COGNITIVE_NODE_CANONICAL_CODE,
+            str(exc),
+            session_id=req.session_id,
+            details={
+                "graph_layer": graph_layer_value,
+                "required_graph_layer": exc.required_graph_layer,
+                "candidate_id": cand.candidate_id,
+            },
+        ) from exc
+
     async with session.lock:
-        if req.candidate.candidate_id in session.node_candidates:
+        if cand.candidate_id in session.node_candidates:
             raise KGPrimitiveError(
                 "duplicate_candidate_id",
-                f"candidate_id already in session: {req.candidate.candidate_id}",
+                f"candidate_id already in session: {cand.candidate_id}",
                 session_id=req.session_id,
             )
-        session.node_candidates[req.candidate.candidate_id] = req.candidate
+        # FR3 / dec_26c5cc2d: a persisted cognitive candidate is always
+        # canonical + canonical_eligible, even when the request omitted or
+        # under-specified the fields. The deterministic worker's working nodes
+        # (system:*) are left untouched (FR5).
+        if not is_system_worker:
+            cand.graph_layer = GRAPH_LAYER_CANONICAL
+            cand.maturity_status = MATURITY_CANONICAL_ELIGIBLE
+        session.node_candidates[cand.candidate_id] = cand
         session.touch(store.default_ttl_seconds)
         return AddNodeCandidateResponse(
             session_id=req.session_id,
-            candidate_id=req.candidate.candidate_id,
+            candidate_id=cand.candidate_id,
             accepted=True,
             node_count_in_session=len(session.node_candidates),
         )
@@ -739,6 +789,11 @@ def _validate_kuzu_connectivity_before_commit(
         registry,
         metric_sink=_connectivity_metric_sink(),
     )
+    _auto_attach_provenance_edges(
+        kconn=kconn,
+        node_candidates=node_candidates,
+        edge_candidates=edge_candidates,
+    )
     guard_nodes: list[object] = []
     guard_edges: list[object] = list(edge_candidates.values())
     existing_refs: list[KGNodeRef] = []
@@ -840,12 +895,154 @@ def _validate_kuzu_connectivity_before_commit(
             },
         )
 
+    details: dict = {"connectivity": response}
+    # R7: a working-only canonical Learning bug-derived candidate is an EXPECTED
+    # semantic hold, not a generic orphan. Attach a bounded hold payload so the
+    # async worker can materialize the go-forward hold in the
+    # CognitiveConsolidationItemStore (never CanonicalDebt/DLQ). The guard stays
+    # a pure policy function: it does not touch the store/db here.
+    r7_hold = _r7_cognitive_hold_payload(result, session_id=session_id)
+    if r7_hold is not None:
+        details["r7_cognitive_hold_candidate"] = r7_hold
     raise KGPrimitiveError(
         CONNECTIVITY_ERROR_CODE,
         "KG node connectivity guard rejected the commit before graph mutation.",
         session_id=session_id,
-        details={"connectivity": response},
+        details=details,
     )
+
+
+def _infer_artifact_type_from_source_ref(source_ref: str | None) -> str | None:
+    """Best-effort, bounded artifact_type from a source_artifact_ref.
+
+    bug:* / card:bug:* / *:bug:* → "bug" (the bug_learning hold is always
+    bug-derived); otherwise the leading known-type prefix, else None. The worker
+    re-derives the store-acceptable type, so this is only a hint.
+    """
+    s = source_ref or ""
+    if s.startswith("bug:") or s.startswith("card:bug:") or ":bug:" in s:
+        return "bug"
+    if ":" in s:
+        prefix = s.split(":", 1)[0]
+        if prefix in {
+            "spec",
+            "decision",
+            "refinement",
+            "task",
+            "test",
+            "bug",
+            "card",
+            "story",
+            "ideation",
+            "sprint",
+        }:
+            return prefix
+    return None
+
+
+def _r7_cognitive_hold_payload(result, *, session_id: str) -> dict | None:
+    """Build the bounded r7_cognitive_hold_candidate payload from the first
+    working-only canonical Learning violation, or None when no such violation
+    is present. No content/PII — only refs, ids and layer descriptors."""
+    for violation in result.violations:
+        if violation.reason == CANONICAL_LEARNING_WORKING_ONLY_REASON:
+            source_ref = violation.source_artifact_ref or ""
+            return {
+                "reason_code": CANONICAL_LEARNING_WORKING_ONLY_REASON,
+                "node_type": violation.node_type,
+                "candidate_id": violation.candidate_id,
+                "source_ref": source_ref,
+                "artifact_type": _infer_artifact_type_from_source_ref(source_ref),
+                "observed_endpoints": list(violation.observed_endpoints),
+                "session_id": session_id,
+            }
+    return None
+
+
+def _auto_attach_provenance_edges(
+    *,
+    kconn,
+    node_candidates: dict,
+    edge_candidates: dict,
+) -> None:
+    """Materialize deterministic provenance for cognitive nodes when resolvable.
+
+    Agents are intentionally not allowed to emit ``belongs_to`` edges. When a
+    cognitive candidate's source ref resolves to an existing root Entity/Bug, the
+    commit path owns that deterministic edge so the connectivity guard has a
+    valid, auditable remediation path instead of asking the agent to do something
+    the API rejects.
+    """
+    for cand_id, cand in list(node_candidates.items()):
+        if _has_outgoing_edge(edge_candidates, cand_id, "belongs_to"):
+            continue
+        source_ref = str(getattr(cand, "source_artifact_ref", "") or "")
+        if not source_ref:
+            continue
+        root = _resolve_provenance_root(kconn, source_ref)
+        if root is None:
+            continue
+        root_node_id, root_node_type = root
+        cand_node_type = _enum_value(getattr(cand, "node_type", ""))
+        if (cand_node_type, root_node_type) not in _allowed_edge_pairs("belongs_to"):
+            continue
+        edge_id = f"{cand_id}__auto_belongs_to_source_root"
+        if edge_id in edge_candidates:
+            continue
+        edge_candidates[edge_id] = EdgeCandidate(
+            candidate_id=edge_id,
+            edge_type=KGEdgeType.BELONGS_TO,
+            from_candidate_id=cand_id,
+            to_candidate_id=f"kg:{root_node_id}",
+            confidence=1.0,
+            layer="deterministic",
+            rule_id="belongs_to/auto_source_root@commit_consolidation",
+            created_by="system:commit_consolidation",
+            fallback_reason=(
+                "auto_attached_to_"
+                f"{root_node_type.lower()}_source_root"
+            ),
+        )
+
+
+def _has_outgoing_edge(edge_candidates: dict, cand_id: str, edge_type: str) -> bool:
+    for edge in edge_candidates.values():
+        if (
+            str(getattr(edge, "from_candidate_id", "")) == cand_id
+            and _enum_value(getattr(edge, "edge_type", "")) == edge_type
+        ):
+            return True
+    return False
+
+
+def _resolve_provenance_root(kconn, source_ref: str) -> tuple[str, str] | None:
+    for root_ref in _source_root_ref_candidates(source_ref):
+        for node_type in ("Entity", "Bug"):
+            node_id = _lookup_existing_node(kconn, node_type, root_ref)
+            if node_id:
+                return node_id, node_type
+    return None
+
+
+def _source_root_ref_candidates(source_ref: str) -> tuple[str, ...]:
+    parts = [part for part in source_ref.split(":") if part]
+    candidates: list[str] = []
+    if len(parts) >= 2:
+        kind = parts[0]
+        if kind in {"spec", "refinement", "ideation", "story"}:
+            candidates.append(f"{kind}:{parts[1]}")
+        elif kind == "bug":
+            candidates.append(f"bug:{parts[1]}")
+            candidates.append(f"card:{parts[1]}")
+        elif kind == "card":
+            if len(parts) >= 3 and parts[1] == "bug":
+                candidates.append(f"bug:{parts[2]}")
+                candidates.append(f"card:{parts[2]}")
+                candidates.append(f"card:bug:{parts[2]}")
+            else:
+                candidates.append(f"card:{parts[1]}")
+    candidates.append(source_ref)
+    return tuple(dict.fromkeys(candidates))
 
 
 def _validate_degraded_connectivity_before_open(
@@ -988,9 +1185,20 @@ def _existing_refs_for_edge_endpoints(
             node_type = resolved_type or _lookup_node_type_by_id(kconn, node_id)
             if not node_type:
                 continue
-            refs.append(KGNodeRef(ref_id=endpoint, node_type=node_type))
-            refs.append(KGNodeRef(ref_id=node_id, node_type=node_type))
-            refs.append(KGNodeRef(ref_id=f"kg:{node_id}", node_type=node_type))
+            # R7: carry the endpoint's graph_layer so the layer-aware guard can
+            # tell a canonical Bug from a working one for explicit edge endpoints.
+            node_layer = _lookup_node_layer_by_id(kconn, node_type, node_id)
+            refs.append(
+                KGNodeRef(ref_id=endpoint, node_type=node_type, graph_layer=node_layer)
+            )
+            refs.append(
+                KGNodeRef(ref_id=node_id, node_type=node_type, graph_layer=node_layer)
+            )
+            refs.append(
+                KGNodeRef(
+                    ref_id=f"kg:{node_id}", node_type=node_type, graph_layer=node_layer
+                )
+            )
     return refs
 
 
@@ -1010,17 +1218,22 @@ def _existing_connectivity_edges_for_candidate(
         return []
 
     if node_type == "Learning" and _candidate_has_known_bug_source(cand):
+        from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_CANONICAL
+
+        # Mirrors connectivity_guard._learning_bug_group: a bug-derived canonical
+        # Learning only reaches completeness through a *canonical* Bug (R7).
         groups = [
             KGConnectivityEdgeGroup(
                 name="bug_learning",
                 alternatives=(
                     KGConnectivityEdgeRequirement(
                         "validates", "outgoing", ("Bug",),
+                        required_target_layer=GRAPH_LAYER_CANONICAL,
                     ),
                 ),
                 remediation_hint=(
-                    "Provide Learning -> validates -> Bug when the learning "
-                    "is derived from a known bug."
+                    "Provide Learning -> validates -> canonical Bug when the "
+                    "learning is derived from a known bug."
                 ),
             )
         ]
@@ -1030,20 +1243,43 @@ def _existing_connectivity_edges_for_candidate(
     synthesized: list[dict[str, str]] = []
     for group in groups:
         for req in group.alternatives:
-            match = _find_existing_connectivity_match(
-                kconn=kconn,
-                node_type=node_type,
-                node_id=node_id,
-                edge_type=req.edge_type,
-                direction=req.direction,
-                target_node_types=req.target_node_types,
-            )
+            match = None
+            if req.required_target_layer is not None:
+                # R7: prefer a canonical endpoint for completeness; only fall
+                # back to ANY existing endpoint so a working-only existing edge
+                # is still surfaced to the guard (its real layer rides the ref).
+                match = _find_existing_connectivity_match(
+                    kconn=kconn,
+                    node_type=node_type,
+                    node_id=node_id,
+                    edge_type=req.edge_type,
+                    direction=req.direction,
+                    target_node_types=req.target_node_types,
+                    required_target_layer=req.required_target_layer,
+                )
+            if match is None:
+                match = _find_existing_connectivity_match(
+                    kconn=kconn,
+                    node_type=node_type,
+                    node_id=node_id,
+                    edge_type=req.edge_type,
+                    direction=req.direction,
+                    target_node_types=req.target_node_types,
+                )
             if match is None:
                 continue
-            other_id, other_type, direction = match
+            other_id, other_type, direction, other_layer = match
             endpoint_ref = f"kg:{other_id}"
-            existing_refs.append(KGNodeRef(ref_id=endpoint_ref, node_type=other_type))
-            existing_refs.append(KGNodeRef(ref_id=other_id, node_type=other_type))
+            existing_refs.append(
+                KGNodeRef(
+                    ref_id=endpoint_ref,
+                    node_type=other_type,
+                    graph_layer=other_layer,
+                )
+            )
+            existing_refs.append(
+                KGNodeRef(ref_id=other_id, node_type=other_type, graph_layer=other_layer)
+            )
             if direction == "outgoing":
                 from_ref = candidate_id
                 to_ref = endpoint_ref
@@ -1082,26 +1318,42 @@ def _find_existing_connectivity_match(
     edge_type: str,
     direction: str,
     target_node_types: tuple[str, ...],
-) -> tuple[str, str, str] | None:
+    required_target_layer: str | None = None,
+) -> tuple[str, str, str, str | None] | None:
+    """Find an existing connectivity edge for ``node_id``.
+
+    Returns ``(other_id, other_type, direction, other_graph_layer)`` or None.
+    When ``required_target_layer`` is set the match is restricted to endpoints
+    on that graph_layer (R7: prefer a canonical Bug for canonical Learning
+    completeness); a NULL layer therefore never matches a canonical filter.
+    """
     directions = ("outgoing", "incoming") if direction == "any" else (direction,)
     targets = target_node_types or tuple(_kg_node_types())
+    params: dict[str, str] = {"node_id": node_id}
+    layer_clause = ""
+    if required_target_layer is not None:
+        layer_clause = " AND m.graph_layer = $layer"
+        params["layer"] = required_target_layer
     for actual_direction in directions:
         for target_type in targets:
             if actual_direction == "outgoing":
                 cypher = (
                     f"MATCH (n:{node_type})-[r:{edge_type}]->(m:{target_type}) "
-                    "WHERE n.id = $node_id RETURN m.id LIMIT 1"
+                    f"WHERE n.id = $node_id{layer_clause} "
+                    "RETURN m.id, m.graph_layer LIMIT 1"
                 )
             else:
                 cypher = (
                     f"MATCH (m:{target_type})-[r:{edge_type}]->(n:{node_type}) "
-                    "WHERE n.id = $node_id RETURN m.id LIMIT 1"
+                    f"WHERE n.id = $node_id{layer_clause} "
+                    "RETURN m.id, m.graph_layer LIMIT 1"
                 )
             try:
-                res = kconn.execute(cypher, {"node_id": node_id})
+                res = kconn.execute(cypher, params)
                 try:
                     if res.has_next():
-                        return res.get_next()[0], target_type, actual_direction
+                        row = res.get_next()
+                        return row[0], target_type, actual_direction, row[1]
                 finally:
                     try:
                         res.close()
@@ -1109,6 +1361,33 @@ def _find_existing_connectivity_match(
                         pass
             except Exception:
                 continue
+    return None
+
+
+def _lookup_node_layer_by_id(kconn, node_type: str, node_id: str) -> str | None:
+    """Return a node's graph_layer (or None if unknown/unreadable).
+
+    None is fail-closed downstream: the R7 layer-aware guard treats an
+    unresolved layer as non-canonical.
+    """
+    if not node_id or not node_type:
+        return None
+    try:
+        res = kconn.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.graph_layer LIMIT 1",
+            {"id": node_id},
+        )
+        try:
+            if res.has_next():
+                value = res.get_next()[0]
+                return str(value) if value is not None else None
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    except Exception:
+        return None
     return None
 
 
@@ -1365,6 +1644,10 @@ def _do_kuzu_commit(
                             "content": cand.content or "",
                             "context": cand.context or "",
                             "justification": cand.justification or "",
+                            "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                            "maturity_status": getattr(
+                                cand, "maturity_status", "canonical_eligible"
+                            ),
                             "source_confidence": cand.source_confidence,
                             "priority_boost": getattr(cand, "priority_boost", 0.0),
                         }
@@ -1404,6 +1687,10 @@ def _do_kuzu_commit(
                         "context": cand.context or "",
                         "justification": cand.justification or "",
                         "source_artifact_ref": cand.source_artifact_ref or "",
+                        "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                        "maturity_status": getattr(
+                            cand, "maturity_status", "canonical_eligible"
+                        ),
                         "created_at": _now_iso(),
                         "created_by_agent": agent_id,
                         "source_confidence": cand.source_confidence,
@@ -1459,12 +1746,38 @@ def _do_kuzu_commit(
                                 "content": cand.content or "",
                                 "context": cand.context or "",
                                 "justification": cand.justification or "",
+                                "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                                "maturity_status": getattr(
+                                    cand, "maturity_status", "canonical_eligible"
+                                ),
                                 "source_confidence": cand.source_confidence,
                                 "priority_boost": getattr(cand, "priority_boost", 0.0),
                                 "embedding": embedding,
                             }
                             _apply_kuzu_node_update_partial(
                                 orch, node_type, existing_id, update_attrs
+                            )
+                        else:
+                            # FR4 / dec_85ba8dc2 (card 302044a7): a human_curated
+                            # node keeps its PROTECTED content (title/content/
+                            # context/justification/embedding/source_confidence),
+                            # but maturity METADATA still promotes — a working
+                            # node a human curated must still reach canonical when
+                            # its source spec becomes done. Update ONLY the
+                            # maturity metadata (partial), never the curated
+                            # content.
+                            _apply_kuzu_node_update_partial(
+                                orch,
+                                node_type,
+                                existing_id,
+                                {
+                                    "graph_layer": getattr(
+                                        cand, "graph_layer", "canonical"
+                                    ),
+                                    "maturity_status": getattr(
+                                        cand, "maturity_status", "canonical_eligible"
+                                    ),
+                                },
                             )
                         candidate_to_kuzu_id[cand_id] = existing_id
                         candidate_to_node_type[cand_id] = node_type
@@ -1506,6 +1819,10 @@ def _do_kuzu_commit(
                     "context": cand.context or "",
                     "justification": cand.justification or "",
                     "source_artifact_ref": cand.source_artifact_ref or "",
+                    "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                    "maturity_status": getattr(
+                        cand, "maturity_status", "canonical_eligible"
+                    ),
                     "created_at": _now_iso(),
                     "created_by_agent": agent_id,
                     "source_confidence": cand.source_confidence,
@@ -1880,7 +2197,10 @@ def _resolve_endpoint(
            Sprint→Spec / Card→Sprint hierarchy edges across sessions.
     """
     if endpoint.startswith("kg:"):
-        return endpoint[3:], None
+        node_id = endpoint[3:]
+        if kconn is not None:
+            return node_id, _lookup_node_type_by_id(kconn, node_id)
+        return node_id, None
     local = candidate_to_kuzu_id.get(endpoint)
     if local is not None:
         return local, None
@@ -1928,6 +2248,14 @@ def _resolve_endpoint(
 _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset({
     "title", "content", "context", "justification",
     "priority_boost", "source_confidence",
+    # Maturity METADATA (card 302044a7 / FR4 / dec_85ba8dc2): graph_layer +
+    # maturity_status are safe to PROMOTE on a merge by source_artifact_ref
+    # (e.g. working->canonical when the source spec reaches done). They are
+    # maturity metadata, NOT curated content — so they update even for
+    # human_curated nodes, while title/content/context/justification stay
+    # protected. Historical/HNSW-locked fields (embedding, created_at,
+    # query_hits, human_curated, …) remain excluded.
+    "graph_layer", "maturity_status",
 })
 
 # Kuzu HNSW vector indexes (see `VECTOR_INDEX_TYPES` in schema.py) own

@@ -25,6 +25,7 @@ from okto_pulse.core.kg.scoring import (
 )
 from okto_pulse.core.models.db import (
     Board,
+    CanonicalDebt,
     ConsolidationAudit,
     ConsolidationDeadLetter,
     ConsolidationQueue,
@@ -81,6 +82,11 @@ async def kg_health_board(db_factory):
                 KuzuNodeRef.board_id == KG_HEALTH_BOARD_ID,
             )
         )
+        await session.execute(
+            CanonicalDebt.__table__.delete().where(
+                CanonicalDebt.board_id == KG_HEALTH_BOARD_ID,
+            )
+        )
         await session.execute(KGTickRun.__table__.delete())
         await session.commit()
 
@@ -111,7 +117,6 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "default_score_count",
         "default_score_ratio",
         "avg_relevance",
-        "top_disconnected_nodes",
         "schema_version",
         "health_schema_version",
         "graph_schema_version",
@@ -162,6 +167,16 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
         "storage_footprint_proxy",
         # KG-ZO-02 integrity debt projection.
         "orphan_integrity",
+        # KG partitioning/canonical debt diagnostics.
+        "kg_layer_counts",
+        "canonical_debt",
+        "rebuild_diagnostics",
+        # R6-IMP2: active operational-queue drill-down (additive).
+        "active_queue",
+        # R6-IMP5: deduplicated 3-domain operational separation (additive).
+        "operational_domains",
+        # SPEC4 (card 2e913ac3): structured bounded recovery root-cause (additive).
+        "root_cause",
     }
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == HEALTH_SCHEMA_VERSION
@@ -169,7 +184,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert result["schema_version"] == "1.0"
     assert isinstance(result["queue_depth"], int)
     assert isinstance(result["oldest_pending_age_s"], float)
-    assert isinstance(result["top_disconnected_nodes"], list)
+    assert "top_disconnected_nodes" not in result
     assert result["last_decay_tick_at"] is None or isinstance(result["last_decay_tick_at"], str)
     assert result["last_tick_status"] is None or isinstance(result["last_tick_status"], str)
     assert result["last_tick_error"] is None or isinstance(result["last_tick_error"], str)
@@ -216,6 +231,9 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert isinstance(result["decay_scheduler_diagnostics"], dict)
     assert isinstance(result["storage_footprint_proxy"], dict)
     assert isinstance(result["orphan_integrity"], dict)
+    assert isinstance(result["kg_layer_counts"], dict)
+    assert isinstance(result["canonical_debt"], dict)
+    assert isinstance(result["rebuild_diagnostics"], dict)
     assert result["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
     assert result["storage_footprint_proxy"]["source"] == "file_size_proxy"
     assert result["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
@@ -262,7 +280,6 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
             "total_nodes": 10,
             "default_score_count": 0,
             "avg_relevance": 0.75,
-            "top_disconnected_nodes": [],
         },
     )
     monkeypatch.setattr(
@@ -392,6 +409,68 @@ async def test_empty_graph_after_materialized_history_requires_recovery(
 
 
 @pytest.mark.asyncio
+async def test_health_stays_recovery_needed_with_actionable_drilldown(
+    monkeypatch, db_factory, kg_health_board
+):
+    """SPEC4 card 89f61f6f / ts_f7c8bcdc (C6 — no false healthy): while the root
+    cause (empty graph after prior materialization) persists, KG Health stays
+    recovery_needed — never a false healthy — and exposes an actionable
+    structured root-cause + per-domain drill-down so an agent can act without
+    local-file forensics.
+    """
+    now = datetime.now(timezone.utc)
+    async with db_factory() as session:
+        session.add(
+            ConsolidationAudit(
+                session_id=f"kgses_{uuid.uuid4().hex}",
+                board_id=kg_health_board,
+                artifact_id="prior-materialization",
+                artifact_type="spec",
+                agent_id="test",
+                started_at=now,
+                committed_at=now,
+                nodes_added=3,
+                edges_added=1,
+                summary_text="prior materialization evidence",
+            )
+        )
+        await session.commit()
+
+    from okto_pulse.core.services import kg_health_service as svc
+
+    monkeypatch.setattr(
+        svc, "_probe_board_graph_telemetry",
+        lambda **_kwargs: svc._telemetry_unavailable("board"),
+    )
+    monkeypatch.setattr(
+        svc, "_probe_global_discovery_telemetry",
+        lambda: svc._telemetry_unavailable("discovery"),
+    )
+
+    async with db_factory() as session:
+        result = await get_kg_health(kg_health_board, session)
+
+    # NO FALSE HEALTHY: an empty-after-materialized graph stays recovery_needed.
+    assert result["overall_state"] == "recovery_needed"
+    assert result["overall_state"] != "healthy"
+    assert "graph:empty_after_materialized_history" in result["classification_reason"]
+    # actionable structured root-cause (SPEC4 card 2e913ac3 block).
+    root_cause = result["root_cause"]
+    assert root_cause["categories"]["empty_after_materialized_history"]["present"] is True
+    assert "empty_after_materialized_history" in root_cause["present_categories"]
+    # actionable per-domain drill-down — every operational domain names a tool.
+    assert result["operational_domains"]
+    for domain in result["operational_domains"].values():
+        assert domain.get("drill_down_tool")
+    # an actionable health issue + operator action while the root cause persists.
+    assert any(
+        issue["code"] == "board_graph_empty_after_materialized_history"
+        for issue in result["health_issues"]
+    )
+    assert result["operator_action"] == "run_explicit_rebuild"
+
+
+@pytest.mark.asyncio
 async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_required(
     monkeypatch, db_factory, kg_health_board
 ):
@@ -409,7 +488,6 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
             "total_nodes": 7,
             "default_score_count": 1,
             "avg_relevance": 0.61,
-            "top_disconnected_nodes": [],
         }
 
     svc._aggregate_kuzu_metrics = _metrics
@@ -479,7 +557,6 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
             "total_nodes": 3,
             "default_score_count": 0,
             "avg_relevance": 0.8,
-            "top_disconnected_nodes": [],
         }
 
     svc._aggregate_kuzu_metrics = _metrics
@@ -528,7 +605,6 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
             "total_nodes": 5,
             "default_score_count": 0,
             "avg_relevance": 0.7,
-            "top_disconnected_nodes": [],
         },
     )
     monkeypatch.setattr(svc, "_get_graph_schema_version", lambda _board_id: "0.3.5")
@@ -1053,7 +1129,6 @@ async def test_default_score_ratio_skew_emits_alarm_log(
             "total_nodes": 10,
             "default_score_count": 8,
             "avg_relevance": 0.5,
-            "top_disconnected_nodes": [],
         }
 
     svc._aggregate_kuzu_metrics = _stub
