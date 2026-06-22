@@ -67,6 +67,29 @@ def test_registry_exposes_required_resolution_statuses_and_owner_table():
     assert assumption_rule.semantic_target_policy == "provenance_only_v1"
 
 
+def test_final_report_cognitive_nodes_are_allowlisted_technical_roots():
+    guard = KGNodeConnectivityGuard()
+
+    result = guard.validate(
+        board_id="board-1",
+        writer_path="commit_consolidation",
+        kg_health_state="healthy",
+        generation_id="gen-final-report",
+        nodes=[
+            _node(
+                "report-learning",
+                "Learning",
+                "final_report:e2e-report-20260622-001",
+            )
+        ],
+        edges=[],
+        existing_node_refs=[],
+    )
+
+    assert result.passed is True
+    assert result.outcome == KGConnectivityOutcome.ALLOWLISTED
+
+
 def test_isolated_learning_candidate_fails_with_safe_violation_and_metric():
     sink = InMemoryConnectivityMetricSink()
     guard = KGNodeConnectivityGuard(metric_sink=sink)

@@ -116,8 +116,11 @@ When the board's `skip_test_evidence_global` setting is False (default),
 setting status to one of `automated`, `passed`, or `failed` REQUIRES
 structured evidence:
   - `automated`: evidence.test_file_path AND evidence.test_function
-  - `passed`/`failed`: evidence.last_run_at AND
-    (evidence.output_snippet OR evidence.test_run_id)
+  - `passed`/`failed`: either an explicit `evidence_class` with the fields
+    listed below, or unclassed run-log evidence with evidence.last_run_at AND
+    (evidence.output_snippet OR evidence.test_run_id) AND
+    evidence.expected_output_snapshot AND
+    evidence.non_replayable_justification
   - `draft`/`ready`: evidence opcional (intent declarado)
 
 When `skip_test_evidence_global=True`, the gate is bypassed — every

@@ -221,6 +221,32 @@ def _count_decision_belongs_to_root(
     return 0
 
 
+def _count_assumption_belongs_to_root(
+    board_id: str,
+    *,
+    assumption_source_ref: str,
+    root_id: str,
+) -> int:
+    from okto_pulse.core.kg.schema import open_board_connection
+
+    with open_board_connection(board_id) as (_db, kconn):
+        res = kconn.execute(
+            "MATCH (n:Assumption)-[r:belongs_to]->(m:Entity) "
+            "WHERE n.source_artifact_ref = $ref AND m.id = $root_id "
+            "RETURN count(r)",
+            {"ref": assumption_source_ref, "root_id": root_id},
+        )
+        try:
+            if res.has_next():
+                return int(res.get_next()[0])
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    return 0
+
+
 def _count_learning_validates_bug(
     board_id: str,
     *,
@@ -564,5 +590,69 @@ async def test_commit_auto_attaches_cognitive_decision_to_source_root(
     assert _count_decision_belongs_to_root(
         board_id,
         decision_source_ref=decision_source_ref,
+        root_id=root_id,
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_commit_auto_attaches_cognitive_assumption_to_source_root(
+    board_id,
+    agent_id,
+    db_factory,
+    board_handle,
+):
+    spec_id = f"spec-{uuid.uuid4()}"
+    spec_ref = f"spec:{spec_id}"
+    root_id, _existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
+    assumption_source_ref = f"{spec_ref}:assumption:e2e"
+
+    async with db_factory() as db:
+        begin = await begin_consolidation(
+            BeginConsolidationRequest(
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=spec_id,
+                raw_content="assumption auto provenance",
+            ),
+            agent_id=agent_id,
+            db=db,
+        )
+
+    from okto_pulse.core.kg.primitives import add_node_candidate
+    from okto_pulse.core.kg.schemas import AddNodeCandidateRequest
+
+    await add_node_candidate(
+        AddNodeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=NodeCandidate(
+                candidate_id="assumption_auto_root",
+                node_type=KGNodeType.ASSUMPTION,
+                title="Auto root assumption",
+                source_artifact_ref=assumption_source_ref,
+                source_confidence=0.9,
+            ),
+        ),
+        agent_id=agent_id,
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id=agent_id,
+        db=None,
+        force_reprocess=True,
+    )
+
+    async with db_factory() as db:
+        commit = await commit_consolidation(
+            CommitConsolidationRequest(session_id=begin.session_id),
+            agent_id=agent_id,
+            db=db,
+        )
+
+    assert commit.connectivity["passed"] is True
+    assert commit.nodes_added == 1
+    assert commit.edges_added == 1
+    assert _count_assumption_belongs_to_root(
+        board_id,
+        assumption_source_ref=assumption_source_ref,
         root_id=root_id,
     ) == 1

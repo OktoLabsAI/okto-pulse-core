@@ -112,6 +112,21 @@ Args:
 Returns:
     JSON with counts of unseen mentions and recent activity
 
+## `okto_pulse_get_publish_health`
+
+Read the metrics publication health surface used by Pulse telemetry.
+
+Use this before or after an AWS/S3/Firehose validation to inspect the last
+publish attempt, failure state, freshness, and configured availability
+sources without mutating local state.
+
+Args:
+    board_id: Board ID used for authentication and scoping.
+
+Returns:
+    JSON health DTO with source availability, last success/failure details,
+    publish mode, and bounded reason codes.
+
 ## `okto_pulse_link_task`
 
 Generic task-linking tool — dispatches on `target_type`. Equivalent to the
@@ -207,6 +222,105 @@ Returns:
     JSON preview with eligible candidates, rejected candidates, and semantic-gap
     guidance. The tool is read-only.
 
+## `okto_pulse_create_amendment_revision`
+
+Create a formal hotfix/amendment revision for a bug tied to a locked spec.
+
+Use this for Path B regression remediation when a same-spec scenario cannot be
+reused safely. The revision starts before coverage confirmation; it does not by
+itself close the bug gate.
+
+Args:
+    board_id: Board ID.
+    bug_id: Bug card ID.
+    title: Revision title.
+    description: Optional summary of the semantic gap or hotfix scope.
+
+Returns:
+    JSON with revision identity, status, lineage_state, and required follow-up.
+
+## `okto_pulse_list_amendment_revisions`
+
+List amendment/hotfix revisions for a board or bug.
+
+Use this to inspect Path B readiness before moving a bug forward, especially
+when the bug is blocked with coverage_pending or incomplete lineage.
+
+Args:
+    board_id: Board ID.
+    bug_id: Optional bug card ID filter.
+    status: Optional status filter.
+
+Returns:
+    JSON list with revision status, lineage_state, artifacts, and coverage flags.
+
+## `okto_pulse_get_amendment_revision`
+
+Read one amendment/hotfix revision in detail.
+
+Args:
+    board_id: Board ID.
+    revision_id: Amendment revision ID.
+
+Returns:
+    JSON with lineage artifacts, associated regression scenario/test task,
+    status, and coverage confirmation state.
+
+## `okto_pulse_associate_amendment_revision_artifacts`
+
+Attach or replace the declared artifacts on an amendment revision.
+
+Use this to bind the revision spec, declared regression scenario, regression
+test task, and affected/origin task membership before transition.
+
+Args:
+    board_id: Board ID.
+    revision_id: Amendment revision ID.
+    revision_spec_id: Optional spec ID for the amendment.
+    regression_scenario_id: Optional test scenario ID.
+    regression_test_task_id: Optional test card ID.
+    affected_task_ids: Optional multi-value task IDs.
+
+Returns:
+    JSON with the updated artifact set and remaining lineage requirements.
+
+## `okto_pulse_transition_amendment_revision`
+
+Move an amendment revision through status and lineage-state transitions.
+
+Use this after artifacts are associated. `lineage_state=complete` requires the
+declared scenario, test task, and origin/affected membership. `approved`/`done`
+require complete lineage. This still does not confirm bug coverage; use
+`okto_pulse_confirm_amendment_coverage` for the validator attestation.
+
+Args:
+    board_id: Board ID.
+    revision_id: Amendment revision ID.
+    status: Optional target status.
+    lineage_state: Optional target lineage state.
+    note: Optional transition rationale.
+
+Returns:
+    JSON with updated status, lineage_state, blockers, and next action.
+
+## `okto_pulse_confirm_amendment_coverage`
+
+Validator-only confirmation that the amendment regression artifacts satisfy the
+bug coverage gate.
+
+Use this after the regression test card and declared scenario have fresh
+re-executable evidence. This is the non-forgeable coverage signal consumed by
+bug movement gates.
+
+Args:
+    board_id: Board ID.
+    bug_id: Bug card ID.
+    regression_test_task_id: Declared regression test task ID.
+    regression_scenario_id: Declared regression scenario ID.
+
+Returns:
+    JSON with confirmation status and the bug coverage gate readiness.
+
 ## `okto_pulse_mark_as_seen`
 
 Mark one or more items as seen so they won't appear in list_my_mentions.
@@ -275,3 +389,80 @@ Args:
 
 Returns:
     JSON with validation result, outcome, threshold violations, and card routing
+
+## `okto_pulse_list_design_systems`
+
+List global and board-scoped design systems visible to the board.
+
+Args:
+    board_id: Board ID.
+    scope: Optional filter such as global or inline.
+
+Returns:
+    JSON list with design system metadata and board-link/default flags.
+
+## `okto_pulse_get_design_system`
+
+Read a design system, including its content body.
+
+Args:
+    board_id: Board ID used for access checks.
+    design_system_id: Design system ID.
+
+Returns:
+    JSON with title, content, scope, tags, and timestamps.
+
+## `okto_pulse_create_design_system`
+
+Create a design system record and its content.
+
+Global design systems can be linked to boards and used as defaults; inline
+design systems belong to the current board.
+
+Args:
+    board_id: Board ID.
+    title: Design system title.
+    content: Markdown instructions or tokens for mockup generation.
+    scope: global or inline.
+    tags: Optional multi-value tags.
+
+Returns:
+    JSON with created design system.
+
+## `okto_pulse_update_design_system`
+
+Update design system title, content, tags, or active state.
+
+Args:
+    board_id: Board ID.
+    design_system_id: Design system ID.
+    title: Optional new title.
+    content: Optional new content.
+    tags: Optional replacement tags.
+
+Returns:
+    JSON with updated design system.
+
+## `okto_pulse_delete_design_system`
+
+Delete or deactivate a design system and remove board links.
+
+Args:
+    board_id: Board ID.
+    design_system_id: Design system ID.
+
+Returns:
+    JSON success payload.
+
+## `okto_pulse_set_default_design_system`
+
+Set or clear the global default design system used by newly created boards.
+
+Only design systems from the global catalog are eligible for default use.
+
+Args:
+    board_id: Board ID used for authentication.
+    design_system_id: Global design system ID, or empty/CLEAR to remove default.
+
+Returns:
+    JSON with the active default design system reference.

@@ -200,6 +200,69 @@ async def test_ir_or_link_reference_validation(db_factory):
 
 
 @pytest.mark.asyncio
+async def test_ir_or_linked_requirements_accept_structured_tr_refs(db_factory):
+    board_id = _id("board")
+    actor_id = _id("user")
+    spec_id = _id("spec")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="IR OR TR refs", owner_id=actor_id))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="IR OR TR refs",
+                status=SpecStatus.DRAFT,
+                created_by=actor_id,
+                functional_requirements=[
+                    {"id": "fr_login", "text": "User can log in", "status": "active"}
+                ],
+                technical_requirements=[
+                    {
+                        "id": "tr_audit",
+                        "text": "Login API must emit audit events",
+                        "linked_task_ids": [],
+                    },
+                    {
+                        "id": "tr_session",
+                        "text": "Session timeout must be configurable",
+                        "linked_task_ids": [],
+                    },
+                ],
+            )
+        )
+        await db.flush()
+
+        service = SpecService(db)
+        await service.update_spec(
+            spec_id,
+            actor_id,
+            SpecUpdate(
+                integration_requirements=[
+                    {
+                        "id": "ir_1",
+                        "title": "Audit export",
+                        "linked_requirements": ["tr_audit"],
+                    }
+                ],
+                observability_requirements=[
+                    {
+                        "id": "or_1",
+                        "title": "Timeout metric",
+                        "linked_requirements": ["Session timeout must be configurable"],
+                    }
+                ],
+            ),
+        )
+        spec = await service.get_spec(spec_id)
+
+    assert spec.integration_requirements[0]["linked_requirements"] == ["tr_audit"]
+    assert spec.observability_requirements[0]["linked_requirements"] == [
+        "Session timeout must be configurable"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_add_integration_requirement_accepts_external_service_mcp(db_factory):
     board_id = _id("board")
     actor_id = _id("user")

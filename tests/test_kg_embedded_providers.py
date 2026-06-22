@@ -57,6 +57,58 @@ class TestProtocolCompliance:
         assert isinstance(SqliteOutboxEventBus(lambda: None), EventBus)
 
 
+class _FakeKuzuConnection:
+    def __init__(self):
+        self.statements: list[tuple[str, dict]] = []
+
+    def execute(self, statement: str, params: dict):
+        self.statements.append((statement, params))
+
+
+class _FakeOpenBoardConnection:
+    def __init__(self, conn: _FakeKuzuConnection):
+        self.conn = conn
+
+    def __enter__(self):
+        return None, self.conn
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestKuzuGraphStoreRelationshipResolution:
+    def test_create_edge_ambiguous_relationship_requires_endpoint_hints(self):
+        from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
+
+        with pytest.raises(ValueError, match="ambiguous.*from_type/to_type"):
+            KuzuGraphStore().create_edge("b1", "implements", "api-login", "tr-audit")
+
+    def test_create_edge_implements_constraint_honors_endpoint_hints(self, monkeypatch):
+        from okto_pulse.core.kg.providers.embedded import kuzu_graph_store as module
+
+        conn = _FakeKuzuConnection()
+        monkeypatch.setattr(
+            module,
+            "open_board_connection",
+            lambda _board_id: _FakeOpenBoardConnection(conn),
+        )
+
+        module.KuzuGraphStore().create_edge(
+            "b1",
+            "implements",
+            "api-login",
+            "tr-audit",
+            from_type="APIContract",
+            to_type="Constraint",
+        )
+
+        assert len(conn.statements) == 1
+        assert (
+            "MATCH (a:APIContract {id: $from_id}), "
+            "(b:Constraint {id: $to_id})"
+        ) in conn.statements[0][0]
+
+
 # -----------------------------------------------------------------------
 # Registry wiring
 # -----------------------------------------------------------------------

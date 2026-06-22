@@ -16,16 +16,23 @@ import pytest
 
 from okto_pulse.core.kg.primitives import (
     _apply_kuzu_node_create_with_timestamp,
+    add_edge_candidate,
     begin_consolidation,
     commit_consolidation,
     propose_reconciliation,
 )
+from okto_pulse.core.kg.schema import open_board_connection
 from okto_pulse.core.kg.schemas import (
+    AddEdgeCandidateRequest,
     BeginConsolidationRequest,
     CommitConsolidationRequest,
     KGNodeType,
     NodeCandidate,
     ProposeReconciliationRequest,
+)
+from okto_pulse.core.kg.workers.consolidation import (
+    _worker_edge_to_candidate,
+    _worker_node_to_candidate,
 )
 from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
 
@@ -75,6 +82,25 @@ def _children(result) -> list:
     ]
 
 
+def _count_api_implements_constraint(board_id: str, *, api_title: str, tr_title: str) -> int:
+    with open_board_connection(board_id) as (_db, kconn):
+        res = kconn.execute(
+            "MATCH (a:APIContract)-[r:implements]->(c:Constraint) "
+            "WHERE a.title = $api_title AND c.title = $tr_title "
+            "RETURN count(r)",
+            {"api_title": api_title, "tr_title": tr_title},
+        )
+        try:
+            if res.has_next():
+                return int(res.get_next()[0])
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # ts_838e4ef9 (card 43bc4311) AC1 — done spec -> all children canonical
 # ---------------------------------------------------------------------------
@@ -113,6 +139,77 @@ def test_spec_predone_children_are_working_only():
     # so these nodes are excluded by construction.
     assert all(n.graph_layer == "working" for n in children)
     assert all(n.maturity_status == "working_immature" for n in children)
+
+
+@pytest.mark.asyncio
+async def test_commit_materializes_api_contract_implements_tr_constraint(
+    board_id, db_factory, board_handle,
+):
+    spec_id = f"spec-{uuid.uuid4().hex[:8]}"
+    spec = {
+        "id": spec_id,
+        "title": "TR linked API contract",
+        "status": "done",
+        "board_id": board_id,
+        "functional_requirements": [
+            {"id": "fr-login", "text": "User can log in"},
+        ],
+        "technical_requirements": [
+            {"id": "tr-audit-events", "text": "Login API emits audit events"},
+        ],
+        "api_contracts": [
+            {
+                "id": "api-login",
+                "method": "POST",
+                "path": "/login",
+                "linked_requirements": ["tr-audit-events"],
+            },
+        ],
+    }
+    worker_result = DeterministicWorker().process_spec(spec)
+
+    async with db_factory() as db:
+        begin = await begin_consolidation(
+            BeginConsolidationRequest(
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=spec_id,
+                raw_content=worker_result.raw_content or "tr linked api contract",
+                deterministic_candidates=[
+                    _worker_node_to_candidate(node) for node in worker_result.nodes
+                ],
+            ),
+            agent_id="system:layer1_worker",
+            db=db,
+        )
+
+    for edge in worker_result.edges:
+        await add_edge_candidate(
+            AddEdgeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=_worker_edge_to_candidate(edge),
+            ),
+            agent_id="system:layer1_worker",
+        )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id="system:layer1_worker",
+        db=None,
+        force_reprocess=True,
+    )
+    async with db_factory() as db:
+        commit = await commit_consolidation(
+            CommitConsolidationRequest(session_id=begin.session_id),
+            agent_id="system:layer1_worker",
+            db=db,
+        )
+
+    assert commit.connectivity["passed"] is True
+    assert _count_api_implements_constraint(
+        board_id,
+        api_title="POST /login",
+        tr_title="Login API emits audit events",
+    ) == 1
 
 
 # ---------------------------------------------------------------------------

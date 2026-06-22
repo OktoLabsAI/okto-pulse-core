@@ -126,6 +126,21 @@ Returns:
     artifact identity, source_ref, target_status, canonical_state, failure
     reason, last_error, retry metadata, queue/DLQ refs, and evidence_ref.
 
+## `okto_pulse_kg_canonical_partition_integrity_list`
+
+List canonical/working partition integrity issues for a board.
+
+Use this when KG health reports partition drift or when validating that working
+nodes have not leaked into canonical-only surfaces.
+
+Args:
+    board_id: Board ID.
+    limit: Max rows to return.
+    offset: Page offset.
+
+Returns:
+    JSON with partition issue rows and bounded counts.
+
 ## `okto_pulse_kg_dead_letter_list`
 
 List dead-lettered consolidation rows.
@@ -327,6 +342,33 @@ Args:
 Returns:
     JSON health snapshot, or {"error": "..."} on auth/not-found.
 
+## `okto_pulse_kg_digest_layer_mismatch_list`
+
+List nodes whose digest/materialization layer metadata is inconsistent.
+
+Args:
+    board_id: Board ID.
+    limit: Max rows to return.
+    offset: Page offset.
+
+Returns:
+    JSON with mismatch rows, expected/actual layer fields, and counts.
+
+## `okto_pulse_kg_stale_canonical_parity_list`
+
+List canonical nodes whose parity with working/source materialization is stale.
+
+Use this after migrations or rebuilds to inspect stale canonical parity without
+mutating the graph.
+
+Args:
+    board_id: Board ID.
+    limit: Max rows to return.
+    offset: Page offset.
+
+Returns:
+    JSON with stale parity rows and diagnostic metadata.
+
 ## `okto_pulse_kg_orphan_report`
 
 Return a bounded safe orphan-node report for a board KG.
@@ -407,7 +449,103 @@ Args:
     limit: Page size, 1..200, default 100.
     offset: Page offset, ≥ 0, default 0.
     status_filter: Deprecated compatibility alias for ``status``;
-        ``status`` takes precedence when both are provided.
+    ``status`` takes precedence when both are provided.
+
+## `okto_pulse_kg_list_cognitive_readiness_items`
+
+List cognitive-readiness items that can block completion or validation.
+
+Use this to inspect outstanding cognitive closeout work before advancing a bug,
+spec, or refinement through a gate.
+
+Args:
+    board_id: Board ID.
+    entity_type: Optional source entity type filter.
+    entity_id: Optional source entity ID filter.
+    status: Optional readiness status filter.
+    limit: Max rows.
+    offset: Page offset.
+
+Returns:
+    JSON with readiness items, counts, and source references.
+
+## `okto_pulse_kg_evaluate_cognitive_readiness`
+
+Evaluate cognitive-readiness gates for a target entity.
+
+Args:
+    board_id: Board ID.
+    entity_type: Target entity type.
+    entity_id: Target entity ID.
+
+Returns:
+    JSON with readiness outcome, blockers, skip state, and remediation text.
+
+## `okto_pulse_kg_evaluate_bug_cognitive_closure`
+
+Evaluate whether a bug has the required cognitive closeout before closure.
+
+Args:
+    board_id: Board ID.
+    bug_id: Bug card ID.
+
+Returns:
+    JSON with closure readiness, missing cognitive items, and gate outcome.
+
+## `okto_pulse_kg_record_cognitive_skip`
+
+Record a human-authorized cognitive-readiness skip.
+
+This tool records the skip and its bounded reason. It must not be used as a
+silent bypass for technical blockers.
+
+Args:
+    board_id: Board ID.
+    entity_type: Target entity type.
+    entity_id: Target entity ID.
+    reason: Required justification.
+
+Returns:
+    JSON with recorded skip state and audit metadata.
+
+## `okto_pulse_kg_clear_cognitive_skip`
+
+Clear a previously recorded cognitive-readiness skip.
+
+Args:
+    board_id: Board ID.
+    entity_type: Target entity type.
+    entity_id: Target entity ID.
+    reason: Optional audit reason.
+
+Returns:
+    JSON with updated readiness/skip state.
+
+## `okto_pulse_kg_list_cognitive_dlq`
+
+List cognitive-readiness dead-letter or failed extraction items.
+
+Args:
+    board_id: Board ID.
+    limit: Max rows.
+    offset: Page offset.
+
+Returns:
+    JSON with cognitive DLQ rows, error reason codes, and counts.
+
+## `okto_pulse_kg_queue_drilldown`
+
+Inspect active KG queue depth and per-state work distribution.
+
+Use this when KG health reports backlog, at_risk, or backpressure and the agent
+needs to distinguish active queue work from DLQ/debt.
+
+Args:
+    board_id: Board ID.
+    profile: summary or full.
+
+Returns:
+    JSON with active queue counts, dead-letter counts, and queue diagnostics.
 
 ## `okto_pulse_kg_migrate_schema`
 

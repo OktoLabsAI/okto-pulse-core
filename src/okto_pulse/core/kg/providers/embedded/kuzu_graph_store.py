@@ -19,6 +19,7 @@ from okto_pulse.core.kg.schema import (
     VECTOR_INDEX_TYPES,
     bootstrap_board_graph,
     open_board_connection,
+    resolve_relationship_endpoint_pair,
     stable_rel_type_entries,
     vector_index_name,
 )
@@ -53,15 +54,15 @@ class KuzuGraphStore:
     def create_edge(
         self, board_id: str, edge_type: str, from_id: str, to_id: str,
         attrs: dict[str, Any] | None = None,
+        *,
+        from_type: str | None = None,
+        to_type: str | None = None,
     ) -> None:
-        rel_row = next((r for r in REL_TYPES if r[0] == edge_type), None)
-        if rel_row is not None:
-            _, from_type, to_type = rel_row
-        else:
-            multi = next((m for m in MULTI_REL_TYPES if m[0] == edge_type), None)
-            if multi is None or len(multi[1]) != 1:
-                raise ValueError(f"unknown or ambiguous edge_type: {edge_type}")
-            from_type, to_type = multi[1][0]
+        from_type, to_type = resolve_relationship_endpoint_pair(
+            edge_type,
+            from_type=from_type,
+            to_type=to_type,
+        )
 
         edge_attrs = dict(attrs or {})
         edge_attrs.setdefault("confidence", 0.7)

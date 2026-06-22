@@ -99,7 +99,7 @@ async def kg_rel_board(db_factory):
 
 def test_ts29_schema_version_is_0_3_3():
     """SCHEMA_VERSION remains monotonic after last_recomputed_at bootstrap."""
-    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6"}
+    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
 
 
 def test_ts29_last_recomputed_columns_constant_exposes_string_type():

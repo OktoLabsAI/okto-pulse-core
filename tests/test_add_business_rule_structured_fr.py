@@ -1,5 +1,4 @@
-"""Regression: okto_pulse_add_business_rule / okto_pulse_add_api_contract must
-accept ``linked_requirements`` against STRUCTURED functional requirements.
+"""Regression: structured ``linked_requirements`` must resolve canonically.
 
 Bug (found in the 0.2.3 live E2E): once FR/AC canonicalization made
 ``functional_requirements`` a list of dicts ``{id,text,status}``, the inline
@@ -11,11 +10,11 @@ text path (``token in frs``) also always failed (a list of dicts never contains
 the bare text). FR->BR/contract linkage was therefore impossible, which blocked
 fr_coverage and the spec validation gate.
 
-IMPL-1 (spec 9d66847f): write-path now resolves to canonical fr_id strings
-(not indices) via ``resolve_linked_requirements_to_ids``. Fail-closed: any
-unresolved token aborts before persistence. The tolerant read resolver
-(``resolve_linked_fr_indices``) is unchanged — it still handles both fr_ids
-and indices on read.
+IMPL-1 (spec 9d66847f): write-path now resolves to canonical requirement IDs
+(not indices). BR/Decision stay FR-scoped; API contracts, IR, and OR accept
+FR/TR references. Fail-closed: any unresolved token aborts before persistence.
+The tolerant read resolver (``resolve_linked_fr_indices``) is unchanged — it
+still handles both fr_ids and indices on read.
 """
 
 from __future__ import annotations
@@ -281,3 +280,56 @@ async def test_update_api_contract_tr_text_structured_requirement(db_factory):
     spec = await _read_spec(spec_id)
     linked = spec.api_contracts[0]["linked_requirements"]
     assert linked == ["tr_4444dddd"], linked
+
+
+# ====================================================================
+# add_integration/observability_requirement — linked_requirements accept TRs
+# ====================================================================
+
+
+async def test_add_integration_requirement_tr_id_structured_requirement(db_factory):
+    board_id, spec_id = await _seed(db_factory)
+    payload = await _call(
+        "okto_pulse_add_integration_requirement",
+        board_id,
+        spec_id=spec_id,
+        title="Audit export",
+        integration_type="external_service",
+        linked_requirements="tr_3333cccc",
+    )
+    assert payload.get("success") is True, payload
+    spec = await _read_spec(spec_id)
+    linked = spec.integration_requirements[0]["linked_requirements"]
+    assert linked == ["tr_3333cccc"], linked
+
+
+async def test_add_observability_requirement_tr_text_structured_requirement(db_factory):
+    board_id, spec_id = await _seed(db_factory)
+    payload = await _call(
+        "okto_pulse_add_observability_requirement",
+        board_id,
+        spec_id=spec_id,
+        title="Session timeout configuration metric",
+        signal_type="metric",
+        linked_requirements="Session timeout must be configurable",
+    )
+    assert payload.get("success") is True, payload
+    spec = await _read_spec(spec_id)
+    linked = spec.observability_requirements[0]["linked_requirements"]
+    assert linked == ["tr_4444dddd"], linked
+
+
+async def test_add_integration_requirement_unknown_requirement_fails_closed(db_factory):
+    board_id, spec_id = await _seed(db_factory)
+    payload = await _call(
+        "okto_pulse_add_integration_requirement",
+        board_id,
+        spec_id=spec_id,
+        title="Broken link",
+        integration_type="api",
+        linked_requirements="tr_missing",
+    )
+    assert "error" in payload and "Unresolved" in payload["error"], payload
+    assert "Available tr_ids" in payload["error"], payload
+    spec = await _read_spec(spec_id)
+    assert (spec.integration_requirements or []) == []

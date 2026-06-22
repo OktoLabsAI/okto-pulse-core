@@ -113,18 +113,13 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
 async def test_allowed_cognitive_candidates_still_commit(
     board_id, agent_id, db_factory, board_handle
 ):
-    # Positive case (ts_a43c9874 / TR7 / AC6): an ALLOWED cognitive node type still
-    # commits. ts_a43c9874 uses example language ("such as Alternative or Assumption"),
-    # so one allowed type proves the deterministic-only restriction on Criterion/Constraint
-    # does not disable the permitted cognitive closeout. We use Alternative (codex decision
-    # A). LATENT FINDING (out of scope, dedicated card): Assumption cannot currently commit
-    # because the provenance group requires belongs_to -> Entity/Bug but the schema's
-    # belongs_to pairs (schema.py) include (Alternative, Entity) and NOT (Assumption, *) —
-    # not changed here (no schema/ownership change in this card).
+    # Positive case (ts_a43c9874 / TR7 / AC6): allowed cognitive node types still
+    # commit while deterministic-only Criterion/Constraint remain blocked.
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
     _seed_entity_root(board_id, spec_ref)  # provenance root the cognitive node attaches to
     alt_ref = f"{spec_ref}:alternative:{uuid.uuid4().hex[:8]}"
+    assumption_ref = f"{spec_ref}:assumption:{uuid.uuid4().hex[:8]}"
 
     async with db_factory() as db:
         begin = await begin_consolidation(
@@ -136,6 +131,7 @@ async def test_allowed_cognitive_candidates_still_commit(
         )
     for cid, node_type, ref, title in (
         ("alt_ok", KGNodeType.ALTERNATIVE, alt_ref, "Considered synchronous polling"),
+        ("assumption_ok", KGNodeType.ASSUMPTION, assumption_ref, "Assume replay manifest remains stable"),
     ):
         await add_node_candidate(
             AddNodeCandidateRequest(
@@ -159,8 +155,9 @@ async def test_allowed_cognitive_candidates_still_commit(
         )
 
     assert commit.connectivity["passed"] is True
-    assert commit.nodes_added >= 1
+    assert commit.nodes_added >= 2
     assert _count_by_source_ref(board_id, "Alternative", alt_ref) == 1
+    assert _count_by_source_ref(board_id, "Assumption", assumption_ref) == 1
 
 
 # ---------------------------------------------------------------------------

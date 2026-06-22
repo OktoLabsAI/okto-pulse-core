@@ -3845,9 +3845,10 @@ async def _validate_spec_linked_refs(
         AC labels like "AC1" are rejected — the SpecModal coverage widget
         does not recognise them and they would silently appear uncovered.
 
-    - linked_requirements (business_rules + api_contracts + IR + OR → FR):
-        Same rule — index "0".."N-1" OR exact FR text. Anything else
-        (including "FR1" labels) is rejected.
+    - linked_requirements:
+        business_rules → FR; api_contracts + IR + OR → FR/TR.
+        Same rule — index "0".."N-1" OR exact requirement text/id.
+        Labels like "FR1" are rejected.
 
     - linked_rules (api_contracts → BR):
         Must match an existing business_rule.id in the same spec.
@@ -3984,17 +3985,18 @@ async def _validate_spec_linked_refs(
                     f"in the spec (valid: {sorted(valid_br_ids) or 'none'})."
                 )
 
-    # integration_requirements.linked_requirements → FR
+    # integration_requirements.linked_requirements → FR/TR
     # integration_requirements.linked_api_contracts → api_contract.id
     for ir in final_irs:
         owner = f"IR '{ir.get('id') or ir.get('title') or '?'}'"
         _check_index_text_or_id(
             ir.get("linked_requirements") or [],
             valid_fr_indices,
-            valid_fr_texts,
-            valid_fr_ids,
+            valid_fr_texts | valid_tr_texts,
+            valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
+            "FR/TR",
         )
         for ref in ir.get("linked_api_contracts") or []:
             if str(ref) not in valid_contract_ids:
@@ -4003,17 +4005,18 @@ async def _validate_spec_linked_refs(
                     f"in the spec (valid: {sorted(valid_contract_ids) or 'none'})."
                 )
 
-    # observability_requirements.linked_requirements → FR
+    # observability_requirements.linked_requirements → FR/TR
     # observability_requirements.linked_integration_requirements → IR.id
     for req in final_ors:
         owner = f"OR '{req.get('id') or req.get('title') or '?'}'"
         _check_index_text_or_id(
             req.get("linked_requirements") or [],
             valid_fr_indices,
-            valid_fr_texts,
-            valid_fr_ids,
+            valid_fr_texts | valid_tr_texts,
+            valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
+            "FR/TR",
         )
         for ref in req.get("linked_integration_requirements") or []:
             if str(ref) not in valid_ir_ids:

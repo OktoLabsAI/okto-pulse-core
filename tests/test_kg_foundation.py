@@ -153,9 +153,30 @@ class TestBootstrapSchema:
         }
 
     def test_schema_version(self):
-        # Monotonic additive bumps preserve the floor (0.3.6 = KG working/
-        # canonical partitioning, dcf6130) — assert known-version membership.
-        assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6"}
+        # Monotonic additive bumps preserve the floor (0.3.7 = implements
+        # APIContract->Constraint endpoint pair) — assert known-version membership.
+        assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
+
+    def test_implements_accepts_requirement_and_constraint_pairs(self):
+        from okto_pulse.core.kg.schema import MULTI_REL_TYPES
+
+        rel_pairs = [
+            (rel_name, from_type, to_type)
+            for rel_name, from_type, to_type in REL_TYPES
+        ]
+        for rel_name, pairs in MULTI_REL_TYPES:
+            rel_pairs.extend(
+                (rel_name, from_type, to_type)
+                for from_type, to_type in pairs
+            )
+        assert ("implements", "APIContract", "Requirement") in rel_pairs
+        assert ("implements", "APIContract", "Constraint") in rel_pairs
+
+    def test_belongs_to_accepts_assumption_to_entity(self):
+        from okto_pulse.core.kg.schema import MULTI_REL_TYPES
+
+        belongs_to = dict(MULTI_REL_TYPES)["belongs_to"]
+        assert ("Assumption", "Entity") in belongs_to
 
     def test_bootstrap_creates_kuzu_dir(self, board_id):
         handle = bootstrap_board_graph(board_id)

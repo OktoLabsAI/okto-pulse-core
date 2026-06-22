@@ -405,6 +405,26 @@ class KGConnectivityRuleRegistry:
                     writer_path="deterministic_worker",
                     source_artifact_ref_prefix="board:",
                 ),
+                KGTechnicalRootAllowlistEntry(
+                    node_type="Decision",
+                    writer_path="commit_consolidation",
+                    source_artifact_ref_prefix="final_report:",
+                ),
+                KGTechnicalRootAllowlistEntry(
+                    node_type="Learning",
+                    writer_path="commit_consolidation",
+                    source_artifact_ref_prefix="final_report:",
+                ),
+                KGTechnicalRootAllowlistEntry(
+                    node_type="Alternative",
+                    writer_path="commit_consolidation",
+                    source_artifact_ref_prefix="final_report:",
+                ),
+                KGTechnicalRootAllowlistEntry(
+                    node_type="Assumption",
+                    writer_path="commit_consolidation",
+                    source_artifact_ref_prefix="final_report:",
+                ),
             )
         )
 
@@ -474,6 +494,7 @@ class KGConnectivityRuleRegistry:
                 required_edge_groups=(provenance, _decision_judgement_group()),
                 semantic_target_policy="structured_provenance_and_judgement",
                 allowed_new_node_writers=cognitive_or_deterministic,
+                technical_root_allowed=True,
             ),
             "Learning": KGConnectivityRule(
                 node_type="Learning",
@@ -481,6 +502,7 @@ class KGConnectivityRuleRegistry:
                 required_edge_groups=(provenance,),
                 semantic_target_policy="bug_learning_requires_validates_when_known",
                 allowed_new_node_writers=cognitive_or_deterministic,
+                technical_root_allowed=True,
             ),
             "Alternative": KGConnectivityRule(
                 node_type="Alternative",
@@ -488,6 +510,7 @@ class KGConnectivityRuleRegistry:
                 required_edge_groups=(provenance,),
                 semantic_target_policy="cognitive_per_concept_source",
                 allowed_new_node_writers=cognitive_only,
+                technical_root_allowed=True,
             ),
             "Assumption": KGConnectivityRule(
                 node_type="Assumption",
@@ -495,6 +518,7 @@ class KGConnectivityRuleRegistry:
                 required_edge_groups=(provenance,),
                 semantic_target_policy="provenance_only_v1",
                 allowed_new_node_writers=cognitive_only,
+                technical_root_allowed=True,
             ),
         }
 

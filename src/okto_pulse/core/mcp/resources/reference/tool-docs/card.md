@@ -268,5 +268,6 @@ treat a Path B regression artifact as closure-ready. Args: `board_id`, `bug_id`,
 `regression_test_task_id`, `regression_scenario_id` (both MUST be declared by the
 amendment). Fail-closed: the regression test task must be `done` with its declared
 scenario `passed`/`automated` carrying re-executable evidence (`test_file_path`+
-`test_function` or `test_run_id`) — lineage/evidence alone is necessary but NOT
+`test_function`, or an explicit replayable evidence_class such as
+`mcp_replay_manifest` plus `expected_output_snapshot`) — lineage/evidence alone is necessary but NOT
 sufficient. Until this runs, the bug stays `coverage_pending`.

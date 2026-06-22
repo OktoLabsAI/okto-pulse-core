@@ -515,7 +515,7 @@ class BusinessRule(BaseModel):
     rule: str
     when: str
     then: str
-    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_requirements: list[str] | None = None  # canonical FR ids
     linked_task_ids: list[str] | None = None  # Card IDs linked to this rule
     status: Literal["active", "superseded", "revoked"] = "active"
     notes: str | None = None
@@ -639,7 +639,7 @@ class IntegrationRequirement(BaseModel):
     endpoint: str | None = None
     method: str | None = None
     data_contract: dict[str, Any] | None = None
-    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_requirements: list[str] | None = None  # canonical FR/TR ids
     linked_api_contracts: list[str] | None = None  # ApiContract IDs
     linked_task_ids: list[str] | None = None  # Card IDs linked to this IR
     status: IntegrationRequirementStatus = "active"
@@ -678,7 +678,7 @@ class ObservabilityRequirement(BaseModel):
     threshold: str | None = None
     severity: str | None = None
     owner: str | None = None
-    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_requirements: list[str] | None = None  # canonical FR/TR ids
     linked_integration_requirements: list[str] | None = None  # IntegrationRequirement IDs
     linked_task_ids: list[str] | None = None  # Card IDs linked to this OR
     status: ObservabilityRequirementStatus = "active"
@@ -711,7 +711,7 @@ class Decision(BaseModel):
     context: str | None = None  # when/where it applies
     alternatives_considered: list[str] | None = None
     supersedes_decision_id: str | None = None  # id of a Decision on the same spec
-    linked_requirements: list[str] | None = None  # 0-based FR indices
+    linked_requirements: list[str] | None = None  # canonical FR ids
     linked_task_ids: list[str] | None = None
     status: DecisionStatus = "active"
     notes: str | None = None
@@ -1239,7 +1239,7 @@ class RefinementCreate(BaseModel):
     mockup_ids: list[str] | None = Field(None, description="IDs dos mockups a propagar da ideacao (None = propagar todos).")
     kb_ids: list[str] | None = Field(None, description="IDs dos KB items a propagar da ideacao (None = propagar todos).")
     architecture_design_ids: list[str] | None = Field(None, description="IDs dos architecture designs a propagar (None = propagar todos).")
-    architecture_propagation_mode: str = Field("copy", description="Modo de propagacao de arquitetura: 'copy' (padrao) ou 'reference'.")
+    architecture_propagation_mode: str = Field("copy", description="Modo de propagacao de arquitetura: 'copy'/'derive' copiam snapshots; 'reference_only'/'none' mantem apenas a ligacao com o pai.")
 
     @field_validator("in_scope")
     @classmethod
@@ -2215,9 +2215,12 @@ class BoardSettings(BaseModel):
     # Test Theater Prevention Gate — Wave 2 NC-9 (spec 873e98cc).
     # When False (default), update_test_scenario_status with status in
     # {automated, passed, failed} requires structured evidence (test_file_path,
-    # test_function for automated; last_run_at + (output_snippet|test_run_id)
-    # for passed/failed). When True, gate is bypass — any status accepted
-    # without evidence; audit log records every bypass for forensics.
+    # test_function for automated; explicit evidence_class with its required
+    # replayable fields, or unclassed run-log evidence with last_run_at +
+    # (output_snippet|test_run_id) + expected_output_snapshot +
+    # non_replayable_justification for passed/failed). When True, gate is bypass
+    # — any status accepted without evidence; audit log records every bypass for
+    # forensics.
     skip_test_evidence_global: bool = False
     # Cognitive Extraction LLM config — opt-in (spec 3d907a87, FR7 / D5).
     # Schema (free-form dict so it can evolve without a migration):

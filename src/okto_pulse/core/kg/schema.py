@@ -22,7 +22,7 @@ from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
 
-SCHEMA_VERSION = "0.3.6"
+SCHEMA_VERSION = "0.3.7"
 GRAPH_DB_FILENAME = "graph.lbug"
 CORRUPT_DB_ERROR_MARKERS = (
     "checksum verification failed",
@@ -108,6 +108,13 @@ REL_TYPES: tuple[tuple[str, str, str], ...] = (
 #     MATCH (n)-[:belongs_to]->(p:Entity) RETURN n, p
 # Without this we'd need 8 `belongs_to_<type>` variants polluting the schema.
 MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    # `implements` remains in REL_TYPES for the historical APIContract ->
+    # Requirement pair. This additive multi-pair entry lets the migrator add
+    # the TR/BR Constraint endpoint without breaking consumers that still read
+    # REL_TYPES as the single-pair registry.
+    ("implements", (
+        ("APIContract", "Constraint"),
+    )),
     ("belongs_to", (
         ("Entity", "Entity"),
         ("Entity", "Bug"),
@@ -119,6 +126,7 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("Decision", "Entity"),
         ("Bug", "Entity"),
         ("Alternative", "Entity"),
+        ("Assumption", "Entity"),
         ("Learning", "Entity"),
     )),
     ("originates_from", (
@@ -159,6 +167,66 @@ def stable_rel_type_entries() -> list[dict[str, Any]]:
         for rel_name, pairs in MULTI_REL_TYPES
     )
     return entries
+
+
+def relationship_endpoint_pairs(edge_type: str) -> tuple[tuple[str, str], ...]:
+    """Return every concrete endpoint pair accepted by a relationship name."""
+    pairs: list[tuple[str, str]] = [
+        (from_type, to_type)
+        for rel_name, from_type, to_type in REL_TYPES
+        if rel_name == edge_type
+    ]
+    for rel_name, endpoint_pairs in MULTI_REL_TYPES:
+        if rel_name == edge_type:
+            pairs.extend(endpoint_pairs)
+
+    deduped: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for pair in pairs:
+        if pair in seen:
+            continue
+        seen.add(pair)
+        deduped.append(pair)
+    return tuple(deduped)
+
+
+def resolve_relationship_endpoint_pair(
+    edge_type: str,
+    *,
+    from_type: str | None = None,
+    to_type: str | None = None,
+) -> tuple[str, str]:
+    """Resolve concrete endpoint labels for a relationship insert.
+
+    When a relationship name has multiple valid endpoint pairs, callers must
+    provide both endpoint hints. This prevents rel-name short-circuiting such as
+    resolving every ``implements`` edge to APIContract->Requirement even when
+    the target is a Constraint.
+    """
+    pairs = relationship_endpoint_pairs(edge_type)
+    if not pairs:
+        raise ValueError(f"unknown edge_type: {edge_type}")
+
+    if from_type or to_type:
+        if not from_type or not to_type:
+            raise ValueError(
+                f"edge_type '{edge_type}' requires both from_type and to_type "
+                f"hints; got {from_type!r}/{to_type!r}"
+            )
+        if (from_type, to_type) not in pairs:
+            raise ValueError(
+                f"edge_type '{edge_type}' does not accept pair "
+                f"({from_type}, {to_type}); valid pairs: {pairs}"
+            )
+        return from_type, to_type
+
+    if len(pairs) == 1:
+        return pairs[0]
+
+    raise ValueError(
+        f"edge_type '{edge_type}' is ambiguous and requires explicit "
+        f"from_type/to_type hints; valid pairs: {pairs}"
+    )
 
 
 # Common attributes shared across every node type — written once in the DDL

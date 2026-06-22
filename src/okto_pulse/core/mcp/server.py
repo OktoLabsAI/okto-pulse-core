@@ -113,11 +113,12 @@ def _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
     frs: list,
     trs: list,
 ) -> tuple[list[str], list[str]]:
-    """Resolve API-contract requirement refs against FRs first, then TRs.
+    """Resolve requirement refs against FRs first, then TRs.
 
-    The API contract field is historically named ``linked_requirements`` but is
-    used by agents as a generic requirement-link surface. Keep FR behavior
-    unchanged and add strict TR support for structured technical requirements.
+    ``linked_requirements`` is used by agents as a generic requirement-link
+    surface on API contracts, integration requirements, and observability
+    requirements. Keep FR behavior unchanged and add strict TR support for
+    structured technical requirements.
     """
     resolved: list[str] = []
     unresolved: list[str] = []
@@ -7050,8 +7051,10 @@ async def okto_pulse_update_test_scenario_status(
     """Update a test scenario's status, optionally attaching structured evidence that the
 test exists/ran. Test-theater prevention gate (NC-9): when skip_test_evidence_global
 is False (default), status=automated requires evidence.test_file_path+test_function;
-passed/failed require evidence.last_run_at AND (output_snippet OR test_run_id);
-draft/ready optional. When skip is True the gate is bypassed but a
+passed/failed require either an explicit evidence_class with its required fields
+or unclassed run-log evidence with evidence.last_run_at AND
+(output_snippet OR test_run_id) AND expected_output_snapshot AND
+non_replayable_justification; draft/ready optional. When skip is True the gate is bypassed but a
 test_scenario.evidence_gate_skipped audit log is emitted. Evidence persists inline;
 test_scenario.status_changed audit emitted on success. Full details:
 okto-pulse://reference/tool-docs/test-scenario."""
@@ -7108,7 +7111,8 @@ okto-pulse://reference/tool-docs/test-scenario."""
                     "message": (
                         f"Cannot mark scenario as {status} without structured "
                         f"evidence ({', '.join(missing)}). This prevents the test "
-                        "theater anti-pattern. To bypass, enable "
+                        "theater anti-pattern by requiring replayable or justified "
+                        "evidence. To bypass, enable "
                         "skip_test_evidence_global on the board."
                     ),
                 })
@@ -9399,24 +9403,25 @@ async def okto_pulse_add_integration_requirement(
         if not spec or spec.board_id != board_id:
             return json.dumps({"error": "Spec not found"})
 
-        # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+        # Write-path: resolve to canonical FR/TR ids, fail-closed. spec 9d66847f.
         _frs_ir = spec.functional_requirements or []
+        _trs_ir = spec.technical_requirements or []
         req_list = None
         if linked_requirements:
-            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
-                parse_multi_value(linked_requirements), _frs_ir
+            _resolved_req_ids, _unresolved_reqs = _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
+                parse_multi_value(linked_requirements), _frs_ir, _trs_ir
             )
-            if _unresolved_frs:
-                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in _frs_ir) if fid]
+            if _unresolved_reqs:
                 return json.dumps({
                     "error": (
-                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
-                        f"Valid indices: 0..{max(0, len(_frs_ir) - 1)}. "
-                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"Unresolved linked_requirements token(s): {_unresolved_reqs}. "
+                        f"Valid FR indices: 0..{max(0, len(_frs_ir) - 1)}. "
+                        f"Available fr_ids: {_available_structured_ids(_frs_ir)}. "
+                        f"Available tr_ids: {_available_structured_ids(_trs_ir)}. "
                         f"No integration requirement was appended."
                     )
                 })
-            req_list = _resolved_fr_ids or None
+            req_list = _resolved_req_ids or None
 
         data_contract = None
         if data_contract_json:
@@ -9615,24 +9620,25 @@ async def okto_pulse_add_observability_requirement(
         if not spec or spec.board_id != board_id:
             return json.dumps({"error": "Spec not found"})
 
-        # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+        # Write-path: resolve to canonical FR/TR ids, fail-closed. spec 9d66847f.
         _frs_or = spec.functional_requirements or []
+        _trs_or = spec.technical_requirements or []
         req_list = None
         if linked_requirements:
-            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
-                parse_multi_value(linked_requirements), _frs_or
+            _resolved_req_ids, _unresolved_reqs = _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
+                parse_multi_value(linked_requirements), _frs_or, _trs_or
             )
-            if _unresolved_frs:
-                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in _frs_or) if fid]
+            if _unresolved_reqs:
                 return json.dumps({
                     "error": (
-                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
-                        f"Valid indices: 0..{max(0, len(_frs_or) - 1)}. "
-                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"Unresolved linked_requirements token(s): {_unresolved_reqs}. "
+                        f"Valid FR indices: 0..{max(0, len(_frs_or) - 1)}. "
+                        f"Available fr_ids: {_available_structured_ids(_frs_or)}. "
+                        f"Available tr_ids: {_available_structured_ids(_trs_or)}. "
                         f"No observability requirement was appended."
                     )
                 })
-            req_list = _resolved_fr_ids or None
+            req_list = _resolved_req_ids or None
 
         linked_irs_list = None
         if linked_integration_requirements:
