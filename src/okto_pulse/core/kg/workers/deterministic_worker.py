@@ -688,6 +688,7 @@ class DeterministicWorker:
 
         # 3. Technical requirements → Constraint
         tr_ids: list[tuple[str, str]] = []  # (candidate_id, text)
+        tr_id_to_cid: dict[str, str] = {}
         for i, req in enumerate(spec.get("technical_requirements") or []):
             if isinstance(req, dict):
                 text = req.get("text") or req.get("description") or json.dumps(req)
@@ -696,6 +697,10 @@ class DeterministicWorker:
             raw_parts.append(text)
             cid = f"{prefix}_tr_{i}"
             tr_ids.append((cid, text))
+            if isinstance(req, dict):
+                tr_id = req.get("id")
+                if tr_id not in (None, ""):
+                    tr_id_to_cid[str(tr_id)] = cid
             result.nodes.append(EmittedNode(
                 candidate_id=cid,
                 node_type="Constraint",
@@ -820,8 +825,10 @@ class DeterministicWorker:
                     rule_id=f"tests/ac_match@{WORKER_VERSION}",
                 ))
 
-        # 7. APIContract + `implements` edges to Requirement via linked_requirements.
+        # 7. APIContract + `implements` edges to Requirement/Constraint via linked_requirements.
         fr_text_to_cid = {text.strip(): cid for cid, text in fr_ids}
+        tr_text_to_cid = {text.strip(): cid for cid, text in tr_ids}
+        requirement_candidate_suggestions = [c for c, _ in fr_ids] + [c for c, _ in tr_ids]
         api_ids_by_id: dict[str, str] = {}
         for i, api in enumerate(spec.get("api_contracts") or []):
             if not isinstance(api, dict):
@@ -851,24 +858,29 @@ class DeterministicWorker:
                     from_candidate_id=api_cid,
                     from_candidate_title=title,
                     reason="no_requirement_match",
-                    suggested_candidates=[c for c, _ in fr_ids],
+                    suggested_candidates=requirement_candidate_suggestions,
                     artifact_ref=artifact_ref,
                 ))
                 continue
             for idx, link in enumerate(linked):
                 if not isinstance(link, str):
                     continue
-                # (a) Resolve linked_requirements entry: try canonical fr_id
-                # first (IMPL-1 persists the id field on FR dicts), then fall
-                # back to full-text match for specs written before IMPL-1.
-                target = fr_id_to_cid.get(link.strip()) or fr_text_to_cid.get(link.strip())
+                # (a) Resolve linked_requirements entry: try canonical FR/TR
+                # ids first, then fall back to full-text match for legacy refs.
+                stripped_link = link.strip()
+                target = (
+                    fr_id_to_cid.get(stripped_link)
+                    or tr_id_to_cid.get(stripped_link)
+                    or fr_text_to_cid.get(stripped_link)
+                    or tr_text_to_cid.get(stripped_link)
+                )
                 if target is None:
                     result.missing_link_candidates.append(MissingLinkCandidate(
                         edge_type="implements",
                         from_candidate_id=api_cid,
                         from_candidate_title=title,
                         reason="no_requirement_match",
-                        suggested_candidates=[c for c, _ in fr_ids],
+                        suggested_candidates=requirement_candidate_suggestions,
                         artifact_ref=artifact_ref,
                     ))
                     continue

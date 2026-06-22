@@ -108,6 +108,70 @@ def _trs_to_objects(trs: list[str] | None) -> list | None:
     ]
 
 
+def _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
+    linked_tokens: list | None,
+    frs: list,
+    trs: list,
+) -> tuple[list[str], list[str]]:
+    """Resolve API-contract requirement refs against FRs first, then TRs.
+
+    The API contract field is historically named ``linked_requirements`` but is
+    used by agents as a generic requirement-link surface. Keep FR behavior
+    unchanged and add strict TR support for structured technical requirements.
+    """
+    resolved: list[str] = []
+    unresolved: list[str] = []
+    seen: set[str] = set()
+
+    fr_ids, fr_unresolved = resolve_linked_requirements_to_ids(linked_tokens, frs)
+    for rid in fr_ids:
+        if rid not in seen:
+            seen.add(rid)
+            resolved.append(rid)
+
+    if not fr_unresolved:
+        return resolved, unresolved
+
+    tr_ids, tr_unresolved = resolve_linked_requirements_to_ids(fr_unresolved, trs)
+    for rid in tr_ids:
+        if rid not in seen:
+            seen.add(rid)
+            resolved.append(rid)
+    unresolved.extend(tr_unresolved)
+    return resolved, unresolved
+
+
+def _available_structured_ids(items: list) -> list[str]:
+    return [rid for rid in (_structured_ref_id(item) for item in items) if rid]
+
+
+def _qa_selected_labels(qa: Any) -> list[str]:
+    selected = getattr(qa, "selected", None)
+    choices = getattr(qa, "choices", None)
+    if isinstance(qa, dict):
+        selected = qa.get("selected")
+        choices = qa.get("choices")
+    selected_ids = [str(item) for item in (selected or [])]
+    labels_by_id = {
+        str(choice.get("id")): str(choice.get("label"))
+        for choice in (choices or [])
+        if isinstance(choice, dict) and choice.get("id") is not None
+    }
+    return [labels_by_id.get(item, item) for item in selected_ids]
+
+
+def _qa_answer_text(qa: Any) -> str | None:
+    answer = getattr(qa, "answer", None)
+    if isinstance(qa, dict):
+        answer = qa.get("answer")
+    if answer:
+        return str(answer)
+    labels = _qa_selected_labels(qa)
+    if labels:
+        return ", ".join(labels)
+    return None
+
+
 def _load_instructions() -> str:
     """Load agent instructions. Prefers mounted volume (live-editable), falls back to bundled copy."""
     here = Path(__file__).parent
@@ -3432,7 +3496,7 @@ async def okto_pulse_add_choice_comment(
     board_id: str,
     card_id: str,
     question: str,
-    options: list[str] | str,
+    options: list[str] | str = "",
     comment_type: str = "choice",
     allow_free_text: str = "false",
     options_json: str = "",
@@ -5361,7 +5425,7 @@ async def okto_pulse_ask_ideation_choice_question(
     board_id: str,
     ideation_id: str,
     question: str,
-    options: list[str] | str,
+    options: list[str] | str = "",
     question_type: str = "choice",
     allow_free_text: str = "false",
     options_json: str = "",
@@ -6050,7 +6114,7 @@ async def okto_pulse_ask_refinement_choice_question(
     board_id: str,
     refinement_id: str,
     question: str,
-    options: list[str] | str,
+    options: list[str] | str = "",
     question_type: str = "choice",
     allow_free_text: str = "false",
     options_json: str = "",
@@ -7194,6 +7258,15 @@ async def okto_pulse_delete_test_scenario(
 
 
 _LINK_TASK_TARGET_TYPES = ("scenario", "rule", "decision", "tr", "contract", "ir", "or", "spec")
+_LINK_TASK_TARGET_ALIASES = {
+    "test_scenario": "scenario",
+    "business_rule": "rule",
+    "technical_requirement": "tr",
+    "api_contract": "contract",
+    "integration_requirement": "ir",
+    "observability_requirement": "or",
+}
+_LINK_TASK_ACCEPTED_TARGET_TYPES = _LINK_TASK_TARGET_TYPES + tuple(_LINK_TASK_TARGET_ALIASES)
 
 
 @mcp.tool()
@@ -7205,7 +7278,10 @@ async def okto_pulse_link_task(
     spec_id: str = "",
 ) -> str:
     """
-    Generic task-linking tool — dispatches on `target_type`. Equivalent to the
+    Generic task-linking tool — dispatches on `target_type`. Short codes
+    (`tr`, `ir`, `or`) and their long names (`technical_requirement`,
+    `integration_requirement`, `observability_requirement`) are accepted.
+    Equivalent to the
     per-type tools (`okto_pulse_link_task_to_rule`, `…_to_decision`, `…_to_tr`,
     `…_to_integration_requirement`, `…_to_observability_requirement`,
     `…_to_scenario`, `…_to_contract`, `okto_pulse_link_card_to_spec`) but
@@ -7214,9 +7290,10 @@ async def okto_pulse_link_task(
 
     Ideação MCP-token-optimization Story 5."""
     target_type = (target_type or "").strip().lower()
+    target_type = _LINK_TASK_TARGET_ALIASES.get(target_type, target_type)
     if target_type not in _LINK_TASK_TARGET_TYPES:
         return json.dumps({
-            "error": f"Unknown target_type '{target_type}'. Must be one of: {', '.join(_LINK_TASK_TARGET_TYPES)}"
+            "error": f"Unknown target_type '{target_type}'. Must be one of: {', '.join(_LINK_TASK_ACCEPTED_TARGET_TYPES)}"
         })
     # Dispatch to internal helpers (no @mcp.tool() decoration — see commit
     # removing 8 link_task_to_* shims in favor of this unified entry point).
@@ -8519,14 +8596,15 @@ async def okto_pulse_copy_qa_to_card(
         if not card:
             return json.dumps({"error": "Card not found"})
 
-        # Get answered Q&A
-        qa_items = [qa for qa in (spec.qa_items or []) if qa.answer]
+        # Choice/multi-choice answers store selected option ids while
+        # ``answer`` may stay NULL. Treat either shape as answered.
+        qa_items = [qa for qa in (spec.qa_items or []) if _qa_answer_text(qa)]
         if not qa_items:
             return json.dumps({"error": "No answered Q&A to copy"})
 
         lines = ["## Spec Q&A Context\n"]
         for qa in qa_items:
-            lines.append(f"**Q:** {qa.question}\n**A:** {qa.answer}\n")
+            lines.append(f"**Q:** {qa.question}\n**A:** {_qa_answer_text(qa)}\n")
 
         from okto_pulse.core.models.db import Comment
         comment = Comment(
@@ -9285,8 +9363,9 @@ async def okto_pulse_add_integration_requirement(
     """
     Add an Integration Requirement (IR) to a spec.
 
-    Use IR for APIs, queues, stored procedures, events, files, and data
-    contracts that need traceability beyond a single endpoint.
+    Use IR for APIs, queues, stored procedures, events, files, external
+    services, and data contracts that need traceability beyond a single
+    endpoint.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -9299,7 +9378,16 @@ async def okto_pulse_add_integration_requirement(
     if perm_err:
         return _perm_error(perm_err)
 
-    allowed_types = {"api", "queue", "stored_procedure", "data_contract", "event", "file", "other"}
+    allowed_types = {
+        "api",
+        "queue",
+        "stored_procedure",
+        "data_contract",
+        "event",
+        "file",
+        "external_service",
+        "other",
+    }
     if integration_type not in allowed_types:
         return json.dumps({"error": f"Invalid integration_type. Use one of: {sorted(allowed_types)}"})
 
@@ -10140,7 +10228,7 @@ async def okto_pulse_add_api_contract(
 ) -> str:
     """
     Add an API contract to a spec. API contracts define endpoints, request/response
-    shapes, and link to requirements and business rules."""
+    shapes, and link to FR/TR requirements and business rules."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10159,6 +10247,7 @@ async def okto_pulse_add_api_contract(
 
         contract_id = f"api_{_uuid.uuid4().hex[:8]}"
         frs = spec.functional_requirements or []
+        trs = spec.technical_requirements or []
         existing_rules = spec.business_rules or []
 
         # Parse JSON strings (or accept native dict/list directly)
@@ -10192,24 +10281,24 @@ async def okto_pulse_add_api_contract(
                 except json.JSONDecodeError as e:
                     return json.dumps({"error": f"Invalid response_errors_json: {e}"})
 
-        # Resolve linked_requirements to canonical fr_ids (write-path, STRICT,
-        # FAIL-CLOSED — mirrors add_test_scenario AC pattern). spec 9d66847f.
+        # Resolve linked_requirements to canonical FR/TR ids (write-path,
+        # STRICT, FAIL-CLOSED).
         req_list = None
         if linked_requirements:
-            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
-                parse_multi_value(linked_requirements), frs
+            _resolved_req_ids, _unresolved_reqs = _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
+                parse_multi_value(linked_requirements), frs, trs
             )
-            if _unresolved_frs:
-                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+            if _unresolved_reqs:
                 return json.dumps({
                     "error": (
-                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
-                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
-                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"Unresolved linked_requirements token(s): {_unresolved_reqs}. "
+                        f"Valid FR indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_structured_ids(frs)}. "
+                        f"Available tr_ids: {_available_structured_ids(trs)}. "
                         f"No API contract was appended."
                     )
                 })
-            req_list = _resolved_fr_ids or None
+            req_list = _resolved_req_ids or None
 
         # Resolve linked rules
         rules_list = None
@@ -10283,7 +10372,8 @@ async def okto_pulse_update_api_contract(
     notes: str = "",
 ) -> str:
     """
-    Update an existing API contract on a spec."""
+    Update an existing API contract on a spec. linked_requirements accepts
+    FR index/fr_id/text and structured TR id/text."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10353,24 +10443,25 @@ async def okto_pulse_update_api_contract(
             target["notes"] = notes.replace("\\n", "\n")
 
         frs = spec.functional_requirements or []
+        trs = spec.technical_requirements or []
         if linked_requirements == "CLEAR":
             target["linked_requirements"] = None
         elif linked_requirements:
-            # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
-            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
-                parse_multi_value(linked_requirements), frs
+            # Write-path: resolve to canonical FR/TR ids, fail-closed.
+            _resolved_req_ids, _unresolved_reqs = _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
+                parse_multi_value(linked_requirements), frs, trs
             )
-            if _unresolved_frs:
-                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+            if _unresolved_reqs:
                 return json.dumps({
                     "error": (
-                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
-                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
-                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"Unresolved linked_requirements token(s): {_unresolved_reqs}. "
+                        f"Valid FR indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_structured_ids(frs)}. "
+                        f"Available tr_ids: {_available_structured_ids(trs)}. "
                         f"No API contract was updated."
                     )
                 })
-            target["linked_requirements"] = _resolved_fr_ids or None
+            target["linked_requirements"] = _resolved_req_ids or None
 
         existing_rules = spec.business_rules or []
         if isinstance(linked_rules, str) and linked_rules == "CLEAR":
@@ -10615,6 +10706,7 @@ async def okto_pulse_list_api_contracts(
             ]
         existing_rules = {r.get("id"): r for r in (spec.business_rules or [])}
         frs = spec.functional_requirements or []
+        trs = spec.technical_requirements or []
 
         from okto_pulse.core.mcp.payload_compaction import emit_compaction_metric
         from okto_pulse.core.services.analytics_service import (
@@ -10638,27 +10730,44 @@ async def okto_pulse_list_api_contracts(
                     resolved_rules.append(rid)
             entry["resolved_rules"] = resolved_rules
 
-            # FR7 dedup: same as list_business_rules — emit canonical fr_id
+            # FR7 dedup: same as list_business_rules — emit canonical ids
             # under ``linked_requirements`` (IMPL-2: projection now emits fr_id,
             # not re-derived index; legacy FRs without id fall back to str(idx))
-            # and carry the human ``[FR-n] <text>`` only under
-            # ``resolved_requirements`` so the full FR text is not serialized twice.
+            # and carry the human ``[FR-n] <text>`` / ``[TR-id] <text>`` only
+            # under ``resolved_requirements`` so full requirement text is not
+            # serialized twice.
             linked_reqs = c.get("linked_requirements") or []
             idxs = sorted(resolve_linked_fr_indices(linked_reqs, frs))
+            tr_ids: list[str] = []
+            unresolved = []
+            for ref in linked_reqs:
+                if resolve_linked_fr_indices([ref], frs):
+                    continue
+                resolved_tr_ids, unresolved_trs = resolve_linked_requirements_to_ids([ref], trs)
+                if resolved_tr_ids:
+                    for tr_id in resolved_tr_ids:
+                        if tr_id not in tr_ids:
+                            tr_ids.append(tr_id)
+                else:
+                    unresolved.extend(unresolved_trs)
+            tr_text_by_id = {
+                _structured_ref_id(tr) or _structured_ref_text(tr): _structured_ref_text(tr)
+                for tr in trs
+            }
             entry["linked_requirements"] = [
                 _structured_ref_id(frs[i]) or str(i)
                 for i in idxs
                 if 0 <= i < len(frs)
-            ]
+            ] + tr_ids
             entry["resolved_requirements"] = [
                 f"[FR-{i}] {_structured_ref_text(frs[i])}"
                 for i in idxs
                 if 0 <= i < len(frs)
+            ] + [
+                f"[TR-{tr_id}] {tr_text_by_id.get(tr_id, '')}"
+                for tr_id in tr_ids
             ]
-            # Robustness: preserve legacy refs that don't resolve to any FR.
-            unresolved = [
-                ref for ref in linked_reqs if not resolve_linked_fr_indices([ref], frs)
-            ]
+            # Robustness: preserve legacy refs that don't resolve to any FR/TR.
             if unresolved:
                 entry["unresolved_requirements"] = unresolved
             deduped_count += len(entry["resolved_requirements"])
@@ -11625,7 +11734,7 @@ async def okto_pulse_ask_spec_choice_question(
     board_id: str,
     spec_id: str,
     question: str,
-    options: list[str] | str,
+    options: list[str] | str = "",
     question_type: str = "choice",
     allow_free_text: str = "false",
     options_json: str = "",

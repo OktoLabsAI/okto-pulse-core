@@ -26,12 +26,18 @@ from okto_pulse.core.mcp import server
 # Each tuple is (target_type, requires_spec_id)
 _TARGET_TYPES = [
     ("scenario", True),
+    ("test_scenario", True),
     ("rule", True),
+    ("business_rule", True),
     ("decision", True),
     ("tr", True),
+    ("technical_requirement", True),
     ("contract", True),
+    ("api_contract", True),
     ("ir", True),
+    ("integration_requirement", True),
     ("or", True),
+    ("observability_requirement", True),
     ("spec", False),
 ]
 

@@ -40,6 +40,11 @@ _STRUCTURED_FRS = [
     {"id": "fr_2222bbbb", "text": "Session expires after timeout", "status": "active"},
 ]
 
+_STRUCTURED_TRS = [
+    {"id": "tr_3333cccc", "text": "Login API must emit audit events", "linked_task_ids": []},
+    {"id": "tr_4444dddd", "text": "Session timeout must be configurable", "linked_task_ids": []},
+]
+
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
@@ -71,6 +76,7 @@ async def _seed(db_factory) -> tuple[str, str]:
                 status=SpecStatus.DRAFT,
                 created_by=USER_ID,
                 functional_requirements=[dict(f) for f in _STRUCTURED_FRS],
+                technical_requirements=[dict(t) for t in _STRUCTURED_TRS],
                 acceptance_criteria=[],
                 test_scenarios=[],
                 business_rules=[],
@@ -222,3 +228,56 @@ async def test_add_api_contract_index_structured_fr(db_factory):
     # The tolerant read resolver maps fr_ids back to indices.
     assert linked == ["fr_2222bbbb"], linked
     assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {1}
+
+
+async def test_add_api_contract_tr_id_structured_requirement(db_factory):
+    board_id, spec_id = await _seed(db_factory)
+    payload = await _call(
+        "okto_pulse_add_api_contract",
+        board_id,
+        spec_id=spec_id,
+        method="POST",
+        path="/api/login",
+        linked_requirements="tr_3333cccc",
+    )
+    assert payload.get("success") is True, payload
+    spec = await _read_spec(spec_id)
+    linked = spec.api_contracts[0]["linked_requirements"]
+    assert linked == ["tr_3333cccc"], linked
+
+    listed = await _call(
+        "okto_pulse_list_api_contracts",
+        board_id,
+        spec_id=spec_id,
+    )
+    contract = listed["api_contracts"][0]
+    assert contract["linked_requirements"] == ["tr_3333cccc"], contract
+    assert "unresolved_requirements" not in contract
+    assert contract["resolved_requirements"] == [
+        "[TR-tr_3333cccc] Login API must emit audit events"
+    ]
+
+
+async def test_update_api_contract_tr_text_structured_requirement(db_factory):
+    board_id, spec_id = await _seed(db_factory)
+    created = await _call(
+        "okto_pulse_add_api_contract",
+        board_id,
+        spec_id=spec_id,
+        method="POST",
+        path="/api/login",
+    )
+    assert created.get("success") is True, created
+    contract_id = created["api_contract"]["id"]
+
+    payload = await _call(
+        "okto_pulse_update_api_contract",
+        board_id,
+        spec_id=spec_id,
+        contract_id=contract_id,
+        linked_requirements="Session timeout must be configurable",
+    )
+    assert payload.get("success") is True, payload
+    spec = await _read_spec(spec_id)
+    linked = spec.api_contracts[0]["linked_requirements"]
+    assert linked == ["tr_4444dddd"], linked

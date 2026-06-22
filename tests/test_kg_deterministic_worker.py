@@ -904,6 +904,39 @@ def test_impl3_api_contract_implements_resolves_via_fr_id():
     )
 
 
+def test_api_contract_implements_resolves_via_tr_id():
+    """api_contract.linked_requirements may point at a structured TR id; the
+    deterministic worker must emit an implements edge to the TR Constraint and
+    not create a missing-link candidate."""
+    spec = {
+        "id": "tr-link-spec-0000-1111",
+        "title": "TR linked API contract",
+        "functional_requirements": [
+            {"id": "fr-login", "text": "User can log in"},
+        ],
+        "technical_requirements": [
+            {"id": "tr-audit-events", "text": "Login API emits audit events"},
+        ],
+        "api_contracts": [
+            {
+                "id": "api-login",
+                "method": "POST",
+                "path": "/login",
+                "linked_requirements": ["tr-audit-events"],
+            },
+        ],
+    }
+
+    result = DeterministicWorker().process_spec(spec)
+    impl_edges = [e for e in result.edges if e.edge_type == "implements"]
+    assert len(impl_edges) == 1
+    assert impl_edges[0].to_candidate_id.endswith("_tr_0")
+    assert [
+        c for c in result.missing_link_candidates
+        if c.edge_type == "implements"
+    ] == []
+
+
 def test_impl3_decision_derives_from_resolves_via_fr_id():
     """(b) decision.linked_requirements = [fr_id] → deterministic
     `derives_from` edge with confidence 1.0 (explicit_link), targeting only

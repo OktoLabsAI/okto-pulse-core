@@ -754,13 +754,39 @@ def _filter_mockups(
 
 def _compile_qa_context(qa_items: list) -> str | None:
     """Compile answered Q&A items into a context section."""
-    answered = [qa for qa in (qa_items or []) if getattr(qa, "answer", None) or (isinstance(qa, dict) and qa.get("answer"))]
+    def _selected_labels(qa) -> list[str]:
+        selected = getattr(qa, "selected", None)
+        choices = getattr(qa, "choices", None)
+        if isinstance(qa, dict):
+            selected = qa.get("selected")
+            choices = qa.get("choices")
+        selected_ids = [str(item) for item in (selected or [])]
+        labels_by_id = {
+            str(choice.get("id")): str(choice.get("label"))
+            for choice in (choices or [])
+            if isinstance(choice, dict) and choice.get("id") is not None
+        }
+        return [labels_by_id.get(item, item) for item in selected_ids]
+
+    def _answer_text(qa) -> str | None:
+        answer = getattr(qa, "answer", None) or (qa.get("answer") if isinstance(qa, dict) else None)
+        if answer:
+            return str(answer)
+        labels = _selected_labels(qa)
+        if labels:
+            return ", ".join(labels)
+        return None
+
+    answered = [qa for qa in (qa_items or []) if _answer_text(qa)]
     if not answered:
         return None
     lines = []
     for qa in answered:
-        q = getattr(qa, "question", None) or qa.get("question", "")
-        a = getattr(qa, "answer", None) or qa.get("answer", "")
+        q = getattr(qa, "question", None)
+        if isinstance(qa, dict):
+            q = q or qa.get("question", "")
+        q = q or ""
+        a = _answer_text(qa) or ""
         lines.append(f"**Q:** {q}\n**A:** {a}")
     return "## Q&A Decisions\n" + "\n\n".join(lines)
 
@@ -3897,6 +3923,8 @@ async def _validate_spec_linked_refs(
     valid_ac_texts = {text for text in final_acs if text}
     valid_fr_ids = {child_id for item in final_frs_raw if (child_id := _child_id(item))}
     valid_ac_ids = {child_id for item in final_acs_raw if (child_id := _child_id(item))}
+    valid_tr_texts = {_child_text(item) for item in final_trs_structured if _child_text(item)}
+    valid_tr_ids = {child_id for item in final_trs_structured if (child_id := _child_id(item))}
     valid_br_ids = {br.get("id") for br in final_brs if br.get("id")}
     valid_contract_ids = {ct.get("id") for ct in final_contracts if ct.get("id")}
     valid_ir_ids = {ir.get("id") for ir in final_irs if ir.get("id")}
@@ -3911,8 +3939,9 @@ async def _validate_spec_linked_refs(
         valid_ids: set,
         dim: str,
         owner_label: str,
+        target_label: str | None = None,
     ):
-        target = _DIM_TARGET.get(dim, dim.upper()[:2])
+        target = target_label or _DIM_TARGET.get(dim, dim.upper()[:2])
         for ref in refs or []:
             ref_str = str(ref)
             if ref_str in valid_indices or ref_str in valid_texts or ref_str in valid_ids:
@@ -3942,10 +3971,11 @@ async def _validate_spec_linked_refs(
         _check_index_text_or_id(
             ct.get("linked_requirements") or [],
             valid_fr_indices,
-            valid_fr_texts,
-            valid_fr_ids,
+            valid_fr_texts | valid_tr_texts,
+            valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
+            "FR/TR",
         )
         for ref in ct.get("linked_rules") or []:
             if str(ref) not in valid_br_ids:
@@ -4075,7 +4105,7 @@ async def _validate_spec_linked_refs(
         more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
         raise ValueError(
             f"Cannot update spec: {len(errors)} orphan link reference(s) found. {joined}{more}. "
-            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC, the BR.id for linked_rules, "
+            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC, TR id/text for API contracts, the BR.id for linked_rules, "
             f"the api_contract.id / integration_requirement.id for cross-resource links, "
             f"and an existing Card.id for linked_task_ids."
         )

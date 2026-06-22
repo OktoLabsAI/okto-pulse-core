@@ -123,13 +123,17 @@ per-type tools, each annotated with the `target_type` short code it maps to:
 (target_type="scenario"), `…_to_contract` (target_type="contract"), and
 `okto_pulse_link_card_to_spec` (target_type="spec"). It exposes a single entry
 point so agents don't have to pre-load eight near-identical tool schemas. The
-`target_type` Args line below is the single source of truth for accepted codes.
+`target_type` Args line below is the single source of truth for accepted codes
+and long-name aliases.
 
 Ideação MCP-token-optimization Story 5.
 
 Args:
     board_id: Board ID.
-    target_type: One of: rule, decision, tr, ir, or, scenario, contract, spec.
+    target_type: One of: rule, business_rule, decision, tr,
+        technical_requirement, ir, integration_requirement, or,
+        observability_requirement, scenario, test_scenario, contract,
+        api_contract, spec.
         Keywords link rule decision tr ir or scenario contract spec.
     target_id: ID of the target artifact (rule_id, decision_id, tr_id,
         ir_id/requirement_id, or_id/requirement_id, scenario_id,

@@ -621,6 +621,7 @@ IntegrationRequirementType = Literal[
     "data_contract",
     "event",
     "file",
+    "external_service",
     "other",
 ]
 

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from okto_pulse.core.api.specs import _spec_update_permission_requirements
 from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecUpdate
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
@@ -195,6 +197,51 @@ async def test_ir_or_link_reference_validation(db_factory):
                     observability_requirements=bad_or,
                 ),
             )
+
+
+@pytest.mark.asyncio
+async def test_add_integration_requirement_accepts_external_service_mcp(db_factory):
+    board_id = _id("board")
+    actor_id = _id("user")
+    spec_id = _id("spec")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="External service IR Board", owner_id=actor_id))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec",
+                status=SpecStatus.DRAFT,
+                created_by=actor_id,
+                functional_requirements=["FR"],
+                integration_requirements=[],
+                observability_requirements=[],
+            )
+        )
+        await db.commit()
+
+    ctx = type(
+        "Ctx",
+        (),
+        {"agent_id": actor_id, "agent_name": actor_id, "permissions": None},
+    )()
+    mcp_server.register_session_factory(db_factory)
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
+        raw = await mcp_server.okto_pulse_add_integration_requirement.fn(
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Third-party CRM",
+            integration_type="external_service",
+            provider="CRM",
+            consumer="Pulse",
+        )
+
+    import json
+
+    payload = json.loads(raw)
+    assert payload.get("success") is True, payload
+    assert payload["integration_requirement"]["integration_type"] == "external_service"
 
 
 def test_ir_or_coverage_summary_and_kg_mapping():

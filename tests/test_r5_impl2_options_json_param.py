@@ -45,6 +45,7 @@ AC cross-reference
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -401,6 +402,17 @@ def test_handler_declares_options_json_param(server_source: str, tool_name: str)
     body = _slice_handler(server_source, tool_name)
     assert "options_json" in body, (
         f"{tool_name} must declare 'options_json' parameter (FR2/TR2)"
+    )
+
+
+@pytest.mark.parametrize("tool_name", CHOICE_HANDLERS)
+def test_options_param_is_optional_when_options_json_is_used(server_source: str, tool_name: str):
+    """Regression: strict MCP clients must be able to omit legacy ``options``
+    when they provide ``options_json``."""
+    body = _slice_handler(server_source, tool_name)
+    assert re.search(r"options:\s*list\[str\]\s*\|\s*str\s*=\s*\"\"", body), (
+        f"{tool_name} must default options to an empty string so options_json-only "
+        "calls are valid in the MCP schema"
     )
 
 
