@@ -28,7 +28,11 @@ from okto_pulse.core.kg.kg_service import (
     get_kg_service,
     reset_kg_service_for_tests,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from okto_pulse.core.kg.schema import (
+    SCHEMA_VERSION,
+    bootstrap_board_graph,
+    open_board_connection,
+)
 from okto_pulse.core.kg.tool_schemas import (
     AlternativesResponse,
     ConstraintExplanationResponse,
@@ -260,4 +264,4 @@ class TestContextToolsErrors:
     def test_schema_drift_detection(self):
         svc = get_kg_service()
         ver = svc.get_schema_version(BOARD)
-        assert ver == "0.3.5"
+        assert ver == SCHEMA_VERSION

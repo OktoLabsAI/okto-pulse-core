@@ -71,6 +71,12 @@ def test_create_card_source_enforces_bug_required_fields():
     assert "Bug cards require non-empty" in block
 
 
+def test_create_card_source_exposes_test_scenario_cap():
+    block = _handler_block("okto_pulse_create_card")
+    assert "max_scenarios_per_card" in block
+    assert "max_scenarios_per_card_exceeded" in block
+
+
 def test_update_card_source_validates_severity():
     block = _handler_block("okto_pulse_update_card")
     assert "BugSeverity(" in block
@@ -178,6 +184,54 @@ async def test_create_card_rejects_bug_missing_required_fields(_seed_board_and_s
     assert "Bug cards require" in msg
     for field in ("origin_task_id", "severity", "expected_behavior", "observed_behavior"):
         assert field in msg
+
+
+@pytest.mark.asyncio
+async def test_create_test_card_rejects_over_board_scenario_cap():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    db_factory = get_session_factory()
+    board_id = f"card-type-val-cap-{uuid.uuid4().hex[:8]}"
+    spec_id = str(uuid.uuid4())
+    scenario_ids = ["ts_cap_1", "ts_cap_2", "ts_cap_3"]
+    async with db_factory() as db:
+        db.add(Board(
+            id=board_id,
+            name="Scenario Cap Board",
+            owner_id=USER_ID,
+            settings={"max_scenarios_per_card": 2},
+        ))
+        db.add(Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Spec for scenario cap",
+            status=SpecStatus.APPROVED,
+            created_by=USER_ID,
+            functional_requirements=["FR1"],
+            acceptance_criteria=["AC1"],
+            test_scenarios=[
+                {"id": sid, "title": sid, "scenario_type": "integration", "status": "draft"}
+                for sid in scenario_ids
+            ],
+            business_rules=[],
+            api_contracts=[],
+        ))
+        await db.commit()
+
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())), \
+         patch.object(mcp_server, "check_permission", return_value=None):
+        payload = await _call_create_card(
+            board_id=board_id,
+            title="should fail scenario cap",
+            spec_id=spec_id,
+            card_type="test",
+            test_scenario_ids=scenario_ids,
+        )
+
+    assert payload["error"] == "max_scenarios_per_card_exceeded"
+    assert payload["provided_count"] == 3
+    assert payload["max_scenarios_per_card"] == 2
+    assert "separate test cards" in payload["remediation"]
 
 
 @pytest.mark.asyncio

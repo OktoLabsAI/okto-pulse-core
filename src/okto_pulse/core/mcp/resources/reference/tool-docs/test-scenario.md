@@ -18,7 +18,13 @@ Args:
     given: Precondition (e.g. "User has a valid JWT token")
     when: Action (e.g. "GET /api/v1/boards with Bearer token")
     then: Expected result (e.g. "Returns 200 with board list")
-    scenario_type: unit | integration | e2e | manual (default: integration)
+    scenario_type: unit | integration | e2e | manual | negative (default: integration).
+        Use ``negative`` for expected denial, validation failure, error-path, or
+        abuse-case behavior. STRICT contract: an unsupported value (e.g.
+        ``regression``) is rejected
+        with a structured ``invalid_scenario_type`` error naming the allowed
+        values and NO scenario is appended — it is NEVER silently normalized to
+        ``integration``.
     linked_criteria: Multi-value (pipe ``"0|2"`` or JSON-array ``'["0","2"]'``)
         references to the acceptance criteria this scenario validates. Each
         token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
@@ -61,7 +67,7 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     status: Filter by scenario status (optional) — one of: draft, ready, automated, passed, failed
-    scenario_type: Filter by type (optional) — one of: unit, integration, e2e, manual
+    scenario_type: Filter by type (optional) — one of: unit, integration, e2e, manual, negative
     linked: Filter by task linkage (optional) — "linked" = only scenarios with tasks, "unlinked" = only scenarios without tasks
     offset: Skip first N scenarios (default 0)
     limit: Max scenarios to return (default 50, max 200)
@@ -90,12 +96,16 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
         spec_id: Spec ID.
         scenario_id: Test scenario ID (e.g. "ts_abc123").
         title/given/when/then/scenario_type/notes: New value, or "" to leave as-is.
+            scenario_type follows the same STRICT contract as add — valid values
+            are unit, integration, e2e, manual, negative. An
+            unsupported value is rejected (``invalid_scenario_type``) before any
+            mutation, never normalized.
         linked_criteria: Pipe-separated AC index/id/text (resolved to AC ids).
         clear: Pipe-separated field names to empty (notes, linked_criteria).
 
     Returns:
         JSON {success, scenario_id, updated_fields, evidence_invalidated} or
-        {error: spec_locked|scenario_not_found|unresolved_criteria|invalid_update}.
+        {error: spec_locked|scenario_not_found|unresolved_criteria|invalid_scenario_type|invalid_update}.
 
 ## `okto_pulse_update_test_scenario_status`
 
@@ -108,8 +118,11 @@ When the board's `skip_test_evidence_global` setting is False (default),
 setting status to one of `automated`, `passed`, or `failed` REQUIRES
 structured evidence:
   - `automated`: evidence.test_file_path AND evidence.test_function
-  - `passed`/`failed`: evidence.last_run_at AND
-    (evidence.output_snippet OR evidence.test_run_id)
+  - `passed`/`failed`: either an explicit `evidence_class` with the fields
+    listed below, or unclassed run-log evidence with evidence.last_run_at AND
+    (evidence.output_snippet OR evidence.test_run_id) AND
+    evidence.expected_output_snapshot AND
+    evidence.non_replayable_justification
   - `draft`/`ready`: evidence opcional (intent declarado)
 
 When `skip_test_evidence_global=True`, the gate is bypassed — every
@@ -120,6 +133,41 @@ Evidence is persisted inline within the scenario dict (no DB migration).
 Audit log `test_scenario.status_changed` is emitted on every successful
 update with `evidence_provided`, `evidence_gate_skipped`, and
 `changed_by_agent_id`.
+
+**Re-executable evidence contract (spec 9e0bf979):**
+
+Evidence may declare an explicit `evidence_class` so a validator can rerun or
+inspect the artifact instead of trusting a raw log. The six classes and their
+minimum fields (on a gated status) are:
+
+  - `automated_test_pointer`: `test_file_path` + `test_function`.
+  - `replay_command`: `replay_command` + `expected_output_snapshot`.
+  - `mcp_replay_manifest`: `mcp_replay_manifest` + `expected_output_snapshot`.
+  - `manual_checklist`: `manual_checklist_ref` + `expected_output_snapshot`.
+  - `run_log`: `last_run_at` + (`output_snippet` OR `test_run_id`) +
+    `non_replayable_justification` + `expected_output_snapshot`.
+  - `non_replayable_justified`: `non_replayable_justification` +
+    `expected_output_snapshot`.
+
+An `expected_output_snapshot` (expected output / success criteria) is required
+for every class except the direct `automated_test_pointer`. An invalid
+`evidence_class` value fails closed (it is never normalized).
+
+**Cheap/existing replay (when run logs are NOT acceptable):** a deterministic
+replay is treated as cheap or already-existing — so a run log is the wrong
+class — when any of these is present: an existing test (`test_file_path`), an
+existing command/script (`replay_command`), or a deterministic MCP replay
+manifest writable under bounded setup (`mcp_replay_manifest`). A `run_log` /
+`non_replayable_justified` payload is rejected when `replay_should_exist=true`
+OR a cheap/existing signal is present — declare a replayable class instead.
+
+**Write vs read:** on a NEW gated write without `evidence_class`, only the
+legacy direct test pointer (`test_file_path` + `test_function`) is grandfathered;
+a run-log-like payload must carry `expected_output_snapshot` +
+`non_replayable_justification` (or declare `evidence_class`). Already-persisted
+legacy evidence stays readable and can be upgraded with `evidence_class` without
+losing prior fields. The system enforces only the minimum fields; whether a
+`non_replayable_justification` is credible remains a validator judgment.
 
 Validated/done specs keep their semantic content lock. The only post-lock
 status update allowed here is operational evidence for a scenario that is
@@ -132,8 +180,11 @@ Args:
     spec_id: Spec ID
     scenario_id: Test scenario ID (e.g. "ts_abc123")
     status: New status — one of: draft, ready, automated, passed, failed
-    evidence: Optional JSON string with keys test_file_path, test_function,
-        last_run_at, test_run_id, output_snippet. Empty string = no evidence.
+    evidence: Optional JSON string. Legacy keys: test_file_path, test_function,
+        last_run_at, test_run_id, output_snippet. Re-executable contract keys
+        (spec 9e0bf979): evidence_class, replay_command, mcp_replay_manifest,
+        manual_checklist_ref, expected_output_snapshot, replay_should_exist,
+        non_replayable_justification. Empty string = no evidence.
 
 Returns:
     JSON. On success: {success, scenario_id, old_status, new_status,

@@ -1,6 +1,6 @@
 [project]
 name = "okto-pulse-core"
-version = "0.2.4"
+version = "0.2.5"
 description = "Okto Pulse Core — spec-driven project management engine with MCP support for AI agents"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
@@ -21,7 +21,11 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "fastapi>=0.109.0,<1.0.0",
+    # 0.137.0 regrediu include_router: o guard de path vazio passou a rodar
+    # contra a sub-rota sem prefixo, quebrando rotas de coleção @router.post("")
+    # sob prefixo (ex.: create_board) com "Prefix and path cannot be both empty".
+    # Corrigido na 0.137.1. Exclui apenas a release ruim; demais versões OK.
+    "fastapi>=0.109.0,!=0.137.0,<1.0.0",
     "uvicorn[standard]>=0.27.0,<1.0.0",
     "wsproto>=1.2.0,<2.0.0",
     "pydantic>=2.5.0,<2.14",

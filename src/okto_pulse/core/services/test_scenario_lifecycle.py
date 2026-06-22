@@ -52,6 +52,87 @@ SEMANTIC_FIELDS: tuple[str, ...] = (
 #: Editing only these fields preserves status and evidence.
 COSMETIC_FIELDS: tuple[str, ...] = ("title", "notes")
 
+# --------------------------------------------------------------------------
+# Scenario-type vocabulary (spec ac16b3c9 — fail-closed scenario_type)
+# --------------------------------------------------------------------------
+
+#: The one authoritative scenario_type taxonomy for this initiative. Every write
+#: surface (MCP add/update tools, the REST/spec update path and the service
+#: create/update paths) validates against THIS tuple — there is no second
+#: allowlist. Adding a new type is a deliberate taxonomy change, never a silent
+#: fallback.
+VALID_SCENARIO_TYPES: tuple[str, ...] = (
+    "unit",
+    "integration",
+    "e2e",
+    "manual",
+    "negative",
+)
+
+#: The default applied when a caller OMITS scenario_type entirely. This is a
+#: true default, NOT a normalization of an invalid value — an invalid value
+#: fails closed (see :func:`validate_scenario_type`).
+DEFAULT_SCENARIO_TYPE: str = "integration"
+
+
+class InvalidScenarioTypeError(ValueError):
+    """Raised when a write supplies a scenario_type outside
+    :data:`VALID_SCENARIO_TYPES`.
+
+    Fail-closed: the value is NEVER normalized to another valid type, because
+    silent normalization hides caller intent. The message names the allowed
+    values so agents and UI clients can correct the request.
+    """
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+        self.allowed = VALID_SCENARIO_TYPES
+        super().__init__(
+            f"Invalid scenario_type {value!r}. "
+            f"Allowed values: {', '.join(VALID_SCENARIO_TYPES)}."
+        )
+
+
+def is_valid_scenario_type(value: object) -> bool:
+    """Whether ``value`` is one of the supported scenario types. Read-tolerant —
+    used by list/report paths that must keep rendering historical data."""
+    return isinstance(value, str) and value in VALID_SCENARIO_TYPES
+
+
+def validate_scenario_type(value: object) -> str:
+    """Fail-closed validator: return ``value`` unchanged when it is a supported
+    scenario_type, else raise :class:`InvalidScenarioTypeError`. Never normalizes.
+    """
+    if not is_valid_scenario_type(value):
+        raise InvalidScenarioTypeError(value)
+    return value  # type: ignore[return-value]
+
+
+def validate_scenario_types_for_write(
+    new_scenarios: object, old_scenarios: object
+) -> None:
+    """Whole-list write guard for the spec create/update persistence paths.
+
+    Validates the scenario_type of every scenario that is NEW or whose
+    scenario_type CHANGED relative to ``old_scenarios`` (matched by ``id``).
+    Scenarios whose scenario_type is unchanged are GRANDFATHERED so historical
+    or legacy values keep reading, listing and re-serializing without breaking
+    (spec ac16b3c9 FR5/AC5; the rule only forbids accepting an invalid value on
+    a *new* write). Raises :class:`InvalidScenarioTypeError` on the first
+    new/changed invalid value BEFORE any mutation; never normalizes.
+    """
+    old_by_id: dict[Any, Any] = {
+        s.get("id"): s for s in (old_scenarios or []) if isinstance(s, dict)
+    }
+    for s in new_scenarios or []:
+        if not isinstance(s, dict) or "scenario_type" not in s:
+            continue
+        new_type = s.get("scenario_type")
+        prev = old_by_id.get(s.get("id"))
+        if prev is None or prev.get("scenario_type") != new_type:
+            validate_scenario_type(new_type)
+
+
 #: Required evidence keys per gated status. Each rule group is AND; a group with
 #: more than one key is one-of (OR). Moved verbatim from mcp/server.py.
 EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
@@ -70,6 +151,144 @@ EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
         ("output_snippet", "test_run_id"),  # one-of
     ),
 }
+
+# --------------------------------------------------------------------------
+# Re-executable evidence contract (spec 9e0bf979)
+# --------------------------------------------------------------------------
+
+#: The authoritative evidence_class taxonomy (fr_75e54f55). One allowlist; an
+#: invalid value fails closed (never normalized), mirroring scenario_type.
+EVIDENCE_CLASSES: tuple[str, ...] = (
+    "automated_test_pointer",
+    "replay_command",
+    "mcp_replay_manifest",
+    "manual_checklist",
+    "run_log",
+    "non_replayable_justified",
+)
+
+#: Minimum fields required per evidence_class on a gated status (fr_52f084b4).
+#: Same AND-of-(one-of) shape as EVIDENCE_REQUIRED_KEYS. An expected_output_snapshot
+#: (expected output / success criteria) is required for EVERY class except the
+#: direct automated_test_pointer; run_log / non_replayable_justified additionally
+#: require non_replayable_justification (fr_0937529f).
+EVIDENCE_CLASS_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "automated_test_pointer": (
+        ("test_file_path",),
+        ("test_function",),
+    ),
+    "replay_command": (
+        ("replay_command",),
+        ("expected_output_snapshot",),
+    ),
+    "mcp_replay_manifest": (
+        ("mcp_replay_manifest",),
+        ("expected_output_snapshot",),
+    ),
+    "manual_checklist": (
+        ("manual_checklist_ref",),
+        ("expected_output_snapshot",),
+    ),
+    "run_log": (
+        ("last_run_at",),
+        ("output_snippet", "test_run_id"),  # one-of: the actual log
+        ("non_replayable_justification",),
+        ("expected_output_snapshot",),
+    ),
+    "non_replayable_justified": (
+        ("non_replayable_justification",),
+        ("expected_output_snapshot",),
+    ),
+}
+
+
+class InvalidEvidenceClassError(ValueError):
+    """Raised when evidence supplies an evidence_class outside
+    :data:`EVIDENCE_CLASSES`. Fail-closed: the value is NEVER normalized
+    (spec 9e0bf979), mirroring :class:`InvalidScenarioTypeError`."""
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+        self.allowed = EVIDENCE_CLASSES
+        super().__init__(
+            f"Invalid evidence_class {value!r}. "
+            f"Allowed values: {', '.join(EVIDENCE_CLASSES)}."
+        )
+
+
+def is_valid_evidence_class(value: object) -> bool:
+    """Whether ``value`` is a supported evidence_class. Read-tolerant."""
+    return isinstance(value, str) and value in EVIDENCE_CLASSES
+
+
+def validate_evidence_class(value: object) -> str:
+    """Fail-closed validator: return ``value`` unchanged when supported, else
+    raise :class:`InvalidEvidenceClassError`. Never normalizes."""
+    if not is_valid_evidence_class(value):
+        raise InvalidEvidenceClassError(value)
+    return value  # type: ignore[return-value]
+
+
+#: Fields whose presence proves a deterministic replay already exists or is
+#: cheap to produce (tr_1fd44294): an existing test (``test_file_path``), an
+#: existing command/script (``replay_command``) or a deterministic MCP replay
+#: manifest writable under bounded setup (``mcp_replay_manifest``). When one is
+#: present, a run-log-only payload is NOT acceptable because the replayable
+#: artifact is already at hand.
+_CHEAP_OR_EXISTING_REPLAY_FIELDS: tuple[str, ...] = (
+    "test_file_path",
+    "replay_command",
+    "mcp_replay_manifest",
+)
+
+
+def replay_is_cheap_or_existing(evidence: dict | None) -> bool:
+    """Whether a deterministic test / command / replay manifest already exists
+    or can be produced cheaply for this evidence (tr_1fd44294)."""
+    if not evidence:
+        return False
+    return any(evidence.get(k) for k in _CHEAP_OR_EXISTING_REPLAY_FIELDS)
+
+
+#: The non-replayable evidence classes — acceptable ONLY when a deterministic
+#: replay genuinely does not exist and is not cheap to produce (fr_958f0c9c).
+_RUN_LOG_CLASSES: frozenset[str] = frozenset({"run_log", "non_replayable_justified"})
+
+
+def replayable_evidence_required(evidence: dict | None) -> bool:
+    """True when a replayable artifact must be provided instead of a run log:
+    the caller declared ``replay_should_exist=True`` OR a cheap/existing replay
+    signal is present (fr_958f0c9c, br_078725cc, tr_1fd44294)."""
+    if not evidence:
+        return False
+    return evidence.get("replay_should_exist") is True or replay_is_cheap_or_existing(
+        evidence
+    )
+
+
+def infer_evidence_class(evidence: dict | None) -> str | None:
+    """Best-effort classification of evidence for DISPLAY / upgrade ONLY
+    (ac_8212cdbb). Never used to retroactively reject already-persisted legacy
+    evidence — that path stays on the lenient per-status rules. Returns the
+    explicit class when set, else infers from the present fields, else None."""
+    if not evidence:
+        return None
+    explicit = evidence.get("evidence_class")
+    if explicit:
+        return str(explicit)
+    if evidence.get("test_file_path") and evidence.get("test_function"):
+        return "automated_test_pointer"
+    if evidence.get("replay_command"):
+        return "replay_command"
+    if evidence.get("mcp_replay_manifest"):
+        return "mcp_replay_manifest"
+    if evidence.get("manual_checklist_ref"):
+        return "manual_checklist"
+    if evidence.get("last_run_at") and (
+        evidence.get("output_snippet") or evidence.get("test_run_id")
+    ):
+        return "run_log"
+    return None
 
 
 class StatusNotMutableError(ValueError):
@@ -93,37 +312,121 @@ class StatusNotMutableError(ValueError):
         )
 
 
-def validate_test_scenario_evidence(
-    status: str, evidence: dict | None
+def _apply_evidence_rules(
+    rules: tuple[tuple[str, ...], ...], evidence: dict | None
 ) -> tuple[bool, list[str]]:
-    """Return ``(ok, missing_keys)``. An empty ``missing_keys`` means valid.
-
-    For each rule group, ALL keys in the group must be present (AND logic). When
-    a group has multiple keys (one-of), at least one must be present.
-    """
-    rules = EVIDENCE_REQUIRED_KEYS.get(status)
+    """Apply an AND-of-(one-of) rule set to an evidence dict → ``(ok, missing)``.
+    A single-key group is required; a multi-key group is satisfied by any one
+    key. Empty ``rules`` is always valid."""
     if not rules:
         return True, []
     if not evidence:
-        # Flatten all required keys for the error message.
-        flat: list[str] = []
-        for group in rules:
-            if len(group) == 1:
-                flat.extend(group)
-            else:
-                flat.append(" or ".join(group))
+        flat: list[str] = [
+            group[0] if len(group) == 1 else " or ".join(group) for group in rules
+        ]
         return False, flat
     missing: list[str] = []
     for group in rules:
         if len(group) == 1:
-            key = group[0]
-            if not evidence.get(key):
-                missing.append(key)
-        else:
-            # one-of group — at least one key must be present
-            if not any(evidence.get(k) for k in group):
-                missing.append(" or ".join(group))
+            if not evidence.get(group[0]):
+                missing.append(group[0])
+        elif not any(evidence.get(k) for k in group):
+            missing.append(" or ".join(group))
     return (len(missing) == 0, missing)
+
+
+#: Hint appended when an unclassed gated write is rejected so the caller knows
+#: the supported escape hatch (declare a replayable class) instead of guessing.
+_DECLARE_CLASS_HINT = (
+    "or set evidence_class to replay_command/mcp_replay_manifest/manual_checklist/"
+    "run_log/non_replayable_justified with its required fields"
+)
+
+
+def _validate_unclassed_gated_write(
+    status: str, evidence: dict | None
+) -> tuple[bool, list[str]]:
+    """Write-side gate for a NEW gated write that omits evidence_class
+    (spec 9e0bf979).
+
+    Only the legacy direct automated-test-pointer shape (``test_file_path`` +
+    ``test_function``) is grandfathered without an explicit class. Any other
+    shape — notably run-log-like (``last_run_at`` + ``output_snippet``/
+    ``test_run_id``) — must carry replayable-quality fields
+    (``expected_output_snapshot`` + ``non_replayable_justification``),
+    equivalent to declaring ``run_log``/``non_replayable_justified``, so a weak
+    run-log payload can no longer pass a new validation silently (fr_0937529f,
+    br_078725cc). Already-persisted legacy evidence is unaffected: this runs
+    only when ``for_write=True``."""
+    ev = evidence or {}
+    if ev.get("test_file_path") and ev.get("test_function"):
+        return True, []  # legacy automated_test_pointer flow
+    if status == "automated":
+        # automated has no run-log substitute — it needs the test pointer.
+        return _apply_evidence_rules(EVIDENCE_REQUIRED_KEYS["automated"], ev)
+    # passed/failed without a pointer: must be replayable-grade run-log evidence.
+    ok, missing = _apply_evidence_rules(
+        (
+            ("last_run_at",),
+            ("output_snippet", "test_run_id"),
+            ("expected_output_snapshot",),
+            ("non_replayable_justification",),
+        ),
+        ev,
+    )
+    if not ok:
+        missing = [*missing, _DECLARE_CLASS_HINT]
+    return ok, missing
+
+
+def validate_test_scenario_evidence(
+    status: str, evidence: dict | None, *, for_write: bool = False
+) -> tuple[bool, list[str]]:
+    """Return ``(ok, missing_keys)``; empty ``missing_keys`` means valid.
+
+    Composition (spec 9e0bf979):
+
+    * an EXPLICIT, valid ``evidence_class`` is validated against that class's
+      minimum fields — the strict re-executable contract — in BOTH read and
+      write contexts;
+    * without an explicit class, ``for_write=True`` applies the write-side gate
+      (:func:`_validate_unclassed_gated_write`: only a direct test pointer is
+      grandfathered, run-log-like must be replayable-grade), while the default
+      read context keeps the legacy per-status rules so previously persisted
+      evidence stays valid and readable (ac_8212cdbb).
+
+    An invalid ``evidence_class`` value always fails closed (never normalized).
+    Each rule group is AND; a multi-key group is one-of (OR).
+    """
+    if status not in GATED_STATUSES:
+        return True, []
+
+    explicit_class: str | None = None
+    if evidence:
+        raw_class = evidence.get("evidence_class")
+        if raw_class not in (None, ""):
+            if not is_valid_evidence_class(raw_class):
+                return False, [
+                    f"evidence_class must be one of {', '.join(EVIDENCE_CLASSES)}"
+                ]
+            explicit_class = str(raw_class)
+
+    if explicit_class is not None:
+        if explicit_class in _RUN_LOG_CLASSES and replayable_evidence_required(evidence):
+            # fr_958f0c9c / br_078725cc: a run-log / non-replayable class is NOT
+            # acceptable when a deterministic replay should exist or is cheap/
+            # existing — demand a replayable class rather than a weak log.
+            return False, [
+                "replayable_evidence_required: replay is cheap/existing or "
+                "replay_should_exist=true — use evidence_class "
+                "automated_test_pointer/replay_command/mcp_replay_manifest/manual_checklist"
+            ]
+        return _apply_evidence_rules(
+            EVIDENCE_CLASS_REQUIRED_KEYS[explicit_class], evidence
+        )
+    if for_write:
+        return _validate_unclassed_gated_write(status, evidence)
+    return _apply_evidence_rules(EVIDENCE_REQUIRED_KEYS.get(status) or (), evidence)
 
 
 def scenario_has_required_evidence(scenario: dict[str, Any]) -> bool:

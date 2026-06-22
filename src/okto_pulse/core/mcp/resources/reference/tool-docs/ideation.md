@@ -216,6 +216,26 @@ Args:
 Returns:
     JSON with updated ideation status
 
+## `okto_pulse_set_ideation_ambiguity_gate_skip`
+
+Human-only control (R5-IMP1). Applying or removing the per-ideation Max ambiguity
+gate skip is a human decision and is NOT available from this agent-facing tool: it
+fails closed with `human_control_required` (mutation_allowed=false,
+state_changed=false) and never changes `skip_ambiguity_gate`.
+
+When the board-level Max ambiguity gate blocks an `evaluating` -> `done`
+transition, an agent should surface the read-only state and request a human
+decision. A human operator applies the skip through the authorized UI control or
+the human REST endpoint (`PATCH /api/v1/ideations/{ideation_id}/ambiguity-gate-skip`).
+
+Args:
+    board_id: Board ID.
+    ideation_id: Ideation ID.
+    skip_ambiguity_gate: Ignored on the agent surface (human-only control).
+
+Returns:
+    JSON `human_control_required` envelope (read-only; no mutation, no state change).
+
 ## `okto_pulse_update_ideation`
 
 Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated.

@@ -54,6 +54,13 @@ FORBIDDEN_KEY_RE = re.compile(
     r"content|stack|trace|token|secret|password|ip|address|url|uri)$",
     re.IGNORECASE,
 )
+# Closed-schema keys that are explicitly VETTED as bounded categoricals even
+# though they match FORBIDDEN_KEY_RE (e.g. ``tool_name`` ends in ``name`` but is a
+# bounded MCP tool NAME, never PII). The hand-curated ALLOWED_PAYLOAD_KEYS is the
+# authoritative bounded contract; FORBIDDEN_KEY_RE stays the defense-in-depth guard
+# for everything NOT explicitly allowlisted. Without this, ``mcp`` events lose
+# their tool dimension and aggregate as ``unknown`` (R5A-B).
+_VETTED_BOUNDED_KEYS: frozenset[str] = frozenset({"tool_name"})
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 UUID_RE = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
@@ -132,7 +139,7 @@ def sanitize_payload(event_type: str, payload: dict[str, Any] | None) -> tuple[d
     safe: dict[str, Any] = {}
     rejected = 0
     for key, value in (payload or {}).items():
-        if key not in allowed or FORBIDDEN_KEY_RE.search(key):
+        if key not in allowed or (FORBIDDEN_KEY_RE.search(key) and key not in _VETTED_BOUNDED_KEYS):
             rejected += 1
             continue
         try:
@@ -158,7 +165,7 @@ def count_rejected_payload_fields(event_type: str, payload: dict[str, Any] | Non
     allowed = ALLOWED_PAYLOAD_KEYS[event_type]
     rejected = 0
     for key, value in (payload or {}).items():
-        if key not in allowed or FORBIDDEN_KEY_RE.search(key):
+        if key not in allowed or (FORBIDDEN_KEY_RE.search(key) and key not in _VETTED_BOUNDED_KEYS):
             rejected += 1
             continue
         try:

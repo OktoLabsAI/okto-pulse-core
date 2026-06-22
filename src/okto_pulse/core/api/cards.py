@@ -20,6 +20,7 @@ from okto_pulse.core.models import (
 )
 from okto_pulse.core.models.db import ActivityLog, Agent, AgentSeenItem
 from okto_pulse.core.services import CardOperationError, CardService, ResourceGateError
+from okto_pulse.core.services.gate_contracts import GateContractError
 from okto_pulse.core.services.activity_log import (
     activity_log_summary,
     activity_log_trigger,
@@ -108,6 +109,8 @@ async def move_card(
     try:
         card = await service.move_card(card_id, user_id, data)
     except CardOperationError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
+    except GateContractError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except ResourceGateError as e:
         raise HTTPException(
@@ -426,6 +429,8 @@ async def submit_task_validation(
             reviewer_name=reviewer_name,
             data=data,
         )
+    except GateContractError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except ResourceGateError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

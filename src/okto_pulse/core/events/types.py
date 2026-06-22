@@ -251,6 +251,35 @@ class RefinementDerivedToSpec(DomainEvent):
     spec_id: str
 
 
+# --- Story lifecycle ---
+
+
+class StoryCreated(DomainEvent):
+    event_type: ClassVar[str] = "story.created"
+    story_id: str
+    topic_id: str
+    status: str = "draft"
+
+
+class StoryUpdated(DomainEvent):
+    event_type: ClassVar[str] = "story.updated"
+    story_id: str
+    changed_fields: list[str] = Field(default_factory=list)
+
+
+class StoryMoved(DomainEvent):
+    event_type: ClassVar[str] = "story.moved"
+    story_id: str
+    from_status: str
+    to_status: str
+
+
+class StoryLinkedToIdeation(DomainEvent):
+    event_type: ClassVar[str] = "story.linked_to_ideation"
+    story_id: str
+    ideation_id: str
+
+
 # --- KG operational events (spec 28583299 — Ideação #4) ---
 
 
@@ -311,6 +340,9 @@ class BugRegressionScenarioReuseDecision(DomainEvent):
     spec_id: str
     decision: Literal["eligible", "rejected", "semantic_gap"]
     reason_code: str
+    # Path B coverage state (G2 / card 966c7e7c): bounded diagnostic on the audit
+    # event (path_b_ready / coverage_pending / not_applicable). Empty for Path A.
+    coverage_state: str = ""
     scenario_count: int = 0
     test_task_count: int = 0
 
@@ -353,6 +385,10 @@ EVENT_TYPES: list[str] = [
     SprintClosed.event_type,
     IdeationDerivedToSpec.event_type,
     RefinementDerivedToSpec.event_type,
+    StoryCreated.event_type,
+    StoryUpdated.event_type,
+    StoryMoved.event_type,
+    StoryLinkedToIdeation.event_type,
     KGHitFlushed.event_type,
     CardPriorityChanged.event_type,
     CardSeverityChanged.event_type,
@@ -382,6 +418,10 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     SprintClosed.event_type: SprintClosed,
     IdeationDerivedToSpec.event_type: IdeationDerivedToSpec,
     RefinementDerivedToSpec.event_type: RefinementDerivedToSpec,
+    StoryCreated.event_type: StoryCreated,
+    StoryUpdated.event_type: StoryUpdated,
+    StoryMoved.event_type: StoryMoved,
+    StoryLinkedToIdeation.event_type: StoryLinkedToIdeation,
     KGHitFlushed.event_type: KGHitFlushed,
     CardPriorityChanged.event_type: CardPriorityChanged,
     CardSeverityChanged.event_type: CardSeverityChanged,

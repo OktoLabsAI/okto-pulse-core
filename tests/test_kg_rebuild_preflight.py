@@ -355,6 +355,98 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
     assert len(body["source_set_hash"]) == 64
 
 
+# --- SPEC4 card 8d77d45d / scenario ts_f49b7d37 ------------------------------
+# Preflight on a recovery_needed board is NON-MUTATING (the graph.lbug store's
+# timestamp + content hash are unchanged) AND diagnostic (returns root-cause +
+# source/layer counts). This is a behavioural file-level proof on a REAL board
+# graph, complementing the static "never calls a mutation api" check above.
+
+
+def _graph_store_fingerprint(path) -> dict:
+    """Map {relpath: (mtime, size, sha256|None)} for the board graph store on
+    disk — handles graph.lbug being a single file OR a directory. mtime+size
+    come from os.stat (never opens the file, so a Ladybug lock can't hide a
+    mutation); sha256 is added when the file is readable (the cache is closed
+    before this is called)."""
+    import hashlib
+    import os
+
+    def _one(fp: str) -> tuple:
+        st = os.stat(fp)
+        digest = None
+        try:
+            with open(fp, "rb") as fh:
+                digest = hashlib.sha256(fh.read()).hexdigest()
+        except OSError:
+            digest = None  # still locked → mtime+size guard the mutation
+        return (st.st_mtime, st.st_size, digest)
+
+    p = str(path)
+    out: dict[str, tuple] = {}
+    if os.path.isdir(p):
+        for root, _dirs, files in os.walk(p):
+            for fname in files:
+                fp = os.path.join(root, fname)
+                out[os.path.relpath(fp, p)] = _one(fp)
+    elif os.path.exists(p):
+        out["."] = _one(p)
+    return out
+
+
+def test_preflight_is_non_mutating_and_diagnostic_on_recovery_needed():
+    import uuid
+
+    from okto_pulse.core.kg.schema import (
+        board_kuzu_path,
+        bootstrap_board_graph,
+        close_board_db_cache,
+        open_board_connection,
+    )
+
+    board_id = f"preflight-nonmut-{uuid.uuid4().hex[:8]}"
+    # Materialize a REAL board graph with content so there is a store to guard.
+    bootstrap_board_graph(board_id)
+    with open_board_connection(board_id) as (_db, conn):
+        conn.execute(
+            "CREATE (n:Decision {id:$id, title:$t, graph_layer:'canonical', "
+            "source_confidence:1.0})",
+            {"id": "d1", "t": "seed"},
+        )
+    # Release the Ladybug handle so the on-disk store is fully flushed + readable
+    # for a content hash (preflight itself never opens the board graph).
+    close_board_db_cache(board_id)
+
+    graph_path = board_kuzu_path(board_id)
+    before = _graph_store_fingerprint(graph_path)
+    assert before, "expected a materialized board graph store on disk"
+
+    # Run the REAL preflight on the recovery_needed board (root-cause) with a
+    # source set that carries per-layer counts.
+    source = RebuildSourceSummary(
+        eligible_count=3,
+        skipped_cancelled_count=0,
+        has_non_deterministic_inputs=False,
+        canonical_source_count=2,
+        working_source_count=1,
+        layer_counts={"canonical": 2, "working": 1},
+    )
+    svc = _service(health=_health(state="recovery_needed"), source=source)
+    result = svc.run(board_id=board_id)
+
+    # NON-MUTATION: the board graph store is byte-for-byte + timestamp identical.
+    after = _graph_store_fingerprint(graph_path)
+    assert after == before, "preflight mutated the board graph store (timestamp/hash changed)"
+
+    # DIAGNOSTIC: recovery_needed root-cause + source/layer counts + hash.
+    assert result.outcome == PreflightOutcome.CONFIRMATION_REQUIRED.value
+    assert result.reason == PreflightBlockReason.HEALTH_RECOVERY_NEEDED.value
+    assert result.base_state == "recovery_needed"
+    assert result.canonical_source_count == 2
+    assert result.eligible_source_count == 3
+    assert result.layer_counts == {"canonical": 2, "working": 1}
+    assert len(result.preflight_hash) == 64  # deterministic source-set hash
+
+
 def test_post_preflight_missing_board_id_returns_400():
     """Empty/missing board_id is rejected with HTTP 400."""
     from fastapi import FastAPI

@@ -22,7 +22,7 @@ from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.schema")
 
-SCHEMA_VERSION = "0.3.5"
+SCHEMA_VERSION = "0.3.7"
 GRAPH_DB_FILENAME = "graph.lbug"
 CORRUPT_DB_ERROR_MARKERS = (
     "checksum verification failed",
@@ -108,6 +108,13 @@ REL_TYPES: tuple[tuple[str, str, str], ...] = (
 #     MATCH (n)-[:belongs_to]->(p:Entity) RETURN n, p
 # Without this we'd need 8 `belongs_to_<type>` variants polluting the schema.
 MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    # `implements` remains in REL_TYPES for the historical APIContract ->
+    # Requirement pair. This additive multi-pair entry lets the migrator add
+    # the TR/BR Constraint endpoint without breaking consumers that still read
+    # REL_TYPES as the single-pair registry.
+    ("implements", (
+        ("APIContract", "Constraint"),
+    )),
     ("belongs_to", (
         ("Entity", "Entity"),
         ("Entity", "Bug"),
@@ -119,6 +126,7 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("Decision", "Entity"),
         ("Bug", "Entity"),
         ("Alternative", "Entity"),
+        ("Assumption", "Entity"),
         ("Learning", "Entity"),
     )),
     ("originates_from", (
@@ -161,6 +169,66 @@ def stable_rel_type_entries() -> list[dict[str, Any]]:
     return entries
 
 
+def relationship_endpoint_pairs(edge_type: str) -> tuple[tuple[str, str], ...]:
+    """Return every concrete endpoint pair accepted by a relationship name."""
+    pairs: list[tuple[str, str]] = [
+        (from_type, to_type)
+        for rel_name, from_type, to_type in REL_TYPES
+        if rel_name == edge_type
+    ]
+    for rel_name, endpoint_pairs in MULTI_REL_TYPES:
+        if rel_name == edge_type:
+            pairs.extend(endpoint_pairs)
+
+    deduped: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for pair in pairs:
+        if pair in seen:
+            continue
+        seen.add(pair)
+        deduped.append(pair)
+    return tuple(deduped)
+
+
+def resolve_relationship_endpoint_pair(
+    edge_type: str,
+    *,
+    from_type: str | None = None,
+    to_type: str | None = None,
+) -> tuple[str, str]:
+    """Resolve concrete endpoint labels for a relationship insert.
+
+    When a relationship name has multiple valid endpoint pairs, callers must
+    provide both endpoint hints. This prevents rel-name short-circuiting such as
+    resolving every ``implements`` edge to APIContract->Requirement even when
+    the target is a Constraint.
+    """
+    pairs = relationship_endpoint_pairs(edge_type)
+    if not pairs:
+        raise ValueError(f"unknown edge_type: {edge_type}")
+
+    if from_type or to_type:
+        if not from_type or not to_type:
+            raise ValueError(
+                f"edge_type '{edge_type}' requires both from_type and to_type "
+                f"hints; got {from_type!r}/{to_type!r}"
+            )
+        if (from_type, to_type) not in pairs:
+            raise ValueError(
+                f"edge_type '{edge_type}' does not accept pair "
+                f"({from_type}, {to_type}); valid pairs: {pairs}"
+            )
+        return from_type, to_type
+
+    if len(pairs) == 1:
+        return pairs[0]
+
+    raise ValueError(
+        f"edge_type '{edge_type}' is ambiguous and requires explicit "
+        f"from_type/to_type hints; valid pairs: {pairs}"
+    )
+
+
 # Common attributes shared across every node type — written once in the DDL
 # template below. Embedding is always declared even on types without a vector
 # index so nothing breaks if a future tool queries similarity on them.
@@ -176,6 +244,8 @@ _COMMON_NODE_ATTRS = """
     context STRING,
     justification STRING,
     source_artifact_ref STRING,
+    graph_layer STRING,
+    maturity_status STRING,
     source_session_id STRING,
     created_at TIMESTAMP,
     created_by_agent STRING,
@@ -191,6 +261,17 @@ _COMMON_NODE_ATTRS = """
     human_curated BOOLEAN,
     embedding DOUBLE[384]
 """.strip()
+
+# R6-IMP3: the stable scalar properties guaranteed on EVERY canonical node label —
+# every node table is created from _COMMON_NODE_ATTRS, so these are the ONLY
+# schema-safe properties to query on any label. Derived from the DDL above (drift-
+# safe). ``embedding`` is excluded: it is the 384-d vector, surfaced via
+# vector_indexes / has_vector_index, not a scalar property an agent filters on.
+STABLE_NODE_PROPERTIES: tuple[str, ...] = tuple(
+    line.strip().split()[0]
+    for line in _COMMON_NODE_ATTRS.splitlines()
+    if line.strip() and line.strip().split()[0] != "embedding"
+)
 
 # Columns added in v0.3.0 — used by the migration probe and ALTER TABLE path
 # when the node table already exists but lacks the new columns. Kùzu accepts
@@ -227,6 +308,14 @@ HUMAN_CURATED_COLUMNS: tuple[tuple[str, str], ...] = (
 # convention as last_queried_at) so legacy boards backfill cleanly.
 LAST_RECOMPUTED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("last_recomputed_at", "STRING"),
+)
+
+# Columns added in v0.3.6 (KG graph partitioning): every node carries its
+# logical graph layer and maturity status so canonical-only queries can be
+# enforced by data, not just by UI convention.
+KG_LAYER_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("graph_layer", "STRING"),
+    ("maturity_status", "STRING"),
 )
 
 # Columns removed in v0.3.0. Kùzu v0.6 has no ALTER TABLE DROP COLUMN, so the
@@ -1803,6 +1892,49 @@ def _ensure_last_recomputed_at_columns(conn, node_type: str) -> list[str]:
     return added
 
 
+def _ensure_kg_layer_columns(conn, node_type: str) -> list[str]:
+    """ALTER TABLE ADD for v0.3.6 graph_layer/maturity_status columns."""
+
+    added: list[str] = []
+    for col_name, col_type in KG_LAYER_COLUMNS:
+        if _alter_add_column_with_retry(conn, node_type, col_name, col_type) == "added":
+            added.append(col_name)
+    return added
+
+
+def _backfill_kg_layer_defaults(conn, node_type: str) -> None:
+    """Mark legacy rows as canonical so existing boards keep querying.
+
+    The rebuild manifest and CanonicalDebt surfaces now own precise maturity
+    classification for future rebuilds. Existing graph rows predate that
+    metadata, so defaulting them to canonical preserves compatibility while
+    letting operators rebuild to materialize stricter partitioning later.
+    """
+
+    try:
+        conn.execute(
+            f"MATCH (n:{node_type}) "
+            f"WHERE n.graph_layer IS NULL "
+            f"SET n.graph_layer = 'canonical'"
+        )
+    except Exception as exc:
+        logger.warning(
+            "migrate_kg_layer.backfill_failed node=%s col=graph_layer err=%s",
+            node_type, exc,
+        )
+    try:
+        conn.execute(
+            f"MATCH (n:{node_type}) "
+            f"WHERE n.maturity_status IS NULL "
+            f"SET n.maturity_status = 'canonical_eligible'"
+        )
+    except Exception as exc:
+        logger.warning(
+            "migrate_kg_layer.backfill_failed node=%s col=maturity_status err=%s",
+            node_type, exc,
+        )
+
+
 def _backfill_relevance_defaults(conn, node_type: str) -> None:
     """Populate the v0.3.0 columns for rows that existed before the migration.
 
@@ -1975,6 +2107,7 @@ def _migrate_node_table_v030(conn, node_type: str) -> int:
                 f"id: $id, title: $title, content: $content, context: $context, "
                 f"justification: $justification, "
                 f"source_artifact_ref: $source_artifact_ref, "
+                f"graph_layer: 'canonical', maturity_status: 'canonical_eligible', "
                 f"source_session_id: $source_session_id, "
                 f"created_at: $created_at, created_by_agent: $created_by_agent, "
                 f"source_confidence: $source_confidence, "
@@ -2045,7 +2178,9 @@ def migrate_board_to_v030(board_id: str) -> dict[str, Any]:
     try:
         for node_type in NODE_TYPES:
             added = _ensure_relevance_columns(conn, node_type)
+            added.extend(_ensure_kg_layer_columns(conn, node_type))
             _backfill_relevance_defaults(conn, node_type)
+            _backfill_kg_layer_defaults(conn, node_type)
             had_legacy = _node_has_legacy_columns(conn, node_type)
             summary[node_type] = {
                 "strategy": "alter",
@@ -2437,6 +2572,10 @@ def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
                     added_for_type.extend(
                         _ensure_last_recomputed_at_columns(conn, node_type)
                     )
+                    added_for_type.extend(
+                        _ensure_kg_layer_columns(conn, node_type)
+                    )
+                    _backfill_kg_layer_defaults(conn, node_type)
                 except Exception as nt_exc:
                     errors.append(
                         f"node_type_failed: {node_type}: {nt_exc}"
@@ -2543,6 +2682,9 @@ def apply_schema_to_connection(conn) -> None:
         # ISO timestamp of the last relevance_score persist. Read by the
         # daily decay tick and kg_health for observability.
         _ensure_last_recomputed_at_columns(conn, node_type)
+        # v0.3.6: graph partition metadata for canonical-only query surfaces.
+        _ensure_kg_layer_columns(conn, node_type)
+        _backfill_kg_layer_defaults(conn, node_type)
     for rel_name, from_type, to_type in REL_TYPES:
         conn.execute(_build_rel_ddl(rel_name, from_type, to_type))
         # v0.1.0 → v0.2.0 backfill: ALTER ADD the metadata cols on legacy

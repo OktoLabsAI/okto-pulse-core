@@ -36,8 +36,8 @@ Args:
     request_body_json: JSON string for request body schema (optional). Example: '{"name": "string", "email": "string"}'
     response_success_json: JSON string for success response schema (optional)
     response_errors_json: JSON string for error responses array (optional). Example: '[{"status": 400, "detail": "..."}]'
-    linked_requirements: Pipe-separated INDICES (0-based) of functional requirements.
-        Example: "0|2|5"
+    linked_requirements: Pipe-separated requirement refs. Accepts FR index/fr_id/text and structured TR id/text.
+        Example: "0|fr_login|tr_audit_events"
     linked_rules: Pipe-separated business rule IDs. Example: "br_abc123|br_def456"
     notes: Additional notes (optional)
 
@@ -81,7 +81,8 @@ Args:
     request_body_json: New request body JSON (optional, "CLEAR" to remove)
     response_success_json: New success response JSON (optional, "CLEAR" to remove)
     response_errors_json: New error responses JSON (optional, "CLEAR" to remove)
-    linked_requirements: Pipe-separated INDICES. "CLEAR" to remove all. Empty = no change.
+    linked_requirements: Pipe-separated requirement refs. Accepts FR index/fr_id/text and structured TR id/text.
+        "CLEAR" to remove all. Empty = no change.
     linked_rules: Pipe-separated rule IDs. "CLEAR" to remove all. Empty = no change.
     notes: New notes (optional, "CLEAR" to remove)
 

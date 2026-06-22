@@ -101,6 +101,7 @@ class GlobalResult(BaseModel):
     id: str
     title: str
     similarity: float = 0.0
+    graph_layer: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +117,9 @@ class DecisionHistoryResponse(BaseModel):
 class RelatedContextResponse(BaseModel):
     context: list[ContextHop]
     count: int = 0
+    # R6-IMP3: echo the graph_layer actually applied to the traversal (canonical|
+    # working|all) so callers can confirm the scope. Additive; default None.
+    applied_graph_layer: str | None = None
 
 
 class SupersedenceChainResponse(BaseModel):
@@ -151,6 +155,9 @@ class LearningsResponse(BaseModel):
 class GlobalQueryResponse(BaseModel):
     results: list[GlobalResult]
     count: int = 0
+    # R6-IMP3: echo the graph_layer actually applied to the search (canonical|
+    # working|all). Additive; the per-result `graph_layer` on GlobalResult is kept.
+    applied_graph_layer: str | None = None
 
 
 # ---------------------------------------------------------------------------

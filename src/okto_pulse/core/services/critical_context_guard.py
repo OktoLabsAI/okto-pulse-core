@@ -186,6 +186,13 @@ CRITICAL_MUTATION_GUARD_COVERAGE: tuple[CriticalMutationGuardCoverage, ...] = (
     ),
     CriticalMutationGuardCoverage(
         "CardService",
+        "confirm_amendment_coverage",
+        CriticalAction.CARD_SUBMIT_VALIDATION,
+        "card",
+        "Path B amendment coverage confirmation can unblock bug closure and must resolve the regression test context.",
+    ),
+    CriticalMutationGuardCoverage(
+        "CardService",
         "move_card",
         CriticalAction.CARD_MOVE_STATUS,
         "card",

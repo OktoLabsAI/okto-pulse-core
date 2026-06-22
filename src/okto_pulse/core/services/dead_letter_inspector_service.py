@@ -69,14 +69,28 @@ def _normalise_errors(value: Any) -> list[dict[str, Any]]:
 
 
 def _row_to_dict(row: ConsolidationDeadLetter) -> dict[str, Any]:
+    errors = _normalise_errors(row.errors)
+    # AC6 / ts_c604a02b: derive last_error/error_text from the most recent
+    # attempt, keeping the full errors[] history intact.
+    last_error = errors[-1].get("message") if errors else None
     return {
         "id": row.id,
+        # FR6/AC6 alias (spec 007d1308): contract field name, kept additive so
+        # the existing DLQ Inspector consumer (spec 1ede3471) reading `id`
+        # still works.
+        "dead_letter_id": row.id,
         "board_id": row.board_id,
         "artifact_type": row.artifact_type,
         "artifact_id": row.artifact_id,
         "original_queue_id": row.original_queue_id,
         "attempts": row.attempts,
-        "errors": _normalise_errors(row.errors),
+        "errors": errors,
+        "last_error": last_error,
+        "error_text": last_error,
+        # SPEC4 (card 2e913ac3, AC ac_26acf1db): bounded suggested next action so
+        # the DLQ row is actionable from the drill-down alone. Every DLQ row is a
+        # terminal consolidation failure → inspect the error then reprocess.
+        "next_action": "inspect_last_error_then_reprocess_via_okto_pulse_kg_dead_letter_reprocess",
         "dead_lettered_at": (
             row.dead_lettered_at.isoformat()
             if row.dead_lettered_at
@@ -102,8 +116,12 @@ async def list_dead_letter_rows(
     """
     rows = await list_dead_letter(db, board_id, limit=limit + offset)
     sliced = rows[offset:offset + limit]
+    projected = [_row_to_dict(r) for r in sliced]
     return {
-        "rows": [_row_to_dict(r) for r in sliced],
+        "rows": projected,
+        # FR6/AC6 alias (spec 007d1308): `items` is the contract name; `rows`
+        # is preserved for the existing DLQ Inspector consumer.
+        "items": projected,
         "total": len(rows),
         "limit": limit,
         "offset": offset,

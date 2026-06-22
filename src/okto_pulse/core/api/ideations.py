@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models.schemas import (
+    IdeationAmbiguityGateSkipUpdate,
     IdeationCreate,
     IdeationHistoryResponse,
     IdeationKnowledgeCreate,
@@ -23,6 +24,7 @@ from okto_pulse.core.models.schemas import (
     SpecResponse,
 )
 from okto_pulse.core.services import (
+    AmbiguityGateError,
     BoardService,
     IdeationKnowledgeService,
     IdeationQAService,
@@ -116,7 +118,37 @@ async def move_ideation(
 ):
     """Change ideation status."""
     service = IdeationService(db)
-    ideation = await service.move_ideation(ideation_id, user_id, data)
+    try:
+        ideation = await service.move_ideation(ideation_id, user_id, data)
+    except AmbiguityGateError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    if not ideation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
+    await db.commit()
+    ideation = await service.get_ideation(ideation_id)
+    return ideation
+
+
+@router.patch("/ideations/{ideation_id}/ambiguity-gate-skip", response_model=IdeationResponse)
+async def set_ideation_ambiguity_gate_skip(
+    ideation_id: str,
+    data: IdeationAmbiguityGateSkipUpdate,
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist the per-ideation Max ambiguity gate skip override (spec 2485780b).
+
+    Dedicated write path that works while the ideation is in evaluating status
+    without opening the generic update_ideation draft-only guard to other
+    fields. Rejects archived ideations and emits an auditable activity entry.
+    """
+    service = IdeationService(db)
+    try:
+        ideation = await service.set_ambiguity_gate_skip(
+            ideation_id, user_id, data.skip_ambiguity_gate, source="rest"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     if not ideation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
     await db.commit()

@@ -12,7 +12,11 @@ import json
 import logging
 from typing import Any
 
-from okto_pulse.core.kg.kg_service import KGToolError, get_kg_service
+from okto_pulse.core.kg.kg_service import (
+    KGToolError,
+    get_kg_service,
+    normalize_graph_layer,
+)
 from okto_pulse.core.kg.tool_schemas import (
     AlternativeResult,
     AlternativesResponse,
@@ -144,6 +148,7 @@ okto-pulse://reference/tool-docs/kg."""
         rel_types: str = "",
         direction: str = "both",
         max_depth: int = 2,
+        graph_layer: str = "canonical",
     ) -> str:
         """
         Given an artifact, return its neighborhood in the KG: prior
@@ -163,9 +168,15 @@ okto-pulse://reference/tool-docs/kg."""
                 Applied to hop1 only; hop2 is always undirected.
             max_depth: ``1`` returns center+hop1 only (hop2 fields null);
                 ``2`` (default) returns the full 2-hop context.
+            graph_layer: ``canonical`` (default) | ``working`` | ``all`` (spec
+                849d6292, FR6). The default scopes the neighborhood to canonical
+                nodes so an explored subgraph NEVER leaks ``working`` nodes;
+                pass ``working``/``all`` to widen it. Invalid values return a
+                structured error.
 
         Returns:
-            JSON with 2-hop neighborhood context
+            JSON with 2-hop neighborhood context + `applied_graph_layer` echoing
+            the layer actually applied to the traversal (canonical|working|all).
         """
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
@@ -174,6 +185,9 @@ okto-pulse://reference/tool-docs/kg."""
         svc = get_kg_service()
         try:
             svc.check_board_access(boards, board_id)
+            # R6-IMP3: normalize at the boundary (fail-closed on invalid) + echo the
+            # applied layer top-level so the explored scope is auditable.
+            applied_layer = normalize_graph_layer(graph_layer)
             parsed_types: list[str] | None = None
             if rel_types:
                 tokens = [t.strip() for t in rel_types.replace("|", ",").split(",")]
@@ -184,11 +198,13 @@ okto-pulse://reference/tool-docs/kg."""
                 board_id, artifact_id,
                 min_confidence=min_confidence, max_rows=max_rows,
                 rel_types=parsed_types, direction=direction, max_depth=max_depth,
+                graph_layer=applied_layer,
             )
             logger.debug("[KG] kg_get_related_context thread returned: count=%d", len(rows))
             resp = RelatedContextResponse(
                 context=[ContextHop(**r) for r in rows],
                 count=len(rows),
+                applied_graph_layer=applied_layer,
             )
             return resp.model_dump_json()
         except ValueError as e:
@@ -430,6 +446,7 @@ okto-pulse://reference/tool-docs/kg."""
         board_id: str = "",
         nl_query: str = "",
         top_k: int = 10,
+        graph_layer: str = "canonical",
     ) -> str:
         """
         Cross-board semantic search via the global discovery layer. Returns
@@ -440,9 +457,13 @@ okto-pulse://reference/tool-docs/kg."""
             board_id: Optional board_id to restrict search (empty = all boards)
             nl_query: Natural language query string
             top_k: Maximum results (default 10)
+            graph_layer: canonical, working, or all (default canonical);
+                invalid values fail closed.
 
         Returns:
-            JSON with results: [{board_id, id, title, similarity}]
+            JSON `{results: [{board_id, id, title, similarity, graph_layer}],
+            count, applied_graph_layer}`. `applied_graph_layer` echoes the layer
+            actually applied (canonical|working|all).
         """
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:
@@ -450,13 +471,23 @@ okto-pulse://reference/tool-docs/kg."""
         logger.debug("[KG] kg_query_global called: board_id=%s nl_query=%r", board_id, nl_query)
         svc = get_kg_service()
         try:
+            # R6-IMP3: normalize at the boundary so an invalid graph_layer fails
+            # closed here and the applied (normalized) layer is echoed top-level.
+            applied_layer = normalize_graph_layer(graph_layer)
             target_boards = [board_id] if board_id else boards
             logger.debug("[KG] kg_query_global offloading to thread, target_boards=%d", len(target_boards))
-            rows = await asyncio.to_thread(svc.query_global, nl_query, user_boards=target_boards, top_k=top_k)
+            rows = await asyncio.to_thread(
+                svc.query_global,
+                nl_query,
+                user_boards=target_boards,
+                top_k=top_k,
+                graph_layer=applied_layer,
+            )
             logger.debug("[KG] kg_query_global thread returned: count=%d", len(rows))
             resp = GlobalQueryResponse(
                 results=[GlobalResult(**r) for r in rows],
                 count=len(rows),
+                applied_graph_layer=applied_layer,
             )
             return resp.model_dump_json()
         except KGToolError as e:

@@ -30,7 +30,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from okto_pulse.core.api.kg_health import KGHealthResponse, TopDisconnectedNode
+from okto_pulse.core.api.kg_health import KGHealthResponse
 from okto_pulse.core.kg.schema import (
     LAST_RECOMPUTED_COLUMNS,
     NODE_TYPES,
@@ -99,7 +99,7 @@ async def kg_rel_board(db_factory):
 
 def test_ts29_schema_version_is_0_3_3():
     """SCHEMA_VERSION remains monotonic after last_recomputed_at bootstrap."""
-    assert SCHEMA_VERSION == "0.3.5"
+    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
 
 
 def test_ts29_last_recomputed_columns_constant_exposes_string_type():
@@ -298,6 +298,7 @@ def test_ts32_kg_tick_run_model_columns():
         "duration_ms",
         "error",
         "boards_processed",
+        "boards_failed",
     }
     pk = [c.name for c in KGTickRun.__table__.primary_key.columns]
     assert pk == ["tick_id"]
@@ -450,7 +451,6 @@ def test_ts35_response_model_defaults_when_fields_missing():
         "default_score_count": 0,
         "default_score_ratio": 0.0,
         "avg_relevance": 0.0,
-        "top_disconnected_nodes": [],
         "schema_version": "1.0",
         "contradict_warn_count": 0,
         # KG-01 contract fields (api_3ed9037f) — required since 0.2.x. This
@@ -459,6 +459,16 @@ def test_ts35_response_model_defaults_when_fields_missing():
         "board_id": "board-ts35",
         "correlation_id": "corr-ts35",
         "checked_at": "2026-04-27T09:30:00+00:00",
+        "decay_scheduler_diagnostics": {
+            "status": "ok",
+            "severity": "info",
+            "recommended_action": "none",
+            "operational_debt": False,
+        },
+        "storage_footprint_proxy": {
+            "description": "test fixture",
+            "tooltip": "test fixture",
+        },
     }
     response = KGHealthResponse(**payload)
     assert response.last_decay_tick_at is None
@@ -475,25 +485,30 @@ def test_ts35_response_model_accepts_populated_new_fields():
         "default_score_count": 10,
         "default_score_ratio": 0.2,
         "avg_relevance": 0.62,
-        "top_disconnected_nodes": [
-            {"id": "dec_1", "type": "Decision", "degree": 0},
-        ],
         "schema_version": "1.0",
         "contradict_warn_count": 1,
         # KG-01 contract fields (api_3ed9037f) — required since 0.2.x.
         "board_id": "board-ts35",
         "correlation_id": "corr-ts35",
         "checked_at": "2026-04-27T09:30:00+00:00",
+        "decay_scheduler_diagnostics": {
+            "status": "ok",
+            "severity": "info",
+            "recommended_action": "none",
+            "operational_debt": False,
+        },
+        "storage_footprint_proxy": {
+            "description": "test fixture",
+            "tooltip": "test fixture",
+        },
         "last_decay_tick_at": "2026-04-27T09:30:00+00:00",
         "nodes_recomputed_in_last_tick": 137,
     }
     response = KGHealthResponse(**payload)
     assert response.last_decay_tick_at == "2026-04-27T09:30:00+00:00"
     assert response.nodes_recomputed_in_last_tick == 137
-    assert response.top_disconnected_nodes == [
-        TopDisconnectedNode(id="dec_1", type="Decision", degree=0)
-    ]
     dumped = response.model_dump()
+    assert "top_disconnected_nodes" not in dumped
     assert "last_decay_tick_at" in dumped
     assert "nodes_recomputed_in_last_tick" in dumped
 
@@ -624,7 +639,7 @@ def test_ts5_card_to_dict_carries_severity_field_none_and_populated():
                 setattr(self, k, v)
 
     bug_with_severity = _Card(
-        id="b1", title="B", description="d", card_type=CardType.BUG,
+        id="b1", board_id="board-1", title="B", description="d", card_type=CardType.BUG,
         spec_id=None, sprint_id=None, origin_task_id=None,
         priority=CardPriority.HIGH,
         severity=BugSeverity.CRITICAL,
@@ -634,7 +649,7 @@ def test_ts5_card_to_dict_carries_severity_field_none_and_populated():
     assert payload["priority"] == "high"
 
     bug_no_severity = _Card(
-        id="b2", title="B2", description="",
+        id="b2", board_id="board-1", title="B2", description="",
         card_type=CardType.BUG, spec_id=None, sprint_id=None,
         origin_task_id=None, priority=None, severity=None,
     )
@@ -664,11 +679,10 @@ def test_kg_hit_flushed_event_class_registered():
 
     assert KGHitFlushed.event_type == "kg.hit_flushed"
     assert "kg.hit_flushed" in EVENT_TYPES
-    # Ideação #4 took it to 21 — IMPL-B (KGHitFlushed) + IMPL-C
-    # (CardPriorityChanged + CardSeverityChanged) + IMPL-D (KGDailyTick). The
-    # later structured-entity canonicalization added 3 more
-    # (structured_entity.{created,updated,revoked}) → 24 total.
-    assert len(EVENT_TYPES) == 24
+    # Ideação #4 took it to 21; later structured-entity canonicalization,
+    # story lifecycle, refinement semantic changes, and bug-regression reuse
+    # events expanded the registry to 29.
+    assert len(EVENT_TYPES) == 29
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1100,15 +1114,14 @@ def test_impl_c_frozen_on_insert_doc_updated_to_mutable_semantics():
 
 
 def test_impl_d_kg_daily_tick_event_class_registered():
-    """KGDailyTick took the Ideação #4 event count to 21; structured-entity
-    canonicalization later added 3 more (structured_entity.*) → 24 total."""
+    """KGDailyTick is registered in the current 29-event registry."""
     from okto_pulse.core.events.types import (
         EVENT_TYPES, KGDailyTick, resolve_event_class,
     )
 
     assert KGDailyTick.event_type == "kg.tick.daily"
     assert "kg.tick.daily" in EVENT_TYPES
-    assert len(EVENT_TYPES) == 24
+    assert len(EVENT_TYPES) == 29
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 

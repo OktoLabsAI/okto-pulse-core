@@ -13,12 +13,13 @@ from okto_pulse.core.kg.board_rebuild_adapter import BoardRebuildIngestionAdapte
 from okto_pulse.core.kg.rebuild_service import RebuildStepInput
 
 
-def test_enqueue_sources_maps_task_test_bug_to_card_and_skips_refinement(
+def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
     tmp_path: Path,
 ) -> None:
-    """Refinement is semantic-only. task/test/bug sources are deterministic
-    card-derived rows and must be queued through the legacy worker artifact
-    type ``card``."""
+    """task/test/bug sources are card-derived rows and must be queued
+    through the legacy worker artifact type ``card``. Pre-spec working
+    artifacts stay first-class so explicit rebuild restores working graph
+    lineage instead of rebuilding an empty board."""
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
@@ -42,10 +43,13 @@ def test_enqueue_sources_maps_task_test_bug_to_card_and_skips_refinement(
             {"artifact_type": "test", "id": "tc1"},
             {"artifact_type": "bug", "id": "bug1"},
             {"artifact_type": "ideation", "id": "i1"},
+            {"artifact_type": "story", "id": "st1"},
+            {"artifact_type": "sprint", "id": "sp1"},
+            {"artifact_type": "decision", "id": "d1"},
         ],
     )
 
-    assert counts == {"inserted": 4, "reset_to_pending": 0, "left_alone": 0}
+    assert counts == {"inserted": 8, "reset_to_pending": 0, "left_alone": 0}
     with sqlite3.connect(str(db_path)) as conn:
         rows = conn.execute(
             "SELECT artifact_type, artifact_id, priority FROM consolidation_queue "
@@ -55,7 +59,11 @@ def test_enqueue_sources_maps_task_test_bug_to_card_and_skips_refinement(
         ("card", "bug1", "high"),
         ("card", "t1", "high"),
         ("card", "tc1", "high"),
+        ("ideation", "i1", "high"),
+        ("refinement", "r1", "high"),
         ("spec", "s1", "high"),
+        ("sprint", "sp1", "high"),
+        ("story", "st1", "high"),
     ]
 
 

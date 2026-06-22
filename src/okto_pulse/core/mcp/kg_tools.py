@@ -14,6 +14,7 @@ Each tool:
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from pydantic import ValidationError
@@ -47,10 +48,13 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_status_counts,
     default_rebuild_base_dir,
     detect_unsafe_update_payload,
+    emit_operational_inspection_sample,
     empty_status_counts,
     project_item_for_api,
     project_item_for_update_api,
+    record_cognitive_working_only_hold,
 )
+from okto_pulse.core.kg.cognitive_readiness import R7_HOLD_REASON_CODES
 
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
@@ -80,6 +84,36 @@ def _err(code: str, message: str, **extra: Any) -> str:
 
 def _ok(response) -> str:
     return response.model_dump_json()
+
+
+logger = logging.getLogger("okto_pulse.mcp.kg_tools")
+
+
+def _maybe_record_r7_cognitive_hold(
+    *, board_id: str, error: KGPrimitiveError, actor_id: str
+) -> None:
+    """Persist an R7 working-only canonical Learning go-forward hold when a
+    commit is rejected with the bounded hold payload.
+
+    Non-blocking: a persistence failure must NEVER mask the structured error
+    that the agent needs to see. The hold lands in the cognitive pending
+    ledger only (never CanonicalDebt / DLQ)."""
+    details = getattr(error, "details", None)
+    if not isinstance(details, dict):
+        return
+    payload = details.get("r7_cognitive_hold_candidate")
+    if not isinstance(payload, dict):
+        return
+    try:
+        record_cognitive_working_only_hold(
+            board_id=board_id,
+            hold_payload=payload,
+            actor_id=actor_id,
+        )
+    except Exception:
+        logger.warning(
+            "kg.r7_hold.persist_failed board=%s", board_id, exc_info=True
+        )
 
 
 def register_kg_tools(mcp, *, get_agent, get_db) -> None:
@@ -338,6 +372,13 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
                 )
                 return _ok(resp)
             except KGPrimitiveError as e:
+                # R7: a working-only canonical Learning bug-derived commit is an
+                # EXPECTED semantic hold — materialize the go-forward hold in the
+                # cognitive pending ledger (never CanonicalDebt/DLQ) before
+                # surfacing the structured error back to the agent.
+                _maybe_record_r7_cognitive_hold(
+                    board_id=session.board_id, error=e, actor_id=agent.id
+                )
                 return _err(e.code, e.message, session_id=e.session_id,
                             details=e.details)
 
@@ -483,6 +524,12 @@ offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
             status_filter_present=status_present,
             reason_code=CognitiveItemListReasonCode.NONE.value,
             item_count=item_count,
+        )
+        # or_b8ff0cc2: count this operational-inspection listing (cognitive
+        # pending domain) so absence of drill-down usage is diagnosable.
+        emit_operational_inspection_sample(
+            signal="cognitive_pending", surface="mcp", outcome="success",
+            board_id=board_id, item_count=item_count,
         )
 
         return json.dumps({
@@ -681,6 +728,33 @@ labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg.""
         store = CognitiveConsolidationItemStore(
             base_dir=default_rebuild_base_dir()
         )
+
+        # AC9 / IR3 — this MCP tool is AGENT-facing (get_agent). An R7 canonical
+        # Learning partition-integrity HOLD/debt item (item.reason_code in
+        # R7_HOLD_REASON_CODES) may ONLY be skipped/cleared by an explicit human
+        # action via the REST surface; an agent must never mutate it here and
+        # mask the hold. Fail-closed BEFORE the ledger write.
+        _r7_current = next(
+            (
+                it
+                for it in store.list_items(board_id, kg_generation_id)
+                if it.item_id == item_id
+            ),
+            None,
+        )
+        if (
+            _r7_current is not None
+            and str(_r7_current.reason_code or "") in R7_HOLD_REASON_CODES
+        ):
+            return _reject(
+                "human_only_reason_code",
+                (
+                    "this item is an R7 canonical Learning partition-integrity "
+                    "hold/debt; only an explicit human action may skip or clear it"
+                ),
+                outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
+                reason_code=CognitiveItemUpdateReasonCode.NONE.value,
+            )
 
         try:
             updated_item = store.update_item(

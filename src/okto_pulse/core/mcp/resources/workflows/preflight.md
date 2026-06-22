@@ -46,3 +46,42 @@ Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types.
 | Card, task, test, bug | `card` |
 
 Before finalization call `okto_pulse_get_resource_gate_summary(board_id, entity_type, entity_id)` and resolve every `missing` resource by attaching the artifact or marking N/A with `justification`.
+
+### Design System pre-flight — before creating or editing mockups
+
+A board can mandate a **Design System** for its screen mockups. The `MockupDesignSystemGate`
+enforces it deterministically on `okto_pulse_add_screen_mockup` / `okto_pulse_update_screen_mockup`
+(and the REST twin) **before persistence**. Discover the mandate from the board summary so you
+reference the Design System from the start instead of learning it by being rejected:
+
+```
+1. okto_pulse_get_board(board_id) → read the `design_system` block:
+     { "effective": {design_system_id, title, version, source} | null,
+       "gate_mode": "off" | "advisory" | "blocking",
+       "mandate": true when there is an effective Design System AND gate_mode == "blocking" }
+2. okto_pulse_get_board_design_system(board_id) → the effective Design System identity (id/version/source)
+3. okto_pulse_get_design_system(design_system_id) → the full Design System incl. payload (tokens, components, layout/accessibility rules) to actually consume it
+```
+
+When `mandate` is true (gate_mode=blocking + an effective Design System), a new/updated mockup MUST carry:
+- `design_system_ref` = the board's REAL effective `design_system_id` (synthetic/wrong → rejected),
+- `design_system_version` matching the effective version,
+- `design_system_evidence` = non-empty proof the screen consumes the Design System.
+
+Otherwise the gate rejects **before persisting** with an actionable, structured error:
+
+| reason code | meaning |
+|---|---|
+| `design_system_required` | no `design_system_ref` provided |
+| `design_system_not_found` | the ref is synthetic, non-existent, or dangling (does not resolve to the real effective Design System) |
+| `design_system_version_mismatch` | the version does not match the effective Design System version |
+| `design_system_evidence_missing` | no consumption evidence |
+
+The error payload carries `expected_design_system_id` and `expected_design_system_version` — use
+them to **self-correct** (set `design_system_ref` / `design_system_version` to the expected values,
+add evidence) and retry.
+
+- **advisory**: the mockup is persisted, but the response carries a `design_system_gate` warning and a queryable `DesignSystemGateAudit` row is written.
+- **off**, or a board with **no effective Design System**: the gate never blocks.
+
+> Caveat: `mandate=true` can still fail at the gate with `design_system_not_found` if the board's configured Design System is **dangling** (e.g. a board link to a deleted Design System — the resolver still reports it but `exists=false`). Read a `design_system_not_found` under `mandate=true` as "the board's Design System config is broken", not as your ref being wrong.

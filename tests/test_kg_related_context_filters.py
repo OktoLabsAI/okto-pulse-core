@@ -26,8 +26,11 @@ class TestSignatureContract:
         assert "rel_types" in params
         assert "direction" in params
         assert "max_depth" in params
+        assert "graph_layer" in params
         assert params["direction"].default == "both"
         assert params["max_depth"].default == 2
+        # Spec 849d6292 (FR6): default scopes to canonical — never leaks working.
+        assert params["graph_layer"].default == "canonical"
 
 
 class TestValidation:
@@ -48,18 +51,23 @@ class TestRoutingToFilteredPath:
 
     def _setup_fake_store(self, calls):
         class FakeStore:
-            def find_by_artifact(self, board_id, artifact_id, filters):
+            def find_by_artifact(
+                self, board_id, artifact_id, filters, *, graph_layer="all",
+            ):
                 calls["legacy"] += 1
+                calls["last_graph_layer"] = graph_layer
                 return []
 
             def find_by_artifact_filtered(
                 self, board_id, artifact_id, filters,
                 *, rel_types=None, direction="both", max_depth=2,
+                graph_layer="all",
             ):
                 calls["filtered"] += 1
                 calls["last_rel_types"] = rel_types
                 calls["last_direction"] = direction
                 calls["last_max_depth"] = max_depth
+                calls["last_graph_layer"] = graph_layer
                 return []
 
         return FakeStore()
@@ -76,6 +84,8 @@ class TestRoutingToFilteredPath:
             svc.get_related_context("bid", "aid")
             assert calls["legacy"] == 1
             assert calls["filtered"] == 0
+            # Default propagates canonical to the store (non-leak at data layer).
+            assert calls["last_graph_layer"] == "canonical"
         finally:
             kg_service_mod._get_graph_store = original
 
@@ -132,5 +142,5 @@ class TestStoreMethodSignature:
         sig = inspect.signature(KuzuGraphStore.find_by_artifact_filtered)
         assert set(sig.parameters) >= {
             "self", "board_id", "artifact_id", "filters",
-            "rel_types", "direction", "max_depth",
+            "rel_types", "direction", "max_depth", "graph_layer",
         }

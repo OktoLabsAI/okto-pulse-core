@@ -366,6 +366,15 @@ def stub_registry(monkeypatch):
         lambda board_id, node_ids: {},
         raising=True,
     )
+    # These tests exercise the rewrite strategies, not the graph_layer filter
+    # (spec e2598178). Stub the layer lookup so the synthetic nodes are treated
+    # as canonical and survive the default-canonical scope; the layer contract
+    # itself is covered by tests/test_kg_natural_query_layer.py.
+    monkeypatch.setattr(
+        tier_power, "_batch_lookup_graph_layer",
+        lambda board_id, node_ids: {nid: "canonical" for nid in node_ids},
+        raising=True,
+    )
     return by_query
 
 

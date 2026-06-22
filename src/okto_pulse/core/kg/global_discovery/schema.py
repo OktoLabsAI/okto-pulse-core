@@ -14,13 +14,13 @@ from __future__ import annotations
 import gc
 import logging
 import os
-import shutil
 from pathlib import Path
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.schema")
 
-GLOBAL_SCHEMA_VERSION = "0.1.0"
+GLOBAL_SCHEMA_VERSION = "0.1.1"
 GLOBAL_DISCOVERY_FILENAME = "discovery.lbug"
+DECISION_DIGEST_GRAPH_LAYER_COLUMN = ("graph_layer", "STRING")
 
 NODE_DDL = [
     """CREATE NODE TABLE IF NOT EXISTS Board (
@@ -56,10 +56,78 @@ NODE_DDL = [
         title STRING,
         one_line_summary STRING,
         node_type STRING,
+        graph_layer STRING,
         embedding DOUBLE[384],
         created_at TIMESTAMP
     )""",
 ]
+
+
+def _is_duplicate_column_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        "already exists" in msg
+        or "duplicate" in msg
+        or "column with name" in msg
+    )
+
+
+def _table_column_names(conn, table_name: str) -> set[str]:
+    res = None
+    names: set[str] = set()
+    try:
+        res = conn.execute(f"CALL TABLE_INFO('{table_name}') RETURN *")
+        while res.has_next():
+            row = res.get_next()
+            for cell in row:
+                if isinstance(cell, str):
+                    names.add(cell)
+                    break
+    finally:
+        if res is not None:
+            try:
+                res.close()
+            except Exception:
+                pass
+    return names
+
+
+def _ensure_decision_digest_layer_column(conn) -> list[str]:
+    """Add ``graph_layer`` and fail-CLOSED backfill legacy DecisionDigest rows.
+
+    R1-IMP3 / FR5: a legacy digest that predates the ``graph_layer`` column has
+    NULL after the ALTER. It must NOT be defaulted to ``canonical`` (that would
+    leak an unverified legacy fact into canonical-only discovery). Instead it is
+    stamped ``legacy_unknown`` — outside canonical until the R1-IMP1 parity
+    reconciler maps it to the correct ``expected_digest_layer`` from the board
+    graph. Identity (``original_node_id``/``source_artifact_ref``) is untouched.
+    """
+    col_name, col_type = DECISION_DIGEST_GRAPH_LAYER_COLUMN
+    added: list[str] = []
+    try:
+        columns = _table_column_names(conn, "DecisionDigest")
+    except Exception:
+        columns = set()
+    if col_name not in columns:
+        try:
+            conn.execute(f"ALTER TABLE DecisionDigest ADD {col_name} {col_type}")
+            added.append(col_name)
+        except Exception as exc:
+            if not _is_duplicate_column_error(exc):
+                raise
+    try:
+        conn.execute(
+            "MATCH (d:DecisionDigest) "
+            "WHERE d.graph_layer IS NULL "
+            "SET d.graph_layer = 'legacy_unknown'"
+        )
+    except Exception as exc:
+        logger.debug(
+            "global_discovery.layer_backfill_skipped err=%s",
+            exc,
+            extra={"event": "global_discovery.layer_backfill_skipped"},
+        )
+    return added
 
 REL_DDL = [
     "CREATE REL TABLE IF NOT EXISTS HAS_TOPIC (FROM Board TO Topic)",
@@ -252,6 +320,7 @@ def bootstrap_global_discovery() -> Path:
             conn.execute(ddl)
         for ddl in REL_DDL:
             conn.execute(ddl)
+        _ensure_decision_digest_layer_column(conn)
         for table, idx_name, col in VECTOR_INDEXES:
             try:
                 conn.execute(
@@ -278,6 +347,21 @@ def bootstrap_global_discovery() -> Path:
         del db
         gc.collect()
     return path
+
+
+def ensure_global_discovery_layer_schema() -> list[str]:
+    """Ensure existing global discovery graphs expose DecisionDigest.graph_layer."""
+    from okto_pulse.core.kg.write_barrier import require_global_write_token
+
+    require_global_write_token()
+    _gdb, conn = open_global_connection()
+    try:
+        return _ensure_decision_digest_layer_column(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 _global_db = None

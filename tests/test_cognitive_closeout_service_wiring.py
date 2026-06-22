@@ -19,11 +19,18 @@ from okto_pulse.core.models.db import (
     Card,
     CardStatus,
     CardType,
+    ConsolidationDeadLetter,
     Spec,
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardMove, SpecMove
-from okto_pulse.core.services.main import CardService, SpecService
+from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
+from okto_pulse.core.services.main import (
+    CardService,
+    SpecService,
+    _board_cognitive_readiness_policy,
+    _cognitive_readiness_blocking_active,
+)
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
@@ -360,3 +367,318 @@ async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_
     assert [(item.source_ref, item.status) for item in items] == [
         (f"task:{card_id}", "pending")
     ]
+
+
+# ===========================================================================
+# S1.3 — production wiring of CognitiveReadinessService + safe policy rollout
+# ===========================================================================
+
+
+class _AllowGate:
+    """Legacy closeout gate stub that always ALLOWS, so these tests isolate the
+    NEW readiness wiring (DLQ / canonical_debt OPEN / skip-expired tiers)."""
+
+    def evaluate(self, **_kwargs):
+        return SimpleNamespace(allowed=True, reason="ok", blocking_count=0)
+
+
+_APPROVE_VALIDATION = {
+    "confidence": 99,
+    "confidence_justification": "strong",
+    "estimated_completeness": 100,
+    "completeness_justification": "complete",
+    "estimated_drift": 0,
+    "drift_justification": "none",
+    "recommendation": "approve",
+    "general_justification": "ready",
+}
+
+
+def _enable_global_blocking_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Flip the default-OFF global feature flag on the cached settings instance."""
+    from okto_pulse.core.infra import config as config_mod
+
+    settings = config_mod.get_settings()
+    monkeypatch.setattr(
+        settings, "cognitive_readiness_blocking_enabled", True, raising=False
+    )
+
+
+async def _seed_open_debt(board_id: str, card_id: str) -> None:
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await upsert_canonical_debt(
+            db, board_id=board_id, artifact_type="task", artifact_id=card_id,
+            source_ref=f"task:{card_id}", content_hash="h",
+            target_status="done", canonical_state="failed",  # OPEN
+        )
+        await db.commit()
+
+
+async def _seed_dlq(board_id: str, card_id: str) -> None:
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        db.add(ConsolidationDeadLetter(
+            id=_id(), board_id=board_id, artifact_type="task", artifact_id=card_id,
+            original_queue_id=_id(), attempts=3,
+            errors=[{"attempt": 1, "error_type": "X", "message": "boom"}],
+        ))
+        await db.commit()
+
+
+# --- policy helper unit (safe rollout: default advisory, two-key blocking) ---
+
+
+def test_board_policy_defaults_to_advisory():
+    assert _board_cognitive_readiness_policy(None) == "advisory"
+    assert _board_cognitive_readiness_policy(
+        SimpleNamespace(settings=None)
+    ) == "advisory"
+    assert _board_cognitive_readiness_policy(
+        SimpleNamespace(settings={"cognitive_readiness_policy": "blocking"})
+    ) == "blocking"
+    # unknown value falls back to advisory
+    assert _board_cognitive_readiness_policy(
+        SimpleNamespace(settings={"cognitive_readiness_policy": "weird"})
+    ) == "advisory"
+
+
+def test_blocking_active_needs_both_flag_and_policy(monkeypatch: pytest.MonkeyPatch):
+    blocking_board = SimpleNamespace(settings={"cognitive_readiness_policy": "blocking"})
+    advisory_board = SimpleNamespace(settings={})
+    # global flag OFF (default) → never active
+    assert _cognitive_readiness_blocking_active(blocking_board) is False
+    # flag ON but policy advisory → not active
+    _enable_global_blocking_flag(monkeypatch)
+    assert _cognitive_readiness_blocking_active(advisory_board) is False
+    # flag ON + policy blocking → active
+    assert _cognitive_readiness_blocking_active(blocking_board) is True
+
+
+# --- done-transition wiring (blocking policy active) ---
+
+
+@pytest.mark.asyncio
+async def test_done_blocks_on_open_canonical_debt_without_active_item(
+    isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    board_id, _, card_id = await _seed_card(
+        CardType.NORMAL, CardStatus.VALIDATION,
+        board_settings={"cognitive_readiness_policy": "blocking"},
+    )
+    await _seed_open_debt(board_id, card_id)
+    _enable_global_blocking_flag(monkeypatch)
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        with pytest.raises(ValueError, match="canonical_debt_open"):
+            await service.submit_task_validation(
+                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                data=_APPROVE_VALIDATION,
+            )
+        await db.rollback()
+
+    card = await _card_row(card_id)
+    assert card.status == CardStatus.VALIDATION  # blocked before status mutation
+    assert card.validations in (None, [])
+
+
+@pytest.mark.asyncio
+async def test_done_blocks_on_technical_dlq_before_status_mutation(
+    isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    board_id, _, card_id = await _seed_card(
+        CardType.NORMAL, CardStatus.VALIDATION,
+        board_settings={"cognitive_readiness_policy": "blocking"},
+    )
+    await _seed_dlq(board_id, card_id)
+    _enable_global_blocking_flag(monkeypatch)
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        with pytest.raises(ValueError, match="technical_dlq"):
+            await service.move_card(
+                card_id=card_id, user_id=USER_ID,
+                data=CardMove(
+                    status=CardStatus.DONE, conclusion="impl",
+                    completeness=100, completeness_justification="c",
+                    drift=0, drift_justification="n",
+                ),
+                actor_name=USER_ID,
+            )
+        await db.rollback()
+
+    card = await _card_row(card_id)
+    assert card.status == CardStatus.VALIDATION
+    assert card.conclusions in (None, [])
+
+
+@pytest.mark.asyncio
+async def test_advisory_default_board_does_not_block_on_open_debt(
+    isolated_closeout_kg_dir: Path,
+) -> None:
+    # default board (no policy set) → advisory → readiness wiring is a NO-OP even
+    # with open canonical_debt; done succeeds (rollout safety for existing boards).
+    board_id, _, card_id = await _seed_card(CardType.NORMAL, CardStatus.VALIDATION)
+    await _seed_open_debt(board_id, card_id)
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        result = await service.submit_task_validation(
+            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            data=_APPROVE_VALIDATION,
+        )
+        await db.commit()
+        assert result["card_status"] == CardStatus.DONE.value
+
+    assert (await _card_row(card_id)).status == CardStatus.DONE
+
+
+@pytest.mark.asyncio
+async def test_blocking_policy_no_debt_passes(
+    isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # policy blocking + flag on, but NO debt/DLQ/active item → readiness ready,
+    # done succeeds.
+    board_id, _, card_id = await _seed_card(
+        CardType.NORMAL, CardStatus.VALIDATION,
+        board_settings={"cognitive_readiness_policy": "blocking"},
+    )
+    _enable_global_blocking_flag(monkeypatch)
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        result = await service.submit_task_validation(
+            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            data=_APPROVE_VALIDATION,
+        )
+        await db.commit()
+        assert result["card_status"] == CardStatus.DONE.value
+
+    assert (await _card_row(card_id)).status == CardStatus.DONE
+
+
+class _ExplodingReadiness:
+    """Readiness service whose evaluation always fails — to prove blocking-active
+    enforcement is fail-CLOSED (visible) rather than a silent skip."""
+
+    async def evaluate_artifact(self, *_a, **_k):
+        raise RuntimeError("readiness backend down")
+
+
+@pytest.mark.asyncio
+async def test_blocking_active_fails_closed_when_readiness_service_errors(
+    isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # blocking policy + flag on + readiness service explodes → done MUST block
+    # with cognitive_readiness_unavailable BEFORE any status/validation mutation.
+    board_id, _, card_id = await _seed_card(
+        CardType.NORMAL, CardStatus.VALIDATION,
+        board_settings={"cognitive_readiness_policy": "blocking"},
+    )
+    _enable_global_blocking_flag(monkeypatch)
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        service._cognitive_readiness_service_factory = lambda: _ExplodingReadiness()
+        with pytest.raises(ValueError, match="cognitive_readiness_unavailable"):
+            await service.submit_task_validation(
+                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                data=_APPROVE_VALIDATION,
+            )
+        await db.rollback()
+
+    card = await _card_row(card_id)
+    assert card.status == CardStatus.VALIDATION
+    assert card.validations in (None, [])
+
+
+@pytest.mark.asyncio
+async def test_advisory_default_does_not_instantiate_readiness_service(
+    isolated_closeout_kg_dir: Path,
+) -> None:
+    # default (advisory) board → the wiring is a NO-OP that never even touches
+    # the readiness factory; done succeeds even if the factory would explode.
+    board_id, _, card_id = await _seed_card(CardType.NORMAL, CardStatus.VALIDATION)
+
+    def _boom_factory():
+        raise AssertionError(
+            "readiness factory must not be called under advisory policy"
+        )
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        service._cognitive_readiness_service_factory = _boom_factory
+        result = await service.submit_task_validation(
+            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            data=_APPROVE_VALIDATION,
+        )
+        await db.commit()
+        assert result["card_status"] == CardStatus.DONE.value
+
+    assert (await _card_row(card_id)).status == CardStatus.DONE
+
+
+@pytest.mark.asyncio
+async def test_blocking_active_fails_closed_when_source_ref_resolution_errors(
+    isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # blocking policy + flag on + source-ref resolution explodes (non-unsupported)
+    # → done MUST fail-closed with cognitive_readiness_unavailable, no mutation.
+    board_id, _, card_id = await _seed_card(
+        CardType.NORMAL, CardStatus.VALIDATION,
+        board_settings={"cognitive_readiness_policy": "blocking"},
+    )
+    _enable_global_blocking_flag(monkeypatch)
+
+    import okto_pulse.core.kg.cognitive_closeout_gate as ccg_mod
+
+    def _boom_resolve(**_kwargs):
+        raise RuntimeError("source ref backend down")
+
+    monkeypatch.setattr(ccg_mod, "resolve_cognitive_source_refs", _boom_resolve)
+
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
+        service = CardService(db)
+        service._cognitive_closeout_gate_factory = lambda: _AllowGate()
+        with pytest.raises(ValueError, match="cognitive_readiness_unavailable"):
+            await service.submit_task_validation(
+                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                data=_APPROVE_VALIDATION,
+            )
+        await db.rollback()
+
+    card = await _card_row(card_id)
+    assert card.status == CardStatus.VALIDATION
+    assert card.validations in (None, [])

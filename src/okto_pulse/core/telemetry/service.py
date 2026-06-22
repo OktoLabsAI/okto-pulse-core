@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.infra.config import CoreSettings
+from okto_pulse.core.telemetry import failure_state
+from okto_pulse.core.telemetry import publish_health as publish_health_mod
 from okto_pulse.core.telemetry.product import PRODUCT_AGGREGATE_FAMILIES
 from okto_pulse.core.telemetry.schema import normalize_event, now_utc
 from okto_pulse.core.telemetry.settings import (
@@ -111,6 +114,10 @@ class TelemetryService:
             "product_aggregate_families": list(PRODUCT_AGGREGATE_FAMILIES),
             "summary": summary,
             "beacon_status": beacon_status,
+            # R1-D: sanitized failure-state read for UI/MCP/CLI. Built from the
+            # R1-A allowlist projection, so it can never carry install_token /
+            # token_hash. Legacy state migrates to safe defaults (R1-A).
+            "publish_status": failure_state.public_status_projection(state),
             "next_opt_in_prompt_after": state.get("next_opt_in_prompt_after"),
             "consent": {
                 "source": state.get("source"),
@@ -121,6 +128,67 @@ class TelemetryService:
             },
             "resolved_precedence": list(cfg.resolved_precedence),
         }
+
+    def publish_health(self, *, now: datetime | None = None) -> dict[str, Any]:
+        """R5C-A: compose the publish-health DTO for the MCP/UI health surface.
+
+        Consumes the R5A PUBLIC failure-state projection (the allowlisted,
+        already-redacted boundary surfaced by ``summary()['publish_status']``)
+        and only CLASSIFIES the health status / source / freshness on top — no
+        producer logic, no trust recomputation, no parallel schema, no
+        re-derived redaction (see ``docs/architecture/telemetry_r5a_r5c_boundary.md``).
+        When NO health source can be read, returns the structured
+        ``HEALTH_SOURCE_UNAVAILABLE`` error instead of a (misleading) health DTO.
+        """
+        resolved_now = now or datetime.now(timezone.utc)
+        try:
+            cfg = self.config()
+            state = dict(cfg.state)
+            projection = failure_state.public_status_projection(state)
+        except Exception:
+            logger.info(
+                "metrics.publish_health",
+                extra={
+                    "metric_name": "metrics_publish_health_total",
+                    "outcome": "source_unavailable",
+                    "source": publish_health_mod.SOURCE_LOCAL,
+                },
+            )
+            return publish_health_mod.redact_health_payload(
+                {
+                    "error": publish_health_mod.HEALTH_SOURCE_UNAVAILABLE,
+                    "source": publish_health_mod.SOURCE_LOCAL,
+                    "message": "No publish-health source could be read.",
+                    "redaction_applied": True,
+                }
+            )
+        # R5C-C: compose the four distinguished sources. local + install_lifecycle
+        # are REAL client signals; aws_ingest / report_athena have no adapter in the
+        # core client (downstream R5B/R4) so they enter as an explicit gap and can
+        # never be inferred healthy from a local send.
+        install_lifecycle = publish_health_mod.derive_install_lifecycle(state, now=resolved_now)
+        aws_ingest, report_athena = publish_health_mod.discover_external_sources(self.settings)
+        dto = publish_health_mod.resolve_publish_health(
+            projection,
+            now=resolved_now,
+            install_lifecycle=install_lifecycle,
+            aws_ingest=aws_ingest,
+            report_athena=report_athena,
+        )
+        logger.info(
+            "metrics.publish_health",
+            extra={
+                "metric_name": "metrics_publish_health_total",
+                "outcome": dto.status,  # enum only — never the DTO/state itself
+                "source": dto.source,
+            },
+        )
+        # R5C-E guardrail: every surface (API/MCP/UI) gets ONLY redacted data —
+        # recursively scrub forbidden keys + secret values (incl. any from the
+        # source state) before the payload leaves the process.
+        return publish_health_mod.redact_health_payload(
+            dto.to_dict(), secret_values=publish_health_mod.collect_health_secret_values(state)
+        )
 
     def update_settings(
         self,

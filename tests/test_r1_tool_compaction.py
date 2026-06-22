@@ -74,8 +74,9 @@ def test_tool_names_stable_after_compaction():
     # Surface size: 210 baseline + 2 R4 consolidated tools (okto_pulse_remove_spec_entity,
     # okto_pulse_ask) added additively as dedicated-routing entrypoints = 212.
     # + 3 R2a rebuild MCP twins (okto_pulse_kg_rebuild_preflight,
-    #   okto_pulse_kg_rebuild_confirm, okto_pulse_kg_rebuild_run) = 215.
-    assert len(names) == 215
+    #   okto_pulse_kg_rebuild_confirm, okto_pulse_kg_rebuild_run)
+    # + 5 operational drill-down/control tools added after the R1 baseline = 220.
+    assert len(names) == 220
     assert all(n.startswith("okto_pulse_") for n in names)
 
 

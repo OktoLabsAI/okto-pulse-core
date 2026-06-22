@@ -69,7 +69,11 @@ LINK_TASK_ANNOTATIONS = [
     'target_type="spec"',
 ]
 
-LINK_TASK_ARGS_SSOT = "One of: rule, decision, tr, ir, or, scenario, contract, spec."
+LINK_TASK_ARGS_SSOT = (
+    "One of: rule, business_rule, decision, tr, technical_requirement, "
+    "ir, integration_requirement, or, observability_requirement, scenario, "
+    "test_scenario, contract, api_contract, spec."
+)
 
 
 def _read(p: Path) -> str:
@@ -126,8 +130,8 @@ def test_ac3_link_task_prose_annotated() -> None:
     text = _read(TOOLDOCS / "misc.md")
     for annotation in LINK_TASK_ANNOTATIONS:
         assert annotation in text, f"misc.md link_task prose missing {annotation}."
-    # The Args line stays the single source of truth, byte-unchanged.
-    assert LINK_TASK_ARGS_SSOT in text
+    # The Args line stays the single source of truth, normalized for wrapping.
+    assert LINK_TASK_ARGS_SSOT in _normalized(text)
 
 
 # ---------------------------------------------------------------------------

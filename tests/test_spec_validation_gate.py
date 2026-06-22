@@ -25,12 +25,14 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import select
 
 from okto_pulse.core.models.db import (
     Board,
     Card,
     CardStatus,
     CardType,
+    DomainEventRow,
     Ideation,
     IdeationStatus,
     Refinement,
@@ -289,6 +291,38 @@ class TestStateGuard:
             )
         assert result["outcome"] == "success"
         assert result["spec_status"] == "validated"
+
+    async def test_successful_submit_emits_status_consolidation_event(self, db_factory):
+        """Spec validation promotion must re-enqueue KG consolidation."""
+        board_id = str(uuid.uuid4())
+        spec_id = str(uuid.uuid4())
+        await _seed_board_with_ids(db_factory, board_id, spec_id)
+        async with db_factory() as db:
+            await db.execute(DomainEventRow.__table__.delete())
+            service = SpecService(db)
+            result = await service.submit_spec_validation(
+                spec_id=spec_id,
+                reviewer_id=USER_ID,
+                reviewer_name="Tester",
+                data=_valid_submit_data(),
+            )
+            events = (
+                await db.execute(
+                    select(DomainEventRow).where(DomainEventRow.board_id == board_id)
+                )
+            ).scalars().all()
+
+        assert result["spec_status"] == "validated"
+        by_type = {event.event_type: event.payload_json for event in events}
+        assert by_type["spec.moved"] == {
+            "spec_id": spec_id,
+            "from_status": "approved",
+            "to_status": "validated",
+        }
+        assert by_type["spec.semantic_changed"] == {
+            "spec_id": spec_id,
+            "changed_fields": ["status"],
+        }
 
     async def test_draft_status_rejects_submit(self, db_factory):
         """Spec in 'draft' status must raise ValueError."""

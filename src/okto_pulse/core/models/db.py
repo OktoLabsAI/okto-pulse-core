@@ -23,6 +23,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from okto_pulse.core.infra.database import Base
+from okto_pulse.core.domain.amendment_eligibility import (
+    AmendmentLineageState,
+    AmendmentRevisionStatus,
+)
 
 if TYPE_CHECKING:
     pass
@@ -185,6 +189,40 @@ class CardPriorityType(TypeDecorator):
         return CardPriority(value)
 
 
+class AmendmentRevisionStatusType(TypeDecorator):
+    """SQLAlchemy type that stores AmendmentRevisionStatus as a string (spec 7ea1e4be)."""
+
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return value.value if isinstance(value, AmendmentRevisionStatus) else value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return AmendmentRevisionStatus(value)
+
+
+class AmendmentLineageStateType(TypeDecorator):
+    """SQLAlchemy type that stores AmendmentLineageState as a string (spec 7ea1e4be)."""
+
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return value.value if isinstance(value, AmendmentLineageState) else value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return AmendmentLineageState(value)
+
+
 class IdeationStatusType(TypeDecorator):
     impl = String(50)
     cache_ok = True
@@ -323,6 +361,12 @@ class Board(Base):
     realm_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     # Board settings (JSON): {max_scenarios_per_card: int, skip_test_coverage_global: bool}
     settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Applied DefaultBoardConfiguration snapshot metadata (spec 9df814bc / FR4).
+    # Lives OUTSIDE Board.settings so it never affects BoardSettings/governance
+    # normalization. Shape: {template_id, template_version, scope, applied_at,
+    # applied_by, override_summary}. Null for boards created via the no-active-template
+    # fallback or legacy boards (no backfill — TR4).
+    default_config_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -514,6 +558,11 @@ class Ideation(Base):
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Max ambiguity gate (spec 2485780b): per-ideation opt-out of the board's
+    # ideation ambiguity gate. Explicit top-level column — NOT stored inside
+    # scope_assessment (which is evaluation-owned). Default false; the write
+    # path works while the ideation is in evaluating status.
+    skip_ambiguity_gate: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
 
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="ideations")
@@ -620,6 +669,12 @@ class IdeationKnowledgeBase(Base):
     source_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # R6-IMP4: multi-hop KB lineage. root_source_kb_id = the INITIAL canonical
+    # origin (preserved across ideation->refinement->spec->card hops, never
+    # overwritten by the immediate parent); immediate_parent_kb_id = the direct
+    # parent. source_kb_id stays == immediate parent for back-compat.
+    root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -712,6 +767,12 @@ class RefinementKnowledgeBase(Base):
     source_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # R6-IMP4: multi-hop KB lineage. root_source_kb_id = the INITIAL canonical
+    # origin (preserved across ideation->refinement->spec->card hops, never
+    # overwritten by the immediate parent); immediate_parent_kb_id = the direct
+    # parent. source_kb_id stays == immediate parent for back-compat.
+    root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -979,6 +1040,12 @@ class SpecKnowledgeBase(Base):
     source_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # R6-IMP4: multi-hop KB lineage. root_source_kb_id = the INITIAL canonical
+    # origin (preserved across ideation->refinement->spec->card hops, never
+    # overwritten by the immediate parent); immediate_parent_kb_id = the direct
+    # parent. source_kb_id stays == immediate parent for back-compat.
+    root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -1759,10 +1826,102 @@ class BoardGuideline(Base):
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # Default-template provenance (spec 8a2fad91 / FR3). Nullable: links created
+    # manually or before the umbrella keep NULL (legacy/forward-only, TR5).
+    template_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    guideline_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Relationships
     board: Mapped["Board"] = relationship("Board")
     guideline: Mapped["Guideline"] = relationship("Guideline", back_populates="board_links")
+
+
+class DesignSystem(Base):
+    """Reusable Design System — a global catalog entry or a board-inline artifact
+    (spec 3a006f65 / card 1392f59d). Versioned catalog row: ``version`` bumps on a
+    title/payload change (including inline) so the mockup gate can compare a stable
+    persisted version/snapshot. Inline systems require ``board_id`` and are never
+    eligible as a global default."""
+
+    __tablename__ = "design_systems"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'global'")
+    )
+    board_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'active'")
+    )
+    owner_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class BoardDesignSystem(Base):
+    """The single effective Design System linked to a board (spec 3a006f65 / card
+    1392f59d). One row per board (UniqueConstraint) — singular effective cardinality;
+    link/unlink upserts/deletes it. Captures ``design_system_version`` at link time so
+    the gate can compare a stable identity."""
+
+    __tablename__ = "board_design_systems"
+    __table_args__ = (UniqueConstraint("board_id", name="uq_board_design_system"),)
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    design_system_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("design_systems.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    design_system_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DesignSystemGateAudit(Base):
+    """Structured, queryable audit of MockupDesignSystemGate ADVISORY outcomes (spec
+    3a006f65 / card 0192f58d). Advisory persists the mockup but records a warning row
+    so the gate decision is reconstituible by query (mockup_id, board_id, expected
+    Design System identity + reason). Blocking failures abort the transaction and are
+    surfaced as a structured error instead — no row here."""
+
+    __tablename__ = "design_system_gate_audit"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    entity_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    mockup_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    expected_design_system_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    expected_design_system_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provided_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class ActivityLog(Base):
@@ -1782,6 +1941,126 @@ class ActivityLog(Base):
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DefaultBoardConfiguration(Base):
+    """Versioned GLOBAL template of default board configuration (spec 9df814bc /
+    card d86f4f96, FR1).
+
+    Snapshot-at-creation source: ``DefaultBoardConfigurationService`` is the single
+    provider that resolves the active template and applies it to a new board's
+    effective settings. The applied snapshot metadata lives on
+    ``Board.default_config_snapshot`` (OUTSIDE ``Board.settings``); future template
+    changes never mutate existing boards (TR5). New table — created by
+    ``Base.metadata.create_all`` on init (no Alembic here).
+    """
+
+    __tablename__ = "default_board_configurations"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Lifecycle status (API contract): draft | active | inactive.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=False, index=True)
+    scope: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="global", index=True
+    )
+    # Effective default settings, validated as BoardSettings by the service (TR1).
+    settings_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # Guideline refs consumed by the guidelines adapter (card #3) — stored here,
+    # materialized there within the same create_board transaction (TR10).
+    guideline_default_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Design System default ref consumed by the design-system adapter (card #4).
+    # Shape: {design_system_id, version, snapshot, gate_mode}.
+    design_system_default_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DefaultBoardConfigurationAudit(Base):
+    """Dedicated audit trail for GLOBAL default-board-configuration template events
+    (spec 9df814bc / card d86f4f96, FR9).
+
+    Templates are global (no ``board_id``), so they cannot use the board-scoped
+    ``ActivityLog``. Board-scoped events (template applied to a board, no-template
+    fallback) stay in ``ActivityLog``. New table — created by ``create_all``.
+    """
+
+    __tablename__ = "default_board_configuration_audit"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    template_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Stable event types: default_board_configuration_created / _activated / _deactivated.
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(String(50), nullable=False, default="global")
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AmendmentHotfixRevision(Base):
+    """Path B first-class lineage artifact (spec 7ea1e4be, fr_e64e2b28).
+
+    A persisted amendment/hotfix revision that links a bug on a done/locked spec
+    to a revision spec OR regression artifact WITHOUT mutating the original spec
+    (AC1). Eligibility is decided by the pure policy in
+    ``core.domain.amendment_eligibility`` (status x lineage_state); this row only
+    stores the durable lineage + lifecycle state + audit-relevant metadata. New
+    table — created by ``Base.metadata.create_all`` on init (no Alembic here).
+    """
+
+    __tablename__ = "amendment_hotfix_revisions"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # The original done/locked spec the amendment corrects. Plain ref (no FK
+    # cascade) so the amendment record is durable and the original spec is never
+    # mutated or coupled to the amendment's lifecycle.
+    original_spec_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    origin_bug_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    # Exact-membership lineage sets (G1: membership is exact, never loose match).
+    origin_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    affected_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    revision_spec_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    regression_scenario_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    regression_test_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Automated regression artifacts (e.g. a pytest node id) — first-class so a
+    # tooling/test-infra regression counts as evidence, not only a product scenario.
+    automated_regression_refs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[AmendmentRevisionStatus] = mapped_column(
+        AmendmentRevisionStatusType(),
+        default=AmendmentRevisionStatus.DRAFT,
+        nullable=False,
+    )
+    lineage_state: Mapped[AmendmentLineageState] = mapped_column(
+        AmendmentLineageStateType(),
+        default=AmendmentLineageState.INCOMPLETE,
+        nullable=False,
+    )
+    validation_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
@@ -1855,6 +2134,72 @@ class ConsolidationQueue(Base):
     next_retry_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )  # Exp-backoff scheduling: claim ignores rows with next_retry_at > now()
+
+
+class CanonicalDebt(Base):
+    """Items that could not be promoted to the canonical KG yet.
+
+    This ledger is intentionally separate from ConsolidationQueue. Queue rows
+    represent executable work; canonical debt records describe why an artifact
+    is not canonical and how/when an agent should retry cognitive promotion.
+    """
+
+    __tablename__ = "canonical_debt"
+    __table_args__ = (
+        UniqueConstraint(
+            "board_id",
+            "artifact_type",
+            "artifact_id",
+            "target_status",
+            "content_hash",
+            name="uq_canonical_debt_artifact_target_hash",
+        ),
+        Index("ix_canonical_debt_board_state", "board_id", "canonical_state"),
+        Index("ix_canonical_debt_board_artifact", "board_id", "artifact_type", "artifact_id"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    canonical_state: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="pending", server_default="pending"
+    )  # pending | retry_scheduled | deferred | failed | blocked | committed | not_applicable | superseded
+    graph_layer: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="working", server_default="working"
+    )
+    maturity_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    owner_agent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    queue_ref: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    dlq_ref: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    evidence_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class ConsolidationDeadLetter(Base):

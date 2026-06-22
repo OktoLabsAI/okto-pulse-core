@@ -53,6 +53,7 @@ def _seed_rows(count: int = SEED_COUNT) -> list[dict]:
             "source_confidence": 0.85,
             "relevance_score": 0.8,
             "source_artifact_ref": "spec-s8",
+            "graph_layer": "canonical",
         })
     # Sort by created_at DESC, id DESC — the stable order the endpoint must honour.
     rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
@@ -72,6 +73,7 @@ class _FakeKGService:
         max_rows: int | None = None,
         cursor: str | None = None,
         node_type: str | None = None,
+        graph_layer: str = "canonical",
     ) -> list[dict]:
         # Stable order (created_at DESC, id DESC). AC-12 requires determinism.
         # The real KGService applies the ORDER BY in Cypher; we replicate it
@@ -83,6 +85,11 @@ class _FakeKGService:
         )
         if node_type:
             ordered = [r for r in ordered if r.get("node_type") == node_type]
+        if graph_layer != "all":
+            ordered = [
+                r for r in ordered
+                if r.get("graph_layer", "canonical") == graph_layer
+            ]
         if cursor:
             # Mimic the production decode_cursor contract. The helper lives
             # in kg_routes and raises ValueError on invalid input.
@@ -102,10 +109,17 @@ class _FakeKGService:
         min_confidence: float = 0.0,
         min_relevance: float | None = None,
         node_type: str | None = None,
+        graph_layer: str = "canonical",
     ) -> int:
+        rows = self._rows
         if node_type:
-            return sum(1 for r in self._rows if r.get("node_type") == node_type)
-        return len(self._rows)
+            rows = [r for r in rows if r.get("node_type") == node_type]
+        if graph_layer != "all":
+            rows = [
+                r for r in rows
+                if r.get("graph_layer", "canonical") == graph_layer
+            ]
+        return len(rows)
 
     def get_related_context(self, *_, **__):
         return []
@@ -373,6 +387,40 @@ class TestNodesAndStats:
         assert body["edge_counts_by_type"] == {"belongs_to": 3}
         assert body["edge_count_status"] == "ok"
 
+    def test_graph_layer_filters_graph_nodes_and_stats(self, client, monkeypatch):
+        rows = _seed_rows(4)
+        rows[0]["graph_layer"] = "canonical"
+        rows[1]["graph_layer"] = "working"
+        rows[2]["graph_layer"] = "working"
+        rows[3]["graph_layer"] = "canonical"
+        fake = _FakeKGService(rows)
+        monkeypatch.setattr(kg_routes, "get_kg_service", lambda: fake)
+
+        code, graph_body = _get_graph(client, limit=10, graph_layer="working")
+        assert code == 200, graph_body
+        assert graph_body["metadata"]["graph_layer"] == "working"
+        assert {n["graph_layer"] for n in graph_body["nodes"]} == {"working"}
+        assert len(graph_body["nodes"]) == 2
+
+        nodes_code, nodes_body = _get_nodes(client, limit=10, graph_layer="working")
+        assert nodes_code == 200, nodes_body
+        assert nodes_body["graph_layer"] == "working"
+        assert nodes_body["total_hint"] == 2
+
+        stats_resp = client.get(
+            f"/api/v1/kg/boards/{SEED_BOARD}/stats",
+            params={"graph_layer": "working"},
+        )
+        stats_body = stats_resp.json()
+        assert stats_resp.status_code == 200, stats_body
+        assert stats_body["graph_layer"] == "working"
+        assert stats_body["node_counts_by_type"]["Decision"] == 2
+
+    def test_invalid_graph_layer_is_rejected(self, client):
+        code, body = _get_graph(client, limit=10, graph_layer="draft")
+        assert code == 400, body
+        assert "graph_layer" in body["detail"]
+
     def test_stats_counts_learning_nodes_beyond_first_thousand(self, monkeypatch):
         many_decisions = _seed_rows(1005)
         learning = {
@@ -384,6 +432,7 @@ class TestNodesAndStats:
             "source_confidence": 0.9,
             "relevance_score": 0.75,
             "source_artifact_ref": "bug-1",
+            "graph_layer": "canonical",
         }
         fake = _FakeKGService([*many_decisions, learning])
         monkeypatch.setattr(kg_routes, "get_kg_service", lambda: fake)

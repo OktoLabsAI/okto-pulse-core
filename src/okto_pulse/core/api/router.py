@@ -24,11 +24,37 @@ from okto_pulse.core.api.settings import router as settings_router
 from okto_pulse.core.api.queue_health import router as queue_health_router
 from okto_pulse.core.api.kg_health import router as kg_health_router
 from okto_pulse.core.api.kg_rebuild import router as kg_rebuild_router
+from okto_pulse.core.api.kg_canonical_debt import (
+    router as kg_canonical_debt_router,
+)
+from okto_pulse.core.api.kg_canonical_partition_integrity import (
+    router as kg_canonical_partition_integrity_router,
+)
+from okto_pulse.core.api.kg_digest_layer_mismatch import (
+    router as kg_digest_layer_mismatch_router,
+)
+from okto_pulse.core.api.kg_stale_canonical_parity import (
+    router as kg_stale_canonical_parity_router,
+)
 from okto_pulse.core.api.kg_orphan_integrity import (
     router as kg_orphan_integrity_router,
 )
 from okto_pulse.core.api.kg_cognitive_pending import (
     router as kg_cognitive_pending_router,
+)
+from okto_pulse.core.api.bug_cognitive_closure import (
+    router as bug_cognitive_closure_router,
+)
+from okto_pulse.core.api.amendment_revisions import (
+    router as amendment_revisions_router,
+)
+from okto_pulse.core.api.default_board_config import (
+    router as default_board_config_router,
+)
+from okto_pulse.core.api.design_systems import router as design_systems_router
+from okto_pulse.core.api.screen_mockups import router as screen_mockups_router
+from okto_pulse.core.api.cognitive_action_center import (
+    router as cognitive_action_center_router,
 )
 from okto_pulse.core.api.kg_cognitive_candidates import (
     router as kg_cognitive_candidates_router,
@@ -53,6 +79,14 @@ api_router.include_router(ideations_router, tags=["ideations"])
 api_router.include_router(stories_router, tags=["stories"])
 api_router.include_router(refinements_router, tags=["refinements"])
 api_router.include_router(specs_router, tags=["specs"])
+# `default_board_config_router` MUST be registered before `guidelines_router`: it owns
+# the literal GET /guidelines/default-candidates, which would otherwise be shadowed by
+# the parametric GET /guidelines/{guideline_id} in guidelines_router (FastAPI/Starlette
+# match routes in registration order, so the param route would swallow the literal path
+# and return 404 "Guideline not found"). Regression: test_guidelines_route_order.py.
+api_router.include_router(
+    default_board_config_router, tags=["default-board-config"]
+)
 api_router.include_router(guidelines_router, tags=["guidelines"])
 api_router.include_router(agents_router, prefix="/agents", tags=["agents"])
 api_router.include_router(attachments_router, prefix="/attachments", tags=["attachments"])
@@ -69,11 +103,37 @@ api_router.include_router(settings_router, tags=["settings"])
 api_router.include_router(queue_health_router, tags=["queue-health"])
 api_router.include_router(kg_health_router, tags=["kg-health"])
 api_router.include_router(kg_rebuild_router, tags=["kg-rebuild"])
+api_router.include_router(kg_canonical_debt_router, tags=["kg-canonical-debt"])
+api_router.include_router(
+    kg_canonical_partition_integrity_router,
+    tags=["kg-canonical-partition-integrity"],
+)
+api_router.include_router(
+    kg_digest_layer_mismatch_router,
+    tags=["kg-digest-layer-mismatch"],
+)
+api_router.include_router(
+    kg_stale_canonical_parity_router,
+    tags=["kg-stale-canonical-parity"],
+)
 api_router.include_router(
     kg_orphan_integrity_router, tags=["kg-orphan-integrity"]
 )
 api_router.include_router(
     kg_cognitive_pending_router, tags=["kg-cognitive-pending"]
+)
+api_router.include_router(
+    bug_cognitive_closure_router, tags=["bug-cognitive-closure"]
+)
+api_router.include_router(
+    amendment_revisions_router, tags=["amendment-revisions"]
+)
+# NOTE: default_board_config_router is registered earlier (before guidelines_router)
+# so its literal /guidelines/default-candidates route is not shadowed. See above.
+api_router.include_router(design_systems_router, tags=["design-systems"])
+api_router.include_router(screen_mockups_router, tags=["screen-mockups"])
+api_router.include_router(
+    cognitive_action_center_router, tags=["kg-cognitive-action-center"]
 )
 api_router.include_router(
     kg_cognitive_candidates_router, tags=["kg-cognitive-pending"]

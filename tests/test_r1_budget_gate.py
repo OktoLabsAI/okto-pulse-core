@@ -138,8 +138,9 @@ def test_callable_names_and_schema_keys_stable():
     tools = _tools()
     # 210 baseline + 2 R4 consolidated tools (okto_pulse_remove_spec_entity, okto_pulse_ask)
     # + 3 R2a rebuild MCP twins (okto_pulse_kg_rebuild_preflight,
-    #   okto_pulse_kg_rebuild_confirm, okto_pulse_kg_rebuild_run) = 215.
-    assert len(tools) == 215
+    #   okto_pulse_kg_rebuild_confirm, okto_pulse_kg_rebuild_run)
+    # + 5 operational drill-down/control tools added after the R1 baseline = 220.
+    assert len(tools) == 220
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

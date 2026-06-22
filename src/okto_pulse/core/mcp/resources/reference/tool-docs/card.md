@@ -55,6 +55,10 @@ Args:
         See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
     test_scenario_ids: Multi-value test scenario IDs (e.g. ``["ts_abc", "ts_def"]``)
         — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
+        A single card is capped by the board's ``max_scenarios_per_card`` setting
+        (default 3; some boards use 2). If the list exceeds the cap, creation
+        fails with ``max_scenarios_per_card_exceeded`` and you must split the
+        scenarios across separate test cards.
         When provided, automatically creates bidirectional links between the
         card and the scenarios. Linking to an existing scenario is a
         traceability update that leaves validated spec content unchanged, but
@@ -72,8 +76,13 @@ Args:
         update is treated as operational evidence rather than semantic spec
         editing. If no eligible scenario
         exists or expected behavior changed, treat it as a semantic gap and
-        route to amendment, refinement, spec revision, or hotfix spec instead
-        of editing the current spec. Bug cards require origin_task_id,
+        remediate through a formal Path B AmendmentHotfixRevision —
+        create/associate the revision, complete its lineage, register
+        re-executable evidence, and have the validator confirm coverage —
+        instead of editing the current spec. Refinement or spec-revision
+        authoring may produce that revisional artifact, but on its own it does
+        not satisfy the bug gate without amendment lineage and confirmed
+        coverage. Bug cards require origin_task_id,
         severity, expected_behavior, and observed_behavior.
     origin_task_id: REQUIRED for bug cards — ID of the task that originated the bug. The spec is auto-resolved from this task.
     severity: REQUIRED for bug cards — one of: critical, major, minor
@@ -93,16 +102,26 @@ Bug regression decision rule:
     spec_mutation_required, and next_action. Only eligible scenarios may satisfy
     require_test_task_for_bug.
 
-    Path B is semantic gap remediation. Same-spec membership by itself, title
-    similarity, cross-spec scenarios, or scenario_not_found do not satisfy the
-    bug gate. Escalate with next_action=escalate_semantic_gap by creating an
-    amendment, refinement, spec revision, or hotfix spec. Do not move a spec directly from in_progress to approved for the simple Path A reuse case.
+    Path B is amendment-revision lineage remediation. Same-spec membership by
+    itself, title similarity, cross-spec scenarios, scenario_not_found, or an
+    unrelated scenario do not satisfy the bug gate. Escalate with
+    next_action=escalate_semantic_gap, then remediate through a formal
+    AmendmentHotfixRevision — create it with
+    okto_pulse_create_amendment_revision, attach the regression
+    artifacts/lineage with okto_pulse_associate_amendment_revision_artifacts and
+    supply re-executable evidence, and have the validator record the
+    (non-forgeable) coverage attestation with
+    okto_pulse_confirm_amendment_coverage. Only then is the regression
+    closure-ready; a generic authoring detour without amendment lineage and
+    validator coverage confirmation does not satisfy the gate. Do not move a spec directly from in_progress to approved for the simple Path A reuse case.
 
-    Path C is hotfix execution. When a done spec or closed origin sprint blocks
-    bug execution, use the returned next_action (`assign_hotfix_lane` or
+    Path C is hotfix execution lane ONLY — it does NOT replace the Path B
+    amendment lineage. When a done spec or closed origin sprint blocks bug
+    execution, use the returned next_action (`assign_hotfix_lane` or
     `activate_hotfix_lane`) to put the bug and its regression test card on an
-    active `lane_type="hotfix"` sprint. Keep the original closed sprint
-    unchanged.
+    active `lane_type="hotfix"` sprint. The lane only unblocks execution; the
+    regression must still satisfy Path A reuse or the Path B amendment lineage
+    above. Keep the original closed sprint unchanged.
 
 ## `okto_pulse_delete_card`
 
@@ -184,4 +203,76 @@ Update card details. Pass only the fields you want to change; omit the rest.
 
 Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
 native list; legacy pipe-separated string is also accepted. Comma-only strings
-are REJECTED. For bidirectional scenario linking, use okto_pulse_link_task_to_scenario.
+are REJECTED. For bidirectional scenario linking, use
+`okto_pulse_link_task(target_type="scenario", ...)`.
+
+## Path B amendment revisions (cross-spec regression evidence)
+
+These tools REMEDIATE the bug regression gate for Path B — they never skip or
+override it (any `skip_gate`/`override_gate`/`bypass`/`force` field is rejected
+with `gate_bypass_not_allowed`). They mirror the REST endpoints under
+`/api/v1/boards/{board_id}/bugs/{bug_id}/amendment-revisions`. See the Path B
+sequence in `workflows/cards.md` and the error codes in `reference/errors.md`.
+
+## `okto_pulse_create_amendment_revision`
+
+Create a Path B `AmendmentHotfixRevision` for a bug (REST twin: `POST
+.../amendment-revisions`). The amendment binds to the bug's OWN `done`/`validated`
+(locked) spec and always starts as `draft` — you cannot mint `approved`/`done`
+(`invalid_initial_status`) and you cannot inject a coverage confirmation (that is
+the validator's job, non-forgeable). Args: `board_id`, `bug_id`, optional
+`original_spec_id` (defaults to the bug's spec; a mismatch is `bug_spec_mismatch`),
+`revision_spec_id`, `origin_task_ids`, `affected_task_ids`,
+`regression_scenario_ids`, `regression_test_task_ids`, `automated_regression_refs`.
+Rejects creating against an `in_progress` spec (`original_spec_not_done_or_locked`).
+
+## `okto_pulse_list_amendment_revisions`
+
+List the bug's amendment revisions plus the bug-level Path B resolution (REST
+twin: `GET .../amendment-revisions`). The `path_b_resolution` payload exposes
+`coverage_state` (`coverage_pending` is NOT closure-ready), `missing_links`,
+`safe_next_actions`, and rejected/eligible regression artifacts — enough to pick
+the next safe action without reading raw errors. Read-only.
+
+## `okto_pulse_get_amendment_revision`
+
+Get one amendment revision scoped to the bug (REST twin: `GET
+.../amendment-revisions/{amendment_id}`). A revision that does not belong to this
+bug/board fails `amendment_bug_mismatch` — it never leaks as success. Read-only.
+
+## `okto_pulse_associate_amendment_revision_artifacts`
+
+Additively associate regression artifacts/evidence to an existing revision (REST
+twin: `POST .../amendment-revisions/{amendment_id}/associate`). Args:
+`board_id`, `bug_id`, `amendment_id`, and any of `regression_scenario_ids`,
+`regression_test_task_ids`, `automated_regression_refs` (at least one, else
+`no_artifacts_to_associate`). NEVER reparents `origin_bug_id`/`original_spec_id`;
+audit-backed.
+
+## `okto_pulse_transition_amendment_revision`
+
+Promote an amendment's lifecycle for the bug (REST twin: `POST
+.../amendment-revisions/{amendment_id}/lifecycle`) — the agent-facing step that
+takes a created/associated revision to `approved`/`done` + `lineage_state=complete`
+so the bug gate can reach `path_b_ready`. Args: `board_id`, `bug_id`,
+`amendment_id`, and any of `status`, `lineage_state`. Fail-closed: unknown values
+are rejected (`invalid_amendment_status`/`invalid_lineage_state`);
+`lineage_state=complete` needs the declared regression scenario + test-task
+artifacts and the bug's authoritative origin task (`incomplete_lineage_artifacts`);
+`approved`/`done` need complete lineage (`cannot_promote_incomplete_lineage`); a
+`cancelled`/`superseded` revision is terminal and cannot be promoted back
+(`terminal_amendment_revision`). It has NO coverage parameter and **never**
+confirms coverage — that stays validator-only via
+`okto_pulse_confirm_amendment_coverage`, so on its own this tool leaves the bug
+`coverage_pending` (it does not close it).
+
+## `okto_pulse_confirm_amendment_coverage`
+
+VALIDATOR-ONLY. Records the non-forgeable coverage attestation that lets the gate
+treat a Path B regression artifact as closure-ready. Args: `board_id`, `bug_id`,
+`regression_test_task_id`, `regression_scenario_id` (both MUST be declared by the
+amendment). Fail-closed: the regression test task must be `done` with its declared
+scenario `passed`/`automated` carrying re-executable evidence (`test_file_path`+
+`test_function`, or an explicit replayable evidence_class such as
+`mcp_replay_manifest` plus `expected_output_snapshot`) — lineage/evidence alone is necessary but NOT
+sufficient. Until this runs, the bug stays `coverage_pending`.

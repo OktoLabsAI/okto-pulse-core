@@ -84,6 +84,7 @@ from okto_pulse.core.services.governance_observability import (
 )
 from okto_pulse.core.services.main import (
     AgentService,
+    AmbiguityGateError,
     ArchiveService,
     AttachmentService,
     BoardService,
@@ -202,6 +203,7 @@ __all__ = [
     "sanitize_governance_metric_event",
     "validate_governance_audit_details",
     "AgentService",
+    "AmbiguityGateError",
     "ArchiveService",
     "AttachmentService",
     "BoardService",

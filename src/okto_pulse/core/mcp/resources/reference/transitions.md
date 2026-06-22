@@ -18,7 +18,11 @@
 | From | To | Pre-requisites |
 |------|-----|---------------|
 | `not_started` | `started` | Spec must be `validated` or later |
-| `validation` | `done` | ALL linked test scenarios must be `passed` or `automated` + `conclusion` + completeness/drift. On `validated`/`done` specs, scenario status/evidence updates are allowed only when the scenario is already linked to an executable test card. |
+| `not_started` | `in_progress` | Spec must be `validated` or later; direct start is accepted by the API for executable test cards. |
+| `started` | `in_progress` | Spec must be `validated` or later |
+| `started`/`in_progress`/`validation` | `done` | ALL linked test scenarios must be `passed` or `automated` + `conclusion` + completeness/drift. On `validated`/`done` specs, scenario status/evidence updates are allowed only when the scenario is already linked to an executable test card. |
+
+Test cards skip `okto_pulse_submit_task_validation`; scenario status/evidence is the gate. A single test card may link at most `board.settings.max_scenarios_per_card` scenarios (default 3, board-specific values such as 2 are valid).
 
 ## Sprint transitions
 

@@ -10,8 +10,12 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 Add an Integration Requirement (IR) to a spec.
 
-Use IR for APIs, queues, stored procedures, events, files, and data
-contracts that need traceability beyond a single endpoint.
+Use IR for APIs, queues, stored procedures, events, files, external services,
+and data contracts that need traceability beyond a single endpoint.
+
+`linked_requirements` is pipe-separated and fail-closed. It accepts FR
+index/fr_id/text and structured TR id/text, then persists canonical IDs.
+Unresolved tokens abort the append before persistence.
 
 ## `okto_pulse_list_integration_requirements`
 

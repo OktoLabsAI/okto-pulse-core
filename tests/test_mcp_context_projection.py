@@ -615,3 +615,64 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
 
     # unsupported profile → structured error, no silent fallback
     assert bad["error_code"] == "unsupported_projection"
+
+
+# ---------------------------------------------------------------------------
+# spec 9e0bf979 / b4e89fcc point 1 — projection must NOT omit the re-executable
+# evidence fields, in summary OR full, so a validator sees them in context.
+# ---------------------------------------------------------------------------
+
+_NEW_EVIDENCE_FIELDS = (
+    "evidence_class",
+    "replay_command",
+    "expected_output_snapshot",
+    "non_replayable_justification",
+)
+
+
+def _result_with_evidence() -> dict:
+    evidence = {
+        "evidence_class": "replay_command",
+        "replay_command": "pytest tests/test_x.py::test_y",
+        "expected_output_snapshot": "1 passed",
+        "non_replayable_justification": "n/a",
+        "test_file_path": "tests/test_x.py",
+        "test_function": "test_y",
+        "last_run_at": "2026-06-19T00:00:00",
+        "output_snippet": "1 passed",
+    }
+    scenario = {"id": "ts_a", "title": "my scenario", "status": "passed", "evidence": dict(evidence)}
+    return {
+        "card": {
+            "id": "c1",
+            "title": "X",
+            "status": "in_progress",
+            "card_type": "normal",
+            "spec_id": "s1",
+            "test_scenario_ids": ["ts_a"],
+        },
+        "spec": {
+            "id": "s1",
+            "title": "Spec",
+            "status": "in_progress",
+            "test_scenarios": [dict(scenario)],
+        },
+        "my_test_scenarios": [dict(scenario)],
+    }
+
+
+@pytest.mark.parametrize("profile", ["summary", "full"])
+def test_projection_preserves_re_executable_evidence_fields(profile):
+    projected = project_task_context(_result_with_evidence(), card_id="c1", profile=profile)
+
+    scenarios = projected.get("my_test_scenarios") or []
+    assert scenarios, f"my_test_scenarios dropped in {profile} projection"
+    evidence = scenarios[0].get("evidence") or {}
+    for field in _NEW_EVIDENCE_FIELDS:
+        assert evidence.get(field), f"{field} omitted from my_test_scenarios evidence ({profile})"
+
+    spec_scenarios = (projected.get("spec") or {}).get("test_scenarios") or []
+    assert spec_scenarios, f"spec.test_scenarios dropped in {profile} projection"
+    spec_evidence = spec_scenarios[0].get("evidence") or {}
+    for field in _NEW_EVIDENCE_FIELDS:
+        assert spec_evidence.get(field), f"{field} omitted from spec scenario evidence ({profile})"

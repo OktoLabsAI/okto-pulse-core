@@ -62,7 +62,6 @@ from okto_pulse.core.models.schemas import (
     AgentCreate,
     AgentUpdate,
     BoardCreate,
-    BoardSettings,
     BoardShareCreate,
     BoardShareUpdate,
     BoardUpdate,
@@ -105,7 +104,10 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
+from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_scenarios import (
+    AmendmentLineageFact,
+    BugRegressionCoverageState,
     BugRegressionGateValidator,
 )
 from okto_pulse.core.services.bug_workflow_remediation import (
@@ -151,6 +153,8 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
     evidence_invalidated_by_semantic_edit,
     require_test_scenario_status_mutable,
     scenario_has_required_evidence,
+    validate_scenario_type,
+    validate_scenario_types_for_write,
     validate_test_scenario_evidence,
 )
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
@@ -177,6 +181,40 @@ def _build_default_cognitive_closeout_gate() -> Any:
 def _board_skip_cognitive_consolidation(board: Board | None) -> bool:
     settings = (board.settings or {}) if board else {}
     return bool(settings.get("skip_cognitive_consolidation", False))
+
+
+# S1.3 Cognitive Closure rollout — per-board policy + global feature flag.
+COGNITIVE_READINESS_POLICY_ADVISORY = "advisory"
+COGNITIVE_READINESS_POLICY_BLOCKING = "blocking"
+
+
+def _board_cognitive_readiness_policy(board: Board | None) -> str:
+    """Per-board cognitive readiness policy (fr_9d42c5e2). Default ``advisory``
+    so existing boards never begin blocking on rollout."""
+    settings = (board.settings or {}) if board else {}
+    value = str(
+        settings.get("cognitive_readiness_policy", COGNITIVE_READINESS_POLICY_ADVISORY)
+    ).lower()
+    if value not in (
+        COGNITIVE_READINESS_POLICY_ADVISORY,
+        COGNITIVE_READINESS_POLICY_BLOCKING,
+    ):
+        return COGNITIVE_READINESS_POLICY_ADVISORY
+    return value
+
+
+def _cognitive_readiness_blocking_active(board: Board | None) -> bool:
+    """True only when BOTH the global feature flag is enabled AND the board
+    policy is ``blocking`` — the two-key safe rollout (dec_41db6a36). Default-off:
+    any failure or unset value resolves to advisory (non-blocking)."""
+    if _board_cognitive_readiness_policy(board) != COGNITIVE_READINESS_POLICY_BLOCKING:
+        return False
+    try:
+        from okto_pulse.core.infra.config import get_settings
+
+        return bool(get_settings().cognitive_readiness_blocking_enabled)
+    except Exception:
+        return False
 
 
 def _board_qa_require_role_separation(board: Board | None) -> bool:
@@ -512,6 +550,119 @@ def _evaluate_cognitive_closeout_or_raise(
     )
 
 
+def _build_default_cognitive_readiness_service() -> Any:
+    """Default ``CognitiveReadinessService`` over the shared cognitive item
+    store (S1.2/S1.3). Injectable factory mirrors
+    ``_build_default_cognitive_closeout_gate`` so tests can swap a fake."""
+
+    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
+    from okto_pulse.core.kg.rebuild_audit import (
+        CognitiveConsolidationItemStore,
+        default_rebuild_base_dir,
+    )
+
+    return CognitiveReadinessService(
+        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    )
+
+
+async def _evaluate_cognitive_readiness_or_raise(
+    *,
+    service_factory: Callable[[], Any],
+    db: AsyncSession,
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    entity: Any,
+    target_label: str,
+    policy_blocking: bool,
+) -> None:
+    """S1.3 production wiring: consult the single ``CognitiveReadinessService``
+    on a ``done`` transition and block on the readiness tiers the legacy gate
+    does NOT cover — technical DLQ, canonical_debt OPEN, and a lapsed
+    revisit-required skip — BEFORE any status / conclusion / snapshot / activity
+    mutation. The legacy ``CognitiveCloseoutGate`` still governs active cognitive
+    items.
+
+    Rollout safety (fr_9d42c5e2 / dec_41db6a36): when ``policy_blocking`` is
+    False (the default for existing boards, or the global flag off) this is a
+    NO-OP — readiness stays advisory. Carve-out: a task/test (no reusable
+    cognition) never blocks on the cognitive/advisory tiers, but the technical
+    no-mask tiers (DLQ / open canonical_debt) still block when policy is active.
+
+    Failure semantics: while ``policy_blocking`` is False this is a NO-OP. Once
+    blocking is ACTIVE, a resolution/evaluation failure is fail-CLOSED with a
+    visible ``cognitive_readiness_unavailable`` error BEFORE any mutation — a
+    silent skip would make the enforcement point an appearance of control
+    (validator carry-forward).
+    """
+
+    if not policy_blocking:
+        return
+
+    from okto_pulse.core.kg.cognitive_closeout_gate import (
+        CognitiveCloseoutGateError,
+        resolve_cognitive_source_refs,
+    )
+    from okto_pulse.core.kg.cognitive_readiness import GATE_BLOCKING_TIERS
+
+    def _unavailable(reason: str) -> ValueError:
+        return ValueError(
+            f"cognitive_readiness_unavailable: {target_label} done transition "
+            f"blocked — {reason} (blocking policy active)"
+        )
+
+    try:
+        refs = resolve_cognitive_source_refs(
+            entity_type=entity_type, entity=entity, entity_id=entity_id,
+        ).source_refs
+    except CognitiveCloseoutGateError as exc:
+        # An entity type that is genuinely NOT eligible for cognitive closeout is
+        # a safe no-op; any other gate error on a covered type is fail-closed.
+        if getattr(exc, "code", "") == "unsupported_entity_type":
+            return
+        raise _unavailable(
+            "source resolution failed "
+            f"({getattr(exc, 'code', None) or type(exc).__name__})"
+        ) from exc
+    except Exception as exc:
+        raise _unavailable(f"source resolution failed ({type(exc).__name__})") from exc
+    if not refs:
+        return
+
+    # Carve-out: the entity's own ref is refs[0] (``<normalized_type>:<id>``).
+    # task/test carry no reusable cognition → advisory for cognitive tiers (the
+    # technical DLQ/debt no-mask tiers still apply via compose_readiness).
+    primary_type = refs[0].split(":", 1)[0]
+    has_reusable_cognition = primary_type not in ("task", "test")
+
+    try:
+        service = service_factory()
+    except Exception as exc:
+        raise _unavailable(
+            f"readiness service unavailable ({type(exc).__name__})"
+        ) from exc
+    blocking_tiers = GATE_BLOCKING_TIERS
+    for ref in refs:
+        try:
+            verdict = await service.evaluate_artifact(
+                db,
+                board_id=board_id,
+                source_ref=ref,
+                has_reusable_cognition=has_reusable_cognition,
+            )
+        except Exception as exc:
+            raise _unavailable(
+                f"readiness evaluation failed for {ref} ({type(exc).__name__})"
+            ) from exc
+        if verdict.blocking and verdict.tier in blocking_tiers:
+            raise ValueError(
+                f"{verdict.tier}: {target_label} done transition blocked by "
+                "cognitive readiness "
+                f"({verdict.readiness_signal or verdict.reason_code or verdict.tier})"
+            )
+
+
 async def _resolve_closeout_graph_state(
     board_id: str, db: AsyncSession
 ) -> str | None:
@@ -603,15 +754,60 @@ def _filter_mockups(
 
 def _compile_qa_context(qa_items: list) -> str | None:
     """Compile answered Q&A items into a context section."""
-    answered = [qa for qa in (qa_items or []) if getattr(qa, "answer", None) or (isinstance(qa, dict) and qa.get("answer"))]
+    def _selected_labels(qa) -> list[str]:
+        selected = getattr(qa, "selected", None)
+        choices = getattr(qa, "choices", None)
+        if isinstance(qa, dict):
+            selected = qa.get("selected")
+            choices = qa.get("choices")
+        selected_ids = [str(item) for item in (selected or [])]
+        labels_by_id = {
+            str(choice.get("id")): str(choice.get("label"))
+            for choice in (choices or [])
+            if isinstance(choice, dict) and choice.get("id") is not None
+        }
+        return [labels_by_id.get(item, item) for item in selected_ids]
+
+    def _answer_text(qa) -> str | None:
+        answer = getattr(qa, "answer", None) or (qa.get("answer") if isinstance(qa, dict) else None)
+        if answer:
+            return str(answer)
+        labels = _selected_labels(qa)
+        if labels:
+            return ", ".join(labels)
+        return None
+
+    answered = [qa for qa in (qa_items or []) if _answer_text(qa)]
     if not answered:
         return None
     lines = []
     for qa in answered:
-        q = getattr(qa, "question", None) or qa.get("question", "")
-        a = getattr(qa, "answer", None) or qa.get("answer", "")
+        q = getattr(qa, "question", None)
+        if isinstance(qa, dict):
+            q = q or qa.get("question", "")
+        q = q or ""
+        a = _answer_text(qa) or ""
         lines.append(f"**Q:** {q}\n**A:** {a}")
     return "## Q&A Decisions\n" + "\n\n".join(lines)
+
+
+_PROPAGATED_KB_PREFIX = "[propagated from parent]"
+
+
+def _propagated_kb_description(description: str | None) -> str:
+    """R6-IMP1 (FR1/AC1) — apply the propagation marker AT MOST ONCE.
+
+    In a multi-hop chain (ideation -> refinement -> spec -> card) the source KB
+    already carries the prefix from the previous hop, because every hop copies the
+    parent's (already-prefixed) description through this same path. Prepending
+    again would stack ``[propagated from parent] [propagated from parent] ...``.
+    Idempotent: if the stripped description already starts with the marker, return
+    it unchanged; otherwise prepend once. Origin metadata (source_*/source_kb_id)
+    is untouched — only the human-readable marker is normalized."""
+    body = (description or "").strip()
+    if body.startswith(_PROPAGATED_KB_PREFIX):
+        return body
+    return f"{_PROPAGATED_KB_PREFIX} {body}".strip()
 
 
 async def propagate_artifacts(
@@ -639,8 +835,18 @@ async def propagate_artifacts(
     # Propagate mockups
     copied_mockups = _filter_mockups(source_mockups, mockup_ids)
     if copied_mockups:
-        existing = target_entity.screen_mockups or []
-        target_entity.screen_mockups = existing + copied_mockups
+        existing = list(target_entity.screen_mockups or [])
+        new_set = existing + copied_mockups
+        # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): a propagated/copied
+        # mockup is a NEW entry on the target board — gate it (delta vs the existing set)
+        # BEFORE assigning so a non-compliant mockup can't be laundered onto a blocking
+        # board via propagation. Covers create_refinement propagation + copy_mockups_to_card.
+        from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+        target_entity.screen_mockups = existing  # keep baseline for the gate's delta
+        await gate_entity_screen_mockups(
+            db, target_entity, new_set, entity_type=type(target_entity).__name__.lower()
+        )
+        target_entity.screen_mockups = new_set
 
     # Propagate knowledge bases (DB rows) — accepts ORM objects or dicts
     if target_kb_class and source_knowledge_bases:
@@ -660,17 +866,26 @@ async def propagate_artifacts(
                 kb_payload = {
                     target_id_field: target_entity.id,
                     "title": _get("title"),
-                    "description": f"[propagated from parent] {_get('description') or ''}".strip(),
+                    # R6-IMP1: idempotent prefix — never stack across multi-hop chains.
+                    "description": _propagated_kb_description(_get("description")),
                     "content": _get("content"),
                     "mime_type": _get("mime_type") or "text/markdown",
                     "created_by": user_id,
                 }
+                # R6-IMP4: multi-hop KB lineage. The immediate parent is the KB
+                # being copied; the root is the parent's OWN root when it already
+                # has one (so a 3rd hop keeps the canonical origin), else the
+                # parent itself. source_kb_id stays == immediate parent (back-compat).
+                parent_kb_id = _get("id")
+                parent_root = _get("root_source_kb_id")
                 source_values = {
                     "source_type": source_type,
                     "source_id": source_id,
                     "source_title": source_title,
                     "source_version": source_version,
-                    "source_kb_id": _get("id"),
+                    "source_kb_id": parent_kb_id,
+                    "immediate_parent_kb_id": parent_kb_id,
+                    "root_source_kb_id": parent_root or parent_kb_id,
                 }
                 for attr, value in source_values.items():
                     if value is not None and hasattr(target_kb_class, attr):
@@ -780,8 +995,15 @@ async def propagate_architecture_designs(
     if normalized in {"reference_only", "none"}:
         return []
 
+    from okto_pulse.core.models.schemas import ArchitectureWarningAcknowledgementRequest
     from okto_pulse.core.services.architecture import ArchitecturePropagationService
 
+    # Bug eded2f0e (R3, option B): SDLC artifact propagation is an INTERNAL
+    # snapshot copy of an already-acknowledged source architecture design — not a
+    # new authoring action. The copy still gets its OWN copy-scoped acknowledgement
+    # record (copy_from_parent enforces an explicit ack for warning-bearing copies;
+    # the gate is NOT weakened), supplied here by the system on the artifact's
+    # behalf so legitimate propagation is not blocked.
     return await ArchitecturePropagationService(db).copy_from_parent(
         source_parent_type=source_parent_type,
         source_parent_id=source_parent_id,
@@ -789,6 +1011,13 @@ async def propagate_architecture_designs(
         target_parent_id=target_parent_id,
         actor_id=actor_id,
         design_ids=design_ids,
+        architecture_warning_acknowledgement=ArchitectureWarningAcknowledgementRequest(
+            accepted=True,
+            statement=(
+                f"internal snapshot propagation of an already-acknowledged "
+                f"{source_parent_type} architecture design"
+            ),
+        ),
     )
 
 
@@ -800,16 +1029,28 @@ class BoardService:
 
     async def create_board(self, user_id: str, data: BoardCreate, realm_id: str | None = None) -> Board:
         """Create a new board."""
+        from okto_pulse.core.services.default_board_configuration import (
+            BOARD_EVENT_APPLIED,
+            BOARD_EVENT_FALLBACK,
+            DefaultBoardConfigurationService,
+        )
+
+        # FR3: the single provider resolves the active default template (if any)
+        # and produces the effective settings + snapshot metadata in THIS same
+        # transaction. No active template -> graceful fallback (BoardSettings()
+        # default, no snapshot, no error — AC11). Snapshot metadata is persisted on
+        # Board.default_config_snapshot, OUTSIDE Board.settings (FR4).
+        _config_service = DefaultBoardConfigurationService(self.db)
+        effective_settings, snapshot_meta = await _config_service.build_snapshot_for_create(
+            settings_override=getattr(data, "settings", None), applied_by=user_id
+        )
         board = Board(
             name=data.name,
             description=data.description,
             owner_id=user_id,
             realm_id=realm_id,
-            settings=(
-                data.settings.model_dump(mode="json")
-                if getattr(data, "settings", None)
-                else BoardSettings().model_dump(mode="json")
-            ),
+            settings=effective_settings,
+            default_config_snapshot=snapshot_meta,
         )
         self.db.add(board)
         await self.db.flush()
@@ -822,6 +1063,35 @@ class BoardService:
             actor_name=actor_name,
             details={"name": data.name},
         )
+        # FR9: board-scoped audit of which default-config path created the board.
+        if snapshot_meta is not None:
+            await self._log_activity(
+                board_id=board.id,
+                action=BOARD_EVENT_APPLIED,
+                actor_type="user",
+                actor_id=user_id,
+                actor_name=actor_name,
+                details={
+                    "template_id": snapshot_meta["template_id"],
+                    "template_version": snapshot_meta["template_version"],
+                    "override_summary": snapshot_meta["override_summary"],
+                },
+            )
+        else:
+            await self._log_activity(
+                board_id=board.id,
+                action=BOARD_EVENT_FALLBACK,
+                actor_type="user",
+                actor_id=user_id,
+                actor_name=actor_name,
+                details={"reason": "no_active_default_board_configuration"},
+            )
+        # FR5/FR6/#3/#4: the umbrella service orchestrates every default adapter
+        # (guidelines + design system) onto the new board IN THIS transaction. Any
+        # adapter failure raises default_materialization_failed so the whole
+        # create_board reverts (no partial board/link/snapshot); no active
+        # template -> no-op.
+        await _config_service.apply_default_config_to_board(board.id, actor=user_id)
         # Eagerly bootstrap the per-board Kùzu graph. This keeps board
         # creation on the slow path (~1-2s) so subsequent consolidation /
         # MCP query paths stay on the hot path.
@@ -1067,6 +1337,9 @@ class CardService:
         self._cognitive_closeout_gate_factory: Callable[
             [], Any
         ] = _build_default_cognitive_closeout_gate
+        self._cognitive_readiness_service_factory: Callable[
+            [], Any
+        ] = _build_default_cognitive_readiness_service
 
     async def create_card(
         self, board_id: str, user_id: str, data: CardCreate, skip_ownership_check: bool = False
@@ -1366,6 +1639,11 @@ class CardService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
+            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, card, update_data["screen_mockups"], entity_type="card"
+            )
 
         card_json_fields = {"labels", "test_scenario_ids", "conclusions", "screen_mockups", "knowledge_bases"}
         for key, value in update_data.items():
@@ -1601,9 +1879,17 @@ class CardService:
                 f"Card is not in 'validation' status (currently '{card.status.value}'). "
                 f"Only cards in 'validation' status can receive validations."
             )
+        old_status = card.status
 
         if getattr(card, "card_type", CardType.NORMAL) == CardType.TEST:
-            raise ValueError("Card type 'test' is not subject to validation gate.")
+            # R4-IMP1: normalized contract pointing at the test-card operational
+            # path (scenario status update + move_card done). Same rejection.
+            from okto_pulse.core.services.gate_contracts import (
+                task_validation_unsupported_for_test_card_error,
+            )
+            raise task_validation_unsupported_for_test_card_error(
+                card_id=card.id, board_id=card.board_id, spec_id=card.spec_id,
+            )
 
         # Resolve thresholds from hierarchy
         board = await self.db.get(Board, card.board_id)
@@ -1657,6 +1943,16 @@ class CardService:
                 entity=card,
                 target_label="card",
                 graph_state=graph_state,
+            )
+            await _evaluate_cognitive_readiness_or_raise(
+                service_factory=self._cognitive_readiness_service_factory,
+                db=self.db,
+                board_id=card.board_id,
+                entity_type=_card_cognitive_entity_type(card),
+                entity_id=card.id,
+                entity=card,
+                target_label="card",
+                policy_blocking=_cognitive_readiness_blocking_active(board),
             )
 
         # Build validation entry.
@@ -1770,6 +2066,23 @@ class CardService:
         max_pos = (await self.db.execute(pos_query)).scalar() or -1
         card.position = max_pos + 1
 
+        if old_status != card.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import CardMoved
+
+            await event_publish(
+                CardMoved(
+                    board_id=card.board_id,
+                    actor_id=reviewer_id,
+                    card_id=card.id,
+                    from_status=old_status.value,
+                    to_status=card.status.value,
+                    spec_id=card.spec_id,
+                    moved_by=reviewer_id,
+                ),
+                session=self.db,
+            )
+
         # Activity log
         await self._log_activity(
             board_id=card.board_id,
@@ -1827,6 +2140,146 @@ class CardService:
         card.validations = new_validations
         flag_modified(card, "validations")
         return True
+
+    async def confirm_amendment_coverage(
+        self,
+        *,
+        amendment_id: str,
+        regression_test_task_id: str,
+        regression_scenario_id: str,
+        reviewer_id: str,
+        reviewer_name: str,
+    ) -> dict:
+        """Validator-only writer of the Path B coverage attestation (G2 / c9cf9781).
+
+        Enforces, fail-closed, BEFORE persisting:
+        * artifact binding — the test task + scenario MUST be declared by THIS
+          amendment (regression_test_task_ids / regression_scenario_ids);
+        * real validator identity — the same critical-context authorization the
+          task-validation gate uses (not a free-text validator_id);
+        * reexecutable evidence (NECESSARY, not sufficient) — the regression test
+          task is DONE and its declared scenario is passed/automated with SPEC3
+          reexecutable evidence (test_file_path+test_function or test_run_id).
+        Persists the bound attestation via the single reserved-key writer. The bug
+        gate later DERIVES coverage_confirmed from this record (never a passed
+        bool), so a generic/forged metadata write cannot grant coverage."""
+        from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
+
+        svc = AmendmentRevisionService(self.db)
+        amendment = await svc.get(amendment_id)
+        if amendment is None:
+            raise ValueError(f"Amendment '{amendment_id}' not found")
+
+        # 1. binding: the artifact MUST be declared by THIS amendment.
+        if regression_test_task_id not in (amendment.regression_test_task_ids or []):
+            raise CardOperationError(
+                "coverage_binding_invalid",
+                f"Regression test task '{regression_test_task_id}' is not declared by "
+                f"amendment '{amendment_id}'. Coverage can only be confirmed for an "
+                "artifact bound to this amendment.",
+                remediation="bind_regression_artifact_to_amendment",
+                facts={"amendment_id": amendment_id},
+            )
+        if regression_scenario_id not in (amendment.regression_scenario_ids or []):
+            raise CardOperationError(
+                "coverage_binding_invalid",
+                f"Regression scenario '{regression_scenario_id}' is not declared by "
+                f"amendment '{amendment_id}'.",
+                remediation="bind_regression_artifact_to_amendment",
+                facts={"amendment_id": amendment_id},
+            )
+
+        test_task = await self.db.get(Card, regression_test_task_id)
+        if not test_task or test_task.board_id != amendment.board_id:
+            raise ValueError(
+                f"Regression test task '{regression_test_task_id}' not found on this board"
+            )
+
+        # 2. real validator identity — same critical-context gate as task validation.
+        await _authorize_critical_context_or_raise(
+            self.db,
+            board_id=amendment.board_id,
+            actor_id=reviewer_id,
+            entity_type="card",
+            entity_id=test_task.id,
+            critical_action=CriticalAction.CARD_SUBMIT_VALIDATION,
+            surface="service",
+            actor_type="agent",
+            actor_name=reviewer_name,
+            card_id=test_task.id,
+        )
+
+        # 3. reexecutable evidence is NECESSARY (not sufficient): test task done +
+        #    declared scenario passed/automated with SPEC3 reexecutable evidence.
+        if test_task.status != CardStatus.DONE:
+            raise CardOperationError(
+                "coverage_precondition_unmet",
+                f"Regression test task '{regression_test_task_id}' is not done "
+                f"(status='{getattr(test_task.status, 'value', test_task.status)}').",
+                remediation="complete_regression_test_task",
+                facts={"amendment_id": amendment_id},
+            )
+        evidence_ref = await self._reexecutable_evidence_ref(
+            test_task, regression_scenario_id
+        )
+        if not evidence_ref:
+            raise CardOperationError(
+                "coverage_precondition_unmet",
+                f"Scenario '{regression_scenario_id}' has no reexecutable evidence "
+                "(needs status passed/automated with test_file_path+test_function or "
+                "test_run_id). Lineage + a generic status are NOT sufficient (G2).",
+                remediation="attach_reexecutable_evidence",
+                facts={"amendment_id": amendment_id},
+            )
+
+        confirmation = {
+            "validator_id": reviewer_id,
+            "amendment_revision_id": amendment.id,
+            "regression_test_task_id": regression_test_task_id,
+            "regression_scenario_id": regression_scenario_id,
+            "evidence_ref": evidence_ref,
+            "confirmed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await svc.set_coverage_confirmation(
+            amendment_id, confirmation=confirmation, actor=reviewer_id
+        )
+        return confirmation
+
+    async def _reexecutable_evidence_ref(self, test_task: Card, scenario_id: str) -> str:
+        """Reexecutable evidence ref for the scenario if it is passed/automated
+        with SPEC3 evidence, else ''. Searches the test task's spec first, then the
+        board's specs (a Path B regression scenario may be cross-spec)."""
+        spec_ids: list[str] = []
+        if test_task.spec_id:
+            spec_ids.append(str(test_task.spec_id))
+        rows = await self.db.execute(
+            select(Spec.id).where(Spec.board_id == test_task.board_id)
+        )
+        spec_ids.extend(str(sid) for (sid,) in rows.all())
+        seen: set[str] = set()
+        for spec_id in spec_ids:
+            if spec_id in seen:
+                continue
+            seen.add(spec_id)
+            spec = await self.db.get(Spec, spec_id)
+            if not spec:
+                continue
+            for sc in (spec.test_scenarios or []):
+                if not isinstance(sc, dict) or str(sc.get("id")) != scenario_id:
+                    continue
+                if str(sc.get("status") or "").lower() not in ("passed", "automated"):
+                    return ""
+                ev = sc.get("evidence")
+                if isinstance(ev, dict):
+                    fp = str(ev.get("test_file_path") or "").strip()
+                    fn = str(ev.get("test_function") or "").strip()
+                    if fp and fn:
+                        return f"{fp}::{fn}"
+                    trid = str(ev.get("test_run_id") or "").strip()
+                    if trid:
+                        return f"test_run:{trid}"
+                return ""
+        return ""
 
     # ---- Coverage gate functions (used by SpecService.move_spec) ----
 
@@ -2290,15 +2743,24 @@ class CardService:
                 for sid in (card.test_scenario_ids or []):
                     sc = all_scenarios.get(sid)
                     if sc and sc.get("status") in ("draft", "ready"):
-                        stale.append(sc.get("title", sid))
+                        stale.append({
+                            "id": sid,
+                            "title": sc.get("title", sid),
+                            "status": sc.get("status"),
+                        })
                 if stale:
-                    titles = ", ".join(f'"{t}"' for t in stale[:3])
-                    suffix = f" and {len(stale) - 3} more" if len(stale) > 3 else ""
-                    raise ValueError(
-                        f"Cannot complete this test card: {len(stale)} linked scenario(s) "
-                        f"still have status 'draft' or 'ready' ({titles}{suffix}). "
-                        f"Update scenario statuses to 'automated' or 'passed' using "
-                        f"okto_pulse_update_test_scenario_status before completing the card."
+                    # R4-IMP1: normalized test_card_completion contract with the
+                    # actionable pending scenarios. Same block (draft/ready scenarios
+                    # prevent done); no auto-promotion.
+                    from okto_pulse.core.services.gate_contracts import (
+                        incomplete_test_card_completion_error,
+                    )
+                    raise incomplete_test_card_completion_error(
+                        card_id=card.id,
+                        current_status=old_status.value if old_status else None,
+                        pending_scenarios=stale,
+                        board_id=card.board_id,
+                        spec_id=card.spec_id,
                     )
 
         # --- Bug card: block in_progress/done without properly linked test tasks ---
@@ -2365,6 +2827,25 @@ class CardService:
                 for s in (spec_for_bug.test_scenarios or [])
                 if isinstance(s, dict) and s.get("id") is not None
             } if spec_for_bug else {}
+            # Path B (spec f5a7cae7 / card ead17e4d): amendments formally linked
+            # to THIS bug+spec feed the shared Path A/B predicate so a cross-spec
+            # regression artifact is admissible ONLY with valid amendment lineage.
+            # coverage_confirmed is hardcoded False here — no production path may
+            # confirm coverage before card c9cf9781 (ADJ-B). An empty list means
+            # Path B context is active but no amendment exists -> cross-spec stays
+            # fail-closed (ADJ-C).
+            amendment_rows = (
+                await AmendmentRevisionService(self.db).list_for_bug(
+                    board_id=card.board_id,
+                    original_spec_id=card.spec_id,
+                    origin_bug_id=card.id,
+                )
+                if card.spec_id
+                else []
+            )
+            amendment_facts = [
+                AmendmentLineageFact.from_row(row) for row in amendment_rows
+            ]
             validated_test_tasks: list[Card] = []
             candidate_scenario_ids: list[str] = []
 
@@ -2394,8 +2875,12 @@ class CardService:
                         f"or create a new test task with test_scenario_ids set."
                     )
 
-                # Validate test task belongs to the same spec
-                if test_task.spec_id != card.spec_id:
+                # Validate test task belongs to the same spec (Path A). A
+                # cross-spec test task is admissible ONLY via Path B: when an
+                # amendment formally links this bug we defer the decision to the
+                # shared predicate (which fail-closes); with no amendment context
+                # the cross-spec test task stays blocked (ADJ-C).
+                if test_task.spec_id != card.spec_id and not amendment_facts:
                     raise ValueError(
                         f"Linked test task '{test_task.title}' belongs to spec '{test_task.spec_id}' "
                         f"but this bug belongs to spec '{card.spec_id}'. "
@@ -2447,44 +2932,13 @@ class CardService:
                     if not sc:
                         other_spec_id = candidate_spec_ids_by_scenario_id.get(scenario_id)
                         if other_spec_id:
-                            observe_bug_regression_resolution(
-                                board_id=card.board_id,
-                                result=None,
-                                duration_ms=(time.perf_counter() - bug_gate_started) * 1000,
-                                spec_id=card.spec_id,
-                                error_code="cross_spec_scenario",
-                            )
-                            await record_bug_regression_decision(
-                                board_id=card.board_id,
-                                bug_id=card.id,
-                                spec_id=card.spec_id,
-                                decision="semantic_gap",
-                                reason_code="cross_spec_scenario",
-                                scenario_count=len(candidate_scenario_ids),
-                                test_task_count=len(validated_test_tasks),
-                                actor_id=user_id,
-                                session=self.db,
-                            )
-                            workflow_remediation = (
-                                BugWorkflowRemediationMessageBuilder()
-                                .build_semantic_gap(reason_code="cross_spec_scenario")
-                            )
-                            raise CardOperationError(
-                                "cross_spec_scenario",
-                                f"Test scenario '{scenario_id}' referenced by test task "
-                                f"'{test_task.title}' belongs to spec '{other_spec_id}' "
-                                f"but this bug belongs to spec '{card.spec_id}'. "
-                                "reason=cross_spec_scenario; semantic_gap_required=true; "
-                                "spec_mutation_required=true; next_action=escalate_semantic_gap."
-                                ,
-                                remediation="escalate_semantic_gap",
-                                facts={
-                                    "card_id": card.id,
-                                    "spec_id": card.spec_id,
-                                    "next_action": workflow_remediation.next_action.value,
-                                },
-                                workflow_remediation=workflow_remediation,
-                            )
+                            # TR1: cross-spec evidence is admissible ONLY via Path
+                            # B. Always defer to the shared predicate
+                            # (validate_linked_test_tasks below) — it fail-closes
+                            # with a stable Path B reason (missing_amendment_revision
+                            # when no formal amendment links this bug), replacing
+                            # the old direct same-spec equality reject.
+                            continue
                         observe_bug_regression_resolution(
                             board_id=card.board_id,
                             result=None,
@@ -2568,6 +3022,11 @@ class CardService:
                 spec=spec_for_bug,
                 origin_task=origin_task,
                 candidate_spec_ids_by_scenario_id=candidate_spec_ids_by_scenario_id,
+                # G2 (c9cf9781): coverage is NOT passed in (a bool would be
+                # forgeable). It is derived from the persisted, artifact-bound
+                # validator attestation carried on each amendment fact
+                # (validation_metadata.coverage_confirmation) — fail-closed.
+                amendment_facts=amendment_facts,
             )
             eligibility = gate_result.eligibility
             observe_bug_regression_resolution(
@@ -2579,6 +3038,8 @@ class CardService:
                 primary_reason = eligibility.rejected_scenarios[0].reason.value
             elif eligibility.eligible_scenarios:
                 primary_reason = eligibility.eligible_scenarios[0].reason.value
+            elif eligibility.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING:
+                primary_reason = "coverage_pending"
             else:
                 primary_reason = "no_eligible_scenarios"
 
@@ -2586,12 +3047,17 @@ class CardService:
                 board_id=card.board_id,
                 bug_id=card.id,
                 spec_id=card.spec_id,
+                # The bounded decision vocabulary (eligible/rejected/semantic_gap)
+                # is owned by the observability schema; extending it belongs to
+                # 966c7e7c. coverage_pending is a non-allow block -> recorded as
+                # "rejected"; the precise signal travels in reason_code below.
                 decision=(
                     "eligible"
                     if gate_result.allowed
                     else ("semantic_gap" if eligibility.semantic_gap_required else "rejected")
                 ),
                 reason_code=primary_reason,
+                coverage_state=eligibility.coverage_state.value,
                 scenario_count=len(candidate_scenario_ids),
                 test_task_count=len(validated_test_tasks),
                 actor_id=user_id,
@@ -2600,6 +3066,7 @@ class CardService:
             if not gate_result.allowed:
                 rejected = ", ".join(
                     f"{item.scenario_id}:{item.reason.value}"
+                    + (f"({item.detail})" if item.detail else "")
                     for item in eligibility.rejected_scenarios
                 ) or "none"
                 eligible_ids = ", ".join(
@@ -2661,6 +3128,16 @@ class CardService:
                 entity=card,
                 target_label="card",
                 graph_state=graph_state,
+            )
+            await _evaluate_cognitive_readiness_or_raise(
+                service_factory=self._cognitive_readiness_service_factory,
+                db=self.db,
+                board_id=card.board_id,
+                entity_type=_card_cognitive_entity_type(card),
+                entity_id=card.id,
+                entity=card,
+                target_label="card",
+                policy_blocking=_cognitive_readiness_blocking_active(board),
             )
 
         report_target = None
@@ -3368,9 +3845,10 @@ async def _validate_spec_linked_refs(
         AC labels like "AC1" are rejected — the SpecModal coverage widget
         does not recognise them and they would silently appear uncovered.
 
-    - linked_requirements (business_rules + api_contracts + IR + OR → FR):
-        Same rule — index "0".."N-1" OR exact FR text. Anything else
-        (including "FR1" labels) is rejected.
+    - linked_requirements:
+        business_rules → FR; api_contracts + IR + OR → FR/TR.
+        Same rule — index "0".."N-1" OR exact requirement text/id.
+        Labels like "FR1" are rejected.
 
     - linked_rules (api_contracts → BR):
         Must match an existing business_rule.id in the same spec.
@@ -3446,6 +3924,8 @@ async def _validate_spec_linked_refs(
     valid_ac_texts = {text for text in final_acs if text}
     valid_fr_ids = {child_id for item in final_frs_raw if (child_id := _child_id(item))}
     valid_ac_ids = {child_id for item in final_acs_raw if (child_id := _child_id(item))}
+    valid_tr_texts = {_child_text(item) for item in final_trs_structured if _child_text(item)}
+    valid_tr_ids = {child_id for item in final_trs_structured if (child_id := _child_id(item))}
     valid_br_ids = {br.get("id") for br in final_brs if br.get("id")}
     valid_contract_ids = {ct.get("id") for ct in final_contracts if ct.get("id")}
     valid_ir_ids = {ir.get("id") for ir in final_irs if ir.get("id")}
@@ -3460,8 +3940,9 @@ async def _validate_spec_linked_refs(
         valid_ids: set,
         dim: str,
         owner_label: str,
+        target_label: str | None = None,
     ):
-        target = _DIM_TARGET.get(dim, dim.upper()[:2])
+        target = target_label or _DIM_TARGET.get(dim, dim.upper()[:2])
         for ref in refs or []:
             ref_str = str(ref)
             if ref_str in valid_indices or ref_str in valid_texts or ref_str in valid_ids:
@@ -3491,10 +3972,11 @@ async def _validate_spec_linked_refs(
         _check_index_text_or_id(
             ct.get("linked_requirements") or [],
             valid_fr_indices,
-            valid_fr_texts,
-            valid_fr_ids,
+            valid_fr_texts | valid_tr_texts,
+            valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
+            "FR/TR",
         )
         for ref in ct.get("linked_rules") or []:
             if str(ref) not in valid_br_ids:
@@ -3503,17 +3985,18 @@ async def _validate_spec_linked_refs(
                     f"in the spec (valid: {sorted(valid_br_ids) or 'none'})."
                 )
 
-    # integration_requirements.linked_requirements → FR
+    # integration_requirements.linked_requirements → FR/TR
     # integration_requirements.linked_api_contracts → api_contract.id
     for ir in final_irs:
         owner = f"IR '{ir.get('id') or ir.get('title') or '?'}'"
         _check_index_text_or_id(
             ir.get("linked_requirements") or [],
             valid_fr_indices,
-            valid_fr_texts,
-            valid_fr_ids,
+            valid_fr_texts | valid_tr_texts,
+            valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
+            "FR/TR",
         )
         for ref in ir.get("linked_api_contracts") or []:
             if str(ref) not in valid_contract_ids:
@@ -3522,17 +4005,18 @@ async def _validate_spec_linked_refs(
                     f"in the spec (valid: {sorted(valid_contract_ids) or 'none'})."
                 )
 
-    # observability_requirements.linked_requirements → FR
+    # observability_requirements.linked_requirements → FR/TR
     # observability_requirements.linked_integration_requirements → IR.id
     for req in final_ors:
         owner = f"OR '{req.get('id') or req.get('title') or '?'}'"
         _check_index_text_or_id(
             req.get("linked_requirements") or [],
             valid_fr_indices,
-            valid_fr_texts,
-            valid_fr_ids,
+            valid_fr_texts | valid_tr_texts,
+            valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
+            "FR/TR",
         )
         for ref in req.get("linked_integration_requirements") or []:
             if str(ref) not in valid_ir_ids:
@@ -3624,7 +4108,7 @@ async def _validate_spec_linked_refs(
         more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
         raise ValueError(
             f"Cannot update spec: {len(errors)} orphan link reference(s) found. {joined}{more}. "
-            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC, the BR.id for linked_rules, "
+            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC, TR id/text for API contracts, the BR.id for linked_rules, "
             f"the api_contract.id / integration_requirement.id for cross-resource links, "
             f"and an existing Card.id for linked_task_ids."
         )
@@ -3638,6 +4122,9 @@ class SpecService:
         self._cognitive_closeout_gate_factory: Callable[
             [], Any
         ] = _build_default_cognitive_closeout_gate
+        self._cognitive_readiness_service_factory: Callable[
+            [], Any
+        ] = _build_default_cognitive_readiness_service
 
     # ---- Status progression order ----
     _STATUS_ORDER = {
@@ -3713,6 +4200,14 @@ class SpecService:
         if not result.scalar_one_or_none():
             return None
 
+        # Fail-closed scenario_type (spec ac16b3c9): every scenario in a NEW spec
+        # is a new write — reject an unsupported type before insert/flush, never
+        # normalize.
+        if data.test_scenarios:
+            validate_scenario_types_for_write(
+                [s.model_dump() for s in data.test_scenarios], None
+            )
+
         spec = Spec(
             board_id=board_id,
             title=data.title,
@@ -3726,7 +4221,7 @@ class SpecService:
                 "acceptance_criterion", data.acceptance_criteria
             ),
             test_scenarios=[s.model_dump() for s in data.test_scenarios] if data.test_scenarios else None,
-            screen_mockups=[s.model_dump() for s in data.screen_mockups] if data.screen_mockups else None,
+            screen_mockups=None,  # assigned after the Design System gate (below)
             business_rules=[r.model_dump() for r in data.business_rules] if data.business_rules else None,
             api_contracts=[c.model_dump() for c in data.api_contracts] if data.api_contracts else None,
             integration_requirements=[ir.model_dump() for ir in data.integration_requirements] if data.integration_requirements else None,
@@ -3739,6 +4234,19 @@ class SpecService:
             ideation_id=data.ideation_id,
             refinement_id=data.refinement_id,
         )
+        # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate mockups submitted
+        # at creation BEFORE persistence — the create twin of the update_spec gate. The
+        # baseline is the entity's (empty) mockups, so every submitted screen is
+        # evaluated; assign only if the gate does not raise.
+        _submitted_mockups = (
+            [s.model_dump() for s in data.screen_mockups] if data.screen_mockups else None
+        )
+        if _submitted_mockups:
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, spec, _submitted_mockups, entity_type="spec"
+            )
+            spec.screen_mockups = _submitted_mockups
         self.db.add(spec)
         await self.db.flush()
 
@@ -3856,6 +4364,12 @@ class SpecService:
         target = next((s for s in scenarios if s.get("id") == scenario_id), None)
         if target is None:
             raise ValueError(f"scenario_not_found: {scenario_id}")
+
+        # Fail-closed scenario_type (spec ac16b3c9): an explicit new value on the
+        # body-edit path must be a supported type — reject before mutation, never
+        # normalize. ``None`` means "leave unchanged" and is not validated.
+        if scenario_type is not None:
+            validate_scenario_type(scenario_type)
 
         clearable = {"notes", "linked_criteria"}
         clear_set = set(clear or [])
@@ -4095,7 +4609,13 @@ class SpecService:
             else False
         )
         if not skip:
-            ok, missing = validate_test_scenario_evidence(status, evidence)
+            # for_write: a NEW gated write must satisfy the re-executable
+            # evidence contract (spec 9e0bf979) — explicit evidence_class is
+            # strict, and an unclassed run-log-like payload is rejected before
+            # persisting (only a direct test pointer is grandfathered).
+            ok, missing = validate_test_scenario_evidence(
+                status, evidence, for_write=True
+            )
             if not ok:
                 raise ValueError(f"evidence_required: {', '.join(missing)}")
 
@@ -4432,6 +4952,17 @@ class SpecService:
         # rejects orphan references with a precise error message.
         await _validate_spec_linked_refs(self.db, spec, update_data)
 
+        # Fail-closed scenario_type service gate — defense in depth (spec
+        # ac16b3c9, FR2/IR). Closes the same whole-list bypass for scenario_type:
+        # any caller (UI full-list, REST PUT or MCP) replacing test_scenarios must
+        # not introduce a new/changed invalid scenario_type. Grandfathers unchanged
+        # historical values (matched by id) so legacy data keeps re-serializing;
+        # runs BEFORE any mutation/flush and never normalizes.
+        if update_data.get("test_scenarios") is not None:
+            validate_scenario_types_for_write(
+                update_data["test_scenarios"], spec.test_scenarios
+            )
+
         # NC-9 (test-theater) service gate — defense in depth (spec 6f1e75bf,
         # FR1/BR2). Closes the bypass where any caller (UI full-list, REST or
         # MCP) could replace test_scenarios with a gated status and no evidence;
@@ -4440,6 +4971,17 @@ class SpecService:
         if update_data.get("test_scenarios") is not None:
             await self._enforce_test_scenario_evidence_gate(
                 spec, update_data["test_scenarios"], user_id
+            )
+
+        # MockupDesignSystemGate (spec 3a006f65, card 0192f58d) — defense in depth:
+        # gate the bulk screen_mockups write (UI full-list / REST) the same way the MCP
+        # tool does, BEFORE persistence. Delta-only: only new/changed mockups; legacy
+        # untouched mockups are skipped; screens already gated by the MCP tool in this
+        # transaction are skipped. Blocking raises pre-persist; advisory audits.
+        if update_data.get("screen_mockups") is not None:
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, spec, update_data["screen_mockups"], entity_type="spec"
             )
 
         json_fields = {
@@ -4616,11 +5158,13 @@ class SpecService:
                 spec.status == SpecStatus.APPROVED
                 and board_settings.get("require_spec_validation", True)
             ):
-                raise ValueError(
-                    "Spec Validation Gate is enabled on this board. Direct "
-                    "approved→validated is blocked — submit a spec validation "
-                    "via okto_pulse_submit_spec_validation (or the IDE Validate "
-                    "button) to go through the semantic quality gate."
+                # R4-IMP1: same block, normalized operational contract (GateContractError
+                # subclasses ValueError — no state-machine change, no auto-promotion).
+                from okto_pulse.core.services.gate_contracts import (
+                    spec_validation_gate_error,
+                )
+                raise spec_validation_gate_error(
+                    spec_id=spec.id, current_status=spec.status.value,
                 )
 
         # Re-execute coverage gates + qualitative validation when moving to in_progress
@@ -4751,6 +5295,16 @@ class SpecService:
                 entity=spec,
                 target_label="spec",
                 graph_state=graph_state,
+            )
+            await _evaluate_cognitive_readiness_or_raise(
+                service_factory=self._cognitive_readiness_service_factory,
+                db=self.db,
+                board_id=spec.board_id,
+                entity_type="spec",
+                entity_id=spec.id,
+                entity=spec,
+                target_label="spec",
+                policy_blocking=_cognitive_readiness_blocking_active(board),
             )
 
             resource_gate = ResourceGateService(self.db)
@@ -5076,6 +5630,28 @@ class SpecService:
         old_status = spec.status
         if outcome == "success":
             spec.status = SpecStatus.VALIDATED
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecMoved, SpecSemanticChanged
+
+            await event_publish(
+                SpecMoved(
+                    board_id=spec.board_id,
+                    actor_id=reviewer_id,
+                    spec_id=spec.id,
+                    from_status=old_status.value,
+                    to_status=spec.status.value,
+                ),
+                session=self.db,
+            )
+            await event_publish(
+                SpecSemanticChanged(
+                    board_id=spec.board_id,
+                    actor_id=reviewer_id,
+                    spec_id=spec.id,
+                    changed_fields=["status"],
+                ),
+                session=self.db,
+            )
 
         # Activity log
         await self._log_activity(
@@ -5932,11 +6508,20 @@ class StoryService:
             status=data.status,
             assignee_id=data.assignee_id,
             created_by=user_id,
-            screen_mockups=[
-                item.model_dump() if hasattr(item, "model_dump") else item
-                for item in (data.screen_mockups or [])
-            ] or None,
+            screen_mockups=None,  # assigned after the Design System gate (below)
         )
+        # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate mockups submitted
+        # at creation BEFORE persistence (old=[] baseline so every screen is evaluated).
+        _submitted_mockups = [
+            item.model_dump() if hasattr(item, "model_dump") else item
+            for item in (data.screen_mockups or [])
+        ] or None
+        if _submitted_mockups:
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, story, _submitted_mockups, entity_type="story"
+            )
+            story.screen_mockups = _submitted_mockups
         self.db.add(story)
         await self.db.flush()
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
@@ -5947,6 +6532,19 @@ class StoryService:
             actor_id=user_id,
             actor_name=actor_name,
             details={"story_id": story.id, "topic_id": story.topic_id, "title": story.title},
+        )
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import StoryCreated
+
+        await event_publish(
+            StoryCreated(
+                board_id=board_id,
+                actor_id=user_id,
+                story_id=story.id,
+                topic_id=story.topic_id,
+                status=story.status.value,
+            ),
+            session=self.db,
         )
         return await self.get_story(story.id)
 
@@ -6014,6 +6612,11 @@ class StoryService:
                 item.model_dump() if hasattr(item, "model_dump") else item
                 for item in update_data["screen_mockups"]
             ]
+            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, story, update_data["screen_mockups"], entity_type="story"
+            )
         for key, value in update_data.items():
             setattr(story, key, value)
             if key in {"labels", "screen_mockups"}:
@@ -6027,6 +6630,19 @@ class StoryService:
             actor_name=actor_name,
             details={"story_id": story.id, "fields": list(update_data.keys())},
         )
+        if update_data:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import StoryUpdated
+
+            await event_publish(
+                StoryUpdated(
+                    board_id=story.board_id,
+                    actor_id=user_id,
+                    story_id=story.id,
+                    changed_fields=list(update_data.keys()),
+                ),
+                session=self.db,
+            )
         await self.db.flush()
         return await self.get_story(story_id)
 
@@ -6054,6 +6670,20 @@ class StoryService:
             actor_name=actor_name,
             details={"story_id": story.id, "from_status": old_status.value, "to_status": data.status.value},
         )
+        if old_status != data.status:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import StoryMoved
+
+            await event_publish(
+                StoryMoved(
+                    board_id=story.board_id,
+                    actor_id=user_id,
+                    story_id=story.id,
+                    from_status=old_status.value,
+                    to_status=data.status.value,
+                ),
+                session=self.db,
+            )
         await self.db.flush()
         return await self.get_story(story_id)
 
@@ -6117,6 +6747,18 @@ class StoryService:
             actor_id=user_id,
             actor_name=actor_name,
             details={"story_id": story_id, "ideation_id": ideation_id},
+        )
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import StoryLinkedToIdeation
+
+        await event_publish(
+            StoryLinkedToIdeation(
+                board_id=story.board_id,
+                actor_id=user_id,
+                story_id=story_id,
+                ideation_id=ideation_id,
+            ),
+            session=self.db,
         )
         return link
 
@@ -6183,9 +6825,19 @@ class StoryService:
             if link:
                 links.append(link)
 
+        _old_ideation_mockups = list(ideation.screen_mockups or [])
         propagated = self._propagate_story_mockups(stories, ideation, data.mockup_ids)
         if propagated:
             flag_modified(ideation, "screen_mockups")
+            # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): convert_stories
+            # rewrites story mockups with FRESH ids onto the ideation — gate the new
+            # entries (delta vs the pre-propagation set) BEFORE flush so a non-compliant
+            # legacy mockup can't be laundered onto a blocking board.
+            from okto_pulse.core.services.design_system import MockupDesignSystemGate
+            await MockupDesignSystemGate(self.db).gate_delta(
+                ideation.board_id, _old_ideation_mockups, list(ideation.screen_mockups or []),
+                entity_type="ideation", entity_id=ideation.id,
+            )
         await self.db.flush()
         await self.db.refresh(ideation)
         for link in links:
@@ -6219,6 +6871,16 @@ class StoryService:
         if propagated:
             ideation.screen_mockups = target
         return propagated
+
+
+class AmbiguityGateError(ValueError):
+    """Raised when the Max ambiguity gate blocks an evaluating -> done transition.
+
+    A ValueError subclass (spec 2485780b, BR4) so the MCP move tool's existing
+    ``except ValueError`` surfaces the actionable detail unchanged, while REST
+    callers catch it specifically to return HTTP 400 without altering the
+    behavior of unrelated move errors.
+    """
 
 
 class IdeationService:
@@ -6403,6 +7065,11 @@ class IdeationService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
+            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, ideation, update_data["screen_mockups"], entity_type="ideation"
+            )
 
         ideation_json_fields = {"scope_assessment", "labels", "screen_mockups"}
         for key, value in update_data.items():
@@ -6451,6 +7118,136 @@ class IdeationService:
         IdeationStatus.CANCELLED: [],
     }
 
+    @staticmethod
+    def _resolve_ideation_ambiguity_config(board: Board | None) -> dict[str, Any]:
+        """Resolve the Max ambiguity gate config from board settings (spec 2485780b).
+
+        Reads through the same ``settings.get(key, default)`` normalization path
+        used by other governance settings, so missing legacy settings resolve to
+        defaults (gate disabled, threshold 3). The threshold is clamped to 1-5
+        defensively in case a legacy row persisted an out-of-range value before
+        BoardSettings validation existed.
+        """
+        settings = (board.settings if board else None) or {}
+        threshold = int(settings.get("max_ideation_ambiguity", 3))
+        threshold = max(1, min(5, threshold))
+        return {
+            "require_ideation_ambiguity_gate": bool(
+                settings.get("require_ideation_ambiguity_gate", False)
+            ),
+            "max_ideation_ambiguity": threshold,
+        }
+
+    async def set_ambiguity_gate_skip(
+        self,
+        ideation_id: str,
+        user_id: str,
+        skip: bool,
+        *,
+        source: str,
+        actor_name: str | None = None,
+    ) -> Ideation | None:
+        """Dedicated write path for the per-ideation skip_ambiguity_gate flag (spec 2485780b).
+
+        Works while the ideation is in evaluating status (or any non-draft
+        status) WITHOUT routing through the generic update_ideation draft-only
+        guard — so it cannot be used to smuggle other non-draft edits past that
+        guard. Rejects archived ideations. Emits an auditable activity entry
+        (ideation.ambiguity_gate_skip_updated) carrying actor, source path and
+        the old -> new skip value. Both the REST endpoint and the MCP mirror
+        call THIS method, so their behavior, validation and audit trail are
+        identical (BR7 / FR5 / FR14 / FR15).
+        """
+        ideation = await self.get_ideation(ideation_id)
+        if not ideation:
+            return None
+
+        if getattr(ideation, "archived", False):
+            raise ValueError("Cannot update ambiguity gate skip for archived ideation.")
+
+        old_value = bool(ideation.skip_ambiguity_gate)
+        new_value = bool(skip)
+        ideation.skip_ambiguity_gate = new_value
+
+        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, ideation.board_id)
+        await self._log_activity(
+            board_id=ideation.board_id,
+            action="ideation.ambiguity_gate_skip_updated",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=resolved_name,
+            details={
+                "ideation_id": ideation_id,
+                "source": source,
+                "old_value": old_value,
+                "new_value": new_value,
+            },
+        )
+        return ideation
+
+    @staticmethod
+    def _parse_ambiguity_score(raw: Any) -> int | None:
+        """Parse scope_assessment.ambiguity as an integer 1-5 (spec 2485780b TR8).
+
+        Returns None when the value is missing, non-numeric, or outside the
+        1-5 range so the gate treats it as 'not properly evaluated' and
+        fails closed. ``bool`` is rejected explicitly (it is an ``int``
+        subclass but never a valid ambiguity score).
+        """
+        if isinstance(raw, bool):
+            return None
+        if isinstance(raw, int):
+            value = raw
+        elif isinstance(raw, float) and raw.is_integer():
+            value = int(raw)
+        elif isinstance(raw, str) and raw.strip().lstrip("-").isdigit():
+            value = int(raw.strip())
+        else:
+            return None
+        if not 1 <= value <= 5:
+            return None
+        return value
+
+    async def _enforce_ambiguity_gate(self, ideation: Ideation) -> None:
+        """Enforce the Max ambiguity gate on an evaluating -> done transition.
+
+        Spec 2485780b (TR6/TR8/TR9, BR2/BR4/BR6): only acts when the board gate
+        is enabled and the ideation has not explicitly skipped it. Blocks the
+        transition when the evaluated ambiguity is missing, non-numeric, or
+        greater than the configured threshold, raising AmbiguityGateError with
+        an actionable detail. Reads board settings through the shared
+        normalization path and never touches evaluation/KG/cognitive/resource
+        subsystems. The caller invokes this BEFORE ResourceGate so ambiguity
+        errors take precedence.
+        """
+        board = await self.db.get(Board, ideation.board_id)
+        config = self._resolve_ideation_ambiguity_config(board)
+        if not config["require_ideation_ambiguity_gate"]:
+            return
+        if bool(getattr(ideation, "skip_ambiguity_gate", False)):
+            return
+
+        threshold = config["max_ideation_ambiguity"]
+        scope = ideation.scope_assessment or {}
+        score = self._parse_ambiguity_score(scope.get("ambiguity"))
+        if score is None:
+            raise AmbiguityGateError(
+                "Max ambiguity gate failed: ambiguity has not been evaluated. "
+                "Evaluate the ideation's ambiguity (e.g. via Q&A). Skipping the gate "
+                "for this ideation is a human decision applied through the authorized "
+                "UI/REST control — an agent cannot apply the skip and should request a "
+                "human decision."
+            )
+        if score > threshold:
+            raise AmbiguityGateError(
+                f"Max ambiguity gate failed: ambiguity score {score} exceeds "
+                f"configured max {threshold}. Reduce ambiguity through Q&A, or raise "
+                f"the threshold / disable the board gate. Skipping the gate for this "
+                f"ideation is a human decision applied through the authorized UI/REST "
+                f"control — an agent cannot apply the skip and should request a human "
+                f"decision."
+            )
+
     async def move_ideation(
         self, ideation_id: str, user_id: str, data: IdeationMove, actor_name: str | None = None
     ) -> Ideation | None:
@@ -6495,6 +7292,10 @@ class IdeationService:
 
         # Snapshot on done
         if data.status == IdeationStatus.DONE:
+            # Max ambiguity gate (spec 2485780b): only evaluating -> done, and
+            # BEFORE ResourceGate so ambiguity errors take precedence (BR4).
+            if old_status == IdeationStatus.EVALUATING:
+                await self._enforce_ambiguity_gate(ideation)
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
                 ideation.board_id,
                 "ideation",
@@ -6898,6 +7699,9 @@ class RefinementService:
         self._cognitive_done_guard_factory: Callable[
             [], Any
         ] = _build_default_refinement_cognitive_done_guard
+        self._cognitive_readiness_service_factory: Callable[
+            [], Any
+        ] = _build_default_cognitive_readiness_service
 
     _STATUS_ORDER = {
         RefinementStatus.DRAFT: 0,
@@ -7008,14 +7812,24 @@ class RefinementService:
             out_of_scope=data.out_of_scope,
             analysis=data.analysis,
             decisions=data.decisions,
-            screen_mockups=[
-                item.model_dump() if hasattr(item, "model_dump") else item
-                for item in (data.screen_mockups or [])
-            ] or None,  # manual mockups only; propagation adds via propagate_artifacts
+            screen_mockups=None,  # assigned after the Design System gate (below)
             assignee_id=data.assignee_id,
             created_by=user_id,
             labels=data.labels or ideation.labels,
         )
+        # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate the MANUAL mockups
+        # submitted at creation BEFORE persistence (old=[] baseline). Propagated mockups
+        # added below by propagate_artifacts are gated inside that helper.
+        _submitted_mockups = [
+            item.model_dump() if hasattr(item, "model_dump") else item
+            for item in (data.screen_mockups or [])
+        ] or None
+        if _submitted_mockups:
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, refinement, _submitted_mockups, entity_type="refinement"
+            )
+            refinement.screen_mockups = _submitted_mockups
         self.db.add(refinement)
         await self.db.flush()
 
@@ -7136,6 +7950,11 @@ class RefinementService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
+            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            await gate_entity_screen_mockups(
+                self.db, refinement, update_data["screen_mockups"], entity_type="refinement"
+            )
 
         refinement_json_fields = {"in_scope", "out_scope", "labels", "screen_mockups"}
         for key, value in update_data.items():
@@ -7268,6 +8087,16 @@ class RefinementService:
                 target_label="refinement",
                 graph_state=graph_state,
             )
+            await _evaluate_cognitive_readiness_or_raise(
+                service_factory=self._cognitive_readiness_service_factory,
+                db=self.db,
+                board_id=refinement.board_id,
+                entity_type="refinement",
+                entity_id=refinement.id,
+                entity=refinement,
+                target_label="refinement",
+                policy_blocking=_cognitive_readiness_blocking_active(board),
+            )
 
         # Snapshot on done
         if data.status == RefinementStatus.DONE:
@@ -7284,6 +8113,18 @@ class RefinementService:
             refinement.version += 1
 
         refinement.status = data.status
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import RefinementSemanticChanged
+
+        await event_publish(
+            RefinementSemanticChanged(
+                board_id=refinement.board_id,
+                actor_id=user_id,
+                refinement_id=refinement.id,
+                changed_fields=["status"],
+            ),
+            session=self.db,
+        )
 
         await self._log_activity(
             board_id=refinement.board_id,
@@ -7828,6 +8669,51 @@ class GuidelineService:
         link.priority = priority
         await self.db.flush()
         return True
+
+    async def apply_default_guidelines(
+        self,
+        board_id: str,
+        refs: list,
+        *,
+        template_id: str,
+        template_version: int,
+        actor: str = "system",
+    ) -> list[BoardGuideline]:
+        """Materialize a new board's default guideline links from the active default
+        template's resolved refs (spec 8a2fad91 / card 2803c136 / FR3). Each created
+        link records the priority + the template provenance (template_id,
+        template_version) + the guideline_version captured in the ref. Runs in the
+        CALLER's transaction (TR3 — no commit here), so any failure aborts the whole
+        ``create_board`` with no partial board / orphan links. Idempotent per
+        ``uq_board_guideline``: an existing board/guideline link is preserved untouched;
+        intra-batch duplicate guideline_ids are de-duped first-wins, so the resulting
+        priority/provenance is deterministic and never duplicated (TR4). The umbrella
+        owns resolution + fail-closed validation; this is purely the writer (it is the
+        single materialization point and the ts_a48e70ee failure-injection target)."""
+        existing = await self.db.execute(
+            select(BoardGuideline.guideline_id).where(BoardGuideline.board_id == board_id)
+        )
+        already_linked = set(existing.scalars())
+        created: list[BoardGuideline] = []
+        seen: set[str] = set()
+        for ref in refs or []:
+            guideline_id = ref["guideline_id"]
+            if guideline_id in seen or guideline_id in already_linked:
+                continue  # uq_board_guideline + intra-template de-dup (first wins)
+            seen.add(guideline_id)
+            link = BoardGuideline(
+                board_id=board_id,
+                guideline_id=guideline_id,
+                priority=int(ref.get("priority", 0) or 0),
+                template_id=template_id,
+                template_version=template_version,
+                guideline_version=ref.get("guideline_version"),
+            )
+            self.db.add(link)
+            created.append(link)
+        if created:
+            await self.db.flush()
+        return created
 
 
 # ============================================================================

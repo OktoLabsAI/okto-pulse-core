@@ -8,6 +8,7 @@ exposes only `**kwargs`. The dispatcher MUST forward via keyword arguments.
 Each per-type tool has a different name for the "intermediate" id parameter:
   link_card_to_spec(board_id, spec_id, card_id)                       — no intermediate
   link_task_to_scenario(board_id, spec_id, scenario_id, card_id)      — scenario_id
+  link_task_to_fr(board_id, spec_id, fr_id, card_id)                  — fr_id
   link_task_to_rule(board_id, spec_id, rule_id, card_id)              — rule_id
   link_task_to_decision(board_id, spec_id, decision_id, card_id)     — decision_id
   link_task_to_tr(board_id, spec_id, tr_id, card_id)                 — tr_id
@@ -18,20 +19,33 @@ Each per-type tool has a different name for the "intermediate" id parameter:
 
 from __future__ import annotations
 
+import json
+import uuid
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from okto_pulse.core.mcp import server
+from okto_pulse.core.models.db import Board, Card, Spec, SpecStatus
 
 
 # Each tuple is (target_type, requires_spec_id)
 _TARGET_TYPES = [
     ("scenario", True),
+    ("test_scenario", True),
+    ("fr", True),
+    ("functional_requirement", True),
     ("rule", True),
+    ("business_rule", True),
     ("decision", True),
     ("tr", True),
+    ("technical_requirement", True),
     ("contract", True),
+    ("api_contract", True),
     ("ir", True),
+    ("integration_requirement", True),
     ("or", True),
+    ("observability_requirement", True),
     ("spec", False),
 ]
 
@@ -68,7 +82,7 @@ async def test_unknown_target_type_returns_structured_error():
         card_id="fake",
     )
     assert "Unknown target_type 'banana'" in result
-    assert "scenario" in result and "rule" in result  # whitelist enumerated
+    assert "scenario" in result and "fr" in result and "rule" in result  # whitelist enumerated
 
 
 @pytest.mark.asyncio
@@ -115,6 +129,7 @@ def test_per_type_shim_no_longer_registered_as_mcp_tool(shim_name):
 
 _INTERNAL_HELPERS = [
     "_link_task_to_scenario_internal",
+    "_link_task_to_fr_internal",
     "_link_task_to_rule_internal",
     "_link_task_to_decision_internal",
     "_link_task_to_tr_internal",
@@ -127,7 +142,7 @@ _INTERNAL_HELPERS = [
 
 @pytest.mark.parametrize("helper_name", _INTERNAL_HELPERS)
 def test_internal_helper_exists_and_is_async(helper_name):
-    """Each of the 8 dispatch targets must exist as an async internal helper
+    """Each dispatch target must exist as an async internal helper
     so okto_pulse_link_task can route correctly.
     """
     import inspect
@@ -159,6 +174,7 @@ async def test_spec_target_does_not_require_spec_id():
 # helper was an outlier (missing saturation) — this test pins parity.
 _HELPERS_WITH_SATURATION_ENVELOPE = [
     "_link_task_to_scenario_internal",
+    "_link_task_to_fr_internal",
     "_link_task_to_rule_internal",
     "_link_task_to_decision_internal",
     "_link_task_to_tr_internal",
@@ -182,3 +198,68 @@ def test_link_helper_returns_saturation_envelope(helper_name):
         f"{helper_name} success response is missing the saturation envelope. "
         f"Expected `**_saturation_or_coverage(cov)` in the json.dumps payload."
     )
+
+
+@pytest.mark.asyncio
+async def test_fr_target_persists_direct_traceability_without_closing_fr_coverage(db_factory):
+    """target_type='fr' must persist FR.linked_task_ids but keep FR coverage
+    semantics tied to Business Rules.
+    """
+    board_id = f"lt-board-{uuid.uuid4().hex[:8]}"
+    spec_id = f"lt-spec-{uuid.uuid4().hex[:8]}"
+    card_id = f"lt-card-{uuid.uuid4().hex[:8]}"
+    fr_id = "fr_dispatch"
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Link Task FR", owner_id="link-task-agent"))
+        db.add(Spec(
+            id=spec_id,
+            board_id=board_id,
+            title="Link Task FR Spec",
+            status=SpecStatus.APPROVED,
+            created_by="link-task-agent",
+            functional_requirements=[{"id": fr_id, "text": "Persist FR traceability"}],
+            acceptance_criteria=[],
+            test_scenarios=[],
+            business_rules=[],
+            api_contracts=[],
+        ))
+        db.add(Card(
+            id=card_id,
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Implementation card",
+            created_by="link-task-agent",
+        ))
+        await db.commit()
+
+    ctx = type(
+        "Ctx",
+        (),
+        {
+            "agent_id": "link-task-agent",
+            "agent_name": "link-task-agent",
+            "board_id": board_id,
+            "permissions": ["card.entity.update"],
+        },
+    )()
+    server.register_session_factory(db_factory)
+    with patch.object(server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
+         patch.object(server, "check_permission", return_value=None):
+        result = json.loads(await server.okto_pulse_link_task.fn(
+            board_id=board_id,
+            target_type="fr",
+            target_id=fr_id,
+            card_id=card_id,
+            spec_id=spec_id,
+        ))
+
+    assert result["success"] is True
+    assert result["coverage_note"].startswith("Direct FR task link persisted")
+
+    async with db_factory() as db:
+        from okto_pulse.core.services.analytics_service import spec_coverage_summary
+
+        spec = await db.get(Spec, spec_id)
+        assert spec.functional_requirements[0]["linked_task_ids"] == [card_id]
+        assert spec_coverage_summary(spec)["fr_coverage_pct"] == 0

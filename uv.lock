@@ -1487,7 +1487,7 @@ wheels = [
 
 [[package]]
 name = "okto-pulse-core"
-version = "0.2.1"
+version = "0.2.5"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },

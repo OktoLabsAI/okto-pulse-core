@@ -92,6 +92,52 @@ def test_create_edge_counts_only_confirmed_relationship():
     assert create_result.closed is True
 
 
+def test_create_edge_ambiguous_relationship_requires_endpoint_hints():
+    conn = _FakeConnection()
+    orch = TransactionOrchestrator(
+        conn,
+        sqlite_session=None,  # type: ignore[arg-type]
+        session_id="sess-edge",
+        board_id="board-edge",
+    )
+
+    with pytest.raises(ValueError, match="ambiguous.*from_type/to_type"):
+        orch.create_edge("implements", "api-login", "tr-audit")
+
+    assert conn.statements == []
+    assert orch.counters.edges_added == 0
+
+
+def test_create_edge_implements_constraint_honors_endpoint_hints():
+    exists_result = _FakeResult(has_row=False)
+    create_result = _FakeResult(has_row=True)
+    conn = _FakeConnection(exists_result, create_result)
+    orch = TransactionOrchestrator(
+        conn,
+        sqlite_session=None,  # type: ignore[arg-type]
+        session_id="sess-edge",
+        board_id="board-edge",
+    )
+
+    orch.create_edge(
+        "implements",
+        "api-login",
+        "tr-audit",
+        from_type="APIContract",
+        to_type="Constraint",
+    )
+
+    assert (
+        "MATCH (a:APIContract {id: $from_id})-[r:implements]->"
+        "(b:Constraint {id: $to_id})"
+    ) in conn.statements[0][0]
+    assert (
+        "MATCH (a:APIContract {id: $from_id}), "
+        "(b:Constraint {id: $to_id})"
+    ) in conn.statements[1][0]
+    assert orch.counters.edges_added == 1
+
+
 def test_create_edge_skips_existing_relationship():
     exists_result = _FakeResult(has_row=True)
     conn = _FakeConnection(exists_result)

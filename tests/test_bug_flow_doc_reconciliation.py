@@ -241,3 +241,162 @@ def test_ac6_edited_files_valid_registered_resources() -> None:
         assert registered.get(uri) == rel, (
             f"Registry entry for {uri!r} is {registered.get(uri)!r}, expected {rel!r}."
         )
+
+
+# ---------------------------------------------------------------------------
+# AC5/TS3 (card 6c489eef) — the CONTENT SERVED through the okto-pulse:// resource
+# mechanism (registry + _load_resource_file, the exact path an agent reads) must
+# carry the reconciled Path B sequence and NONE of the stale/unsafe remediation
+# instructions. This is stricter than asserting the raw file: it follows the
+# registry URI -> relative path -> loader, so it also catches a registry that
+# points a URI at the wrong/stale file. (The live MCP can still serve cached
+# stale content if its long-running process was not restarted after an edit —
+# that is an operational redeploy concern, NOT a source defect; this test pins
+# the source + serving path the next restart will pick up.)
+# ---------------------------------------------------------------------------
+
+# The generic pre-Path-B remediation phrasings that must never be SERVED again.
+_FORBIDDEN_PATH_B_REMEDIATION = (
+    "refinement, spec revision, or hotfix spec",
+    "route to amendment, refinement",
+)
+
+# Every Path B doc resource, by the URI an agent actually reads.
+_PATH_B_RESOURCE_URIS = (
+    "okto-pulse://workflows/cards",
+    "okto-pulse://reference/errors",
+    "okto-pulse://reference/tool-docs/card",
+    "okto-pulse://reference/card_types",
+)
+
+
+def test_ac7_exposed_path_b_resources_serve_reconciled_content() -> None:
+    from okto_pulse.core.mcp import server as _srv
+
+    registry = {uri: rel for uri, rel, _ in _srv._RESOURCE_REGISTRY}
+
+    # 1. No Path B resource SERVED via the registry may carry the old generic
+    #    "amendment, refinement, spec revision, or hotfix spec" remediation.
+    for uri in _PATH_B_RESOURCE_URIS:
+        rel = registry.get(uri)
+        assert rel is not None, f"{uri} is not registered."
+        served = _srv._load_resource_file(rel)
+        assert served, f"{uri} served empty content."
+        low = served.lower()
+        for bad in _FORBIDDEN_PATH_B_REMEDIATION:
+            assert bad not in low, f"{uri} still SERVES stale Path B remediation: {bad!r}"
+
+    # 2. The SERVED cards workflow + card_types reference satisfy the same
+    #    load-bearing reconciliation predicates as their files (AC3 proves the
+    #    predicates are non-vacuous), now exercised through the loader.
+    assert _cards_md_reconciled(_srv._load_resource_file(registry["okto-pulse://workflows/cards"]))
+    assert _card_types_reconciled(
+        _srv._load_resource_file(registry["okto-pulse://reference/card_types"])
+    )
+
+    # 3. The served cards workflow points Path B at the formal amendment lineage
+    #    (not a generic refinement/hotfix-spec detour) and keeps Path C non-substitutive.
+    cards_low = _srv._load_resource_file(registry["okto-pulse://workflows/cards"]).lower()
+    assert "amendmenthotfixrevision" in cards_low or "amendment revision" in cards_low
+    # Path C is non-substitutive (markdown emphasis may wrap "not", so match the
+    # distinctive tail rather than the full sentence).
+    assert "replace path b" in cards_low
+
+    # Negative-wiring: the forbidden-phrase guard is NOT vacuous — synthetic stale
+    # remediation text must trip at least one forbidden marker (teeth-by-construction,
+    # no shared-file mutation).
+    synthetic_stale = "If none, route to amendment, refinement, spec revision, or hotfix spec."
+    assert any(bad in synthetic_stale.lower() for bad in _FORBIDDEN_PATH_B_REMEDIATION)
+
+
+def test_ac8_every_registered_resource_serves_nonempty_content() -> None:
+    """Packaging guard against shipping a build/release that omits a load-bearing
+    resource file. EVERY okto-pulse:// resource in the registry must load
+    NON-EMPTY content through the serving loader: a wheel that failed to bundle a
+    ``resources/*.md`` file surfaces here as an empty served body (the loader maps
+    a missing file to ``""``). Run against the installed package in the release
+    gate, this also pins that the docs the agent reads were actually shipped."""
+    from okto_pulse.core.mcp import server as _srv
+
+    empty = [
+        (uri, rel)
+        for uri, rel, _desc in _srv._RESOURCE_REGISTRY
+        if not _srv._load_resource_file(rel).strip()
+    ]
+    assert not empty, f"Registered resources served EMPTY (missing from package?): {empty}"
+
+
+# ---------------------------------------------------------------------------
+# AC (card d712a2ba) — the historical-bug-closure checklist in workflows/cards.md
+# must enforce real Path B (fresh re-executable evidence, formal amendment lineage,
+# validator-confirmed coverage, clean KG) and must NOT offer an administrative
+# bypass. Scoped to the new section so the prohibition wording ("no skip/override")
+# is allowed while PERMISSIVE bypass instructions are blocked.
+# ---------------------------------------------------------------------------
+
+_CHECKLIST_HEADING = "### Historical bug closure via Path B"
+
+# Gates the checklist MUST carry (lower-cased).
+_CHECKLIST_REQUIRED = (
+    "confirm_amendment_coverage",
+    "coverage_confirmed",
+    "amendmenthotfixrevision",
+    "re-executable",
+    "test_file_path",
+    "canonical debt",
+    "dead-letter",
+    "coverage_pending",
+    "do not close",
+    "no administrative shortcut",
+    "validator-confirmed coverage",
+)
+
+# PERMISSIVE bypass phrasings that must NEVER appear (the prohibition form
+# "no skip/override" is intentionally NOT in this list).
+_CHECKLIST_FORBIDDEN_PERMISSIVE = (
+    "may skip",
+    "can skip",
+    "may close",
+    "force close",
+    "force-close",
+    "skip the validator",
+    "skip validator",
+    "skip coverage",
+    "override the gate",
+    "bypass the gate",
+    "administratively close",
+    "close it without",
+    "without confirming coverage",
+)
+
+
+def _historical_closure_section(cards_md: str) -> str:
+    start = cards_md.find(_CHECKLIST_HEADING)
+    assert start != -1, "historical-closure checklist section missing from cards.md"
+    rest = cards_md[start + len(_CHECKLIST_HEADING):]
+    end = rest.find("\n## ")  # ends at the next top-level (##) heading
+    return _CHECKLIST_HEADING + (rest if end == -1 else rest[:end])
+
+
+def test_ac9_historical_closure_checklist_enforces_path_b_without_bypass() -> None:
+    from okto_pulse.core.mcp import server as _srv
+
+    registry = {uri: rel for uri, rel, _ in _srv._RESOURCE_REGISTRY}
+    # Read the EXPOSED resource (registry + loader), not the raw file.
+    served = _srv._load_resource_file(registry["okto-pulse://workflows/cards"])
+    section = _historical_closure_section(served).lower()
+
+    for needed in _CHECKLIST_REQUIRED:
+        assert needed in section, f"historical-closure checklist missing gate: {needed!r}"
+
+    for permissive in _CHECKLIST_FORBIDDEN_PERMISSIVE:
+        assert permissive not in section, (
+            f"historical-closure checklist carries a permissive bypass: {permissive!r}"
+        )
+
+    # Negative-wiring: the permissive guard is NOT vacuous, and it does NOT trip on
+    # the legitimate prohibition wording the checklist is allowed to use.
+    synthetic_bypass = "An operator may skip validator coverage and force close the bug."
+    assert any(p in synthetic_bypass.lower() for p in _CHECKLIST_FORBIDDEN_PERMISSIVE)
+    allowed_prohibition = "There is no skip/override/force path; never close without coverage."
+    assert not any(p in allowed_prohibition.lower() for p in _CHECKLIST_FORBIDDEN_PERMISSIVE)

@@ -24,7 +24,7 @@ def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
         return fallback
 
 
-_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.2.3+local")
+_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.2.5+local")
 GRAPH_DB_MAX_SIZE_GB_VALUES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
 DEFAULT_METRICS_BEACON_URL = "https://metrics.oktolabs.ai"
 
@@ -79,6 +79,7 @@ class CoreSettings(BaseSettings):
     metrics_policy_version: str = "2026-05-11"
     metrics_schema_version: str = "1.1.0"
     metrics_opt_in_prompt_interval_days: int = Field(30, ge=1, le=365)
+    metrics_token_refresh_margin_hours: int = Field(24, ge=0, le=168)
 
     # MCP Server
     mcp_server_name: str = "okto-pulse"
@@ -122,9 +123,30 @@ class CoreSettings(BaseSettings):
     kg_queue_claim_timeout_s: int = Field(300, ge=60, le=3600)
     kg_queue_max_attempts: int = Field(5, ge=1, le=10)
     kg_queue_alert_threshold: int = Field(5000, ge=100, le=100000)
+    # R6-IMP2: advisory age (seconds) above which an ACTIVE queue item (oldest
+    # pending/claimed) is classified ``stuck`` in the queue drill-down. Advisory
+    # only — does not change the queue alert/backpressure threshold above.
+    kg_queue_stuck_age_seconds: int = Field(300, ge=1, le=86400)
     # Recovery scan periodicity (TR6); operators can lower for tests but
     # production values below 30s start to compete with normal traffic.
     kg_queue_recovery_scan_interval_s: int = Field(60, ge=10, le=600)
+    # S1.3 Cognitive Closure rollout — the FIRST blocking activation of the
+    # CognitiveReadinessService done-transition enforcement sits behind this
+    # feature flag, default-OFF so existing boards stay advisory until skip
+    # ledger-only + no-mask-DLQ are proven green (fr_9d42c5e2 / dec_41db6a36).
+    # Even with the per-board policy set to "blocking", enforcement activates
+    # ONLY when this global flag is True.
+    cognitive_readiness_blocking_enabled: bool = Field(False)
+
+    # Spec R2c (FR5/TR5/TR6/TR7) — DLQ auto-drain opt-in defaults.
+    # The feature is disabled by default (board-level flag controls opt-in).
+    # kg_queue_dlq_auto_drain_backoff_s: minimum seconds between auto-drain
+    #   runs for the same board (in-process per-board cooldown dict).
+    # kg_queue_dlq_auto_drain_max_requeue_attempts: DLQ rows that have been
+    #   requeued this many times without success are considered poison pills
+    #   and are permanently deleted with a WARN log.
+    kg_queue_dlq_auto_drain_backoff_s: int = Field(300, ge=30, le=86400)
+    kg_queue_dlq_auto_drain_max_requeue_attempts: int = Field(3, ge=1, le=20)
 
     # Spec R2c (FR5/TR5/TR6/TR7) — DLQ auto-drain opt-in defaults.
     # The feature is disabled by default (board-level flag controls opt-in).

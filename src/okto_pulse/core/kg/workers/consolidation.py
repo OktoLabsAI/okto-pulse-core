@@ -21,15 +21,18 @@ Fallback Confidence Cap`).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from okto_pulse.core.models.db import (
+    AmendmentHotfixRevision,
     Card,
     ConsolidationQueue,
     Ideation,
@@ -57,6 +60,10 @@ from okto_pulse.core.kg.primitives import (
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
 from okto_pulse.core.kg.workers.dead_letter import route_to_dead_letter
+from okto_pulse.core.kg.schema_layer_guard import (
+    ensure_graph_layer_schema,
+    is_graph_layer_schema_error,
+)
 from okto_pulse.core.kg.safe_write_lifecycle import (
     STEP_CHECKPOINT,
     STEP_FLUSH,
@@ -67,6 +74,13 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     SafeWriteLifecycleStatus,
 )
 from okto_pulse.core.kg.schema import apply_ladybug_lifecycle_step
+from okto_pulse.core.kg.source_maturity import (
+    GRAPH_LAYER_CANONICAL,
+    GRAPH_LAYER_NONE,
+    GRAPH_LAYER_WORKING,
+    MATURITY_CANONICAL_ELIGIBLE,
+    classify_source_for_kg,
+)
 from okto_pulse.core.kg.write_barrier import under_safe_write
 from okto_pulse.core.kg.workers.deterministic_worker import (
     DeterministicWorker,
@@ -75,6 +89,10 @@ from okto_pulse.core.kg.workers.deterministic_worker import (
     WORKER_VERSION,
     WorkerResult,
     _spec_child_ref,
+)
+from okto_pulse.core.services.canonical_debt_service import (
+    mark_canonical_debt_committed_for_artifact,
+    upsert_canonical_debt,
 )
 
 logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
@@ -270,6 +288,7 @@ def _spec_to_dict(spec: Spec) -> dict:
         "title": spec.title,
         "description": spec.description,
         "context": spec.context,
+        "status": getattr(getattr(spec, "status", None), "value", getattr(spec, "status", None)),
         "functional_requirements": spec.functional_requirements or [],
         "technical_requirements": spec.technical_requirements or [],
         "acceptance_criteria": spec.acceptance_criteria or [],
@@ -349,6 +368,7 @@ def _sprint_to_dict(sprint: Sprint) -> dict:
         "description": sprint.description,
         "objective": sprint.objective,
         "expected_outcome": sprint.expected_outcome,
+        "status": getattr(getattr(sprint, "status", None), "value", getattr(sprint, "status", None)),
         "spec_id": sprint.spec_id,
         "lane_type": getattr(getattr(sprint, "lane_type", None), "value", getattr(sprint, "lane_type", None)) or "normal",
         "origin_sprint_id": getattr(sprint, "origin_sprint_id", None),
@@ -364,6 +384,7 @@ def _card_to_dict(card) -> dict:
         "board_id": card.board_id,
         "title": card.title,
         "description": card.description,
+        "status": getattr(getattr(card, "status", None), "value", getattr(card, "status", None)),
         "card_type": getattr(card.card_type, "value", card.card_type) if getattr(card, "card_type", None) else "normal",
         "spec_id": card.spec_id,
         "sprint_id": card.sprint_id,
@@ -371,10 +392,32 @@ def _card_to_dict(card) -> dict:
         "linked_test_task_ids": getattr(card, "linked_test_task_ids", None) or [],
         "priority": getattr(priority, "value", priority) if priority is not None else None,
         "severity": getattr(severity, "value", severity) if severity is not None else None,
+        "has_minimal_evidence": _card_has_minimal_evidence(card),
         "architecture_designs": [
             _architecture_design_to_dict(design)
             for design in (getattr(card, "architecture_designs", None) or [])
         ],
+    }
+
+
+def _amendment_to_dict(amendment) -> dict:
+    """Project an AmendmentHotfixRevision ORM row to the worker dict
+    (spec 7ea1e4be). Enum fields are flattened to their string value."""
+    status = getattr(amendment, "status", None)
+    lineage_state = getattr(amendment, "lineage_state", None)
+    return {
+        "id": amendment.id,
+        "board_id": amendment.board_id,
+        "status": getattr(status, "value", status),
+        "lineage_state": getattr(lineage_state, "value", lineage_state),
+        "original_spec_id": amendment.original_spec_id,
+        "origin_bug_id": amendment.origin_bug_id,
+        "origin_task_ids": getattr(amendment, "origin_task_ids", None) or [],
+        "affected_task_ids": getattr(amendment, "affected_task_ids", None) or [],
+        "revision_spec_id": getattr(amendment, "revision_spec_id", None),
+        "regression_scenario_ids": getattr(amendment, "regression_scenario_ids", None) or [],
+        "regression_test_task_ids": getattr(amendment, "regression_test_task_ids", None) or [],
+        "automated_regression_refs": getattr(amendment, "automated_regression_refs", None) or [],
     }
 
 
@@ -386,8 +429,53 @@ def _worker_node_to_candidate(node: EmittedNode) -> NodeCandidate:
         content=node.content,
         context=node.context or None,
         source_artifact_ref=node.source_artifact_ref,
+        graph_layer=node.graph_layer,
+        maturity_status=node.maturity_status,
         source_confidence=node.source_confidence,
         priority_boost=node.priority_boost,
+    )
+
+
+def _layer_attrs_for_artifact(
+    artifact_type: str,
+    status: Any,
+    *,
+    has_minimal_evidence: bool = True,
+    lineage_complete: bool = True,
+) -> tuple[str, str]:
+    classification = classify_source_for_kg(
+        artifact_type=artifact_type,
+        artifact_status=status,
+        content_hash="consolidation-lineage",
+        has_minimal_evidence=has_minimal_evidence,
+        lineage_complete=lineage_complete,
+    )
+    graph_layer = classification.graph_layer
+    if graph_layer == GRAPH_LAYER_NONE:
+        graph_layer = GRAPH_LAYER_WORKING
+    return graph_layer, classification.maturity_status
+
+
+def _card_source_artifact_type(card_type: Any) -> str:
+    normalized = str(card_type or "normal").lower()
+    if normalized == "test":
+        return "test"
+    if normalized == "bug":
+        return "bug"
+    return "task"
+
+
+def _card_has_minimal_evidence(card: Card) -> bool:
+    card_type = getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    if card_type != "bug":
+        return True
+    has_text = any(
+        str(getattr(card, field, "") or "").strip()
+        for field in ("observed_behavior", "expected_behavior", "steps_to_reproduce")
+    )
+    return has_text and (
+        bool(getattr(card, "linked_test_task_ids", None))
+        or bool(getattr(card, "conclusions", None))
     )
 
 
@@ -419,6 +507,8 @@ def _run_deterministic_worker(entry: ConsolidationQueue, artifact) -> WorkerResu
         return worker.process_sprint(_sprint_to_dict(artifact))
     if entry.artifact_type == "card":
         return worker.process_card(_card_to_dict(artifact))
+    if entry.artifact_type == "amendment_hotfix_revision":
+        return worker.process_amendment(_amendment_to_dict(artifact))
     raise ValueError(f"unknown artifact_type: {entry.artifact_type}")
 
 
@@ -432,17 +522,64 @@ def _node_exists(result: WorkerResult, candidate_id: str) -> bool:
 
 def _append_card_entity_node(result: WorkerResult, card: Card) -> str:
     cid = f"card_{card.id[:8]}_entity"
-    if _node_exists(result, cid):
-        return cid
     card_type = getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
-    result.nodes.append(EmittedNode(
-        candidate_id=cid,
-        node_type="Bug" if card_type == "bug" else "Entity",
-        title=card.title or f"Card {card.id}",
-        content=card.description or "",
-        source_artifact_ref=f"card:{card.id}",
-        source_confidence=1.0,
-    ))
+    if not _node_exists(result, cid):
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            _card_source_artifact_type(card_type),
+            getattr(getattr(card, "status", None), "value", getattr(card, "status", None)),
+            has_minimal_evidence=_card_has_minimal_evidence(card),
+        )
+        result.nodes.append(EmittedNode(
+            candidate_id=cid,
+            node_type="Bug" if card_type == "bug" else "Entity",
+            title=card.title or f"Card {card.id}",
+            content=card.description or "",
+            source_artifact_ref=f"card:{card.id}",
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+            source_confidence=1.0,
+        ))
+    if getattr(card, "board_id", None):
+        _attach_entity_node_to_board_root(
+            result,
+            board_id=card.board_id,
+            child_candidate_id=cid,
+            rule_slot="card",
+        )
+    return cid
+
+
+def _append_spec_entity_node(result: WorkerResult, spec: Spec) -> str:
+    cid = f"spec_{spec.id[:8]}_entity"
+    if not _node_exists(result, cid):
+        content = "\n\n".join(
+            p for p in (
+                getattr(spec, "description", None),
+                getattr(spec, "context", None),
+            )
+            if p
+        )
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            "spec",
+            getattr(getattr(spec, "status", None), "value", getattr(spec, "status", None)),
+        )
+        result.nodes.append(EmittedNode(
+            candidate_id=cid,
+            node_type="Entity",
+            title=getattr(spec, "title", None) or f"Spec {spec.id}",
+            content=content or getattr(spec, "title", None) or "",
+            source_artifact_ref=f"spec:{spec.id}",
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+            source_confidence=1.0,
+        ))
+    if getattr(spec, "board_id", None):
+        _attach_entity_node_to_board_root(
+            result,
+            board_id=spec.board_id,
+            child_candidate_id=cid,
+            rule_slot="spec",
+        )
     return cid
 
 
@@ -450,12 +587,18 @@ def _append_story_entity_node(result: WorkerResult, story: Story) -> str:
     cid = f"story_{story.id[:8]}_entity"
     if _node_exists(result, cid):
         return cid
+    graph_layer, maturity_status = _layer_attrs_for_artifact(
+        "story",
+        getattr(getattr(story, "status", None), "value", getattr(story, "status", None)),
+    )
     result.nodes.append(EmittedNode(
         candidate_id=cid,
         node_type="Entity",
         title=story.title or f"Story {story.id}",
         content=story.description or "",
         source_artifact_ref=f"story:{story.id}",
+        graph_layer=graph_layer,
+        maturity_status=maturity_status,
         source_confidence=1.0,
     ))
     return cid
@@ -473,12 +616,18 @@ def _append_ideation_entity_node(result: WorkerResult, ideation: Ideation) -> st
         )
         if p
     )
+    graph_layer, maturity_status = _layer_attrs_for_artifact(
+        "ideation",
+        getattr(getattr(ideation, "status", None), "value", getattr(ideation, "status", None)),
+    )
     result.nodes.append(EmittedNode(
         candidate_id=cid,
         node_type="Entity",
         title=ideation.title or f"Ideation {ideation.id}",
         content=content or ideation.title or "",
         source_artifact_ref=f"ideation:{ideation.id}",
+        graph_layer=graph_layer,
+        maturity_status=maturity_status,
         source_confidence=1.0,
     ))
     return cid
@@ -491,12 +640,18 @@ def _append_refinement_entity_node(result: WorkerResult, refinement: Refinement)
     content = "\n\n".join(
         p for p in (refinement.description, refinement.analysis) if p
     )
+    graph_layer, maturity_status = _layer_attrs_for_artifact(
+        "refinement",
+        getattr(getattr(refinement, "status", None), "value", getattr(refinement, "status", None)),
+    )
     result.nodes.append(EmittedNode(
         candidate_id=cid,
         node_type="Entity",
         title=refinement.title or f"Refinement {refinement.id}",
         content=content or refinement.title or "",
         source_artifact_ref=f"refinement:{refinement.id}",
+        graph_layer=graph_layer,
+        maturity_status=maturity_status,
         source_confidence=1.0,
     ))
     return cid
@@ -744,9 +899,22 @@ async def _resolve_missing_link_candidates(
                 scenario = _scenario_candidate_for_id(spec, str(scenario_id))
                 if scenario is None:
                     continue
+                spec_cid = _append_spec_entity_node(result, spec)
                 scenario_cid, scenario_node = scenario
                 if not _node_exists(result, scenario_cid):
                     result.nodes.append(scenario_node)
+                scenario_belongs_edge_id = (
+                    f"{scenario_cid}_belongs_to_spec_{spec.id[:8]}"
+                )
+                if not _edge_exists(result, scenario_belongs_edge_id):
+                    result.edges.append(EmittedEdge(
+                        candidate_id=scenario_belongs_edge_id,
+                        edge_type="belongs_to",
+                        from_candidate_id=scenario_cid,
+                        to_candidate_id=spec_cid,
+                        confidence=1.0,
+                        rule_id=f"belongs_to/bug_linked_test_scenario@{WORKER_VERSION}",
+                    ))
                 scenario_edge_id = (
                     f"{candidate.from_candidate_id}_covered_by_ts_"
                     f"{spec.id[:8]}_{str(scenario_id)[:8]}"
@@ -821,6 +989,12 @@ async def _process_queue_entry(
             select(Card)
             .options(selectinload(Card.architecture_designs))
             .where(Card.id == entry.artifact_id)
+        )
+    elif entry.artifact_type == "amendment_hotfix_revision":
+        result = await db.execute(
+            select(AmendmentHotfixRevision).where(
+                AmendmentHotfixRevision.id == entry.artifact_id
+            )
         )
     else:
         logger.warning("unknown artifact_type: %s", entry.artifact_type)
@@ -907,7 +1081,119 @@ async def _process_queue_entry(
         entry.artifact_type, entry.artifact_id,
         commit_resp.nodes_added, commit_resp.edges_added,
     )
+    try:
+        debt_result = await mark_canonical_debt_committed_for_artifact(
+            db,
+            board_id=entry.board_id,
+            artifact_type=entry.artifact_type,
+            artifact_id=entry.artifact_id,
+            actor_id=AGENT_ID,
+            evidence_ref=f"kg_session:{session_id}",
+        )
+        if debt_result["committed_count"]:
+            logger.info(
+                "canonical_debt.resolved board=%s artifact=%s:%s count=%d",
+                entry.board_id, entry.artifact_type, entry.artifact_id,
+                debt_result["committed_count"],
+            )
+    except Exception:
+        logger.exception(
+            "canonical_debt.resolve_failed board=%s artifact=%s:%s",
+            entry.board_id, entry.artifact_type, entry.artifact_id,
+        )
+
+    # R7 IMP2: keep the canonical Learning partition-integrity ledger current —
+    # open CanonicalDebt for historical violations (canonical bug-derived
+    # Learning without a canonical Bug) and close debt whose bug evidence is now
+    # canonical (canonical-only evidence pre-filter). Reuses canonical_debt_service;
+    # never cognitive pending/DLQ. Best effort — must never fail a good commit.
+    try:
+        from okto_pulse.core.kg.canonical_learning_partition import (
+            run_canonical_learning_partition_maintenance,
+        )
+
+        await run_canonical_learning_partition_maintenance(
+            db, board_id=entry.board_id, actor_id=AGENT_ID
+        )
+    except Exception:
+        logger.exception(
+            "kg.clp.maintenance_failed board=%s artifact=%s:%s",
+            entry.board_id, entry.artifact_type, entry.artifact_id,
+        )
+
+    # R2-IMP3: maturity replay of CanonicalDebt — close open debts whose canonical
+    # evidence is now available after this commit (a status/maturity move that
+    # re-consolidated, or a rebuild drain). Concrete trigger over the existing
+    # verified reconcile contract; never cognitive pending/DLQ. Best effort — must
+    # never fail a good commit, and a replay failure is logged, not silently
+    # treated as success (only the verified contract commits anything).
+    try:
+        from okto_pulse.core.kg.canonical_debt_replay import (
+            replay_canonical_debt_post_commit,
+        )
+
+        await replay_canonical_debt_post_commit(db, board_id=entry.board_id)
+    except Exception:
+        logger.exception(
+            "kg.canonical_debt_replay.post_commit_failed board=%s artifact=%s:%s",
+            entry.board_id, entry.artifact_type, entry.artifact_id,
+        )
     return True
+
+
+async def _classify_queue_entry_source_for_debt(
+    db: AsyncSession,
+    entry: ConsolidationQueue,
+):
+    """Return the current source maturity for queue-failure accounting.
+
+    CanonicalDebt is specifically canonical debt. A failed working-graph
+    materialization remains operational debt in the queue/DLQ, but must not
+    inflate the canonical-debt counters used by KG Health.
+    """
+
+    if entry.artifact_type == "card":
+        card = await db.get(Card, entry.artifact_id)
+        if card is None:
+            return None
+        card_type = (
+            getattr(card.card_type, "value", card.card_type)
+            if card.card_type
+            else "normal"
+        )
+        return classify_source_for_kg(
+            artifact_type=_card_source_artifact_type(card_type),
+            artifact_status=getattr(
+                getattr(card, "status", None),
+                "value",
+                getattr(card, "status", None),
+            ),
+            content_hash="consolidation-failure",
+            has_minimal_evidence=_card_has_minimal_evidence(card),
+        )
+
+    model_by_type = {
+        "story": Story,
+        "ideation": Ideation,
+        "refinement": Refinement,
+        "spec": Spec,
+        "sprint": Sprint,
+    }
+    model = model_by_type.get(entry.artifact_type)
+    if model is None:
+        return None
+    artifact = await db.get(model, entry.artifact_id)
+    if artifact is None:
+        return None
+    return classify_source_for_kg(
+        artifact_type=entry.artifact_type,
+        artifact_status=getattr(
+            getattr(artifact, "status", None),
+            "value",
+            getattr(artifact, "status", None),
+        ),
+        content_hash="consolidation-failure",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1322,6 +1608,103 @@ class ConsolidationWorker:
         a FailureEvent with ``event_kind="kg.commit.failed"`` is recorded
         in the collector ring-buffer so the MemoryPressureCorrelator
         receives a real commit-failure signal.  Non-blocking/non-raising.
+
+        FR6 (spec eaf185c9 / card 81a96a49): a legacy board missing the
+        graph_layer/maturity_status schema raises ``Cannot find property
+        graph_layer for n``. Before that raw string becomes the sole DLQ
+        diagnostic we try the idempotent schema migration+backfill. If it
+        actually repairs the schema we re-pending the entry for an immediate
+        retry instead of counting it toward the dead-letter threshold; if it
+        cannot, we replace the raw error with a structured, actionable
+        diagnostic (or_1f52d4fd) so the dead-letter row names the operational
+        action rather than the opaque binder error.
+        """
+        if is_graph_layer_schema_error(error_text):
+            remediation = ensure_graph_layer_schema(
+                entry.board_id, raw_error=error_text
+            )
+            if remediation.recovered:
+                # Schema repaired in place — re-pending for an immediate retry
+                # rather than charging this attempt against the DLQ threshold.
+                entry.last_error = None
+                entry.status = "pending"
+                entry.next_retry_at = datetime.now(timezone.utc)
+                entry.claim_timeout_at = None
+                entry.worker_id = None
+                entry.claimed_at = None
+                entry.claimed_by_session_id = None
+                logger.info(
+                    "consolidation.schema_layer_recovered artifact=%s:%s "
+                    "board=%s columns_added=%s",
+                    entry.artifact_type, entry.artifact_id, entry.board_id,
+                    remediation.columns_added,
+                )
+                return
+            if remediation.needs_structured_error and remediation.structured_message:
+                # Could not migrate — make the DLQ diagnostic actionable so the
+                # raw binder error is never the only thing operators see.
+                error_text = remediation.structured_message
+
+        correlation_id = uuid.uuid4().hex
+        try:
+            classification = await _classify_queue_entry_source_for_debt(db, entry)
+            default_to_canonical_debt = (
+                classification is None
+                and entry.artifact_type in {"spec", "refinement"}
+            )
+            is_canonical_failure = (
+                default_to_canonical_debt
+                or (
+                    classification is not None
+                    and classification.graph_layer == GRAPH_LAYER_CANONICAL
+                    and classification.maturity_status == MATURITY_CANONICAL_ELIGIBLE
+                )
+            )
+            if is_canonical_failure:
+                debt_hash = hashlib.sha256(
+                    "|".join([
+                        entry.board_id,
+                        entry.artifact_type,
+                        entry.artifact_id,
+                        entry.triggered_at.isoformat() if entry.triggered_at else "",
+                    ]).encode("utf-8")
+                ).hexdigest()
+                await upsert_canonical_debt(
+                    db,
+                    board_id=entry.board_id,
+                    artifact_type=entry.artifact_type,
+                    artifact_id=entry.artifact_id,
+                    source_ref=f"{entry.artifact_type}:{entry.artifact_id}",
+                    content_hash=debt_hash,
+                    target_status="canonical_consolidation",
+                    canonical_state="failed",
+                    failure_reason="consolidation_failed",
+                    last_error=error_text,
+                    owner_agent_id=entry.worker_id or AGENT_ID,
+                    correlation_id=correlation_id,
+                    queue_ref=entry.id,
+                    graph_layer=(
+                        classification.graph_layer
+                        if classification is not None
+                        else GRAPH_LAYER_CANONICAL
+                    ),
+                    maturity_status=(
+                        classification.maturity_status
+                        if classification is not None
+                        else MATURITY_CANONICAL_ELIGIBLE
+                    ),
+                )
+        except Exception as debt_exc:
+            logger.error(
+                "canonical_debt.persist_failed board=%s artifact=%s:%s err=%s",
+                entry.board_id, entry.artifact_type, entry.artifact_id,
+                debt_exc,
+            )
+
+        FR3 (spec R2c): when the entry is routed to the dead-letter queue,
+        a FailureEvent with ``event_kind="kg.commit.failed"`` is recorded
+        in the collector ring-buffer so the MemoryPressureCorrelator
+        receives a real commit-failure signal.  Non-blocking/non-raising.
         """
         entry.attempts = (entry.attempts or 0) + 1
         entry.last_error = error_text
@@ -1335,7 +1718,7 @@ class ConsolidationWorker:
                         timestamp=datetime.now(timezone.utc),
                         event_kind="kg.commit.failed",
                         graph_type="board",
-                        correlation_id=uuid.uuid4().hex,
+                        correlation_id=correlation_id,
                     ),
                 )
             except Exception:
