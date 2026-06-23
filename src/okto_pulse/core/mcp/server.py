@@ -116,9 +116,9 @@ def _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
     """Resolve requirement refs against FRs first, then TRs.
 
     ``linked_requirements`` is used by agents as a generic requirement-link
-    surface on API contracts, integration requirements, and observability
-    requirements. Keep FR behavior unchanged and add strict TR support for
-    structured technical requirements.
+    surface on API contracts, integration requirements, observability
+    requirements, and decisions. Keep FR behavior unchanged and add strict TR
+    support for structured technical requirements.
     """
     resolved: list[str] = []
     unresolved: list[str] = []
@@ -5174,7 +5174,9 @@ async def okto_pulse_derive_spec_from_ideation(
 
     Artifacts (mockups, KBs, Architecture Designs) from the ideation are
     automatically propagated to the spec. Use mockup_ids/kb_ids/
-    architecture_design_ids to select specific ones (default: all)."""
+    architecture_design_ids to select specific ones (default: all).
+    architecture_propagation_mode accepts copy, derive, reference_only, or
+    none; "snapshot" is not a mode."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5602,7 +5604,8 @@ async def okto_pulse_create_refinement(
 
     Artifacts (mockups, KBs, Architecture Designs) from the ideation are
     automatically propagated. Use mockup_ids/kb_ids/architecture_design_ids
-    to select specific ones (default: all)."""
+    to select specific ones (default: all). architecture_propagation_mode
+    accepts copy, derive, reference_only, or none; "snapshot" is not a mode."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6019,7 +6022,9 @@ async def okto_pulse_derive_spec_from_refinement(
 
     Artifacts (mockups, KBs, Architecture Designs) from the refinement are
     automatically propagated to the spec. Use mockup_ids/kb_ids/
-    architecture_design_ids to select specific ones (default: all)."""
+    architecture_design_ids to select specific ones (default: all).
+    architecture_propagation_mode accepts copy, derive, reference_only, or
+    none; "snapshot" is not a mode."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9227,8 +9232,9 @@ async def okto_pulse_add_business_rule(
     notes: str = "",
 ) -> str:
     """
-    Add a business rule to a spec. Business rules define system behavior constraints
-    using When/Then format."""
+    Add a business rule to a spec. Business rules define system behavior
+    constraints using When/Then format. linked_requirements accepts 0-based FR
+    indices, fr_ ids, or exact FR text; display labels like FR-1 are rejected."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9305,7 +9311,9 @@ async def okto_pulse_update_business_rule(
     notes: str = "",
 ) -> str:
     """
-    Update an existing business rule on a spec."""
+    Update an existing business rule on a spec. linked_requirements accepts
+    0-based FR indices, fr_ ids, or exact FR text; display labels like FR-1
+    are rejected."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9457,9 +9465,9 @@ async def okto_pulse_add_integration_requirement(
     """
     Add an Integration Requirement (IR) to a spec.
 
-    Use IR for APIs, queues, stored procedures, events, files, external
-    services, and data contracts that need traceability beyond a single
-    endpoint.
+    Use IR for APIs, queues, stored procedures, MCP tools, events, files,
+    external services, and data contracts that need traceability beyond a
+    single endpoint.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -9480,6 +9488,7 @@ async def okto_pulse_add_integration_requirement(
         "event",
         "file",
         "external_service",
+        "mcp_tool",
         "other",
     }
     if integration_type not in allowed_types:
@@ -9686,7 +9695,10 @@ async def okto_pulse_add_observability_requirement(
     linked_integration_requirements: list[str] | str = "",
     notes: str = "",
 ) -> str:
-    """Add an Observability Requirement (OR) to a spec."""
+    """
+    Add an Observability Requirement (OR) to a spec. signal_type accepts
+    metric, log, trace, dashboard, alert, slo, or other; use log for audit
+    logs instead of audit_log."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9864,7 +9876,8 @@ async def okto_pulse_add_decision(
     prescriptive "DEVE" statement): use a Decision to capture design
     intent, tradeoffs, or team consensus. The KG extracts Decisions into
     queryable nodes, and the optional coverage gate (opt-in) can require each
-    Decision to have ≥1 linked task."""
+    Decision to have ≥1 linked task. linked_requirements accepts FR refs and
+    structured TR refs."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9888,24 +9901,25 @@ async def okto_pulse_add_decision(
             return json.dumps({"error": "Spec not found"})
 
         frs = spec.functional_requirements or []
+        trs = spec.technical_requirements or []
 
-        # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
+        # Write-path: resolve to canonical FR/TR ids, fail-closed. spec 9d66847f.
         req_list = None
         if linked_requirements:
-            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
-                parse_multi_value(linked_requirements), frs
+            _resolved_req_ids, _unresolved_reqs = _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
+                parse_multi_value(linked_requirements), frs, trs
             )
-            if _unresolved_frs:
-                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+            if _unresolved_reqs:
                 return json.dumps({
                     "error": (
-                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
-                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
-                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"Unresolved linked_requirements token(s): {_unresolved_reqs}. "
+                        f"Valid FR indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_structured_ids(frs)}. "
+                        f"Available tr_ids: {_available_structured_ids(trs)}. "
                         f"No decision was appended."
                     )
                 })
-            req_list = _resolved_fr_ids or None
+            req_list = _resolved_req_ids or None
 
         decisions = list(spec.decisions or [])
 
@@ -9970,7 +9984,8 @@ async def okto_pulse_update_decision(
 ) -> str:
     """
     Update an existing Decision. Only non-empty fields are changed; pass "CLEAR"
-    to wipe optional string/list fields."""
+    to wipe optional string/list fields. linked_requirements accepts FR refs
+    and structured TR refs."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10017,21 +10032,22 @@ async def okto_pulse_update_decision(
                         break
         if linked_requirements:
             frs = spec.functional_requirements or []
-            # Write-path: resolve to canonical fr_ids, fail-closed. spec 9d66847f.
-            _resolved_fr_ids, _unresolved_frs = resolve_linked_requirements_to_ids(
-                parse_multi_value(linked_requirements), frs
+            trs = spec.technical_requirements or []
+            # Write-path: resolve to canonical FR/TR ids, fail-closed. spec 9d66847f.
+            _resolved_req_ids, _unresolved_reqs = _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
+                parse_multi_value(linked_requirements), frs, trs
             )
-            if _unresolved_frs:
-                _available_fr_ids = [fid for fid in (_structured_ref_id(f) for f in frs) if fid]
+            if _unresolved_reqs:
                 return json.dumps({
                     "error": (
-                        f"Unresolved linked_requirements token(s): {_unresolved_frs}. "
-                        f"Valid indices: 0..{max(0, len(frs) - 1)}. "
-                        f"Available fr_ids: {_available_fr_ids}. "
+                        f"Unresolved linked_requirements token(s): {_unresolved_reqs}. "
+                        f"Valid FR indices: 0..{max(0, len(frs) - 1)}. "
+                        f"Available fr_ids: {_available_structured_ids(frs)}. "
+                        f"Available tr_ids: {_available_structured_ids(trs)}. "
                         f"No decision was updated."
                     )
                 })
-            target["linked_requirements"] = _resolved_fr_ids or None
+            target["linked_requirements"] = _resolved_req_ids or None
         if notes:
             target["notes"] = None if notes.strip().upper() == "CLEAR" else notes.replace("\\n", "\n")
         if status:
@@ -12367,7 +12383,9 @@ async def okto_pulse_create_sprint(
     labels: list[str] | str = "",
 ) -> str:
     """
-    Create a new sprint for a spec. Sprints break specs into incremental deliverables."""
+    Create a new sprint for a spec. Sprints break specs into incremental
+    deliverables. lane_type accepts normal or hotfix; release_validation is an
+    objective/label on a normal sprint, not a lane."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12439,7 +12457,8 @@ async def okto_pulse_update_sprint(
     skip_qualitative_validation: str = "",
 ) -> str:
     """
-    Update sprint fields."""
+    Update sprint fields. lane_type accepts normal or hotfix; release_validation
+    is an objective/label on a normal sprint, not a lane."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12512,7 +12531,9 @@ async def okto_pulse_move_sprint(
 ) -> str:
     """
     Move a sprint to a new status. State machine: draft→active→review→closed.
-    Gates: draft→active requires cards, active→review requires scoped test coverage, review→closed requires evaluation."""
+    Gates: draft→active requires cards, active→review requires scoped test
+    scenarios in passed status, review→closed requires evaluation. Automated
+    test pointers alone do not satisfy sprint review."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -14879,161 +14900,6 @@ async def okto_pulse_kg_orphan_backfill(
         "backfill_summary": result.to_safe_dict(),
         "correlation_id": result.correlation_id,
     }, default=str)
-
-
-# ============================================================================
-# KG ORPHAN INTEGRITY (spec KG-ZO-02 — FR6/TR4)
-# ============================================================================
-
-
-def _kg_orphan_graph_unavailable_payload(board_id: str, exc: Exception) -> dict[str, Any]:
-    return {
-        "error": "kg_orphan_graph_unavailable",
-        "board_id": board_id,
-        "error_type": type(exc).__name__,
-        "operator_action": "inspect_kg_health",
-    }
-
-
-async def _kg_orphan_backfill_health_refusal(board_id: str) -> dict[str, Any] | None:
-    from okto_pulse.core.services.kg_health_service import get_kg_health
-
-    async with get_db_for_mcp() as db:
-        health = await get_kg_health(board_id, db)
-    state = str(health.get("overall_state") or health.get("graph_state") or "")
-    if state in {"recovery_needed", "quarantined"}:
-        return {
-            "error": "kg_orphan_backfill_refused_by_health",
-            "board_id": board_id,
-            "overall_state": health.get("overall_state"),
-            "graph_state": health.get("graph_state"),
-            "operator_action": "inspect_kg_health_recovery_flow",
-        }
-    return None
-
-
-@mcp.tool()
-async def okto_pulse_kg_orphan_report(
-    board_id: str,
-    generation_id: str | None = None,
-    limit: int = 25,
-) -> str:
-    """
-    Return a bounded safe orphan-node report for a board KG.
-
-    The payload intentionally contains only safe identifiers and aggregate
-    counts: board_id, generation_id, orphan_count_by_type, safe samples,
-    unresolved_reasons, backfill_summary and correlation_id. Raw node text,
-    embeddings, prompts and payload bodies are never returned.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    from okto_pulse.core.kg.orphan_integrity import (
-        DEFAULT_ORPHAN_SAMPLE_LIMIT,
-        MAX_ORPHAN_SAMPLE_LIMIT,
-        OrphanNodeScanner,
-    )
-
-    bounded_limit = max(
-        0,
-        min(
-            int(limit or DEFAULT_ORPHAN_SAMPLE_LIMIT),
-            MAX_ORPHAN_SAMPLE_LIMIT,
-        ),
-    )
-    try:
-        report = OrphanNodeScanner().scan(
-            board_id=board_id,
-            generation_id=generation_id,
-            limit=bounded_limit,
-        )
-    except Exception as exc:
-        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
-
-    payload = report.to_safe_dict()
-    payload["backfill_summary"] = {
-        "status": "not_run",
-        "dry_run": None,
-        "detected": None,
-        "connected": None,
-        "noop": None,
-        "unresolved": None,
-        "ambiguous": None,
-        "semantic_pending": None,
-    }
-    return json.dumps(payload, default=str)
-
-
-@mcp.tool()
-async def okto_pulse_kg_orphan_backfill(
-    board_id: str,
-    generation_id: str | None = None,
-    dry_run: bool = True,
-    node_ids: list[str] | str = "",
-    limit: int = 25,
-) -> str:
-    """
-    Run explicit orphan backfill for structurally resolvable nodes.
-
-    Defaults to dry_run=True. node_ids accepts the standard MCP multi-value
-    format: JSON array, native list, or pipe-separated string. Backfill is
-    refused when KG Health is recovery_needed/quarantined so operators use the
-    recovery flow instead of mutating a degraded graph.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    try:
-        parsed_node_ids = coerce_to_list_str(node_ids) or None
-    except ValueError as exc:
-        return json.dumps({
-            "error": "invalid_node_ids",
-            "reason": str(exc),
-            "expected_format": "JSON array, native list, or pipe-separated string",
-        })
-
-    try:
-        refusal = await _kg_orphan_backfill_health_refusal(board_id)
-    except Exception as exc:
-        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
-    if refusal is not None:
-        return json.dumps(refusal, default=str)
-
-    from okto_pulse.core.kg.orphan_integrity import (
-        DEFAULT_ORPHAN_SAMPLE_LIMIT,
-        MAX_ORPHAN_SAMPLE_LIMIT,
-        OrphanBackfillReconciler,
-    )
-
-    bounded_limit = max(
-        0,
-        min(
-            int(limit or DEFAULT_ORPHAN_SAMPLE_LIMIT),
-            MAX_ORPHAN_SAMPLE_LIMIT,
-        ),
-    )
-    try:
-        result = OrphanBackfillReconciler().run(
-            board_id=board_id,
-            generation_id=generation_id,
-            dry_run=dry_run,
-            node_ids=parsed_node_ids,
-            limit=bounded_limit,
-        )
-    except Exception as exc:
-        return json.dumps(_kg_orphan_graph_unavailable_payload(board_id, exc))
-
-    return json.dumps({
-        "board_id": board_id,
-        "generation_id": generation_id,
-        "dry_run": dry_run,
-        "backfill_summary": result.to_safe_dict(),
-        "correlation_id": result.correlation_id,
-    }, default=str)
-
 
 # ============================================================================
 # DEAD LETTER INSPECTOR (spec ed17b1fe — Wave 2 NC 1ede3471)

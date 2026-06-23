@@ -10,8 +10,12 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 Add an Integration Requirement (IR) to a spec.
 
-Use IR for APIs, queues, stored procedures, events, files, external services,
-and data contracts that need traceability beyond a single endpoint.
+Use IR for APIs, queues, stored procedures, MCP tools, events, files,
+external services, and data contracts that need traceability beyond a single
+endpoint.
+
+`integration_type` accepted values: `api`, `queue`, `stored_procedure`,
+`data_contract`, `event`, `file`, `external_service`, `mcp_tool`, `other`.
 
 `linked_requirements` is pipe-separated and fail-closed. It accepts FR
 index/fr_id/text and structured TR id/text, then persists canonical IDs.

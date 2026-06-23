@@ -18,8 +18,10 @@ Args:
     rule: The business rule statement
     when: Condition that triggers the rule
     then: Expected behavior / outcome
-    linked_requirements: Pipe-separated INDICES (0-based) of functional requirements this rule relates to.
-        Example: "0|2|5" links to the 1st, 3rd, and 6th functional requirement.
+    linked_requirements: Pipe-separated functional requirement refs. Accepted forms:
+        0-based indices ("0|2|5"), canonical fr_... ids, or exact FR text.
+        Human labels such as "FR-1" are not accepted because they are display
+        labels, not stable identifiers.
     notes: Additional notes (optional)
 
 Returns:
@@ -60,8 +62,9 @@ Args:
     rule: New rule statement (optional)
     when: New condition (optional)
     then: New outcome (optional)
-    linked_requirements: Pipe-separated INDICES (0-based) of functional requirements.
-        Pass "CLEAR" to remove all links. Empty = no change.
+    linked_requirements: Pipe-separated functional requirement refs. Accepted forms:
+        0-based indices, canonical fr_... ids, or exact FR text. Labels such
+        as "FR-1" are not accepted. Pass "CLEAR" to remove all links. Empty = no change.
     notes: New notes (optional, "CLEAR" to remove)
 
 Returns:

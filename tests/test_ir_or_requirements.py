@@ -307,6 +307,51 @@ async def test_add_integration_requirement_accepts_external_service_mcp(db_facto
     assert payload["integration_requirement"]["integration_type"] == "external_service"
 
 
+@pytest.mark.asyncio
+async def test_add_integration_requirement_accepts_mcp_tool_type(db_factory):
+    board_id = _id("board")
+    actor_id = _id("user")
+    spec_id = _id("spec")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="MCP tool IR Board", owner_id=actor_id))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec",
+                status=SpecStatus.DRAFT,
+                created_by=actor_id,
+                functional_requirements=["FR"],
+                integration_requirements=[],
+                observability_requirements=[],
+            )
+        )
+        await db.commit()
+
+    ctx = type(
+        "Ctx",
+        (),
+        {"agent_id": actor_id, "agent_name": actor_id, "permissions": None},
+    )()
+    mcp_server.register_session_factory(db_factory)
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
+        raw = await mcp_server.okto_pulse_add_integration_requirement.fn(
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Pulse MCP gateway",
+            integration_type="mcp_tool",
+            provider="Pulse",
+            consumer="Agent",
+        )
+
+    import json
+
+    payload = json.loads(raw)
+    assert payload.get("success") is True, payload
+    assert payload["integration_requirement"]["integration_type"] == "mcp_tool"
+
+
 def test_ir_or_coverage_summary_and_kg_mapping():
     spec = {
         "id": "spec_1",

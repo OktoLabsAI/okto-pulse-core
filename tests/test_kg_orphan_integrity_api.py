@@ -205,5 +205,7 @@ def test_mcp_orphan_tools_are_registered_with_safe_contract() -> None:
     ):
         assert required in source
 
+    assert source.count("async def okto_pulse_kg_orphan_report") == 1
+    assert source.count("async def okto_pulse_kg_orphan_backfill") == 1
     assert "report.to_safe_dict()" in source
     assert "result.to_safe_dict()" in source

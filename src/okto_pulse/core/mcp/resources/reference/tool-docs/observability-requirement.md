@@ -10,6 +10,10 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 Add an Observability Requirement (OR) to a spec.
 
+`signal_type` accepted values: `metric`, `log`, `trace`, `dashboard`,
+`alert`, `slo`, `other`. Use `log` for audit-log requirements; `audit_log`
+is a descriptive subtype, not an accepted discriminator.
+
 `linked_requirements` is pipe-separated and fail-closed. It accepts FR
 index/fr_id/text and structured TR id/text, then persists canonical IDs.
 Unresolved tokens abort the append before persistence.

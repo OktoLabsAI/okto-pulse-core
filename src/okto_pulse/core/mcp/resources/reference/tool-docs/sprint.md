@@ -57,6 +57,8 @@ Args:
     description: Sprint description with scope and deliverables (optional)
     objective: What this sprint aims to achieve (optional but recommended)
     expected_outcome: What success looks like when this sprint is done (optional but recommended)
+    lane_type: One of `normal` or `hotfix`. `release_validation` is not a lane;
+        use `normal` with release-validation title/objective/labels.
     test_scenario_ids: Multi-value spec test scenario IDs scoped to this sprint —
         preferred native list; legacy string accepted as JSON array or pipe-separated.
         Comma-only string is REJECTED. (optional)
@@ -150,7 +152,9 @@ Returns:
 ## `okto_pulse_move_sprint`
 
 Move a sprint to a new status. State machine: draft→active→review→closed.
-Gates: draft→active requires cards, active→review requires scoped test coverage, review→closed requires evaluation.
+Gates: draft→active requires cards, active→review requires scoped test
+scenarios in `passed` status, review→closed requires evaluation. `automated`
+alone does not satisfy sprint review.
 
 Args:
     board_id: Board ID
@@ -213,6 +217,7 @@ Args:
     labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
         legacy string accepted as JSON array or pipe-separated. Comma-only string
         is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional)
+    lane_type: One of `normal` or `hotfix`. `release_validation` is not a lane.
     skip_test_coverage: "true" or "false" (optional)
     skip_rules_coverage: "true" or "false" (optional)
     skip_qualitative_validation: "true" or "false" (optional)
