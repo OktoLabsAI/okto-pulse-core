@@ -29,6 +29,11 @@ Sprints expose `lane_type` so normal delivery work and post-closure bug work are
 | `normal` | Default delivery sprint. Existing sprints with no lane metadata are treated as `normal`. |
 | `hotfix` | Post-closure execution lane for bug and regression test cards on a done spec or closed origin sprint. |
 
+`release_validation` is not a `lane_type`. Model release validation as a
+`normal` sprint with explicit title/objective/labels and scoped test scenarios.
+The lane enum is intentionally limited to delivery vs post-closure hotfix
+semantics.
+
 Hotfix lanes carry optional lineage fields:
 - `origin_sprint_id` — the closed original sprint that produced the post-closure work, when applicable.
 - `origin_bug_id` — the bug card that triggered the lane, when available.
@@ -72,7 +77,7 @@ For scope to resolve correctly, **you MUST link spec artifacts to cards** using 
 | Transition | Gate |
 |------------|------|
 | draft → active | At least 1 card assigned |
-| active → review | Scoped test scenarios must be passed (unless skip_test_coverage) |
+| active → review | Scoped test scenarios must be `passed` (unless skip_test_coverage). `automated` alone is enough for test-card completion, but sprint review requires the scenario execution result to be `passed`. |
 | review → closed | Qualitative evaluation with at least 1 approval, 0 rejects, avg score ≥ threshold |
 
 **Card behavior with sprints:**
@@ -104,5 +109,5 @@ When a sprint is in `review` status, submit an evaluation via `okto_pulse_submit
 | From | To | Pre-requisites |
 |------|-----|---------------|
 | `draft` | `active` | Must have assigned cards |
-| `active` | `review` | Scoped test scenarios must be `passed` (unless `skip_test_coverage`) |
+| `active` | `review` | Scoped test scenarios must be `passed` (unless `skip_test_coverage`). `automated` alone does not satisfy sprint review. |
 | `review` | `closed` | `okto_pulse_submit_sprint_evaluation` with `recommendation=approve` must pass |

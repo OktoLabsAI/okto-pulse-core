@@ -153,6 +153,15 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 8. Verify health/queryability when closeout committed
 ```
 
+**Decision closeout rule:** create a cognitive `Decision` only when the
+artifact contains a real choice with a valid judgement edge you can model
+(`supersedes`/`contradicts`/`depends_on` to another Decision, or `relates_to`
+to an Alternative). Do not create a Decision just to satisfy connectivity. If
+the closeout only records uncertainty, risk, rejected path, or contextual note,
+use `Assumption` or `Alternative` with a precise `source_artifact_ref` such as
+`spec:<spec_id>:assumption:<stable_id>` or
+`spec:<spec_id>:alternative:<stable_id>`.
+
 **Final response requirement:** include a compact Cognitive KG Closeout line naming one of:
 - committed: session_id, nodes_added/updated, edges_added, and verification summary
 - nothing_changed: session_id or aborted session, plus evidence that reconciliation found no semantic change

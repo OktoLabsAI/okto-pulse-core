@@ -11,7 +11,7 @@ the bare text). FR->BR/contract linkage was therefore impossible, which blocked
 fr_coverage and the spec validation gate.
 
 IMPL-1 (spec 9d66847f): write-path now resolves to canonical requirement IDs
-(not indices). BR/Decision stay FR-scoped; API contracts, IR, and OR accept
+(not indices). BR stays FR-scoped; Decision, API contracts, IR, and OR accept
 FR/TR references. Fail-closed: any unresolved token aborts before persistence.
 The tolerant read resolver (``resolve_linked_fr_indices``) is unchanged — it
 still handles both fr_ids and indices on read.
@@ -279,6 +279,52 @@ async def test_update_api_contract_tr_text_structured_requirement(db_factory):
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
     linked = spec.api_contracts[0]["linked_requirements"]
+    assert linked == ["tr_4444dddd"], linked
+
+
+# ====================================================================
+# add_decision — decisions can be linked to FRs and structured TRs
+# ====================================================================
+
+
+async def test_add_decision_tr_id_structured_requirement(db_factory):
+    board_id, spec_id = await _seed(db_factory)
+    payload = await _call(
+        "okto_pulse_add_decision",
+        board_id,
+        spec_id=spec_id,
+        title="Emit audit events from login API",
+        rationale="Auditability is a technical requirement for the auth flow",
+        linked_requirements="tr_3333cccc",
+    )
+    assert payload.get("success") is True, payload
+    spec = await _read_spec(spec_id)
+    linked = spec.decisions[0]["linked_requirements"]
+    assert linked == ["tr_3333cccc"], linked
+
+
+async def test_update_decision_tr_text_structured_requirement(db_factory):
+    board_id, spec_id = await _seed(db_factory)
+    created = await _call(
+        "okto_pulse_add_decision",
+        board_id,
+        spec_id=spec_id,
+        title="Session timeout is configurable",
+        rationale="Operations needs per-environment timeout control",
+    )
+    assert created.get("success") is True, created
+    decision_id = created["decision"]["id"]
+
+    payload = await _call(
+        "okto_pulse_update_decision",
+        board_id,
+        spec_id=spec_id,
+        decision_id=decision_id,
+        linked_requirements="Session timeout must be configurable",
+    )
+    assert payload.get("success") is True, payload
+    spec = await _read_spec(spec_id)
+    linked = spec.decisions[0]["linked_requirements"]
     assert linked == ["tr_4444dddd"], linked
 
 

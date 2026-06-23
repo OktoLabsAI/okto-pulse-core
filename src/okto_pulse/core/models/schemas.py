@@ -622,12 +622,13 @@ IntegrationRequirementType = Literal[
     "event",
     "file",
     "external_service",
+    "mcp_tool",
     "other",
 ]
 
 
 class IntegrationRequirement(BaseModel):
-    """An integration requirement for APIs, queues, SPs, events, or data contracts."""
+    """An integration requirement for APIs, queues, SPs, MCP tools, events, or data contracts."""
 
     id: str
     title: str
@@ -711,7 +712,7 @@ class Decision(BaseModel):
     context: str | None = None  # when/where it applies
     alternatives_considered: list[str] | None = None
     supersedes_decision_id: str | None = None  # id of a Decision on the same spec
-    linked_requirements: list[str] | None = None  # canonical FR ids
+    linked_requirements: list[str] | None = None  # canonical FR/TR ids
     linked_task_ids: list[str] | None = None
     status: DecisionStatus = "active"
     notes: str | None = None
@@ -1239,7 +1240,15 @@ class RefinementCreate(BaseModel):
     mockup_ids: list[str] | None = Field(None, description="IDs dos mockups a propagar da ideacao (None = propagar todos).")
     kb_ids: list[str] | None = Field(None, description="IDs dos KB items a propagar da ideacao (None = propagar todos).")
     architecture_design_ids: list[str] | None = Field(None, description="IDs dos architecture designs a propagar (None = propagar todos).")
-    architecture_propagation_mode: str = Field("copy", description="Modo de propagacao de arquitetura: 'copy'/'derive' copiam snapshots; 'reference_only'/'none' mantem apenas a ligacao com o pai.")
+    architecture_propagation_mode: str = Field(
+        "copy",
+        description=(
+            "Modo de propagacao de arquitetura. Valores aceitos: 'copy', "
+            "'derive', 'reference_only' ou 'none'. 'snapshot' nao e um modo; "
+            "'copy'/'derive' copiam snapshots, enquanto 'reference_only'/'none' "
+            "mantem apenas a ligacao com o pai."
+        ),
+    )
 
     @field_validator("in_scope")
     @classmethod
