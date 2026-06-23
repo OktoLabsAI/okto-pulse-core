@@ -40,6 +40,8 @@ htmlcov/
 
 # SQLite
 *.db
+*.db-shm
+*.db-wal
 
 # MCP config
 .mcp.json

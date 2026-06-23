@@ -25,7 +25,9 @@ Args:
     context: When/where this applies (optional)
     alternatives_considered: Pipe-separated list of alternatives (e.g. "Neo4j|DuckDB")
     supersedes_decision_id: id of another Decision this one replaces; it auto-moves to status=superseded
-    linked_requirements: Pipe-separated FR indices (e.g. "0|2")
+    linked_requirements: Pipe-separated requirement refs. Accepted forms:
+        FR index/fr_id/text and structured TR id/text. Persisted values are
+        canonical ids when the write path resolves them.
     notes: Additional notes
 
 Returns:
@@ -77,7 +79,8 @@ Args:
     context: New context (optional, "CLEAR" to remove)
     alternatives_considered: Pipe-separated list (optional, "CLEAR" to remove)
     supersedes_decision_id: New target Decision id, or "CLEAR" to unset
-    linked_requirements: Pipe-separated FR indices ("CLEAR" to empty)
+    linked_requirements: Pipe-separated requirement refs. Accepted forms:
+        FR index/fr_id/text and structured TR id/text. Pass "CLEAR" to empty.
     notes: Notes (optional, "CLEAR" to remove)
     status: One of "active", "superseded", "revoked" (optional)
 

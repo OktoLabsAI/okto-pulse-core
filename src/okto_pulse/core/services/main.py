@@ -4037,13 +4037,18 @@ async def _validate_spec_linked_refs(
             owner,
         )
 
-    # decisions.linked_requirements → FR  +  supersedes_decision_id → Decision.id
+    # decisions.linked_requirements → FR/TR  +  supersedes_decision_id → Decision.id
     valid_decision_ids = {d.get("id") for d in final_decisions if d.get("id")}
     for dec in final_decisions:
         owner = f"Decision '{dec.get('id') or dec.get('title') or '?'}'"
         _check_index_text_or_id(
             dec.get("linked_requirements") or [],
-            valid_fr_indices, valid_fr_texts, valid_fr_ids, "requirements", owner,
+            valid_fr_indices,
+            valid_fr_texts | valid_tr_texts,
+            valid_fr_ids | valid_tr_ids,
+            "requirements",
+            owner,
+            "FR/TR",
         )
         sup = dec.get("supersedes_decision_id")
         if sup and sup not in valid_decision_ids:
@@ -4108,7 +4113,8 @@ async def _validate_spec_linked_refs(
         more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
         raise ValueError(
             f"Cannot update spec: {len(errors)} orphan link reference(s) found. {joined}{more}. "
-            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC, TR id/text for API contracts, the BR.id for linked_rules, "
+            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC; "
+            f"TR id/text is accepted for API contracts, IR/OR, and decisions; the BR.id for linked_rules, "
             f"the api_contract.id / integration_requirement.id for cross-resource links, "
             f"and an existing Card.id for linked_task_ids."
         )

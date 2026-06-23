@@ -321,6 +321,41 @@ async def test_structured_create_supports_all_spec_entity_types(
 
 
 @pytest.mark.asyncio
+async def test_structured_decision_accepts_structured_tr_link(db_factory):
+    board_id = f"board-{uuid.uuid4()}"
+    spec_id = f"spec-{uuid.uuid4()}"
+    actor_id = "actor-structured"
+    async with db_factory() as db:
+        await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id=actor_id)
+        spec = await db.get(Spec, spec_id)
+        spec.technical_requirements = [
+            {"id": "tr_struct", "text": "Use the structured entity service"}
+        ]
+        await db.flush()
+
+        service = StructuredSpecEntityService(db)
+        result = await service.mutate(
+            StructuredSpecEntityCommand(
+                board_id=board_id,
+                spec_id=spec_id,
+                actor_id=actor_id,
+                entity_type="decision",
+                operation="create",
+                payload={
+                    **_payload_for("decision"),
+                    "linked_requirements": ["tr_struct"],
+                },
+                expected_spec_version=1,
+                permission_set=_permission_set("Spec"),
+            )
+        )
+
+        assert result.success is True
+        spec = await db.get(Spec, spec_id)
+        assert spec.decisions[0]["linked_requirements"] == ["tr_struct"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("entity_type", "field_name", "entity_id"),
     [

@@ -84,7 +84,9 @@ Args:
     mockup_ids: Pipe-separated mockup IDs to propagate from ideation (optional, empty = all)
     kb_ids: Pipe-separated KB IDs to propagate from ideation (optional, empty = all)
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
-    architecture_propagation_mode: copy/derive copies snapshots; reference_only/none keeps only parent linkage
+    architecture_propagation_mode: one of copy, derive, reference_only, none.
+        "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
+        while reference_only/none keep only parent linkage.
 
 Returns:
     JSON with created refinement details

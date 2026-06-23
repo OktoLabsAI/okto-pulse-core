@@ -62,6 +62,14 @@ candidate proposed here is rejected **before any graph mutation** with
 missing-connectivity failure); remediation: remove the candidate, abort/recreate the
 session without it, or route through the deterministic owner.
 
+For cognitive closeout, create a `Decision` only when the source artifact
+contains a real choice and you can add a valid judgement edge for it. Do not add
+an artificial Decision to satisfy connectivity. If the closeout only captures
+uncertainty, rejected paths, risks, or contextual notes, prefer `Assumption` or
+`Alternative` and include a precise `source_artifact_ref` such as
+`spec:<spec_id>:assumption:<stable_id>` or
+`spec:<spec_id>:alternative:<stable_id>`.
+
 Args:
     session_id: Session from begin_consolidation
     candidate: Dict with candidate_id, node_type, title, content, etc.
