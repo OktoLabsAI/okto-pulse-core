@@ -85,8 +85,14 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ### 0.2.6 — current
 
-- Hardens Architecture Design propagation as a fail-closed core policy: active architecture critic findings block copy/propagation/card creation, acknowledgements remain audit-only, and the legacy propagation diagnostic stays read-only.
-- Aligns the MCP/API contract around the canonical architecture propagation error surface and current allowed values.
+Changeset:
+
+- **Architecture propagation now fails closed everywhere it matters** — active Architecture Design critic findings, missing/unavailable verdicts and in-memory revalidation blockers prevent copy/propagation into downstream artifacts. Acknowledgement remains audit-only and never authorizes propagation.
+- **Completion gates consume the same canonical architecture decision** — `ResourceGateService.validate_entity_completion()` and the spec architecture-findings done path now treat `architecture_propagation_blocking=true` as a real blocker, including cases with no persisted active finding rows.
+- **REST/MCP error surfaces stay structured** — `ArchitecturePropagationBlocked` now maps to the canonical payload with stable `code`, design/source identifiers, finding keys, verdict status and remediation instead of being flattened into a generic validation string.
+- **Card resource snapshots are consistently read-only** — effective-resource read models mark direct card snapshots read-only, matching the write-side 409 behavior and preventing UI/API consumers from advertising edits that cannot succeed.
+- **Effective architecture copy avoids duplicate lineage snapshots** — inherited architecture refs now carry source identity (`source_design_id`/`source_ref`) and fallback copy plans de-duplicate by canonical source identity before copying to cards.
+- **Regression coverage** — focused tests cover propagation-block completion, structured REST error mapping, read-only card snapshots and deduped effective architecture fallback refs.
 
 ### 0.2.5
 
