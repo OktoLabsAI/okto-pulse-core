@@ -163,6 +163,31 @@ from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropa
 
 settings = get_settings()
 
+CARD_RESOURCE_READ_ONLY_MESSAGE = (
+    "Card resources are read-only governed snapshots. Copy Knowledge Base, "
+    "Mockup, and Architecture resources from the parent spec to refresh card "
+    "context, and edit the source ideation, refinement, or spec resource instead."
+)
+CARD_RESOURCE_FIELDS = {"knowledge_bases", "screen_mockups"}
+
+
+class CardResourceReadOnlyError(ValueError):
+    """Raised when a caller tries to author governed resources directly on a card."""
+
+
+def _ensure_card_resource_write_allowed(
+    update_data: dict[str, Any],
+    *,
+    allow: bool,
+) -> None:
+    if allow:
+        return
+    attempted = sorted(CARD_RESOURCE_FIELDS.intersection(update_data))
+    if attempted:
+        raise CardResourceReadOnlyError(
+            f"{CARD_RESOURCE_READ_ONLY_MESSAGE} Blocked fields: {', '.join(attempted)}."
+        )
+
 
 def _build_default_cognitive_closeout_gate() -> Any:
     """Build the shared cognitive closeout gate lazily.
@@ -1595,7 +1620,14 @@ class CardService:
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
-    async def update_card(self, card_id: str, user_id: str, data: CardUpdate) -> Card | None:
+    async def update_card(
+        self,
+        card_id: str,
+        user_id: str,
+        data: CardUpdate,
+        *,
+        allow_card_resource_write: bool = False,
+    ) -> Card | None:
         """Update a card."""
         card = await self.get_card(card_id)
         if not card:
@@ -1607,6 +1639,10 @@ class CardService:
             )
 
         update_data = data.model_dump(exclude_unset=True)
+        _ensure_card_resource_write_allowed(
+            update_data,
+            allow=allow_card_resource_write,
+        )
 
         await _authorize_critical_context_or_raise(
             self.db,

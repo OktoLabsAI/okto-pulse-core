@@ -113,6 +113,26 @@ async def get_resource_gate_summary(
         raise _resource_gate_exception(exc) from exc
 
 
+@router.get("/resource-gate/{entity_type}/{entity_id}/effective-resources")
+async def get_effective_resources(
+    entity_type: EntityType,
+    entity_id: str,
+    board_id: str = Query(...),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return hydrated effective Resource Gate resources for UI rendering."""
+    await _get_board_or_404(board_id, user_id, db)
+    try:
+        return await ResourceGateService(db).get_effective_resources(
+            board_id,
+            entity_type,
+            entity_id,
+        )
+    except ResourceGateError as exc:
+        raise _resource_gate_exception(exc) from exc
+
+
 @router.post("/resource-gate/{entity_type}/{entity_id}/not-applicable")
 async def mark_resource_not_applicable(
     entity_type: EntityType,

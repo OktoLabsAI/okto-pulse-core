@@ -31,7 +31,7 @@ from okto_pulse.core.models.db import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
-from okto_pulse.core.services.main import CardService
+from okto_pulse.core.services.main import CardResourceReadOnlyError, CardService
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
@@ -710,6 +710,30 @@ class TestCardUpdates:
                 CardUpdate(labels=["new-label-1", "new-label-2"]),
             )
             assert updated.labels == ["new-label-1", "new-label-2"]
+
+    async def test_direct_resource_field_update_is_read_only_without_internal_flag(self, db_factory):
+        """Card KB/mockup snapshots can only be refreshed by propagation/copy paths."""
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            card = (await db.execute(
+                __import__("sqlalchemy").select(Card).where(Card.board_id == BOARD_ID)
+            )).scalars().first()
+
+            with pytest.raises(CardResourceReadOnlyError):
+                await svc.update_card(
+                    card.id,
+                    USER_ID,
+                    CardUpdate(knowledge_bases=[{"id": "cardkb_direct"}]),
+                )
+
+            updated = await svc.update_card(
+                card.id,
+                USER_ID,
+                CardUpdate(knowledge_bases=[{"id": "cardkb_copied"}]),
+                allow_card_resource_write=True,
+            )
+            assert updated.knowledge_bases == [{"id": "cardkb_copied"}]
 
     async def test_update_assignee(self, db_factory):
         """Change card assignee."""

@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from okto_pulse.core.models.db import (
+    ArchitectureDesign,
     ArchitectureFinding,
     ArchitectureFindingRun,
     ArchitectureDesignVersion,
@@ -25,7 +26,9 @@ from okto_pulse.core.models.db import (
 )
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
 from okto_pulse.core.services.architecture import (
+    CardArchitectureReadOnlyError,
     ArchitectureDesignRepository,
+    ArchitecturePropagationBlocked,
     ArchitecturePropagationService,
     ArchitectureWarningAcknowledgementRequired,
 )
@@ -235,6 +238,58 @@ def _valid_connectivity_justification_payload() -> dict:
         "node-external-audit": "External audit sink is intentionally shown as a terminal dependency for planning.",
     }
     return payload
+
+
+@pytest.mark.asyncio
+async def test_repository_blocks_direct_card_architecture_writes(db_factory):
+    board_id, _spec_id, card_id = await _seed_spec_card(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+
+        with pytest.raises(CardArchitectureReadOnlyError):
+            await repo.create("card", card_id, _architecture_payload(), USER_ID)
+
+        card_design = ArchitectureDesign(
+            board_id=board_id,
+            parent_type="card",
+            card_id=card_id,
+            title="Copied Architecture",
+            global_description="Card snapshot copied from an upstream architecture design.",
+            entities=[],
+            interfaces=[],
+            diagrams=[],
+            source_ref="architecture_design:source-design",
+            source_design_id="source-design",
+            created_by=USER_ID,
+        )
+        db.add(card_design)
+        await db.flush()
+
+        with pytest.raises(CardArchitectureReadOnlyError):
+            await repo.update(
+                card_design.id,
+                ArchitectureDesignUpdate(
+                    global_description="Direct edits must be blocked.",
+                    change_summary="blocked direct card edit",
+                ),
+                USER_ID,
+            )
+
+        updated = await repo.update(
+            card_design.id,
+            ArchitectureDesignUpdate(
+                global_description="Internal propagation can refresh the snapshot.",
+                change_summary="internal propagation refresh",
+            ),
+            USER_ID,
+            allow_card_parent_write=True,
+        )
+        assert updated.global_description == "Internal propagation can refresh the snapshot."
+
+        with pytest.raises(CardArchitectureReadOnlyError):
+            await repo.delete(card_design.id, USER_ID)
+
+        assert await repo.delete(card_design.id, USER_ID, allow_card_parent_write=True) is True
 
 
 @pytest.mark.asyncio
@@ -712,22 +767,25 @@ async def test_update_with_acknowledged_structured_warning_persists_audit_only_a
 
 
 @pytest.mark.asyncio
-async def test_copy_warning_design_requires_copy_scoped_acknowledgement_and_finding_run(db_factory):
+async def test_copy_warning_design_is_blocked_by_propagation_eligibility(db_factory):
+    """Spec B (supersedes the old R3 copy-with-ack contract): copying a warning-bearing
+    source (active critic finding) is blocked by the canonical eligibility policy. A
+    copy-scoped acknowledgement is audit-only and does NOT authorize the copy — no target
+    design is created on the card (no laundered snapshot)."""
     _, spec_id, card_id = await _seed_spec_card(db_factory)
     async with db_factory() as db:
         repo = ArchitectureDesignRepository(db)
-        source = await repo.create("spec", spec_id, _invalid_connectivity_justification_payload(), USER_ID)
-        source_diagram_id = source.diagrams[0]["id"]
-        source_payload_ref = source.diagrams[0]["adapter_payload_ref"]
+        await repo.create("spec", spec_id, _invalid_connectivity_justification_payload(), USER_ID)
         service = ArchitecturePropagationService(db, repository=repo)
 
-        with pytest.raises(ArchitectureWarningAcknowledgementRequired) as exc_info:
+        # Without an ack the eligibility gate blocks BEFORE the copy-scoped ack gate.
+        with pytest.raises(ArchitecturePropagationBlocked) as exc_info:
             await service.copy_spec_to_card(spec_id, card_id, USER_ID)
-
-        assert exc_info.value.reason == "architecture_warning_acknowledgement_required"
+        assert exc_info.value.to_payload()["code"] == "architecture_propagation_blocked"
         assert await repo.list("card", card_id) == []
 
-        copied = (
+        # WITH a copy-scoped ack it is STILL blocked — the ack is audit-only, never a bypass.
+        with pytest.raises(ArchitecturePropagationBlocked):
             await service.copy_spec_to_card(
                 spec_id,
                 card_id,
@@ -737,66 +795,7 @@ async def test_copy_warning_design_requires_copy_scoped_acknowledgement_and_find
                     "statement": "Copied design warning reviewed independently.",
                 },
             )
-        )[0]
-        await db.flush()
-
-        assert copied.id != source.id
-        assert copied.source_design_id == source.id
-        assert copied.source_ref == f"architecture_design:{source.id}"
-        assert copied.diagrams[0]["source_diagram_id"] == source_diagram_id
-        assert copied.diagrams[0]["source_payload_ref"] == source_payload_ref
-        assert copied.diagrams[0]["id"] != source_diagram_id
-        assert copied.diagrams[0]["adapter_payload_ref"] != source_payload_ref
-
-        runs = (
-            await db.execute(
-                select(ArchitectureFindingRun)
-                .where(ArchitectureFindingRun.design_id.in_([source.id, copied.id]))
-                .order_by(ArchitectureFindingRun.design_id)
-            )
-        ).scalars().all()
-        by_design = {run.design_id: run for run in runs}
-        assert by_design[source.id].active_count == 1
-        assert by_design[copied.id].active_count == 1
-        assert by_design[source.id].critic_run_id.startswith(f"archcrit:{source.id}:v1:")
-        assert by_design[copied.id].critic_run_id.startswith(f"archcrit:{copied.id}:v1:")
-        assert by_design[source.id].critic_run_id != by_design[copied.id].critic_run_id
-
-        copied_finding = (
-            await db.execute(
-                select(ArchitectureFinding).where(
-                    ArchitectureFinding.design_id == copied.id,
-                    ArchitectureFinding.warning_code == "conceptual_justification_invalid",
-                )
-            )
-        ).scalar_one()
-        source_finding = (
-            await db.execute(
-                select(ArchitectureFinding).where(
-                    ArchitectureFinding.design_id == source.id,
-                    ArchitectureFinding.warning_code == "conceptual_justification_invalid",
-                )
-            )
-        ).scalar_one()
-        assert copied_finding.finding_key != source_finding.finding_key
-        assert copied_finding.diagram_id == copied.diagrams[0]["id"]
-        assert copied_finding.diagram_id != source_diagram_id
-
-        acknowledgements = (
-            await db.execute(
-                select(ArchitectureWarningAcknowledgement)
-                .where(ArchitectureWarningAcknowledgement.design_id.in_([source.id, copied.id]))
-                .order_by(ArchitectureWarningAcknowledgement.design_id)
-            )
-        ).scalars().all()
-        ack_by_design = {ack.design_id: ack for ack in acknowledgements}
-        assert ack_by_design[source.id].statement == "Source acknowledgement is scoped only to the source design."
-        assert ack_by_design[copied.id].statement == "Copied design warning reviewed independently."
-        assert ack_by_design[source.id].finding_key != ack_by_design[copied.id].finding_key
-        assert ack_by_design[source.id].critic_run_id == by_design[source.id].critic_run_id
-        assert ack_by_design[copied.id].critic_run_id == by_design[copied.id].critic_run_id
-        assert ack_by_design[source.id].design_version == source.version
-        assert ack_by_design[copied.id].design_version == copied.version
+        assert await repo.list("card", card_id) == []
 
 
 @pytest.mark.asyncio
@@ -845,6 +844,7 @@ async def test_copy_preserves_connectivity_justifications_as_content_but_reevalu
                 },
             ),
             USER_ID,
+            allow_card_parent_write=True,
         )
         await db.flush()
 

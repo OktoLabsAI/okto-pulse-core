@@ -384,6 +384,28 @@ class SpecResourcePropagationService:
             for design in existing_designs
             if getattr(design, "source_ref", None)
         }
+
+        # Spec B: enforce the canonical propagation eligibility against every source that
+        # WOULD be copied (new) or refreshed (version drift) BEFORE any mutation, so a
+        # blocking source never yields a partial / laundered card snapshot (atomicity,
+        # TR 3154a2d1). The refresh branch below calls ``repository.update`` directly
+        # (bypassing ``copy_from_parent``), so it must be covered here. A system
+        # acknowledgement is audit-only and never authorizes a blocking source (FR 67f3545a
+        # / TR 392cd7aa). Auto-propagation is fail-closed RAISE in the interim: the Spec C
+        # Resource Gate backstop for a controlled skip is not yet active (validator directive).
+        designs_to_mutate = []
+        for design in source_designs:
+            source_ref = repository.source_ref_for(design)
+            target = existing_by_ref.get(source_ref)
+            if target is None:
+                designs_to_mutate.append(design)
+            elif getattr(target, "source_version", None) != getattr(design, "version", None):
+                designs_to_mutate.append(design)
+        if designs_to_mutate:
+            await ArchitecturePropagationService(
+                self.db, repository=repository
+            ).assert_sources_eligible(designs_to_mutate, flow="spec_to_card_autocopy")
+
         copied_count = 0
         ignored_count = 0
         copied_ids: list[str] = []
@@ -422,7 +444,12 @@ class SpecResourcePropagationService:
                     ),
                 ),
             )
-            await repository.update(target.id, patch, actor_id)
+            await repository.update(
+                target.id,
+                patch,
+                actor_id,
+                allow_card_parent_write=True,
+            )
             copied_count += 1
             copied_ids.append(target.id)
             refreshed = True
@@ -434,10 +461,10 @@ class SpecResourcePropagationService:
             )
             new_designs = await propagation_service.copy_spec_to_card(
                 spec.id, card.id, actor_id,
-                # Bug eded2f0e (R3, option B): system-supplied copy-scoped ack for
-                # the internal snapshot of an already-acknowledged spec design. The
-                # gate is intact — copy_from_parent still requires an explicit ack
-                # (this is one), and a direct authoring save still raises without.
+                # Bug eded2f0e (R3, option B): system-supplied copy-scoped ack for the
+                # internal snapshot of an already-acknowledged spec design. The authoring
+                # gate is intact — a direct authoring save still raises without an ack;
+                # eligibility (Spec B) is enforced separately and is ack-independent.
                 architecture_warning_acknowledgement=ArchitectureWarningAcknowledgementRequest(
                     accepted=True,
                     statement=(
@@ -469,7 +496,11 @@ class SpecResourcePropagationService:
         for design in existing_designs:
             source_ref = getattr(design, "source_ref", None)
             if source_ref in refs_to_remove:
-                await repository.delete(design.id, None)
+                await repository.delete(
+                    design.id,
+                    None,
+                    allow_card_parent_write=True,
+                )
                 removed_ids.append(design.id)
         return {
             "source_count": len(spec_design_ids),

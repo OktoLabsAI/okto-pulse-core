@@ -419,6 +419,7 @@ async def resolve_effective_card_copy_plan(
         "resource_type": resource_type,
         "has_direct": bool(state and state.direct_count > 0),
         "fallback": False,
+        "fallback_refs": [],
         "not_applicable": bool(state and state.na_mark),
         "has_obligation": obligation_id is not None,
         "coverage_obligation_id": obligation_id,
@@ -429,6 +430,7 @@ async def resolve_effective_card_copy_plan(
     if not plan["has_direct"] and not plan["not_applicable"] and state and state.inherited_count > 0:
         ref = (state.inherited_refs or ({},))[0]
         plan["fallback"] = True
+        plan["fallback_refs"] = [dict(item) for item in state.inherited_refs]
         plan["source_entity_type"] = ref.get("source_entity_type")
         plan["source_entity_id"] = ref.get("source_entity_id")
     return plan

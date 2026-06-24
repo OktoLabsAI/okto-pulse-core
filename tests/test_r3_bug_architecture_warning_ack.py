@@ -1,13 +1,14 @@
-"""R3 bug eded2f0e (test card eb314eef) — architecture warning-ack regression.
+"""R3 bug eded2f0e — architecture warning-ack regression, updated for Spec B.
 
-Option B fix: an INTERNAL snapshot copy (copy_from_parent / auto-propagation
-re-sync) of an already-acknowledged source architecture design carries a system
-acknowledgement, so legitimate propagation is not blocked. This must NOT weaken
-the authoring gate.
+Authoring gate (UNCHANGED): a DIRECT repo.create / repo.update of a warning-bearing
+design WITHOUT an acknowledgement still raises ArchitectureWarningAcknowledgementRequired.
 
-Negative proof: a DIRECT repo.create / repo.update of a warning-bearing design
-WITHOUT an acknowledgement still raises ArchitectureWarningAcknowledgementRequired.
-Positive proof: the internal snapshot copy succeeds WITHOUT an interactive ack.
+Spec B (architecture propagation eligibility) SUPERSEDES the old R3 "Option B"
+behavior: a system/copy-scoped acknowledgement is audit-only and NO LONGER authorizes
+copying or propagating a warning-bearing source (one carrying active critic findings).
+Both copy_from_parent and the SDLC internal-snapshot path (propagate_architecture_designs)
+now fail closed with the canonical ArchitecturePropagationBlocked error
+(architecture_propagation_blocked). See FR 67f3545a / TR 392cd7aa.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from okto_pulse.core.models.schemas import (
 )
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
+    ArchitecturePropagationBlocked,
     ArchitecturePropagationService,
     ArchitectureWarningAcknowledgementRequired,
 )
@@ -123,15 +125,15 @@ async def test_direct_update_without_ack_still_raises(db_factory):
 
 
 # ===========================================================================
-# POSITIVE PROOF — internal snapshot copy needs no interactive ack
+# SPEC B — system/copy-scoped ack is audit-only; warning-bearing copy is blocked
 # ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_raw_copy_from_parent_still_requires_explicit_ack(db_factory):
-    """The copy gate itself is intact: copy_from_parent of a warning-bearing source
-    WITHOUT an acknowledgement still raises (copies need a copy-scoped ack — the
-    contract in test_copy_warning_design_requires_copy_scoped_acknowledgement)."""
+async def test_copy_from_parent_blocks_warning_bearing_source(db_factory):
+    """Spec B: copy_from_parent of a warning-bearing source (active findings) is blocked
+    by the canonical eligibility policy — even a copy-scoped acknowledgement does NOT
+    authorize the copy (the ack is audit-only)."""
     _board_id, spec_id, card_id = await _seed(db_factory)
     async with db_factory() as db:
         repo = ArchitectureDesignRepository(db)
@@ -142,42 +144,46 @@ async def test_raw_copy_from_parent_still_requires_explicit_ack(db_factory):
         await db.commit()
     async with db_factory() as db:
         service = ArchitecturePropagationService(db)
-        with pytest.raises(ArchitectureWarningAcknowledgementRequired):
+        with pytest.raises(ArchitecturePropagationBlocked) as excinfo:
             await service.copy_from_parent(
                 source_parent_type="spec", source_parent_id=spec_id,
                 target_parent_type="card", target_parent_id=card_id, actor_id=USER_ID,
+                architecture_warning_acknowledgement=_ack(),
             )
+    assert excinfo.value.to_payload()["code"] == "architecture_propagation_blocked"
 
 
 @pytest.mark.asyncio
-async def test_internal_snapshot_propagation_does_not_require_interactive_ack(db_factory):
-    """The FIX: the SDLC internal-snapshot path (propagate_architecture_designs)
-    copies a warning-bearing, already-acknowledged source WITHOUT a human ack — the
-    system supplies the copy-scoped acknowledgement, so legitimate propagation is
-    not blocked."""
+async def test_internal_snapshot_propagation_blocks_warning_bearing_source(db_factory):
+    """Spec B / TR 392cd7aa (replaces the old R3 positive proof): the SDLC
+    internal-snapshot path (propagate_architecture_designs) supplies a SYSTEM
+    acknowledgement, but that ack is audit-only and no longer authorizes copying a
+    warning-bearing source. The propagation fails closed and NO design is copied."""
     from okto_pulse.core.services.main import propagate_architecture_designs
 
     _board_id, spec_id, card_id = await _seed(db_factory)
     async with db_factory() as db:
         repo = ArchitectureDesignRepository(db)
-        design = await repo.create(
+        await repo.create(
             "spec", spec_id,
             _warning_payload(architecture_warning_acknowledgement=_ack()), USER_ID,
         )
         await db.commit()
 
     async with db_factory() as db:
-        copied = await propagate_architecture_designs(
-            db, source_parent_type="spec", source_parent_id=spec_id,
-            target_parent_type="card", target_parent_id=card_id, actor_id=USER_ID,
-            mode="copy",
-        )
-        await db.commit()
-        assert len(copied) == 1
+        with pytest.raises(ArchitecturePropagationBlocked):
+            await propagate_architecture_designs(
+                db, source_parent_type="spec", source_parent_id=spec_id,
+                target_parent_type="card", target_parent_id=card_id, actor_id=USER_ID,
+                mode="copy",
+            )
+
+    # No partial / laundered snapshot: the card received no copied design.
+    async with db_factory() as db:
         card_designs = (await db.execute(
             select(ArchitectureDesign).where(
                 ArchitectureDesign.parent_type == "card",
                 ArchitectureDesign.card_id == card_id,
             )
         )).scalars().all()
-    assert any(getattr(d, "source_design_id", None) == design.id for d in card_designs)
+    assert card_designs == []

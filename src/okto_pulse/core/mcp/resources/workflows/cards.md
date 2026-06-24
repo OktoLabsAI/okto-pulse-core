@@ -14,13 +14,17 @@ Architecture Design is the first-class place for system structure. See the full 
 
 > **A card must be self-contained.** Any agent or human picking up a card must be able to execute it from the card alone, without re-querying the parent spec.
 
-**Three attachment paths:**
+**Attachment path:**
 
 | Source of the artifact | Tool | When to use |
 |---|---|---|
 | KE / mockup / Architecture Design already exists on the parent spec | `okto_pulse_copy_knowledge_to_card` / `okto_pulse_copy_mockups_to_card` / `okto_pulse_copy_architecture_to_card` | Default path. Pass `knowledge_ids` / `screen_ids` / `design_ids` to scope a subset; omit to copy all. |
-| KE specific to this task that should NOT live on the spec | `okto_pulse_add_card_knowledge` | Use when the knowledge is task-scoped. |
-| Mockup specific to this card | `okto_pulse_add_screen_mockup(board_id, card_id, ..., entity_type="card")` | Use for card-scoped UI deliverables, bug repro screenshots, or per-card layout variants. |
+
+Card resources are read-only governed snapshots. Do not create, edit, annotate,
+import, or delete Knowledge Base, Mockup, or Architecture resources directly on a
+card; update the source ideation/refinement/spec resource and then run the
+matching copy tool to refresh the card snapshot while preserving the source
+identity used by the Resource Gate.
 
 **Mandatory before moving the card to `in_progress`:**
 
@@ -28,7 +32,7 @@ Architecture Design is the first-class place for system structure. See the full 
 2. For each KE / mockup / Architecture Design the task needs, decide:
    - **Already on the card** → no action.
    - **On the parent spec, relevant to this task** → call the copy tool.
-   - **Not yet captured anywhere** → create it with `okto_pulse_add_card_knowledge`.
+   - **Not yet captured anywhere** → add it to the source ideation/refinement/spec first, then call the copy tool.
 3. Skip explicitly when the task genuinely needs no artifact — but post a one-line comment justifying the skip.
 
 ### Governance Rules (enforced by the system)

@@ -1,7 +1,5 @@
 """Card API endpoints."""
 
-import hashlib
-import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -19,7 +17,13 @@ from okto_pulse.core.models import (
     CardUpdate,
 )
 from okto_pulse.core.models.db import ActivityLog, Agent, AgentSeenItem
-from okto_pulse.core.services import CardOperationError, CardService, ResourceGateError
+from okto_pulse.core.services import (
+    CARD_RESOURCE_READ_ONLY_MESSAGE,
+    CardOperationError,
+    CardResourceReadOnlyError,
+    CardService,
+    ResourceGateError,
+)
 from okto_pulse.core.services.gate_contracts import GateContractError
 from okto_pulse.core.services.activity_log import (
     activity_log_summary,
@@ -88,7 +92,10 @@ async def update_card(
 ):
     """Update a card."""
     service = CardService(db)
-    card = await service.update_card(card_id, user_id, data)
+    try:
+        card = await service.update_card(card_id, user_id, data)
+    except CardResourceReadOnlyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if not card:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
     await db.commit()
@@ -512,11 +519,6 @@ class CardKnowledgeUpdate(BaseModel):
     description: Optional[str] = None
     mime_type: Optional[str] = None
 
-
-def _new_kb_id() -> str:
-    return "kb_" + hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:10]
-
-
 @router.get("/{card_id}/knowledge")
 async def list_card_knowledge(
     card_id: str,
@@ -538,30 +540,11 @@ async def create_card_knowledge(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Attach a KE to a card."""
-    if not data.title.strip() or not data.content.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title and content are required")
-
-    service = CardService(db)
-    card = await service.get_card(card_id)
-    if not card:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-
-    kbs = list(card.knowledge_bases or [])
-    kb = {
-        "id": _new_kb_id(),
-        "title": data.title.strip(),
-        "description": (data.description or "").strip() or None,
-        "content": data.content,
-        "mime_type": data.mime_type,
-        "source": data.source,
-        "author_id": user_id,
-    }
-    kbs.append(kb)
-
-    await service.update_card(card_id, user_id, CardUpdate(knowledge_bases=kbs))
-    await db.commit()
-    return kb
+    """Blocked: card Knowledge Base resources are read-only governed snapshots."""
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=CARD_RESOURCE_READ_ONLY_MESSAGE,
+    )
 
 
 @router.get("/{card_id}/knowledge/{kb_id}")
@@ -590,31 +573,11 @@ async def update_card_knowledge(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update a KE in place."""
-    service = CardService(db)
-    card = await service.get_card(card_id)
-    if not card:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-
-    kbs = list(card.knowledge_bases or [])
-    idx = next((i for i, kb in enumerate(kbs) if kb.get("id") == kb_id), -1)
-    if idx == -1:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge entry not found")
-
-    kb = dict(kbs[idx])
-    if data.title is not None:
-        kb["title"] = data.title.strip()
-    if data.description is not None:
-        kb["description"] = data.description.strip() or None
-    if data.content is not None:
-        kb["content"] = data.content
-    if data.mime_type is not None:
-        kb["mime_type"] = data.mime_type
-    kbs[idx] = kb
-
-    await service.update_card(card_id, user_id, CardUpdate(knowledge_bases=kbs))
-    await db.commit()
-    return kb
+    """Blocked: card Knowledge Base resources are read-only governed snapshots."""
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=CARD_RESOURCE_READ_ONLY_MESSAGE,
+    )
 
 
 @router.delete("/{card_id}/knowledge/{kb_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -624,20 +587,11 @@ async def delete_card_knowledge(
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a KE from a card."""
-    service = CardService(db)
-    card = await service.get_card(card_id)
-    if not card:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-
-    kbs = list(card.knowledge_bases or [])
-    before = len(kbs)
-    kbs = [kb for kb in kbs if kb.get("id") != kb_id]
-    if len(kbs) == before:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge entry not found")
-
-    await service.update_card(card_id, user_id, CardUpdate(knowledge_bases=kbs))
-    await db.commit()
+    """Blocked: card Knowledge Base resources are read-only governed snapshots."""
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=CARD_RESOURCE_READ_ONLY_MESSAGE,
+    )
 
 
 @router.get("/{card_id}/knowledge/{kb_id}/download")

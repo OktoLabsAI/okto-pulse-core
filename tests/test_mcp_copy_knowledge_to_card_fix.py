@@ -82,6 +82,7 @@ def test_handler_copies_kb_into_card_knowledge_bases_not_comments():
     block = _handler_block("okto_pulse_copy_knowledge_to_card")
 
     assert "CardUpdate(knowledge_bases=existing)" in block
+    assert "allow_card_resource_write=True" in block
     assert "Comment(" not in block
     assert "copied_from_spec:" in block
 
