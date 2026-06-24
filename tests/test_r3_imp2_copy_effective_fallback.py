@@ -33,6 +33,7 @@ from okto_pulse.core.models.db import (
     Spec,
 )
 from okto_pulse.core.mcp.server import _effective_empty_copy_response
+from okto_pulse.core.services.effective_resource_propagation import _dedupe_effective_refs
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 USER_ID = "user-r3-imp2"
@@ -47,6 +48,27 @@ class _Ctx:
         self.agent_id = USER_ID
         self.agent_name = "r3 tester"
         self.permissions = object()
+
+
+def test_architecture_fallback_refs_dedupe_by_source_design_identity():
+    refs = _dedupe_effective_refs(
+        "architecture",
+        [
+            {
+                "id": "arch-refinement-snapshot",
+                "source_design_id": "arch-ideation-root",
+                "source_entity_type": "refinement",
+                "source_entity_id": "ref-1",
+            },
+            {
+                "id": "arch-ideation-root",
+                "source_entity_type": "ideation",
+                "source_entity_id": "idea-1",
+            },
+        ],
+    )
+
+    assert [item["id"] for item in refs] == ["arch-refinement-snapshot"]
 
 
 async def _call(name: str, **kwargs) -> dict:
