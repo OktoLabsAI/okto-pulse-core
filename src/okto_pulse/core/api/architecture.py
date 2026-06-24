@@ -143,6 +143,11 @@ async def _ensure_design_mutable(db: AsyncSession, design_id: str) -> Any:
 def _http_error_from_value(error: ValueError) -> HTTPException:
     if isinstance(error, ArchitectureWarningAcknowledgementRequired):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error.to_payload())
+    if isinstance(error, ArchitecturePropagationBlocked):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=error.to_error_dict(),
+        )
     if isinstance(error, CardArchitectureReadOnlyError):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
     message = str(error)

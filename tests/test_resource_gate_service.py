@@ -66,6 +66,47 @@ def test_resource_gate_coverage_path_has_static_lineage_drift_guard():
 
 
 @pytest.mark.asyncio
+async def test_completion_fails_closed_on_architecture_propagation_block_without_findings(monkeypatch):
+    service = ResourceGateService(db=None)
+    summary = {
+        "resources": [
+            {"resource_type": "architecture", "state": "provided"},
+            {"resource_type": "mockup", "state": "not_applicable"},
+            {"resource_type": "knowledge_base", "state": "not_applicable"},
+        ],
+        "architecture_findings": {
+            "active_count": 0,
+            "design_count": 1,
+            "top_remediation": [],
+        },
+        "architecture_propagation": {
+            "blocking": True,
+            "ineligible_sources": [{"code": "architecture_propagation_blocked"}],
+            "remediation": "Fix the source design and rerun the architecture critic.",
+        },
+        "architecture_propagation_blocking": True,
+    }
+
+    async def fake_summary(*_args, **_kwargs):
+        return summary
+
+    monkeypatch.setattr(service, "get_summary", fake_summary)
+
+    result = await service.validate_entity_completion("board-1", "card", "card-1")
+
+    assert result["allowed"] is False
+    assert result["blocking_resources"] == []
+    assert result["blocking_architecture_findings"] == []
+    assert result["blocking_architecture_propagation"]["blocking"] is True
+
+    with pytest.raises(ResourceGateViolation) as exc_info:
+        await service.validate_or_raise_entity_completion("board-1", "card", "card-1")
+
+    assert exc_info.value.code == "architecture_propagation_blocked"
+    assert exc_info.value.details["architecture_propagation"]["blocking"] is True
+
+
+@pytest.mark.asyncio
 async def test_resource_gate_resolves_direct_inherited_and_na_precedence(db_factory):
     board_id = _id("board")
     actor_id = _id("agent")
