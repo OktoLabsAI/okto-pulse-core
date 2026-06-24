@@ -437,13 +437,58 @@ class ResourceGateService:
         ]
         architecture_findings = summary.get("architecture_findings") or {}
         blocking_findings = list(architecture_findings.get("top_remediation") or [])
+        architecture_propagation = summary.get("architecture_propagation") or {}
+        blocking_architecture_propagation = (
+            architecture_propagation
+            if summary.get("architecture_propagation_blocking")
+            else {}
+        )
         return {
-            "allowed": not blocking_resources and not blocking_findings,
+            "allowed": (
+                not blocking_resources
+                and not blocking_findings
+                and not blocking_architecture_propagation
+            ),
             "blocking_resources": blocking_resources,
             "blocking_architecture_findings": blocking_findings,
+            "blocking_architecture_propagation": blocking_architecture_propagation,
             "architecture_findings": architecture_findings,
             "summary": summary,
         }
+
+    def _raise_architecture_propagation_block(
+        self,
+        board_id: str,
+        entity_type: EntityType | str,
+        entity_id: str,
+        *,
+        phase: str,
+        architecture_propagation: dict[str, Any],
+        summary: dict[str, Any],
+    ) -> None:
+        observe_architecture_done_blocker(
+            board_id=board_id,
+            owner_type=str(entity_type),
+            active_count=0,
+            design_count=len(architecture_propagation.get("ineligible_sources") or []),
+            phase=phase,
+        )
+        raise ResourceGateViolation(
+            "architecture_propagation_blocked",
+            (
+                f"Cannot complete {entity_type} '{entity_id}': an inherited "
+                "Architecture Design source is ineligible for propagation. "
+                f"{architecture_propagation.get('remediation') or ''}".strip()
+            ),
+            details={
+                "board_id": board_id,
+                "entity_type": str(entity_type),
+                "entity_id": entity_id,
+                "phase": phase,
+                "architecture_propagation": architecture_propagation,
+                "summary": summary,
+            },
+        )
 
     async def validate_or_raise_entity_completion(
         self,
@@ -481,6 +526,18 @@ class ResourceGateService:
             )
 
         architecture_findings = result["architecture_findings"]
+        if not result["blocking_architecture_findings"]:
+            if result["blocking_architecture_propagation"]:
+                self._raise_architecture_propagation_block(
+                    board_id,
+                    entity_type,
+                    entity_id,
+                    phase=phase,
+                    architecture_propagation=result["blocking_architecture_propagation"],
+                    summary=result["summary"],
+                )
+            return result
+
         label_items = []
         for item in result["blocking_architecture_findings"][:5]:
             target = item.get("target_ref") or item.get("path") or "unknown target"
@@ -539,6 +596,16 @@ class ResourceGateService:
         architecture_findings = summary.get("architecture_findings") or {}
         blocking = list(architecture_findings.get("top_remediation") or [])
         if not blocking:
+            architecture_propagation = summary.get("architecture_propagation") or {}
+            if summary.get("architecture_propagation_blocking"):
+                self._raise_architecture_propagation_block(
+                    board_id,
+                    entity_type,
+                    entity_id,
+                    phase=phase,
+                    architecture_propagation=architecture_propagation,
+                    summary=summary,
+                )
             return summary
 
         label_items = []
