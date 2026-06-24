@@ -87,12 +87,13 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 Changeset:
 
+- **Canonical Architecture Design evaluation became the propagation source of truth** — the backend critic now produces the same structured verdict used by authoring, Resource Gate, REST/MCP copy flows and SDLC propagation. Any active finding, unavailable verdict or revalidation blocker prevents downstream copy instead of being bypassed by acknowledgement or implicit snapshotting.
 - **Architecture propagation now fails closed everywhere it matters** — active Architecture Design critic findings, missing/unavailable verdicts and in-memory revalidation blockers prevent copy/propagation into downstream artifacts. Acknowledgement remains audit-only and never authorizes propagation.
 - **Completion gates consume the same canonical architecture decision** — `ResourceGateService.validate_entity_completion()` and the spec architecture-findings done path now treat `architecture_propagation_blocking=true` as a real blocker, including cases with no persisted active finding rows.
 - **REST/MCP error surfaces stay structured** — `ArchitecturePropagationBlocked` now maps to the canonical payload with stable `code`, design/source identifiers, finding keys, verdict status and remediation instead of being flattened into a generic validation string.
 - **Card resource snapshots are consistently read-only** — effective-resource read models mark direct card snapshots read-only, matching the write-side 409 behavior and preventing UI/API consumers from advertising edits that cannot succeed.
 - **Effective architecture copy avoids duplicate lineage snapshots** — inherited architecture refs now carry source identity (`source_design_id`/`source_ref`) and fallback copy plans de-duplicate by canonical source identity before copying to cards.
-- **Regression coverage** — focused tests cover propagation-block completion, structured REST error mapping, read-only card snapshots and deduped effective architecture fallback refs.
+- **Runtime and regression coverage** — focused tests cover propagation-block completion, structured REST error mapping, read-only card snapshots and deduped effective architecture fallback refs. The installed `0.2.6` API was also smoke-tested through `/api/v1/architecture/validate` to confirm live structured warnings are emitted by the packaged runtime.
 
 ### 0.2.5
 
