@@ -2,7 +2,7 @@
 
 # ruff: noqa: F401
 
-__version__ = "0.1.0"
+__version__ = "0.2.6"
 
 from okto_pulse.core.infra.auth import (
     AuthProvider, configure_auth, get_auth_provider,

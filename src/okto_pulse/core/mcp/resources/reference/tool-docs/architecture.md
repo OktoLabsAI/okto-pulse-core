@@ -311,3 +311,36 @@ Args:
 
 Returns:
     JSON dry-run critique; this tool does not write anything.
+
+
+## `architecture_warning_acknowledgement` is audit-only — NOT a propagation bypass
+
+`architecture_warning_acknowledgement` belongs to the AUTHORING path only: it lets you SAVE
+a warning-bearing Architecture Design. The warnings are still recorded as active findings,
+and the acknowledgement is stored as audit-only evidence (in `ArchitectureWarningAcknowledgement`).
+It does NOT clear the findings and it does NOT authorize copying or propagating that design.
+An active finding blocks BOTH Done and copy/propagation (`architecture_propagation_blocked`),
+regardless of how many acknowledgements exist, and the Resource Gate fails closed instead of
+auto-marking the inherited architecture N/A. To propagate, fix the SOURCE design until the
+backend critic resolves the findings, then retry the copy.
+
+
+## `okto_pulse_list_architecture_propagation_legacy`
+
+Read-only, forward-only diagnostic. Lists Architecture Design snapshots that were copied
+before the propagation-eligibility rule and whose SOURCE is now ineligible. It NEVER
+backfills, resolves findings, mutates snapshots, or changes any SDLC status.
+
+Args:
+    board_id: Board ID
+    limit: Max items per page (1..200; default 100)
+    offset: Pagination offset (default 0)
+    include_clean: "true" to also list snapshots whose source is currently eligible (default "false")
+    parent_type_filter: Optional parent_type filter (ideation | refinement | spec | card)
+
+Returns:
+    JSON: `{ success, board_id, items: [{ target_design_id, target_parent{type,id},
+    source_design_id, source_ref, source_version, legacy_status
+    (source_blocked | verdict_missing | source_unavailable), verdict_status, finding_keys,
+    remediation, mutation_performed: false }], scanned_total, limit, offset,
+    mutation_performed: false }`. No mutation is ever performed.

@@ -83,7 +83,12 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-### 0.2.5 — current
+### 0.2.6 — current
+
+- Hardens Architecture Design propagation as a fail-closed core policy: active architecture critic findings block copy/propagation/card creation, acknowledgements remain audit-only, and the legacy propagation diagnostic stays read-only.
+- Aligns the MCP/API contract around the canonical architecture propagation error surface and current allowed values.
+
+### 0.2.5
 
 Scope is taken from the finalized specs on the **Okto Pulse 0.2.5** board and the `feature/0.2.5` branch diff over `feature/0.2.3`: `311 files changed, +59,295 / -1,104`. This release turns the 0.2.3 KG durability base into a governed operating layer for canonical graph maturity, cognitive closeout, board defaults, Design System consumption, Path B amendment remediation and AWS metrics publication health.
 
