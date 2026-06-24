@@ -27,7 +27,11 @@ from okto_pulse.core.models.db import (
     Spec,
     SpecKnowledgeBase,
 )
-from okto_pulse.core.services.architecture import ArchitectureFindingGate
+from okto_pulse.core.services.architecture import (
+    ArchitectureDesignRepository,
+    ArchitectureFindingGate,
+    ArchitecturePropagationEligibilityPolicy,
+)
 from okto_pulse.core.services.architecture_observability import (
     observe_architecture_done_blocker,
 )
@@ -139,6 +143,63 @@ class ResourceGateService:
             lineage=lineage,
         )
 
+    async def get_effective_resources(
+        self,
+        board_id: str,
+        entity_type: EntityType | str,
+        entity_id: str,
+    ) -> dict[str, Any]:
+        """Return hydrated effective resources with provenance metadata.
+
+        Resource Gate summaries intentionally expose lightweight refs for gate
+        evaluation. This read model is for UI rendering: direct resources remain
+        editable by the owning screen, while inherited resources are hydrated and
+        marked read-only without changing their original id/provenance.
+        """
+        self._validate_entity_type(entity_type)
+        lineage = await self._resolve_resource_lineage(
+            board_id,
+            str(entity_type),
+            entity_id,
+            include_coverage=False,
+            projection_profile="full",
+        )
+        resources: dict[str, list[dict[str, Any]]] = {
+            resource_type: [] for resource_type in RESOURCE_TYPES
+        }
+
+        for state in lineage.resource_states:
+            resource_type = state.resource_type
+            for ref in state.direct_refs:
+                resources[resource_type].append(
+                    await self._effective_resource_item(
+                        board_id=board_id,
+                        resource_type=resource_type,
+                        ref=dict(ref),
+                        attachment_kind="direct",
+                        inherited=False,
+                    )
+                )
+            for ref in state.inherited_refs:
+                resources[resource_type].append(
+                    await self._effective_resource_item(
+                        board_id=board_id,
+                        resource_type=resource_type,
+                        ref=dict(ref),
+                        attachment_kind="inherited_reference",
+                        inherited=True,
+                    )
+                )
+
+        return {
+            "board_id": board_id,
+            "entity_type": str(entity_type),
+            "entity_id": entity_id,
+            "resources": resources,
+            "lineage_counts": lineage.counts,
+            "resource_lineage": lineage.to_dict(),
+        }
+
     async def _summary_from_lineage(
         self,
         *,
@@ -169,6 +230,9 @@ class ResourceGateService:
             architecture_refs=self._effective_architecture_refs(architecture_resource),
         )
         architecture_findings = architecture_findings_result["architecture_findings"]
+        architecture_propagation = await self._architecture_propagation_block(
+            architecture_resource=architecture_resource,
+        )
         warnings: list[dict[str, Any]] = []
         if architecture_findings["active_count"]:
             warnings.append(
@@ -180,6 +244,16 @@ class ResourceGateService:
                     ),
                     "active_count": architecture_findings["active_count"],
                     "top_remediation": architecture_findings["top_remediation"],
+                }
+            )
+        if architecture_propagation["blocking"]:
+            warnings.append(
+                {
+                    "code": "architecture_propagation_blocked_on_inherited",
+                    "message": architecture_propagation["remediation"],
+                    "ineligible_source_count": len(
+                        architecture_propagation["ineligible_sources"]
+                    ),
                 }
             )
         return {
@@ -194,8 +268,51 @@ class ResourceGateService:
             "architecture_findings_blocking": bool(
                 architecture_findings["active_count"]
             ),
+            "architecture_propagation": architecture_propagation,
+            "architecture_propagation_blocking": architecture_propagation["blocking"],
             "resource_lineage": lineage.to_dict(),
             "lineage_counts": lineage.counts,
+        }
+
+    async def _architecture_propagation_block(
+        self,
+        *,
+        architecture_resource: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Spec C: distinguish a MISSING architecture resource from an INHERITED one whose
+        SOURCE is ineligible for propagation (TR 83009a1e). Read-only — surfaces the
+        canonical eligibility verdict + actionable remediation so the operator fixes the
+        SOURCE design instead of marking architecture N/A artificially. Acknowledgement is
+        audit-only and never authorizes propagation; this method never mutates state."""
+        empty: dict[str, Any] = {"blocking": False, "ineligible_sources": [], "remediation": None}
+        if not architecture_resource:
+            return empty
+        inherited = list(architecture_resource.get("inherited_refs") or [])
+        if not inherited:
+            return empty
+        policy = ArchitecturePropagationEligibilityPolicy(self.db)
+        ineligible: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for ref in inherited:
+            design_id = str(ref.get("id") or ref.get("source_design_id") or "").strip()
+            if not design_id or design_id in seen:
+                continue
+            seen.add(design_id)
+            eligibility = await policy.evaluate(design_id)
+            if not eligibility.eligible:
+                ineligible.append(eligibility.to_dict())
+        if not ineligible:
+            return empty
+        return {
+            "blocking": True,
+            "ineligible_sources": ineligible,
+            "remediation": (
+                "An inherited Architecture Design source is ineligible for propagation. "
+                "Fix the SOURCE design (resolve the active critic findings or restore its "
+                "verdict) and re-run the architecture critic, then retry the copy. "
+                "Acknowledgement is audit-only and does NOT authorize propagation; do not "
+                "mark architecture N/A to bypass this."
+            ),
         }
 
     async def _resolve_resource_lineage(
@@ -320,13 +437,58 @@ class ResourceGateService:
         ]
         architecture_findings = summary.get("architecture_findings") or {}
         blocking_findings = list(architecture_findings.get("top_remediation") or [])
+        architecture_propagation = summary.get("architecture_propagation") or {}
+        blocking_architecture_propagation = (
+            architecture_propagation
+            if summary.get("architecture_propagation_blocking")
+            else {}
+        )
         return {
-            "allowed": not blocking_resources and not blocking_findings,
+            "allowed": (
+                not blocking_resources
+                and not blocking_findings
+                and not blocking_architecture_propagation
+            ),
             "blocking_resources": blocking_resources,
             "blocking_architecture_findings": blocking_findings,
+            "blocking_architecture_propagation": blocking_architecture_propagation,
             "architecture_findings": architecture_findings,
             "summary": summary,
         }
+
+    def _raise_architecture_propagation_block(
+        self,
+        board_id: str,
+        entity_type: EntityType | str,
+        entity_id: str,
+        *,
+        phase: str,
+        architecture_propagation: dict[str, Any],
+        summary: dict[str, Any],
+    ) -> None:
+        observe_architecture_done_blocker(
+            board_id=board_id,
+            owner_type=str(entity_type),
+            active_count=0,
+            design_count=len(architecture_propagation.get("ineligible_sources") or []),
+            phase=phase,
+        )
+        raise ResourceGateViolation(
+            "architecture_propagation_blocked",
+            (
+                f"Cannot complete {entity_type} '{entity_id}': an inherited "
+                "Architecture Design source is ineligible for propagation. "
+                f"{architecture_propagation.get('remediation') or ''}".strip()
+            ),
+            details={
+                "board_id": board_id,
+                "entity_type": str(entity_type),
+                "entity_id": entity_id,
+                "phase": phase,
+                "architecture_propagation": architecture_propagation,
+                "summary": summary,
+            },
+        )
 
     async def validate_or_raise_entity_completion(
         self,
@@ -364,6 +526,18 @@ class ResourceGateService:
             )
 
         architecture_findings = result["architecture_findings"]
+        if not result["blocking_architecture_findings"]:
+            if result["blocking_architecture_propagation"]:
+                self._raise_architecture_propagation_block(
+                    board_id,
+                    entity_type,
+                    entity_id,
+                    phase=phase,
+                    architecture_propagation=result["blocking_architecture_propagation"],
+                    summary=result["summary"],
+                )
+            return result
+
         label_items = []
         for item in result["blocking_architecture_findings"][:5]:
             target = item.get("target_ref") or item.get("path") or "unknown target"
@@ -422,6 +596,16 @@ class ResourceGateService:
         architecture_findings = summary.get("architecture_findings") or {}
         blocking = list(architecture_findings.get("top_remediation") or [])
         if not blocking:
+            architecture_propagation = summary.get("architecture_propagation") or {}
+            if summary.get("architecture_propagation_blocking"):
+                self._raise_architecture_propagation_block(
+                    board_id,
+                    entity_type,
+                    entity_id,
+                    phase=phase,
+                    architecture_propagation=architecture_propagation,
+                    summary=summary,
+                )
             return summary
 
         label_items = []
@@ -840,7 +1024,12 @@ class ResourceGateService:
 
     async def _architecture_refs(self, ref: _EntityRef) -> list[dict[str, Any]]:
         result = await self.db.execute(
-            select(ArchitectureDesign.id, ArchitectureDesign.title)
+            select(
+                ArchitectureDesign.id,
+                ArchitectureDesign.title,
+                ArchitectureDesign.source_design_id,
+                ArchitectureDesign.source_ref,
+            )
             .where(
                 ArchitectureDesign.board_id == getattr(ref.entity, "board_id"),
                 ArchitectureDesign.parent_type == ref.entity_type,
@@ -848,10 +1037,19 @@ class ResourceGateService:
             )
             .order_by(ArchitectureDesign.created_at.asc())
         )
-        return [
-            self._artifact_ref(ref, artifact_id=row[0], title=row[1])
-            for row in result.all()
-        ]
+        refs: list[dict[str, Any]] = []
+        for row in result.mappings().all():
+            item = self._artifact_ref(
+                ref,
+                artifact_id=row.get("id"),
+                title=row.get("title"),
+            )
+            if row.get("source_design_id"):
+                item["source_design_id"] = row.get("source_design_id")
+            if row.get("source_ref"):
+                item["source_ref"] = row.get("source_ref")
+            refs.append(item)
+        return refs
 
     def _mockup_refs(self, ref: _EntityRef) -> list[dict[str, Any]]:
         mockups = getattr(ref.entity, "screen_mockups", None) or []
@@ -894,6 +1092,178 @@ class ResourceGateService:
             self._artifact_ref(ref, artifact_id=row[0], title=row[1])
             for row in result.all()
         ]
+
+    async def _effective_resource_item(
+        self,
+        *,
+        board_id: str,
+        resource_type: str,
+        ref: dict[str, Any],
+        attachment_kind: str,
+        inherited: bool,
+    ) -> dict[str, Any]:
+        metadata = {
+            "resource_type": resource_type,
+            "resource_id": ref.get("id"),
+            "id": ref.get("id"),
+            "title": ref.get("title"),
+            "attachment_kind": attachment_kind,
+            "inherited": inherited,
+            "read_only": inherited or ref.get("source_entity_type") == "card",
+            "source_entity_type": ref.get("source_entity_type"),
+            "source_entity_id": ref.get("source_entity_id"),
+            "source_entity_title": ref.get("source_entity_title"),
+            "provenance": {
+                "source_entity_type": ref.get("source_entity_type"),
+                "source_entity_id": ref.get("source_entity_id"),
+                "source_entity_title": ref.get("source_entity_title"),
+                "resource_id": ref.get("id"),
+            },
+            "ref": dict(ref),
+            "hydrated": False,
+        }
+        try:
+            resource = await self._hydrate_effective_resource(
+                board_id=board_id,
+                resource_type=resource_type,
+                ref=ref,
+            )
+        except Exception as exc:  # pragma: no cover - defensive legacy projection
+            return {
+                **metadata,
+                "hydration_error": str(exc),
+            }
+        if not resource:
+            return {
+                **metadata,
+                "hydration_error": "Resource payload not found for effective ref.",
+            }
+        return {
+            **resource,
+            **metadata,
+            "resource": resource,
+            "hydrated": True,
+        }
+
+    async def _hydrate_effective_resource(
+        self,
+        *,
+        board_id: str,
+        resource_type: str,
+        ref: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if resource_type == "architecture":
+            return await self._hydrate_architecture_ref(ref)
+        if resource_type == "mockup":
+            return await self._hydrate_mockup_ref(board_id, ref)
+        if resource_type == "knowledge_base":
+            return await self._hydrate_knowledge_ref(board_id, ref)
+        return None
+
+    async def _hydrate_architecture_ref(self, ref: dict[str, Any]) -> dict[str, Any] | None:
+        design_id = str(ref.get("id") or "").strip()
+        if not design_id:
+            return None
+        repo = ArchitectureDesignRepository(self.db)
+        design = await repo.get(design_id, include_payloads=True)
+        if design is None:
+            return None
+        return self._dump_model(repo.to_response(design))
+
+    async def _hydrate_mockup_ref(
+        self,
+        board_id: str,
+        ref: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        source = await self._load_source_entity_ref(board_id, ref)
+        if source is None:
+            return None
+        resource_id = str(ref.get("id") or "")
+        for item in getattr(source.entity, "screen_mockups", None) or []:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("id") or "") == resource_id:
+                return dict(item)
+        return None
+
+    async def _hydrate_knowledge_ref(
+        self,
+        board_id: str,
+        ref: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        source = await self._load_source_entity_ref(board_id, ref)
+        if source is None:
+            return None
+        resource_id = str(ref.get("id") or "")
+        if source.entity_type == "card":
+            for item in getattr(source.entity, "knowledge_bases", None) or []:
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("id") or "") == resource_id:
+                    return dict(item)
+            return None
+
+        kb_model, fk_column, fk_name = {
+            "ideation": (
+                IdeationKnowledgeBase,
+                IdeationKnowledgeBase.ideation_id,
+                "ideation_id",
+            ),
+            "refinement": (
+                RefinementKnowledgeBase,
+                RefinementKnowledgeBase.refinement_id,
+                "refinement_id",
+            ),
+            "spec": (SpecKnowledgeBase, SpecKnowledgeBase.spec_id, "spec_id"),
+        }[source.entity_type]
+        result = await self.db.execute(
+            select(kb_model).where(
+                kb_model.id == resource_id,
+                fk_column == source.entity_id,
+            )
+        )
+        kb = result.scalar_one_or_none()
+        if kb is None:
+            return None
+        return {
+            "id": kb.id,
+            fk_name: source.entity_id,
+            "title": kb.title,
+            "description": kb.description,
+            "content": kb.content,
+            "mime_type": kb.mime_type,
+            "source_type": kb.source_type,
+            "source_id": kb.source_id,
+            "source_title": kb.source_title,
+            "source_version": kb.source_version,
+            "source_kb_id": kb.source_kb_id,
+            "root_source_kb_id": kb.root_source_kb_id,
+            "immediate_parent_kb_id": kb.immediate_parent_kb_id,
+            "created_by": kb.created_by,
+            "created_at": self._isoformat(kb.created_at),
+            "updated_at": self._isoformat(kb.updated_at),
+        }
+
+    async def _load_source_entity_ref(
+        self,
+        board_id: str,
+        ref: dict[str, Any],
+    ) -> _EntityRef | None:
+        source_type = str(ref.get("source_entity_type") or "").strip()
+        source_id = str(ref.get("source_entity_id") or "").strip()
+        if not source_type or not source_id:
+            return None
+        return await self._load_entity_ref(board_id, source_type, source_id)
+
+    @staticmethod
+    def _dump_model(value: Any) -> dict[str, Any]:
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json")
+        return dict(value)
+
+    @staticmethod
+    def _isoformat(value: Any) -> str | None:
+        return value.isoformat() if value else None
 
     @staticmethod
     def _artifact_ref(

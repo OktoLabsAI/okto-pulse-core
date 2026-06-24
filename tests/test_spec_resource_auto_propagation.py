@@ -569,21 +569,47 @@ def _author_ack() -> ArchitectureWarningAcknowledgementRequest:
     )
 
 
+def _clean_arch_entities(api_name: str = "Checkout API") -> list[dict]:
+    return [
+        {"id": "customer-portal", "name": "Customer Portal", "entity_type": "web_app",
+         "responsibility": "Sends checkout data to the API."},
+        {"id": "checkout-api", "name": api_name, "entity_type": "api",
+         "responsibility": "Handles checkout and orders."},
+    ]
+
+
+_CLEAN_ARCH_INTERFACES = [
+    {"id": "create-order", "name": "Create order", "endpoint": "POST /orders",
+     "description": "Portal sends checkout data to Checkout API.",
+     "direction": "source_to_target", "protocol": "REST", "contract_type": "OpenAPI",
+     "source_entity_id": "customer-portal", "target_entity_id": "checkout-api"},
+]
+
+_CLEAN_ARCH_DIAGRAMS = [
+    {"id": "diagram-runtime", "title": "Runtime context", "diagram_type": "context",
+     "format": "excalidraw_json",
+     "adapter_payload": {"type": "excalidraw", "version": 2, "elements": [
+         {"id": "node-customer-portal", "type": "rectangle", "label": "Customer Portal",
+          "linkedEntityId": "customer-portal"},
+         {"id": "node-checkout-api", "type": "rectangle", "label": "Checkout API",
+          "linkedEntityId": "checkout-api"},
+         {"id": "edge-create-order", "type": "arrow", "sourceElementId": "node-customer-portal",
+          "targetElementId": "node-checkout-api", "linkedInterfaceIds": ["create-order"]},
+     ], "appState": {}, "files": {}}},
+]
+
+
 async def _arch_create_payload() -> ArchitectureDesignCreate:
+    # Spec B: a CLEAN, eligible source (two connected services — no isolated nodes and no
+    # blocking structured warnings) so the auto-propagation feature can be verified end to
+    # end under the new eligibility gate. Only non-blocking textual boundary/schema notes
+    # remain, which neither require an ack nor create active findings.
     return ArchitectureDesignCreate(
         title="Service layer arch",
-        global_description="Designed via repository.create to verify propagation.",
-        entities=[
-            {
-                "id": "svc-api",
-                "name": "Demo API",
-                "entity_type": "api",
-                "responsibility": "Handles demo traffic.",
-            }
-        ],
-        interfaces=[],
-        diagrams=[],
-        architecture_warning_acknowledgement=_author_ack(),
+        global_description="Two connected services to verify clean propagation behavior end to end.",
+        entities=_clean_arch_entities(),
+        interfaces=_CLEAN_ARCH_INTERFACES,
+        diagrams=_CLEAN_ARCH_DIAGRAMS,
     )
 
 
@@ -628,16 +654,8 @@ async def test_architecture_update_via_repository_propagates_to_linked_cards(db_
         await repo.update(
             design.id,
             ArchitectureDesignUpdate(
-                entities=[
-                    {
-                        "id": "svc-api",
-                        "name": "Demo API v2",
-                        "entity_type": "api",
-                        "responsibility": "Handles demo traffic — refreshed.",
-                    }
-                ],
+                entities=_clean_arch_entities(api_name="Demo API v2"),
                 change_summary="Renamed entity",
-                architecture_warning_acknowledgement=_author_ack(),
             ),
             ctx["actor_id"],
         )
@@ -788,9 +806,8 @@ async def test_disabled_auto_derive_skips_all_service_layer_propagation(db_facto
         await repo.update(
             design.id,
             ArchitectureDesignUpdate(
-                entities=[{"id": "svc-api", "name": "Renamed", "entity_type": "api", "responsibility": "x"}],
+                entities=_clean_arch_entities(api_name="Renamed"),
                 change_summary="rename",
-                architecture_warning_acknowledgement=_author_ack(),
             ),
             ctx["actor_id"],
         )

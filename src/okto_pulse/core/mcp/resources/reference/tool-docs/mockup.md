@@ -8,14 +8,16 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 ## `okto_pulse_add_screen_mockup`
 
-Add a screen mockup to any entity (spec, ideation, refinement, card, or story).
+Add a screen mockup to a source entity (spec, ideation, refinement, or story).
+Card mockups are read-only governed snapshots; use
+`okto_pulse_copy_mockups_to_card` to refresh card context.
 Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard.
 
 Args:
     board_id: Board ID
-    entity_id: Entity ID (spec, ideation, refinement, card, or story)
+    entity_id: Entity ID (spec, ideation, refinement, or story)
     title: Screen title (e.g. "Login Page", "Dashboard", "Settings Modal")
-    entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
+    entity_type: Type of entity — one of: spec, ideation, refinement, story (default: spec)
     description: What this screen does and when it appears (optional). Supports Markdown.
     screen_type: Type of screen — one of: page, modal, drawer, popover, panel (default: page)
     html_content: HTML+Tailwind markup for the screen mockup. Script tags and on* event attributes are stripped for safety.
@@ -25,14 +27,15 @@ Returns:
 
 ## `okto_pulse_annotate_mockup`
 
-Add a design annotation/note to a screen mockup on any entity.
+Add a design annotation/note to a screen mockup on a source entity. Card mockups
+are read-only governed snapshots.
 
 Args:
     board_id: Board ID
-    entity_id: Entity ID (spec, ideation, refinement, card, or story)
+    entity_id: Entity ID (spec, ideation, refinement, or story)
     screen_id: Screen mockup ID
     text: Annotation text (design note, requirement, constraint)
-    entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
+    entity_type: Type of entity — one of: spec, ideation, refinement, story (default: spec)
 
 Returns:
     JSON with created annotation
@@ -56,20 +59,22 @@ Returns:
 
 ## `okto_pulse_delete_screen_mockup`
 
-Delete a screen mockup from any entity.
+Delete a screen mockup from a source entity. Card mockups are read-only governed
+snapshots.
 
 Args:
     board_id: Board ID
-    entity_id: Entity ID (spec, ideation, refinement, card, or story)
+    entity_id: Entity ID (spec, ideation, refinement, or story)
     screen_id: Screen mockup ID to delete
-    entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
+    entity_type: Type of entity — one of: spec, ideation, refinement, story (default: spec)
 
 Returns:
     JSON with success status
 
 ## `okto_pulse_list_screen_mockups`
 
-List screen mockups for any entity with optional filtering and pagination.
+List screen mockups for any entity with optional filtering and pagination,
+including read-only card snapshots.
 
 Args:
     board_id: Board ID
@@ -84,13 +89,14 @@ Returns:
 
 ## `okto_pulse_update_screen_mockup`
 
-Update an existing screen mockup's fields on any entity.
+Update an existing screen mockup's fields on a source entity. Card mockups are
+read-only governed snapshots.
 
 Args:
     board_id: Board ID
-    entity_id: Entity ID (spec, ideation, refinement, card, or story)
+    entity_id: Entity ID (spec, ideation, refinement, or story)
     screen_id: Screen mockup ID to update
-    entity_type: Type of entity — one of: spec, ideation, refinement, card, story (default: spec)
+    entity_type: Type of entity — one of: spec, ideation, refinement, story (default: spec)
     title: New title (empty = no change)
     description: New description (empty = no change)
     html_content: New HTML+Tailwind content (empty = no change). Script tags and on* event attributes are stripped.

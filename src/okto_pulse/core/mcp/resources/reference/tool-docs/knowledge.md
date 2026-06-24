@@ -8,9 +8,9 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 ## `okto_pulse_add_card_knowledge`
 
-Attach a knowledge base entry directly to a card. Stored inline on
-`Card.knowledge_bases` (JSONB). Symmetric to spec_knowledge but scoped
-to a single task.
+Deprecated / blocked. Card Knowledge Base resources are read-only governed
+snapshots. Create or update the Knowledge Base on the source ideation,
+refinement, or spec, then call `okto_pulse_copy_knowledge_to_card`.
 
 Args:
     board_id: Board ID
@@ -22,7 +22,7 @@ Args:
     source: Free-form provenance hint (e.g. "manual", "copied_from_spec:<spec_id>:<kb_id>")
 
 Returns:
-    JSON with the created KE including its generated id
+    JSON error `card_resource_read_only`
 
 ## `okto_pulse_add_ideation_knowledge`
 
@@ -95,7 +95,9 @@ Returns:
 
 ## `okto_pulse_delete_card_knowledge`
 
-Delete a KE from a card's inline knowledge_bases array.
+Deprecated / blocked. Card Knowledge Base resources are read-only governed
+snapshots. Delete or update the source Knowledge Base, then refresh card context
+with `okto_pulse_copy_knowledge_to_card`.
 
 ## `okto_pulse_delete_ideation_knowledge`
 
@@ -176,4 +178,6 @@ List knowledge base items for a spec, ideation, refinement, or card.
 
 ## `okto_pulse_update_card_knowledge`
 
-Update fields of an existing KE on a card. Only provided fields change.
+Deprecated / blocked. Card Knowledge Base resources are read-only governed
+snapshots. Update the source Knowledge Base, then refresh card context with
+`okto_pulse_copy_knowledge_to_card`.

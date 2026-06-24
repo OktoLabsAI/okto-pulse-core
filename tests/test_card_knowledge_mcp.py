@@ -1,12 +1,16 @@
-"""TC-1 (TS1) — pytest MCP add+list+get card_knowledge round-trip.
+"""Card Knowledge MCP handlers.
 
 Exercises the 5 new MCP handlers via the FastMCP tool registry:
-- okto_pulse_add_card_knowledge
 - okto_pulse_list_knowledge (entity_type="card")
 - okto_pulse_get_card_knowledge
+- okto_pulse_add_card_knowledge
 - okto_pulse_update_card_knowledge
 - okto_pulse_delete_card_knowledge
 
+Card Knowledge is now a read-only governed snapshot: direct add/update/delete
+return a deterministic `card_resource_read_only` error while list/get remain
+available for copied card context.
+ 
 Each handler is fetched through `mcp.get_tool(name).fn` to bypass the
 FastMCP / xml_safety decorator stack and invoke the underlying coroutine
 directly. Auth is stubbed; the DB session is the real test session
@@ -59,6 +63,18 @@ async def _seed_card():
             id=card_id, board_id=BOARD_ID, spec_id=spec_id,
             title="Card for KB tests", status=CardStatus.NOT_STARTED,
             card_type=CardType.NORMAL, created_by=USER_ID,
+            knowledge_bases=[
+                {
+                    "id": "cardkb_existing",
+                    "title": "Copied KB",
+                    "description": "brief",
+                    "content": "Body here",
+                    "mime_type": "text/markdown",
+                    "source": f"copied_from_spec:{spec_id}:kb_source",
+                    "source_kb_id": "kb_source",
+                    "author_id": USER_ID,
+                }
+            ],
         ))
         await db.commit()
     return spec_id, card_id
@@ -80,16 +96,8 @@ def _stub_auth():
 
 
 @pytest.mark.asyncio
-async def test_add_then_list_returns_the_kb(_seed_card):
+async def test_list_returns_copied_card_kb(_seed_card):
     spec_id, card_id = _seed_card
-    add = await _call(
-        "okto_pulse_add_card_knowledge",
-        board_id=BOARD_ID, card_id=card_id,
-        title="Auth design", content="Use JWT with rotating secrets.",
-    )
-    assert add.get("success") is True, add
-    kb_id = add["knowledge"]["id"]
-
     listed = await _call(
         "okto_pulse_list_knowledge",
         board_id=BOARD_ID,
@@ -98,63 +106,46 @@ async def test_add_then_list_returns_the_kb(_seed_card):
     )
     assert listed.get("entity_type") == "card"
     titles = [k["title"] for k in listed["knowledge_bases"]]
-    assert "Auth design" in titles
+    assert "Copied KB" in titles
     ids = [k["id"] for k in listed["knowledge_bases"]]
-    assert kb_id in ids
+    assert "cardkb_existing" in ids
 
 
 @pytest.mark.asyncio
 async def test_get_returns_full_content(_seed_card):
     spec_id, card_id = _seed_card
-    add = await _call(
-        "okto_pulse_add_card_knowledge",
-        board_id=BOARD_ID, card_id=card_id,
-        title="Doc", content="Body here", description="brief",
-    )
-    kb_id = add["knowledge"]["id"]
-
     got = await _call(
         "okto_pulse_get_card_knowledge",
-        board_id=BOARD_ID, card_id=card_id, knowledge_id=kb_id,
+        board_id=BOARD_ID, card_id=card_id, knowledge_id="cardkb_existing",
     )
     assert got.get("success") is True
-    assert got["knowledge"]["title"] == "Doc"
+    assert got["knowledge"]["title"] == "Copied KB"
     assert got["knowledge"]["content"] == "Body here"
     assert got["knowledge"]["description"] == "brief"
 
 
 @pytest.mark.asyncio
-async def test_update_changes_only_provided_fields(_seed_card):
+async def test_direct_add_update_delete_are_read_only(_seed_card):
     spec_id, card_id = _seed_card
     add = await _call(
         "okto_pulse_add_card_knowledge",
         board_id=BOARD_ID, card_id=card_id,
-        title="orig", content="original-body",
+        title="Direct", content="blocked",
     )
-    kb_id = add["knowledge"]["id"]
+    assert add.get("error") == "card_resource_read_only"
 
     upd = await _call(
         "okto_pulse_update_card_knowledge",
-        board_id=BOARD_ID, card_id=card_id, knowledge_id=kb_id,
+        board_id=BOARD_ID, card_id=card_id, knowledge_id="cardkb_existing",
         title="renamed",
     )
-    assert upd.get("success") is True
-    assert upd["knowledge"]["title"] == "renamed"
-    assert upd["knowledge"]["content"] == "original-body"  # unchanged
-
-
-@pytest.mark.asyncio
-async def test_delete_removes_only_target(_seed_card):
-    spec_id, card_id = _seed_card
-    a = await _call("okto_pulse_add_card_knowledge", board_id=BOARD_ID, card_id=card_id, title="A", content="aa")
-    b = await _call("okto_pulse_add_card_knowledge", board_id=BOARD_ID, card_id=card_id, title="B", content="bb")
-    a_id, b_id = a["knowledge"]["id"], b["knowledge"]["id"]
+    assert upd.get("error") == "card_resource_read_only"
 
     rem = await _call(
         "okto_pulse_delete_card_knowledge",
-        board_id=BOARD_ID, card_id=card_id, knowledge_id=a_id,
+        board_id=BOARD_ID, card_id=card_id, knowledge_id="cardkb_existing",
     )
-    assert rem.get("success") is True
+    assert rem.get("error") == "card_resource_read_only"
 
     listed = await _call(
         "okto_pulse_list_knowledge",
@@ -163,16 +154,7 @@ async def test_delete_removes_only_target(_seed_card):
         entity_id=card_id,
     )
     ids = [k["id"] for k in listed["knowledge_bases"]]
-    assert a_id not in ids and b_id in ids
-
-
-@pytest.mark.asyncio
-async def test_add_rejects_empty_title_or_content(_seed_card):
-    spec_id, card_id = _seed_card
-    err1 = await _call("okto_pulse_add_card_knowledge", board_id=BOARD_ID, card_id=card_id, title="", content="x")
-    assert "error" in err1
-    err2 = await _call("okto_pulse_add_card_knowledge", board_id=BOARD_ID, card_id=card_id, title="x", content="")
-    assert "error" in err2
+    assert "cardkb_existing" in ids
 
 
 @pytest.mark.asyncio

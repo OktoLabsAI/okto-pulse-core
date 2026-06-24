@@ -26,9 +26,16 @@ from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitectureDiagramStore,
     ArchitecturePayloadValidationError,
+    ArchitecturePropagationBlocked,
     ArchitecturePropagationService,
+    CARD_ARCHITECTURE_READ_ONLY_MESSAGE,
+    CardArchitectureReadOnlyError,
     ArchitectureWarningAcknowledgementRequired,
     stable_architecture_finding_key,
+)
+from okto_pulse.core.services.effective_resource_propagation import (
+    ResourceLineageResolutionError,
+    ResourcePropagationError,
 )
 
 router = APIRouter()
@@ -123,6 +130,11 @@ async def _ensure_design_mutable(db: AsyncSession, design_id: str) -> Any:
     design = await db.get(ArchitectureDesign, design_id)
     if design is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Architecture design not found")
+    if design.parent_type == "card":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=CARD_ARCHITECTURE_READ_ONLY_MESSAGE,
+        )
     if design.parent_type == "spec":
         await _ensure_spec_architecture_unlocked(db, design.spec_id)
     return design
@@ -131,6 +143,13 @@ async def _ensure_design_mutable(db: AsyncSession, design_id: str) -> Any:
 def _http_error_from_value(error: ValueError) -> HTTPException:
     if isinstance(error, ArchitectureWarningAcknowledgementRequired):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error.to_payload())
+    if isinstance(error, ArchitecturePropagationBlocked):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=error.to_error_dict(),
+        )
+    if isinstance(error, CardArchitectureReadOnlyError):
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
     message = str(error)
     status_code = (
         status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -285,6 +304,35 @@ async def validate_architecture_payload(
             for warning in (critique.get("structured_warnings") or [])
         ]
     return critique
+
+
+@router.get("/architecture/propagation-legacy-report")
+async def architecture_propagation_legacy_report(
+    board_id: str = Query(...),
+    limit: int = Query(100),
+    offset: int = Query(0),
+    include_clean: bool = Query(False),
+    parent_type_filter: str = Query(""),
+    user_id: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Spec C: read-only, forward-only diagnostic of legacy Architecture Design snapshots
+    whose SOURCE is now ineligible for propagation. Bounded/idempotent; never mutates
+    snapshots, findings, or SDLC status. Registered before /architecture/{design_id} so the
+    static path wins route matching."""
+    from okto_pulse.core.services.architecture_propagation_legacy import (
+        build_propagation_legacy_report,
+    )
+
+    return await build_propagation_legacy_report(
+        db,
+        board_id=board_id,
+        limit=limit,
+        offset=offset,
+        include_clean=include_clean,
+        parent_type_filter=parent_type_filter or None,
+        surface="rest",
+    )
 
 
 @router.get("/architecture/{design_id}", response_model=ArchitectureDesignResponse)
@@ -468,15 +516,33 @@ async def copy_architecture_from_spec_to_card(
 ):
     service = ArchitecturePropagationService(db)
     try:
-        designs = await service.copy_spec_to_card(
-            spec_id,
-            card_id,
-            user_id,
+        designs, _plan = await service.copy_effective_spec_to_card(
+            board_id=(await _ensure_parent(db, "card", card_id)).board_id,
+            spec_id=spec_id,
+            card_id=card_id,
+            actor_id=user_id,
             design_ids=(data.design_ids if data else None),
             architecture_warning_acknowledgement=(
                 data.architecture_warning_acknowledgement if data else None
             ),
         )
+    except ResourceLineageResolutionError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=error.to_error_dict(),
+        ) from error
+    except ResourcePropagationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=error.to_error_dict(spec_id=spec_id),
+        ) from error
+    except ArchitecturePropagationBlocked as error:
+        # Spec B: a source design ineligible for propagation surfaces the canonical
+        # structured error (architecture_propagation_blocked), not a generic 422.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=error.to_error_dict(),
+        ) from error
     except ValueError as error:
         raise _http_error_from_value(error)
     repo = ArchitectureDesignRepository(db)

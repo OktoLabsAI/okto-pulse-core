@@ -16,6 +16,7 @@ METRIC_DONE_BLOCKER_TOTAL = "architecture_findings_block_done_total"
 METRIC_GATE_EVAL_DURATION_MS = "architecture_finding_gate_eval_duration_ms"
 METRIC_PROJECTION_TOTAL = "architecture_finding_projection_total"
 METRIC_PAYLOAD_PARITY_VIOLATION_TOTAL = "architecture_finding_payload_contract_violation_total"
+METRIC_PROPAGATION_LEGACY_REPORT_TOTAL = "architecture_propagation_legacy_report_total"
 
 ARCHITECTURE_METRIC_NAMES = frozenset(
     {
@@ -25,6 +26,7 @@ ARCHITECTURE_METRIC_NAMES = frozenset(
         METRIC_GATE_EVAL_DURATION_MS,
         METRIC_PROJECTION_TOTAL,
         METRIC_PAYLOAD_PARITY_VIOLATION_TOTAL,
+        METRIC_PROPAGATION_LEGACY_REPORT_TOTAL,
     }
 )
 
@@ -200,6 +202,32 @@ def observe_architecture_done_blocker(
                 "outcome": "blocked",
                 "active_count_bucket": _count_bucket(active_count),
                 "design_count_bucket": _count_bucket(design_count),
+            },
+        )
+    )
+
+
+def observe_architecture_propagation_legacy_report(
+    *,
+    board_id: str,
+    scanned_count: int,
+    legacy_count: int,
+    surface: str = "service",
+    metrics_sink: ArchitectureMetricsSink | None = None,
+) -> None:
+    """Spec C OR-C1: read-only diagnostic of legacy architecture snapshots whose source
+    is now ineligible for propagation. Bounded labels only — never the diagram payload."""
+    sink = metrics_sink or _DEFAULT_METRICS_SINK
+    sink.emit(
+        ArchitectureMetricEvent(
+            METRIC_PROPAGATION_LEGACY_REPORT_TOTAL,
+            1,
+            {
+                "board_id": board_id,
+                "outcome": "report_generated",
+                "surface": surface,
+                "design_count_bucket": _count_bucket(scanned_count),
+                "active_count_bucket": _count_bucket(legacy_count),
             },
         )
     )

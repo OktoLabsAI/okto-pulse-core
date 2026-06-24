@@ -884,6 +884,23 @@ async def test_mcp_copy_architecture_to_card_and_task_context(_seed_spec_card):
 
 
 @pytest.mark.asyncio
+async def test_mcp_blocks_direct_card_architecture_authoring(_seed_spec_card):
+    board_id, _spec_id, card_id = _seed_spec_card
+
+    created = await _call(
+        "okto_pulse_add_architecture_design",
+        board_id=board_id,
+        parent_type="card",
+        parent_id=card_id,
+        title="Direct card architecture",
+        global_description="Should be copied from the source spec instead.",
+    )
+
+    assert "error" in created
+    assert "read-only governed snapshots" in created["error"]
+
+
+@pytest.mark.asyncio
 async def test_mcp_task_context_projects_architecture_findings_full_and_summary(_seed_spec_card):
     from okto_pulse.core.infra.database import get_session_factory
 

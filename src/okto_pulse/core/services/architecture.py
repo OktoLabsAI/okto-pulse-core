@@ -65,6 +65,22 @@ SEMANTIC_PATCH_FIELDS = {
     "diagrams",
 }
 
+CARD_ARCHITECTURE_READ_ONLY_MESSAGE = (
+    "Card Architecture Designs are read-only governed snapshots. "
+    "Copy architecture from the parent spec to refresh card context, and edit "
+    "the source ideation, refinement, or spec Architecture Design instead."
+)
+
+
+class CardArchitectureReadOnlyError(ValueError):
+    """Raised when a caller tries to author Architecture directly on a card."""
+
+
+def _ensure_card_architecture_write_allowed(parent_type: str, *, allow: bool) -> None:
+    if parent_type == "card" and not allow:
+        raise CardArchitectureReadOnlyError(CARD_ARCHITECTURE_READ_ONLY_MESSAGE)
+
+
 ALLOWED_INTERFACE_DIRECTIONS = {
     "source_to_target",
     "target_to_source",
@@ -1973,6 +1989,391 @@ class ArchitectureFindingGate:
         }
 
 
+ARCHITECTURE_PROPAGATION_BLOCKED_CODE = "architecture_propagation_blocked"
+
+# Canonical verdict-status taxonomy for propagation eligibility (Spec A).
+PROPAGATION_VERDICT_CURRENT = "current"          # persisted run trusted as-is
+PROPAGATION_VERDICT_REVALIDATED = "revalidated"  # persisted run missing/stale -> critic re-run
+PROPAGATION_VERDICT_UNAVAILABLE = "unavailable"  # fail-closed: could not decide
+
+# Why a revalidation was triggered (audit detail; None when the persisted verdict is trusted).
+PROPAGATION_REVALIDATION_MISSING_RUN = "missing_run"
+PROPAGATION_REVALIDATION_VERSION_INCOMPATIBLE = "version_incompatible"
+PROPAGATION_REVALIDATION_VERDICT_UNLOADABLE = "verdict_unloadable"
+
+
+@dataclass(frozen=True)
+class ArchitecturePropagationEligibility:
+    """Canonical verdict on whether an Architecture Design source may be copied/propagated.
+
+    This is the single serializable contract consumed by every copy/propagation call
+    site (wiring is Spec B). It deliberately mirrors the ``ArchitectureFindingGate``
+    classification so propagation eligibility and the Architecture Finding Done Gate
+    (AFG.01) stay in lockstep: an active finding that blocks Done also blocks copy.
+    ``ArchitectureWarningAcknowledgement`` rows are surfaced as audit evidence only and
+    never flip ``eligible`` (TR fe6f1935 / db.py:1482).
+    """
+
+    design_id: str
+    eligible: bool
+    verdict_status: str
+    source_design_id: str | None
+    source_ref: str | None
+    source_version: int | None
+    parent_type: str | None
+    parent_id: str | None
+    critic_run_id: str | None
+    design_version: int | None
+    issues: list[str]
+    blocking_warnings: list[dict[str, Any]]
+    finding_keys: list[str]
+    non_blocking: dict[str, Any]
+    acknowledgements_audit: list[dict[str, Any]]
+    revalidation_reason: str | None
+    remediation: str | None
+
+    @property
+    def blocker_counts(self) -> dict[str, int]:
+        return {
+            "issues": len(self.issues),
+            "blocking_warnings": len(self.blocking_warnings),
+            "total": len(self.issues) + len(self.blocking_warnings),
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        """Stable JSON payload for REST, MCP, and internal services (TR f106b97f).
+
+        Materializes the canonical error/verdict contract — every field the Spec A
+        refinement requires for automation (FR b64537ee), not free text.
+        """
+        return {
+            "error": ARCHITECTURE_PROPAGATION_BLOCKED_CODE,
+            "code": ARCHITECTURE_PROPAGATION_BLOCKED_CODE,
+            "eligible": self.eligible,
+            "design_id": self.design_id,
+            "source_design_id": self.source_design_id,
+            "source_ref": self.source_ref,
+            "source_version": self.source_version,
+            "parent_source": {"parent_type": self.parent_type, "parent_id": self.parent_id},
+            "critic_run_id": self.critic_run_id,
+            "design_version": self.design_version,
+            "verdict_status": self.verdict_status,
+            "revalidation_reason": self.revalidation_reason,
+            "blocker_counts": self.blocker_counts,
+            "finding_keys": list(self.finding_keys),
+            "issues": list(self.issues),
+            "warnings": [dict(warning) for warning in self.blocking_warnings],
+            "non_blocking": dict(self.non_blocking),
+            "acknowledgements_audit": [dict(ack) for ack in self.acknowledgements_audit],
+            "remediation": self.remediation,
+        }
+
+
+class ArchitecturePropagationBlocked(ValueError):
+    """Raised when a source Architecture Design is ineligible for copy/propagation.
+
+    Carries the full :class:`ArchitecturePropagationEligibility` verdict so callers
+    (REST/MCP/services, wired in Spec B) surface a structured, serializable error
+    without re-deriving the reason from free text.
+    """
+
+    def __init__(self, eligibility: ArchitecturePropagationEligibility):
+        self.eligibility = eligibility
+        super().__init__(ARCHITECTURE_PROPAGATION_BLOCKED_CODE)
+
+    def to_payload(self) -> dict[str, Any]:
+        return self.eligibility.to_dict()
+
+    # Alias for parity with ResourcePropagationError/ResourceLineageResolutionError,
+    # whose REST/MCP handlers call ``.to_error_dict``.
+    def to_error_dict(self) -> dict[str, Any]:
+        return self.eligibility.to_dict()
+
+
+def _propagation_remediation(
+    *, blocked: bool, verdict_status: str, finding_keys: list[str]
+) -> str | None:
+    if not blocked:
+        return None
+    if verdict_status == PROPAGATION_VERDICT_UNAVAILABLE:
+        return (
+            "Propagation is fail-closed: the source Architecture Design, its diagram "
+            "payload, or its persisted critic verdict could not be loaded. Restore the "
+            "source so the canonical eligibility policy can re-evaluate before copying."
+        )
+    keys = ", ".join(sorted(finding_keys)) if finding_keys else "(see issues)"
+    return (
+        "Resolve the blocking architecture findings on the SOURCE design until the "
+        "backend critic no longer emits them, then retry. Acknowledgement is audit-only "
+        f"and does not authorize propagation. Blocking finding keys: {keys}."
+    )
+
+
+def build_propagation_eligibility(
+    *,
+    design_id: str,
+    source_design_id: str | None,
+    source_ref: str | None,
+    source_version: int | None,
+    parent_type: str | None,
+    parent_id: str | None,
+    design_version: int | None,
+    critic_run_id: str | None,
+    verdict_status: str,
+    revalidation_reason: str | None,
+    issues: list[str],
+    blocking_warnings: list[dict[str, Any]],
+    suppressed_warnings: list[dict[str, Any]] | None = None,
+    resolved_count: int = 0,
+    superseded_count: int = 0,
+    acknowledgements_audit: list[dict[str, Any]] | None = None,
+) -> ArchitecturePropagationEligibility:
+    """Pure constructor for the canonical eligibility verdict.
+
+    Centralizes the blocking/non-blocking taxonomy (FR cb209602 / 8f1a6f4c) so it is
+    unit-testable without a database: ``issues`` and ``blocking_warnings`` block;
+    ``suppressed_warnings`` and resolved/superseded findings are recorded as
+    non-blocking and never flip ``eligible``. A ``verdict_status`` of ``unavailable``
+    is always fail-closed (ineligible) regardless of counts (TR e4fa4314).
+    """
+
+    suppressed = list(suppressed_warnings or [])
+    acks = list(acknowledgements_audit or [])
+    fail_closed = verdict_status == PROPAGATION_VERDICT_UNAVAILABLE
+    eligible = not fail_closed and not issues and not blocking_warnings
+    finding_keys = sorted(
+        {
+            str(warning.get("finding_key"))
+            for warning in blocking_warnings
+            if warning.get("finding_key")
+        }
+    )
+    non_blocking = {
+        "suppressed_warnings": suppressed,
+        "suppressed_warnings_count": len(suppressed),
+        "resolved_findings_count": int(resolved_count),
+        "superseded_findings_count": int(superseded_count),
+    }
+    remediation = _propagation_remediation(
+        blocked=not eligible,
+        verdict_status=verdict_status,
+        finding_keys=finding_keys,
+    )
+    return ArchitecturePropagationEligibility(
+        design_id=design_id,
+        eligible=eligible,
+        verdict_status=verdict_status,
+        source_design_id=source_design_id,
+        source_ref=source_ref,
+        source_version=source_version,
+        parent_type=parent_type,
+        parent_id=parent_id,
+        critic_run_id=critic_run_id,
+        design_version=design_version,
+        issues=list(issues),
+        blocking_warnings=[dict(warning) for warning in blocking_warnings],
+        finding_keys=finding_keys,
+        non_blocking=non_blocking,
+        acknowledgements_audit=[dict(ack) for ack in acks],
+        revalidation_reason=revalidation_reason,
+        remediation=remediation,
+    )
+
+
+@dataclass(frozen=True)
+class ArchitecturePropagationEligibilityPolicy:
+    """Canonical policy that decides whether an Architecture Design may be propagated.
+
+    Source of truth (Decision A): the persisted ``ArchitectureFindingRun`` verdict,
+    revalidated deterministically ONLY when it is missing, version-incompatible, or
+    unloadable (FR b7fe702a). Revalidation re-runs the deterministic critic IN MEMORY
+    and never mutates persisted state, so an eligibility check is side-effect free and
+    the fail-closed paths (TR e4fa4314 / AC 2c06ae77) cannot leave partial writes.
+
+    Spec A scope: this class only DECIDES. Wiring it into copy/propagation call sites
+    (ArchitecturePropagationService, REST, MCP, auto-derive) is Spec B.
+    """
+
+    db: AsyncSession
+
+    async def evaluate(self, design_id: str) -> ArchitecturePropagationEligibility:
+        """Return the canonical eligibility verdict for a source design (never mutates)."""
+        try:
+            repo = ArchitectureDesignRepository(self.db)
+            design = await repo.get(design_id)
+            if design is None:
+                return self._unavailable(design_id, reason="source_design_not_found")
+            store = ArchitectureFindingRunStore(self.db)
+            run = await store.get_current_run(design_id)
+            reason = self._revalidation_reason(design, run)
+            if reason is None:
+                return await self._evaluate_persisted(design, run, store)
+            return await self._evaluate_revalidated(design, run, repo, store, reason)
+        except Exception:  # noqa: BLE001 - fail-closed on any load/critic failure
+            logger.exception(
+                "architecture.propagation_eligibility.failed design_id=%s", design_id
+            )
+            return self._unavailable(design_id, reason="evaluation_error")
+
+    async def require_eligible(self, design_id: str) -> ArchitecturePropagationEligibility:
+        """Raise :class:`ArchitecturePropagationBlocked` unless the source is eligible."""
+        eligibility = await self.evaluate(design_id)
+        if not eligibility.eligible:
+            raise ArchitecturePropagationBlocked(eligibility)
+        return eligibility
+
+    @staticmethod
+    def _revalidation_reason(
+        design: ArchitectureDesign,
+        run: ArchitectureFindingRun | None,
+    ) -> str | None:
+        if run is None:
+            return PROPAGATION_REVALIDATION_MISSING_RUN
+        if run.design_version != design.version:
+            return PROPAGATION_REVALIDATION_VERSION_INCOMPATIBLE
+        summary = run.validator_summary
+        if not isinstance(summary, dict) or summary.get("valid") is False or summary.get("issues"):
+            return PROPAGATION_REVALIDATION_VERDICT_UNLOADABLE
+        return None
+
+    async def _evaluate_persisted(
+        self,
+        design: ArchitectureDesign,
+        run: ArchitectureFindingRun,
+        store: ArchitectureFindingRunStore,
+    ) -> ArchitecturePropagationEligibility:
+        findings = await store.list_findings(design_id=design.id)
+        active = [f for f in findings if f.lifecycle == ARCHITECTURE_FINDING_ACTIVE]
+        resolved = sum(1 for f in findings if f.lifecycle == ARCHITECTURE_FINDING_RESOLVED)
+        superseded = sum(1 for f in findings if f.lifecycle == ARCHITECTURE_FINDING_SUPERSEDED)
+        blocking_warnings = [self._finding_payload(finding) for finding in active]
+        acks = await self._acknowledgements_audit(design.id, run.critic_run_id)
+        return build_propagation_eligibility(
+            design_id=design.id,
+            source_design_id=design.source_design_id,
+            source_ref=design.source_ref,
+            source_version=design.source_version,
+            parent_type=design.parent_type,
+            parent_id=design.parent_id,
+            design_version=design.version,
+            critic_run_id=run.critic_run_id,
+            verdict_status=PROPAGATION_VERDICT_CURRENT,
+            revalidation_reason=None,
+            issues=[],
+            blocking_warnings=blocking_warnings,
+            suppressed_warnings=[],
+            resolved_count=resolved,
+            superseded_count=superseded,
+            acknowledgements_audit=acks,
+        )
+
+    async def _evaluate_revalidated(
+        self,
+        design: ArchitectureDesign,
+        run: ArchitectureFindingRun | None,
+        repo: ArchitectureDesignRepository,
+        store: ArchitectureFindingRunStore,
+        reason: str,
+    ) -> ArchitecturePropagationEligibility:
+        diagrams = await repo._diagrams_for_validation(list(design.diagrams or []))
+        critique = repo.critique_payload(
+            {
+                "title": design.title,
+                "global_description": design.global_description,
+                "entities": design.entities or [],
+                "interfaces": design.interfaces or [],
+                "diagrams": diagrams,
+            }
+        )
+        issues = list(critique.get("issues") or [])
+        blocking_warnings = repo._structured_warnings_with_keys(
+            design.id, list(critique.get("structured_warnings") or [])
+        )
+        resolved = superseded = 0
+        if run is not None:
+            findings = await store.list_findings(design_id=design.id)
+            resolved = sum(1 for f in findings if f.lifecycle == ARCHITECTURE_FINDING_RESOLVED)
+            superseded = sum(1 for f in findings if f.lifecycle == ARCHITECTURE_FINDING_SUPERSEDED)
+        acks = await self._acknowledgements_audit(
+            design.id, run.critic_run_id if run is not None else None
+        )
+        return build_propagation_eligibility(
+            design_id=design.id,
+            source_design_id=design.source_design_id,
+            source_ref=design.source_ref,
+            source_version=design.source_version,
+            parent_type=design.parent_type,
+            parent_id=design.parent_id,
+            design_version=design.version,
+            critic_run_id=run.critic_run_id if run is not None else None,
+            verdict_status=PROPAGATION_VERDICT_REVALIDATED,
+            revalidation_reason=reason,
+            issues=issues,
+            blocking_warnings=blocking_warnings,
+            suppressed_warnings=list(critique.get("suppressed_warnings") or []),
+            resolved_count=resolved,
+            superseded_count=superseded,
+            acknowledgements_audit=acks,
+        )
+
+    def _unavailable(
+        self, design_id: str, *, reason: str
+    ) -> ArchitecturePropagationEligibility:
+        return build_propagation_eligibility(
+            design_id=design_id,
+            source_design_id=None,
+            source_ref=None,
+            source_version=None,
+            parent_type=None,
+            parent_id=None,
+            design_version=None,
+            critic_run_id=None,
+            verdict_status=PROPAGATION_VERDICT_UNAVAILABLE,
+            revalidation_reason=reason,
+            issues=[f"architecture propagation eligibility could not be evaluated: {reason}"],
+            blocking_warnings=[],
+        )
+
+    async def _acknowledgements_audit(
+        self, design_id: str, critic_run_id: str | None
+    ) -> list[dict[str, Any]]:
+        stmt = select(ArchitectureWarningAcknowledgement).where(
+            ArchitectureWarningAcknowledgement.design_id == design_id
+        )
+        if critic_run_id:
+            stmt = stmt.where(ArchitectureWarningAcknowledgement.critic_run_id == critic_run_id)
+        result = await self.db.execute(stmt)
+        return [
+            {
+                "finding_key": ack.finding_key,
+                "critic_run_id": ack.critic_run_id,
+                "design_version": ack.design_version,
+                "actor_id": ack.actor_id,
+                "actor_type": ack.actor_type,
+                "statement": ack.statement,
+                "audit_only": True,
+            }
+            for ack in result.scalars().all()
+        ]
+
+    @staticmethod
+    def _finding_payload(finding: ArchitectureFinding) -> dict[str, Any]:
+        return {
+            "finding_key": finding.finding_key,
+            "code": finding.warning_code,
+            "severity": finding.severity,
+            "lifecycle": finding.lifecycle,
+            "message": finding.message,
+            "normalized_target_kind": finding.normalized_target_kind,
+            "target_ref": finding.target_ref,
+            "path": finding.path,
+            "diagram_id": finding.diagram_id,
+            "diagram_type": finding.diagram_type,
+            "critic_run_id": finding.critic_run_id,
+            "design_version": finding.design_version,
+        }
+
+
 class ArchitectureDesignRepository:
     """Repository for Architecture Design envelopes and versions."""
 
@@ -2006,7 +2407,19 @@ class ArchitectureDesignRepository:
             await self._attach_payloads(design)
         return design
 
-    async def create(self, parent_type: str, parent_id: str, data: ArchitectureDesignCreate | dict[str, Any], actor_id: str) -> ArchitectureDesign:
+    async def create(
+        self,
+        parent_type: str,
+        parent_id: str,
+        data: ArchitectureDesignCreate | dict[str, Any],
+        actor_id: str,
+        *,
+        allow_card_parent_write: bool = False,
+    ) -> ArchitectureDesign:
+        _ensure_card_architecture_write_allowed(
+            parent_type,
+            allow=allow_card_parent_write,
+        )
         parent_model, parent_field = self._parent_config(parent_type)
         parent = await self.db.get(parent_model, parent_id)
         if parent is None:
@@ -2073,10 +2486,21 @@ class ArchitectureDesignRepository:
             )
         return design
 
-    async def update(self, design_id: str, patch: ArchitectureDesignUpdate | dict[str, Any], actor_id: str) -> ArchitectureDesign:
+    async def update(
+        self,
+        design_id: str,
+        patch: ArchitectureDesignUpdate | dict[str, Any],
+        actor_id: str,
+        *,
+        allow_card_parent_write: bool = False,
+    ) -> ArchitectureDesign:
         design = await self.get(design_id)
         if design is None:
             raise ValueError(f"architecture design not found: {design_id}")
+        _ensure_card_architecture_write_allowed(
+            design.parent_type,
+            allow=allow_card_parent_write,
+        )
         payload = _dump_model_or_dict(patch, exclude_unset=True)
         change_summary = payload.pop("change_summary", None)
         acknowledgement = payload.pop("architecture_warning_acknowledgement", None)
@@ -2324,10 +2748,20 @@ class ArchitectureDesignRepository:
                     statement=data.get("statement"),
                 )
 
-    async def delete(self, design_id: str, actor_id: str | None = None) -> bool:
+    async def delete(
+        self,
+        design_id: str,
+        actor_id: str | None = None,
+        *,
+        allow_card_parent_write: bool = False,
+    ) -> bool:
         design = await self.get(design_id)
         if design is None:
             return False
+        _ensure_card_architecture_write_allowed(
+            design.parent_type,
+            allow=allow_card_parent_write,
+        )
         spec_parent_id = (
             self.parent_id_for(design) if design.parent_type == "spec" else None
         )
@@ -3184,6 +3618,11 @@ class ArchitecturePropagationService:
             wanted = set(design_ids)
             source_designs = [design for design in source_designs if design.id in wanted]
 
+        # Spec B: enforce canonical propagation eligibility against every REAL source
+        # BEFORE any create/update, so a blocking source never yields a partial target
+        # snapshot. ``architecture_warning_acknowledgement`` stays audit-only here.
+        await self.assert_sources_eligible(source_designs, flow="copy_from_parent")
+
         copied: list[ArchitectureDesign] = []
         for source_design in source_designs:
             source_ref = self.repository.source_ref_for(source_design)
@@ -3197,6 +3636,7 @@ class ArchitecturePropagationService:
                     target_parent_id,
                     ArchitectureDesignCreate(**payload),
                     actor_id,
+                    allow_card_parent_write=target_parent_type == "card",
                 )
             else:
                 copied_design = await self.repository.update(
@@ -3217,6 +3657,7 @@ class ArchitecturePropagationService:
                         change_summary=f"Re-synced from {source_parent_type} architecture",
                     ),
                     actor_id,
+                    allow_card_parent_write=target_parent_type == "card",
                 )
             copied.append(copied_design)
         await self.db.flush()
@@ -3239,6 +3680,145 @@ class ArchitecturePropagationService:
             design_ids,
             architecture_warning_acknowledgement=architecture_warning_acknowledgement,
         )
+
+    async def copy_effective_spec_to_card(
+        self,
+        *,
+        board_id: str,
+        spec_id: str,
+        card_id: str,
+        actor_id: str,
+        design_ids: list[str] | None = None,
+        architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None = None,
+    ) -> tuple[list[ArchitectureDesign], dict[str, Any]]:
+        """Copy every effective spec Architecture obligation to a card.
+
+        Direct spec designs still use the standard spec -> card copy path. When
+        a legacy/manual spec only inherits Architecture Designs, every inherited
+        reference is copied from its own source parent and the snapshot carries
+        ``source_design_id`` so the Resource Gate can match by origin identity.
+        """
+        from okto_pulse.core.services.effective_resource_propagation import (
+            ResourcePropagationError,
+            resolve_effective_card_copy_plan,
+        )
+
+        plan = await resolve_effective_card_copy_plan(
+            self.db,
+            board_id=board_id,
+            spec_id=spec_id,
+            resource_type="architecture",
+        )
+        if plan["fallback"]:
+            refs = list(plan.get("fallback_refs") or [])
+            wanted = set(design_ids or [])
+            if wanted:
+                refs = [
+                    ref for ref in refs
+                    if str(ref.get("id") or "") in wanted
+                    or str(ref.get("resource_id") or "") in wanted
+                    or str(ref.get("unique_resource_id") or "") in wanted
+                ]
+            grouped: dict[tuple[str, str], list[str]] = {}
+            for ref in refs:
+                source_parent_type = str(ref.get("source_entity_type") or "")
+                source_parent_id = str(ref.get("source_entity_id") or "")
+                source_design_id = str(ref.get("id") or ref.get("resource_id") or "")
+                if not source_parent_type or not source_parent_id or not source_design_id:
+                    continue
+                grouped.setdefault(
+                    (source_parent_type, source_parent_id),
+                    [],
+                ).append(source_design_id)
+
+            if not grouped and plan["has_obligation"] and not wanted:
+                raise ResourcePropagationError(
+                    "architecture copy failed: effective inherited Architecture "
+                    "references could not be resolved to source parents",
+                    failed_resource_type="architecture",
+                    coverage_obligation_id=plan.get("coverage_obligation_id"),
+                )
+
+            copied: list[ArchitectureDesign] = []
+            for (source_parent_type, source_parent_id), source_design_ids in grouped.items():
+                copied.extend(
+                    await self.copy_from_parent(
+                        source_parent_type=source_parent_type,
+                        source_parent_id=source_parent_id,
+                        target_parent_type="card",
+                        target_parent_id=card_id,
+                        actor_id=actor_id,
+                        design_ids=source_design_ids,
+                        architecture_warning_acknowledgement=(
+                            architecture_warning_acknowledgement
+                        ),
+                    )
+                )
+            return copied, plan
+
+        if (
+            not plan["has_direct"]
+            and plan["has_obligation"]
+            and not plan["not_applicable"]
+        ):
+            raise ResourcePropagationError(
+                "architecture copy failed: Resource Gate reports Architecture "
+                "provided but no direct or inherited copy source was resolved",
+                failed_resource_type="architecture",
+                coverage_obligation_id=plan.get("coverage_obligation_id"),
+            )
+
+        return (
+            await self.copy_spec_to_card(
+                spec_id,
+                card_id,
+                actor_id,
+                design_ids=design_ids,
+                architecture_warning_acknowledgement=architecture_warning_acknowledgement,
+            ),
+            plan,
+        )
+
+    async def assert_sources_eligible(
+        self,
+        source_designs: list[ArchitectureDesign],
+        *,
+        flow: str,
+    ) -> None:
+        """Spec B: block copy/propagation of any ineligible source BEFORE mutation.
+
+        Evaluates the canonical propagation eligibility policy (Spec A) against each
+        REAL source design (not the assembled target snapshot — TR 79b0469d) and raises
+        :class:`ArchitecturePropagationBlocked` with the shared structured error on the
+        first blocking source. Called before any ``repository.create``/``update`` so a
+        blocking source never yields a partial target snapshot (atomicity, TR 3154a2d1).
+        ``architecture_warning_acknowledgement`` is audit-only and never bypasses this
+        (FR 67f3545a). Emits a structured, payload-free block log (OR-B1).
+        """
+        policy = ArchitecturePropagationEligibilityPolicy(self.db)
+        for design in source_designs:
+            eligibility = await policy.evaluate(design.id)
+            if eligibility.eligible:
+                continue
+            logger.warning(
+                "architecture.propagation_blocked flow=%s board_id=%s source_design_id=%s "
+                "verdict=%s finding_keys=%s",
+                flow,
+                design.board_id,
+                design.id,
+                eligibility.verdict_status,
+                ",".join(eligibility.finding_keys),
+                extra={
+                    "event": "architecture.propagation_blocked",
+                    "metric": "architecture_propagation_blocked_total",
+                    "flow": flow,
+                    "board_id": design.board_id,
+                    "source_design_id": design.id,
+                    "verdict_status": eligibility.verdict_status,
+                    "blocker_counts": eligibility.blocker_counts,
+                },
+            )
+            raise ArchitecturePropagationBlocked(eligibility)
 
     async def _get_parent(self, parent_type: str, parent_id: str) -> Any | None:
         parent_model, _ = self.repository._parent_config(parent_type)

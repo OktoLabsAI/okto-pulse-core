@@ -33,6 +33,7 @@ from okto_pulse.core.models.db import (
     Spec,
 )
 from okto_pulse.core.mcp.server import _effective_empty_copy_response
+from okto_pulse.core.services.effective_resource_propagation import _dedupe_effective_refs
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 USER_ID = "user-r3-imp2"
@@ -49,6 +50,27 @@ class _Ctx:
         self.permissions = object()
 
 
+def test_architecture_fallback_refs_dedupe_by_source_design_identity():
+    refs = _dedupe_effective_refs(
+        "architecture",
+        [
+            {
+                "id": "arch-refinement-snapshot",
+                "source_design_id": "arch-ideation-root",
+                "source_entity_type": "refinement",
+                "source_entity_id": "ref-1",
+            },
+            {
+                "id": "arch-ideation-root",
+                "source_entity_type": "ideation",
+                "source_entity_id": "idea-1",
+            },
+        ],
+    )
+
+    assert [item["id"] for item in refs] == ["arch-refinement-snapshot"]
+
+
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
@@ -62,7 +84,8 @@ async def _call(name: str, **kwargs) -> dict:
 
 
 async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=False,
-                                  with_architecture=False):
+                                  with_architecture=False,
+                                  with_ideation_architecture=False):
     """A manual/legacy spec (NO direct resources) linked to a refinement that
     DOES carry the requested resource(s) — the effective inherited case."""
     board_id = _id("board")
@@ -73,9 +96,17 @@ async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=Fals
     ref_kb_id = _id("refkb")
     ref_mockup_id = _id("refmock")
     ref_design_id = _id("refdesign")
+    ideation_design_id = _id("ideadesign")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r3 imp2", owner_id=USER_ID))
         db.add(Ideation(id=ideation_id, board_id=board_id, title="idea", created_by=USER_ID))
+        if with_ideation_architecture:
+            db.add(ArchitectureDesign(
+                id=ideation_design_id, board_id=board_id, parent_type="ideation",
+                ideation_id=ideation_id, title="Shared architecture",
+                global_description="ideation architecture", entities=[],
+                interfaces=[], diagrams=[], created_by=USER_ID,
+            ))
         db.add(Refinement(
             id=refinement_id, board_id=board_id, ideation_id=ideation_id,
             title="refinement", created_by=USER_ID,
@@ -93,8 +124,9 @@ async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=Fals
         if with_architecture:
             db.add(ArchitectureDesign(
                 id=ref_design_id, board_id=board_id, parent_type="refinement",
-                refinement_id=refinement_id, title="Ref design", global_description="g",
-                entities=[], interfaces=[], diagrams=[], created_by=USER_ID,
+                refinement_id=refinement_id, title="Shared architecture",
+                global_description="refinement architecture", entities=[],
+                interfaces=[], diagrams=[], created_by=USER_ID,
             ))
         # The spec is linked to the refinement but has NO direct resources.
         db.add(Spec(id=spec_id, board_id=board_id, refinement_id=refinement_id,
@@ -106,7 +138,7 @@ async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=Fals
         await db.commit()
     return {"board_id": board_id, "refinement_id": refinement_id, "spec_id": spec_id,
             "card_id": card_id, "ref_kb_id": ref_kb_id, "ref_mockup_id": ref_mockup_id,
-            "ref_design_id": ref_design_id}
+            "ref_design_id": ref_design_id, "ideation_design_id": ideation_design_id}
 
 
 # ===========================================================================
@@ -183,6 +215,40 @@ async def test_copy_architecture_falls_back_to_effective(db_factory):
     # The card design carries source_design_id == the effective refinement design.
     assert any(getattr(d, "source_design_id", None) == seed["ref_design_id"]
                for d in designs), [getattr(d, "source_design_id", None) for d in designs]
+
+
+@pytest.mark.asyncio
+async def test_copy_architecture_covers_multiple_inherited_effective_designs(db_factory):
+    seed = await _legacy_spec_inheriting(
+        db_factory,
+        with_architecture=True,
+        with_ideation_architecture=True,
+    )
+
+    result = await _call(
+        "okto_pulse_copy_architecture_to_card",
+        board_id=seed["board_id"], spec_id=seed["spec_id"], card_id=seed["card_id"],
+        profile="full",
+    )
+    assert result.get("success") is True, result
+    copied_source_ids = {
+        item.get("source_design_id") for item in result["architecture_designs"]
+    }
+    assert copied_source_ids >= {
+        seed["ref_design_id"],
+        seed["ideation_design_id"],
+    }
+
+    async with db_factory() as db:
+        coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
+            seed["board_id"], seed["spec_id"],
+        )
+
+    arch_uncovered = [
+        item for item in coverage["uncovered_resources"]
+        if item["resource_type"] == "architecture"
+    ]
+    assert arch_uncovered == [], coverage["uncovered_resources"]
 
 
 # ===========================================================================

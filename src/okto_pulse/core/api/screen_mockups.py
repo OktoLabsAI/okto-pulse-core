@@ -1,8 +1,10 @@
 """Screen mockup REST endpoints with the MockupDesignSystemGate (spec 3a006f65 /
 card 0192f58d, contract api_a5e13bc5).
 
-Create/update a ScreenMockup on any mockup-bearing entity (spec/ideation/refinement/
-card/story), carrying the Design System consumption metadata
+Create/update a ScreenMockup on mockup-bearing source entities
+(spec/ideation/refinement/story), carrying the Design System consumption metadata.
+Card mockups are read-only governed snapshots and are refreshed through the
+spec-to-card copy path.
 (design_system_ref/version/evidence). The MockupDesignSystemGate runs BEFORE
 persistence: blocking rejects an invalid/missing ref with an actionable structured
 error; advisory persists + returns a design_system_gate warning + a queryable audit
@@ -31,6 +33,7 @@ from okto_pulse.core.models.schemas import (
     StoryUpdate,
 )
 from okto_pulse.core.services import (
+    CARD_RESOURCE_READ_ONLY_MESSAGE,
     CardService,
     IdeationService,
     RefinementService,
@@ -106,6 +109,11 @@ def _validate_entity_type(entity_type: str) -> None:
         )
 
 
+def _reject_card_resource_write(entity_type: str) -> None:
+    if entity_type == "card":
+        raise HTTPException(status_code=409, detail=CARD_RESOURCE_READ_ONLY_MESSAGE)
+
+
 async def _load(db, entity_type: str, entity_id: str):
     ServiceCls, get_name, update_name, UpdateClass = _DISPATCH[entity_type]
     service = ServiceCls(db)
@@ -122,6 +130,7 @@ async def create_screen_mockup(
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     _validate_entity_type(entity_type)
+    _reject_card_resource_write(entity_type)
     try:
         req = CreateScreenMockupRequest.model_validate(raw)
     except ValidationError as exc:
@@ -164,6 +173,7 @@ async def update_screen_mockup(
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     _validate_entity_type(entity_type)
+    _reject_card_resource_write(entity_type)
     try:
         req = UpdateScreenMockupRequest.model_validate(raw)
     except ValidationError as exc:

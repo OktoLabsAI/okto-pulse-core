@@ -66,6 +66,73 @@ def test_resource_gate_coverage_path_has_static_lineage_drift_guard():
 
 
 @pytest.mark.asyncio
+async def test_completion_fails_closed_on_architecture_propagation_block_without_findings(monkeypatch):
+    service = ResourceGateService(db=None)
+    summary = {
+        "resources": [
+            {"resource_type": "architecture", "state": "provided"},
+            {"resource_type": "mockup", "state": "not_applicable"},
+            {"resource_type": "knowledge_base", "state": "not_applicable"},
+        ],
+        "architecture_findings": {
+            "active_count": 0,
+            "design_count": 1,
+            "top_remediation": [],
+        },
+        "architecture_propagation": {
+            "blocking": True,
+            "ineligible_sources": [{"code": "architecture_propagation_blocked"}],
+            "remediation": "Fix the source design and rerun the architecture critic.",
+        },
+        "architecture_propagation_blocking": True,
+    }
+
+    async def fake_summary(*_args, **_kwargs):
+        return summary
+
+    monkeypatch.setattr(service, "get_summary", fake_summary)
+
+    result = await service.validate_entity_completion("board-1", "card", "card-1")
+
+    assert result["allowed"] is False
+    assert result["blocking_resources"] == []
+    assert result["blocking_architecture_findings"] == []
+    assert result["blocking_architecture_propagation"]["blocking"] is True
+
+    with pytest.raises(ResourceGateViolation) as exc_info:
+        await service.validate_or_raise_entity_completion("board-1", "card", "card-1")
+
+    assert exc_info.value.code == "architecture_propagation_blocked"
+    assert exc_info.value.details["architecture_propagation"]["blocking"] is True
+
+
+@pytest.mark.asyncio
+async def test_effective_resource_marks_direct_card_snapshots_read_only(monkeypatch):
+    service = ResourceGateService(db=None)
+
+    async def fake_hydrate(*_args, **_kwargs):
+        return {"id": "kb-card-snapshot", "title": "Card KB snapshot"}
+
+    monkeypatch.setattr(service, "_hydrate_effective_resource", fake_hydrate)
+
+    item = await service._effective_resource_item(
+        board_id="board-1",
+        resource_type="knowledge_base",
+        ref={
+            "id": "kb-card-snapshot",
+            "title": "Card KB snapshot",
+            "source_entity_type": "card",
+            "source_entity_id": "card-1",
+        },
+        attachment_kind="direct",
+        inherited=False,
+    )
+
+    assert item["inherited"] is False
+    assert item["read_only"] is True
+
+
+@pytest.mark.asyncio
 async def test_resource_gate_resolves_direct_inherited_and_na_precedence(db_factory):
     board_id = _id("board")
     actor_id = _id("agent")
@@ -141,6 +208,97 @@ async def test_resource_gate_resolves_direct_inherited_and_na_precedence(db_fact
         assert summary["lineage_counts"]["attachment_count"] >= 3
         assert summary["resource_lineage"]["owner"]["entity_type"] == "refinement"
         assert summary["resource_lineage"]["resource_states"]
+
+
+@pytest.mark.asyncio
+async def test_effective_resources_hydrate_inherited_payloads_with_provenance(db_factory):
+    board_id = _id("board")
+    actor_id = _id("agent")
+    ideation_id = _id("idea")
+    refinement_id = _id("ref")
+    architecture_id = _id("arch")
+    kb_id = _id("kb")
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Effective resources", owner_id=actor_id))
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="Idea source",
+                created_by=actor_id,
+                screen_mockups=[
+                    {
+                        "id": "mock-source-1",
+                        "title": "Source screen",
+                        "description": "Parent mockup",
+                        "screen_type": "page",
+                        "html_content": "<main>source</main>",
+                        "annotations": [],
+                        "order": 0,
+                    }
+                ],
+            )
+        )
+        architecture = ArchitectureDesign(
+            id=architecture_id,
+            board_id=board_id,
+            parent_type="ideation",
+            ideation_id=ideation_id,
+            title="Source architecture",
+            global_description="Parent architecture payload",
+            entities=[{"id": "api", "name": "API", "entity_type": "service"}],
+            interfaces=[],
+            diagrams=[],
+            created_by=actor_id,
+        )
+        kb = IdeationKnowledgeBase(
+            id=kb_id,
+            ideation_id=ideation_id,
+            title="Source KB",
+            content="Parent knowledge payload",
+            created_by=actor_id,
+        )
+        db.add(architecture)
+        db.add(kb)
+        db.add(
+            Refinement(
+                id=refinement_id,
+                ideation_id=ideation_id,
+                board_id=board_id,
+                title="Refinement inherits",
+                created_by=actor_id,
+            )
+        )
+        await db.commit()
+
+        result = await ResourceGateService(db).get_effective_resources(
+            board_id,
+            "refinement",
+            refinement_id,
+        )
+
+    architecture_item = result["resources"]["architecture"][0]
+    assert architecture_item["id"] == architecture_id
+    assert architecture_item["inherited"] is True
+    assert architecture_item["read_only"] is True
+    assert architecture_item["source_entity_type"] == "ideation"
+    assert architecture_item["source_entity_id"] == ideation_id
+    assert architecture_item["resource"]["global_description"] == (
+        "Parent architecture payload"
+    )
+    assert architecture_item["resource"]["entities"][0]["id"] == "api"
+
+    mockup_item = result["resources"]["mockup"][0]
+    assert mockup_item["id"] == "mock-source-1"
+    assert mockup_item["html_content"] == "<main>source</main>"
+    assert mockup_item["resource"]["html_content"] == "<main>source</main>"
+    assert mockup_item["provenance"]["source_entity_title"] == "Idea source"
+
+    kb_item = result["resources"]["knowledge_base"][0]
+    assert kb_item["id"] == kb_id
+    assert kb_item["content"] == "Parent knowledge payload"
+    assert kb_item["source_entity_type"] == "ideation"
 
 
 @pytest.mark.asyncio

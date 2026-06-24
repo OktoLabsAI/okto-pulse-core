@@ -26,6 +26,7 @@ from okto_pulse.core.services.main import (
     AgentService,
     AttachmentService,
     BoardService,
+    CARD_RESOURCE_READ_ONLY_MESSAGE,
     CardOperationError,
     CardService,
     CommentService,
@@ -62,10 +63,12 @@ from okto_pulse.core.services.skip_overrides import (
 )
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
+    ArchitecturePropagationBlocked,
     ArchitectureDiagramAdapterRegistry,
     ArchitectureDiagramStore,
     ArchitecturePropagationService,
     ArchitectureWarningAcknowledgementRequired,
+    CARD_ARCHITECTURE_READ_ONLY_MESSAGE,
     architecture_design_payload_schema,
 )
 from okto_pulse.core.services.activity_log import (
@@ -866,6 +869,8 @@ async def _mcp_require_architecture_mutable(db, design_id: str) -> tuple[Any | N
     design = await db.get(ArchitectureDesign, design_id)
     if not design:
         return None, "Architecture design not found"
+    if design.parent_type == "card":
+        return None, CARD_ARCHITECTURE_READ_ONLY_MESSAGE
     if design.parent_type == "spec":
         spec = await db.get(Spec, design.spec_id)
         if not spec:
@@ -7749,6 +7754,45 @@ async def okto_pulse_list_architecture_designs(
 
 
 @mcp.tool()
+async def okto_pulse_list_architecture_propagation_legacy(
+    board_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    include_clean: str = "false",
+    parent_type_filter: str = "",
+) -> str:
+    """List legacy Architecture Design snapshots whose SOURCE is now ineligible for
+    propagation (Spec C). READ-ONLY / forward-only: never backfills, resolves findings,
+    mutates snapshots, or changes SDLC status. Each item carries legacy_status
+    (source_blocked|verdict_missing|source_unavailable), source identity, finding_keys and
+    remediation. architecture_warning_acknowledgement is audit-only and is NOT a
+    propagation bypass."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = _mcp_check_architecture_permission(ctx.permissions, "spec", "read")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    async with get_db_for_mcp() as db:
+        from okto_pulse.core.services.architecture_propagation_legacy import (
+            build_propagation_legacy_report,
+        )
+
+        report = await build_propagation_legacy_report(
+            db,
+            board_id=board_id,
+            limit=limit,
+            offset=offset,
+            include_clean=_flag_enabled(include_clean),
+            parent_type_filter=parent_type_filter or None,
+            surface="mcp",
+        )
+        return json.dumps({"success": True, **report}, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_get_architecture_design(
     board_id: str,
     design_id: str,
@@ -7941,7 +7985,9 @@ async def okto_pulse_add_architecture_design(
     diagrams: list[dict] | str = "",
     architecture_warning_acknowledgement: dict | str = "",
 ) -> str:
-    """Create an Architecture Design on an ideation, refinement, spec, or card. Use whenever
+    """Create an Architecture Design on an ideation, refinement, or spec. Card
+Architecture Designs are read-only governed snapshots; use
+okto_pulse_copy_architecture_to_card to refresh card context. Use whenever
 the artifact benefits from explicit architecture (services, modules, databases,
 queues, events, integrations, runtime boundaries, API contracts, data flows,
 ownership). For non-trivial payloads call okto_pulse_get_architecture_design_schema
@@ -8244,47 +8290,34 @@ async def okto_pulse_copy_architecture_to_card(
     async with get_db_for_mcp() as db:
         service = ArchitecturePropagationService(db)
         repo = ArchitectureDesignRepository(db)
-        # R3-IMP2: copy DIRECT spec designs, or fall back to the effective parent
-        # (refinement/ideation) when the spec has none direct. copy_from_parent
-        # persists source_design_id (the gate-readable identity == effective id).
+        # R3-IMP2/RG-ARCH-RO: copy DIRECT spec designs, or fall back to every
+        # effective inherited Architecture source when the spec has none direct.
+        # Card Architecture remains a read-only governed snapshot, but the
+        # propagation service is allowed to create/re-sync those snapshots and
+        # persists source_design_id (the gate-readable origin identity).
         from okto_pulse.core.services.effective_resource_propagation import (
+            ResourcePropagationError,
             ResourceLineageResolutionError,
-            resolve_effective_card_copy_plan,
         )
         try:
-            plan = await resolve_effective_card_copy_plan(
-                db, board_id=board_id, spec_id=spec_id, resource_type="architecture",
+            designs, _plan = await service.copy_effective_spec_to_card(
+                board_id=board_id,
+                spec_id=spec_id,
+                card_id=card_id,
+                actor_id=ctx.agent_id,
+                design_ids=ids,
+                architecture_warning_acknowledgement=acknowledgement,
             )
         except ResourceLineageResolutionError as exc:
             return json.dumps(exc.to_error_dict())
+        except ResourcePropagationError as exc:
+            return json.dumps(exc.to_error_dict(spec_id=spec_id))
+        except ArchitecturePropagationBlocked as exc:
+            # Spec B: same canonical structured error as REST/internal services.
+            return json.dumps(exc.to_error_dict())
+        except Exception as exc:
+            return _mcp_architecture_error(exc)
         try:
-            if plan["fallback"]:
-                designs = await service.copy_from_parent(
-                    source_parent_type=plan["source_entity_type"],
-                    source_parent_id=plan["source_entity_id"],
-                    target_parent_type="card",
-                    target_parent_id=card_id,
-                    actor_id=ctx.agent_id,
-                    design_ids=ids,
-                    architecture_warning_acknowledgement=acknowledgement,
-                )
-            elif (
-                not plan["has_direct"]
-                and plan["has_obligation"]
-                and not plan["not_applicable"]
-            ):
-                # Gate reports architecture provided but nothing copyable resolved.
-                return _effective_empty_copy_response("architecture", plan)
-            else:
-                # Direct designs (or a genuinely empty/N/A spec) -> existing path
-                # (preserves the empty-projection contract when there is nothing).
-                designs = await service.copy_spec_to_card(
-                    spec_id,
-                    card_id,
-                    ctx.agent_id,
-                    design_ids=ids,
-                    architecture_warning_acknowledgement=acknowledgement,
-                )
             payload = [_dump_model(repo.to_response(design)) for design in designs]
             # Total Architecture Designs on the card after the copy (no payloads —
             # we only need the count for the summary metadata).
@@ -8366,7 +8399,12 @@ async def okto_pulse_copy_mockups_to_card(
                 copied += 1
 
         from okto_pulse.core.models.schemas import CardUpdate
-        await card_service.update_card(card_id, ctx.agent_id, CardUpdate(screen_mockups=existing))
+        await card_service.update_card(
+            card_id,
+            ctx.agent_id,
+            CardUpdate(screen_mockups=existing),
+            allow_card_resource_write=True,
+        )
         await db.commit()
 
     return json.dumps({"success": True, "copied": copied, "total_on_card": len(existing), "fallback": fallback})
@@ -8505,7 +8543,12 @@ async def okto_pulse_copy_knowledge_to_card(
             copied_ids.append(card_kb_id)
             copied += 1
 
-        await card_service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=existing))
+        await card_service.update_card(
+            card_id,
+            ctx.agent_id,
+            CardUpdate(knowledge_bases=existing),
+            allow_card_resource_write=True,
+        )
         await db.commit()
 
     return json.dumps({
@@ -8519,11 +8562,14 @@ async def okto_pulse_copy_knowledge_to_card(
 # ============================================================================
 
 
-def _new_card_kb_id() -> str:
-    import hashlib
-    import time
-
-    return "kb_" + hashlib.md5(f"{time.time_ns()}".encode()).hexdigest()[:10]
+def _card_resource_read_only_error() -> str:
+    return json.dumps(
+        {
+            "error": "card_resource_read_only",
+            "message": CARD_RESOURCE_READ_ONLY_MESSAGE,
+            "retryable": False,
+        }
+    )
 
 
 @mcp.tool()
@@ -8537,43 +8583,12 @@ async def okto_pulse_add_card_knowledge(
     source: str = "manual",
 ) -> str:
     """
-    Attach a knowledge base entry directly to a card. Stored inline on
-    `Card.knowledge_bases` (JSONB). Symmetric to spec_knowledge but scoped
-    to a single task."""
+    Deprecated: card Knowledge Base resources are read-only governed snapshots.
+    Use okto_pulse_copy_knowledge_to_card to refresh card context from the spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    if not (title or "").strip() or not (content or "").strip():
-        return json.dumps({"error": "title and content are required"})
-
-    from okto_pulse.core.models.schemas import CardUpdate
-
-    async with get_db_for_mcp() as db:
-        service = CardService(db)
-        card = await service.get_card(card_id)
-        if not card or card.board_id != board_id:
-            return json.dumps({"error": "Card not found"})
-
-        kbs = list(card.knowledge_bases or [])
-        kb = {
-            "id": _new_card_kb_id(),
-            "title": title.strip(),
-            "description": (description or "").strip() or None,
-            "content": content.replace("\\n", "\n"),
-            "mime_type": mime_type or "text/markdown",
-            "source": source or "manual",
-            "author_id": ctx.agent_id,
-        }
-        kbs.append(kb)
-
-        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
-        await db.commit()
-
-    return json.dumps({"success": True, "knowledge": kb}, default=str)
+    return _card_resource_read_only_error()
 
 
 @mcp.tool()
@@ -8605,72 +8620,20 @@ async def okto_pulse_update_card_knowledge(
     content: str = "",
     mime_type: str = "",
 ) -> str:
-    """Update fields of an existing KE on a card. Only provided fields change."""
+    """Deprecated: card Knowledge Base resources are read-only governed snapshots."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.models.schemas import CardUpdate
-
-    async with get_db_for_mcp() as db:
-        service = CardService(db)
-        card = await service.get_card(card_id)
-        if not card or card.board_id != board_id:
-            return json.dumps({"error": "Card not found"})
-
-        kbs = list(card.knowledge_bases or [])
-        idx = next((i for i, kb in enumerate(kbs) if kb.get("id") == knowledge_id), -1)
-        if idx == -1:
-            return json.dumps({"error": "Knowledge entry not found"})
-
-        kb = dict(kbs[idx])
-        if title:
-            kb["title"] = title.strip()
-        if description:
-            kb["description"] = description.strip()
-        if content:
-            kb["content"] = content.replace("\\n", "\n")
-        if mime_type:
-            kb["mime_type"] = mime_type
-        kbs[idx] = kb
-
-        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
-        await db.commit()
-
-    return json.dumps({"success": True, "knowledge": kb}, default=str)
+    return _card_resource_read_only_error()
 
 
 @mcp.tool()
 async def okto_pulse_delete_card_knowledge(board_id: str, card_id: str, knowledge_id: str) -> str:
-    """Delete a KE from a card's inline knowledge_bases array."""
+    """Deprecated: card Knowledge Base resources are read-only governed snapshots."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
-    if perm_err:
-        return _perm_error(perm_err)
-
-    from okto_pulse.core.models.schemas import CardUpdate
-
-    async with get_db_for_mcp() as db:
-        service = CardService(db)
-        card = await service.get_card(card_id)
-        if not card or card.board_id != board_id:
-            return json.dumps({"error": "Card not found"})
-
-        kbs = list(card.knowledge_bases or [])
-        before = len(kbs)
-        kbs = [kb for kb in kbs if kb.get("id") != knowledge_id]
-        if len(kbs) == before:
-            return json.dumps({"error": "Knowledge entry not found"})
-
-        await service.update_card(card_id, ctx.agent_id, CardUpdate(knowledge_bases=kbs))
-        await db.commit()
-
-    return json.dumps({"success": True, "deleted": knowledge_id, "remaining": len(kbs)})
+    return _card_resource_read_only_error()
 
 
 @mcp.tool()
@@ -10826,12 +10789,6 @@ async def okto_pulse_list_api_contracts(
             resolve_linked_fr_indices,
         )
 
-        from okto_pulse.core.mcp.payload_compaction import emit_compaction_metric
-        from okto_pulse.core.services.analytics_service import (
-            _structured_ref_text,
-            resolve_linked_fr_indices,
-        )
-
         result = []
         deduped_count = 0
         for c in contracts:
@@ -10995,7 +10952,9 @@ async def okto_pulse_add_screen_mockup(
     design_system_evidence=None,
 ) -> str:
     """
-    Add a screen mockup to any entity (spec, ideation, refinement, card, or story).
+    Add a screen mockup to a source entity (spec, ideation, refinement, or story).
+    Card mockups are read-only governed snapshots; use okto_pulse_copy_mockups_to_card
+    to refresh card context.
     Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard.
 
     design_system_ref (Design System id), design_system_version and design_system_evidence
@@ -11014,6 +10973,8 @@ async def okto_pulse_add_screen_mockup(
     entity_type_error = _validate_screen_mockup_entity_type(entity_type)
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
+    if entity_type == "card":
+        return _card_resource_read_only_error()
 
     import hashlib
     import time
@@ -11074,8 +11035,9 @@ async def okto_pulse_update_screen_mockup(
     design_system_evidence=None,
 ) -> str:
     """
-    Update an existing screen mockup's fields on any entity. When a gate-relevant field
-    changes (html_content / design_system_ref / design_system_evidence) the
+    Update an existing screen mockup's fields on a source entity. Card mockups are
+    read-only governed snapshots. When a gate-relevant field changes
+    (html_content / design_system_ref / design_system_evidence) the
     MockupDesignSystemGate re-evaluates this mockup BEFORE persistence (delta-only):
     blocking rejects an invalid Design System ref/version/evidence with an actionable
     error; advisory persists + returns a design_system_gate warning; off / no Design
@@ -11090,6 +11052,8 @@ async def okto_pulse_update_screen_mockup(
     entity_type_error = _validate_screen_mockup_entity_type(entity_type)
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
+    if entity_type == "card":
+        return _card_resource_read_only_error()
 
     Gate, GateErr, normalize_ref = _mockup_gate_imports()
 
@@ -11143,7 +11107,8 @@ async def okto_pulse_annotate_mockup(
     entity_type: str = "spec",
 ) -> str:
     """
-    Add a design annotation/note to a screen mockup on any entity."""
+    Add a design annotation/note to a screen mockup on a source entity. Card
+    mockups are read-only governed snapshots."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11154,6 +11119,8 @@ async def okto_pulse_annotate_mockup(
     entity_type_error = _validate_screen_mockup_entity_type(entity_type)
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
+    if entity_type == "card":
+        return _card_resource_read_only_error()
 
     import hashlib
     import time
@@ -11230,7 +11197,7 @@ async def okto_pulse_delete_screen_mockup(
     board_id: str, entity_id: str, screen_id: str, entity_type: str = "spec"
 ) -> str:
     """
-    Delete a screen mockup from any entity."""
+    Delete a screen mockup from a source entity. Card mockups are read-only governed snapshots."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11241,6 +11208,8 @@ async def okto_pulse_delete_screen_mockup(
     entity_type_error = _validate_screen_mockup_entity_type(entity_type)
     if entity_type_error:
         return json.dumps({"error": entity_type_error})
+    if entity_type == "card":
+        return _card_resource_read_only_error()
 
     async with get_db_for_mcp() as db:
         entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
