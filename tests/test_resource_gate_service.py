@@ -107,6 +107,32 @@ async def test_completion_fails_closed_on_architecture_propagation_block_without
 
 
 @pytest.mark.asyncio
+async def test_effective_resource_marks_direct_card_snapshots_read_only(monkeypatch):
+    service = ResourceGateService(db=None)
+
+    async def fake_hydrate(*_args, **_kwargs):
+        return {"id": "kb-card-snapshot", "title": "Card KB snapshot"}
+
+    monkeypatch.setattr(service, "_hydrate_effective_resource", fake_hydrate)
+
+    item = await service._effective_resource_item(
+        board_id="board-1",
+        resource_type="knowledge_base",
+        ref={
+            "id": "kb-card-snapshot",
+            "title": "Card KB snapshot",
+            "source_entity_type": "card",
+            "source_entity_id": "card-1",
+        },
+        attachment_kind="direct",
+        inherited=False,
+    )
+
+    assert item["inherited"] is False
+    assert item["read_only"] is True
+
+
+@pytest.mark.asyncio
 async def test_resource_gate_resolves_direct_inherited_and_na_precedence(db_factory):
     board_id = _id("board")
     actor_id = _id("agent")

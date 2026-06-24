@@ -35,7 +35,7 @@ Contract (codex R3 decisions):
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -165,6 +165,43 @@ def _obligation_id_for_type(lineage, resource_type: str) -> str | None:
             if value:
                 return str(value)
     return None
+
+
+def _effective_ref_identity(resource_type: str, ref: dict[str, Any]) -> str:
+    for key in (
+        "unique_resource_id",
+        "source_design_id",
+        "source_kb_id",
+        "source_mockup_id",
+        "origin_id",
+        "source_ref",
+        "origin_ref",
+        "source",
+        "id",
+    ):
+        value = ref.get(key)
+        if value:
+            return f"{resource_type}:{value}"
+    source_entity_type = ref.get("source_entity_type") or "unknown"
+    source_entity_id = ref.get("source_entity_id") or "unknown"
+    title = ref.get("title") or "untitled"
+    return f"{resource_type}:{source_entity_type}:{source_entity_id}:{title}"
+
+
+def _dedupe_effective_refs(
+    resource_type: str,
+    refs: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for ref in refs:
+        item = dict(ref)
+        identity = _effective_ref_identity(resource_type, item)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(item)
+    return deduped
 
 
 def _kb_dicts(entity, *, source_type: str, source_id: str | None,
@@ -428,9 +465,10 @@ async def resolve_effective_card_copy_plan(
         "source_entity_id": None,
     }
     if not plan["has_direct"] and not plan["not_applicable"] and state and state.inherited_count > 0:
-        ref = (state.inherited_refs or ({},))[0]
+        fallback_refs = _dedupe_effective_refs(resource_type, state.inherited_refs or ())
+        ref = (fallback_refs or [{}])[0]
         plan["fallback"] = True
-        plan["fallback_refs"] = [dict(item) for item in state.inherited_refs]
+        plan["fallback_refs"] = fallback_refs
         plan["source_entity_type"] = ref.get("source_entity_type")
         plan["source_entity_id"] = ref.get("source_entity_id")
     return plan

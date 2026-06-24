@@ -1024,7 +1024,12 @@ class ResourceGateService:
 
     async def _architecture_refs(self, ref: _EntityRef) -> list[dict[str, Any]]:
         result = await self.db.execute(
-            select(ArchitectureDesign.id, ArchitectureDesign.title)
+            select(
+                ArchitectureDesign.id,
+                ArchitectureDesign.title,
+                ArchitectureDesign.source_design_id,
+                ArchitectureDesign.source_ref,
+            )
             .where(
                 ArchitectureDesign.board_id == getattr(ref.entity, "board_id"),
                 ArchitectureDesign.parent_type == ref.entity_type,
@@ -1032,10 +1037,19 @@ class ResourceGateService:
             )
             .order_by(ArchitectureDesign.created_at.asc())
         )
-        return [
-            self._artifact_ref(ref, artifact_id=row[0], title=row[1])
-            for row in result.all()
-        ]
+        refs: list[dict[str, Any]] = []
+        for row in result.mappings().all():
+            item = self._artifact_ref(
+                ref,
+                artifact_id=row.get("id"),
+                title=row.get("title"),
+            )
+            if row.get("source_design_id"):
+                item["source_design_id"] = row.get("source_design_id")
+            if row.get("source_ref"):
+                item["source_ref"] = row.get("source_ref")
+            refs.append(item)
+        return refs
 
     def _mockup_refs(self, ref: _EntityRef) -> list[dict[str, Any]]:
         mockups = getattr(ref.entity, "screen_mockups", None) or []
@@ -1095,7 +1109,7 @@ class ResourceGateService:
             "title": ref.get("title"),
             "attachment_kind": attachment_kind,
             "inherited": inherited,
-            "read_only": inherited,
+            "read_only": inherited or ref.get("source_entity_type") == "card",
             "source_entity_type": ref.get("source_entity_type"),
             "source_entity_id": ref.get("source_entity_id"),
             "source_entity_title": ref.get("source_entity_title"),
