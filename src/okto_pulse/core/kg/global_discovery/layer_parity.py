@@ -40,6 +40,7 @@ def resolve_expected_digest_layer(
     raw_graph_layer: str,
     source_artifact_ref: str | None = None,
     canonical_bug_count: int = 0,
+    relates_to_endpoints: tuple[tuple[str, str | None], ...] = (),
     overlay_exclusion_reason: str | None = None,
 ) -> tuple[str, str | None]:
     """Return ``(expected_publication_layer, exclusion_reason_or_None)``.
@@ -49,11 +50,18 @@ def resolve_expected_digest_layer(
     and a non-canonical Learning — publishes at its own (already fail-closed)
     ``raw_graph_layer``. ``exclusion_reason`` is non-None only when a canonical
     Learning was downgraded to ``working`` (so the caller can emit the metric).
+
+    ``relates_to_endpoints`` (S-KG-02) is the non-bug taxonomy evidence
+    ``(endpoint_node_type, endpoint_layer)`` the caller collected from the board
+    graph; it is threaded to the publication authority so a non-bug canonical
+    Learning publishes at ``canonical`` ONLY with a resolved source + a canonical
+    ``relates_to`` to an S-KG-01 taxonomy endpoint (else downgraded to ``working``).
     """
     if node_type == LEARNING_NODE_TYPE and raw_graph_layer == GRAPH_LAYER_CANONICAL:
         publishable, reason = evaluate_canonical_learning_publication(
             source_artifact_ref=source_artifact_ref or "",
             canonical_bug_count=int(canonical_bug_count or 0),
+            relates_to_endpoints=relates_to_endpoints,
             overlay_exclusion_reason=overlay_exclusion_reason,
         )
         if not publishable:
@@ -146,6 +154,7 @@ async def detect_digest_layer_mismatches(
             raw_graph_layer=meta["graph_layer"],
             source_artifact_ref=meta.get("source_artifact_ref") or "",
             canonical_bug_count=int(meta.get("canonical_bug_count") or 0),
+            relates_to_endpoints=tuple(meta.get("relates_to_endpoints") or ()),
             overlay_exclusion_reason=overlay.get(artifact_id),
         )
         if expected != d["actual_layer"]:

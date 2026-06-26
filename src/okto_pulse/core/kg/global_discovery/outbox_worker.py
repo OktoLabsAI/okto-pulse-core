@@ -433,6 +433,7 @@ class OutboxWorker:
                     raw_graph_layer=node["graph_layer"],
                     source_artifact_ref=node.get("source_artifact_ref") or "",
                     canonical_bug_count=int(node.get("canonical_bug_count") or 0),
+                    relates_to_endpoints=tuple(node.get("relates_to_endpoints") or ()),
                     overlay_exclusion_reason=learning_exclusions.get(artifact_id),
                 )
                 if exclusion_reason:
@@ -702,12 +703,15 @@ class OutboxWorker:
     @staticmethod
     def _attach_learning_completeness(conn, out: list[dict], learning_ids: list[str]) -> None:
         """Attach ``source_artifact_ref`` + ``canonical_bug_count`` /
-        ``working_bug_count`` to each digested Learning entry in ``out``.
+        ``working_bug_count`` + ``relates_to_endpoints`` to each digested Learning
+        entry in ``out``.
 
-        Two scoped reads over the SAME open board connection: the Learning's
-        source ref, then its ``validates -> Bug`` endpoints bucketed by the Bug's
-        layer. ``_apply_event`` feeds these into the central completeness rule;
-        no decision is made here.
+        Scoped reads over the SAME open board connection: the Learning's source
+        ref, its ``validates -> Bug`` endpoints bucketed by the Bug's layer, and
+        (S-KG-02) its ``relates_to`` taxonomy endpoints with type+layer so the
+        central completeness rule can decide a NON-bug Learning's canonical
+        publication. ``_apply_event`` feeds these into the rule; no decision is
+        made here.
         """
         meta: dict[str, dict] = {}
         res = conn.execute(
@@ -721,6 +725,7 @@ class OutboxWorker:
                 "source_artifact_ref": str(row[1] or ""),
                 "canonical_bug_count": 0,
                 "working_bug_count": 0,
+                "relates_to_endpoints": [],
             }
         res = conn.execute(
             "MATCH (l:Learning)-[:validates]->(b:Bug) WHERE l.id IN $ids "
@@ -736,6 +741,22 @@ class OutboxWorker:
                 entry["canonical_bug_count"] += 1
             else:
                 entry["working_bug_count"] += 1
+        # S-KG-02: relates_to -> taxonomy endpoints (the non-bug cognitive
+        # provenance path) with type+layer, so the publication rule can canonize a
+        # non-bug Learning only with a canonical S-KG-01 endpoint association.
+        res = conn.execute(
+            "MATCH (l:Learning)-[:relates_to]->(t) WHERE l.id IN $ids "
+            "RETURN l.id, label(t), t.graph_layer",
+            {"ids": learning_ids},
+        )
+        while res.has_next():
+            row = res.get_next()
+            entry = meta.get(str(row[0]))
+            if entry is None:
+                continue
+            entry["relates_to_endpoints"].append(
+                (str(row[1] or ""), str(row[2] or "") or None)
+            )
         for node in out:
             if node.get("node_type") != "Learning":
                 continue
@@ -824,6 +845,7 @@ class OutboxWorker:
                 raw_graph_layer=meta["graph_layer"],
                 source_artifact_ref=meta.get("source_artifact_ref") or "",
                 canonical_bug_count=int(meta.get("canonical_bug_count") or 0),
+                relates_to_endpoints=tuple(meta.get("relates_to_endpoints") or ()),
                 overlay_exclusion_reason=overlay.get(artifact_id),
             )
             if expected != t["current_layer"]:
@@ -881,6 +903,7 @@ class OutboxWorker:
                             "graph_layer": str(row[1] or "legacy_unknown"),
                             "source_artifact_ref": "",
                             "canonical_bug_count": 0,
+                            "relates_to_endpoints": [],
                         }
                 learning_ids = by_type.get("Learning") or []
                 if learning_ids:
@@ -904,6 +927,21 @@ class OutboxWorker:
                         m = out.get(str(row[0]))
                         if m is not None and str(row[1] or "") == "canonical":
                             m["canonical_bug_count"] += 1
+                    # S-KG-02: relates_to -> taxonomy endpoints (type+layer) so the
+                    # publication rule canonizes a non-bug Learning only with a
+                    # canonical S-KG-01 endpoint association (else fail-closed).
+                    res = conn.execute(
+                        "MATCH (l:Learning)-[:relates_to]->(t) "
+                        "WHERE l.id IN $ids RETURN l.id, label(t), t.graph_layer",
+                        {"ids": learning_ids},
+                    )
+                    while res.has_next():
+                        row = res.get_next()
+                        m = out.get(str(row[0]))
+                        if m is not None:
+                            m["relates_to_endpoints"].append(
+                                (str(row[1] or ""), str(row[2] or "") or None)
+                            )
         except Exception as exc:
             logger.warning(
                 "outbox.reconcile_board_read_failed board=%s err=%s",

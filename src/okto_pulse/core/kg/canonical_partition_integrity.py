@@ -282,6 +282,7 @@ def evaluate_canonical_learning_publication(
     *,
     source_artifact_ref: str,
     canonical_bug_count: int,
+    relates_to_endpoints: tuple[tuple[str, str | None], ...] = (),
     overlay_exclusion_reason: str | None = None,
 ) -> tuple[bool, str | None]:
     """Return ``(publishable_as_complete_canonical, exclusion_reason_code)``.
@@ -291,20 +292,41 @@ def evaluate_canonical_learning_publication(
 
     * an OPEN canonical_debt / active cognitive_pending overlay for this
       artifact => NOT publishable (#3 never mask), reason = the overlay reason;
-    * a non-bug-derived (provenance-only) Learning => publishable (#4 not newly
-      blocked by IMP5);
     * a bug-derived Learning with >=1 canonical Bug evidence => publishable
       (#2 mixed allowed because at least one semantic endpoint is canonical);
     * a bug-derived Learning with 0 canonical Bug evidence (working-only) =>
-      NOT publishable (#1), reason = working-only.
+      NOT publishable (#1), reason = working-only;
+    * a NON-bug-derived Learning => publishable ONLY when it is
+      ``canonical_learning_resolved`` under the S-KG-02 / S-KG-01 taxonomy: a
+      RESOLVED auditable ``source_artifact_ref`` AND a canonical ``relates_to``
+      to one of the seven taxonomy endpoints. Otherwise NOT publishable, reason =
+      the precise classification (missing_source / unresolved_source /
+      weak_provenance / invalid_orphan_learning). This shares the SINGLE
+      classifier (:func:`classify_canonical_learning`) so the publication
+      authority and the read-model diagnostic can never diverge (TR60 /
+      BR-KG02-02): the legacy ``(True, None)`` shortcut for any non-bug Learning
+      is removed (it let an un-sourced/un-associated non-bug Learning publish as
+      canonical on the digest/parity path).
+
+    ``relates_to_endpoints`` is the non-bug taxonomy evidence — a tuple of
+    ``(endpoint_node_type, endpoint_layer)`` collected by the caller from the
+    board graph; an empty tuple (no canonical association supplied) is fail-closed
+    for a non-bug Learning. It is ignored for the bug-derived path.
     """
     if overlay_exclusion_reason:
         return (False, overlay_exclusion_reason)
-    if not _is_bug_derived_ref(str(source_artifact_ref or "")):
+    if _is_bug_derived_ref(str(source_artifact_ref or "")):
+        if int(canonical_bug_count) >= 1:
+            return (True, None)
+        return (False, CANONICAL_LEARNING_WORKING_ONLY_REASON)
+    classification = classify_canonical_learning(
+        source_ref=str(source_artifact_ref or ""),
+        is_bug_derived=False,
+        relates_to_endpoints=relates_to_endpoints,
+    )
+    if classification == CLASSIFICATION_CANONICAL_LEARNING_RESOLVED:
         return (True, None)
-    if int(canonical_bug_count) >= 1:
-        return (True, None)
-    return (False, CANONICAL_LEARNING_WORKING_ONLY_REASON)
+    return (False, classification)
 
 
 async def pending_or_debt_exclusions(
