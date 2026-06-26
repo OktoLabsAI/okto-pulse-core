@@ -244,10 +244,8 @@ async def _reset_last_recomputed_at(board_id: str | None) -> None:
     block the rest.
     """
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.kg.schema import (
-        VECTOR_INDEX_TYPES,
-        open_board_connection,
-    )
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+    from okto_pulse.core.kg.schema import VECTOR_INDEX_TYPES
     from okto_pulse.core.kg.write_barrier import require_write_token
     from okto_pulse.core.models.db import Board
     from sqlalchemy import select
@@ -268,11 +266,13 @@ async def _reset_last_recomputed_at(board_id: str | None) -> None:
         # enter KGSafeWriteLifecycle before invoking this path.
         require_write_token(bid)
         try:
-            conn = open_board_connection(bid)
-            with conn as (_kdb, kconn):
+            # R05-C: write through the #06 GraphTransaction port. _kdb was
+            # unused; the SET is a plain scope.execute — behaviour-identical to
+            # the old (db, conn) tuple.
+            async with await get_kg_registry().graph_transaction.begin(bid) as scope:
                 for node_type in VECTOR_INDEX_TYPES:
                     try:
-                        kconn.execute(
+                        scope.execute(
                             f"MATCH (n:{node_type}) SET n.last_recomputed_at = NULL"
                         )
                     except Exception:

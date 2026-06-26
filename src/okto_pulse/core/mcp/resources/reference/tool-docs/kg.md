@@ -10,7 +10,7 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 Drop an in-flight session without committing.
 
-No compensating delete is applied — commit was never called, so LadybugDB
+No compensating delete is applied — commit was never called, so the embedded graph database
 has no partial writes. The session is marked aborted and removed from
 the in-memory registry.
 
@@ -26,7 +26,7 @@ Returns:
 Add an edge candidate to an open session.
 
 Endpoints (from_candidate_id / to_candidate_id) must reference either
-another in-session node candidate OR an existing LadybugDB node via the
+another in-session node candidate OR an existing graph database node via the
 'kg:' prefix (kg:decision_abc123).
 
 Cognitive agents may only propose judgement edges: supersedes,
@@ -98,7 +98,7 @@ Returns:
 
 ## `okto_pulse_kg_commit_consolidation`
 
-Atomically commit the session: LadybugDB writes + audit row + outbox event.
+Atomically commit the session: graph database writes + audit row + outbox event.
 
 agent_overrides map candidate_id → ReconciliationHint for cases where
 the agent's semantic reasoning produces a different op than the
@@ -194,6 +194,99 @@ Args:
 Returns:
     JSON with selected/requeued/already_queued counts and, when
     process_now is true, the worker batch processed count.
+
+## `okto_pulse_kg_connectivity_dlq_diagnose`
+
+Diagnose the LIVE connectivity-guard `technical_dlq` class (RKG-04) before any
+reprocess. Read-only.
+
+The class is every dead-letter row whose terminal error is `KG node
+connectivity guard rejected the commit before graph mutation` (the recurring
+cognitive-closeout failure that RKG-02 fixes at the root). Returns each member's
+`dead_letter_id`, `artifact_id`, `attempts`, `errors`, `last_error`, the
+`source_artifact_ref` involved, the `probable_root_cause`, the `next_action` and
+a `remediation` hint — the input you must feed to
+`okto_pulse_kg_connectivity_dlq_reprocess`, which only accepts in-class ids.
+
+Args:
+    board_id: Board UUID.
+
+Returns:
+    JSON `{board_id, dlq_class, count, items, dead_letter_ids}`.
+
+## `okto_pulse_kg_connectivity_dlq_reprocess`
+
+Fail-closed reprocess of the connectivity-guard `technical_dlq` class (RKG-04).
+
+Unlike the generic `okto_pulse_kg_dead_letter_reprocess`, this NEVER does a broad
+reprocess: it requires EXPLICIT in-class `dead_letter_ids` (from
+`okto_pulse_kg_connectivity_dlq_diagnose`) and blocks — removing NO DLQ — when the
+selection is empty (`no_dlq_selected`), missing (`selected_dlq_missing`),
+out-of-class (`selected_dlq_out_of_class`), the RKG-02/RKG-03 root-cause fixes are
+absent (`rkg02_rkg03_not_applied`) or the KG is quarantined (`kg_quarantined`). On
+success it reuses the idempotent DLQ→ConsolidationQueue path (queue dedup).
+
+Args:
+    board_id: Board UUID.
+    dead_letter_ids: REQUIRED in-class DLQ row IDs (native list, JSON array
+        string, or pipe-separated string). Empty is blocked, never "all".
+    process_now: "true" to run one consolidation worker batch after requeueing.
+
+Returns:
+    JSON. When blocked: `{success: false, blocked: true, removed_dlq: false,
+    reasons, preconditions}`. On success: selected/requeued/already_queued counts
+    + optional worker batch info.
+
+## `okto_pulse_kg_connectivity_dlq_verify`
+
+After the consolidation worker drains the queue, confirm the connectivity-guard
+class is cleared for the given `artifact_refs` (or the whole class when empty).
+Read-only. A member that returned to the DLQ stays VISIBLE
+(`class_cleared=false` + `remaining_dlq`) — partial success is never masked.
+
+Args:
+    board_id: Board UUID.
+    artifact_refs: Optional `type:id` refs to scope the check (native list, JSON
+        array string, or pipe-separated string). Empty checks the whole class.
+
+Returns:
+    JSON `{class_cleared, remaining_count, remaining_dlq}`.
+
+## `okto_pulse_kg_health_readiness`
+
+Canonical NON-MASKABLE health/readiness projection (RKG-05; gemelar do REST
+`GET /api/v1/kg/health-readiness`). The single source the health/readiness/MCP/UI/
+report surfaces share, so a technical blocker is never hidden by a summary view or
+a cognitive skip.
+
+Both `profile=summary` and `profile=full` expose:
+- `technical_signals` — scalar counters `dead_letter_count`, `technical_dlq_count`,
+  `canonical_debt_open_count`, `active_queue_count`. These are SEPARATE
+  operational domains: one count is never inferred from another (e.g.
+  `active_queue_count` is not derived from `dead_letter_count`).
+- `readiness` — `blocking` (a technical problem IS visible) vs `would_block_done`
+  (whether the gate would actually block; `false` under advisory enforcement),
+  plus `reasons` and `policy_reason`.
+- top-level `cognitive_enforcement_mode` (`advisory`/`blocking`) and
+  `enforcement_active`.
+- `non_maskable_items` — one entry per OPEN technical item with `artifact_ref`,
+  `source_ref`, `signal`, `last_error`, `error_text`, `next_action`,
+  `remediation` and `drill_down_tool`. A cognitive skip/no_action can never
+  reduce this list (it is derived from health, not from the cognitive verdict).
+
+`profile=full` ADDS the prose `health_issues` + `root_cause`. An invalid profile
+returns `invalid_profile` (HTTP 400 on REST). Optional `artifact_ref` scopes
+`non_maskable_items`.
+
+Args:
+    board_id: Board UUID.
+    profile: "summary" (default) or "full".
+    artifact_ref: Optional `type:id` ref to scope `non_maskable_items`.
+
+Returns:
+    JSON `{board_id, profile, overall_state, cognitive_enforcement_mode,
+    enforcement_active, technical_signals, readiness, non_maskable_items,
+    operational_domains, [health_issues, root_cause]}`.
 
 ## `okto_pulse_kg_explain_constraint`
 
@@ -297,7 +390,7 @@ Returns:
 
 ## `okto_pulse_kg_get_similar_nodes`
 
-Fetch existing LadybugDB nodes similar to an in-session candidate.
+Fetch existing graph database nodes similar to an in-session candidate.
 
 MVP uses title-prefix match as a deterministic fallback; production
 replaces with HNSW k-NN via vector index (card 00dae72a).
@@ -567,7 +660,7 @@ column foi missed em board bootstrapped antes daquela versão.
 Idempotente: re-rodar em board já migrado retorna `migrated=true`
 com `columns_added` vazio (no-op).
 
-NUNCA delete `graph.lbug` para "consertar" — destruiria todo o KG
+NUNCA delete the per-board graph store para "consertar" — destruiria todo o KG
 do board. Use esta tool em vez disso.
 
 Args:
@@ -666,7 +759,7 @@ search (embedding + HNSW + traversal). Falls back to string match if
 embedding is unavailable.
 
 Does NOT invoke any LLM — all processing is deterministic (embedding
-model is local sentence-transformers or stub).
+model is a local embedding model or stub).
 
 Args:
     board_id: Board ID
@@ -798,7 +891,7 @@ exactly one bounded sample per call with labels
 Run the KG rebuild preflight for a board — gemelar do REST POST /api/v1/kg/rebuild/preflight.
 
 Executes the pre-rebuild check (read-only, TR13): enumerates real sources
-via BoardSourceStore (SQLite), classifies the KG health state, and persists
+via BoardSourceStore (the relational store), classifies the KG health state, and persists
 the immutable manifest needed for /confirm.
 
 **Admission gate (FR8):** refuses with `rebuild_refused_quarantined` when

@@ -127,6 +127,84 @@ async def test_create_rejects_in_progress_spec():
             )
     assert exc.value.code == "original_spec_not_done_or_locked"
     assert exc.value.status_code == 409
+    # fr_58b6aa0b: actionable hint — in_progress without lock is still editable.
+    assert "still editable" in exc.value.message
+    assert exc.value.details.get("content_locked") is False
+
+
+async def _lock_spec(db, spec_id, *, outcome="success", dangling=False):
+    """Mark a spec content-locked (current_validation_id -> success validation)."""
+    spec = await db.get(Spec, spec_id)
+    vid = f"val_{uuid.uuid4().hex[:8]}"
+    spec.current_validation_id = vid
+    spec.validations = [] if dangling else [{"id": vid, "outcome": outcome}]
+    await db.flush()
+    return vid
+
+
+async def test_create_accepts_in_progress_content_locked_spec():
+    # spec 62cf2d36 fr_0d2f84a1 / ac_b81f927c: in_progress + current_validation_id
+    # pointing to an outcome=success validation IS Path-B eligible.
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed(db, spec_status=SpecStatus.IN_PROGRESS)
+        await _lock_spec(db, ids["spec"])
+        created = await AmendmentRevisionApiService(db).create(
+            board_id=ids["board"], bug_id=ids["bug"], author=USER_ID,
+            origin_task_ids=[ids["origin"]], regression_scenario_ids=["ts_a"],
+        )
+        assert created["status"] == "draft"
+        assert created["original_spec_id"] == ids["spec"]
+
+
+async def test_path_b_docs_distinguish_content_locked_in_progress():
+    # fr_6348d040: agent-facing docs/tool-contracts must distinguish
+    # in_progress-editable from in_progress-content-locked; the stale absolute
+    # "only done/validated" / "rejects in_progress" claims must not survive.
+    import re
+    from pathlib import Path
+
+    base = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core" / "mcp"
+    files = {
+        "errors.md": base / "resources" / "reference" / "errors.md",
+        "cards.md": base / "resources" / "workflows" / "cards.md",
+        "card.md": base / "resources" / "reference" / "tool-docs" / "card.md",
+        "misc.md": base / "resources" / "reference" / "tool-docs" / "misc.md",
+        "server.py": base / "server.py",
+    }
+    # Whitespace- AND backtick-normalized so markdown formatting can't hide a
+    # stale claim (this is how a backticked checklist variant slipped through once).
+    stale = [
+        "binds to the bug's own done/validated (locked) spec and always",
+        "rejects creating against an in_progress spec",
+        "only attach to a done/validated (locked) spec",
+        "amendment revision for a bug tied to a locked spec.",
+        "if it is still in_progress, edit the spec directly",
+        "binds to the bug's own locked spec and starts as draft",
+    ]
+    for name, path in files.items():
+        raw = path.read_text(encoding="utf-8").replace("`", "")
+        norm = re.sub(r"\s+", " ", raw).lower()
+        assert "content-lock" in norm, f"{name}: content-lock guidance missing"
+        for phrase in stale:
+            assert phrase not in norm, f"{name}: stale Path B text survived: {phrase!r}"
+
+
+async def test_create_rejects_in_progress_failed_stale_or_superseded():
+    # ac_6e16f722: current_validation_id pointing to a failed validation, or a
+    # dangling/stale pointer, is NOT a content lock -> still rejected.
+    from okto_pulse.core.infra.database import get_session_factory
+
+    for kw in ({"outcome": "failed"}, {"dangling": True}):
+        async with get_session_factory()() as db:
+            ids = await _seed(db, spec_status=SpecStatus.IN_PROGRESS)
+            await _lock_spec(db, ids["spec"], **kw)
+            with pytest.raises(AmendmentRevisionApiError) as exc:
+                await AmendmentRevisionApiService(db).create(
+                    board_id=ids["board"], bug_id=ids["bug"], author=USER_ID,
+                )
+        assert exc.value.code == "original_spec_not_done_or_locked", kw
 
 
 async def test_create_rejects_spec_mismatch_and_bad_status_and_non_bug():

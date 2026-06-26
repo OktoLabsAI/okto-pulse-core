@@ -6,9 +6,9 @@ version: "1.0"
 
 ## Architecture Overview
 
-- **Per-board LadybugDB graph** at `~/.okto-pulse/boards/{board_id}/graph.lbug` — 11 node types, 10 relationship types, 5 HNSW vector indexes
-- **Global discovery meta-graph** at `~/.okto-pulse/global/discovery.lbug` — board summaries, topic clusters, canonical entities (digest-only, no sensitive content)
-- **SQLite operational tables**: `consolidation_queue`, `consolidation_audit`, node back-references for undo, `global_update_outbox`
+- **Per-board embedded graph database** (per-board graph store) — 11 node types, 10 relationship types, 5 HNSW vector indexes
+- **Global discovery meta-graph** (global discovery graph store) — board summaries, topic clusters, canonical entities (digest-only, no sensitive content)
+- **Relational operational tables**: `consolidation_queue`, `consolidation_audit`, node back-references for undo, `global_update_outbox`
 - **Agent-as-LLM premise**: the platform NEVER invokes LLM. All cognitive work (extraction, reasoning, reconciliation decisions) is done by YOU, the code agent.
 
 ## Consolidation Primitives (7 tools)
@@ -20,7 +20,7 @@ version: "1.0"
 | `okto_pulse_kg_add_edge_candidate` | session_id, candidate | Add an edge. Endpoints reference in-session candidates or existing nodes via `kg:` prefix. |
 | `okto_pulse_kg_get_similar_nodes` | session_id, candidate_id, top_k?, min_similarity? | HNSW vector search against existing graph. |
 | `okto_pulse_kg_propose_reconciliation` | session_id | Server computes deterministic hints: ADD/UPDATE/SUPERSEDE/NOOP. |
-| `okto_pulse_kg_commit_consolidation` | session_id, summary_text?, agent_overrides? | Atomically write to LadybugDB + audit row + outbox event. |
+| `okto_pulse_kg_commit_consolidation` | session_id, summary_text?, agent_overrides? | Atomically write to the embedded graph database + audit row + outbox event. |
 | `okto_pulse_kg_abort_consolidation` | session_id, reason? | Drop the session without writing. |
 
 **Node types (11):** Decision, Criterion, Constraint, Assumption, Requirement, Entity, APIContract, TestScenario, Bug, Learning, Alternative
@@ -101,7 +101,7 @@ version: "1.0"
 
 | Tool | Args | Purpose |
 |------|------|---------|
-| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms?, include_working? | Read-only Cypher directly on LadybugDB. Defaults to canonical-only rows; pass `include_working=true` when validating working graph ingestion. |
+| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms?, include_working? | Read-only Cypher directly on the embedded graph database. Defaults to canonical-only rows; pass `include_working=true` when validating working graph ingestion. |
 | `okto_pulse_kg_query_natural` | board_id, nl_query, limit?, min_confidence? | Natural language search via embedding + HNSW |
 | `okto_pulse_kg_schema_info` | board_id?, include_internal? | Schema introspection: node types, rel types, vector indexes |
 

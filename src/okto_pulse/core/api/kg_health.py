@@ -21,6 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.services.cognitive_effectiveness_service import (
+    CognitiveEffectivenessError,
+    build_cognitive_effectiveness_inventory,
+)
 from okto_pulse.core.services.kg_health_service import (
     BoardNotFoundError,
     get_kg_health,
@@ -259,3 +263,69 @@ async def get_kg_health_endpoint(
     except BoardNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return KGHealthResponse(**data)
+
+
+@router.get("/kg/health-readiness")
+async def get_kg_health_readiness_endpoint(
+    board_id: str = Query(..., description="Board ID (uuid)"),
+    profile: str = Query("summary", description="summary | full"),
+    artifact_ref: str | None = Query(
+        None, description="Optional type:id ref to scope non_maskable_items"),
+    _: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """RKG-05 (api_1feb6875): the canonical, NON-MASKABLE health/readiness
+    projection.
+
+    ``technical_signals`` (scalar counters dead_letter_count / technical_dlq_count
+    / canonical_debt_open_count / active_queue_count), ``readiness`` (``blocking``
+    vs ``would_block_done`` + ``reasons`` + ``policy_reason``), the top-level
+    ``cognitive_enforcement_mode`` / ``enforcement_active`` and
+    ``non_maskable_items`` are exposed in BOTH the summary and full profiles — a
+    summary view never masks a technical blocker or its drill_down_tool. The full
+    profile only ADDS the prose ``health_issues`` + ``root_cause``. Read-only."""
+    from okto_pulse.core.services.kg_health_readiness_service import (
+        InvalidProfileError,
+        build_health_readiness,
+    )
+
+    try:
+        return await build_health_readiness(
+            board_id, db, profile=profile, surface="rest", artifact_ref=artifact_ref)
+    except InvalidProfileError as exc:
+        raise HTTPException(status_code=400, detail="invalid_profile") from exc
+    except BoardNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/kg/cognitive-effectiveness/inventory")
+async def get_cognitive_effectiveness_inventory_endpoint(
+    board_id: str = Query(..., description="Board ID (uuid)"),
+    artifact_id: str | None = Query(None, description="Optional artifact_ref filter"),
+    include_candidate_logs: bool = Query(False),
+    graph_layer: str = Query("canonical", description="canonical|working|all"),
+    _: str = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Read-only canonical cognitive-effectiveness inventory (RKG-01).
+
+    Cross-references KG health, technical DLQ, cognitive readiness/pending and
+    persisted cognitive nodes to classify each done artifact. The endpoint is
+    READ-ONLY (TR1): it never reprocesses DLQs, opens consolidation sessions,
+    creates nodes or mutates readiness.
+    """
+    try:
+        health = await get_kg_health(board_id, db)
+    except BoardNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
+        return await build_cognitive_effectiveness_inventory(
+            db,
+            board_id,
+            artifact_id=artifact_id,
+            include_candidate_logs=include_candidate_logs,
+            graph_layer=graph_layer,
+            metric_status=health.get("metric_status"),
+        )
+    except CognitiveEffectivenessError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc

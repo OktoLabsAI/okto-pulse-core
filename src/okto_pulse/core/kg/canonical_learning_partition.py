@@ -50,24 +50,26 @@ _BUG_REF_PREFIXES = ("bug:", "card:bug:")
 def _is_bug_derived_ref(source_ref: str) -> bool:
     """True iff the Learning's source_artifact_ref denotes a known bug source.
 
-    Mirrors the IMP1 guard's bug-derived signal for graph nodes (where only the
-    source_ref is available). Provenance-only Learnings never match, so they are
-    excluded from the partition-integrity check (no false positives)."""
-    return source_ref.startswith(_BUG_REF_PREFIXES) or ":bug:" in source_ref
+    Delegates to the shared cognitive source_ref resolver (RKG-02 / BR3) — the
+    single authorized parser. Form-based here (no canonical_bug_probe): a graph
+    Learning carries only its source_ref, so bug:/card:bug:/:bug: are bug-derived
+    while a plain card:<uuid> is not (provenance-only Learnings never match)."""
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+        resolve_cognitive_source_ref,
+    )
+    return resolve_cognitive_source_ref(source_ref).is_bug_derived
 
 
 def _bug_artifact_id(source_ref: str) -> str:
     """Extract a stable, <=36-char artifact_id (the source bug uuid) from a
-    bug-derived Learning source_ref. Falls back to a truncated ref."""
-    parts = source_ref.split(":")
-    if source_ref.startswith("card:bug:") and len(parts) >= 3:
-        return parts[2][:36]
-    if source_ref.startswith("bug:") and len(parts) >= 2:
-        return parts[1][:36]
-    if ":bug:" in source_ref:
-        idx = parts.index("bug") if "bug" in parts else -1
-        if idx != -1 and idx + 1 < len(parts):
-            return parts[idx + 1][:36]
+    bug-derived Learning source_ref via the shared resolver. Falls back to a
+    truncated ref."""
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+        resolve_cognitive_source_ref,
+    )
+    resolution = resolve_cognitive_source_ref(source_ref)
+    if resolution.is_bug_derived and ":" in resolution.canonical_artifact_ref:
+        return resolution.canonical_artifact_ref.split(":", 1)[1][:36]
     return source_ref[:36]
 
 
@@ -174,10 +176,13 @@ async def detect_historical_canonical_learning_debt(
     Idempotent: upsert keyed by (board, artifact, target_status, content_hash).
     Storage is CanonicalDebt only — never cognitive pending / DLQ. Returns
     ``{opened, source_refs}``."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    with open_board_connection(board_id) as (_kdb, kconn):
-        violating, _satisfied = _scan_partition(kconn)
+    # R05-C: scan through the #06 GraphTransaction port. _scan_partition only
+    # calls conn.execute()/result iteration, and the scope proxies execute to the
+    # same connection — so passing `scope` is behaviour-identical (_kdb unused).
+    async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+        violating, _satisfied = _scan_partition(scope)
 
     opened: list[str] = []
     for node_id, source_ref in violating:
@@ -220,10 +225,11 @@ async def reconcile_canonical_learning_partition_debt(
     calls the layer-blind ``reconcile_canonical_debt_with_evidence``.
     ``extra_evidence`` (optional) is folded through the SAME pre-filter, so a
     caller cannot smuggle working-layer evidence past the guard."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    with open_board_connection(board_id) as (_kdb, kconn):
-        _violating, satisfied = _scan_partition(kconn)
+    # R05-C: scan through the #06 GraphTransaction port (see detect_* above).
+    async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+        _violating, satisfied = _scan_partition(scope)
 
     evidence = [_canonical_evidence_for(nid, ref) for nid, ref in satisfied]
     if extra_evidence:
@@ -257,11 +263,12 @@ async def run_canonical_learning_partition_maintenance(
 
     Non-raising by contract for the worker: detection and reconcile are best
     effort; a failure here must never fail the (already successful) commit."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
+    # R05-C: scan through the #06 GraphTransaction port (see detect_* above).
     try:
-        with open_board_connection(board_id) as (_kdb, kconn):
-            violating, satisfied = _scan_partition(kconn)
+        async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+            violating, satisfied = _scan_partition(scope)
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("kg.clp.maintenance_scan_failed board=%s err=%s", board_id, exc)
         return {"opened": 0, "closed": 0}

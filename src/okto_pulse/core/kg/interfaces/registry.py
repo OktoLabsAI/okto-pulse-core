@@ -22,7 +22,11 @@ from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.event_bus import EventBus
+from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycle
+from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphPathResolver
+from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphTransaction
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
@@ -48,6 +52,13 @@ class KGProviderRegistry:
     cypher_executor: CypherExecutor | None = None
     event_bus: EventBus | None = None
 
+    # Onda 4 — KG storage ports (spec #06): close kg.schema as a port before
+    # Kùzu/Ladybug can move out of core.
+    graph_transaction: GraphTransaction | None = None
+    graph_schema_manager: GraphSchemaManager | None = None
+    graph_lifecycle: GraphLifecycle | None = None
+    graph_path_resolver: GraphPathResolver | None = None
+
 
 _registry: KGProviderRegistry | None = None
 _lock = threading.Lock()
@@ -68,6 +79,16 @@ def _build_defaults() -> KGProviderRegistry:
     from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
     from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
     from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_lifecycle import KuzuGraphLifecycle
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_path_resolver import (
+        KuzuGraphPathResolver,
+    )
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_schema_manager import (
+        KuzuGraphSchemaManager,
+    )
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_transaction import (
+        KuzuGraphTransaction,
+    )
     from okto_pulse.core.kg.embedding import _build_provider_from_config
 
     config = SettingsKGConfig()
@@ -84,13 +105,55 @@ def _build_defaults() -> KGProviderRegistry:
         # Onda 3
         graph_store=KuzuGraphStore(),
         cypher_executor=KuzuCypherExecutor(),
+        # Onda 4 — KG storage ports (embedded Kùzu adapters)
+        graph_transaction=KuzuGraphTransaction(),
+        graph_schema_manager=KuzuGraphSchemaManager(),
+        graph_lifecycle=KuzuGraphLifecycle(),
+        graph_path_resolver=KuzuGraphPathResolver(),
         # event_bus, audit_repo, auth_context_factory populated by configure_kg_registry()
     )
+
+
+def _build_graph_defaults() -> dict[str, Any]:
+    """Build ONLY the core-owned, non-Onda-A providers: the KG ``config`` and the
+    embedded Kùzu/graph adapters (graph_store / cypher_executor / transaction /
+    schema_manager / lifecycle / path_resolver).
+
+    These are the providers spec #06 closed but R05 does NOT move (deferred). The
+    R05-B base-registry path uses this to mount the core graph slots WITHOUT
+    instantiating the Onda A embedded (cache / rate_limiter / session_store /
+    embedding) — those are supplied by the caller's ``base_registry``.
+    """
+    from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
+    from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_lifecycle import KuzuGraphLifecycle
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_path_resolver import (
+        KuzuGraphPathResolver,
+    )
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_schema_manager import (
+        KuzuGraphSchemaManager,
+    )
+    from okto_pulse.core.kg.providers.embedded.kuzu_graph_transaction import (
+        KuzuGraphTransaction,
+    )
+
+    return {
+        "config": SettingsKGConfig(),
+        "graph_store": KuzuGraphStore(),
+        "cypher_executor": KuzuCypherExecutor(),
+        "graph_transaction": KuzuGraphTransaction(),
+        "graph_schema_manager": KuzuGraphSchemaManager(),
+        "graph_lifecycle": KuzuGraphLifecycle(),
+        "graph_path_resolver": KuzuGraphPathResolver(),
+    }
 
 
 def configure_kg_registry(
     *,
     session_factory: Any | None = None,
+    base_registry: "KGProviderRegistry | None" = None,
+    defaults_factory: Any | None = None,
     **overrides: Any,
 ) -> None:
     """Configure the singleton registry with optional provider overrides.
@@ -100,23 +163,64 @@ def configure_kg_registry(
     Args:
         session_factory: SQLAlchemy async session factory. When provided,
             auto-wires audit_repo (SqlAlchemyAuditRepository) and event_bus
-            (SqliteOutboxEventBus) if not explicitly overridden.
+            (SqliteOutboxEventBus) ONLY when the slot is not explicitly
+            overridden AND not already supplied by ``base_registry`` (R05-D
+            register-before-fallback / prefer-provided).
+        base_registry: (R05-B) a pre-built ``KGProviderRegistry`` whose Onda A
+            slots (cache_backend / rate_limiter / session_store /
+            embedding_provider) are supplied by the edition (e.g. the Community
+            adapters) so the core's embedded Onda A are NOT instantiated. The
+            core-owned NON-Onda-A slots it leaves ``None`` (config + Kùzu/graph)
+            are filled by ``_build_graph_defaults`` here. audit_repo / event_bus
+            auto-wire from ``session_factory`` ONLY if the base left them ``None``
+            — the Community edition supplies them explicitly (R05-D), so the
+            auto-wire is a ledgered fallback for non-composed callers.
+        defaults_factory: (R05-B) a callable returning the base registry, used
+            instead of ``base_registry`` when the caller prefers lazy
+            construction. Same composition semantics as ``base_registry``.
         **overrides: Provider instances keyed by field name.
             Example: configure_kg_registry(cache_backend=RedisCacheBackend(url))
+
+    Retro-compat (TR3): a call WITHOUT ``base_registry``/``defaults_factory``
+    behaves EXACTLY as before — ``_build_defaults()`` + session_factory
+    auto-wiring.
     """
     global _registry, _configured
     with _lock:
-        reg = _build_defaults()
+        composed = base_registry is not None or defaults_factory is not None
+        if base_registry is not None:
+            reg = base_registry
+        elif defaults_factory is not None:
+            reg = defaults_factory()
+        else:
+            reg = _build_defaults()
 
-        # Auto-wire session_factory-dependent providers
+        # R05-B: when a base/factory supplied the Onda A slots, mount the
+        # core-owned non-Onda-A providers (config + Kùzu/graph) into any slot the
+        # base left empty — WITHOUT instantiating the embedded Onda A.
+        if composed:
+            for key, value in _build_graph_defaults().items():
+                if getattr(reg, key, None) is None:
+                    setattr(reg, key, value)
+
+        # R05-D: the session_factory auto-wire of audit_repo/event_bus is now a
+        # LEDGERED FALLBACK (register-before-fallback). It fires ONLY when the
+        # composition did NOT already supply the slot. The Community edition
+        # supplies CommunityAuditRepository / CommunityOutboxEventBus EXPLICITLY
+        # (community.adapters.composition._apply_data_providers), so for that
+        # edition this auto-wire never runs. A non-composed caller (no
+        # base_registry → _build_defaults leaves these None) still auto-wires
+        # EXACTLY as before (TR3 retro-compat). This fallback is owned /
+        # criteria-tracked in data_provider_ownership_gate.LEDGERED_DATA_FALLBACK
+        # and retires when spec #04 strangles the Repository-UoW.
         if session_factory is not None:
-            if "audit_repo" not in overrides:
+            if "audit_repo" not in overrides and reg.audit_repo is None:
                 from okto_pulse.core.kg.providers.embedded.sqlalchemy_audit_repo import (
                     SqlAlchemyAuditRepository,
                 )
                 reg.audit_repo = SqlAlchemyAuditRepository(session_factory)
 
-            if "event_bus" not in overrides:
+            if "event_bus" not in overrides and reg.event_bus is None:
                 from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import (
                     SqliteOutboxEventBus,
                 )

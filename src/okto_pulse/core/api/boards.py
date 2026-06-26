@@ -7,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user, get_realm_id
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.application.use_cases import CreateBoardCommand, CreateBoardUseCase
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.models import (
     BoardCreate,
     BoardResponse,
@@ -38,16 +42,21 @@ async def create_board(
     data: BoardCreate,
     user_id: str = Depends(require_user),
     realm_id: str | None = Depends(get_realm_id),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a new board."""
-    service = BoardService(db)
-    board = await service.create_board(user_id, data, realm_id=realm_id)
-    await db.commit()
-    # Re-fetch with relationships loaded
-    board = await service.get_board(board.id)
-    board.__dict__["agents"] = []
-    return _attach_effective_board_settings(board)
+    # Spec #04: the migrated REST flow obtains a request-scoped PulseUnitOfWork
+    # (from the persistence port, bound to the request session via get_db) and
+    # calls the transport-free use case — no raw AsyncSession in the handler's
+    # contract with the use case. Behavior (payload/201/commit/re-fetch/effective
+    # settings/realm_id) is preserved, and the get_db dependency override still
+    # applies because get_unit_of_work depends on it.
+    result = await CreateBoardUseCase().execute(
+        CreateBoardCommand(data),
+        actor=RESTAdapterContract.actor(user_id, realm_id=realm_id),
+        uow=uow,
+    )
+    return result.board
 
 
 @router.get("", response_model=list[BoardSummary])

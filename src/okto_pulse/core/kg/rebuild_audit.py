@@ -770,6 +770,85 @@ def reset_operational_inspection_counter() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Counter for OR or_36e0cd85 — okto_pulse_kg_cognitive_technical_signal_total (RKG-05)
+# ---------------------------------------------------------------------------
+#
+# Contract (or_36e0cd85): one bounded sample whenever a NON-MASKABLE technical KG
+# signal (technical_dlq / dead_letter_backlog / canonical_debt_open /
+# persistence_error) is surfaced through the health/readiness projection — so the
+# PRESENCE of a technical blocker, and whether it is gate-blocking vs advisory, is
+# observable independently of any cognitive skip/no_action. Labels only.
+COGNITIVE_TECHNICAL_SIGNALS: frozenset[str] = frozenset({
+    "technical_dlq",
+    "dead_letter_backlog",
+    "canonical_debt_open",
+    "persistence_error",
+})
+_COGNITIVE_TECHNICAL_SIGNAL_LABELS = (
+    "signal", "surface", "blocking", "would_block_done", "board_id")
+_cognitive_technical_signal_samples: list[dict[str, Any]] = []
+_cognitive_technical_signal_lock = threading.Lock()
+
+
+def emit_cognitive_technical_signal_sample(
+    *,
+    signal: str,
+    surface: str,
+    blocking: bool,
+    would_block_done: bool,
+    board_id: str,
+) -> None:
+    """Emit one sample on ``okto_pulse_kg_cognitive_technical_signal_total`` (or_36e0cd85).
+
+    ``signal`` is one of COGNITIVE_TECHNICAL_SIGNALS; ``surface`` is rest/mcp;
+    ``blocking`` is whether a technical problem is visible; ``would_block_done``
+    is whether the gate would actually block (enforcement-aware, advisory→False).
+    """
+    with _cognitive_technical_signal_lock:
+        _cognitive_technical_signal_samples.append({
+            "signal": signal,
+            "surface": surface,
+            "blocking": bool(blocking),
+            "would_block_done": bool(would_block_done),
+            "board_id": board_id,
+        })
+
+
+def get_cognitive_technical_signal_event_count(
+    *,
+    signal: str | None = None,
+    surface: str | None = None,
+    blocking: bool | None = None,
+    would_block_done: bool | None = None,
+    board_id: str | None = None,
+) -> int:
+    with _cognitive_technical_signal_lock:
+        return sum(
+            1
+            for s in _cognitive_technical_signal_samples
+            if (signal is None or s["signal"] == signal)
+            and (surface is None or s["surface"] == surface)
+            and (blocking is None or s["blocking"] == blocking)
+            and (would_block_done is None or s["would_block_done"] == would_block_done)
+            and (board_id is None or s["board_id"] == board_id)
+        )
+
+
+def get_cognitive_technical_signal_counter_labels() -> tuple[str, ...]:
+    return _COGNITIVE_TECHNICAL_SIGNAL_LABELS
+
+
+def get_cognitive_technical_signal_samples() -> list[dict[str, Any]]:
+    with _cognitive_technical_signal_lock:
+        return [dict(s) for s in _cognitive_technical_signal_samples]
+
+
+def reset_cognitive_technical_signal_counter() -> None:
+    with _cognitive_technical_signal_lock:
+        _cognitive_technical_signal_samples.clear()
+
+
+# ---------------------------------------------------------------------------
 # Counter for OR or_174f18d5 — kg_cognitive_item_update_total
 # ---------------------------------------------------------------------------
 #

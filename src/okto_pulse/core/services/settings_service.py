@@ -19,7 +19,6 @@ import asyncio
 import logging
 import os
 import warnings
-from datetime import timezone
 from typing import Any
 
 from sqlalchemy import String, select
@@ -33,6 +32,12 @@ from okto_pulse.core.infra.config import (
     get_settings,
     validate_graph_db_max_size_gb,
 )
+from okto_pulse.core.ports.runtime_settings import (
+    KG_TICK_RESCHEDULE_FAILED_SIGNAL,
+    RuntimeEffectResult,
+    build_reschedule_failed_signal,
+)
+from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
 
 logger = logging.getLogger("okto_pulse.services.settings")
 
@@ -273,76 +278,138 @@ async def get_runtime_settings(db: AsyncSession) -> dict[str, Any]:
     return {**effective, "restart_required": restart_required}
 
 
-def _maybe_reschedule_tick(values: dict[str, int]) -> None:
-    """Spec 54399628 (Wave 2 NC f9732afc) — hot-reload tick interval.
+def _apply_live_tick_settings(values: dict[str, int]) -> None:
+    """Persist the decay-tick knobs into live CoreSettings — NO scheduler.
 
-    When `kg_decay_tick_interval_minutes` is in the persisted PUT body,
-    update the live CoreSettings AND call APScheduler.reschedule_job so
-    the cron job picks up the new interval without a server restart.
-
-    Other tick keys (staleness, max_age_cap) take effect on the NEXT
-    tick run via CoreSettings live-read in the handler — no scheduler
-    intervention needed for them.
-
-    Soft-fails when scheduler singleton is None (test contexts that
-    skip lifespan) — settings are still persisted; live process just
-    doesn't reschedule.
+    Behaviour-preserving split of the former ``_maybe_reschedule_tick``
+    (spec #15 fr_93c9af44/fr_2ae7de62). This is the PERSISTENCE half: it
+    updates live ``CoreSettings`` so a subsequent ``get_settings()`` returns
+    the new value, and is gated on the interval being in the change set
+    exactly as before. It NEVER touches the scheduler singleton, so
+    ``RuntimeSettingsPort.persist`` can run with no scheduler wired
+    (AC ac_a4d41673).
     """
     if "kg_decay_tick_interval_minutes" not in values:
         return
-
-    new_interval = int(values["kg_decay_tick_interval_minutes"])
-
-    # Update live CoreSettings so subsequent get_settings() returns the
-    # new value (next tick handler invocation will read it).
-    from okto_pulse.core.infra.config import configure_settings, get_settings
     current = get_settings()
-    updated = current.model_copy(update={
-        k: int(values[k]) for k in DECAY_TICK_KEYS if k in values
-    })
+    updated = current.model_copy(
+        update={k: int(values[k]) for k in DECAY_TICK_KEYS if k in values}
+    )
     configure_settings(updated)
 
-    # Hot-reload the APScheduler trigger.
-    try:
-        from apscheduler.triggers.interval import IntervalTrigger
-        from okto_pulse.core.kg.scheduler_singleton import get_scheduler
 
-        scheduler = get_scheduler()
-        if scheduler is None:
-            logger.info(
-                "kg.tick.reschedule_skipped reason=no_scheduler "
-                "new_interval_minutes=%d",
-                new_interval,
-                extra={
-                    "event": "kg.tick.reschedule_skipped",
-                    "reason": "no_scheduler",
-                    "new_interval_minutes": new_interval,
-                },
-            )
-            return
-        scheduler.reschedule_job(
-            "kg_daily_tick",
-            trigger=IntervalTrigger(
-                minutes=new_interval,
-                timezone=timezone.utc,
-            ),
-        )
+async def apply_tick_runtime_effects(
+    values: dict[str, int],
+    scheduler_control: SchedulerControl,
+    *,
+    actor_id: str = "unknown",
+    source: str = "runtime_settings.put",
+) -> list[RuntimeEffectResult]:
+    """Apply the runtime EFFECT of a tick-interval change via the port.
+
+    Behaviour-preserving split of ``_maybe_reschedule_tick`` (spec #15
+    fr_2ae7de62): the APScheduler reschedule now flows through the injected
+    ``SchedulerControl`` port — there is NO direct ``scheduler_singleton``
+    access here. Soft-fails (never raises) so it cannot break the PUT
+    response, exactly as before:
+
+    - no scheduler wired -> ``kg.tick.reschedule_skipped`` (AC ac_a4d41673 path);
+    - success -> ``kg.tick.rescheduled`` stays auditable (AC ac_c9b328fb);
+    - failure -> emits/enriches ``kg.tick.reschedule_failed`` with
+      ``error_class`` and a sanitized message, never a secret (AC ac_b74a281f,
+      fr_70c29790).
+
+    Returns one ``RuntimeEffectResult`` per effect for the conformance suite.
+    """
+    if "kg_decay_tick_interval_minutes" not in values:
+        return []
+    new_interval = int(values["kg_decay_tick_interval_minutes"])
+
+    if not scheduler_control.is_available():
         logger.info(
-            "kg.tick.rescheduled new_interval_minutes=%d",
+            "kg.tick.reschedule_skipped reason=no_scheduler new_interval_minutes=%d",
             new_interval,
             extra={
-                "event": "kg.tick.rescheduled",
+                "event": "kg.tick.reschedule_skipped",
+                "reason": "no_scheduler",
                 "new_interval_minutes": new_interval,
             },
         )
+        return [
+            RuntimeEffectResult(
+                effect="kg_tick_reschedule",
+                status="skipped",
+                job_id=KG_DAILY_TICK_JOB_ID,
+                audit_status="skipped",
+            )
+        ]
+
+    try:
+        result = await scheduler_control.reschedule_job(
+            KG_DAILY_TICK_JOB_ID, {"minutes": new_interval}
+        )
     except Exception as exc:
-        # Reschedule is best-effort — failure shouldn't block PUT response.
-        # Operator can restart server to apply on next boot.
+        # Reschedule is best-effort — failure must not block the PUT response.
+        signal = build_reschedule_failed_signal(
+            error=exc, actor_id=actor_id, source=source
+        )
+        # Log the SANITIZED message — never the raw exception (it may carry a
+        # secret/token in its text). The structured `extra` is secret-free too.
         logger.warning(
             "kg.tick.reschedule_failed err=%s",
-            exc,
-            extra={"event": "kg.tick.reschedule_failed"},
+            signal["sanitized_message"],
+            extra={"event": KG_TICK_RESCHEDULE_FAILED_SIGNAL, **signal},
         )
+        return [
+            RuntimeEffectResult(
+                effect="kg_tick_reschedule",
+                status="failed",
+                job_id=KG_DAILY_TICK_JOB_ID,
+                signal=KG_TICK_RESCHEDULE_FAILED_SIGNAL,
+                audit_status="failed",
+                error_class=type(exc).__name__,
+                sanitized_message=signal["sanitized_message"],
+            )
+        ]
+
+    # Respect the port's own outcome: a SchedulerControl that reports the job was
+    # not actually scheduled (scheduled=False / audit_status='skipped') is a
+    # skipped effect, NOT an applied one.
+    if not result.scheduled or result.audit_status == "skipped":
+        logger.info(
+            "kg.tick.reschedule_skipped reason=port_skipped new_interval_minutes=%d",
+            new_interval,
+            extra={
+                "event": "kg.tick.reschedule_skipped",
+                "reason": "port_skipped",
+                "new_interval_minutes": new_interval,
+            },
+        )
+        return [
+            RuntimeEffectResult(
+                effect="kg_tick_reschedule",
+                status="skipped",
+                job_id=KG_DAILY_TICK_JOB_ID,
+                audit_status="skipped",
+            )
+        ]
+
+    logger.info(
+        "kg.tick.rescheduled new_interval_minutes=%d",
+        new_interval,
+        extra={
+            "event": "kg.tick.rescheduled",
+            "new_interval_minutes": new_interval,
+        },
+    )
+    return [
+        RuntimeEffectResult(
+            effect="kg_tick_reschedule",
+            status="applied",
+            job_id=KG_DAILY_TICK_JOB_ID,
+            audit_status=result.audit_status,
+        )
+    ]
 
 
 class ConfigChangeBlocked(Exception):
@@ -373,6 +440,7 @@ async def put_runtime_settings(
     actor_id: str = "unknown",
     migration_plan_ref: str | None = None,
     restart_policy: str | None = None,
+    scheduler_control: SchedulerControl | None = None,
 ) -> dict[str, Any]:
     """Upsert runtime settings into the table. Caller validates ranges first.
 
@@ -450,7 +518,7 @@ async def put_runtime_settings(
             raise ConfigChangeBlocked(
                 reason=exc.code.value,
                 setting_group="unknown",
-                audit_event=f"kg.config_change.unknown.blocked",
+                audit_event="kg.config_change.unknown.blocked",
             ) from exc
 
         if not decision.allowed:
@@ -472,8 +540,21 @@ async def put_runtime_settings(
                 row.value = str(parsed)
         await db.commit()
 
-    # Spec 54399628 — hot-reload tick interval after persistence commits.
-    _maybe_reschedule_tick(values)
+    # Spec 54399628 / spec #15 (fr_93c9af44, fr_2ae7de62) — hot-reload tick
+    # interval after persistence commits, now split into persistence (live
+    # CoreSettings) and an explicit runtime effect through the SchedulerControl
+    # port. ``scheduler_control`` defaults to the singleton-backed adapter so the
+    # external Community behaviour is preserved; callers (and tests) may inject a
+    # port to keep persistence scheduler-free.
+    _apply_live_tick_settings(values)
+    control = scheduler_control
+    if control is None:
+        from okto_pulse.core.services.scheduler_control_adapter import (
+            SingletonSchedulerControl,
+        )
+
+        control = SingletonSchedulerControl()
+    await apply_tick_runtime_effects(values, control, actor_id=actor_id)
 
     # Re-read to compute restart_required consistently.
     return await get_runtime_settings(db)

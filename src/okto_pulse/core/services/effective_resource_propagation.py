@@ -204,6 +204,45 @@ def _dedupe_effective_refs(
     return deduped
 
 
+def effective_ref_identity_values(ref: dict[str, Any]) -> set[str]:
+    """Every id token by which a caller may legitimately reference an effective
+    inherited ref — the immediate snapshot id AND every canonical-origin field
+    (source_design_id, unique_resource_id, source_ref tail, origin_evidence.*,
+    raw.*). A ``design_ids`` filter must match whether the caller passes the
+    intermediate snapshot id or the inherited ROOT id (card 5c43a364).
+    """
+    values: set[str] = set()
+
+    def _add(value: Any) -> None:
+        if not value:
+            return
+        text = str(value)
+        values.add(text)
+        for sep in (":", "/", "\\"):
+            if sep in text:
+                values.add(text.rsplit(sep, 1)[-1])
+
+    for key in (
+        "id",
+        "resource_id",
+        "source_design_id",
+        "unique_resource_id",
+        "source_kb_id",
+        "source_mockup_id",
+        "origin_id",
+        "source_ref",
+        "origin_ref",
+        "source",
+    ):
+        _add(ref.get(key))
+    for nested_key in ("origin_evidence", "raw"):
+        nested = ref.get(nested_key)
+        if isinstance(nested, dict):
+            for key in ("id", "source_design_id", "unique_resource_id", "source_ref"):
+                _add(nested.get(key))
+    return values
+
+
 def _kb_dicts(entity, *, source_type: str, source_id: str | None,
               source_title: str | None, source_version: int | None) -> list[dict[str, Any]]:
     """Snapshot an entity's knowledge bases to source dicts that

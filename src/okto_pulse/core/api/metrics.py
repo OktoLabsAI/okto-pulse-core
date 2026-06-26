@@ -13,7 +13,7 @@ from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.telemetry.publish_health import HEALTH_SOURCE_UNAVAILABLE
 from okto_pulse.core.telemetry.schema import SchemaReject, count_rejected_payload_fields, sanitize_payload
-from okto_pulse.core.telemetry.service import TelemetryService
+from okto_pulse.core.telemetry.telemetry_port_registry import get_telemetry_port
 
 router = APIRouter()
 logger = logging.getLogger("okto_pulse.api.metrics")
@@ -78,7 +78,7 @@ async def get_local_metrics_summary(
     window_days: int = Query(default=30, ge=1, le=400),
     _: str = Depends(require_user),
 ):
-    service = TelemetryService(get_settings())
+    service = get_telemetry_port(get_settings())
     return service.summary(window_days=window_days)
 
 
@@ -88,7 +88,7 @@ async def get_metrics_publish_health(
 ):
     """R5C-A publish-health surface: the allowlisted classification of the R5A
     local failure-state. No source readable -> 503 HEALTH_SOURCE_UNAVAILABLE."""
-    result = TelemetryService(get_settings()).publish_health()
+    result = get_telemetry_port(get_settings()).publish_health()
     if result.get("error") == HEALTH_SOURCE_UNAVAILABLE:
         return JSONResponse(status_code=503, content=result)
     return result
@@ -99,7 +99,7 @@ async def post_local_metrics_event(
     payload: LocalMetricsEventPayload,
     _: str = Depends(require_user),
 ):
-    service = TelemetryService(get_settings())
+    service = get_telemetry_port(get_settings())
     cfg = service.config()
     schema_version = cfg.schema_version
     rejected_fields_count = count_rejected_payload_fields(payload.event_type, payload.payload)
@@ -176,7 +176,7 @@ async def post_metrics_settings(
                 reason="missing_policy_ack",
             )
             raise HTTPException(status_code=400, detail="MISSING_POLICY_ACK")
-    service = TelemetryService(get_settings())
+    service = get_telemetry_port(get_settings())
     try:
         result = service.update_settings(
             mode=payload.mode,
@@ -207,7 +207,7 @@ async def mark_metrics_migration_notice_seen(
     payload: MigrationNoticeSeenPayload,
     _: str = Depends(require_user),
 ):
-    service = TelemetryService(get_settings())
+    service = get_telemetry_port(get_settings())
     try:
         return service.mark_migration_notice_seen(notice_key=payload.notice_key)
     except ValueError as exc:
@@ -218,11 +218,11 @@ async def mark_metrics_migration_notice_seen(
 async def export_local_metrics(
     _: str = Depends(require_user),
 ):
-    return TelemetryService(get_settings()).export_local()
+    return get_telemetry_port(get_settings()).export_local()
 
 
 @router.delete("/metrics/local")
 async def purge_local_metrics(
     _: str = Depends(require_user),
 ):
-    return TelemetryService(get_settings()).purge_local()
+    return get_telemetry_port(get_settings()).purge_local()

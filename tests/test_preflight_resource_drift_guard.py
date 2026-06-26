@@ -1,18 +1,19 @@
 """
-Registry-URI drift guard for spec 0022b885 (Refinement B of ideation 02eaa737 — F1).
+Catalog-URI drift guard for spec 0022b885 (Refinement B of ideation 02eaa737 — F1).
 
-Pure doc-content + registry tests (read_text + import of server._RESOURCE_REGISTRY,
-as tests/test_mcp_resources.py already does; no board/graph). They lock in the
+Pure doc-content + catalog tests (R11-C: resolve URIs/content from the EFFECTIVE
+resource catalog — the authority — not the _RESOURCE_REGISTRY projection; no
+board/graph). They lock in the
 extraction of the Pre-Flight Checklist into a real okto-pulse://workflows/preflight
 resource and prevent the F1 drift (a "READ FIRST" doc that is not retrievable) from
 silently recurring.
 
 Covers the spec's six acceptance criteria:
 - AC1 (ts_d58a459a) — preflight.md exists with frontmatter + the 4 sequences verbatim.
-- AC2 (ts_0ee73005) — the URI is registered and resolves to non-empty content.
+- AC2 (ts_0ee73005) — the URI is catalogued and resolves to non-empty content.
 - AC3 (ts_42e30be9) — agent_instructions.md carries the concise pointer, not the step bodies.
 - AC4 (ts_edc27c0a) — the Quick-Nav cites the URI (not "(this file)"); all Quick-Nav URIs resolve.
-- AC5 (ts_ac2cdcf1) — the registry-URI guard is load-bearing (negative-wiring).
+- AC5 (ts_ac2cdcf1) — the catalog-URI guard is load-bearing (negative-wiring).
 - AC6 (ts_484b04a3) — the generic registration machinery is byte-unchanged.
 """
 
@@ -61,9 +62,11 @@ def _read(p: Path) -> str:
 
 
 def _registered_uris() -> set[str]:
+    # R11-C: resolve URIs from the EFFECTIVE catalog (the authority), not the
+    # _RESOURCE_REGISTRY projection.
     from okto_pulse.core.mcp import server as _srv
 
-    return {entry[0] for entry in _srv._RESOURCE_REGISTRY}
+    return {s.uri for s in _srv.effective_resource_catalog().specs()}
 
 
 def _quicknav_uris(agent_text: str) -> set[str]:
@@ -76,8 +79,8 @@ def _quicknav_uris(agent_text: str) -> set[str]:
 
 
 def _preflight_guard_holds(registered: set[str], agent_text: str) -> bool:
-    """Load-bearing predicate: preflight registered, no stale Quick-Nav text,
-    and every Quick-Nav URI resolves in the registry."""
+    """Load-bearing predicate: preflight catalogued, no stale Quick-Nav text,
+    and every Quick-Nav URI resolves in the effective catalog."""
     return (
         PREFLIGHT_URI in registered
         and STALE_QUICKNAV not in agent_text
@@ -104,21 +107,26 @@ def test_ac1_preflight_md_verbatim() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC2 — the URI is registered and resolves to non-empty content
+# AC2 — the URI is catalogued and resolves to non-empty content
 # ---------------------------------------------------------------------------
 
 
 def test_ac2_preflight_registered_and_resolves() -> None:
+    # R11-C: resolve the preflight resource from the EFFECTIVE catalog (authority)
+    # + spec.read() for content — not _RESOURCE_REGISTRY / _load_resource_file.
     from okto_pulse.core.mcp import server as _srv
 
-    registered = {entry[0]: entry[1] for entry in _srv._RESOURCE_REGISTRY}
-    assert registered.get(PREFLIGHT_URI) == PREFLIGHT_REL, (
-        f"{PREFLIGHT_URI} not registered to {PREFLIGHT_REL}."
+    specs = _srv.effective_resource_catalog().specs()
+    preflight = [s for s in specs if s.uri == PREFLIGHT_URI]
+    # exactly one catalog entry for the preflight URI (no accidental duplicate).
+    assert len(preflight) == 1, f"{PREFLIGHT_URI} not in the effective catalog exactly once."
+    spec = preflight[0]
+    # it points to the canonical relative path.
+    assert spec.path == PREFLIGHT_REL, (
+        f"{PREFLIGHT_URI} resolves to {spec.path!r}, expected {PREFLIGHT_REL!r}."
     )
-    # exactly one registration (no accidental duplicate)
-    uris = [entry[0] for entry in _srv._RESOURCE_REGISTRY]
-    assert uris.count(PREFLIGHT_URI) == 1
-    content = _srv._load_resource_file(PREFLIGHT_REL)
+    # resources/read via the catalog loader returns non-empty content.
+    content = spec.read()
     assert content and len(content) > 0, "preflight resource resolves to empty content."
 
 
@@ -151,11 +159,11 @@ def test_ac4_quicknav_cites_uri() -> None:
     assert "Resource Fetching Protocol" in text, "Resource Fetching Protocol must stay inline."
     registered = _registered_uris()
     for uri in _quicknav_uris(text):
-        assert uri in registered, f"Quick-Nav cites an unregistered URI: {uri}"
+        assert uri in registered, f"Quick-Nav cites a non-catalogued URI: {uri}"
 
 
 # ---------------------------------------------------------------------------
-# AC5 — the registry-URI guard is load-bearing (negative-wiring)
+# AC5 — the catalog-URI guard is load-bearing (negative-wiring)
 # ---------------------------------------------------------------------------
 
 
@@ -164,7 +172,7 @@ def test_ac5_guard_is_load_bearing() -> None:
     agent_text = _read(AGENT_INSTRUCTIONS)
     # Positive: the real state satisfies the guard.
     assert _preflight_guard_holds(registered, agent_text)
-    # Negative-wiring: a registry without preflight FAILS the guard.
+    # Negative-wiring: an effective catalog without preflight FAILS the guard.
     assert not _preflight_guard_holds(registered - {PREFLIGHT_URI}, agent_text)
     # Negative-wiring: a Quick-Nav that still says "(this file)" FAILS the guard.
     assert not _preflight_guard_holds(registered, agent_text + "\n" + STALE_QUICKNAV + "\n")
@@ -176,8 +184,20 @@ def test_ac5_guard_is_load_bearing() -> None:
 
 
 def test_ac6_registration_machinery_intact() -> None:
-    server = _read(SERVER_PY)
-    assert "for _uri, _path, _desc in _RESOURCE_REGISTRY:" in server  # generic loop
-    assert "_load_resource_file(_path)" in server  # pre-warm
-    assert "def _make_resource_handler" in server
-    assert "def _load_resource_file" in server
+    # R11-A: the EFFECTIVE catalog is the authority; _RESOURCE_REGISTRY is its
+    # derived read-only projection. Assert the catalog-based machinery (NOT the
+    # old hard-coded server.py loop text, which no longer exists).
+    from okto_pulse.core.mcp import server as _srv
+
+    cat = _srv.effective_resource_catalog()
+    specs = cat.specs()
+    assert len(specs) >= 45
+    # The projection is DERIVED from the effective catalog (same URIs, same order).
+    assert [r[0] for r in _srv._RESOURCE_REGISTRY] == [s.uri for s in specs]
+    # The projection is an IMMUTABLE tuple (not a mutable list).
+    assert isinstance(_srv._RESOURCE_REGISTRY, tuple)
+    # The catalog registration / injection / freeze machinery is present.
+    assert callable(_srv.register_resource_catalog)
+    assert callable(_srv.freeze_resource_catalog)
+    assert callable(_srv._make_resource_handler)
+    assert callable(_srv._load_resource_file)

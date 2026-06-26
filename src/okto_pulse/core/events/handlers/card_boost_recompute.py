@@ -34,7 +34,8 @@ from okto_pulse.core.events.types import (
     CardPriorityChanged,
     CardSeverityChanged,
 )
-from okto_pulse.core.kg.schema import board_kuzu_path, open_board_connection
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.schema import open_board_connection
 from okto_pulse.core.kg.scoring import (
     _recompute_relevance,
     _resolve_priority_boost,
@@ -210,7 +211,12 @@ def _recompute_boost_sync(
     Returns ``(old_boost, new_boost)``. Short-circuits to (0.0, 0.0) when
     the board has no Kùzu graph yet (event arrived before bootstrap).
     """
-    if not board_kuzu_path(board_id).exists():
+    # Spec #06: existence check via the GraphPathResolver port (no direct
+    # board_kuzu_path import). The embedded resolver delegates to board_kuzu_path,
+    # so behavior is identical; the connection read below stays on the direct
+    # path (the async GraphTransaction port can't be adopted from this sync
+    # helper without async-ifying it — deferred as controlled baseline).
+    if not get_kg_registry().graph_path_resolver.exists(board_id):
         return (0.0, 0.0)
 
     new_boost = _resolve_priority_boost(new_priority_value)

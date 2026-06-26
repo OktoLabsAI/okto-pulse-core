@@ -430,3 +430,83 @@ async def test_agent_facing_lifecycle_reaches_path_b_ready_and_gate_allows():
         bug = await db.get(Card, ids["bug"])
         assert bug.status == CardStatus.IN_PROGRESS
         assert await _coverage_state(db, ids) == "path_b_ready"
+
+
+# ---------------------------------------------------------------------------
+# Card 676b2aa6 (spec 62cf2d36) — Path B for an in_progress + CONTENT-LOCKED spec,
+# the bug gate recognising an eligible amendment as an ADDITIVE regression source
+# for a bug with NO directly-linked test task.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_content_locked_no_direct_link(db):
+    """Mutate the e2e seed into the 676b shape: the bug's spec is in_progress AND
+    content-locked (current_validation_id -> outcome=success) and the bug has NO
+    directly-linked test task — the only regression path is a Path B amendment."""
+    ids = await _seed_e2e(db)
+    spec = await db.get(Spec, ids["spec"])
+    spec.status = SpecStatus.IN_PROGRESS
+    vid = f"val_{uuid.uuid4().hex[:8]}"
+    spec.current_validation_id = vid
+    spec.validations = [{"id": vid, "outcome": "success"}]
+    flag_modified(spec, "validations")
+    bug = await db.get(Card, ids["bug"])
+    bug.linked_test_task_ids = []
+    flag_modified(bug, "linked_test_task_ids")
+    await db.flush()
+    return ids
+
+
+async def test_676b_eligible_amendment_unblocks_content_locked_bug_without_bypass():
+    """GOV-like end-to-end: a bug on an in_progress + content-locked spec, with NO
+    direct test link, advances ONLY via an eligible Path B amendment + validator-
+    confirmed coverage — never a bypass (fr_0d2f84a1, fr_646e69d2, fr_68dddce5)."""
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_content_locked_no_direct_link(db)
+        api = AmendmentRevisionApiService(db)
+        lifecycle = AmendmentRevisionService(db)
+
+        # No direct link + no amendment: the gate still requires a regression
+        # (require_test_task_for_bug intact) -> missing_regression_test_task.
+        await _assert_gate_blocks(db, ids, "at least 1 new test task")
+
+        # 676b Part A: Path B ACCEPTS the in_progress + content-locked spec.
+        created = await api.create(
+            board_id=ids["board"], bug_id=ids["bug"], author=USER_ID,
+            origin_task_ids=[ids["origin"]], regression_scenario_ids=[ids["foreign_scenario"]],
+        )
+        amendment_id = created["id"]
+        await api.associate(
+            board_id=ids["board"], bug_id=ids["bug"], amendment_id=amendment_id,
+            actor=USER_ID, regression_test_task_ids=[ids["test"]],
+        )
+
+        # Anti-bypass: a DRAFT (ineligible) amendment contributes NO test task, so
+        # the gate keeps blocking with missing_regression_test_task.
+        await _assert_gate_blocks(db, ids, "at least 1 new test task")
+
+        # 676b Part B: once the amendment is eligible (done + complete lineage) its
+        # regression test task is an ADDITIVE source -> the gate advances PAST the
+        # first check, but coverage is UNCONFIRMED -> coverage_pending (validator-
+        # only, never forged by the recognition).
+        await lifecycle.set_lineage_state(amendment_id, AmendmentLineageState.COMPLETE, USER_ID)
+        await lifecycle.set_status(amendment_id, AmendmentRevisionStatus.DONE, USER_ID)
+        await _assert_gate_blocks(db, ids, "coverage_pending")
+
+        # The validator confirms coverage on re-executable evidence -> the bug
+        # finally advances. require_test_task_for_bug and validator-only coverage
+        # held throughout — no bypass.
+        await _make_artifact_ready(db, ids)
+        await CardService(db).confirm_amendment_coverage(
+            amendment_id=amendment_id, regression_test_task_id=ids["test"],
+            regression_scenario_id=ids["foreign_scenario"],
+            reviewer_id=USER_ID, reviewer_name=USER_ID,
+        )
+        await CardService(db).move_card(
+            ids["bug"], USER_ID, CardMove(status=CardStatus.IN_PROGRESS)
+        )
+        bug = await db.get(Card, ids["bug"])
+        assert bug.status == CardStatus.IN_PROGRESS
+        assert await _coverage_state(db, ids) == "path_b_ready"

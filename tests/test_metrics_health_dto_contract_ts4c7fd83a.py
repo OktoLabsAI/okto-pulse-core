@@ -41,6 +41,20 @@ from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION  # noqa: E40
 from okto_pulse.core.telemetry.service import TelemetryService  # noqa: E402
 
 _NOW = datetime(2026, 6, 15, 13, 1, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _register_telemetry_port():
+    """R10-E Pass 2: the port registry is fail-closed. REST/MCP handlers call
+    get_telemetry_port(settings) — register a factory that builds TelemetryService."""
+    from okto_pulse.core.telemetry.telemetry_port_registry import (
+        register_telemetry_port_factory,
+        reset_telemetry_port_factory_for_tests,
+    )
+    reset_telemetry_port_factory_for_tests()
+    register_telemetry_port_factory(lambda s: TelemetryService(s))
+    yield
+    reset_telemetry_port_factory_for_tests()
 _LAST_SUCCESS = datetime(2026, 6, 15, 9, 0, 0, tzinfo=timezone.utc)
 _RAW_INSTALL_ID = "install-RAWID-contract-7777"
 

@@ -68,6 +68,17 @@ class StubEmbeddingProvider:
         norm = math.sqrt(sum(x * x for x in vec)) or 1.0
         return [x / norm for x in vec]
 
+    def embedding_metadata(self) -> dict:
+        """Capability metadata (R13-A) — lets common surfaces describe this
+        provider without ``isinstance``. The stub has no external artifact, so
+        it is always 'loaded'."""
+        return {
+            "model_name": None,
+            "embedding_dimension": self.dim,
+            "is_loaded": True,
+            "is_stub": True,
+        }
+
 
 class SentenceTransformerProvider:
     """Lazy-loaded sentence-transformers provider."""
@@ -110,6 +121,17 @@ class SentenceTransformerProvider:
         model = self._get_model()
         batch = model.encode(list(texts), normalize_embeddings=True)
         return [row.tolist() if hasattr(row, "tolist") else list(row) for row in batch]
+
+    def embedding_metadata(self) -> dict:
+        """Capability metadata (R13-A) — describes the provider without a model
+        load: ``is_loaded`` reads ``_model`` directly (never calls
+        ``_get_model()``)."""
+        return {
+            "model_name": self.model_name,
+            "embedding_dimension": self.dim,
+            "is_loaded": self._model is not None,
+            "is_stub": False,
+        }
 
 
 def _build_provider_from_config(config) -> EmbeddingProvider:

@@ -28,9 +28,38 @@ from okto_pulse.core.services.bug_regression_preview import (
     BugRegressionScenarioPreviewService,
 )
 
-#: Path B amendments only attach to a done/locked (validated) original spec — an
-#: in_progress/draft spec is still editable, so it needs no amendment.
+#: Spec statuses that are ALWAYS content-locked (immutable) — a Path B amendment
+#: always attaches here. ``in_progress`` is handled separately by the
+#: content-lock-aware predicate below (it may be locked or still editable).
 _DONE_OR_LOCKED_SPEC_STATUSES = frozenset({SpecStatus.VALIDATED, SpecStatus.DONE})
+
+
+def _path_b_eligible(spec: Spec) -> bool:
+    """Content-lock-aware Path B eligibility (spec 62cf2d36, fr_0d2f84a1/fr_58b6aa0b).
+
+    A bug's original spec admits a Path B amendment when it is either:
+
+    - ``validated``/``done`` (always content-locked / immutable), OR
+    - ``in_progress`` AND currently content-locked — its ``current_validation_id``
+      points to a validation with ``outcome='success'`` (a validated spec moved to
+      in_progress for execution).
+
+    ``in_progress`` WITHOUT an active passed validation is still editable, so the
+    spec should be edited directly; a ``failed``/``stale``/``superseded`` validation
+    is NOT a lock. This is the exact dual of
+    ``services.main.spec_is_content_locked`` so the content-lock gate and Path B can
+    never contradict — there is no spec that is content-locked (cannot be edited)
+    yet Path-B-ineligible (the catch-22 this fix removes).
+    """
+    if spec.status in _DONE_OR_LOCKED_SPEC_STATUSES:
+        return True
+    if spec.status != SpecStatus.IN_PROGRESS:
+        return False
+    # Deferred import: services.main is a heavy module; importing it lazily here
+    # avoids a module-load cycle (main imports the amendment service, not this API).
+    from okto_pulse.core.services.main import spec_is_content_locked
+
+    return spec_is_content_locked(spec)
 
 #: Bypass-intent field names rejected fail-closed on any write surface (FR5).
 BYPASS_FIELD_NAMES = frozenset(
@@ -117,13 +146,22 @@ class AmendmentRevisionApiService:
                 f"Original spec '{resolved_spec_id}' was not found on this board.",
                 status_code=404,
             )
-        if spec.status not in _DONE_OR_LOCKED_SPEC_STATUSES:
+        if not _path_b_eligible(spec):
+            status_label = getattr(spec.status, "value", spec.status)
+            editable_hint = (
+                " It is in_progress but NOT content-locked, so it is still editable — "
+                "edit the spec directly instead of opening a Path B amendment."
+                if spec.status == SpecStatus.IN_PROGRESS
+                else ""
+            )
             raise AmendmentRevisionApiError(
                 "original_spec_not_done_or_locked",
-                f"Original spec '{resolved_spec_id}' is '{getattr(spec.status, 'value', spec.status)}'. "
-                "Path B amendments only attach to a done/validated (locked) spec; "
-                "edit the spec directly while it is still in progress.",
+                f"Original spec '{resolved_spec_id}' is '{status_label}' and not "
+                "content-locked. Path B amendments attach to a done/validated spec, "
+                "or to an in_progress spec that is still content-locked by an active "
+                f"passed validation (current_validation_id -> outcome=success).{editable_hint}",
                 status_code=409,
+                details={"spec_status": str(status_label), "content_locked": False},
             )
 
         # initial_status: draft-only. Never let a create mint approved/done

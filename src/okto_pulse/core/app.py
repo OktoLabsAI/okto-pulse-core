@@ -15,9 +15,15 @@ from okto_pulse.core.infra.auth import AuthProvider, configure_auth
 from okto_pulse.core.infra.config import CoreSettings, configure_settings
 from okto_pulse.core.infra.database import create_database, init_db, close_db, get_session_factory
 from okto_pulse.core.infra.storage import StorageProvider, configure_storage
+from okto_pulse.core.composition import (
+    REQUIRED_OWNED_PROVIDERS,
+    RuntimeComposition,
+    RuntimeProviderMissing,
+    validate_required_providers,
+)
 from okto_pulse.core.api import api_router
 from okto_pulse.core.telemetry.http_policy import safe_route_template, should_count_http
-from okto_pulse.core.telemetry.service import TelemetryService
+from okto_pulse.core.telemetry.telemetry_port_registry import get_telemetry_port
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +79,54 @@ class _TelemetryASGIMiddleware:
             if error_class:
                 payload["error_class"] = error_class
             try:
-                TelemetryService(self.settings).record_event("http", payload)
+                get_telemetry_port(self.settings).record_event("http", payload)
             except Exception:
                 logger.debug("telemetry.record_failed", exc_info=True)
+
+
+async def shutdown_kg_then_db(
+    close_db: Callable[[], "object"],
+    *,
+    logger: logging.Logger,
+    graph_lifecycle_provider: Callable[[], object] | None = None,
+    run_blocking: Callable[[Callable[[], object]], object] | None = None,
+) -> None:
+    """Release KG graph connections, then close the DB (R16-D, tr_5c727d9b).
+
+    Closes the board graphs via the spec #06 ``GraphLifecycle`` port
+    (``graph_lifecycle.close(None)`` replaces ``kg.schema.close_all_connections``),
+    driven OFF the event loop because the embedded adapter is synchronous under
+    the async port (the close drains readers up to ~5s/board and would freeze
+    shutdown if run on the loop).
+
+    A KG-close (or registry-resolution) failure is logged as
+    ``kg.shutdown.close_connections_failed`` and NEVER blocks the DB close —
+    ``close_db()`` ALWAYS runs afterwards. ``graph_lifecycle_provider`` /
+    ``run_blocking`` are injectable for deterministic tests.
+    """
+    try:
+        if graph_lifecycle_provider is None:
+            from okto_pulse.core.kg.interfaces import get_kg_registry
+
+            graph_lifecycle = get_kg_registry().graph_lifecycle
+        else:
+            graph_lifecycle = graph_lifecycle_provider()
+        if run_blocking is None:
+            await asyncio.to_thread(
+                lambda: asyncio.run(graph_lifecycle.close(None))
+            )
+        else:
+            await run_blocking(lambda: graph_lifecycle.close(None))
+    except Exception as exc:  # noqa: BLE001 — never block the DB close
+        logger.warning(
+            "kg.shutdown.close_connections_failed err=%s",
+            exc,
+            extra={
+                "event": "kg.shutdown.close_connections_failed",
+                "error": str(exc),
+            },
+        )
+    await close_db()
 
 
 def create_app(
@@ -85,6 +136,8 @@ def create_app(
     *,
     cors_origins: list[str] | None = None,
     lifespan: Optional[Callable] = None,
+    composition: RuntimeComposition | None = None,
+    strict_runtime: bool = False,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -93,11 +146,24 @@ def create_app(
         auth_provider: Authentication provider implementation
         storage_provider: File storage provider implementation
         cors_origins: List of allowed CORS origins
+        composition: Optional explicit :class:`RuntimeComposition` (spec #03). When
+            omitted, the historical wiring is preserved (backward compatible).
+        strict_runtime: When True (spec #03, tr_f9d2f84f) a #03-owned provider that
+            is absent fails fast with ``runtime_provider_missing`` — no silent
+            fallback to a concrete default. The KG registry stays deferred to #05.
     """
     if auth_provider is None:
         raise TypeError("auth_provider is required")
     if storage_provider is None:
         raise TypeError("storage_provider is required")
+
+    # spec #03 (tr_f9d2f84f): strict_runtime requires an explicit composition and
+    # rejects any missing required owned provider deterministically. Default
+    # (strict_runtime=False) keeps the historical behaviour intact.
+    if strict_runtime:
+        if composition is None:
+            raise RuntimeProviderMissing("composition", missing=list(REQUIRED_OWNED_PROVIDERS))
+        validate_required_providers(composition)
 
     # Register providers
     configure_settings(settings)
@@ -214,6 +280,28 @@ def create_app(
                 },
             )
 
+        # RKG-03: the dedicated cognitive-closeout worker drains PENDING cognitive
+        # closeout from the ledger and persists Alternative/Assumption/Learning to
+        # graph.lbug OUTSIDE the event drain (never inside the deterministic Layer-1
+        # worker, never inside the event drain transaction).
+        cognitive_closeout_worker = None
+        try:
+            from okto_pulse.core.kg.workers.cognitive_closeout import (
+                get_cognitive_closeout_worker,
+            )
+
+            cognitive_closeout_worker = get_cognitive_closeout_worker()
+            await cognitive_closeout_worker.start()
+        except Exception as exc:
+            logger.warning(
+                "kg.cognitive_closeout_worker.start_failed err=%s",
+                exc,
+                extra={
+                    "event": "kg.cognitive_closeout_worker.start_failed",
+                    "error": str(exc),
+                },
+            )
+
         # NC-10 fix: migrate per-board KG schemas idempotently on boot.
         # Boards created before SCHEMA_VERSION 0.3.3 lack the
         # ``last_recomputed_at`` column on every node type, which floods
@@ -226,9 +314,9 @@ def create_app(
         try:
             from sqlalchemy import select as _select
             from okto_pulse.core.models.db import Board as _Board
-            from okto_pulse.core.kg.schema import (
-                board_kuzu_path as _board_kuzu_path,
-                open_board_connection as _open_board_connection,
+            from okto_pulse.core.kg.interfaces import get_kg_registry
+            from okto_pulse.core.kg.startup_schema_sweep import (
+                sweep_board_schemas,
             )
 
             factory = get_session_factory()
@@ -237,41 +325,22 @@ def create_app(
                     await _session.execute(_select(_Board.id))
                 ).scalars().all()
 
-            def _sweep_one(_bid: str) -> bool:
-                """Abre/fecha a BoardConnection (migração idempotente).
-
-                Roda via asyncio.to_thread — abrir um Kùzu DB é I/O pesado
-                (até 6.2s de retry em lock contention) e este loop rodava
-                SÍNCRONO no event loop, congelando o servidor inteiro no
-                startup quando havia boards lentos/em recuperação.
-                """
-                bc = _open_board_connection(_bid)
-                bc.close()
-                return True
-
-            migrated = 0
-            for _bid in board_ids:
-                if not _board_kuzu_path(_bid).exists():
-                    continue
-                try:
-                    await asyncio.to_thread(_sweep_one, _bid)
-                    migrated += 1
-                except Exception as _exc:
-                    logger.warning(
-                        "kg.schema.migration_failed board=%s err=%s",
-                        _bid, _exc,
-                        extra={
-                            "event": "kg.schema.migration_failed",
-                            "board_id": _bid,
-                            "error": str(_exc),
-                        },
-                    )
-            logger.info(
-                "kg.schema.migration_swept boards=%d", migrated,
-                extra={
-                    "event": "kg.schema.migration_swept",
-                    "boards_swept": migrated,
-                },
+            # R16-D: the per-board KG schema sweep now goes through the spec #06
+            # ports — GraphPathResolver.exists (skip-missing) +
+            # GraphSchemaManager.ensure_bootstrapped (idempotent per-board
+            # migration) — instead of kg.schema.board_kuzu_path /
+            # open_board_connection. The embedded adapter runs the synchronous
+            # Kùzu work, so the helper offloads each board off the event loop,
+            # preserving the original non-blocking boot. Same skip-missing /
+            # soft-fail-per-board / count / log (migration_swept/_failed)
+            # semantics; an outer failure (table absent on fresh install / Kùzu
+            # missing) still degrades to migration_skipped below.
+            _kg_reg = get_kg_registry()
+            await sweep_board_schemas(
+                board_ids,
+                graph_path_resolver=_kg_reg.graph_path_resolver,
+                graph_schema_manager=_kg_reg.graph_schema_manager,
+                logger=logger,
             )
         except Exception as _exc:
             # Tabela ainda não existe em fresh install ou Kùzu não
@@ -392,6 +461,8 @@ def create_app(
             set_dispatcher(None)
             if consolidation_worker is not None:
                 await consolidation_worker.stop()
+            if cognitive_closeout_worker is not None:
+                await cognitive_closeout_worker.stop()
             if cleanup_worker is not None:
                 await cleanup_worker.stop()
             if outbox_worker is not None:
@@ -400,22 +471,12 @@ def create_app(
             # Relying on interpreter teardown can leave WAL sidecars as the
             # only holder of recent writes; a later bootstrap probe may then
             # see a corrupt WAL and previously attempted an automatic purge.
-            try:
-                from okto_pulse.core.kg.schema import close_all_connections
-
-                # to_thread: o close drena leitores (até 5s por board via o
-                # close guard) — síncrono no loop, congelava o shutdown.
-                await asyncio.to_thread(close_all_connections)
-            except Exception as exc:
-                logger.warning(
-                    "kg.shutdown.close_connections_failed err=%s",
-                    exc,
-                    extra={
-                        "event": "kg.shutdown.close_connections_failed",
-                        "error": str(exc),
-                    },
-                )
-            await close_db()
+            #
+            # R16-D: extracted to shutdown_kg_then_db (tr_5c727d9b) — closes via
+            # the spec #06 GraphLifecycle port off the loop; a KG-close failure
+            # is logged (kg.shutdown.close_connections_failed) and never blocks
+            # the DB close (close_db always runs).
+            await shutdown_kg_then_db(close_db, logger=logger)
 
     app = FastAPI(
         title=settings.app_name,

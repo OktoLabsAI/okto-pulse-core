@@ -83,7 +83,15 @@ See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-d
 
 ## Release Notes
 
-### 0.2.6 — current
+### 0.3.0 — current
+
+Changeset:
+
+- **Backend SaaS-refactor preparation** — the core tree now carries the first backend-only hexagonal refactor seams for application use cases, inbound adapters, repositories/unit-of-work and KG provider ports. The intent is to keep Community behavior stable while moving implementation specifics out of the core contract.
+- **Architecture Resource Gate multi-hop coverage fix** — `copy_architecture_to_card` now preserves the canonical root Architecture identity across copy-of-copy chains, and `design_ids` filters match the effective ref's root and intermediate identities. This unblocks specs whose mandatory Architecture resource is inherited through ideation -> refinement -> spec.
+- **0.3.0 local runtime package** — package metadata, runtime version discovery and lock metadata now resolve as `okto-pulse-core 0.3.0` for local rebuild/reinstall.
+
+### 0.2.6
 
 Changeset:
 

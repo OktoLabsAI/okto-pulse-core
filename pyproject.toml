@@ -1,6 +1,6 @@
 [project]
 name = "okto-pulse-core"
-version = "0.2.6"
+version = "0.3.0"
 description = "Okto Pulse Core — spec-driven project management engine with MCP support for AI agents"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
@@ -35,7 +35,12 @@ dependencies = [
     "python-multipart>=0.0.6,<1.0.0",
     "sqlalchemy[asyncio]>=2.0.0,<3.0.0",
     "aiosqlite>=0.19.0,<1.0.0",
-    "asyncpg>=0.29,<1.0.0",
+    # asyncpg removed in R05-E (spec d9d30831): the Postgres async driver is a
+    # future SaaS relational adapter with ZERO import in src/okto_pulse/core and
+    # no core default requires it. It is NOT moved to Community in this phase.
+    # The removal is enforced by the R05-E dependency conformance auditor
+    # (core.application.boundary.dependency_conformance) against this manifest,
+    # uv.lock, the source tree and the installed wheel.
     "fastmcp>=2.0.0,<3.0.0",
     "authlib>=1.6.5,<1.7.0",
     "mcp>=1.0.0,<2.0.0",
@@ -50,6 +55,11 @@ dependencies = [
 kg-embeddings = [
     "sentence-transformers>=2.5.0,<5.0.0",
 ]
+
+[project.scripts]
+# spec #12 (tr_b5f136b3): CI-runnable core-pure boundary auditor. Static
+# analysis only (ast/tomllib/pathlib) — no runtime side effects on import.
+okto-pulse-core-boundary = "okto_pulse.core.application.boundary.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/OktoLabsAI/okto-pulse-core"

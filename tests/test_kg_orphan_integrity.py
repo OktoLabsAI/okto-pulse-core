@@ -185,6 +185,38 @@ def test_scanner_does_not_report_allowlisted_board_root_entity() -> None:
     assert report.samples == ()
 
 
+def test_scanner_allowlists_final_report_root_from_kg_session_id() -> None:
+    board_id = f"orphan-final-report-{uuid.uuid4()}"
+    assumption_id = f"assumption_final_report_{uuid.uuid4().hex[:12]}"
+
+    with open_board_connection(board_id) as (_db, kconn):
+        orch = TransactionOrchestrator(
+            kuzu_conn=kconn,
+            sqlite_session=None,
+            session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+            board_id=board_id,
+        )
+        _seed_node(
+            kconn,
+            orch,
+            "Assumption",
+            assumption_id,
+            "final_report:saas-refactor-rkg-closeout-2026-06-25",
+            created_by_agent=str(uuid.uuid4()),
+        )
+
+        report = OrphanNodeScanner().scan(
+            board_id=board_id,
+            generation_id="gen-final-report",
+            limit=5,
+            connection=kconn,
+        )
+
+    assert report.orphan_count == 0
+    assert report.allowlisted_root_count == 1
+    assert report.samples == ()
+
+
 def _edge_count(
     board_id: str,
     *,

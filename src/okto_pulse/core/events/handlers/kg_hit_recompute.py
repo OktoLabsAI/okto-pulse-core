@@ -25,7 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import KGHitFlushed
-from okto_pulse.core.kg.schema import board_kuzu_path, open_board_connection
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.schema import open_board_connection
 from okto_pulse.core.kg.scoring import _recompute_relevance
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,11 @@ def _recompute_sync(
     races with bootstrap). Always closes the connection — Kùzu v0.6 holds
     a Windows exclusive lock for the lifetime of the Python handle.
     """
-    if not board_kuzu_path(board_id).exists():
+    # Spec #06: existence check via the GraphPathResolver port (drop-in for
+    # board_kuzu_path; identical behavior). The connection read stays on the
+    # direct path — the async GraphTransaction port can't be adopted from this
+    # sync helper without async-ifying it (deferred as controlled baseline).
+    if not get_kg_registry().graph_path_resolver.exists(board_id):
         return None
     bc = open_board_connection(board_id)
     try:

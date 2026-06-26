@@ -220,7 +220,11 @@ Returns:
 
 ## `okto_pulse_create_amendment_revision`
 
-Create a formal hotfix/amendment revision for a bug tied to a locked spec.
+Create a formal hotfix/amendment revision for a bug tied to a content-locked spec
+(`done`/`validated`, OR `in_progress` still content-locked by an active passed
+validation — `current_validation_id` → outcome=success). An `in_progress` spec that
+is still editable (no active success validation, or a `failed`/`stale`/`superseded`
+one) is rejected — edit it directly instead.
 
 Use this for Path B regression remediation when a same-spec scenario cannot be
 reused safely. The revision starts before coverage confirmation; it does not by

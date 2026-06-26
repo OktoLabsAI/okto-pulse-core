@@ -10,7 +10,6 @@ from typing import Any
 from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.telemetry import failure_state
 from okto_pulse.core.telemetry import publish_health as publish_health_mod
-from okto_pulse.core.telemetry.product import PRODUCT_AGGREGATE_FAMILIES
 from okto_pulse.core.telemetry.schema import normalize_event, now_utc
 from okto_pulse.core.telemetry.settings import (
     TelemetryMode,
@@ -19,7 +18,11 @@ from okto_pulse.core.telemetry.settings import (
     resolve_telemetry_config,
     save_state,
 )
-from okto_pulse.core.telemetry.store import LocalTelemetryStore
+from okto_pulse.core.telemetry.event_store_registry import get_telemetry_event_store
+from okto_pulse.core.telemetry.publish_health_source_registry import (
+    get_external_source_descriptors,
+)
+from okto_pulse.core.ports.telemetry import PRODUCT_AGGREGATE_FAMILIES, TelemetryEventStore
 
 logger = logging.getLogger("okto_pulse.telemetry.service")
 
@@ -43,9 +46,12 @@ class TelemetryService:
     def config(self):
         return resolve_telemetry_config(self.settings)
 
-    def store(self) -> LocalTelemetryStore:
+    def store(self) -> TelemetryEventStore:
+        # R10-B: obtain the EVENT store via the registered factory (Community
+        # supplies the concrete adapter) — the core runtime no longer
+        # instantiates LocalTelemetryStore directly.
         cfg = self.config()
-        return LocalTelemetryStore(cfg.metrics_dir, cfg.retention_days)
+        return get_telemetry_event_store(cfg.metrics_dir, cfg.retention_days)
 
     def record_event(self, event_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         cfg = self.config()
@@ -167,7 +173,12 @@ class TelemetryService:
         # core client (downstream R5B/R4) so they enter as an explicit gap and can
         # never be inferred healthy from a local send.
         install_lifecycle = publish_health_mod.derive_install_lifecycle(state, now=resolved_now)
-        aws_ingest, report_athena = publish_health_mod.discover_external_sources(self.settings)
+        # R10-D: the external (aws_ingest / report_athena) descriptors come from the
+        # registered edition provider (Community PublishHealthSource signals);
+        # register-before-remove falls back to the core GAP default. The pure
+        # resolve_publish_health classifier below is unchanged — a gap/stale/expired/
+        # unavailable/absent source can never be inferred healthy.
+        aws_ingest, report_athena = get_external_source_descriptors(self.settings)
         dto = publish_health_mod.resolve_publish_health(
             projection,
             now=resolved_now,

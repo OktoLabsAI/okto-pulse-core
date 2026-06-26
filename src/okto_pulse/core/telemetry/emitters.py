@@ -5,9 +5,10 @@ These are the canonical, real emit points the core uses to turn the
 ``pending:R5A-B`` types in the EventType contract into wired coverage: ``cli``,
 ``mcp``, ``kg``, ``lifecycle`` and ``pipeline_transition``. Each helper accepts
 ONLY the bounded, closed-schema fields for its type (never free ids / args / paths
-/ payloads), builds the closed payload, and records it through
-:class:`TelemetryService`. Like the HTTP middleware, emission NEVER raises into the
-caller — telemetry must not break a real operation.
+/ payloads), builds the closed payload, and records it through the registered
+:class:`TelemetryPort` (resolved via :func:`get_telemetry_port`; R10-E Pass 2 — the
+facade is no longer constructed at the call site). Like the HTTP middleware, emission
+NEVER raises into the caller — telemetry must not break a real operation.
 
 Settings resolve from the configured global (:func:`get_settings`) so the helpers
 are callable at any core seam without threading ``settings`` through; tests inject
@@ -22,7 +23,7 @@ import logging
 from typing import Any
 
 from okto_pulse.core.infra.config import CoreSettings, get_settings
-from okto_pulse.core.telemetry.service import TelemetryService
+from okto_pulse.core.telemetry.telemetry_port_registry import get_telemetry_port
 
 logger = logging.getLogger("okto_pulse.telemetry.emitters")
 
@@ -35,7 +36,7 @@ def _compact(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _emit(event_type: str, payload: dict[str, Any], *, settings: CoreSettings | None) -> dict[str, Any]:
     try:
-        return TelemetryService(settings or get_settings()).record_event(event_type, _compact(payload))
+        return get_telemetry_port(settings or get_settings()).record_event(event_type, _compact(payload))
     except Exception:
         # Telemetry must never break the operation it observes (cf. app.py middleware).
         logger.debug("telemetry.emit_failed", exc_info=True, extra={"event_type": event_type})

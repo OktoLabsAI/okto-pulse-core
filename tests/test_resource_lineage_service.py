@@ -249,6 +249,38 @@ async def test_resolver_rejects_unsupported_entity_type() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_allows_architecture_source_ref_hop_with_canonical_root() -> None:
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        refs={
+            spec.ref: {
+                "architecture": [
+                    {
+                        "id": "card-snapshot",
+                        "source_ref": "architecture_design:refinement-snapshot",
+                        "source_design_id": "ideation-root",
+                    }
+                ]
+            }
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1",
+        "spec",
+        "spec-1",
+    )
+
+    assert resolved.attachments[0].unique_resource_id == "architecture:ideation-root"
+    assert resolved.unique_resources[0].unique_resource_id == "architecture:ideation-root"
+    assert resolved.unique_resources[0].origin_evidence["source_ref"] == (
+        "architecture_design:refinement-snapshot"
+    )
+    assert resolved.unique_resources[0].origin_evidence["source_design_id"] == "ideation-root"
+
+
+@pytest.mark.asyncio
 async def test_resolver_rejects_conflicting_origin_evidence() -> None:
     spec = LineageEntityRef("spec", "spec-1", "Spec")
     provider = FakeLineageProvider(
@@ -258,8 +290,8 @@ async def test_resolver_rejects_conflicting_origin_evidence() -> None:
                 "architecture": [
                     {
                         "id": "arch-copy",
-                        "source_ref": "architecture_design:arch-origin-a",
-                        "source_design_id": "arch-origin-b",
+                        "source_design_id": "arch-origin-a",
+                        "origin_id": "arch-origin-b",
                     }
                 ]
             }
@@ -275,6 +307,46 @@ async def test_resolver_rejects_conflicting_origin_evidence() -> None:
 
     assert exc.value.code == "ambiguous_origin"
     assert exc.value.details["resource_type"] == "architecture"
+
+
+@pytest.mark.asyncio
+async def test_resolver_snapshot_id_with_hop_ref_and_root_design_id_no_ambiguity() -> None:
+    # GOV 5c43a364 regression — the exact server-blocking shape observed while
+    # validating card 23866493: a card snapshot carrying its OWN ``id``, an
+    # INTERMEDIATE ``source_ref`` hop, and the canonical ROOT ``source_design_id``.
+    # The own ``id`` must NOT be conflated with the canonical origin and the
+    # divergent ``source_ref`` is a provenance hop, so there is NO
+    # AmbiguousResourceOrigin and the resource keys on the ROOT design id.
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    snapshot_id = "67f04914-bac7-433c-8209-cf81188d1122"
+    intermediate = "cead91e9-3b29-4586-8311-588ad4d948fd"
+    root_design_id = "345a132b-28e6-4dc0-81fa-ef59cb22a9ac"
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        refs={
+            spec.ref: {
+                "architecture": [
+                    {
+                        "id": snapshot_id,
+                        "source_ref": f"architecture_design:{intermediate}",
+                        "source_design_id": root_design_id,
+                    }
+                ]
+            }
+        },
+    )
+
+    # Resolving must NOT raise AmbiguousResourceOrigin for this legitimate shape.
+    resolved = await ResolvedResourceLineageService(provider).resolve("board-1", "spec", "spec-1")
+
+    assert resolved.attachments[0].unique_resource_id == f"architecture:{root_design_id}"
+    assert resolved.unique_resources[0].unique_resource_id == f"architecture:{root_design_id}"
+    # the own id is preserved as the resource id (provenance), never the origin
+    assert resolved.attachments[0].resource_id == snapshot_id
+    evidence = resolved.unique_resources[0].origin_evidence
+    assert evidence["source_design_id"] == root_design_id
+    assert evidence["id"] == snapshot_id
+    assert evidence["source_ref"] == f"architecture_design:{intermediate}"
 
 
 @pytest.mark.asyncio

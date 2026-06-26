@@ -603,6 +603,9 @@ class KGNodeConnectivityGuard:
         allowlisted_roots: list[str] = []
         advisories: list[dict[str, Any]] = []
         writer_class = classify_writer_path(writer_path)
+        # RKG-02: the shared resolver decides if a Learning is bug-derived; a
+        # plain card:<uuid> only counts when the canonical Bug probe confirms it.
+        bug_probe = _build_canonical_bug_probe(existing_refs, node_snapshots)
         for node in node_snapshots:
             try:
                 rule = self._registry.get_rule(node.node_type, writer_path)
@@ -655,7 +658,7 @@ class KGNodeConnectivityGuard:
                 )
                 continue
 
-            if node.node_type == "Learning" and _candidate_has_known_bug(node.raw):
+            if node.node_type == "Learning" and _learning_is_bug_derived(node.raw, bug_probe):
                 required_groups = [_learning_bug_group()]
             else:
                 required_groups = list(rule.required_edge_groups)
@@ -1010,6 +1013,61 @@ def _candidate_has_known_bug(raw: Any) -> bool:
             return True
     source_ref = _optional_str(_get_field(raw, "source_artifact_ref", None)) or ""
     return source_ref.startswith("bug:") or source_ref.startswith("card:bug:")
+
+
+def _build_canonical_bug_probe(
+    existing_refs: tuple[KGNodeRef, ...],
+    node_snapshots: tuple[Any, ...],
+) -> Any:
+    """A type-aware probe (RKG-02 / FR2) telling whether a card uuid is backed by
+    a *canonical* Bug. Built from the canonical Bug nodes already in the graph
+    (and any canonical Bug created in the same batch), keyed by normalized
+    identity so ``card:<uuid>``/``bug:<uuid>`` reconcile. Fail-closed: only
+    canonical-layer Bugs count."""
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
+    from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
+
+    canonical_bug_keys: set[str] = set()
+
+    def _add(ref_id: Any, source_ref: Any, layer: Any) -> None:
+        if _layer_value(layer) != GRAPH_LAYER_CANONICAL:
+            return
+        cid = _canonical_ref_id(str(ref_id or ""))
+        if cid:
+            canonical_bug_keys.add(normalize_cognitive_artifact_id(f"card:{cid}"))
+        sref = _optional_str(source_ref)
+        if sref:
+            canonical_bug_keys.add(
+                normalize_cognitive_artifact_id(strip_concept_suffix(sref)))
+
+    for ref in existing_refs:
+        if ref.node_type == "Bug":
+            _add(ref.ref_id, ref.source_artifact_ref, ref.graph_layer)
+    for snap in node_snapshots:
+        if getattr(snap, "node_type", None) == "Bug":
+            _add(
+                getattr(snap, "candidate_id", None),
+                getattr(snap, "source_artifact_ref", None),
+                getattr(snap, "graph_layer", None),
+            )
+
+    def _probe(uuid: str) -> bool:
+        return normalize_cognitive_artifact_id(f"card:{uuid}") in canonical_bug_keys
+
+    return _probe
+
+
+def _learning_is_bug_derived(raw: Any, bug_probe: Any) -> bool:
+    """Type-aware bug-derived detection for a Learning node (RKG-02). Explicit
+    bug fields and bug:/card:bug: forms are always bug-derived; a plain
+    card:<uuid> is bug-derived ONLY when the probe confirms a canonical Bug."""
+    for field_name in ("bug_id", "bug_ref", "known_bug_ref", "known_bug_source_ref", "target_bug_ref"):
+        if _get_field(raw, field_name, None):
+            return True
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import resolve_cognitive_source_ref
+
+    source_ref = _optional_str(_get_field(raw, "source_artifact_ref", None)) or ""
+    return resolve_cognitive_source_ref(source_ref, canonical_bug_probe=bug_probe).is_bug_derived
 
 
 def _get_field(obj: Any, name: str, default: Any = None) -> Any:

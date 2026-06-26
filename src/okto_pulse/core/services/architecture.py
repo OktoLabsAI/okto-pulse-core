@@ -3700,6 +3700,7 @@ class ArchitecturePropagationService:
         """
         from okto_pulse.core.services.effective_resource_propagation import (
             ResourcePropagationError,
+            effective_ref_identity_values,
             resolve_effective_card_copy_plan,
         )
 
@@ -3713,11 +3714,12 @@ class ArchitecturePropagationService:
             refs = list(plan.get("fallback_refs") or [])
             wanted = set(design_ids or [])
             if wanted:
+                # Card 5c43a364: match design_ids against EVERY canonical identity
+                # of the effective ref (root + intermediate), not just the immediate
+                # id, so design_ids=[root_id] still resolves a multi-hop inherited ref.
                 refs = [
                     ref for ref in refs
-                    if str(ref.get("id") or "") in wanted
-                    or str(ref.get("resource_id") or "") in wanted
-                    or str(ref.get("unique_resource_id") or "") in wanted
+                    if effective_ref_identity_values(ref) & wanted
                 ]
             grouped: dict[tuple[str, str], list[str]] = {}
             for ref in refs:
@@ -3860,7 +3862,9 @@ class ArchitecturePropagationService:
             "diagrams": diagrams,
             "source_ref": source_ref,
             "source_version": design.version,
-            "source_design_id": design.id,
+            # Card 5c43a364: carry the canonical ROOT origin (not the immediate
+            # parent) so a multi-hop inherited copy covers the gate obligation.
+            "source_design_id": design.source_design_id or design.id,
             "stale": False,
             "breaking_change_flag": False,
             "requires_arch_review": False,

@@ -5,6 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.application.use_cases import (
+    EntityNotFoundError,
+    MoveIdeationCommand,
+    MoveIdeationUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.models.schemas import (
     IdeationAmbiguityGateSkipUpdate,
     IdeationCreate,
@@ -117,16 +123,18 @@ async def move_ideation(
     db: AsyncSession = Depends(get_db),
 ):
     """Change ideation status."""
-    service = IdeationService(db)
+    # Thin REST adapter (spec #09): delegate to the transport-free use case.
+    # AmbiguityGateError → 400 and a missing ideation → 404 are preserved exactly;
+    # any other error propagates unchanged (legacy behavior).
     try:
-        ideation = await service.move_ideation(ideation_id, user_id, data)
-    except AmbiguityGateError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-    if not ideation:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    await db.commit()
-    ideation = await service.get_ideation(ideation_id)
-    return ideation
+        result = await MoveIdeationUseCase().execute(
+            MoveIdeationCommand(ideation_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=db,
+        )
+    except (AmbiguityGateError, EntityNotFoundError) as e:
+        raise RESTAdapterContract.http_error(e, not_found_detail="Ideation not found") from e
+    return result.ideation
 
 
 @router.patch("/ideations/{ideation_id}/ambiguity-gate-skip", response_model=IdeationResponse)

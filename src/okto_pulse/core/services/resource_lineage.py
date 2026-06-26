@@ -768,16 +768,14 @@ class ResolvedResourceLineageService:
             origin_evidence,
             ("source_ref", "origin_ref", "source"),
         )
-        source_id = _first_present(
-            origin_evidence,
-            ("source_design_id", "source_kb_id", "source_mockup_id", "origin_id"),
-        )
-        if source_ref and source_id and not _source_ref_contains(source_ref, source_id):
+        canonical_origin_ids = _canonical_origin_ids(origin_evidence)
+        if len(canonical_origin_ids) > 1:
             raise AmbiguousResourceOrigin(
                 resource_type=resource_type,
                 resource_id=resource_id,
                 evidence=origin_evidence,
             )
+        source_id = canonical_origin_ids[0] if canonical_origin_ids else None
         identity = source_id or source_ref or resource_id
         if not identity:
             source_entity_type = fallback_ref.get("source_entity_type") or "unknown"
@@ -891,6 +889,18 @@ def _first_present(values: Mapping[str, Any], keys: Iterable[str]) -> str | None
         if value:
             return str(value)
     return None
+
+
+def _canonical_origin_ids(values: Mapping[str, Any]) -> list[str]:
+    ids: list[str] = []
+    for key in ("source_design_id", "source_kb_id", "source_mockup_id", "origin_id"):
+        value = values.get(key)
+        if not value:
+            continue
+        text = str(value)
+        if text not in ids:
+            ids.append(text)
+    return ids
 
 
 def _source_ref_contains(source_ref: str, source_id: str) -> bool:

@@ -81,4 +81,4 @@ specs, or stories as applicable; cards receive resource context only through
 `okto_pulse_kg_query_cypher`, `okto_pulse_kg_query_natural`, `okto_pulse_kg_schema_info`
 
 ## KG — Operational
-`okto_pulse_kg_health`, `okto_pulse_kg_dead_letter_list`, `okto_pulse_kg_dead_letter_reprocess`, `okto_pulse_kg_migrate_schema`, `okto_pulse_kg_tick_run_now`
+`okto_pulse_kg_health`, `okto_pulse_kg_health_readiness`, `okto_pulse_kg_dead_letter_list`, `okto_pulse_kg_dead_letter_reprocess`, `okto_pulse_kg_connectivity_dlq_diagnose`, `okto_pulse_kg_connectivity_dlq_reprocess`, `okto_pulse_kg_connectivity_dlq_verify`, `okto_pulse_kg_migrate_schema`, `okto_pulse_kg_tick_run_now`

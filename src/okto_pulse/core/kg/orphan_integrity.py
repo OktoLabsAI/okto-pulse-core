@@ -1231,6 +1231,7 @@ def _safe_writer_path(created_by_agent: Any, source_session_id: Any) -> str:
             "cognitive",
             "commit_consolidation",
             "consolidation",
+            "kgses_",
             "agent",
             "mcp",
         )

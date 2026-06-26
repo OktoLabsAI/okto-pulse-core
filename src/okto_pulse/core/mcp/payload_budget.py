@@ -369,9 +369,13 @@ def snapshot_instructions(server_module: Any) -> dict[str, str]:
 
 
 def snapshot_resources(server_module: Any) -> dict[str, str]:
+    """(R11-A) Snapshot the EFFECTIVE resource catalog (core + Community-injected)
+    via each spec's deterministic loader — the catalog is the authority, not the
+    transitional ``_RESOURCE_REGISTRY`` projection."""
     out: dict[str, str] = {}
-    for _uri, path, _desc in server_module._RESOURCE_REGISTRY:
-        out[path] = server_module._load_resource_file(path)
+    for spec in server_module.effective_resource_catalog().specs():
+        key = spec.path if spec.path is not None else spec.uri
+        out[key] = spec.read()
     return out
 
 

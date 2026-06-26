@@ -222,7 +222,7 @@ def _load_resource_file(relative_path: str) -> str:
     return _resources_cache[relative_path]
 
 
-_RESOURCE_REGISTRY = [
+_CORE_RESOURCE_TABLE = [
     ("okto-pulse://workflows/stories", "workflows/stories.md", "Stories & Topics workflow — pre-ideation intake."),
     ("okto-pulse://workflows/ideations", "workflows/ideations.md", "Ideations workflow — scope + ambiguity-killer."),
     ("okto-pulse://workflows/refinements", "workflows/refinements.md", "Refinements workflow — deep investigation."),
@@ -278,23 +278,151 @@ _RESOURCE_REGISTRY = [
 ]
 
 
-def _make_resource_handler(path: str) -> "Callable[[], str]":
-    """Create a closure-safe handler for a specific resource path."""
+# ============================================================================
+# R11-A — the EFFECTIVE resource catalog is the authority (not _CORE_RESOURCE_TABLE
+# nor _RESOURCE_REGISTRY). The core built-in catalog is composed with any
+# Community-injected operational catalog at the composition root, then FROZEN.
+# ============================================================================
+from okto_pulse.core.ports.mcp_resources import (  # noqa: E402
+    CompositeMcpResourceCatalog,
+    McpResourceCatalog,
+    McpResourceSpec,
+    StaticMcpResourceCatalog,
+)
+
+
+def _resource_category_for(uri: str) -> str:
+    """Derive the resource category from its okto-pulse:// URI path."""
+    rest = uri[len("okto-pulse://"):]
+    parts = rest.split("/")
+    if parts and parts[0] == "reference" and len(parts) >= 2 and parts[1] in (
+        "tool-docs", "tool-families",
+    ):
+        return f"reference/{parts[1]}"
+    return parts[0] if parts and parts[0] else "misc"
+
+
+def _build_core_resource_catalog() -> StaticMcpResourceCatalog:
+    """The CORE edition catalog, built from ``_CORE_RESOURCE_TABLE`` (path-loaders
+    confined to the core resources dir)."""
+    base = _get_resource_dir()
+    specs = tuple(
+        McpResourceSpec(
+            uri=uri, path=path, description=desc,
+            category=_resource_category_for(uri), edition="core", base_dir=base,
+        )
+        for uri, path, desc in _CORE_RESOURCE_TABLE
+    )
+    return StaticMcpResourceCatalog("core", specs)
+
+
+_effective_resource_catalog = CompositeMcpResourceCatalog([_build_core_resource_catalog()])
+_resource_catalog_frozen = False
+
+#: (R11-A) READ-ONLY transitional PROJECTION of the EFFECTIVE catalog as the legacy
+#: ``(uri, path, description)`` tuples. An IMMUTABLE tuple (NOT a mutable list) —
+#: it is DERIVED from ``effective_resource_catalog()`` and ATOMICALLY REASSIGNED on
+#: every injection/reset, so a consumer cannot mutate the public projection (or the
+#: catalog) by accident. NOT an authority / extension point; kept only so existing
+#: consumers keep working during register-before-remove.
+_RESOURCE_REGISTRY: tuple = ()
+
+
+def effective_resource_catalog() -> CompositeMcpResourceCatalog:
+    """The AUTHORITATIVE effective MCP resource catalog (core + injected)."""
+    return _effective_resource_catalog
+
+
+def _projection_path(spec: McpResourceSpec) -> str:
+    return spec.path if spec.path is not None else f"<content:{spec.uri}>"
+
+
+def _rebuild_resource_registry_projection() -> None:
+    global _RESOURCE_REGISTRY
+    _RESOURCE_REGISTRY = tuple(
+        (s.uri, _projection_path(s), s.description)
+        for s in _effective_resource_catalog.specs()
+    )
+
+
+def _make_resource_handler(spec: McpResourceSpec) -> "Callable[[], str]":
+    """Closure-safe resources/read handler bound to a catalog spec (the spec's
+    deterministic loader; never exposes a filesystem path to the agent)."""
     def handler() -> str:
-        return _load_resource_file(path)
+        return spec.read()
     return handler
 
 
-# Register every resource in _RESOURCE_REGISTRY dynamically
-for _uri, _path, _desc in _RESOURCE_REGISTRY:
-    _handler = _make_resource_handler(_path)
-    _handler.__name__ = f"resource_{_path.replace('/', '_').replace('.md', '')}"
-    _handler.__doc__ = _desc
-    mcp.resource(_uri, description=_desc)(_handler)
+def _register_resource_spec(spec: McpResourceSpec) -> None:
+    handler = _make_resource_handler(spec)
+    handler.__name__ = (
+        "resource_"
+        + spec.uri[len("okto-pulse://"):].replace("/", "_").replace("-", "_")
+    )
+    handler.__doc__ = spec.description
+    mcp.resource(spec.uri, description=spec.description)(handler)
 
-# Pre-warm the resource cache so first-read latency is minimal
-for _, _path, _ in _RESOURCE_REGISTRY:
-    _load_resource_file(_path)
+
+def register_resource_catalog(catalog: McpResourceCatalog) -> None:
+    """(R11-A IMP2/IMP3) Composition-root injection of an additional edition
+    catalog (e.g. the Community operational catalog), using the core CONTRACTS so
+    the core never imports community. FAIL-CLOSED: raises after the freeze."""
+    global _effective_resource_catalog
+    if _resource_catalog_frozen:
+        raise RuntimeError(
+            "MCP resource catalog is FROZEN after composition; late "
+            "registration/mutation is forbidden (R11-A IMP4 fail-closed freeze)."
+        )
+    existing = {s.uri for s in _effective_resource_catalog.specs()}
+    _effective_resource_catalog = _effective_resource_catalog.with_catalog(catalog)
+    for spec in catalog.specs():
+        if spec.uri not in existing:  # first-wins dedupe; conflicts reported, not re-registered
+            _register_resource_spec(spec)
+    _rebuild_resource_registry_projection()
+
+
+def freeze_resource_catalog() -> None:
+    """(R11-A IMP4) Freeze the effective catalog AFTER composition (all providers
+    registered) + prewarm every spec. Idempotent; later registration RAISES."""
+    global _resource_catalog_frozen
+    _resource_catalog_frozen = True
+    for spec in _effective_resource_catalog.specs():
+        spec.read()
+
+
+def reset_resource_catalog_for_tests() -> None:
+    """Tests only: rebuild the core-only effective catalog, clear the freeze, AND
+    drop any FastMCP resource handlers registered beyond the core baseline so a
+    previously-injected catalog leaves NO residual state (isolation)."""
+    global _effective_resource_catalog, _resource_catalog_frozen
+    _effective_resource_catalog = CompositeMcpResourceCatalog(
+        [_build_core_resource_catalog()]
+    )
+    _resource_catalog_frozen = False
+    _rebuild_resource_registry_projection()
+    try:
+        resources = mcp._resource_manager._resources
+        for _uri in list(resources):
+            if _uri not in _CORE_FASTMCP_RESOURCE_URIS:
+                del resources[_uri]
+    except Exception:  # pragma: no cover - FastMCP internals are best-effort here
+        pass
+
+
+# Register the CORE catalog with FastMCP + build the initial projection at import.
+for _spec in _effective_resource_catalog.specs():
+    _register_resource_spec(_spec)
+_rebuild_resource_registry_projection()
+# Pre-warm so first resources/read latency is minimal.
+for _spec in _effective_resource_catalog.specs():
+    _spec.read()
+
+#: FastMCP resource URIs registered by the CORE catalog at import — the baseline a
+#: test reset restores to (any injected-catalog handler beyond this is dropped).
+try:
+    _CORE_FASTMCP_RESOURCE_URIS = frozenset(mcp._resource_manager._resources.keys())
+except Exception:  # pragma: no cover
+    _CORE_FASTMCP_RESOURCE_URIS = frozenset()
 
 
 # R1.1 — canonical map from a compacted tool to its single lazy long-form doc
@@ -391,6 +519,41 @@ class ApiKeySessionMiddleware:
                 _active_api_key.reset(token)
 
 
+# ----------------------------------------------------------------------------
+# R08-A: transport -> McpCredential conversion shims (tr_7d105709).
+#
+# Additive, register-before-remove: these convert the inbound transports into the
+# pure ``McpCredential`` port DTO WITHOUT changing the observable behaviour of
+# the middleware / ``_get_authenticated_agent`` / ``_get_agent_ctx`` below — the
+# ``_active_api_key`` ContextVar remains the transitional per-request carrier
+# (retired in R08-C). They are available for the McpAuthenticator port wiring.
+# ----------------------------------------------------------------------------
+def extract_mcp_credential_from_request(request):
+    """Build an ``McpCredential`` from a Starlette ``Request`` preserving the
+    canonical precedence (query param > X-API-Key > Authorization Bearer) — the
+    SAME order ``ApiKeySessionMiddleware`` applies above."""
+    from okto_pulse.core.ports import mcp_credential_from_sources
+
+    return mcp_credential_from_sources(
+        query_param=request.query_params.get("api_key"),
+        x_api_key_header=request.headers.get("x-api-key"),
+        authorization_header=request.headers.get("authorization"),
+    )
+
+
+def active_api_key_credential():
+    """Wrap the per-request active api_key (``_active_api_key`` ContextVar shim)
+    as an ``McpCredential`` for the McpAuthenticator port. Returns ``None`` when no
+    key is active. ``source='unknown'`` because the originating transport is not
+    preserved past the middleware. The legacy helpers below are UNCHANGED."""
+    from okto_pulse.core.ports import McpCredential
+
+    raw = _active_api_key.get()
+    if not raw:
+        return None
+    return McpCredential(source="unknown", value=raw)
+
+
 # ============================================================================
 # AUTH HELPERS (tools call these instead of passing api_key)
 # ============================================================================
@@ -411,6 +574,23 @@ def get_db_for_mcp():
     if _mcp_session_factory is None:
         raise RuntimeError("Session factory not registered. Call register_session_factory() first.")
     return _mcp_session_factory()
+
+
+def get_unit_of_work_factory_for_mcp():
+    """UnitOfWorkFactory over the registered MCP session factory (spec #04).
+
+    The MCP strangler path: a migrated tool obtains a PulseUnitOfWork from this
+    factory instead of opening a raw ``get_db_for_mcp()`` session and passing it
+    as the uow. The session source is the same registered ``_mcp_session_factory``,
+    so persistence and behavior are unchanged.
+    """
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+
+    if _mcp_session_factory is None:
+        raise RuntimeError(
+            "Session factory not registered. Call register_session_factory() first."
+        )
+    return SQLAlchemyUnitOfWorkFactory(_mcp_session_factory)
 
 
 class AgentContext:
@@ -465,13 +645,21 @@ def invalidate_agent_cache(agent_id: str) -> None:
 
 
 async def _get_authenticated_agent():
-    """Get the agent authenticated via the active API key from the request."""
-    api_key = _active_api_key.get()
-    if not api_key:
+    """Get the agent authenticated via the active API key from the request.
+
+    R08-C: the per-request credential is resolved through the R08-A shim
+    ``active_api_key_credential()`` (the ``McpCredential`` port DTO) instead of
+    reading the ``_active_api_key`` ContextVar directly. The ContextVar STAYS
+    (register-before-remove, DEC-R08C-01 / FR6) — read ONLY by
+    ``active_api_key_credential`` and set/reset by ``ApiKeySessionMiddleware`` —
+    until the request_scope_provider phase retires it. Signature/return are
+    UNCHANGED, so every facade call-site is migrated without being touched."""
+    credential = active_api_key_credential()
+    if credential is None:
         return None
     async with get_db_for_mcp() as db:
         service = AgentService(db)
-        agent = await service.get_agent_by_key(api_key)
+        agent = await service.get_agent_by_key(credential.value)
         await db.commit()
         return agent
 
@@ -481,13 +669,18 @@ async def _get_agent_ctx(board_id: str) -> AgentContext | None:
 
     Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s cache.
     Falls back to legacy flat permissions if permission_flags is not set.
-    """
-    api_key = _active_api_key.get()
-    if not api_key:
+
+    R08-C: the credential is resolved through the R08-A shim
+    ``active_api_key_credential()`` (McpCredential port DTO) rather than reading
+    ``_active_api_key`` directly (register-before-remove, DEC-R08C-01). The
+    permission cache + board ACL resolution below are UNCHANGED, so the ~227
+    facade call-sites are migrated automatically without edits."""
+    credential = active_api_key_credential()
+    if credential is None:
         return None
     async with get_db_for_mcp() as db:
         service = AgentService(db)
-        agent = await service.get_agent_by_key(api_key)
+        agent = await service.get_agent_by_key(credential.value)
         if not agent:
             return None
 
@@ -1270,9 +1463,9 @@ async def okto_pulse_get_publish_health() -> str:
     if not agent:
         return json.dumps({"error": "Authentication failed"})
 
-    from okto_pulse.core.telemetry.service import TelemetryService
+    from okto_pulse.core.telemetry.telemetry_port_registry import get_telemetry_port
 
-    result = TelemetryService(get_settings()).publish_health()
+    result = get_telemetry_port(get_settings()).publish_health()
     return json.dumps(result, default=str)
 
 
@@ -5003,27 +5196,45 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
             {"error": f"Invalid status. Must be one of: {[s.value for s in IdeationStatus]}"}
         )
 
-    async with get_db_for_mcp() as db:
-        service = IdeationService(db)
+    from okto_pulse.core.application.use_cases import (
+        EntityNotFoundError,
+        MoveIdeationCommand,
+        MoveIdeationUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    # Spec #04 (MCP strangler): obtain a PulseUnitOfWork from the MCP
+    # UnitOfWorkFactory instead of opening a raw get_db_for_mcp() session — the
+    # tool no longer calls get_db_for_mcp directly. uow.session is used only as a
+    # transitional bridge for the board-scoped pre-check.
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        service = IdeationService(uow.session)
         existing = await service.get_ideation(ideation_id)
         if not existing or existing.board_id != board_id:
             return json.dumps({"error": "Ideation not found"})
         old_status = existing.status.value
         try:
-            ideation = await service.move_ideation(
-                ideation_id, ctx.agent_id, IdeationMove(status=ideation_status), actor_name=ctx.agent_name
+            # Delegate to the shared transport-free use case (it commits +
+            # re-fetches via the uow). board pre-check, old_status, compact MCP
+            # payload, error envelopes and actor_name are preserved.
+            result = await MoveIdeationUseCase().execute(
+                MoveIdeationCommand(ideation_id, IdeationMove(status=ideation_status)),
+                actor=actor,
+                uow=uow,
             )
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
-        await db.commit()
-
-        if not ideation:
+        except EntityNotFoundError:
+            # Defensive: the pre-check covers not-found, but guard the race where
+            # the ideation is removed between pre-check and the use case — preserve
+            # the original "Ideation not found" envelope (not a ValueError).
             return json.dumps({"error": "Ideation not found"})
+        except ValueError as e:
+            return MCPAdapterContract.error(e)
 
         return json.dumps(
             {
                 "success": True,
-                "ideation_id": ideation.id,
+                "ideation_id": result.ideation.id,
                 "from_status": old_status,
                 "to_status": status,
             },
@@ -13213,9 +13424,13 @@ async def okto_pulse_create_amendment_revision(
     Create a Path B AmendmentHotfixRevision for a bug (spec be089cd3 · FR1 ·
     ir_54ceb69b). Twin of POST /boards/{board_id}/bugs/{bug_id}/amendment-revisions.
 
-    The amendment binds to the bug's OWN done/validated (locked) spec and always
-    starts as 'draft'. This tool ONLY remediates — it NEVER skips/overrides the bug
-    regression gate, and it cannot set coverage confirmation (validator-only).
+    The amendment binds to the bug's OWN content-locked spec (done/validated, OR
+    in_progress still content-locked by an active passed validation -
+    current_validation_id -> outcome=success) and always starts as 'draft'. An
+    in_progress spec that is still editable (no active success validation, or a
+    failed/stale/superseded one) is rejected (original_spec_not_done_or_locked) -
+    edit it directly there. This tool ONLY remediates — it NEVER skips/overrides the
+    bug regression gate, and it cannot set coverage confirmation (validator-only).
     Returns the structured amendment payload (status, lineage_state, eligibility,
     artifacts) or a structured error (no raw exception text)."""
     ctx = await _get_agent_ctx(board_id)
@@ -13972,16 +14187,27 @@ usually violate the configured thresholds."""
         "recommendation": recommendation,
     }
 
+    from okto_pulse.core.application.use_cases import (
+        EntityNotFoundError,
+        SubmitSpecValidationCommand,
+        SubmitSpecValidationUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
     async with get_db_for_mcp() as db:
-        spec_service = SpecService(db)
         try:
-            result = await spec_service.submit_spec_validation(
-                spec_id, ctx.agent_id, ctx.agent_name, data
+            # Thin MCP adapter (spec #09): delegate to the shared use case (it
+            # validates the payload, resolves the reviewer name from the MCP agent,
+            # submits and commits). The MCP-specific input checks above are kept so
+            # the tool's error envelopes/order are unchanged.
+            result = await SubmitSpecValidationUseCase().execute(
+                SubmitSpecValidationCommand(spec_id, data),
+                actor=MCPAdapterContract.actor(ctx, board_id=board_id),
+                uow=db,
             )
-            await db.commit()
-            return json.dumps(result, default=str)
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
+            return json.dumps(result.payload, default=str)
+        except (EntityNotFoundError, ValueError) as e:
+            return MCPAdapterContract.error(e)
 
 
 @mcp.tool()
@@ -14063,6 +14289,41 @@ okto-pulse://reference/tool-docs/kg."""
     # FR4: slim default projection — keep the stop-rule fields, omit verbose
     # diagnostics until profile=full/legacy is requested.
     data = KGHealthMCPProjection().project(data, profile=profile)
+    return json.dumps(data, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_health_readiness(
+    board_id: str, profile: str = "summary", artifact_ref: str = "",
+) -> str:
+    """Canonical NON-MASKABLE KG health/readiness (gemelar do REST GET
+/api/v1/kg/health-readiness, RKG-05). Both summary and full expose
+`technical_signals` (scalar counters dead_letter_count / technical_dlq_count /
+canonical_debt_open_count / active_queue_count, SEPARATE domains), `readiness`
+(`blocking` vs `would_block_done` + reasons + policy_reason), top-level
+`cognitive_enforcement_mode` / `enforcement_active`, and `non_maskable_items`
+(per-item drill_down_tool / last_error / next_action). A summary never hides a
+technical blocker; full adds prose health_issues + root_cause. Optional
+artifact_ref scopes items. Full guide: okto-pulse://reference/tool-docs/kg."""
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    from okto_pulse.core.services.kg_health_service import BoardNotFoundError
+    from okto_pulse.core.services.kg_health_readiness_service import (
+        InvalidProfileError,
+        build_health_readiness,
+    )
+
+    try:
+        async with get_db_for_mcp() as db:
+            data = await build_health_readiness(
+                board_id, db, profile=profile, surface="mcp",
+                artifact_ref=(artifact_ref or None))
+    except InvalidProfileError:
+        return json.dumps({"error": "invalid_profile"})
+    except BoardNotFoundError as exc:
+        return json.dumps({"error": str(exc)})
     return json.dumps(data, default=str)
 
 
@@ -15007,6 +15268,129 @@ async def okto_pulse_kg_dead_letter_reprocess(
             data["processed_now_count"] = await worker.process_batch()
             data["process_now_mode"] = "singleton_direct_batch"
 
+    return json.dumps(data, default=str)
+
+
+# ============================================================================
+# RKG-04 — connectivity-guard technical_dlq class: diagnose / reprocess / verify
+# (fail-closed, class-scoped; never a broad reprocess of unanalysed DLQs).
+# ============================================================================
+
+
+@mcp.tool()
+async def okto_pulse_kg_connectivity_dlq_diagnose(board_id: str) -> str:
+    """okto_pulse_kg_connectivity_dlq_diagnose — diagnose the LIVE connectivity-
+    guard technical_dlq class (RKG-04) BEFORE any reprocess. Read-only.
+
+    Returns each member's dead_letter_id, artifact_id, attempts, errors,
+    last_error, the source_artifact_ref involved, the probable root cause and the
+    next_action — the input you must feed to
+    `okto_pulse_kg_connectivity_dlq_reprocess` (which only accepts in-class ids)."""
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
+        diagnose_connectivity_guard_dlq,
+    )
+
+    async with get_db_for_mcp() as db:
+        data = await diagnose_connectivity_guard_dlq(db, board_id)
+    return json.dumps(data, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_connectivity_dlq_reprocess(
+    board_id: str,
+    dead_letter_ids: list[str] | str = "",
+    process_now: str = "true",
+) -> str:
+    """okto_pulse_kg_connectivity_dlq_reprocess — fail-closed reprocess of the
+    connectivity-guard technical_dlq class (RKG-04).
+
+    Requires EXPLICIT in-class `dead_letter_ids` (from
+    `okto_pulse_kg_connectivity_dlq_diagnose`). Blocks — removing NO DLQ — when the
+    selection is empty (`no_dlq_selected`), missing (`selected_dlq_missing`),
+    out-of-class (`selected_dlq_out_of_class`), the RKG-02/RKG-03 fixes are absent
+    (`rkg02_rkg03_not_applied`) or the KG is quarantined (`kg_quarantined`). It is
+    NEVER a broad reprocess. On success it reuses the idempotent DLQ→queue path
+    (ConsolidationQueue dedup) and, with process_now, runs one worker batch."""
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, "kg.admin.historical_consolidation")
+    if perm_err:
+        return _perm_error(perm_err)
+
+    try:
+        ids = coerce_to_list_str(dead_letter_ids) if dead_letter_ids else []
+    except ValueError as exc:
+        return json.dumps({"error": f"Invalid dead_letter_ids: {exc}"})
+
+    from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
+        reprocess_connectivity_guard_dlq,
+    )
+
+    async with get_db_for_mcp() as db:
+        data = await reprocess_connectivity_guard_dlq(db, board_id, ids)
+        if not data.get("blocked"):
+            await db.commit()
+
+    if not data.get("blocked") and _flag_enabled(process_now):
+        from okto_pulse.core.kg.workers.consolidation import (
+            get_consolidation_worker,
+            signal_consolidation_worker,
+        )
+
+        worker = get_consolidation_worker(_mcp_session_factory)
+        signal_consolidation_worker()
+        data["worker_running"] = worker.is_running
+        if not worker.is_running:
+            data["processed_now_count"] = await worker.process_batch()
+            data["process_now_mode"] = "singleton_direct_batch"
+        else:
+            data["processed_now_count"] = 0
+            data["process_now_mode"] = "signalled_singleton"
+
+    return json.dumps(data, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_connectivity_dlq_verify(
+    board_id: str,
+    artifact_refs: list[str] | str = "",
+) -> str:
+    """okto_pulse_kg_connectivity_dlq_verify — after the worker drains the queue,
+    confirm the connectivity-guard class is cleared for the given
+    `artifact_refs` (or the whole class when empty). Read-only.
+
+    A member that returned to the DLQ stays VISIBLE (`class_cleared=false` +
+    `remaining_dlq`) — partial success is never masked."""
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    try:
+        refs = coerce_to_list_str(artifact_refs) if artifact_refs else None
+    except ValueError as exc:
+        return json.dumps({"error": f"Invalid artifact_refs: {exc}"})
+
+    from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
+        verify_connectivity_class_cleared,
+    )
+
+    async with get_db_for_mcp() as db:
+        data = await verify_connectivity_class_cleared(
+            db, board_id, artifact_refs=refs)
     return json.dumps(data, default=str)
 
 

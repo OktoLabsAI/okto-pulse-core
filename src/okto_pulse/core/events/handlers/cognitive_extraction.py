@@ -9,7 +9,10 @@ Alternative/Assumption queries always returned empty, even on boards
 with rich post-mortems.
 
 Design — Decision D1 (umbrella refinement a647d21a):
-    - Trigger: ``CardMoved`` event with ``to_status == "done"``.
+    - Trigger: ``CardMoved`` event with ``to_status == "done"`` (Learning from
+      bug cards; legacy Alternative/Assumption candidate logs from spec-linked
+      cards). RKG-03: ``SpecMoved`` with ``to_status == "done"`` is the CANONICAL
+      trigger that opens spec cognitive-closeout pending in the ledger (FR1/AC1).
     - Bug cards with ``action_plan`` ≥ 50 chars → ``extract_learning_from_bug``.
     - Cards with ``spec_id`` set → ``extract_alternatives`` + ``extract_assumptions``
       over the spec context.
@@ -21,15 +24,18 @@ Design — Decision D1 (umbrella refinement a647d21a):
       supersede.
 
 This handler intentionally **does not** push candidates into the Kuzu
-store directly. Cognitive nodes go through the consolidation session
+store directly — that is not safe inside an event drain transaction. It
+emits a structured ``cognitive.extraction.*.candidate`` log line per
+candidate AND (RKG-03) opens DURABLE cognitive-closeout work in the
+existing ledger (``CognitiveConsolidationItemStore``) via
+``open_cognitive_closeout_pending`` — a ledger-only write, safe in the
+drain. The dedicated cognitive worker
+(``cognitive_closeout_production.drain_cognitive_closeout_pending``,
+started alongside the consolidation worker) drains that pending work and
+persists Alternative/Assumption/Learning through the consolidation
 pipeline (``begin_consolidation`` → ``add_node_candidate`` →
-``commit_consolidation``) which is owned by the cognitive agent and is
-not safe to call from inside an event drain transaction. Instead, the
-handler emits a structured ``cognitive.extraction.candidate`` log line
-per extracted candidate carrying the full payload; the cognitive agent
-or a downstream worker consumes the log and persists. The wiring of that
-downstream worker is registered in this spec's out-of-scope list and
-deferred to a follow-up spec.
+``add_edge_candidate`` → ``commit_consolidation``) OUTSIDE this
+transaction, advancing the ledger pending→consolidated/skipped/failed.
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
-from okto_pulse.core.events.types import CardMoved, DomainEvent
+from okto_pulse.core.events.types import CardMoved, DomainEvent, SpecMoved
 from okto_pulse.core.kg.agent.extractors import (
     AlternativeExtraction,
     AssumptionExtraction,
@@ -53,11 +59,25 @@ from okto_pulse.core.models.db import Board, Card, CardType, Spec
 logger = logging.getLogger("okto_pulse.core.events.cognitive_extraction")
 
 
-@register_handler("card.moved")
+@register_handler("card.moved", "spec.moved")
 class CognitiveExtractionHandler:
-    """Maps ``card.moved → done`` events to cognitive extractor invocations."""
+    """Maps ``card.moved → done`` and ``spec.moved → done`` events to cognitive
+    extractor invocations and opens cognitive-closeout pending work in the ledger.
+
+    FR1/AC1 (codex): a spec reaching done is the CANONICAL trigger for spec
+    cognitive closeout (``SpecMoved``), independent of any card. A bug card
+    reaching done triggers the Learning closeout.
+    """
 
     async def handle(self, event: DomainEvent, session: AsyncSession) -> None:
+        # FR1/AC1: a spec reaching done is the canonical spec-closeout trigger.
+        # Ledger-only open here (safe in the drain); the worker persists later.
+        if isinstance(event, SpecMoved):
+            if event.to_status == "done":
+                self._open_closeout_pending(
+                    event.board_id, f"spec:{event.spec_id}", "spec")
+            return
+
         # BR1: only react to terminal-state transitions.
         if not isinstance(event, CardMoved) or event.to_status != "done":
             return
@@ -85,13 +105,39 @@ class CognitiveExtractionHandler:
         # Bug branch → Learning (BR2 + BR5 idempotency).
         if _card_type_value(card.card_type) == "bug":
             await self._maybe_extract_learning(card, llm_config, event)
+            # RKG-03: open DURABLE cognitive closeout work in the ledger (no graph
+            # write here — safe in the drain). The dedicated cognitive worker
+            # drains it and persists outside this transaction.
+            self._open_closeout_pending(event.board_id, f"bug:{card.id}", "bug")
 
-        # Spec branch → Alternative + Assumption (BR3 + BR4 + BR5 idempotency).
+        # Spec branch → Alternative + Assumption candidate logs (legacy behaviour).
+        # The spec-done CLOSEOUT pending is opened on SpecMoved(done) above — NOT
+        # here: one card going done does not mean the spec is done.
         if card.spec_id:
             spec = await session.get(Spec, card.spec_id)
             if spec is not None:
                 self._extract_alternatives(spec, event)
                 self._extract_assumptions(spec, event)
+
+    @staticmethod
+    def _open_closeout_pending(board_id: str, source_ref: str, artifact_type: str) -> None:
+        """Ledger-only (RKG-03 / FR2): open pending cognitive closeout work the
+        dedicated worker will drain. Best-effort — never fails the event drain."""
+        try:
+            from okto_pulse.core.kg.cognitive_closeout_production import (
+                open_cognitive_closeout_pending,
+            )
+
+            # Store + generation resolved inside (production default base_dir,
+            # latest_generation or a stable id) — no no-arg store, no per-item gen.
+            open_cognitive_closeout_pending(
+                board_id=board_id, source_ref=source_ref, artifact_type=artifact_type,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "cognitive.closeout.open_pending_failed source_ref=%s err=%s",
+                source_ref, exc,
+            )
 
     # ------------------------------------------------------------------
     # Branch helpers

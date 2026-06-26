@@ -52,13 +52,22 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveItemStatus,
     CognitivePendingOutcomeType,
     compute_cognitive_item_id,
-    normalize_cognitive_artifact_id,
+)
+from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+    resolve_cognitive_source_ref,
 )
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_MIXED_DEFERRED_REASON,
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
 )
 from okto_pulse.core.kg.canonical_learning_partition import HISTORICAL_DEBT_REASON
+
+
+def _canonical_artifact_id(source_ref: str) -> str:
+    """Canonical artifact identity via the shared resolver (RKG-02 / BR3): the
+    readiness read-model routes source_ref through the single authorized
+    resolver instead of a local normalizer."""
+    return resolve_cognitive_source_ref(source_ref).canonical_artifact_ref
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +436,7 @@ class CognitiveReadinessService:
             if str(row.canonical_state or "") not in OPEN_STATES:
                 continue
             ref = row.source_ref or f"{row.artifact_type}:{row.artifact_id}"
-            if normalize_cognitive_artifact_id(ref) == artifact_id:
+            if _canonical_artifact_id(ref) == artifact_id:
                 return True
         return False
 
@@ -441,7 +450,7 @@ class CognitiveReadinessService:
         )).scalars().all()
         for row in rows:
             ref = f"{row.artifact_type}:{row.artifact_id}"
-            if normalize_cognitive_artifact_id(ref) == artifact_id:
+            if _canonical_artifact_id(ref) == artifact_id:
                 return True
         return False
 
@@ -469,7 +478,7 @@ class CognitiveReadinessService:
     ) -> CognitiveReadinessVerdict:
         """Compose the 6-tier readiness verdict for one artifact (api_159e9cd0)."""
 
-        artifact_id = normalize_cognitive_artifact_id(source_ref)
+        artifact_id = _canonical_artifact_id(source_ref)
         technical_dlq = await self._technical_dlq(db, board_id, artifact_id)
         debt_open = await self._open_canonical_debt(db, board_id, artifact_id)
         items = self._items_for_artifact(board_id, artifact_id, kg_generation_id)
@@ -493,7 +502,7 @@ class CognitiveReadinessService:
         reimplementing store access or precedence."""
         return self._items_for_artifact(
             board_id,
-            normalize_cognitive_artifact_id(source_ref),
+            _canonical_artifact_id(source_ref),
             kg_generation_id,
         )
 
@@ -523,7 +532,7 @@ class CognitiveReadinessService:
         # 1. 400s — closed registry + revisit_at (before any write).
         validate_skip_reason(reason_code, revisit_at, now=now)
 
-        artifact_id = normalize_cognitive_artifact_id(source_ref)
+        artifact_id = _canonical_artifact_id(source_ref)
         # 2. 409 — a skip must never mask technical DLQ / open canonical debt.
         if await self._technical_dlq(db, board_id, artifact_id):
             raise CognitiveReadinessError(

@@ -12,7 +12,6 @@ import asyncio
 
 import pytest
 
-import okto_pulse.core.app as app_module
 from okto_pulse.core.app import _TelemetryASGIMiddleware
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -34,11 +33,28 @@ class _RecordingTelemetry:
     def record_event(self, kind, payload):
         _RecordingTelemetry.events.append((kind, payload))
 
+    # TelemetryPort conformance (the middleware only calls record_event).
+    def summary(self, *, window_days=30):
+        return {}
+
+    def publish_health(self, *, now=None):
+        return {}
+
 
 @pytest.fixture(autouse=True)
 def _patch_telemetry(monkeypatch):
     _RecordingTelemetry.events = []
-    monkeypatch.setattr(app_module, "TelemetryService", _RecordingTelemetry)
+    # R10-E Pass 2: app.py middleware resolves telemetry via get_telemetry_port
+    # (TelemetryService is no longer constructed at the call site). Register the
+    # recording fake as the TelemetryPort factory so the middleware records through it.
+    from okto_pulse.core.telemetry.telemetry_port_registry import (
+        register_telemetry_port_factory,
+        reset_telemetry_port_factory_for_tests,
+    )
+    reset_telemetry_port_factory_for_tests()
+    register_telemetry_port_factory(lambda settings: _RecordingTelemetry(settings))
+    yield
+    reset_telemetry_port_factory_for_tests()
 
 
 def _scope(path: str, method: str = "GET", *, route: _Route | None = None) -> dict:

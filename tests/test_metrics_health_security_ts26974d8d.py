@@ -24,6 +24,8 @@ from unittest.mock import AsyncMock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+import pytest  # noqa: E402
+
 from okto_pulse.core.api import metrics as metrics_api  # noqa: E402
 from okto_pulse.core.infra.config import CoreSettings  # noqa: E402
 from okto_pulse.core.mcp import server as mcp_server  # noqa: E402
@@ -34,6 +36,20 @@ from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION  # noqa: E40
 from okto_pulse.core.telemetry.service import TelemetryService  # noqa: E402
 
 _NOW = datetime(2026, 6, 15, 13, 1, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _register_telemetry_port():
+    """R10-E Pass 2: the port registry is fail-closed. REST/MCP handlers call
+    get_telemetry_port(settings) — register a factory that builds TelemetryService."""
+    from okto_pulse.core.telemetry.telemetry_port_registry import (
+        register_telemetry_port_factory,
+        reset_telemetry_port_factory_for_tests,
+    )
+    reset_telemetry_port_factory_for_tests()
+    register_telemetry_port_factory(lambda s: TelemetryService(s))
+    yield
+    reset_telemetry_port_factory_for_tests()
 _RAW_INSTALL_ID = "install-RAWID-sentinel-dddd4444"
 
 # distinctive sentinels per forbidden category (NOT generic strings).

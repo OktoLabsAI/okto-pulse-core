@@ -104,6 +104,7 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
+from okto_pulse.core.domain.amendment_eligibility import evaluate_amendment_eligibility
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_scenarios import (
     AmendmentLineageFact,
@@ -230,8 +231,12 @@ def _board_cognitive_readiness_policy(board: Board | None) -> str:
 
 def _cognitive_readiness_blocking_active(board: Board | None) -> bool:
     """True only when BOTH the global feature flag is enabled AND the board
-    policy is ``blocking`` — the two-key safe rollout (dec_41db6a36). Default-off:
-    any failure or unset value resolves to advisory (non-blocking)."""
+    policy is ``blocking`` — the two-key safe rollout (dec_41db6a36, formalised as
+    the auditable RKG-06 policy decision dec_98c9a850: advisory default, blocking
+    only on board ``cognitive_readiness_policy=blocking`` + global
+    ``cognitive_readiness_blocking_enabled``). Default-off / fail-closed: any
+    failure, unset or invalid value resolves to advisory (non-blocking) — a policy
+    change never blocks silently and never hides a technical signal."""
     if _board_cognitive_readiness_policy(board) != COGNITIVE_READINESS_POLICY_BLOCKING:
         return False
     try:
@@ -735,6 +740,29 @@ class SpecLockedError(Exception):
         super().__init__(self.message)
 
 
+def spec_is_content_locked(spec: "Spec | None") -> bool:
+    """True iff ``spec`` is under the Spec Validation Gate content lock.
+
+    The lock holds when ``current_validation_id`` points to a validation record
+    with ``outcome='success'`` in the spec's validations history — independent of
+    the spec's nominal status (a ``validated`` spec moved to ``in_progress`` for
+    execution stays locked).
+
+    SINGLE source of truth for "is this spec content-locked", reused by Path B
+    amendment eligibility (spec 62cf2d36) so the content-lock gate and Path B can
+    never contradict: a content-locked ``in_progress`` spec — the exact one that
+    cannot be edited directly — is precisely the one Path B must accept.
+    """
+    if spec is None:
+        return False
+    current_id = getattr(spec, "current_validation_id", None)
+    if not current_id:
+        return False
+    validations = getattr(spec, "validations", None) or []
+    current = next((v for v in validations if v.get("id") == current_id), None)
+    return bool(current and current.get("outcome") == "success")
+
+
 async def _require_spec_unlocked(db: AsyncSession, spec_id: str) -> None:
     """Raise SpecLockedError if spec has an active passed validation.
 
@@ -743,15 +771,38 @@ async def _require_spec_unlocked(db: AsyncSession, spec_id: str) -> None:
     exist (caller handles that) or when no validation is active.
     """
     spec = await db.get(Spec, spec_id)
-    if not spec:
-        return
-    current_id = getattr(spec, "current_validation_id", None)
-    if not current_id:
-        return
-    validations = getattr(spec, "validations", None) or []
-    current = next((v for v in validations if v.get("id") == current_id), None)
-    if current and current.get("outcome") == "success":
-        raise SpecLockedError(spec_id=spec_id, current_validation_id=current_id)
+    if spec_is_content_locked(spec):
+        raise SpecLockedError(
+            spec_id=spec_id,
+            current_validation_id=getattr(spec, "current_validation_id", None),
+        )
+
+
+def _amendment_regression_test_task_ids(amendment_rows: list) -> list[str]:
+    """Regression test task ids contributed by ELIGIBLE Path B amendments.
+
+    Spec 62cf2d36 (fr_646e69d2): an AmendmentHotfixRevision formally linked to a
+    bug is an ADDITIVE source of regression test tasks for the bug gate — but only
+    when its ``(status, lineage_state)`` eligibility verdict is NOT blocked
+    (lineage complete + a non-draft status). The deep coverage/lineage decision
+    still runs fail-closed in ``BugRegressionGateValidator`` downstream, so this
+    never disables ``require_test_task_for_bug`` nor relaxes validator-only
+    coverage — a blocked/draft amendment contributes nothing. Order-preserving and
+    de-duplicated.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for row in amendment_rows:
+        verdict = evaluate_amendment_eligibility(
+            getattr(row, "status", None), getattr(row, "lineage_state", None)
+        )
+        if getattr(verdict, "blocked", True):
+            continue
+        for tid in getattr(row, "regression_test_task_ids", None) or []:
+            if tid not in seen:
+                seen.add(tid)
+                out.append(str(tid))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1123,8 +1174,12 @@ class BoardService:
         # Failures are logged but don't abort board creation — the
         # lazy bootstrap in BoardConnection.__init__ is the safety net.
         try:
-            from okto_pulse.core.kg.schema import ensure_board_graph_bootstrapped
-            ensure_board_graph_bootstrapped(board.id)
+            # R05-C: migrated off the direct kg.schema symbol onto the #06
+            # GraphSchemaManager port (ensure_bootstrapped wraps the same
+            # ensure_board_graph_bootstrapped — bit-identical, now via the port).
+            from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+            await get_kg_registry().graph_schema_manager.ensure_bootstrapped(board.id)
         except Exception as exc:
             import logging
             logging.getLogger("okto_pulse.core.services.main").warning(
@@ -2829,8 +2884,31 @@ class CardService:
             and getattr(card, "card_type", CardType.NORMAL) == CardType.BUG
         ):
             bug_gate_started = time.perf_counter()
-            linked_tests = card.linked_test_task_ids or []
-            if not linked_tests:
+            linked_tests = list(card.linked_test_task_ids or [])
+            # Path B (spec 62cf2d36, fr_646e69d2): when the bug's original spec is
+            # content-locked there is no direct path to add a test card, so an
+            # eligible AmendmentHotfixRevision formally linked to the bug
+            # contributes its regression test tasks as an ADDITIVE fallback source.
+            # They are validated below EXACTLY like directly-linked tasks and the
+            # deep coverage/lineage decision stays in BugRegressionGateValidator
+            # (fail-closed) — this never disables require_test_task_for_bug nor
+            # relaxes validator-only coverage. Loaded once here and reused below.
+            amendment_rows = (
+                await AmendmentRevisionService(self.db).list_for_bug(
+                    board_id=card.board_id,
+                    original_spec_id=card.spec_id,
+                    origin_bug_id=card.id,
+                )
+                if card.spec_id
+                else []
+            )
+            amendment_facts = [
+                AmendmentLineageFact.from_row(row) for row in amendment_rows
+            ]
+            effective_linked_tests = (
+                linked_tests or _amendment_regression_test_task_ids(amendment_rows)
+            )
+            if not effective_linked_tests:
                 workflow_remediation = (
                     BugWorkflowRemediationMessageBuilder()
                     .build_missing_regression_test_task()
@@ -2855,7 +2933,12 @@ class CardService:
                     workflow_remediation=workflow_remediation,
                 )
 
-            # Validate each linked test task
+            # Validate each linked test task (directly-linked OR contributed by an
+            # eligible Path B amendment, computed above). Amendments formally linked
+            # to THIS bug+spec feed the shared Path A/B predicate so a cross-spec
+            # regression artifact is admissible ONLY with valid amendment lineage;
+            # coverage stays validator-only/fail-closed — no production path confirms
+            # coverage before card c9cf9781 (ADJ-B/ADJ-C).
             bug_created = card.created_at
             spec_for_bug = await self.db.get(Spec, card.spec_id) if card.spec_id else None
             all_scenarios = {
@@ -2863,29 +2946,10 @@ class CardService:
                 for s in (spec_for_bug.test_scenarios or [])
                 if isinstance(s, dict) and s.get("id") is not None
             } if spec_for_bug else {}
-            # Path B (spec f5a7cae7 / card ead17e4d): amendments formally linked
-            # to THIS bug+spec feed the shared Path A/B predicate so a cross-spec
-            # regression artifact is admissible ONLY with valid amendment lineage.
-            # coverage_confirmed is hardcoded False here — no production path may
-            # confirm coverage before card c9cf9781 (ADJ-B). An empty list means
-            # Path B context is active but no amendment exists -> cross-spec stays
-            # fail-closed (ADJ-C).
-            amendment_rows = (
-                await AmendmentRevisionService(self.db).list_for_bug(
-                    board_id=card.board_id,
-                    original_spec_id=card.spec_id,
-                    origin_bug_id=card.id,
-                )
-                if card.spec_id
-                else []
-            )
-            amendment_facts = [
-                AmendmentLineageFact.from_row(row) for row in amendment_rows
-            ]
             validated_test_tasks: list[Card] = []
             candidate_scenario_ids: list[str] = []
 
-            for test_task_id in linked_tests:
+            for test_task_id in effective_linked_tests:
                 test_task = await self.db.get(Card, test_task_id)
                 if not test_task:
                     raise ValueError(

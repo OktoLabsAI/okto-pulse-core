@@ -591,11 +591,11 @@ async def get_kg_metrics(board_id: str):
     - fallback_edge_ratio ≤ 0.15
     - cognitive_edge_ratio 0.15 – 0.30 in mature boards
     """
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.schema import (
         MULTI_REL_TYPES,
         REL_TYPES,
         board_kuzu_path,
-        open_board_connection,
     )
 
     if not board_kuzu_path(board_id).exists():
@@ -623,7 +623,10 @@ async def get_kg_metrics(board_id: str):
     # MULTI_REL_TYPES pass, the metrics page silently under-counts ~80% of
     # the deterministic edges Layer 1 produces.
     all_rel_names = [r[0] for r in REL_TYPES] + [m[0] for m in MULTI_REL_TYPES]
-    with open_board_connection(board_id) as (_db, conn):
+    # R05-C: read through the #06 GraphTransaction port (scope.execute) instead
+    # of the raw open_board_connection (db,conn) tuple — _db was unused and every
+    # statement is a plain scope.execute, so the swap is behaviour-identical.
+    async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
         for rel_name in all_rel_names:
             try:
                 # Kùzu groups implicitly on non-aggregate projections, but
@@ -631,7 +634,7 @@ async def get_kg_metrics(board_id: str):
                 # raw rows and aggregating in Python keeps the code portable
                 # across Kùzu versions (GROUP BY syntax shifted between 0.6
                 # and 0.11).
-                result = conn.execute(
+                result = scope.execute(
                     f"MATCH ()-[r:{rel_name}]->() "
                     f"RETURN r.layer, r.rule_id"
                 )
@@ -649,7 +652,7 @@ async def get_kg_metrics(board_id: str):
         from okto_pulse.core.kg.schema import NODE_TYPES
         for nt in NODE_TYPES:
             try:
-                result = conn.execute(
+                result = scope.execute(
                     f"MATCH (n:{nt}) RETURN count(n) AS c"
                 )
                 if result.has_next():
@@ -830,41 +833,17 @@ async def delete_board_kg(board_id: str, db: AsyncSession = Depends(get_db)):
 def _describe_embedding_provider(provider: Any) -> dict[str, Any]:
     """Introspect the registered embedding provider WITHOUT triggering a load.
 
-    Reads `_model` directly (never calls `_get_model()`) so /kg/settings can
-    report the live state for a health banner without paying the model-load
-    cost. See TR-4 of spec `sentence-transformers como dep obrigatoria`.
+    Delegates to the metadata-driven describer in the embedding port (R13-A):
+    this common API surface no longer imports or ``isinstance``-checks
+    SentenceTransformerProvider/StubEmbeddingProvider — provider description is
+    driven by capability metadata. Reads ``_model`` directly (never calls
+    ``_get_model()``) so /kg/settings can report the live state for a health
+    banner without paying the model-load cost. See TR-4 of spec
+    `sentence-transformers como dep obrigatoria` and R13-A fr_r13a_provider_metadata.
     """
-    from okto_pulse.core.kg.embedding import (
-        SentenceTransformerProvider,
-        StubEmbeddingProvider,
-    )
+    from okto_pulse.core.kg.interfaces.embedding import describe_embedding_provider
 
-    name = type(provider).__name__ if provider is not None else "NoneProvider"
-    is_stub = isinstance(provider, StubEmbeddingProvider) or provider is None
-    model_name: str | None = None
-    is_loaded = False
-    dimension = 0
-
-    if isinstance(provider, SentenceTransformerProvider):
-        model_name = provider.model_name
-        is_loaded = provider._model is not None
-        dimension = provider.dim
-    elif isinstance(provider, StubEmbeddingProvider):
-        is_loaded = True  # stub has no external artifact to load
-        dimension = provider.dim
-    elif provider is not None:
-        # Unknown provider — best-effort introspection, no load.
-        model_name = getattr(provider, "model_name", None)
-        is_loaded = getattr(provider, "_model", None) is not None
-        dimension = getattr(provider, "dim", 0)
-
-    return {
-        "embedding_provider_name": name,
-        "model_name": model_name,
-        "embedding_dimension": dimension,
-        "is_loaded": is_loaded,
-        "is_stub": is_stub,
-    }
+    return describe_embedding_provider(provider)
 
 
 @router.get("/settings")
@@ -1402,7 +1381,8 @@ async def boost_node(
         200 — `{node_id, node_type, score_before, score_after, boosted_at, boosted_by}`
         404 — node not found in any table of the per-board graph
     """
-    from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+    from okto_pulse.core.kg.schema import NODE_TYPES
     from okto_pulse.core.models.db import ConsolidationAudit
 
     BOOST_DELTA = 0.3
@@ -1411,10 +1391,13 @@ async def boost_node(
 
     score_before: float | None = None
     node_type: str | None = None
-    with open_board_connection(board_id) as (_db, conn):
+    # R05-C: read+write through the #06 GraphTransaction port. _db was unused;
+    # both statements are scope.execute(cypher, params) — behaviour-identical to
+    # the old (db, conn) tuple (embedded auto-commits per statement on the SET).
+    async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
         for ntype in NODE_TYPES:
             try:
-                res = conn.execute(
+                res = scope.execute(
                     f"MATCH (n:{ntype} {{id: $nid}}) RETURN n.relevance_score",
                     {"nid": node_id},
                 )
@@ -1436,7 +1419,7 @@ async def boost_node(
 
         score_after = max(CLAMP_MIN, min(CLAMP_MAX, score_before + BOOST_DELTA))
         try:
-            conn.execute(
+            scope.execute(
                 f"MATCH (n:{node_type} {{id: $nid}}) "
                 f"SET n.relevance_score = $score",
                 {"nid": node_id, "score": score_after},

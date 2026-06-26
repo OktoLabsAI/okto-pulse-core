@@ -217,14 +217,17 @@ sequence in `workflows/cards.md` and the error codes in `reference/errors.md`.
 ## `okto_pulse_create_amendment_revision`
 
 Create a Path B `AmendmentHotfixRevision` for a bug (REST twin: `POST
-.../amendment-revisions`). The amendment binds to the bug's OWN `done`/`validated`
-(locked) spec and always starts as `draft` — you cannot mint `approved`/`done`
-(`invalid_initial_status`) and you cannot inject a coverage confirmation (that is
-the validator's job, non-forgeable). Args: `board_id`, `bug_id`, optional
-`original_spec_id` (defaults to the bug's spec; a mismatch is `bug_spec_mismatch`),
-`revision_spec_id`, `origin_task_ids`, `affected_task_ids`,
-`regression_scenario_ids`, `regression_test_task_ids`, `automated_regression_refs`.
-Rejects creating against an `in_progress` spec (`original_spec_not_done_or_locked`).
+.../amendment-revisions`). The amendment binds to the bug's OWN **content-locked**
+spec (`done`/`validated`, OR `in_progress` still content-locked by an active passed
+validation — `current_validation_id` → outcome=success) and always starts as `draft`
+— you cannot mint `approved`/`done` (`invalid_initial_status`) and you cannot inject
+a coverage confirmation (that is the validator's job, non-forgeable). Args:
+`board_id`, `bug_id`, optional `original_spec_id` (defaults to the bug's spec; a
+mismatch is `bug_spec_mismatch`), `revision_spec_id`, `origin_task_ids`,
+`affected_task_ids`, `regression_scenario_ids`, `regression_test_task_ids`,
+`automated_regression_refs`. Rejects an `in_progress` spec that is NOT content-locked
+— still editable, or with a `failed`/`stale`/`superseded` validation —
+(`original_spec_not_done_or_locked`); edit the spec directly there.
 
 ## `okto_pulse_list_amendment_revisions`
 

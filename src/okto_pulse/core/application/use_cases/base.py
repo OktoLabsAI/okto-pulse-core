@@ -1,0 +1,128 @@
+"""Transport-neutral building blocks for application use cases (spec #09).
+
+Defines the ``UseCase`` protocol, the transport-neutral ``ActorContext``, the
+command/result markers, the domain error hierarchy used by inbound adapters to
+map failures, and the transitional UnitOfWork bridge.
+
+This module lives inside the purity-gated ``application/use_cases`` package and
+therefore imports no transport framework. It deliberately avoids importing
+SQLAlchemy: the UnitOfWork is duck-typed as ``Any`` so the application layer
+stays free of the relational adapter (that boundary is closed by spec #04).
+"""
+
+from __future__ import annotations
+
+from typing import Any, Literal, Mapping, Protocol, TypeVar, runtime_checkable
+
+Source = Literal["rest", "mcp", "system"]
+
+
+class ActorContext:
+    """Transport-neutral actor for a use case execution (tr_b18aefe5).
+
+    Carries identity and authorization data only — never a framework object.
+    ``source`` records the inbound surface as plain data, not as a dependency
+    on FastAPI/MCP. Immutable by convention.
+    """
+
+    __slots__ = (
+        "actor_id",
+        "source",
+        "actor_name",
+        "board_id",
+        "realm_id",
+        "permissions",
+        "roles",
+    )
+
+    def __init__(
+        self,
+        actor_id: str,
+        source: Source,
+        *,
+        actor_name: str | None = None,
+        board_id: str | None = None,
+        realm_id: str | None = None,
+        permissions: Mapping[str, Any] | None = None,
+        roles: tuple[str, ...] = (),
+    ) -> None:
+        self.actor_id = actor_id
+        self.source: Source = source
+        # Display name for audit, when the transport already resolved it (e.g. the
+        # MCP agent name). None lets the service resolve it (the REST behavior).
+        self.actor_name = actor_name
+        self.board_id = board_id
+        self.realm_id = realm_id
+        self.permissions = permissions
+        self.roles = roles
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return (
+            f"ActorContext(actor_id={self.actor_id!r}, source={self.source!r}, "
+            f"actor_name={self.actor_name!r}, board_id={self.board_id!r}, "
+            f"realm_id={self.realm_id!r})"
+        )
+
+
+CommandT = TypeVar("CommandT", contravariant=True)
+ResultT = TypeVar("ResultT", covariant=True)
+
+
+@runtime_checkable
+class UseCase(Protocol[CommandT, ResultT]):
+    """A transport-free application operation (tr_3d5b5204).
+
+    ``uow`` is typed ``Any`` as a transitional bridge: until spec #04 lands the
+    ``PulseUnitOfWork`` port, adapters pass either a UnitOfWork exposing
+    ``.session``/``.commit()`` or an ``AsyncSession`` directly.
+    """
+
+    async def execute(self, command: CommandT, *, actor: ActorContext, uow: Any) -> ResultT:
+        ...
+
+
+# --- Domain error hierarchy (adapters map these to transport responses) ------
+
+
+class UseCaseError(Exception):
+    """Base class for transport-neutral use case errors."""
+
+
+class CommandValidationError(UseCaseError):
+    """Invalid command payload (inbound adapters map to HTTP 400 / MCP error)."""
+
+
+class EntityNotFoundError(UseCaseError):
+    """A referenced entity does not exist (adapters map to HTTP 404)."""
+
+    def __init__(self, entity_type: str, entity_id: str) -> None:
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        super().__init__(f"{entity_type} not found: {entity_id}")
+
+
+# --- Transitional UnitOfWork bridge (removed when spec #04 closes the port) ---
+
+
+def session_of(uow: Any) -> Any:
+    """Return the relational session for ``uow``.
+
+    Accepts a UnitOfWork exposing ``.session`` (the spec #04 shape) or an
+    ``AsyncSession`` passed directly (the transitional shape).
+    """
+    session = getattr(uow, "session", None)
+    if session is not None:
+        return session
+    return uow
+
+
+async def commit(uow: Any) -> None:
+    """Commit the transaction owned by ``uow``.
+
+    Works for both a UnitOfWork and a bare ``AsyncSession`` (both expose an
+    awaitable ``commit()``).
+    """
+    commit_fn = getattr(uow, "commit", None)
+    if commit_fn is None:
+        raise TypeError("uow must provide an awaitable commit() or a .session")
+    await commit_fn()

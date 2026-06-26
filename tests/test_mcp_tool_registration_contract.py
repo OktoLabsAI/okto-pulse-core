@@ -14,6 +14,10 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
         "okto_pulse_kg_canonical_debt_list",
         "okto_pulse_kg_dead_letter_list",
         "okto_pulse_kg_dead_letter_reprocess",
+        "okto_pulse_kg_connectivity_dlq_diagnose",
+        "okto_pulse_kg_connectivity_dlq_reprocess",
+        "okto_pulse_kg_connectivity_dlq_verify",
+        "okto_pulse_kg_health_readiness",
         "okto_pulse_create_card",
         "okto_pulse_submit_task_validation",
         "okto_pulse_list_by_board",
@@ -81,6 +85,26 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     # reprocess: its identity line survives in the compact summary.
     reprocess_desc = tools["okto_pulse_kg_dead_letter_reprocess"].description
     assert "requeue dead-lettered KG" in reprocess_desc
+
+    # RKG-04: the connectivity-guard class tools are registered, documented and the
+    # reprocess is fail-closed (never a broad reprocess of unanalysed DLQs).
+    kg_docs = load("reference/tool-docs/kg.md")
+    for tool_name in (
+        "okto_pulse_kg_connectivity_dlq_diagnose",
+        "okto_pulse_kg_connectivity_dlq_reprocess",
+        "okto_pulse_kg_connectivity_dlq_verify",
+    ):
+        assert tool_name in kg_docs, f"{tool_name} missing from kg tool-docs"
+    conn_reprocess_desc = tools["okto_pulse_kg_connectivity_dlq_reprocess"].description
+    assert "fail-closed" in conn_reprocess_desc.lower()
+    assert "selected_dlq_out_of_class" in kg_docs
+
+    # RKG-05: the canonical non-maskable health/readiness tool is registered +
+    # documented and keeps blocking vs would_block_done discoverable.
+    assert "okto_pulse_kg_health_readiness" in kg_docs
+    hr_desc = tools["okto_pulse_kg_health_readiness"].description
+    assert "would_block_done" in hr_desc
+    assert "non_maskable" in kg_docs.lower()
 
     # mockup family: "story" discoverability is preserved either in the compact
     # description or in the mockup tool-docs resource.

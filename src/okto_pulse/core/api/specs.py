@@ -10,6 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.application.use_cases import (
+    CommandValidationError,
+    EntityNotFoundError,
+    SubmitSpecValidationCommand,
+    SubmitSpecValidationUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.permissions import (
     PermissionSet,
     check_permission,
@@ -1025,68 +1032,25 @@ async def submit_spec_validation(
     or recommendation=reject; success only if all thresholds OK and approve.
     On success, atomically promotes spec.status to validated.
     """
-    # Validate required fields (mirror SpecValidationSubmit schema)
-    required = [
-        "completeness", "completeness_justification",
-        "assertiveness", "assertiveness_justification",
-        "ambiguity", "ambiguity_justification",
-        "general_justification", "recommendation",
-    ]
-    missing = [f for f in required if f not in data or data[f] is None]
-    if missing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing required fields: {', '.join(missing)}",
-        )
-    if data.get("recommendation") not in ("approve", "reject"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="recommendation must be 'approve' or 'reject'",
-        )
-    # Min length checks (schema-level guarantee, but fail fast here too)
-    for dim in ("completeness", "assertiveness", "ambiguity"):
-        jf = data.get(f"{dim}_justification", "")
-        if not isinstance(jf, str) or len(jf.strip()) < 10:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{dim}_justification must be at least 10 characters",
-            )
-    if len((data.get("general_justification") or "").strip()) < 20:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="general_justification must be at least 20 characters",
-        )
-
-    service = SpecService(db)
-    spec = await service.get_spec(spec_id)
-    if not spec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
-
-    # Resolve reviewer name
+    # Thin REST adapter (spec #09): the field-shape validation moved into the
+    # command, get_spec/not-found and the coverage-gate errors are surfaced as
+    # transport-neutral errors and mapped to the SAME HTTP status/detail as before
+    # (CommandValidationError→400, EntityNotFoundError→404, ResourceGateError→409
+    # with {error,message,details}, ValueError→409).
     try:
-        from okto_pulse.core.services.main import resolve_actor_name
-        reviewer_name = await resolve_actor_name(db, user_id, spec.board_id)
-    except Exception:
-        reviewer_name = user_id
-
-    try:
-        result = await service.submit_spec_validation(
-            spec_id=spec_id,
-            reviewer_id=user_id,
-            reviewer_name=reviewer_name,
-            data=data,
+        result = await SubmitSpecValidationUseCase().execute(
+            SubmitSpecValidationCommand(spec_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=db,
         )
-    except ResourceGateError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=_resource_gate_detail(e),
-        )
-    except ValueError as e:
-        # Could be: state guard, opt-in guard, coverage gate failure, or input validation
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-
-    await db.commit()
-    return result
+    except (
+        CommandValidationError,
+        EntityNotFoundError,
+        ResourceGateError,
+        ValueError,
+    ) as e:
+        raise RESTAdapterContract.http_error(e, not_found_detail="Spec not found") from e
+    return result.payload
 
 
 @router.get("/specs/{spec_id}/validations")

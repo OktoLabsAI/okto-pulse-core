@@ -5,8 +5,8 @@ Covers:
 - All 12 resource .md files exist and have frontmatter
 - Root agent_instructions.md is ≤500 lines
 - _load_resource_file() handles missing files gracefully
-- _RESOURCE_REGISTRY URIs are consistent with registered file paths
-- server.py contains okto-pulse:// URIs for all 12 resources
+- effective catalog URIs are consistent with their resolvable content
+- the effective catalog serves okto-pulse:// URIs for all resources
 """
 
 import re
@@ -135,51 +135,59 @@ def test_load_resource_file_missing_returns_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 5. _RESOURCE_REGISTRY in server.py contains all 12 URIs
+# 5. effective catalog contains all expected URIs
 # ---------------------------------------------------------------------------
 
 
 def test_resource_registry_contains_all_uris() -> None:
-    """_RESOURCE_REGISTRY in server.py must declare all 12 expected URIs."""
+    """The EFFECTIVE resource catalog (the authority) must declare all expected
+    URIs. R11-C: consumes ``effective_resource_catalog().specs()`` rather than
+    ``_RESOURCE_REGISTRY`` (which is only its derived, read-only projection)."""
     from okto_pulse.core.mcp import server as _srv
 
-    registered_uris = {entry[0] for entry in _srv._RESOURCE_REGISTRY}
+    catalog_uris = {s.uri for s in _srv.effective_resource_catalog().specs()}
     for expected_uri in EXPECTED_URIS:
-        assert expected_uri in registered_uris, (
-            f"URI missing from _RESOURCE_REGISTRY: {expected_uri}"
+        assert expected_uri in catalog_uris, (
+            f"URI missing from the effective resource catalog: {expected_uri}"
         )
+    # the legacy projection mirrors the catalog (same URIs) — bridge, not authority.
+    assert {entry[0] for entry in _srv._RESOURCE_REGISTRY} == catalog_uris
 
 
 # ---------------------------------------------------------------------------
-# 6. _RESOURCE_REGISTRY paths correspond to existing files
+# 6. effective catalog specs resolve to non-empty content
 # ---------------------------------------------------------------------------
 
 
 def test_resource_registry_paths_exist() -> None:
-    """Every path in _RESOURCE_REGISTRY must correspond to an existing file."""
+    """Every EFFECTIVE catalog spec resolves to non-empty content via its
+    deterministic loader. R11-C: catalog-aware ``read()`` non-empty replaces the
+    old path-exists check (it also covers content-based / overlay specs that have
+    no filesystem path)."""
     from okto_pulse.core.mcp import server as _srv
 
-    resource_dir = _srv._get_resource_dir()
-    for uri, path, _desc in _srv._RESOURCE_REGISTRY:
-        full = resource_dir / path
-        assert full.exists(), (
-            f"Registry entry for {uri!r} points to missing file: {full}"
+    for spec in _srv.effective_resource_catalog().specs():
+        assert len(spec.read()) > 0, (
+            f"resource {spec.uri!r} resolved to EMPTY content via the catalog loader"
         )
 
 
 # ---------------------------------------------------------------------------
-# 7. Smoke test — server.py source contains all okto-pulse:// URIs
+# 7. Smoke test — the EFFECTIVE catalog serves all okto-pulse:// URIs (R11-C:
+#    catalog-aware; no longer a textual scan of server.py source).
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("uri", EXPECTED_URIS)
-def test_server_py_contains_uri(uri: str) -> None:
-    """server.py source text must contain each expected okto-pulse:// URI."""
-    assert SERVER_PY.exists(), "server.py not found"
-    source = SERVER_PY.read_text(encoding="utf-8")
-    assert uri in source, (
-        f"URI {uri!r} not found in server.py. "
-        "Check _RESOURCE_REGISTRY or the resource registration loop."
+def test_uri_in_effective_catalog(uri: str) -> None:
+    """R11-C: each expected okto-pulse:// URI is SERVED by the effective resource
+    catalog (the authority), not asserted against server.py source text — the
+    catalog is the single source of truth after the R11-A/B refactor."""
+    from okto_pulse.core.mcp import server as _srv
+
+    catalog_uris = {s.uri for s in _srv.effective_resource_catalog().specs()}
+    assert uri in catalog_uris, (
+        f"URI {uri!r} is not served by the effective resource catalog"
     )
 
 
@@ -266,27 +274,29 @@ _RESOURCE_URI_PATTERN = re.compile(r"okto-pulse://[a-zA-Z0-9_/\-]+")
 
 def test_smoke_no_broken_resource_links_in_docstrings() -> None:
     """ts_d06efe7a — Every ``okto-pulse://`` URI mentioned in a tool docstring
-    must resolve to a URI registered in ``_RESOURCE_REGISTRY``.
+    must resolve to a URI served by the EFFECTIVE resource catalog (R11-C:
+    catalog-aware resolution — the catalog is the authority, not the
+    ``_RESOURCE_REGISTRY`` projection).
 
     Failure mode caught: a docstring references e.g.
-    ``okto-pulse://workflows/onboardimg`` (typo) — no resource is registered
+    ``okto-pulse://workflows/onboardimg`` (typo) — no resource is in the catalog
     under that URI, so an agent following the link gets nothing back. This
     smoke fails CI naming the offending tool and the broken URI.
     """
     from okto_pulse.core.mcp import server as _srv
 
-    registered: set[str] = {entry[0] for entry in _srv._RESOURCE_REGISTRY}
-    assert registered, "No resources registered — registry import broken."
+    catalogued: set[str] = {s.uri for s in _srv.effective_resource_catalog().specs()}
+    assert catalogued, "No resources in the effective catalog — catalog import broken."
 
     broken: list[tuple[str, str]] = []
     for tool_name, tool in _srv.mcp._tool_manager._tools.items():
         desc = getattr(tool, "description", "") or ""
         for match in _RESOURCE_URI_PATTERN.findall(desc):
-            if match not in registered:
+            if match not in catalogued:
                 broken.append((tool_name, match))
 
     assert not broken, (
-        "Tool docstrings reference unregistered okto-pulse:// URIs: "
+        "Tool docstrings reference non-catalogued okto-pulse:// URIs: "
         + ", ".join(f"{name} -> {uri}" for name, uri in broken)
     )
 
@@ -298,13 +308,13 @@ def test_smoke_detects_synthetic_broken_link() -> None:
     """
     from okto_pulse.core.mcp import server as _srv
 
-    registered = {entry[0] for entry in _srv._RESOURCE_REGISTRY}
+    catalogued = {s.uri for s in _srv.effective_resource_catalog().specs()}
     fake_uri = "okto-pulse://workflows/__definitely_missing__"
-    assert fake_uri not in registered, "Synthetic URI accidentally registered."
+    assert fake_uri not in catalogued, "Synthetic URI accidentally in the catalog."
 
     fake_doc = f"This tool references {fake_uri} for guidance."
-    found = [m for m in _RESOURCE_URI_PATTERN.findall(fake_doc) if m not in registered]
+    found = [m for m in _RESOURCE_URI_PATTERN.findall(fake_doc) if m not in catalogued]
     assert found == [fake_uri], (
-        "Pattern + registry lookup must surface the broken URI; "
+        "Pattern + effective-catalog lookup must surface the broken URI; "
         f"got {found!r}."
     )

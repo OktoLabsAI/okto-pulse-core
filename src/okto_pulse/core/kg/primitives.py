@@ -1188,15 +1188,22 @@ def _existing_refs_for_edge_endpoints(
             # R7: carry the endpoint's graph_layer so the layer-aware guard can
             # tell a canonical Bug from a working one for explicit edge endpoints.
             node_layer = _lookup_node_layer_by_id(kconn, node_type, node_id)
+            # RKG-02: also carry the real source_artifact_ref so the guard's
+            # type-aware canonical-bug probe can reconcile a Learning's
+            # card:<uuid> with this existing Bug endpoint.
+            node_source_ref = _lookup_node_source_ref_by_id(kconn, node_type, node_id)
             refs.append(
-                KGNodeRef(ref_id=endpoint, node_type=node_type, graph_layer=node_layer)
+                KGNodeRef(ref_id=endpoint, node_type=node_type, graph_layer=node_layer,
+                          source_artifact_ref=node_source_ref)
             )
             refs.append(
-                KGNodeRef(ref_id=node_id, node_type=node_type, graph_layer=node_layer)
+                KGNodeRef(ref_id=node_id, node_type=node_type, graph_layer=node_layer,
+                          source_artifact_ref=node_source_ref)
             )
             refs.append(
                 KGNodeRef(
-                    ref_id=f"kg:{node_id}", node_type=node_type, graph_layer=node_layer
+                    ref_id=f"kg:{node_id}", node_type=node_type, graph_layer=node_layer,
+                    source_artifact_ref=node_source_ref,
                 )
             )
     return refs
@@ -1217,7 +1224,8 @@ def _existing_connectivity_edges_for_candidate(
     except KeyError:
         return []
 
-    if node_type == "Learning" and _candidate_has_known_bug_source(cand):
+    bug_probe = _graph_canonical_bug_probe(kconn)
+    if node_type == "Learning" and _candidate_has_known_bug_source(cand, bug_probe):
         from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_CANONICAL
 
         # Mirrors connectivity_guard._learning_bug_group: a bug-derived canonical
@@ -1270,15 +1278,20 @@ def _existing_connectivity_edges_for_candidate(
                 continue
             other_id, other_type, direction, other_layer = match
             endpoint_ref = f"kg:{other_id}"
+            # RKG-02: carry the matched endpoint's real source_artifact_ref so the
+            # guard's canonical-bug probe can reconcile card:<uuid> with the Bug.
+            other_source_ref = _lookup_node_source_ref_by_id(kconn, other_type, other_id)
             existing_refs.append(
                 KGNodeRef(
                     ref_id=endpoint_ref,
                     node_type=other_type,
                     graph_layer=other_layer,
+                    source_artifact_ref=other_source_ref,
                 )
             )
             existing_refs.append(
-                KGNodeRef(ref_id=other_id, node_type=other_type, graph_layer=other_layer)
+                KGNodeRef(ref_id=other_id, node_type=other_type, graph_layer=other_layer,
+                          source_artifact_ref=other_source_ref)
             )
             if direction == "outgoing":
                 from_ref = candidate_id
@@ -1296,7 +1309,11 @@ def _existing_connectivity_edges_for_candidate(
     return synthesized
 
 
-def _candidate_has_known_bug_source(cand) -> bool:
+def _candidate_has_known_bug_source(cand, bug_probe=None) -> bool:
+    """Bug-derived detection for a Learning candidate via the shared resolver
+    (RKG-02 / BR3 — no divergent local parser). Explicit bug fields and
+    bug:/card:bug: forms are always bug-derived; a plain card:<uuid> is
+    bug-derived only when ``bug_probe`` confirms a canonical Bug."""
     for attr in (
         "bug_id",
         "bug_ref",
@@ -1306,8 +1323,10 @@ def _candidate_has_known_bug_source(cand) -> bool:
     ):
         if getattr(cand, attr, None):
             return True
-    source_ref = cand.source_artifact_ref or ""
-    return source_ref.startswith("bug:") or source_ref.startswith("card:bug:")
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import resolve_cognitive_source_ref
+
+    source_ref = getattr(cand, "source_artifact_ref", "") or ""
+    return resolve_cognitive_source_ref(source_ref, canonical_bug_probe=bug_probe).is_bug_derived
 
 
 def _find_existing_connectivity_match(
@@ -1389,6 +1408,76 @@ def _lookup_node_layer_by_id(kconn, node_type: str, node_id: str) -> str | None:
     except Exception:
         return None
     return None
+
+
+def _lookup_node_source_ref_by_id(kconn, node_type: str, node_id: str) -> str | None:
+    """Return a node's source_artifact_ref (or None). RKG-02: the connectivity
+    guard's type-aware canonical-bug probe needs the real Bug source_ref of an
+    EXISTING endpoint to reconcile a Learning's card:<uuid> with the canonical
+    Bug; the worker must load it instead of leaving it None."""
+    if not node_id or not node_type:
+        return None
+    try:
+        res = kconn.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.source_artifact_ref LIMIT 1",
+            {"id": node_id},
+        )
+        try:
+            if res.has_next():
+                value = res.get_next()[0]
+                return str(value) if value is not None else None
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    except Exception:
+        return None
+    return None
+
+
+def _graph_canonical_bug_probe(kconn):
+    """A type-aware canonical-bug probe (RKG-02 / FR2) backed by the live graph:
+    ``probe(uuid)`` is True iff a *canonical* Bug exists whose id or
+    source_artifact_ref reconciles to ``card:<uuid>``. Fail-closed: any read
+    error or non-canonical Bug yields False."""
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
+    from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
+
+    keys: set[str] = set()
+    loaded = False
+
+    def _ensure_loaded() -> None:
+        nonlocal loaded
+        if loaded:
+            return
+        loaded = True
+        try:
+            res = kconn.execute(
+                "MATCH (b:Bug) WHERE b.graph_layer = 'canonical' "
+                "RETURN b.id, b.source_artifact_ref",
+                {},
+            )
+            try:
+                while res.has_next():
+                    bid, bsref = res.get_next()
+                    if bid:
+                        keys.add(normalize_cognitive_artifact_id(f"card:{bid}"))
+                    if bsref:
+                        keys.add(normalize_cognitive_artifact_id(strip_concept_suffix(str(bsref))))
+            finally:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _probe(uuid: str) -> bool:
+        _ensure_loaded()
+        return normalize_cognitive_artifact_id(f"card:{uuid}") in keys
+
+    return _probe
 
 
 def _lookup_node_type_by_id(kconn, node_id: str) -> str | None:
