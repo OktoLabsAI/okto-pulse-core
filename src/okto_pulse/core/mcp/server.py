@@ -14440,12 +14440,17 @@ async def okto_pulse_kg_canonical_partition_integrity_list(
     """
     List canonical Learning partition-integrity signals for KG health drill-down
     (R7). READ-ONLY: surfaces go-forward cognitive holds, historical canonical
-    debt, mixed-evidence deferred and provenance-only observed Learnings.
+    debt, mixed-evidence deferred and provenance-only observed Learnings. Each
+    item carries an S-KG-02 ``classification`` (Learning-centric: missing_source,
+    unresolved_source, canonical_learning_resolved, weak_provenance,
+    invalid_orphan_learning) plus the response's ``classification_counts`` census;
+    the existing ``status`` / ``counts`` are preserved.
 
-    Mirrors REST `GET /api/v1/kg/{board_id}/canonical-partition-integrity`. This
-    tool NEVER skips, clears, force-closes or resolves an R7 hold/debt — those are
-    human-only (use the human REST surface). Filters: reason_code, graph_layer,
-    source_ref, node_id, status.
+    Mirrors REST `GET /api/v1/kg/{board_id}/canonical-partition-integrity` (and the
+    per-node `.../{node_id}` detail, which carries the same ``classification`` so
+    the two surfaces stay consistent). This tool NEVER skips, clears, force-closes
+    or resolves an R7 hold/debt — those are human-only (use the human REST
+    surface). Filters: reason_code, graph_layer, source_ref, node_id, status.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:

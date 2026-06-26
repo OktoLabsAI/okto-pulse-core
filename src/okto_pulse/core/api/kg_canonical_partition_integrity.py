@@ -43,6 +43,10 @@ async def list_canonical_partition_integrity_endpoint(
 ) -> dict[str, Any]:
     """Read-only list of canonical-partition-integrity signals.
 
+    Each item carries an S-KG-02 ``classification`` (Learning-centric verdict;
+    the response also includes a ``classification_counts`` census) alongside the
+    preserved ``status`` / ``counts``. Mirrored 1:1 by the MCP tool.
+
     Errors: 400 ``invalid_filter`` (bad enum filter) / 503 ``kg_health_unavailable``.
     """
     try:
@@ -72,6 +76,10 @@ async def get_canonical_partition_integrity_detail_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Read-only detail for one canonical Learning node.
+
+    Carries the S-KG-02 ``classification`` plus ``canonical_edges`` /
+    ``working_edges`` (validates -> Bug) and ``relates_to_edges`` (the taxonomy
+    associations), consistent with the list/MCP surface.
 
     Error: 404 ``canonical_partition_item_not_found``.
     """
