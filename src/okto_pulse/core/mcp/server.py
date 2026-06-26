@@ -777,6 +777,28 @@ def _canonical_api_contract_error(exc) -> str:
     return json.dumps({"error": "invalid_api_contract", "detail": details})
 
 
+def _canonical_sprint_validation_error(exc) -> str:
+    """Render a SprintCreate/SprintUpdate ValidationError as a canonical MCP error.
+
+    S-LANE-01: a ``lane_type`` enum failure becomes the shared
+    ``invalid_lane_type`` envelope — identical to the REST surface — so the agent
+    never sees the raw Pydantic text (no ``errors.pydantic.dev`` URL, class name,
+    or traceback). Any other field failure becomes a clean, non-leaking error via
+    ``errors(include_url=False)`` (mirrors ``_canonical_api_contract_error``).
+    """
+    from okto_pulse.core.inbound.enum_error_envelope import canonical_enum_error
+
+    envelope = canonical_enum_error(exc.errors())
+    if envelope is not None:
+        return json.dumps(envelope)
+    details = "; ".join(
+        ((".".join(str(p) for p in e.get("loc", ())) + ": ") if e.get("loc") else "")
+        + str(e.get("msg", "invalid value"))
+        for e in exc.errors(include_url=False)
+    )
+    return json.dumps({"error": "invalid_sprint", "detail": details})
+
+
 def _validate_api_contract_write(contract: dict) -> str | None:
     """Validate one api-contract dict as a WRITE and surface a canonical error.
 
@@ -12579,11 +12601,17 @@ async def okto_pulse_create_sprint(
     if perm_err:
         return _perm_error(perm_err)
 
+    from pydantic import ValidationError
+
     from okto_pulse.core.models.schemas import SprintCreate
 
     async with get_db_for_mcp() as db:
         from okto_pulse.core.services.main import SprintOperationError, SprintService
         service = SprintService(db)
+        # S-LANE-01: build the DTO under its own guard so an invalid lane_type
+        # surfaces the canonical envelope (fail-closed: no service call, nothing
+        # persists) instead of leaking the raw Pydantic text. A non-validation
+        # ValueError (e.g. coerce_to_list_str) keeps its prior shape.
         try:
             data = SprintCreate(
                 title=title, description=description or None, spec_id=spec_id,
@@ -12597,6 +12625,11 @@ async def okto_pulse_create_sprint(
                 start_date=start_date or None, end_date=end_date or None,
                 labels=coerce_to_list_str(labels) or None,
             )
+        except ValidationError as exc:
+            return _canonical_sprint_validation_error(exc)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        try:
             sprint = await service.create_sprint(board_id, ctx.agent_id, data, skip_ownership_check=True)
             await db.commit()
             if not sprint:
@@ -12681,8 +12714,17 @@ async def okto_pulse_update_sprint(
         if skip_qualitative_validation:
             kwargs["skip_qualitative_validation"] = skip_qualitative_validation.lower() == "true"
 
+        # S-LANE-01: same fail-closed boundary as create — an invalid lane_type
+        # surfaces the canonical envelope instead of leaking the raw Pydantic text,
+        # and the existing sprint is left untouched (no service call, no commit).
+        from pydantic import ValidationError
         try:
             data = SprintUpdate(**kwargs)
+        except ValidationError as exc:
+            return _canonical_sprint_validation_error(exc)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        try:
             sprint = await service.update_sprint(sprint_id, ctx.agent_id, data)
             await db.commit()
             if not sprint:

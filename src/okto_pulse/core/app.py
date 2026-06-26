@@ -521,10 +521,42 @@ def create_app(
     async def _design_system_error_handler(_request, exc: DesignSystemError):
         return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
 
+    # S-LANE-01: canonicalize an invalid sprint ``lane_type`` (which fails Pydantic
+    # body validation BEFORE the route handler runs) into the shared envelope.
+    # Extracted to a module-level installer so tests register the identical handler.
+    install_request_validation_handler(app)
+
     # API routes
     app.include_router(api_router)
 
     return app
+
+
+def install_request_validation_handler(app: FastAPI) -> None:
+    """Register the canonical RequestValidationError handler (card S-LANE-01).
+
+    An invalid sprint ``lane_type`` fails Pydantic body validation BEFORE the
+    route handler runs (FastAPI raises ``RequestValidationError``), so without
+    this the agent/UI would see the raw Pydantic surface (the
+    ``errors.pydantic.dev`` URL, internal locs). This canonicalizes that one
+    mapped enum field into the shared envelope (status 422,
+    ``mutation_applied=false`` — the boundary rejects before any service call, so
+    nothing persists) and delegates every other validation error to FastAPI's
+    default handler, leaving unmapped fields unaffected. The same envelope is
+    produced on the MCP surface.
+    """
+    from fastapi.exception_handlers import request_validation_exception_handler
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.responses import JSONResponse
+
+    from okto_pulse.core.inbound.enum_error_envelope import canonical_enum_error
+
+    @app.exception_handler(RequestValidationError)
+    async def _request_validation_error_handler(request, exc: RequestValidationError):
+        envelope = canonical_enum_error(exc.errors())
+        if envelope is not None:
+            return JSONResponse(status_code=422, content=envelope)
+        return await request_validation_exception_handler(request, exc)
 
 
 def _tick_next_run_from_last(
