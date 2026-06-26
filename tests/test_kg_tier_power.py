@@ -278,7 +278,10 @@ class TestSchemaInfo:
     def test_stable_types_count(self):
         info = get_schema_info("board-x")
         assert len(info["stable_node_types"]) == 11
-        assert len(info["stable_rel_types"]) == 13
+        # 10 REL_TYPES single-pair entries + 5 MULTI_REL_TYPES names (implements,
+        # relates_to, belongs_to, originates_from, covered_by). S-KG-01 added the
+        # additive `relates_to` Learning taxonomy entry (reused edge name, +1).
+        assert len(info["stable_rel_types"]) == 15
         rel_names = {rel["name"] for rel in info["stable_rel_types"]}
         assert {"belongs_to", "originates_from", "covered_by"} <= rel_names
 

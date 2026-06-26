@@ -45,9 +45,33 @@ COGNITIVE_EDGE_TYPES: Final[frozenset[str]] = frozenset({
     "contradicts",
     "supersedes",
     "depends_on",
-    "relates_to",       # Decision→Alternative, agent owns it
+    "relates_to",       # Decision→Alternative + Learning→taxonomy, agent owns it
     "validates",        # Learning→Bug, agent owns it
 })
+
+
+# S-KG-01 / BR-KG-02 — canonical Learning taxonomy. A cognitive Learning proves
+# provenance through EXISTING edge names only (no new edge types): ``validates``
+# to a canonical Bug when bug-derived, otherwise ``relates_to`` to one of these
+# seven canonical operational/decision endpoints. This is the closed set the
+# connectivity guard's ``cognitive_provenance`` policy and the schema's additive
+# ``relates_to`` endpoint pairs are both derived from — so neither side can drift
+# into inventing a new edge name (learned_from/informs/constrains/…).
+LEARNING_RELATES_TO_TARGETS: Final[tuple[str, ...]] = (
+    "Entity",
+    "Decision",
+    "Requirement",
+    "Constraint",
+    "TestScenario",
+    "APIContract",
+    "Criterion",
+)
+
+# Reason code surfaced when a cognitive writer attempts a deterministic edge
+# (e.g. ``belongs_to``) it does not own. Closed-vocabulary so MCP/REST error
+# envelopes and the connectivity guard share one string (BR-KG-02 fail-closed
+# reason codes).
+FORBIDDEN_DETERMINISTIC_EDGE_REASON: Final[str] = "forbidden_deterministic_edge"
 
 
 # Valid values for the layer metadata on an edge.
@@ -74,6 +98,9 @@ class LayerViolationError(ValueError):
     def __init__(self, edge_type: str):
         self.edge_type = edge_type
         self.allowed_edges = sorted(COGNITIVE_EDGE_TYPES)
+        # Closed-vocabulary reason so callers (MCP/REST envelopes, the
+        # connectivity guard) can branch on it without parsing the message.
+        self.reason = FORBIDDEN_DETERMINISTIC_EDGE_REASON
         super().__init__(
             f"edge_type '{edge_type}' is reserved for the Layer 1 deterministic "
             f"worker; cognitive agent may only propose {self.allowed_edges}"

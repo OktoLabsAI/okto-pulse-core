@@ -168,9 +168,18 @@ def test_invalid_local_edge_pair_gets_contextual_error():
     assert excinfo.value.code == "invalid_edge_endpoint_types"
     assert "relates_to" in excinfo.value.message
     assert "Decision" in excinfo.value.message
-    assert excinfo.value.details["allowed_pairs"] == [
-        {"from_type": "Decision", "to_type": "Alternative"}
-    ]
+    # S-KG-01 added the canonical Learning taxonomy ADDITIVELY to relates_to
+    # (reusing the existing edge name). Decision->Alternative is unchanged and
+    # leads the list; Entity->Requirement is still rejected; the seven
+    # Learning->canonical-endpoint pairs are now also accepted.
+    allowed = excinfo.value.details["allowed_pairs"]
+    assert allowed[0] == {"from_type": "Decision", "to_type": "Alternative"}
+    for target in (
+        "Entity", "Decision", "Requirement", "Constraint",
+        "TestScenario", "APIContract", "Criterion",
+    ):
+        assert {"from_type": "Learning", "to_type": target} in allowed
+    assert {"from_type": "Entity", "to_type": "Requirement"} not in allowed
 
 
 def test_structured_bug_edges_are_valid_deterministic_pairs():

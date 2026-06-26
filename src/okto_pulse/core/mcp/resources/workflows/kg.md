@@ -210,11 +210,24 @@ Before creating any Decision or Constraint, run:
 | `mentions`, `derives_from`, `tests`, `implements`, `violates`, `belongs_to` | Layer 1 deterministic worker | Auto on consolidation |
 | `supersedes`, `contradicts`, `depends_on`, `relates_to`, `validates` | Cognitive agent (you) | Manual cognitive edges only |
 
+### Cognitive Provenance — Learning Taxonomy (S-KG-01)
+
+Cognitive artifacts (`Learning` / `Alternative` / `Assumption`) prove connectivity through **cognitive provenance** — a resolved `source_artifact_ref` PLUS a cognitive-taxonomy relation — NOT the deterministic `belongs_to`-to-`Entity` backbone the **operational** artifacts (`Requirement` / `Constraint` / `APIContract` / `TestScenario` / `Criterion` / `Bug` / `Entity`) require. The taxonomy reuses the EXISTING edge names; no new edge type is ever introduced (never `learned_from` / `informs` / `constrains` / `refines` / `warns_about`):
+
+| Learning shape | Allowed relation | Endpoint |
+|---|---|---|
+| bug-derived | `validates` | a **canonical** `Bug` (a `working` Bug never canonizes the Learning) |
+| non-bug | `relates_to` | ONE canonical `Entity` \| `Decision` \| `Requirement` \| `Constraint` \| `TestScenario` \| `APIContract` \| `Criterion` |
+
+`relates_to Decision -> Alternative` is unchanged. A cognitive writer that emits `belongs_to` (or any deterministic edge) is rejected fail-closed with `forbidden_deterministic_edge`; a cognitive node whose source resolves but carries no allowed relation is `missing_cognitive_provenance`. Operational artifacts stay on the strict deterministic provenance group even when they carry cognitive metadata.
+
 ### KG Health
 
 `okto_pulse_kg_health(board_id)` — returns a JSON health snapshot. It carries the KG-01 contract fields (`board_id`, `graph_state`, `discovery_state`, `overall_state`, `metric_status`, `correlation_id`, `checked_at`, …) alongside the legacy aggregation fields (`queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `schema_version`, `contradict_warn_count`), the daily-tick fields `last_decay_tick_at` / `nodes_recomputed_in_last_tick`, `decay_scheduler_diagnostics`, and `storage_footprint_proxy`.
 
 **When to consult:** before long consolidation cycles, after flagging contradictions, when debugging stale ranking (`default_score_ratio > 0.7`).
+
+**Storage:** each board's KG persists to a per-board LadybugDB store under the board's data directory — `graph.lbug` (the canonical + working graph that `graph_state` reports on) and `discovery.lbug` (the discovery/embedding index behind `discovery_state`). Never delete the graph store; schema migrations self-heal on the hot path. A degraded `graph_state` / `discovery_state` points at the matching `.lbug` file.
 
 ### Operational Signals — Separate Domains + Drill-Down (spec 007d1308)
 

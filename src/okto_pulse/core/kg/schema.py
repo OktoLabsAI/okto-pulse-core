@@ -115,6 +115,20 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("implements", (
         ("APIContract", "Constraint"),
     )),
+    # `relates_to` keeps its historical Decision -> Alternative pair in REL_TYPES.
+    # S-KG-01 / BR-KG-02 adds the canonical Learning taxonomy ADDITIVELY here —
+    # one rel NAME reused for the cognitive provenance relation, never a new edge
+    # type (no learned_from/informs/constrains/refines/warns_about). Endpoints
+    # mirror cognitive_policy.LEARNING_RELATES_TO_TARGETS (TS-KG-07 guards drift).
+    ("relates_to", (
+        ("Learning", "Entity"),
+        ("Learning", "Decision"),
+        ("Learning", "Requirement"),
+        ("Learning", "Constraint"),
+        ("Learning", "TestScenario"),
+        ("Learning", "APIContract"),
+        ("Learning", "Criterion"),
+    )),
     ("belongs_to", (
         ("Entity", "Entity"),
         ("Entity", "Bug"),

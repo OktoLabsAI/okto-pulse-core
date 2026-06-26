@@ -485,10 +485,19 @@ async def add_edge_candidate(
         )
         is_system_worker = agent_id.startswith("system:")
         if (not is_system_worker) and edge_type_str in DETERMINISTIC_EDGE_TYPES:
+            # S-KG-01 / BR-KG-02: a cognitive writer attempting a deterministic
+            # edge (e.g. belongs_to) is fail-closed with the bounded reason so
+            # callers can branch on it without parsing the message.
+            violation = LayerViolationError(edge_type_str)
             raise KGPrimitiveError(
                 "layer_violation",
-                str(LayerViolationError(edge_type_str)),
+                str(violation),
                 session_id=req.session_id,
+                details={
+                    "reason": violation.reason,
+                    "edge_type": violation.edge_type,
+                    "allowed_edges": violation.allowed_edges,
+                },
             )
 
         for ep in (cand.from_candidate_id, cand.to_candidate_id):
