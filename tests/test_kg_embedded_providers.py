@@ -1,13 +1,12 @@
-"""Tests for the new embedded providers (KuzuGraphStore, KuzuCypherExecutor,
-SqliteOutboxEventBus) and the full registry wiring.
+"""Tests for the core embedded KG providers and full registry wiring.
 
 Validates:
 - All 3 providers satisfy their respective Protocols
 - Registry _build_defaults populates graph_store + cypher_executor
-- configure_kg_registry with session_factory wires audit_repo + event_bus
+- configure_kg_registry fails closed without explicit audit_repo + event_bus
 - KuzuGraphStore delegates to Kuzu correctly (via InMemoryGraphStore parity)
 - KuzuCypherExecutor applies safety rails
-- SqliteOutboxEventBus lifecycle
+- test EventBus fake lifecycle
 - kg_service.py uses graph_store from registry (no direct open_board_connection)
 """
 
@@ -53,9 +52,9 @@ class TestProtocolCompliance:
         assert isinstance(KuzuCypherExecutor(), CypherExecutor)
 
     def test_sqlite_outbox_event_bus_satisfies_protocol(self):
-        from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import SqliteOutboxEventBus
+        from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
 
-        assert isinstance(SqliteOutboxEventBus(lambda: None), EventBus)
+        assert isinstance(InMemoryEventBus(), EventBus)
 
 
 class _FakeKuzuConnection:
@@ -128,31 +127,33 @@ class TestRegistryWiring:
         assert reg.cypher_executor is not None
         assert isinstance(reg.cypher_executor, CypherExecutor)
 
-    def test_defaults_no_event_bus_without_session_factory(self):
-        reg = get_kg_registry()
-        # event_bus requires session_factory, so defaults have None
-        assert reg.event_bus is None
-
-    def test_defaults_no_audit_repo_without_session_factory(self):
-        reg = get_kg_registry()
-        assert reg.audit_repo is None
-
-    def test_configure_with_session_factory_wires_audit_repo(self):
-        def mock_sf():
-            return None
-
-        configure_test_kg_registry(session_factory=mock_sf)
-        reg = get_kg_registry()
-        assert reg.audit_repo is not None
-
-    def test_configure_with_session_factory_wires_event_bus(self):
-        def mock_sf():
-            return None
-
-        configure_test_kg_registry(session_factory=mock_sf)
+    def test_test_composition_supplies_event_bus_fake(self):
         reg = get_kg_registry()
         assert reg.event_bus is not None
         assert isinstance(reg.event_bus, EventBus)
+
+    def test_test_composition_supplies_audit_repo_fake(self):
+        reg = get_kg_registry()
+        assert reg.audit_repo is not None
+
+    def test_configure_with_session_factory_does_not_auto_wire_data_ports(self):
+        from okto_pulse.core.kg.interfaces.registry import (
+            KGProviderRegistry,
+            configure_kg_registry,
+        )
+        from okto_pulse.core.kg.providers.embedded.settings_config import (
+            SettingsKGConfig,
+        )
+
+        reset_registry_for_tests()
+        try:
+            with pytest.raises(RuntimeError, match="event_bus, audit_repo"):
+                configure_kg_registry(
+                    session_factory=lambda: None,
+                    base_registry=KGProviderRegistry(config=SettingsKGConfig()),
+                )
+        finally:
+            configure_test_kg_registry()
 
     def test_override_takes_precedence(self):
         from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore
@@ -227,35 +228,38 @@ class TestKuzuCypherExecutorSafety:
 
 
 # -----------------------------------------------------------------------
-# SqliteOutboxEventBus lifecycle
+# InMemoryEventBus lifecycle
 # -----------------------------------------------------------------------
 
 
-class TestSqliteOutboxEventBusLifecycle:
+class TestInMemoryEventBusLifecycle:
 
     @pytest.mark.asyncio
     async def test_start_stop(self):
-        from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import SqliteOutboxEventBus
+        from okto_pulse.core.kg.providers.testing.memory_event_bus import (
+            InMemoryEventBus,
+        )
 
-        bus = SqliteOutboxEventBus(lambda: None)
+        bus = InMemoryEventBus()
         await bus.start()
-        assert bus._running is True
+        assert bus.is_running is True
         await bus.stop()
-        assert bus._running is False
+        assert bus.is_running is False
 
     @pytest.mark.asyncio
     async def test_subscribe_and_handle(self):
-        from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import SqliteOutboxEventBus
+        from okto_pulse.core.kg.providers.testing.memory_event_bus import (
+            InMemoryEventBus,
+        )
 
         received = []
 
         async def handler(event: KGEvent):
             received.append(event)
 
-        bus = SqliteOutboxEventBus(lambda: None)
+        bus = InMemoryEventBus()
         await bus.subscribe("test_event", handler)
 
-        # publish will fail on outbox write (no real DB), but handler should still fire
         event_id = await bus.publish(KGEvent(
             event_type="test_event",
             board_id="b1",

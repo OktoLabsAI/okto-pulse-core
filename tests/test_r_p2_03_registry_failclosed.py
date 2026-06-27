@@ -85,12 +85,24 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
     the caller, not a silent embedded-default substitution.
 
     ``config`` IS supplied here because it is a REQUIRED slot (03D) — otherwise
-    ``configure_kg_registry`` fails closed before we can observe the slot."""
+    ``configure_kg_registry`` fails closed before we can observe the slot. R-P2-02
+    also requires event_bus/audit_repo, so this test supplies opaque fakes for the
+    data ports while proving cache/rate/session are not silently defaulted."""
     from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+    from okto_pulse.core.kg.providers.testing.memory_audit_repo import (
+        InMemoryAuditRepository,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
 
     reset_registry_for_tests()
     try:
-        configure_kg_registry(base_registry=KGProviderRegistry(config=SettingsKGConfig()))
+        configure_kg_registry(
+            base_registry=KGProviderRegistry(
+                config=SettingsKGConfig(),
+                event_bus=InMemoryEventBus(),
+                audit_repo=InMemoryAuditRepository(),
+            )
+        )
         assert getattr(get_kg_registry(), slot) is None, (
             f"{slot} was implicitly defaulted by the core in the composed path"
         )
@@ -98,16 +110,33 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
         configure_test_kg_registry()
 
 
-def test_config_required_fails_closed_when_composition_omits_it() -> None:
+@pytest.mark.parametrize("missing_slot", ("config", "event_bus", "audit_repo"))
+def test_required_data_slots_fail_closed_when_composition_omits_one(
+    missing_slot: str,
+) -> None:
     """R-P2-03D: the core no longer fills ``config`` (KGConfig) with an embedded
     ``SettingsKGConfig`` (the R05-D ledgered fallback is retired). A composition
     that omits ``config`` fails closed at ``configure_kg_registry`` with an
     actionable error — never a late ``AttributeError`` when a consumer reads
-    ``registry.config``."""
+    ``registry.config``. R-P2-02 applies the same fail-closed contract to the
+    relational data ports: event_bus and audit_repo."""
+    from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+    from okto_pulse.core.kg.providers.testing.memory_audit_repo import (
+        InMemoryAuditRepository,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
+
+    providers = {
+        "config": SettingsKGConfig(),
+        "event_bus": InMemoryEventBus(),
+        "audit_repo": InMemoryAuditRepository(),
+    }
+    providers[missing_slot] = None
+
     reset_registry_for_tests()
     try:
-        with pytest.raises(RuntimeError, match="config"):
-            configure_kg_registry(base_registry=KGProviderRegistry())
+        with pytest.raises(RuntimeError, match=missing_slot):
+            configure_kg_registry(base_registry=KGProviderRegistry(**providers))
     finally:
         configure_test_kg_registry()
 

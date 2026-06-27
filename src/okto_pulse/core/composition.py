@@ -10,9 +10,9 @@ Ownership (Remediacao #03 v2): the providers OWNED/wired by #03 in this phase ar
 settings, auth, storage, session_factory, event_bus, scheduler_control,
 telemetry, lifecycle_hooks and mcp_session_factory. The KG registry
 (``kg_registry``) is transitional debt deferred to #05 and is NOT a required
-provider here. ``event_bus`` is a #03-owned provider key — a concrete
-``SqliteOutboxEventBus`` is a transitional baseline only, never a new app-layer
-hardcode.
+provider here. ``event_bus`` is a #03-owned provider key supplied by the edition
+composition root; core code must not instantiate a concrete relational event-bus
+adapter.
 
 Providers are duck-typed (held as opaque objects) so this module imports no
 concrete adapter; it is composition-layer wiring, not application logic.

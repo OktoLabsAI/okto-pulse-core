@@ -69,9 +69,9 @@ def _build_defaults() -> KGProviderRegistry:
     """Build a registry with all embedded defaults.
 
     Populates Onda 1 (config, cache, rate_limiter, embedding), Onda 2
-    (session_store), and Onda 3 (graph_store, cypher_executor, event_bus).
-    audit_repo and auth_context_factory require a session_factory and are
-    populated via configure_kg_registry() at bootstrap time.
+    (session_store), and the core-owned graph slots. event_bus and audit_repo
+    are not defaulted here: real runtimes must compose them explicitly and tests
+    must provide fakes via defaults_factory/overrides.
     """
     from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
     from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
@@ -110,7 +110,7 @@ def _build_defaults() -> KGProviderRegistry:
         graph_schema_manager=KuzuGraphSchemaManager(),
         graph_lifecycle=KuzuGraphLifecycle(),
         graph_path_resolver=KuzuGraphPathResolver(),
-        # event_bus, audit_repo, auth_context_factory populated by configure_kg_registry()
+        # event_bus, audit_repo, auth_context_factory supplied by composition
     )
 
 
@@ -167,11 +167,9 @@ def configure_kg_registry(
     Called once at bootstrap. Thread-safe.
 
     Args:
-        session_factory: SQLAlchemy async session factory. When provided,
-            auto-wires audit_repo (SqlAlchemyAuditRepository) and event_bus
-            (SqliteOutboxEventBus) ONLY when the slot is not explicitly
-            overridden AND not already supplied by ``base_registry`` (R05-D
-            register-before-fallback / prefer-provided).
+        session_factory: Deprecated compatibility argument. R-P2-02 removed
+            relational auto-wire from core; passing this no longer creates
+            audit_repo/event_bus.
         base_registry: (R05-B) a pre-built ``KGProviderRegistry`` whose Onda A
             slots (cache_backend / rate_limiter / session_store /
             embedding_provider) are supplied by the edition (e.g. the Community
@@ -180,9 +178,8 @@ def configure_kg_registry(
             ``_build_graph_defaults`` here. R-P2-03D: ``config`` is NO LONGER a
             graph default — the composition MUST supply it (``configure`` fails
             closed otherwise). audit_repo / event_bus auto-wire from
-            ``session_factory`` ONLY if the base left them ``None`` — the Community
-            edition supplies them explicitly (R05-D), so the auto-wire is a
-            ledgered fallback.
+            Community edition supplies audit_repo / event_bus explicitly; core
+            fails closed if those slots are absent.
         defaults_factory: (R05-B) a callable returning the base registry, used
             instead of ``base_registry`` when the caller prefers lazy
             construction. Same composition semantics as ``base_registry``.
@@ -224,50 +221,39 @@ def configure_kg_registry(
                 if getattr(reg, key, None) is None:
                     setattr(reg, key, value)
 
-        # R05-D: the session_factory auto-wire of audit_repo/event_bus is now a
-        # LEDGERED FALLBACK (register-before-fallback). It fires ONLY when the
-        # composition did NOT already supply the slot. The Community edition
-        # supplies CommunityAuditRepository / CommunityOutboxEventBus EXPLICITLY
-        # (community.adapters.composition._apply_data_providers), so for that
-        # edition this auto-wire never runs. R-P2-03 retired the non-composed
-        # (no base_registry / no defaults_factory) path — it now fails closed, so
-        # this auto-wire only fires for a base_registry/defaults_factory that left
-        # audit_repo/event_bus ``None``. This fallback is owned / criteria-tracked
-        # in data_provider_ownership_gate.LEDGERED_DATA_FALLBACK and retires when
-        # spec #04 strangles the Repository-UoW.
-        if session_factory is not None:
-            if "audit_repo" not in overrides and reg.audit_repo is None:
-                from okto_pulse.core.kg.providers.embedded.sqlalchemy_audit_repo import (
-                    SqlAlchemyAuditRepository,
-                )
-                reg.audit_repo = SqlAlchemyAuditRepository(session_factory)
-
-            if "event_bus" not in overrides and reg.event_bus is None:
-                from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import (
-                    SqliteOutboxEventBus,
-                )
-                reg.event_bus = SqliteOutboxEventBus(session_factory)
-
+        # R-P2-02: the session_factory auto-wire of audit_repo/event_bus is RETIRED.
+        # The core no longer instantiates SqliteOutboxEventBus / SqlAlchemyAuditRepository
+        # as a silent relational fallback — the composition root MUST supply both
+        # ``event_bus`` and ``audit_repo`` explicitly (the Community edition does, via
+        # community.adapters.composition._apply_data_providers; tests supply fakes).
+        # A real composed runtime that omits either one fails closed below.
         for key, value in overrides.items():
             if hasattr(reg, key):
                 setattr(reg, key, value)
 
-        # R-P2-03D: ``config`` (KGConfig) is a REQUIRED slot — the core no longer
-        # fills it with an implicit SettingsKGConfig. A composition that does not
-        # supply it fails closed HERE with an actionable error (not a late
-        # AttributeError when a consumer reads ``registry.config``). The Community
-        # edition supplies CommunityKGConfig explicitly via
+        # R-P2-02 / R-P2-03D: ``config`` (KGConfig), ``event_bus`` (EventBus) and
+        # ``audit_repo`` (AuditRepository) are REQUIRED composition-supplied slots —
+        # the core no longer fills any of them with an implicit/relational fallback.
+        # A real composed runtime that omits one fails closed HERE with an actionable
+        # error (never a late AttributeError when a consumer reads the slot). The
+        # Community edition supplies all three explicitly via
         # ``community.adapters.composition._apply_data_providers``; tests use the
-        # ``defaults_factory`` route, whose embedded fake includes config.
-        if reg.config is None:
+        # ``defaults_factory`` route + explicit fakes.
+        _missing = [
+            name
+            for name in ("config", "event_bus", "audit_repo")
+            if getattr(reg, name) is None
+        ]
+        if _missing:
             raise RuntimeError(
-                "KG registry config (KGConfig) is required but the composition did "
-                "not supply it: a base_registry / defaults_factory (or an explicit "
-                "config= override) must provide `config`. The Community edition "
-                "supplies CommunityKGConfig via "
-                "community.adapters.composition._apply_data_providers; the core no "
-                "longer fills it with an implicit SettingsKGConfig default "
-                "(R-P2-03D)."
+                "KG registry is missing required composition-supplied slot(s): "
+                f"{', '.join(_missing)}. The composition root must provide config "
+                "(KGConfig), event_bus (EventBus) and audit_repo (AuditRepository) "
+                "explicitly — the core no longer auto-wires relational fallbacks "
+                "(R-P2-02, SqliteOutboxEventBus / SqlAlchemyAuditRepository) nor an "
+                "implicit SettingsKGConfig (R-P2-03D). The Community edition supplies "
+                "them via community.adapters.composition._apply_data_providers; tests "
+                "use a defaults_factory / explicit fakes."
             )
 
         _registry = reg

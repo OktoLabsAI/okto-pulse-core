@@ -1,29 +1,25 @@
 """DataProviderOwnershipGate (SaaS Refactor spec R05-D, Onda B / IMP2).
 
-Fail-closed AST/import gate guarding the move of the three KG DATA providers to
-the Community composition root:
-  - EventBus        -> SqliteOutboxEventBus
-  - AuditRepository -> SqlAlchemyAuditRepository
+Fail-closed AST/import gate guarding the move of the KG DATA providers to the
+Community composition root:
+  - EventBus        -> CommunityOutboxEventBus
+  - AuditRepository -> CommunityAuditRepository
   - KGConfig        -> SettingsKGConfig
 
 It BLOCKS (``ok=False``) when:
   1. any core module imports ``okto_pulse.community`` (the edition must never be
      a core dependency — recontamination); OR
-  2. a core module OTHER than the single ledgered fallback
-     (``kg/interfaces/registry.py``) directly INSTANTIATES one of the three data
-     adapters — i.e. a NEW local consumer / a NEW auto-wire outside the ledger.
+  2. any core module directly INSTANTIATES one of the retired data adapter
+     classes. R-P2-02 retired the registry session_factory auto-wire, so the
+     ledger is now empty and there is no legitimate core fallback path.
 
-The one legitimate remaining core auto-wire — the ``configure_kg_registry``
-session_factory auto-wire of audit_repo/event_bus — is the LEDGERED FALLBACK
-(``LEDGERED_DATA_FALLBACK``): a register-before-fallback temporary exception that
-fires ONLY when a ``base_registry`` / ``defaults_factory`` composition left those
-slots ``None``; the Community edition supplies them explicitly, so it never runs
-for that edition. R-P2-03D RETIRED the ``SettingsKGConfig`` config fallback —
-``_build_graph_defaults`` no longer fills the config slot and config is now a
-composition-required slot (``configure_kg_registry`` fails closed without it); the
-only remaining ``SettingsKGConfig`` instantiation (``registry._build_defaults``) is
-the TEST-ONLY fake route. SQLAlchemy / the ORM is NOT moved by R05-D (that is the
-gated spec #04 strangling). Read-only static analysis (``ast`` + ``pathlib``).
+R-P2-03D already retired the ``SettingsKGConfig`` config fallback from real
+composition. The remaining ``SettingsKGConfig`` instantiation in
+``registry._build_defaults`` is a narrowly allowlisted TEST-ONLY fake route; any
+new config instantiation elsewhere is still blocked. SQLAlchemy / the ORM model
+layer remains a gated #04 temporary exception; the EventBus and AuditRepository
+concrete adapters are Community-owned. Read-only static analysis (``ast`` +
+``pathlib``).
 """
 
 from __future__ import annotations
@@ -41,43 +37,21 @@ DATA_ADAPTER_SYMBOLS: frozenset[str] = frozenset(
     }
 )
 
-#: The SINGLE ledgered fallback location (norm path) where the core may still
-#: instantiate a data adapter — register-before-fallback temporary exception.
-LEDGERED_DATA_FALLBACK: dict[str, dict] = {
-    "kg/interfaces/registry.py": {
-        "owner": "core-kg/registry",
-        "reason": (
-            "configure_kg_registry session_factory auto-wire of audit_repo "
-            "(SqlAlchemyAuditRepository) + event_bus (SqliteOutboxEventBus) — fires "
-            "ONLY when the composition left the slot None (prefer-provided); the "
-            "Community edition supplies both explicitly "
-            "(community.adapters.composition._apply_data_providers), so this "
-            "auto-wire never runs for it; it remains a ledgered fallback for a "
-            "base_registry/defaults_factory that leaves audit_repo/event_bus None "
-            "(R-P2-03 retired the non-composed path — it now fails closed). "
-            "R-P2-03D RETIRED the SettingsKGConfig config "
-            "fallback: _build_graph_defaults no longer fills the config slot and "
-            "configure_kg_registry now REQUIRES config (fail-closed). The remaining "
-            "SettingsKGConfig instantiation in registry._build_defaults is the "
-            "TEST-ONLY fake route (defaults_factory), NOT a runtime fallback."
-        ),
-        "target_ports": ["EventBus", "AuditRepository"],
-        "retired_ports": {
-            "KGConfig": "R-P2-03D — config is now composition-required (fail-closed)"
-        },
-        "removal_criterion": (
-            "R-P2-03D already retired the SettingsKGConfig config fallback. spec "
-            "#04: when the Repository-UoW strangling lands and every edition "
-            "composes its data providers, drop the session_factory auto-wire of "
-            "audit_repo/event_bus — this entry then becomes empty and the gate "
-            "enforces zero core instantiation."
-        ),
-    },
-}
+#: R-P2-02 retires the last relational data-provider fallback in core. This stays
+#: as an empty public constant so previous conformance tests can assert the
+#: zero-fallback contract directly.
+LEDGERED_DATA_FALLBACK: dict[str, dict] = {}
 
-#: SQLAlchemy / the relational ORM is a gated spec #04 temporary exception — it
-#: STAYS in core (R05-D does NOT strangle the Repository-UoW). Recorded for the
-#: dependency audit, not a violation here.
+#: R-P2-03D leaves only the sanctioned test helper path that builds
+#: SettingsKGConfig through ``defaults_factory``. This is not a runtime fallback
+#: and is kept separate from the relational fallback ledger, which must remain
+#: empty after R-P2-02.
+TEST_ONLY_CONFIG_FAKE_ROUTES: frozenset[str] = frozenset(
+    {"kg/interfaces/registry.py"}
+)
+
+#: SQLAlchemy / the relational ORM model layer is a gated spec #04 temporary
+#: exception. Recorded for dependency audit, not a direct data-adapter fallback.
 SQLALCHEMY_OWNERSHIP_STATUS = "core-gated-04-temporary-exception"
 
 COMMUNITY_ROOT = "okto_pulse.community"
@@ -222,6 +196,8 @@ def run_data_provider_ownership_gate(
 
         alias_map = _build_alias_map(tree)
         for symbol, lineno in _data_instantiations(tree, alias_map):
+            if symbol == "SettingsKGConfig" and rel in TEST_ONLY_CONFIG_FAKE_ROUTES:
+                continue
             if rel not in LEDGERED_DATA_FALLBACK:
                 new_consumers.append(
                     {"file": rel, "symbol": symbol, "line": lineno}
@@ -244,6 +220,7 @@ def run_data_provider_ownership_gate(
 __all__ = [
     "DATA_ADAPTER_SYMBOLS",
     "LEDGERED_DATA_FALLBACK",
+    "TEST_ONLY_CONFIG_FAKE_ROUTES",
     "SQLALCHEMY_OWNERSHIP_STATUS",
     "DataOwnershipReport",
     "run_data_provider_ownership_gate",

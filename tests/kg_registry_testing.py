@@ -24,8 +24,23 @@ def configure_test_kg_registry(**overrides: Any) -> None:
 
     A thin, EXPLICIT wrapper over
     ``configure_kg_registry(defaults_factory=_build_defaults, **overrides)`` so the
-    test intent ("running on the embedded fakes") is literal and greppable. Pass
-    provider overrides / ``session_factory`` exactly as you would to
-    ``configure_kg_registry``.
+    test intent ("running on the embedded fakes") is literal and greppable.
+
+    R-P2-02: ``event_bus`` and ``audit_repo`` are REQUIRED composition slots (the
+    core no longer auto-wires the SqliteOutboxEventBus / SqlAlchemyAuditRepository
+    relational fallback). The embedded ``_build_defaults`` does NOT supply them, so
+    this helper injects the in-memory test fakes by default — a test can override
+    either (e.g. to exercise prefer-provided or a raising fake). Pass any other
+    provider overrides exactly as you would to ``configure_kg_registry``.
     """
-    configure_kg_registry(defaults_factory=_build_defaults, **overrides)
+    from okto_pulse.core.kg.providers.testing.memory_audit_repo import (
+        InMemoryAuditRepository,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
+
+    defaults: dict[str, Any] = {
+        "event_bus": InMemoryEventBus(),
+        "audit_repo": InMemoryAuditRepository(),
+    }
+    defaults.update(overrides)
+    configure_kg_registry(defaults_factory=_build_defaults, **defaults)

@@ -4,7 +4,8 @@ Scenarios here (core-target):
 
   ts_66c96a7e — configure_kg_registry(base_registry=...) does NOT instantiate the
                 core embedded Onda A (cache/rate_limiter/session_store/embedding)
-                BUT graph_store/audit_repo/event_bus are still present/wired; and
+                BUT graph_store is mounted while audit_repo/event_bus are supplied
+                explicitly by composition; and
                 the no-base path now FAILS CLOSED (R-P2-03 retired the TR3
                 implicit Onda A escape).
   (supporting) — the rerank factory cross_encoder registration hook + the
@@ -35,6 +36,24 @@ from okto_pulse.core.kg.rerank.factory import (
 
 class _Sentinel:
     """A unique opaque object standing in for a community-supplied provider."""
+
+
+class _SentinelBus:
+    async def publish(self, event):
+        return "evt_test"
+
+    async def subscribe(self, event_type, handler):
+        ...
+
+    async def start(self):
+        ...
+
+    async def stop(self):
+        ...
+
+
+class _SentinelAudit:
+    ...
 
 
 def _instrument_onda_a(monkeypatch):
@@ -87,6 +106,8 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
             session_store=_Sentinel(),
             embedding_provider=_Sentinel(),
             config=_Sentinel(),  # R-P2-03D: config is composition-supplied (required)
+            event_bus=_SentinelBus(),
+            audit_repo=_SentinelAudit(),
         )
         configure_kg_registry(session_factory=object(), base_registry=base)
         reg = get_kg_registry()
@@ -109,9 +130,9 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
         assert reg.graph_schema_manager is not None
         assert reg.graph_lifecycle is not None
         assert reg.graph_path_resolver is not None
-        # audit_repo / event_bus auto-wired from the session_factory.
-        assert reg.audit_repo is not None
-        assert reg.event_bus is not None
+        # audit_repo / event_bus are composition-supplied, never auto-wired.
+        assert reg.audit_repo is base.audit_repo
+        assert reg.event_bus is base.event_bus
     finally:
         reset_registry_for_tests()
 
@@ -145,13 +166,15 @@ def test_ts_66c96a7e_defaults_factory_path_also_composes(monkeypatch):
                 session_store=_Sentinel(),
                 embedding_provider=_Sentinel(),
                 config=_Sentinel(),  # R-P2-03D: config required from the composition
+                event_bus=_SentinelBus(),
+                audit_repo=_SentinelAudit(),
             )
 
         configure_kg_registry(session_factory=object(), defaults_factory=_factory)
         reg = get_kg_registry()
         assert counts == {"cache": 0, "rate_limiter": 0, "session_store": 0, "embedding": 0}
         assert reg.graph_store is not None
-        assert reg.audit_repo is not None
+        assert isinstance(reg.audit_repo, _SentinelAudit)
     finally:
         reset_registry_for_tests()
 

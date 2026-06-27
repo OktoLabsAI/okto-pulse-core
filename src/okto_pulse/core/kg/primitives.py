@@ -315,14 +315,11 @@ async def begin_consolidation(
 
     content_hash = compute_content_hash(req.raw_content, req.artifact_id, req.board_id)
 
-    # Nothing-changed detection via audit repository or db fallback.
-    # When both db=None and no audit_repo, skip dedup entirely — forced
-    # re-processing so stale audit records with matching content_hash
-    # don't cause all candidates to be marked NOOP (0 nodes written).
-    has_audit_source = (
-        not force_reprocess
-        and (db is not None or registry.audit_repo is not None)
-    )
+    # Nothing-changed detection is owned by the composed AuditRepository.
+    # R-P2-02 removed the silent DB fallback: a runtime without audit_repo is
+    # mis-composed and must fail early instead of reading relational tables via
+    # an escape path.
+    has_audit_source = not force_reprocess
     if has_audit_source:
         latest = await _get_latest_audit(registry, db, req.board_id, req.artifact_id)
         nothing_changed = bool(latest and _audit_hash(latest) == content_hash)
@@ -665,7 +662,7 @@ async def propose_reconciliation(
     registry = get_kg_registry()
     session = await _require_open_session(req.session_id, agent_id)
 
-    if not force_reprocess and (db is not None or registry.audit_repo is not None):
+    if not force_reprocess:
         latest = await _get_latest_audit(
             registry, db, session.board_id, session.artifact_id
         )
@@ -2460,31 +2457,22 @@ def _now_iso() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Audit helpers — registry.audit_repo with db fallback
+# Audit helpers — registry.audit_repo only
 # ---------------------------------------------------------------------------
 
 
 async def _get_latest_audit(registry, db, board_id: str, artifact_id: str):
-    """Get latest committed audit via audit_repo or db fallback."""
+    """Get latest committed audit via the composed AuditRepository."""
     if registry.audit_repo is not None:
         return await registry.audit_repo.get_latest_for_artifact(board_id, artifact_id)
-    if db is not None:
-        from sqlalchemy import select
-        from okto_pulse.core.models.db import ConsolidationAudit
-
-        query = (
-            select(ConsolidationAudit)
-            .where(
-                ConsolidationAudit.board_id == board_id,
-                ConsolidationAudit.artifact_id == artifact_id,
-                ConsolidationAudit.committed_at.is_not(None),
-                ConsolidationAudit.undo_status == "none",
-            )
-            .order_by(ConsolidationAudit.committed_at.desc())
-            .limit(1)
-        )
-        return (await db.execute(query)).scalars().first()
-    return None
+    raise KGPrimitiveError(
+        "audit_repository_required",
+        (
+            "KG consolidation requires a composed audit_repo. The core no longer "
+            "falls back to direct DB audit/outbox access (R-P2-02); configure the "
+            "registry with an AuditRepository adapter."
+        ),
+    )
 
 
 def _audit_hash(audit_row) -> str | None:
@@ -2498,7 +2486,7 @@ def _audit_session_id(audit_row) -> str | None:
 
 
 async def _commit_audit_records(registry, db, records, counters, req, session, agent_id, committed_at):
-    """Write audit records via audit_repo or db fallback.
+    """Write audit records via the composed AuditRepository.
 
     Args:
         records: List of orch record objects (entity_id, entity_type, kind).
@@ -2557,42 +2545,13 @@ async def _commit_audit_records(registry, db, records, counters, req, session, a
         await registry.audit_repo.commit_consolidation_records(
             audit_data, kuzu_refs, outbox_data
         )
-    elif db is not None:
-        from okto_pulse.core.models.db import (
-            ConsolidationAudit,
-            GlobalUpdateOutbox,
-            KuzuNodeRef,
-        )
-
-        db.add(ConsolidationAudit(
-            session_id=audit_data.session_id,
-            board_id=audit_data.board_id,
-            artifact_id=audit_data.artifact_id,
-            artifact_type=audit_data.artifact_type,
-            agent_id=audit_data.agent_id,
-            started_at=audit_data.started_at,
-            committed_at=audit_data.committed_at,
-            nodes_added=audit_data.nodes_added,
-            nodes_updated=audit_data.nodes_updated,
-            nodes_superseded=audit_data.nodes_superseded,
-            edges_added=audit_data.edges_added,
-            summary_text=audit_data.summary_text,
-            content_hash=audit_data.content_hash,
-            undo_status="none",
-        ))
-        for ref in kuzu_refs:
-            db.add(KuzuNodeRef(
-                session_id=ref.session_id,
-                board_id=ref.board_id,
-                kuzu_node_id=ref.kuzu_node_id,
-                kuzu_node_type=ref.kuzu_node_type,
-                operation=ref.operation,
-            ))
-        db.add(GlobalUpdateOutbox(
-            event_id=outbox_data.event_id,
-            board_id=outbox_data.board_id,
-            session_id=outbox_data.session_id,
-            event_type=outbox_data.event_type,
-            payload=outbox_data.payload,
-        ))
-        await db.commit()
+        return
+    raise KGPrimitiveError(
+        "audit_repository_required",
+        (
+            "KG consolidation requires a composed audit_repo. The core no longer "
+            "writes audit/outbox rows via direct DB fallback (R-P2-02); configure "
+            "the registry with an AuditRepository adapter."
+        ),
+        session_id=req.session_id,
+    )

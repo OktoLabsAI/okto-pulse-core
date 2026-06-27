@@ -88,8 +88,6 @@ def test_ts_a3695d08_inventory_complete_and_metadata_filled():
     # ...and every relational adapter (outbox/audit/asyncpg) depends on it,
     # alongside its repository/UoW axis (tr_68514f22).
     for key in (
-        "sqlite_outbox_event_bus",
-        "sqlalchemy_audit_repository",
         "asyncpg_postgres_driver",
     ):
         refs = _by_key(key).predecessor_refs

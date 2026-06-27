@@ -4,10 +4,8 @@ prefer-provided fallback.
   TS2 import-gate-recontamination — the fail-closed DataProviderOwnershipGate
        PASSES on the real core; a synthetic core→community import BLOCKS; a NEW
        data-adapter instantiation outside the single ledgered fallback BLOCKS.
-  (prefer-provided) — configure_kg_registry does NOT overwrite an audit_repo /
-       event_bus the base_registry already supplied (register-before-fallback);
-       a non-composed call now FAILS CLOSED (R-P2-03 retired the TR3 implicit
-       Onda A escape).
+  (fail-closed) — configure_kg_registry requires audit_repo / event_bus to be
+       supplied explicitly; R-P2-02 retired the registry session_factory auto-wire.
 """
 
 from __future__ import annotations
@@ -22,7 +20,7 @@ from okto_pulse.core.kg.data_provider_ownership_gate import (
 # ===========================================================================
 # TS2 — fail-closed ownership gate.
 # ===========================================================================
-def test_ts2_gate_passes_on_real_core_with_single_ledgered_fallback():
+def test_ts2_gate_passes_on_real_core_with_zero_ledgered_fallback():
     r1 = run_data_provider_ownership_gate()
     r2 = run_data_provider_ownership_gate()
 
@@ -30,15 +28,9 @@ def test_ts2_gate_passes_on_real_core_with_single_ledgered_fallback():
     assert r1.ok is True
     assert r1.community_import_offenders == []
     assert r1.new_data_consumers == []
-    # The single ledgered fallback is registry.py, with a full removal contract.
-    assert set(r1.ledger) == {"kg/interfaces/registry.py"}
-    entry = r1.ledger["kg/interfaces/registry.py"]
-    assert entry["owner"].startswith("core")
-    # R-P2-03D retired the KGConfig fallback (config is now composition-required);
-    # the active ledgered fallback is only the audit_repo/event_bus auto-wire.
-    assert entry["target_ports"] == ["EventBus", "AuditRepository"]
-    assert "KGConfig" in entry["retired_ports"]
-    assert entry["removal_criterion"].startswith("R-P2-03D")
+    # R-P2-02 retired the final relational data-provider fallback; the ledger is
+    # intentionally empty and the gate enforces zero core instantiation.
+    assert r1.ledger == {}
     # SQLAlchemy is the gated #04 exception (documented, not a violation).
     assert r1.as_dict()["sqlalchemy_ownership"] == SQLALCHEMY_OWNERSHIP_STATUS
 
@@ -70,8 +62,9 @@ def test_ts2_gate_blocks_new_unledgered_data_instantiation(tmp_path):
     assert hit["symbol"] == "SqlAlchemyAuditRepository"
 
 
-def test_ts2_gate_allows_instantiation_in_ledgered_registry(tmp_path):
-    # The ledgered fallback path (kg/interfaces/registry.py) MAY instantiate.
+def test_ts2_gate_blocks_instantiation_even_in_registry(tmp_path):
+    # R-P2-02 retired the ledgered fallback path: registry.py may no longer
+    # instantiate relational data adapters.
     d = tmp_path / "kg" / "interfaces"
     d.mkdir(parents=True, exist_ok=True)
     (d / "registry.py").write_text(
@@ -80,9 +73,15 @@ def test_ts2_gate_allows_instantiation_in_ledgered_registry(tmp_path):
         encoding="utf-8",
     )
     report = run_data_provider_ownership_gate(tmp_path)
-    assert report.ok is True
-    assert report.new_data_consumers == []
-    assert "kg/interfaces/registry.py" in LEDGERED_DATA_FALLBACK
+    assert report.ok is False
+    assert report.new_data_consumers == [
+        {
+            "file": "kg/interfaces/registry.py",
+            "symbol": "SqliteOutboxEventBus",
+            "line": 2,
+        }
+    ]
+    assert LEDGERED_DATA_FALLBACK == {}
 
 
 # ---------------------------------------------------------------------------
@@ -122,8 +121,8 @@ def test_ts2_gate_blocks_aliased_config_instantiation(tmp_path):
     assert hit["symbol"] == "SettingsKGConfig"
 
 
-def test_ts2_gate_allows_aliased_instantiation_in_ledgered_registry(tmp_path):
-    # The SAME alias trick INSIDE the ledgered registry.py stays permitted.
+def test_ts2_gate_blocks_aliased_instantiation_in_registry(tmp_path):
+    # The SAME alias trick INSIDE registry.py is also blocked after R-P2-02.
     d = tmp_path / "kg" / "interfaces"
     d.mkdir(parents=True, exist_ok=True)
     (d / "registry.py").write_text(
@@ -131,8 +130,14 @@ def test_ts2_gate_allows_aliased_instantiation_in_ledgered_registry(tmp_path):
         encoding="utf-8",
     )
     report = run_data_provider_ownership_gate(tmp_path)
-    assert report.ok is True
-    assert report.new_data_consumers == []
+    assert report.ok is False
+    assert report.new_data_consumers == [
+        {
+            "file": "kg/interfaces/registry.py",
+            "symbol": "SqliteOutboxEventBus",
+            "line": 2,
+        }
+    ]
 
 
 # ===========================================================================
@@ -172,7 +177,8 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
     sentinel_audit = _SentinelAudit()
     sf = _SF()
     try:
-        # R-P2-03D: config is now a required slot — the composition must supply it.
+        # R-P2-02/R-P2-03D: data slots and config are required — the composition
+        # must supply them and the core must not overwrite them.
         base = KGProviderRegistry(
             event_bus=sentinel_bus, audit_repo=sentinel_audit, config=object()
         )

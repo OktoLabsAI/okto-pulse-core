@@ -152,8 +152,6 @@ REQUIRED_ADAPTER_KEYS: frozenset[str] = frozenset(
         "kuzu_graph_path_resolver",
         "kuzu_graph_transaction",
         "global_discovery_db",
-        "sqlite_outbox_event_bus",
-        "sqlalchemy_audit_repository",
         "settings_kg_config",
         "singleton_scheduler_control",
         "local_telemetry_store",
@@ -434,39 +432,6 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             deferred_provider_key="kg_registry",
         ),
         # --- infra config providers ---
-        _entry(
-            adapter_key="sqlite_outbox_event_bus",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/sqlite_outbox_event_bus.py",
-            port_ref="EventBus",
-            wave="R05-INFRA",
-            predecessor_refs=("#04_repository_uow", "#16_schema_migrations"),
-            target_destination="community/adapters (event_bus)",
-            packages=("SQLAlchemy",),
-            oracles_required=("outbox_event_roundtrip",),
-            removal_criterion=(
-                "Community registers an EventBus via composition (already wired by "
-                "configure_kg_registry); remove the core default after "
-                "register-before-remove."
-            ),
-            status="blocked",
-        ),
-        _entry(
-            adapter_key="sqlalchemy_audit_repository",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/sqlalchemy_audit_repo.py",
-            port_ref="AuditRepository",
-            wave="R05-INFRA",
-            predecessor_refs=("#04_repository_uow", "#16_schema_migrations"),
-            target_destination="community/adapters (audit_repo)",
-            packages=("SQLAlchemy",),
-            oracles_required=("audit_append_query_parity",),
-            removal_criterion=(
-                "Community registers an AuditRepository via composition; remove "
-                "the core default after register-before-remove."
-            ),
-            status="blocked",
-        ),
         _entry(
             adapter_key="settings_kg_config",
             owner="okto-pulse-core/kg",
