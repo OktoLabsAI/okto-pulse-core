@@ -30,8 +30,11 @@ from okto_pulse.core.kg.interfaces.registry import (
 _SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "okto_pulse"
 # Onda A slots NOT carried by the composed-path graph defaults — these are the
 # ones the composed base must supply (or stay None). ``config`` (03D) is special:
-# it is a core-owned R05-D LEDGERED fallback in ``_build_graph_defaults`` and is
-# exercised separately by the 03D-specific tests, so it is not parametrized here.
+# R-P2-03D made it a REQUIRED composition-supplied slot — it is NO LONGER filled
+# by ``_build_graph_defaults`` (the R05-D fallback was retired), and
+# ``configure_kg_registry`` FAILS CLOSED when it is absent. So config is covered by
+# the dedicated config tests below, not the cache/rate/session "not implicitly
+# defaulted" parametrize.
 _FULLY_CLOSED_ONDA_A = ("cache_backend", "rate_limiter", "session_store")
 
 

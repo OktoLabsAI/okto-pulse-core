@@ -176,20 +176,24 @@ def configure_kg_registry(
             slots (cache_backend / rate_limiter / session_store /
             embedding_provider) are supplied by the edition (e.g. the Community
             adapters) so the core's embedded Onda A are NOT instantiated. The
-            core-owned NON-Onda-A slots it leaves ``None`` (config + Kùzu/graph)
-            are filled by ``_build_graph_defaults`` here. audit_repo / event_bus
-            auto-wire from ``session_factory`` ONLY if the base left them ``None``
-            — the Community edition supplies them explicitly (R05-D), so the
-            auto-wire is a ledgered fallback for non-composed callers.
+            core-owned graph slots it leaves ``None`` (Kùzu/graph) are filled by
+            ``_build_graph_defaults`` here. R-P2-03D: ``config`` is NO LONGER a
+            graph default — the composition MUST supply it (``configure`` fails
+            closed otherwise). audit_repo / event_bus auto-wire from
+            ``session_factory`` ONLY if the base left them ``None`` — the Community
+            edition supplies them explicitly (R05-D), so the auto-wire is a
+            ledgered fallback.
         defaults_factory: (R05-B) a callable returning the base registry, used
             instead of ``base_registry`` when the caller prefers lazy
             construction. Same composition semantics as ``base_registry``.
         **overrides: Provider instances keyed by field name.
             Example: configure_kg_registry(cache_backend=RedisCacheBackend(url))
 
-    Retro-compat (TR3): a call WITHOUT ``base_registry``/``defaults_factory``
-    behaves EXACTLY as before — ``_build_defaults()`` + session_factory
-    auto-wiring.
+    R-P2-03: a call WITHOUT ``base_registry``/``defaults_factory`` now FAILS
+    CLOSED — the TR3 implicit ``_build_defaults()`` escape is retired. A real
+    runtime must supply a ``base_registry`` (the Community adapters); tests use a
+    ``defaults_factory`` (the sanctioned fake route). ``config`` is a REQUIRED
+    slot the composition must provide.
     """
     global _registry, _configured
     with _lock:
@@ -212,8 +216,9 @@ def configure_kg_registry(
             )
 
         # R05-B: when a base/factory supplied the Onda A slots, mount the
-        # core-owned non-Onda-A providers (config + Kùzu/graph) into any slot the
-        # base left empty — WITHOUT instantiating the embedded Onda A.
+        # core-owned graph providers (Kùzu/graph) into any slot the base left
+        # empty — WITHOUT instantiating the embedded Onda A. R-P2-03D: ``config``
+        # is NO LONGER mounted here; it is a required composition-supplied slot.
         if composed:
             for key, value in _build_graph_defaults().items():
                 if getattr(reg, key, None) is None:
@@ -224,11 +229,12 @@ def configure_kg_registry(
         # composition did NOT already supply the slot. The Community edition
         # supplies CommunityAuditRepository / CommunityOutboxEventBus EXPLICITLY
         # (community.adapters.composition._apply_data_providers), so for that
-        # edition this auto-wire never runs. A non-composed caller (no
-        # base_registry → _build_defaults leaves these None) still auto-wires
-        # EXACTLY as before (TR3 retro-compat). This fallback is owned /
-        # criteria-tracked in data_provider_ownership_gate.LEDGERED_DATA_FALLBACK
-        # and retires when spec #04 strangles the Repository-UoW.
+        # edition this auto-wire never runs. R-P2-03 retired the non-composed
+        # (no base_registry / no defaults_factory) path — it now fails closed, so
+        # this auto-wire only fires for a base_registry/defaults_factory that left
+        # audit_repo/event_bus ``None``. This fallback is owned / criteria-tracked
+        # in data_provider_ownership_gate.LEDGERED_DATA_FALLBACK and retires when
+        # spec #04 strangles the Repository-UoW.
         if session_factory is not None:
             if "audit_repo" not in overrides and reg.audit_repo is None:
                 from okto_pulse.core.kg.providers.embedded.sqlalchemy_audit_repo import (
