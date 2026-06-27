@@ -70,6 +70,13 @@ def settings_split_conformance(source_root: Path | None = None) -> GateReport:
         "monolith_removed": "def _maybe_reschedule_tick" not in src,
         "accepts_scheduler_control": "scheduler_control" in src,
         "no_direct_singleton_import": "kg.scheduler_singleton" not in src,
+        # R-P2-06C — the general settings-effects contract: no implicit concrete
+        # effect provider in the core (no SingletonSchedulerControl construction,
+        # no scheduler_control_adapter import) and an executable effect->port
+        # inventory (SETTINGS_RUNTIME_EFFECT_PORTS) is the canonical source.
+        "no_implicit_singleton_construction": "SingletonSchedulerControl(" not in src,
+        "no_effect_adapter_import": "scheduler_control_adapter" not in src,
+        "has_effect_port_inventory": "SETTINGS_RUNTIME_EFFECT_PORTS" in src,
     }
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
@@ -84,8 +91,11 @@ def settings_split_conformance(source_root: Path | None = None) -> GateReport:
             expected_value=[],
             remediation_hint=(
                 "settings_service must split persistence (_apply_live_tick_settings) "
-                "from runtime effects (apply_tick_runtime_effects via SchedulerControl) "
-                "and must not reach kg.scheduler_singleton directly."
+                "from runtime effects (apply_tick_runtime_effects via SchedulerControl), "
+                "must not reach kg.scheduler_singleton directly, must NOT construct a "
+                "concrete effect provider (SingletonSchedulerControl / "
+                "scheduler_control_adapter — R-P2-06C), and must declare its "
+                "settings->effect-port inventory in SETTINGS_RUNTIME_EFFECT_PORTS."
             ),
         )
     return GateReport(

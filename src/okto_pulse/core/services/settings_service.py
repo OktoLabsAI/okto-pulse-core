@@ -19,7 +19,7 @@ import asyncio
 import logging
 import os
 import warnings
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy import String, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,6 +73,23 @@ DECAY_TICK_KEYS: tuple[str, ...] = (
 # to expose it via the REST endpoint; update the RuntimeSettingsPayload to
 # include a validator.
 RUNTIME_KEYS: tuple[str, ...] = GRAPH_DB_KEYS + EVENT_QUEUE_KEYS + DECAY_TICK_KEYS
+
+# R-P2-06C — the general settings-effects contract. A settings change may trigger
+# a RUNTIME EFFECT only through a port the composition (edition) INJECTS; the core
+# common NEVER constructs a concrete effect provider (no implicit scheduler
+# singleton — see R-P2-06B). This is the authoritative inventory of every
+# settings -> runtime-effect mapping: the key is the persisted setting, the value
+# is the ``RuntimeComposition`` provider key that carries the effect. Today the
+# single mapped effect is the KG decay-tick reschedule
+# (``kg_decay_tick_interval_minutes`` -> ``SchedulerControl.reschedule_job`` via
+# the ``scheduler_control`` provider). GRAPH_DB_KEYS are guarded
+# (``KGConfigChangeGuard``, restart-required) and DELIBERATELY trigger no local
+# runtime effect — they are absent from this map (the absence-of-unintended-effect
+# invariant). A new settings-effect MUST add an entry here AND flow through an
+# injected port, never a core-constructed concrete.
+SETTINGS_RUNTIME_EFFECT_PORTS: Final[dict[str, str]] = {
+    "kg_decay_tick_interval_minutes": "scheduler_control",
+}
 
 # Legacy env var name → canonical settings key. Read once at boot in
 # apply_persisted_settings_to_core_settings; emits DeprecationWarning if used.
