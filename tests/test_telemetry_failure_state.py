@@ -21,9 +21,7 @@ from okto_pulse.core.telemetry.failure_state import (
     STATUS_UNKNOWN,
     FailureState,
     is_secret_key,
-    load_failure_state,
     merge,
-    persist_failure_state,
     public_status_projection,
     read_failure_state,
     redact_secret_keys,
@@ -144,11 +142,13 @@ def test_public_projection_is_allowlisted_even_with_injected_secret(tmp_path: Pa
     assert "leaked-token" not in repr(projection)
 
 
-def test_persist_roundtrip_preserves_other_keys_and_omits_secrets(tmp_path: Path) -> None:
-    metrics_dir = _write_legacy_state(tmp_path, mode="anonymous_beacon")
+def test_write_failure_state_preserves_other_keys_and_omits_secrets() -> None:
+    # R-P2-08: the FS persistence roundtrip is a Community concern; the core keeps
+    # the PURE projection — write_failure_state must not disturb other state keys.
+    state = {**_LEGACY_STATE, "mode": "anonymous_beacon"}
 
     fs = merge(
-        read_failure_state(load_state(metrics_dir)),
+        read_failure_state(state),
         status=STATUS_DEGRADED,
         reason_code="USAGE_500",
         http_status=500,
@@ -156,17 +156,16 @@ def test_persist_roundtrip_preserves_other_keys_and_omits_secrets(tmp_path: Path
         next_retry_at="2026-06-15T17:15:00Z",
         retry_count=1,
     )
-    persist_failure_state(metrics_dir, fs)
+    updated = write_failure_state(state, fs)
 
-    # Round-trips identically.
-    assert load_failure_state(metrics_dir) == fs
+    # Round-trips identically through the pure projection.
+    assert read_failure_state(updated) == fs
 
-    reloaded = load_state(metrics_dir)
     # Other keys preserved (token still there for publishing).
-    assert reloaded["install_token"] == "super-secret-token-value"
-    assert reloaded["next_batch_seq"] == 7
+    assert updated["install_token"] == "super-secret-token-value"
+    assert updated["next_batch_seq"] == 7
     # The persisted failure_state block carries only allowlisted, non-secret keys.
-    block = reloaded[FAILURE_STATE_KEY]
+    block = updated[FAILURE_STATE_KEY]
     assert set(block) == set(PUBLIC_FAILURE_STATE_FIELDS)
     _assert_no_secret(block)
 

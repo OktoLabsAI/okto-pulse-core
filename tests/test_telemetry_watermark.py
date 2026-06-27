@@ -25,8 +25,6 @@ from okto_pulse.core.telemetry.watermark import (
     advance,
     compare_to_cursor,
     event_cursor_tuple,
-    load_watermark,
-    persist_watermark,
     public_watermark_projection,
     read_watermark,
     write_watermark,
@@ -119,8 +117,11 @@ def test_diagnostic_projection_omits_token_even_when_injected(tmp_path: Path) ->
 # --- backward compatibility (tr_f5b5d90a) ----------------------------------
 
 
-def test_persist_roundtrip_preserves_other_state_keys(tmp_path: Path) -> None:
-    metrics_dir = _write_legacy_state(tmp_path)
+def test_write_watermark_preserves_other_state_keys() -> None:
+    # R-P2-08: the FS persistence roundtrip is a Community concern (see the
+    # community telemetry_state tests). The core keeps the PURE projection —
+    # write_watermark must not disturb other state keys and must round-trip.
+    state = dict(_LEGACY_STATE)
     wm = Watermark(
         watermark="2026-06-10T00:00:00Z",
         watermark_event_id="evt-abc",
@@ -129,15 +130,14 @@ def test_persist_roundtrip_preserves_other_state_keys(tmp_path: Path) -> None:
         next_batch_seq=8,
         retention_days=30,
     )
-    persist_watermark(metrics_dir, wm)
+    updated = write_watermark(state, wm)
 
-    reloaded = load_state(metrics_dir)
     # Every pre-existing key survives untouched.
-    assert reloaded["install_token"] == "super-secret-token-value"
-    assert reloaded["mode"] == "anonymous_beacon"
-    assert reloaded["failure_state"] == {"status": "ok"}
-    # And the watermark round-trips.
-    assert load_watermark(metrics_dir) == wm
+    assert updated["install_token"] == "super-secret-token-value"
+    assert updated["mode"] == "anonymous_beacon"
+    assert updated["failure_state"] == {"status": "ok"}
+    # And the watermark round-trips through the pure projection.
+    assert read_watermark(updated) == wm
 
 
 def test_next_batch_seq_is_a_single_flat_source_of_truth(tmp_path: Path) -> None:

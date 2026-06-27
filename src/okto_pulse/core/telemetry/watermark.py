@@ -309,17 +309,8 @@ def public_watermark_projection(state: dict[str, Any]) -> dict[str, Any]:
     return read_watermark(state).public_dict()
 
 
-def load_watermark(metrics_dir: Any) -> Watermark:
-    """Load and migrate the watermark from ``state.json`` under ``metrics_dir``."""
-    from okto_pulse.core.telemetry.settings import load_state
-
-    return read_watermark(load_state(metrics_dir))
-
-
-def persist_watermark(metrics_dir: Any, watermark: Watermark) -> Watermark:
-    """Persist ``watermark`` into ``state.json`` without disturbing other keys."""
-    from okto_pulse.core.telemetry.settings import load_state, save_state
-
-    state = load_state(metrics_dir)
-    save_state(metrics_dir, write_watermark(state, watermark))
-    return watermark
+# R-P2-08: the local ``state.json`` persistence helpers (``load_watermark`` /
+# ``persist_watermark``) were extracted to the Community edition
+# (``okto_pulse.community.adapters.telemetry_state``). The core keeps ONLY the
+# PURE projections above (``read_watermark`` / ``write_watermark`` /
+# ``public_watermark_projection``); it no longer persists telemetry state locally.
