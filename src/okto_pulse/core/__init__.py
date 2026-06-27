@@ -43,7 +43,6 @@ _LAZY_EXPORTS: dict[str, str] = {
     "has_permission": "okto_pulse.core.infra.permissions",
     # infra.storage
     "StorageProvider": "okto_pulse.core.infra.storage",
-    "FileSystemStorageProvider": "okto_pulse.core.infra.storage",
     "configure_storage": "okto_pulse.core.infra.storage",
     "get_storage_provider": "okto_pulse.core.infra.storage",
 }
@@ -78,7 +77,6 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         has_permission,
     )
     from okto_pulse.core.infra.storage import (
-        FileSystemStorageProvider,
         StorageProvider,
         configure_storage,
         get_storage_provider,

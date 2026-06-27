@@ -1,8 +1,13 @@
-"""Storage abstraction — provider pattern for file persistence."""
+"""Storage abstraction — provider pattern for file persistence.
 
-import secrets
+R-P2-06A: the concrete ``FileSystemStorageProvider`` was extracted to the
+Community edition (``community.adapters.storage.CommunityFileSystemStorage``,
+wired via ``community_storage_provider`` in the composition root). The core keeps
+ONLY the ``StorageProvider`` port + the fail-closed registry; a runtime
+``StorageProvider`` MUST be injected via :func:`configure_storage`.
+"""
+
 from abc import ABC, abstractmethod
-from pathlib import Path
 
 
 class StorageProvider(ABC):
@@ -16,32 +21,6 @@ class StorageProvider(ABC):
 
     @abstractmethod
     async def delete(self, path: str) -> bool: ...
-
-
-class FileSystemStorageProvider(StorageProvider):
-    """Local filesystem storage provider."""
-
-    def __init__(self, base_dir: str):
-        self.base_dir = Path(base_dir)
-
-    async def save(self, board_id: str, filename: str, content: bytes) -> str:
-        safe_name = Path(filename).name
-        unique_name = f"{secrets.token_hex(8)}_{safe_name}"
-        upload_dir = self.base_dir / board_id
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        file_path = upload_dir / unique_name
-        file_path.write_bytes(content)
-        return str(file_path)
-
-    async def load(self, path: str) -> bytes:
-        return Path(path).read_bytes()
-
-    async def delete(self, path: str) -> bool:
-        try:
-            Path(path).unlink()
-            return True
-        except FileNotFoundError:
-            return False
 
 
 _storage_provider: StorageProvider | None = None

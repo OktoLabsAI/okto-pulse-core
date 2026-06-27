@@ -35,7 +35,6 @@ from okto_pulse.core.infra.permissions import (
     has_permission,
 )
 from okto_pulse.core.infra.storage import (
-    FileSystemStorageProvider,
     StorageProvider,
     configure_storage,
     get_storage_provider,
