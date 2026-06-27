@@ -28,7 +28,6 @@ from okto_pulse.core.kg.schema import (
     SCHEMA_VERSION,
     STABLE_NODE_PROPERTIES,
     VECTOR_INDEX_TYPES,
-    open_board_connection,
     stable_rel_type_entries,
     vector_index_name,
 )
@@ -553,8 +552,9 @@ def execute_cypher_read_only(
 ) -> dict:
     """Execute a validated read-only Cypher query with safety rails.
 
-    Delegates to registry.cypher_executor when available, falls back to
-    direct Kuzu execution.
+    Delegates to registry.cypher_executor. A missing executor is a composition
+    error: business-facing query code must never open the graph backend
+    directly.
     """
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
@@ -571,7 +571,7 @@ def execute_cypher_read_only(
     if not include_working:
         cleaned, canonical_filter_mode = _rewrite_cypher_canonical_only(cleaned)
 
-    executor = get_kg_registry().cypher_executor
+    executor = getattr(get_kg_registry(), "cypher_executor", None)
     if executor is not None:
         logger.debug("[KG] execute_cypher_read_only delegating to registry.cypher_executor")
         result = executor.execute_read_only(
@@ -583,55 +583,11 @@ def execute_cypher_read_only(
             canonical_filter_mode=canonical_filter_mode,
         )
 
-    # Fallback: direct execution (should not happen with proper bootstrap)
-    import time as _time
-
-    timeout_ms = clamp_timeout(timeout_ms)
-
-    logger.debug("[KG] execute_cypher_read_only opening board connection board_id=%s", board_id)
-    t0 = _time.monotonic()
-    try:
-        with open_board_connection(board_id) as (_db, conn):
-            logger.debug("[KG] execute_cypher_read_only executing cleaned cypher (first 200 chars): %s", cleaned[:200])
-            result = conn.execute(cleaned, params or {})
-            rows = []
-            while result.has_next():
-                rows.append(result.get_next())
-                if len(rows) > max_rows:
-                    break
-    except TierPowerError:
-        raise
-    except Exception as exc:
-        message = str(exc)
-        logger.error("[KG] execute_cypher_read_only failed: %s", exc)
-        code = "invalid_cypher"
-        details = {"cypher": cleaned[:200]}
-        if "graph" in message.lower() or "lbug" in message.lower() or "kuzu" in message.lower():
-            code = "graph_unavailable"
-            details["graph_state"] = "unavailable"
-        raise TierPowerError(
-            code,
-            f"Cypher execution failed: {exc}",
-            details=details,
-        ) from exc
-
-    dur = (_time.monotonic() - t0) * 1000
-    truncated = len(rows) > max_rows
-    if truncated:
-        rows = rows[:max_rows]
-
-    logger.debug("[KG] execute_cypher_read_only done row_count=%d truncated=%s time_ms=%.1f",
-                 len(rows), truncated, dur)
-    raw_result = {
-        "rows": [list(r) for r in rows],
-        "row_count": len(rows),
-        "truncated": truncated,
-        "execution_time_ms": round(dur, 1),
-    }
-    return _apply_canonical_projection(
-        raw_result,
-        include_working=include_working,
-        canonical_filter_mode=canonical_filter_mode,
+    raise TierPowerError(
+        "graph_backend_unconfigured",
+        "KG registry is missing cypher_executor; configure the graph query port "
+        "in the composition root before using Tier Power.",
+        details={"board_id": board_id, "cypher": cleaned[:200]},
     )
 
 
@@ -676,6 +632,12 @@ def _find_literal_node_matches(
     out: list[dict] = []
     seen: set[str] = set()
 
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    executor = getattr(get_kg_registry(), "cypher_executor", None)
+    if executor is None:
+        return []
+
     def _append(row: list[Any], node_type: str, similarity: float) -> None:
         node_id = row[0]
         if not node_id or node_id in seen:
@@ -690,54 +652,45 @@ def _find_literal_node_matches(
         })
 
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            for node_type in NODE_TYPES:
-                if len(out) >= limit:
-                    break
-                try:
-                    result = conn.execute(
-                        f"MATCH (n:{node_type}) "
-                        "WHERE n.id = $q "
-                        "OR n.title = $q "
-                        "OR n.source_artifact_ref = $q "
-                        "RETURN n.id, n.title, n.source_artifact_ref "
-                        "LIMIT $k",
-                        {"q": query_text, "k": max(1, limit - len(out))},
-                    )
-                    try:
-                        while result.has_next():
-                            _append(result.get_next(), node_type, 1.0)
-                    finally:
-                        try:
-                            result.close()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+        for node_type in NODE_TYPES:
+            if len(out) >= limit:
+                break
+            try:
+                result = executor.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) "
+                    "WHERE n.id = $q "
+                    "OR n.title = $q "
+                    "OR n.source_artifact_ref = $q "
+                    "RETURN n.id, n.title, n.source_artifact_ref "
+                    "LIMIT $k",
+                    {"q": query_text, "k": max(1, limit - len(out))},
+                    max_rows=max(1, limit - len(out)),
+                )
+                for row in result.get("rows") or []:
+                    _append(row, node_type, 1.0)
+            except Exception:
+                pass
 
-            for node_type in NODE_TYPES:
-                if len(out) >= limit:
-                    break
-                try:
-                    result = conn.execute(
-                        f"MATCH (n:{node_type}) "
-                        "WHERE n.title CONTAINS $q "
-                        "OR n.content CONTAINS $q "
-                        "OR n.source_artifact_ref CONTAINS $q "
-                        "RETURN n.id, n.title, n.source_artifact_ref "
-                        "LIMIT $k",
-                        {"q": query_text[:200], "k": max(1, limit - len(out))},
-                    )
-                    try:
-                        while result.has_next():
-                            _append(result.get_next(), node_type, 0.65)
-                    finally:
-                        try:
-                            result.close()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+        for node_type in NODE_TYPES:
+            if len(out) >= limit:
+                break
+            try:
+                result = executor.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) "
+                    "WHERE n.title CONTAINS $q "
+                    "OR n.content CONTAINS $q "
+                    "OR n.source_artifact_ref CONTAINS $q "
+                    "RETURN n.id, n.title, n.source_artifact_ref "
+                    "LIMIT $k",
+                    {"q": query_text[:200], "k": max(1, limit - len(out))},
+                    max_rows=max(1, limit - len(out)),
+                )
+                for row in result.get("rows") or []:
+                    _append(row, node_type, 0.65)
+            except Exception:
+                pass
     except Exception as exc:
         logger.debug(
             "kg.natural.literal_fallback_failed board=%s err=%s",
@@ -920,16 +873,18 @@ def execute_natural_query(
                 except Exception:
                     pass
         else:
-            with open_board_connection(board_id) as (_db, conn):
+            executor = getattr(registry, "cypher_executor", None)
+            if executor is not None:
                 for node_type in NODE_TYPES:
                     try:
-                        result = conn.execute(
+                        result = executor.execute_read_only(
+                            board_id,
                             f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q "
                             f"RETURN n.id, n.title LIMIT $k",
                             {"q": variant_query[:50], "k": fetch_limit},
+                            max_rows=fetch_limit,
                         )
-                        while result.has_next():
-                            row = result.get_next()
+                        for row in result.get("rows") or []:
                             out.append({
                                 "node_id": row[0],
                                 "node_type": node_type,
@@ -1146,21 +1101,25 @@ def _batch_lookup_graph_layer(board_id: str, node_ids: list[str]) -> dict[str, s
     if not node_ids:
         return {}
     from okto_pulse.core.kg import cypher_templates as tpl
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     out: dict[str, str] = {}
-    with open_board_connection(board_id) as (_db, conn):
-        for node_type in NODE_TYPES:
-            try:
-                result = conn.execute(
-                    f"MATCH (n:{node_type}) WHERE n.id IN $ids "
-                    f"RETURN n.id, {tpl.layer_label_projection('n')}",
-                    {"ids": node_ids},
-                )
-                while result.has_next():
-                    row = result.get_next()
-                    out[row[0]] = str(row[1] or "legacy_unknown")
-            except Exception:
-                continue
+    executor = getattr(get_kg_registry(), "cypher_executor", None)
+    if executor is None:
+        return out
+    for node_type in NODE_TYPES:
+        try:
+            result = executor.execute_read_only(
+                board_id,
+                f"MATCH (n:{node_type}) WHERE n.id IN $ids "
+                f"RETURN n.id, {tpl.layer_label_projection('n')}",
+                {"ids": node_ids},
+                max_rows=max(len(node_ids), 1),
+            )
+            for row in result.get("rows") or []:
+                out[row[0]] = str(row[1] or "legacy_unknown")
+        except Exception:
+            continue
     return out
 
 
@@ -1206,31 +1165,35 @@ def _batch_lookup_created_at(board_id: str, node_ids: list[str]) -> dict[str, An
     absence as "outside the temporal window" to be safe.
     """
     from datetime import timezone
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     if not node_ids:
         return {}
 
     out: dict[str, Any] = {}
-    with open_board_connection(board_id) as (_db, conn):
-        for node_type in NODE_TYPES:
-            try:
-                result = conn.execute(
-                    f"MATCH (n:{node_type}) WHERE n.id IN $ids "
-                    f"RETURN n.id, n.created_at",
-                    {"ids": node_ids},
-                )
-                while result.has_next():
-                    row = result.get_next()
-                    nid = row[0]
-                    ts = row[1]
-                    if ts is None:
-                        continue
-                    # Kùzu returns a Python datetime; ensure tz-aware UTC
-                    if hasattr(ts, "tzinfo") and ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=timezone.utc)
-                    out[nid] = ts
-            except Exception:
-                continue
+    executor = getattr(get_kg_registry(), "cypher_executor", None)
+    if executor is None:
+        return out
+    for node_type in NODE_TYPES:
+        try:
+            result = executor.execute_read_only(
+                board_id,
+                f"MATCH (n:{node_type}) WHERE n.id IN $ids "
+                f"RETURN n.id, n.created_at",
+                {"ids": node_ids},
+                max_rows=max(len(node_ids), 1),
+            )
+            for row in result.get("rows") or []:
+                nid = row[0]
+                ts = row[1]
+                if ts is None:
+                    continue
+                # Kùzu returns a Python datetime; ensure tz-aware UTC
+                if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                out[nid] = ts
+        except Exception:
+            continue
     return out
 
 

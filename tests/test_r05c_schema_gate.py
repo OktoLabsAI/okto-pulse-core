@@ -48,11 +48,21 @@ def test_ts_fe24d781_gate_deterministic_blocking_oracle_with_ledger():
     assert set(r1.ledgered_exceptions) == set(LEDGERED_EXCEPTIONS)
     # Migrated off the ledger: services/main.py (37->36), then the class-A
     # GraphTransaction migrations dropped api/kg_tick.py +
-    # kg/canonical_learning_partition.py (36->34).
-    assert len(r1.ledgered_exceptions) == 34
-    assert "services/main.py" not in LEDGERED_EXCEPTIONS
-    assert "api/kg_tick.py" not in LEDGERED_EXCEPTIONS
-    assert "kg/canonical_learning_partition.py" not in LEDGERED_EXCEPTIONS
+    # kg/canonical_learning_partition.py (36->34). R-P2-04 then migrated six
+    # additional business consumers to CypherExecutor / GraphTransaction ports.
+    assert len(r1.ledgered_exceptions) == 28
+    for migrated in {
+        "services/main.py",
+        "api/kg_tick.py",
+        "kg/canonical_learning_partition.py",
+        "events/handlers/cancellation_decay.py",
+        "events/handlers/card_boost_recompute.py",
+        "kg/tier_power.py",
+        "kg/workers/cognitive_closeout.py",
+        "services/cognitive_effectiveness_service.py",
+        "services/discovery_executor.py",
+    }:
+        assert migrated not in LEDGERED_EXCEPTIONS
 
     # The embedded Kùzu runtime stays ledgered (adapter_internal_legitimate) —
     # NOT removed (R05-C constraint).
@@ -137,6 +147,42 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     assert "api/kg_tick.py" not in ledgered
     assert "kg/canonical_learning_partition.py" not in ledgered
     assert "api/kg_routes.py" in ledgered
+
+
+def test_ts_fe24d781_p2_04_consumers_use_ports_not_raw_graph_connections():
+    """R-P2-04: migrated business consumers use the KG ports for read/write
+    surfaces. Residual schema imports in these files are limited to formal
+    metadata/constants and are non-blocking; raw graph connection/path symbols
+    must not reappear.
+    """
+
+    migrated_paths = [
+        "src/okto_pulse/core/events/handlers/cancellation_decay.py",
+        "src/okto_pulse/core/events/handlers/card_boost_recompute.py",
+        "src/okto_pulse/core/kg/tier_power.py",
+        "src/okto_pulse/core/kg/workers/cognitive_closeout.py",
+        "src/okto_pulse/core/services/cognitive_effectiveness_service.py",
+        "src/okto_pulse/core/services/discovery_executor.py",
+    ]
+    forbidden = {
+        "open_board_connection",
+        "board_kuzu_path",
+        "BoardConnection",
+    }
+
+    for rel in migrated_paths:
+        src = Path(rel).read_text(encoding="utf-8")
+        assert not any(symbol in src for symbol in forbidden), rel
+
+    assert "graph_transaction.begin" in Path(
+        "src/okto_pulse/core/events/handlers/cancellation_decay.py"
+    ).read_text(encoding="utf-8")
+    assert "graph_transaction.begin" in Path(
+        "src/okto_pulse/core/events/handlers/card_boost_recompute.py"
+    ).read_text(encoding="utf-8")
+    assert "execute_read_only" in Path(
+        "src/okto_pulse/core/kg/tier_power.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_ts_fe24d781_transaction_ledger_reason_is_factually_correct():

@@ -21,8 +21,6 @@ transition changes.
 
 from __future__ import annotations
 
-import asyncio
-import gc
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -35,7 +33,6 @@ from okto_pulse.core.events.types import (
     CardSeverityChanged,
 )
 from okto_pulse.core.kg.interfaces import get_kg_registry
-from okto_pulse.core.kg.schema import open_board_connection
 from okto_pulse.core.kg.scoring import (
     _recompute_relevance,
     _resolve_priority_boost,
@@ -195,7 +192,7 @@ def _emit_boost_decision_node(
         )
 
 
-def _recompute_boost_sync(
+async def _recompute_boost(
     *,
     board_id: str,
     card_id: str,
@@ -206,17 +203,13 @@ def _recompute_boost_sync(
     trigger_event_type: str,
     changed_by: Optional[str],
 ) -> tuple[float, float]:
-    """Open a Kùzu connection, recompute boost + relevance, audit if needed.
+    """Recompute boost + relevance through the GraphTransaction port.
 
     Returns ``(old_boost, new_boost)``. Short-circuits to (0.0, 0.0) when
     the board has no Kùzu graph yet (event arrived before bootstrap).
     """
-    # Spec #06: existence check via the GraphPathResolver port (no direct
-    # board_kuzu_path import). The embedded resolver delegates to board_kuzu_path,
-    # so behavior is identical; the connection read below stays on the direct
-    # path (the async GraphTransaction port can't be adopted from this sync
-    # helper without async-ifying it — deferred as controlled baseline).
-    if not get_kg_registry().graph_path_resolver.exists(board_id):
+    registry = get_kg_registry()
+    if not registry.graph_path_resolver.exists(board_id):
         return (0.0, 0.0)
 
     new_boost = _resolve_priority_boost(new_priority_value)
@@ -228,12 +221,11 @@ def _recompute_boost_sync(
     node_type = _resolve_node_type(card_type_value)
     root_node_id = _root_entity_id(card_id)
 
-    bc = open_board_connection(board_id)
-    try:
-        old_boost = _fetch_priority_boost(bc.conn, node_type, root_node_id)
-        _persist_priority_boost(bc.conn, node_type, root_node_id, new_boost)
+    async with await registry.graph_transaction.begin(board_id) as scope:
+        old_boost = _fetch_priority_boost(scope, node_type, root_node_id)
+        _persist_priority_boost(scope, node_type, root_node_id, new_boost)
         _recompute_relevance(
-            bc.conn, board_id, node_type, root_node_id,
+            scope, board_id, node_type, root_node_id,
             trigger="boost_change",
         )
         delta = new_boost - old_boost
@@ -253,7 +245,7 @@ def _recompute_boost_sync(
         )
         if abs(delta) > DECISION_AUDIT_DELTA:
             _emit_boost_decision_node(
-                bc.conn,
+                scope,
                 board_id=board_id,
                 card_id=card_id,
                 spec_id=spec_id,
@@ -265,10 +257,6 @@ def _recompute_boost_sync(
                 changed_by=changed_by,
             )
         return (old_boost, new_boost)
-    finally:
-        bc.close()
-        del bc
-        gc.collect()
 
 
 async def _handle_boost_event(
@@ -296,8 +284,7 @@ async def _handle_boost_event(
         card.card_type.value if card.card_type is not None else None
     )
 
-    await asyncio.to_thread(
-        _recompute_boost_sync,
+    await _recompute_boost(
         board_id=event.board_id,
         card_id=event.card_id,
         spec_id=event.spec_id,

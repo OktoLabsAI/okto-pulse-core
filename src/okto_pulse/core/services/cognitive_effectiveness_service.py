@@ -210,50 +210,51 @@ def _project_cognitive_graph(board_id: str, graph_layer: str) -> dict[str, Any]:
     available = True
 
     try:
-        from okto_pulse.core.kg.schema import open_board_connection
-    except Exception as exc:  # pragma: no cover - import guard
-        logger.warning("cognitive_effectiveness.kg_import_failed board=%s err=%s", board_id, exc)
-        return {"persisted_refs": {}, "edge_refs": {}, "node_type_counts": node_type_counts,
-                "edge_type_counts": edge_type_counts, "available": False}
+        from okto_pulse.core.kg.interfaces import get_kg_registry
 
-    try:
-        with open_board_connection(board_id) as (_db, conn):
-            for label in COGNITIVE_NODE_LABELS:
-                try:
-                    res = conn.execute(
-                        f"MATCH (n:{label}) RETURN n.source_artifact_ref, n.graph_layer", {})
-                except Exception as exc:
-                    logger.debug("cognitive_effectiveness.node_query_failed board=%s label=%s err=%s",
-                                 board_id, label, exc)
+        executor = get_kg_registry().cypher_executor
+        for label in COGNITIVE_NODE_LABELS:
+            try:
+                result = executor.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{label}) RETURN n.source_artifact_ref, n.graph_layer",
+                    {},
+                    max_rows=10000,
+                )
+            except Exception as exc:
+                logger.debug("cognitive_effectiveness.node_query_failed board=%s label=%s err=%s",
+                             board_id, label, exc)
+                continue
+            for ref, node_layer in result.get("rows") or []:
+                if not _layer_matches(node_layer, graph_layer):
                     continue
-                while res.has_next():
-                    ref, node_layer = res.get_next()
-                    if not _layer_matches(node_layer, graph_layer):
-                        continue
-                    node_type_counts[label] += 1
-                    if not ref:
-                        continue
+                node_type_counts[label] += 1
+                if not ref:
+                    continue
+                base = _base_artifact_ref(str(ref))
+                bucket = persisted_refs.setdefault(base, {})
+                bucket[label] = bucket.get(label, 0) + 1
+        for etype in COGNITIVE_EDGE_TYPES:
+            try:
+                result = executor.execute_read_only(
+                    board_id,
+                    f"MATCH (n)-[r:{etype}]->() RETURN n.source_artifact_ref, count(r)",
+                    {},
+                    max_rows=10000,
+                )
+            except Exception as exc:
+                logger.debug("cognitive_effectiveness.edge_query_failed board=%s edge=%s err=%s",
+                             board_id, etype, exc)
+                continue
+            for ref, cnt in result.get("rows") or []:
+                c = int(cnt or 0)
+                edge_type_counts[etype] += c
+                if ref:
                     base = _base_artifact_ref(str(ref))
-                    bucket = persisted_refs.setdefault(base, {})
-                    bucket[label] = bucket.get(label, 0) + 1
-            for etype in COGNITIVE_EDGE_TYPES:
-                try:
-                    res = conn.execute(
-                        f"MATCH (n)-[r:{etype}]->() RETURN n.source_artifact_ref, count(r)", {})
-                except Exception as exc:
-                    logger.debug("cognitive_effectiveness.edge_query_failed board=%s edge=%s err=%s",
-                                 board_id, etype, exc)
-                    continue
-                while res.has_next():
-                    ref, cnt = res.get_next()
-                    c = int(cnt or 0)
-                    edge_type_counts[etype] += c
-                    if ref:
-                        base = _base_artifact_ref(str(ref))
-                        eb = edge_refs.setdefault(base, {})
-                        eb[etype] = eb.get(etype, 0) + c
+                    eb = edge_refs.setdefault(base, {})
+                    eb[etype] = eb.get(etype, 0) + c
     except Exception as exc:
-        logger.warning("cognitive_effectiveness.kg_open_failed board=%s err=%s", board_id, exc)
+        logger.warning("cognitive_effectiveness.kg_projection_failed board=%s err=%s", board_id, exc)
         available = False
 
     return {"persisted_refs": persisted_refs, "edge_refs": edge_refs,

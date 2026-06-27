@@ -70,8 +70,6 @@ LEDGERED_EXCEPTIONS: frozenset[str] = frozenset(
     {
         "api/kg_rebuild.py",
         "api/kg_routes.py",
-        "events/handlers/cancellation_decay.py",
-        "events/handlers/card_boost_recompute.py",
         "events/handlers/cognitive_extraction.py",
         "events/handlers/kg_decay_tick.py",
         "events/handlers/kg_hit_recompute.py",
@@ -95,12 +93,8 @@ LEDGERED_EXCEPTIONS: frozenset[str] = frozenset(
         "kg/schema_layer_guard.py",
         "kg/search.py",
         "kg/stale_canonical_parity.py",
-        "kg/tier_power.py",
-        "kg/workers/cognitive_closeout.py",
         "kg/workers/consolidation.py",
         "mcp/server.py",
-        "services/cognitive_effectiveness_service.py",
-        "services/discovery_executor.py",
         "services/kg_health_service.py",
     }
 )

@@ -42,26 +42,22 @@ def _lookup_spec_decision_node(board_id: str, spec_id: str) -> str | None:
     """Find the spec's related canonical Decision node id (for the Alternative's
     relates_to edge), or None when the spec has no materialised Decision."""
     from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
-    from okto_pulse.core.kg.schema import open_board_connection
 
     target = normalize_cognitive_artifact_id(f"spec:{spec_id}")
     try:
-        with open_board_connection(board_id) as (_db, kconn):
-            res = kconn.execute(
-                "MATCH (d:Decision) WHERE d.graph_layer = 'canonical' "
-                "RETURN d.id, d.source_artifact_ref", {})
-            try:
-                while res.has_next():
-                    nid, sref = res.get_next()
-                    if sref and normalize_cognitive_artifact_id(
-                            strip_concept_suffix(str(sref))) == target:
-                        return str(nid)
-            finally:
-                try:
-                    res.close()
-                except Exception:
-                    pass
+        result = get_kg_registry().cypher_executor.execute_read_only(
+            board_id,
+            "MATCH (d:Decision) WHERE d.graph_layer = 'canonical' "
+            "RETURN d.id, d.source_artifact_ref",
+            {},
+            max_rows=5000,
+        )
+        for nid, sref in result.get("rows") or []:
+            if sref and normalize_cognitive_artifact_id(
+                    strip_concept_suffix(str(sref))) == target:
+                return str(nid)
     except Exception as exc:
         logger.debug("cognitive_closeout.decision_lookup_failed spec=%s err=%s", spec_id, exc)
     return None
@@ -69,14 +65,40 @@ def _lookup_spec_decision_node(board_id: str, spec_id: str) -> str | None:
 
 def _graph_bug_probe(board_id: str):
     """A canonical-bug probe backed by the live board graph (RKG-02)."""
-    def _probe(uuid: str) -> bool:
-        from okto_pulse.core.kg.primitives import _graph_canonical_bug_probe
-        from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+    from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
+
+    keys: set[str] = set()
+    loaded = False
+
+    def _ensure_loaded() -> None:
+        nonlocal loaded
+        if loaded:
+            return
+        loaded = True
         try:
-            with open_board_connection(board_id) as (_db, kconn):
-                return _graph_canonical_bug_probe(kconn)(uuid)
+            result = get_kg_registry().cypher_executor.execute_read_only(
+                board_id,
+                "MATCH (b:Bug) WHERE b.graph_layer = 'canonical' "
+                "RETURN b.id, b.source_artifact_ref",
+                {},
+                max_rows=10000,
+            )
+            for bid, bsref in result.get("rows") or []:
+                if bid:
+                    keys.add(normalize_cognitive_artifact_id(f"card:{bid}"))
+                if bsref:
+                    keys.add(normalize_cognitive_artifact_id(
+                        strip_concept_suffix(str(bsref))
+                    ))
         except Exception:
-            return False
+            pass
+
+    def _probe(uuid: str) -> bool:
+        _ensure_loaded()
+        return normalize_cognitive_artifact_id(f"card:{uuid}") in keys
+
     return _probe
 
 

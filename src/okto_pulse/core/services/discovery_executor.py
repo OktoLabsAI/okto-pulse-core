@@ -1802,24 +1802,26 @@ async def _exec_learnings_by_relevance(board_id: str) -> dict:
     bloqueador dominante da UI no incidente de 2026-06-10."""
     import asyncio
 
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     def _query() -> list[tuple]:
-        out: list[tuple] = []
-        with open_board_connection(board_id) as (_db, conn):
-            res = conn.execute(
-                "MATCH (l:Learning) "
-                "RETURN l.id, l.title, l.content, l.relevance_score, "
-                "l.source_artifact_ref "
-                "ORDER BY l.relevance_score DESC LIMIT 200"
-            )
-            try:
-                while res.has_next():
-                    out.append(tuple(res.get_next()))
-            finally:
-                if hasattr(res, "close"):
-                    res.close()
-        return out
+        # R-P2-04: read via the CypherExecutor read-only PORT instead of a raw
+        # graph connection — ``execute_read_only`` is SYNCHRONOUS, so this
+        # stays a plain sync callable run in ``asyncio.to_thread`` (the event-loop
+        # boundary is unchanged). The port is a superset of the raw read path
+        # (validated + bounded) and returns the same Learning rows.
+        cypher = (
+            "MATCH (l:Learning) "
+            "RETURN l.id, l.title, l.content, l.relevance_score, "
+            "l.source_artifact_ref "
+            "ORDER BY l.relevance_score DESC LIMIT 200"
+        )
+        result = get_kg_registry().cypher_executor.execute_read_only(
+            board_id,
+            cypher,
+            max_rows=200,
+        )
+        return [tuple(row) for row in result["rows"]]
 
     try:
         rows_raw = await asyncio.to_thread(_query)
@@ -1875,25 +1877,26 @@ async def _exec_key_decisions(board_id: str) -> dict:
     asyncio.to_thread (nunca Kùzu síncrono no event loop)."""
     import asyncio
 
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     def _query() -> list[tuple]:
-        out: list[tuple] = []
-        with open_board_connection(board_id) as (_db, conn):
-            res = conn.execute(
-                "MATCH (d:Decision) "
-                "OPTIONAL MATCH (d)-[r]-() "
-                "RETURN d.id, d.title, d.content, d.relevance_score, "
-                "d.source_artifact_ref, count(r) "
-                "LIMIT 500"
-            )
-            try:
-                while res.has_next():
-                    out.append(tuple(res.get_next()))
-            finally:
-                if hasattr(res, "close"):
-                    res.close()
-        return out
+        # R-P2-04: read via the CypherExecutor read-only PORT (synchronous) — same
+        # rationale as list_learnings_by_relevance above; the event-loop boundary
+        # is unchanged (run in asyncio.to_thread) and the port is a superset of the
+        # raw read path (validated + bounded).
+        cypher = (
+            "MATCH (d:Decision) "
+            "OPTIONAL MATCH (d)-[r]-() "
+            "RETURN d.id, d.title, d.content, d.relevance_score, "
+            "d.source_artifact_ref, count(r) "
+            "LIMIT 500"
+        )
+        result = get_kg_registry().cypher_executor.execute_read_only(
+            board_id,
+            cypher,
+            max_rows=500,
+        )
+        return [tuple(row) for row in result["rows"]]
 
     try:
         rows_raw = await asyncio.to_thread(_query)
