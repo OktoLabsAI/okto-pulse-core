@@ -158,6 +158,8 @@ REQUIRED_ADAPTER_KEYS: frozenset[str] = frozenset(
         "singleton_scheduler_control",
         "local_telemetry_store",
         "asyncpg_postgres_driver",
+        "board_source_store",
+        "board_rebuild_ingestion_adapter",
     }
 )
 
@@ -533,6 +535,53 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
                 "requires it."
             ),
             status="deferred",
+        ),
+        # --- R-P2-01: raw SQLite residuals governed BEFORE any removal ---
+        # The KG source-materialization + rebuild-ingestion adapters still use raw
+        # ``sqlite3.connect``; they are ledgered here (register-before-remove) so a
+        # later spec can strangle them behind a relational port. R-P2-01 is
+        # governance-only — it does NOT remove the raw sqlite3 usage.
+        _entry(
+            adapter_key="board_source_store",
+            owner="okto-pulse-core/kg",
+            current_module="okto_pulse/core/kg/board_source_store.py",
+            port_ref="(raw SQLite source reader — no port yet; #04 relational boundary)",
+            wave="R05-RELATIONAL",
+            predecessor_refs=("#04_repository_uow",),
+            target_destination="composition-owned relational source reader (Community)",
+            packages=("stdlib(sqlite3)",),
+            oracles_required=(
+                "board_source_fetch_parity",
+                "source_materialization_unaffected",
+            ),
+            removal_criterion=(
+                "deferred to the relational adapter boundary (#04 repository-uow): "
+                "the composition root owns the source reader behind a port; remove "
+                "the raw sqlite3.connect only after register-before-remove + a "
+                "fetch-parity oracle. R-P2-01 governs it; it does NOT remove it."
+            ),
+            status="blocked",
+        ),
+        _entry(
+            adapter_key="board_rebuild_ingestion_adapter",
+            owner="okto-pulse-core/kg",
+            current_module="okto_pulse/core/kg/board_rebuild_adapter.py",
+            port_ref="(raw SQLite rebuild ingestion — no port yet; #04 relational boundary)",
+            wave="R05-RELATIONAL",
+            predecessor_refs=("#04_repository_uow",),
+            target_destination="composition-owned relational rebuild ingestion (Community)",
+            packages=("stdlib(sqlite3)",),
+            oracles_required=(
+                "rebuild_enqueue_receipt_parity",
+                "rebuild_quarantine_unaffected",
+            ),
+            removal_criterion=(
+                "deferred to the relational adapter boundary (#04 repository-uow): "
+                "the composition root owns the rebuild ingestion behind a port; "
+                "remove the raw sqlite3.connect only after register-before-remove + "
+                "an enqueue-receipt oracle. R-P2-01 governs it; it does NOT remove it."
+            ),
+            status="blocked",
         ),
     ]
     return tuple(entries)

@@ -105,6 +105,47 @@ def test_ts_a3695d08_inventory_complete_and_metadata_filled():
     assert "R05-E" in _by_key("asyncpg_postgres_driver").removal_criterion
 
 
+def test_r_p2_01_raw_sqlite_residuals_are_nominally_governed():
+    """R-P2-01: the two raw SQLite residuals must stay explicitly ledgered.
+
+    This test is intentionally independent from REQUIRED_ADAPTER_KEYS so removing
+    both the key and the entry cannot make the generic completeness test pass.
+    """
+    expected = {
+        "board_source_store": {
+            "module": "okto_pulse/core/kg/board_source_store.py",
+            "oracles": {
+                "board_source_fetch_parity",
+                "source_materialization_unaffected",
+            },
+        },
+        "board_rebuild_ingestion_adapter": {
+            "module": "okto_pulse/core/kg/board_rebuild_adapter.py",
+            "oracles": {
+                "rebuild_enqueue_receipt_parity",
+                "rebuild_quarantine_unaffected",
+            },
+        },
+    }
+
+    inv = {entry.adapter_key: entry for entry in build_adapter_inventory()}
+    missing = sorted(set(expected) - set(inv))
+    assert missing == []
+
+    for key, checks in expected.items():
+        entry = inv[key]
+        assert entry.current_module == checks["module"]
+        assert entry.owner == "okto-pulse-core/kg"
+        assert "#04_repository_uow" in entry.predecessor_refs
+        assert "stdlib(sqlite3)" in entry.packages
+        assert set(checks["oracles"]).issubset(set(entry.oracles_required))
+        assert entry.removal_criterion.strip()
+        lowered = entry.removal_criterion.lower()
+        assert "register-before-remove" in lowered
+        assert "does not remove" in lowered
+        assert entry.status == "blocked"
+
+
 # ===========================================================================
 # ts_6baac761 — gate blocks an adapter without evidence.
 # ===========================================================================
@@ -208,6 +249,51 @@ def test_metadata_is_immutable():
     # the tuple itself has no in-place mutation API.
     assert not hasattr(entry.metadata, "append")
     assert not hasattr(entry.metadata, "__setitem__")
+
+
+# ===========================================================================
+# R-P2-01 — the two raw-SQLite residuals are governed NOMINALLY (looked up
+# DIRECTLY in build_adapter_inventory(), NOT via REQUIRED_ADAPTER_KEYS) so a
+# coordinated removal of BOTH the key AND the entry cannot silently satisfy the
+# generic coverage check. Governance-only: sqlite3.connect is NOT removed here.
+# ===========================================================================
+_R_P2_01_RESIDUALS = {
+    "board_source_store": {
+        "module": "okto_pulse/core/kg/board_source_store.py",
+        "oracles": {"board_source_fetch_parity", "source_materialization_unaffected"},
+    },
+    "board_rebuild_ingestion_adapter": {
+        "module": "okto_pulse/core/kg/board_rebuild_adapter.py",
+        "oracles": {"rebuild_enqueue_receipt_parity", "rebuild_quarantine_unaffected"},
+    },
+}
+
+
+@pytest.mark.parametrize("key", sorted(_R_P2_01_RESIDUALS))
+def test_r_p2_01_sqlite_raw_residual_governed_nominally(key):
+    spec = _R_P2_01_RESIDUALS[key]
+    entry = next(
+        (e for e in build_adapter_inventory() if e.adapter_key == key), None
+    )
+    assert entry is not None, (
+        f"R-P2-01: {key} is not registered in build_adapter_inventory()"
+    )
+    assert entry.current_module == spec["module"]
+    # Raw-SQLite governance fields the spec TR requires.
+    assert "stdlib(sqlite3)" in entry.packages, (
+        f"{key} packages must declare stdlib(sqlite3)"
+    )
+    assert "#04_repository_uow" in entry.predecessor_refs, (
+        f"{key} must gate on the #04 relational boundary"
+    )
+    assert set(entry.oracles_required) == spec["oracles"], (
+        f"{key} oracles_required={entry.oracles_required} != expected {spec['oracles']}"
+    )
+    # removal_criterion is non-empty AND encodes register-before-remove + the
+    # governance-only (no removal in this spec) contract.
+    assert entry.removal_criterion.strip()
+    assert "register-before-remove" in entry.removal_criterion
+    assert "does NOT remove" in entry.removal_criterion
 
 
 # ===========================================================================
