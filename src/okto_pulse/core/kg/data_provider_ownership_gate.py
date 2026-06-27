@@ -13,15 +13,17 @@ It BLOCKS (``ok=False``) when:
      (``kg/interfaces/registry.py``) directly INSTANTIATES one of the three data
      adapters — i.e. a NEW local consumer / a NEW auto-wire outside the ledger.
 
-The one legitimate remaining core instantiation — the ``configure_kg_registry``
-session_factory auto-wire of audit_repo/event_bus + the ``SettingsKGConfig``
-default in ``_build_defaults`` / ``_build_graph_defaults`` — is the LEDGERED
-FALLBACK (``LEDGERED_DATA_FALLBACK``): a register-before-fallback temporary
-exception kept for non-composed (retro-compat) callers. It fires only when the
-composition left the slot ``None``; the Community edition supplies the three
-providers explicitly, so the auto-wire never runs for it. SQLAlchemy / the ORM is
-NOT moved by R05-D (that is the gated spec #04 strangling). Read-only static
-analysis (``ast`` + ``pathlib``).
+The one legitimate remaining core auto-wire — the ``configure_kg_registry``
+session_factory auto-wire of audit_repo/event_bus — is the LEDGERED FALLBACK
+(``LEDGERED_DATA_FALLBACK``): a register-before-fallback temporary exception that
+fires ONLY when a ``base_registry`` / ``defaults_factory`` composition left those
+slots ``None``; the Community edition supplies them explicitly, so it never runs
+for that edition. R-P2-03D RETIRED the ``SettingsKGConfig`` config fallback —
+``_build_graph_defaults`` no longer fills the config slot and config is now a
+composition-required slot (``configure_kg_registry`` fails closed without it); the
+only remaining ``SettingsKGConfig`` instantiation (``registry._build_defaults``) is
+the TEST-ONLY fake route. SQLAlchemy / the ORM is NOT moved by R05-D (that is the
+gated spec #04 strangling). Read-only static analysis (``ast`` + ``pathlib``).
 """
 
 from __future__ import annotations
@@ -50,8 +52,10 @@ LEDGERED_DATA_FALLBACK: dict[str, dict] = {
             "ONLY when the composition left the slot None (prefer-provided); the "
             "Community edition supplies both explicitly "
             "(community.adapters.composition._apply_data_providers), so this "
-            "auto-wire never runs for it. Retro-compat (TR3) keeps it for "
-            "non-composed callers. R-P2-03D RETIRED the SettingsKGConfig config "
+            "auto-wire never runs for it; it remains a ledgered fallback for a "
+            "base_registry/defaults_factory that leaves audit_repo/event_bus None "
+            "(R-P2-03 retired the non-composed path — it now fails closed). "
+            "R-P2-03D RETIRED the SettingsKGConfig config "
             "fallback: _build_graph_defaults no longer fills the config slot and "
             "configure_kg_registry now REQUIRES config (fail-closed). The remaining "
             "SettingsKGConfig instantiation in registry._build_defaults is the "
