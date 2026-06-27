@@ -5,7 +5,8 @@ Scenarios here (core-target):
   ts_66c96a7e — configure_kg_registry(base_registry=...) does NOT instantiate the
                 core embedded Onda A (cache/rate_limiter/session_store/embedding)
                 BUT graph_store/audit_repo/event_bus are still present/wired; and
-                the legacy path (no base) is unchanged (TR3 retro-compat).
+                the no-base path now FAILS CLOSED (R-P2-03 retired the TR3
+                implicit Onda A escape).
   (supporting) — the rerank factory cross_encoder registration hook + the
                 token_overlap fallback (feeds the community ts_34ab1390).
 """

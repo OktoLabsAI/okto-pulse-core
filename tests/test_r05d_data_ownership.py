@@ -136,7 +136,8 @@ def test_ts2_gate_allows_aliased_instantiation_in_ledgered_registry(tmp_path):
 
 
 # ===========================================================================
-# prefer-provided fallback (register-before-fallback) + TR3 retro-compat.
+# prefer-provided fallback (register-before-fallback) + R-P2-03 fail-closed
+# (the TR3 implicit-defaults escape is retired).
 # ===========================================================================
 def test_prefer_provided_base_registry_slots_not_overwritten():
     from okto_pulse.core.kg.interfaces import registry as reg_mod
