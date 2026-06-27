@@ -12,7 +12,7 @@ the UI display a banner.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,6 +104,7 @@ async def get_runtime(
 @router.put("/settings/runtime", response_model=RuntimeSettingsResponse)
 async def put_runtime(
     payload: RuntimeSettingsPayload,
+    request: Request,
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ) -> RuntimeSettingsResponse:
@@ -119,6 +120,16 @@ async def put_runtime(
     restart_policy = payload_dict.pop("restart_policy", None)
     # Strip unset value fields — pass only what the caller actually sent.
     values = {k: v for k, v in payload_dict.items() if v is not None}
+    # R-P2-06B: resolve the SchedulerControl from the composition-owned provider
+    # (``RuntimeComposition.scheduler_control``). Absent -> None -> explicit skip
+    # in the service (never the process-global singleton). The Community edition
+    # wires the provider in its composition root, preserving the reschedule.
+    composition = getattr(request.app.state, "runtime_composition", None)
+    scheduler_control = (
+        getattr(composition, "scheduler_control", None)
+        if composition is not None
+        else None
+    )
     try:
         data = await put_runtime_settings(
             db,
@@ -126,6 +137,7 @@ async def put_runtime(
             actor_id=user_id,
             migration_plan_ref=migration_plan_ref,
             restart_policy=restart_policy,
+            scheduler_control=scheduler_control,
         )
     except ConfigChangeBlocked as exc:
         # Safe error envelope: bounded reason + setting_group + audit_event.

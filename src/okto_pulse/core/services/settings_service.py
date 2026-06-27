@@ -300,7 +300,7 @@ def _apply_live_tick_settings(values: dict[str, int]) -> None:
 
 async def apply_tick_runtime_effects(
     values: dict[str, int],
-    scheduler_control: SchedulerControl,
+    scheduler_control: SchedulerControl | None,
     *,
     actor_id: str = "unknown",
     source: str = "runtime_settings.put",
@@ -325,13 +325,19 @@ async def apply_tick_runtime_effects(
         return []
     new_interval = int(values["kg_decay_tick_interval_minutes"])
 
-    if not scheduler_control.is_available():
+    # R-P2-06B: a ``None`` port means the composition injected no
+    # ``SchedulerControl`` — an EXPLICIT skip (the core never falls back to the
+    # process-global singleton). Same public outcome as a wired-but-unavailable
+    # scheduler, with a distinct ``no_provider`` reason for observability.
+    if scheduler_control is None or not scheduler_control.is_available():
+        reason = "no_provider" if scheduler_control is None else "no_scheduler"
         logger.info(
-            "kg.tick.reschedule_skipped reason=no_scheduler new_interval_minutes=%d",
+            "kg.tick.reschedule_skipped reason=%s new_interval_minutes=%d",
+            reason,
             new_interval,
             extra={
                 "event": "kg.tick.reschedule_skipped",
-                "reason": "no_scheduler",
+                "reason": reason,
                 "new_interval_minutes": new_interval,
             },
         )
@@ -541,20 +547,16 @@ async def put_runtime_settings(
         await db.commit()
 
     # Spec 54399628 / spec #15 (fr_93c9af44, fr_2ae7de62) — hot-reload tick
-    # interval after persistence commits, now split into persistence (live
+    # interval after persistence commits, split into persistence (live
     # CoreSettings) and an explicit runtime effect through the SchedulerControl
-    # port. ``scheduler_control`` defaults to the singleton-backed adapter so the
-    # external Community behaviour is preserved; callers (and tests) may inject a
-    # port to keep persistence scheduler-free.
+    # port. R-P2-06B: the core NO LONGER constructs an implicit
+    # ``SingletonSchedulerControl`` fallback — ``scheduler_control`` is the port
+    # the composition injected (the API resolves it from
+    # ``RuntimeComposition.scheduler_control``). A ``None`` port is an explicit
+    # skip handled in ``apply_tick_runtime_effects``; the core never reaches the
+    # process-global scheduler singleton.
     _apply_live_tick_settings(values)
-    control = scheduler_control
-    if control is None:
-        from okto_pulse.core.services.scheduler_control_adapter import (
-            SingletonSchedulerControl,
-        )
-
-        control = SingletonSchedulerControl()
-    await apply_tick_runtime_effects(values, control, actor_id=actor_id)
+    await apply_tick_runtime_effects(values, scheduler_control, actor_id=actor_id)
 
     # Re-read to compute restart_required consistently.
     return await get_runtime_settings(db)

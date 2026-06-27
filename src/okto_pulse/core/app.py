@@ -484,6 +484,13 @@ def create_app(
         lifespan=lifespan if lifespan else _default_lifespan,
     )
 
+    # R-P2-06B: preserve the composition so request handlers can resolve
+    # composition-owned providers (e.g. the SchedulerControl that applies the
+    # runtime settings tick effect) WITHOUT a process-global singleton fallback.
+    # May be ``None`` for legacy/non-composed callers — handlers then treat the
+    # absent provider as an explicit skip.
+    app.state.runtime_composition = composition
+
     # CORS
     if cors_origins:
         app.add_middleware(
