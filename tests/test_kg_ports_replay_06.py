@@ -29,6 +29,7 @@ from okto_pulse.core.kg.interfaces import (
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.schema import (
     board_kuzu_path,
     bootstrap_board_graph,
@@ -78,6 +79,7 @@ def test_gate_blocks_premature_direct_kuzu_outside_adapter(tmp_path):
 def test_minimal_ports_exist_so_promotion_block_is_satisfied():
     # The gate "blocks promotion until the minimal ports exist" — they exist now.
     reset_registry_for_tests()
+    configure_test_kg_registry()
     try:
         reg = get_kg_registry()
         assert isinstance(reg.graph_path_resolver, GraphPathResolver)
@@ -104,6 +106,7 @@ def boards():
 @pytest.mark.asyncio
 async def test_replay_port_path_observably_equivalent_to_direct_baseline(boards):
     reset_registry_for_tests()
+    configure_test_kg_registry()
     try:
         reg = get_kg_registry()
         resolver = reg.graph_path_resolver
@@ -137,6 +140,7 @@ def test_migrated_consumer_existence_check_is_pure_indirection(boards):
     # this proves that swap is a behavior-identical indirection (replay-equivalent).
     # The recompute behavior itself is regression-covered by tests/test_kg_relevance_dynamic.py.
     reset_registry_for_tests()
+    configure_test_kg_registry()
     try:
         resolver = get_kg_registry().graph_path_resolver
         for bid in boards:

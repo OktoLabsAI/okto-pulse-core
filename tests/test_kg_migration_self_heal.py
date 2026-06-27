@@ -41,6 +41,7 @@ def temp_okto_home(tmp_path, monkeypatch):
     """Force `~/.okto-pulse/boards` under tmp_path."""
     from okto_pulse.core.infra import config as config_mod
     from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
+    from kg_registry_testing import configure_test_kg_registry
 
     monkeypatch.setenv("OKTO_PULSE_HOME", str(tmp_path))
     monkeypatch.setenv("KG_BASE_DIR", str(tmp_path))
@@ -51,6 +52,7 @@ def temp_okto_home(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(config_mod, "_settings_instance", None)
     reset_registry_for_tests()
+    configure_test_kg_registry()
     try:
         yield tmp_path
     finally:
@@ -132,13 +134,13 @@ def test_ts2_already_migrated_no_overhead(fresh_board):
 # ---------------------------------------------------------------------------
 
 
-def test_ts3_cli_single_board_returns_json(fresh_board):
-    """AC3: `python -m okto_pulse.tools.kg_migrate_schema --board <id>`
-    returns valid JSON with the expected schema."""
-    # Bug d0f6bab2: parent process keeps the cached Database open per
-    # board; the subprocess opens its own kuzu.Database against the same
-    # path, which Kùzu blocks at OS level. Drop the cache before the
-    # subprocess so the lock is free.
+def test_ts3_cli_single_board_fails_closed_without_composition(fresh_board):
+    """AC3 (R-P2-03): the BARE-CORE `python -m okto_pulse.tools.kg_migrate_schema`
+    is NOT an edition composition root. With the KG registry fail-closed it no
+    longer falls back to implicit embedded providers — so the standalone path
+    deprecates CLEARLY (non-zero exit + an actionable hint) instead of silently
+    migrating. The real migration runs via an edition-composed surface; the JSON
+    payload SHAPE is covered in-process (composed) by the test below."""
     from okto_pulse.core.kg.schema import close_board_db_cache
     close_board_db_cache(board_id=fresh_board)
 
@@ -155,13 +157,39 @@ def test_ts3_cli_single_board_returns_json(fresh_board):
          "--board", fresh_board],
         capture_output=True, text=True, env=env, cwd=str(repo_root),
     )
-    assert result.returncode == 0, f"stderr: {result.stderr}"
+    # Fail-closed: the bare-core process has no composition root, so the registry
+    # is unconfigured and the migration cannot run.
+    assert result.returncode != 0, f"expected fail-closed; stdout: {result.stdout}"
+    assert "registry not configured" in result.stderr.lower()
+    assert "edition-composed" in result.stderr  # the actionable deprecation hint
+    # The JSON summary is still emitted (with the captured error) so ops see why.
     payload = json.loads(result.stdout)
     assert payload["board_id"] == fresh_board
-    assert payload["migrated"] is True
-    assert isinstance(payload["columns_added"], dict)
-    assert isinstance(payload["errors"], list)
-    assert isinstance(payload["duration_ms"], int)
+    assert payload["migrated"] is False
+    assert any("registry not configured" in e.lower() for e in payload["errors"])
+
+
+def test_ts3_in_process_single_board_returns_json_shape(fresh_board, capsys):
+    """AC3 (R-P2-03): the migration JSON-payload contract TS3 used to assert via
+    the bare-core subprocess is validated IN-PROCESS against a COMPOSED registry —
+    the edition-composed path the real migration uses. ``configure_test_kg_registry``
+    stands in for the edition composition (the sanctioned test/fake route)."""
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.tools.kg_migrate_schema import _emit_single, _run_single_board
+
+    configure_test_kg_registry()
+    summary = _run_single_board(fresh_board)
+    rc = _emit_single(summary)
+
+    assert rc == 0
+    assert summary["board_id"] == fresh_board
+    assert summary["migrated"] is True
+    assert isinstance(summary["columns_added"], dict)
+    assert summary["errors"] == []
+    assert isinstance(summary["duration_ms"], int)
+    # _emit_single emitted the JSON payload to stdout (the CLI contract shape).
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["board_id"] == fresh_board and payload["migrated"] is True
 
 
 # ---------------------------------------------------------------------------

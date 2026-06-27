@@ -42,6 +42,7 @@ from okto_pulse.core.kg.interfaces import (
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycle
 from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphPathResolver
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
@@ -341,6 +342,7 @@ def test_ts_f967116f_close_db_continues_when_kg_close_fails():
 # ===========================================================================
 def test_ts_a627315d_registry_providers_conform_and_are_embedded():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     try:
         reg = get_kg_registry()
         assert isinstance(reg.graph_schema_manager, GraphSchemaManager)

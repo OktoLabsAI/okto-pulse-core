@@ -15,11 +15,13 @@ from okto_pulse.core.kg.interfaces.registry import (
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 
@@ -244,6 +246,10 @@ class TestBackwardCompat:
 
         p1 = get_kg_registry().embedding_provider
         reset_embedding_provider_cache()
+        # reset_embedding_provider_cache() resets the whole KG registry; R-P2-03
+        # no longer lazy-rebuilds, so reconfigure the embedded fakes explicitly to
+        # observe a fresh provider instance.
+        configure_test_kg_registry()
         p2 = get_kg_registry().embedding_provider
         assert p1 is not p2
 

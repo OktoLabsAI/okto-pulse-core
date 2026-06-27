@@ -51,8 +51,14 @@ BOARD = "board-tier1-test"
 @pytest.fixture(scope="module", autouse=True)
 def _seed_data():
     """Seed a board with test data for the tier primario queries."""
+    from kg_registry_testing import configure_test_kg_registry
+
     os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_t1_"))
     reset_kg_service_for_tests()
+    # R-P2-03: this MODULE-scope fixture runs BEFORE the function-scope conftest
+    # registry fixture, so it configures the embedded fakes itself — clear_cache()
+    # and bootstrap below both consume the now fail-closed registry.
+    configure_test_kg_registry()
     clear_cache()
 
     _handle = bootstrap_board_graph(BOARD)
@@ -106,6 +112,9 @@ def _seed_data():
     )
     del conn, db
     yield
+    # R-P2-03: at module teardown the function-scope conftest fixture has already
+    # reset the registry, so reconfigure the fakes before the teardown clear_cache.
+    configure_test_kg_registry()
     clear_cache()
 
 

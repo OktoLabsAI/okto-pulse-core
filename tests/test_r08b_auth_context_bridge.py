@@ -36,6 +36,8 @@ from okto_pulse.core.kg.providers.embedded.mcp_auth_context import (
 )
 from okto_pulse.core.ports.mcp_auth import AgentAuthSession
 
+from kg_registry_testing import configure_test_kg_registry
+
 
 @pytest.fixture
 def _seeded_db():
@@ -169,7 +171,7 @@ def test_ts7f7bbdfd_kg_query_tools_use_auth_context_no_bypass(_seeded_db):
             return _Agent("A1")
 
         reg.reset_registry_for_tests()
-        reg.configure_kg_registry(
+        configure_test_kg_registry(
             auth_context_factory=create_mcp_auth_factory(_agent_a1, sf)
         )
         agent, boards = asyncio.run(_get_user_boards())
@@ -183,7 +185,7 @@ def test_ts7f7bbdfd_kg_query_tools_use_auth_context_no_bypass(_seeded_db):
             return _Agent("A2")
 
         reg.reset_registry_for_tests()
-        reg.configure_kg_registry(
+        configure_test_kg_registry(
             auth_context_factory=create_mcp_auth_factory(_agent_a2, sf)
         )
         agent2, boards2 = asyncio.run(_get_user_boards())
@@ -204,7 +206,11 @@ def test_ts8c088b7d_legacy_fallback_preserves_acl(_seeded_db):
     try:
         # NO auth_context_factory registered -> the transitional get_agent/get_db
         # fallback runs, resolving the SAME ACL via AgentService (no bypass).
+        # The registry is configured with the embedded fakes (R-P2-03: no implicit
+        # lazy defaults) but WITHOUT an auth_context_factory, so _get_auth_context
+        # returns None and the legacy facade path is exercised.
         reg.reset_registry_for_tests()
+        configure_test_kg_registry()
 
         async def _agent_a1():
             return _Agent("A1")

@@ -11,10 +11,10 @@ import pytest
 
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
 from okto_pulse.core.kg.interfaces.registry import (
-    configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
 from okto_pulse.core.kg.providers.testing.memory_audit_repo import InMemoryAuditRepository
 
@@ -96,7 +96,7 @@ class TestAuthContextFactory:
     @pytest.mark.asyncio
     async def test_factory_via_registry(self):
         mock = MockAuthContext(agent_id="factory-agent", boards=["b1"])
-        configure_kg_registry(auth_context_factory=lambda: mock)
+        configure_test_kg_registry(auth_context_factory=lambda: mock)
         reg = get_kg_registry()
         auth = reg.auth_context_factory()
         assert await auth.get_agent_id() == "factory-agent"
@@ -119,7 +119,7 @@ class TestE2EInMemoryProviders:
     async def test_begin_and_session_lifecycle(self):
         audit_repo = InMemoryAuditRepository()
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )
@@ -146,7 +146,7 @@ class TestE2EInMemoryProviders:
     async def test_add_candidates_in_memory(self):
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
         audit_repo = InMemoryAuditRepository()
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )
@@ -193,7 +193,7 @@ class TestE2EInMemoryProviders:
     async def test_abort_cleans_session(self):
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
         audit_repo = InMemoryAuditRepository()
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )
@@ -231,7 +231,7 @@ class TestE2EInMemoryProviders:
     async def test_nothing_changed_detection(self):
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
         audit_repo = InMemoryAuditRepository()
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )
@@ -278,7 +278,7 @@ class TestE2EInMemoryProviders:
     @pytest.mark.asyncio
     async def test_sweep_expired_in_memory(self):
         session_store = InMemorySessionStore(default_ttl_seconds=0)
-        configure_kg_registry(session_store=session_store)
+        configure_test_kg_registry(session_store=session_store)
 
         from okto_pulse.core.kg.schemas import BeginConsolidationRequest
         from okto_pulse.core.kg.primitives import begin_consolidation

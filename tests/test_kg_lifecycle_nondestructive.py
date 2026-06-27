@@ -180,6 +180,11 @@ def test_close_guard_fail_open_emits_warning(nd_board, monkeypatch, caplog):
 _WRITER_SCRIPT = r"""
 import os, sys, time
 sys.path.insert(0, os.environ["ND_SRC"])
+# R-P2-03: this is a FRESH core subprocess with no composition root, so it must
+# configure the KG registry (embedded fakes via the sanctioned test
+# defaults_factory) before any board op reads get_kg_registry().config.
+from okto_pulse.core.kg.interfaces.registry import configure_kg_registry, _build_defaults
+configure_kg_registry(defaults_factory=_build_defaults)
 from okto_pulse.core.kg.schema import (
     BoardConnection, apply_ladybug_lifecycle_step, bootstrap_board_graph,
 )
@@ -199,6 +204,9 @@ time.sleep(60)  # o parent mata o processo aqui — sem teardown
 _READER_SCRIPT = r"""
 import os, sys
 sys.path.insert(0, os.environ["ND_SRC"])
+# R-P2-03: fresh core subprocess — compose the registry before board ops.
+from okto_pulse.core.kg.interfaces.registry import configure_kg_registry, _build_defaults
+configure_kg_registry(defaults_factory=_build_defaults)
 from okto_pulse.core.kg.schema import BoardConnection
 bid = os.environ["ND_BOARD"]
 bc = BoardConnection(bid)

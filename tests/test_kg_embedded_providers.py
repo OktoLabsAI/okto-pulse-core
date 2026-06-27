@@ -20,15 +20,16 @@ from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
 from okto_pulse.core.kg.interfaces.registry import (
-    configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 
@@ -140,7 +141,7 @@ class TestRegistryWiring:
         def mock_sf():
             return None
 
-        configure_kg_registry(session_factory=mock_sf)
+        configure_test_kg_registry(session_factory=mock_sf)
         reg = get_kg_registry()
         assert reg.audit_repo is not None
 
@@ -148,7 +149,7 @@ class TestRegistryWiring:
         def mock_sf():
             return None
 
-        configure_kg_registry(session_factory=mock_sf)
+        configure_test_kg_registry(session_factory=mock_sf)
         reg = get_kg_registry()
         assert reg.event_bus is not None
         assert isinstance(reg.event_bus, EventBus)
@@ -157,7 +158,7 @@ class TestRegistryWiring:
         from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore
 
         custom_store = InMemoryGraphStore()
-        configure_kg_registry(graph_store=custom_store)
+        configure_test_kg_registry(graph_store=custom_store)
         reg = get_kg_registry()
         assert reg.graph_store is custom_store
 
@@ -177,7 +178,7 @@ class TestRegistryWiring:
         def mock_sf():
             return None
 
-        configure_kg_registry(session_factory=mock_sf)
+        configure_test_kg_registry(session_factory=mock_sf)
         reg = get_kg_registry()
 
         populated = 0
@@ -279,7 +280,7 @@ class TestKGServiceUsesRegistry:
         from okto_pulse.core.kg.kg_service import KGService
 
         store = InMemoryGraphStore()
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
 
         svc = KGService()
         assert svc.get_schema_version("b1") is None
@@ -300,7 +301,7 @@ class TestKGServiceUsesRegistry:
             "relevance_score": 0.8,
         })
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         results = svc.get_decision_history("b1", "GraphQL")
@@ -318,7 +319,7 @@ class TestKGServiceUsesRegistry:
         store.create_node("b1", "Decision", "d2", {"title": "B"})
         store.create_edge("b1", "contradicts", "d1", "d2", {"confidence": 0.9})
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         results = svc.find_contradictions("b1")
@@ -339,7 +340,7 @@ class TestKGServiceUsesRegistry:
             "source_confidence": 0.95,
         })
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         result = svc.explain_constraint("b1", "c1")
@@ -352,7 +353,7 @@ class TestKGServiceUsesRegistry:
 
         store = InMemoryGraphStore()
         store.bootstrap("b1")
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         with pytest.raises(KGToolError) as exc_info:
@@ -375,7 +376,7 @@ class TestKGServiceUsesRegistry:
         })
         store.create_edge("b1", "relates_to", "d1", "a1")
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         results = svc.list_alternatives("b1", "d1")
@@ -393,7 +394,7 @@ class TestKGServiceUsesRegistry:
             "embedding": [1.0, 0.0, 0.0],
         })
 
-        configure_kg_registry(graph_store=store)
+        configure_test_kg_registry(graph_store=store)
         svc = KGService()
 
         # find_similar_decisions uses embedder.encode which returns a vector

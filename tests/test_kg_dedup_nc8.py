@@ -330,9 +330,9 @@ async def _bootstrap_test_board(monkeypatch):
         init_db,
     )
     from okto_pulse.core.kg.interfaces.registry import (
-        configure_kg_registry,
         reset_registry_for_tests,
     )
+    from kg_registry_testing import configure_test_kg_registry
     from okto_pulse.core.kg.schema import bootstrap_board_graph
 
     db_url = os.environ["DATABASE_URL"]
@@ -340,7 +340,7 @@ async def _bootstrap_test_board(monkeypatch):
     await init_db()
     reset_registry_for_tests()
     session_factory = get_session_factory()
-    configure_kg_registry(session_factory=session_factory)
+    configure_test_kg_registry(session_factory=session_factory)
 
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())

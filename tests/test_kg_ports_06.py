@@ -25,10 +25,10 @@ from okto_pulse.core.kg.interfaces import (
     RebuildReport,
     SchemaValidationResult,
     SemanticGraphStore,
-    configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.schema import (
     SCHEMA_VERSION,
     board_kuzu_path,
@@ -53,6 +53,7 @@ def board():
 @pytest.fixture
 def registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield get_kg_registry()
     reset_registry_for_tests()
 
@@ -237,7 +238,7 @@ class _NoVersionGraphStore:
 async def test_schema_validate_fails_closed_on_read_error():
     reset_registry_for_tests()
     try:
-        configure_kg_registry(graph_store=_RaisingGraphStore())
+        configure_test_kg_registry(graph_store=_RaisingGraphStore())
         result = await get_kg_registry().graph_schema_manager.validate("any-board")
         assert result.valid is False
         assert result.current_version is None
@@ -250,7 +251,7 @@ async def test_schema_validate_fails_closed_on_read_error():
 async def test_schema_validate_invalid_when_no_version_recorded():
     reset_registry_for_tests()
     try:
-        configure_kg_registry(graph_store=_NoVersionGraphStore())
+        configure_test_kg_registry(graph_store=_NoVersionGraphStore())
         result = await get_kg_registry().graph_schema_manager.validate("any-board")
         assert result.valid is False
         assert result.current_version is None
@@ -263,7 +264,7 @@ async def test_schema_validate_invalid_when_no_version_recorded():
 async def test_schema_current_version_does_not_mask_read_error():
     reset_registry_for_tests()
     try:
-        configure_kg_registry(graph_store=_RaisingGraphStore())
+        configure_test_kg_registry(graph_store=_RaisingGraphStore())
         mgr = get_kg_registry().graph_schema_manager
         with pytest.raises(RuntimeError):
             await mgr.current_version("any-board")  # NOT masked to SCHEMA_VERSION

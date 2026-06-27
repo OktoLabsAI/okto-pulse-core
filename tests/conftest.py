@@ -201,6 +201,24 @@ def _isolation_reset(request: pytest.FixtureRequest):
     logger.debug("ISOLATION: singletons reset after teardown")
 
 
+@pytest.fixture(autouse=True)
+def _kg_registry_test_fakes():
+    """R-P2-03: the KG registry no longer lazy-builds implicit Onda A defaults.
+
+    The test suite configures the embedded fakes EXPLICITLY via ``defaults_factory``
+    (the sanctioned test/fake route) so it is literal that tests run on fakes; a
+    test that needs a specific composition just reconfigures the registry. Real
+    runtime must supply a ``base_registry`` (Community adapters) instead.
+    """
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
+
+    reset_registry_for_tests()
+    configure_test_kg_registry()
+    yield
+    reset_registry_for_tests()
+
+
 def _reset_commit_health_cache() -> None:
     """O resolver de health do write-path cacheia por board (TTL 5s) e o
     health cacheia a projeção de órfãos (TTL 300s); o board_id das fixtures

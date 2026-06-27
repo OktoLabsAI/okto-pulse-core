@@ -6,7 +6,8 @@ prefer-provided fallback.
        data-adapter instantiation outside the single ledgered fallback BLOCKS.
   (prefer-provided) — configure_kg_registry does NOT overwrite an audit_repo /
        event_bus the base_registry already supplied (register-before-fallback);
-       a non-composed call still auto-wires the embedded (TR3 retro-compat).
+       a non-composed call now FAILS CLOSED (R-P2-03 retired the TR3 implicit
+       Onda A escape).
 """
 
 from __future__ import annotations
@@ -33,8 +34,11 @@ def test_ts2_gate_passes_on_real_core_with_single_ledgered_fallback():
     assert set(r1.ledger) == {"kg/interfaces/registry.py"}
     entry = r1.ledger["kg/interfaces/registry.py"]
     assert entry["owner"].startswith("core")
-    assert entry["target_ports"] == ["EventBus", "AuditRepository", "KGConfig"]
-    assert entry["removal_criterion"].startswith("spec #04")
+    # R-P2-03D retired the KGConfig fallback (config is now composition-required);
+    # the active ledgered fallback is only the audit_repo/event_bus auto-wire.
+    assert entry["target_ports"] == ["EventBus", "AuditRepository"]
+    assert "KGConfig" in entry["retired_ports"]
+    assert entry["removal_criterion"].startswith("R-P2-03D")
     # SQLAlchemy is the gated #04 exception (documented, not a violation).
     assert r1.as_dict()["sqlalchemy_ownership"] == SQLALCHEMY_OWNERSHIP_STATUS
 
@@ -167,7 +171,10 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
     sentinel_audit = _SentinelAudit()
     sf = _SF()
     try:
-        base = KGProviderRegistry(event_bus=sentinel_bus, audit_repo=sentinel_audit)
+        # R-P2-03D: config is now a required slot — the composition must supply it.
+        base = KGProviderRegistry(
+            event_bus=sentinel_bus, audit_repo=sentinel_audit, config=object()
+        )
         configure_kg_registry(session_factory=sf, base_registry=base)
         r = reg_mod.get_kg_registry()
         # prefer-provided: the composition's slots are NOT replaced by the
@@ -178,14 +185,16 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
         reg_mod._registry, reg_mod._configured = saved
 
 
-def test_tr3_non_composed_call_still_autowires_embedded():
+def test_tr3_non_composed_call_fails_closed():
+    # R-P2-03: the TR3 retro-compat escape (a bare configure_kg_registry with no
+    # base_registry / defaults_factory auto-wiring the embedded defaults) is GONE.
+    # The non-composed path now FAILS CLOSED — there is no implicit Onda A escape.
+    import pytest
+
     from okto_pulse.core.kg.interfaces import registry as reg_mod
-    from okto_pulse.core.kg.interfaces.registry import configure_kg_registry
-    from okto_pulse.core.kg.providers.embedded.sqlalchemy_audit_repo import (
-        SqlAlchemyAuditRepository,
-    )
-    from okto_pulse.core.kg.providers.embedded.sqlite_outbox_event_bus import (
-        SqliteOutboxEventBus,
+    from okto_pulse.core.kg.interfaces.registry import (
+        configure_kg_registry,
+        reset_registry_for_tests,
     )
 
     saved = (reg_mod._registry, reg_mod._configured)
@@ -195,10 +204,14 @@ def test_tr3_non_composed_call_still_autowires_embedded():
             raise RuntimeError("not used")
 
     try:
-        configure_kg_registry(session_factory=_SF())  # NO base_registry
-        r = reg_mod.get_kg_registry()
-        # retro-compat: the embedded auto-wire fires exactly as before.
-        assert type(r.event_bus) is SqliteOutboxEventBus
-        assert type(r.audit_repo) is SqlAlchemyAuditRepository
+        # The bare configure_kg_registry (no base / factory) fails closed BEFORE
+        # it mutates the singleton.
+        with pytest.raises(RuntimeError):
+            configure_kg_registry(session_factory=_SF())  # NO base / factory
+        # With no successful composition, an unconfigured registry also fails
+        # closed on consumption (no implicit Onda A lazy-init).
+        reset_registry_for_tests()
+        with pytest.raises(RuntimeError):
+            reg_mod.get_kg_registry()
     finally:
         reg_mod._registry, reg_mod._configured = saved

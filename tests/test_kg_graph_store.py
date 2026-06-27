@@ -17,6 +17,7 @@ from okto_pulse.core.kg.interfaces.graph_store import QueryFilters, SemanticGrap
 from okto_pulse.core.kg.interfaces.registry import (
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
 from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore
 
@@ -24,6 +25,7 @@ from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGrap
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 

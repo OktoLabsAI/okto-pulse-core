@@ -102,7 +102,7 @@ def _harness_env():
 async def _seed(tmp: str) -> None:
     """Create the DB, register the MCP session factory, seed agents + boards, and
     register the AuthContext factory bound to the REAL server agent/db providers."""
-    from okto_pulse.core.kg.interfaces.registry import configure_kg_registry
+    from kg_registry_testing import configure_test_kg_registry
     from okto_pulse.core.models.db import Agent, AgentBoard, Board
 
     _db_mod.create_database(f"sqlite+aiosqlite:///{Path(tmp) / 'r08d.db'}")
@@ -124,7 +124,7 @@ async def _seed(tmp: str) -> None:
         await s.commit()
 
     # R08-B: AuthContext factory bound to the REAL MCP providers.
-    configure_kg_registry(
+    configure_test_kg_registry(
         auth_context_factory=create_mcp_auth_factory(
             server._get_authenticated_agent, server.get_db_for_mcp
         )

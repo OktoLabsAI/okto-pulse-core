@@ -12,6 +12,8 @@ Scenarios here (core-target):
 
 from __future__ import annotations
 
+import pytest
+
 import okto_pulse.core.kg.embedding as _emb_mod
 import okto_pulse.core.kg.providers.embedded.memory_cache as _cache_mod
 import okto_pulse.core.kg.providers.embedded.memory_rate_limiter as _rl_mod
@@ -83,6 +85,7 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
             rate_limiter=_Sentinel(),
             session_store=_Sentinel(),
             embedding_provider=_Sentinel(),
+            config=_Sentinel(),  # R-P2-03D: config is composition-supplied (required)
         )
         configure_kg_registry(session_factory=object(), base_registry=base)
         reg = get_kg_registry()
@@ -95,8 +98,10 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
         # ...and the core embedded Onda A were NOT instantiated.
         assert counts == {"cache": 0, "rate_limiter": 0, "session_store": 0, "embedding": 0}
 
-        # The core-owned NON-Onda-A slots ARE mounted by the core.
-        assert reg.config is not None
+        # R-P2-03D: config is the composition-supplied one, NOT a core-filled
+        # implicit SettingsKGConfig (the embedded default was retired here).
+        assert reg.config is base.config
+        # The core-owned graph slots ARE mounted by the core.
         assert reg.graph_store is not None
         assert reg.cypher_executor is not None
         assert reg.graph_transaction is not None
@@ -110,23 +115,20 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
         reset_registry_for_tests()
 
 
-def test_ts_66c96a7e_legacy_path_unchanged_retrocompat(monkeypatch):
+def test_ts_66c96a7e_no_base_path_fails_closed(monkeypatch):
     counts = _instrument_onda_a(monkeypatch)
     reset_registry_for_tests()
     try:
-        # No base_registry/defaults_factory -> _build_defaults() exactly as before.
-        configure_kg_registry(session_factory=object())
-        reg = get_kg_registry()
-        # The core embedded Onda A WERE instantiated (legacy behaviour) — the
-        # instrumented subclasses prove it (counts == 1 each).
-        assert counts["cache"] == 1
-        assert counts["rate_limiter"] == 1
-        assert counts["session_store"] == 1
-        assert counts["embedding"] == 1
-        # cache_backend is the (instrumented) core embedded — a real subclass.
-        assert isinstance(reg.cache_backend, _cache_mod.InMemoryCacheBackend)
-        assert reg.graph_store is not None
-        assert reg.audit_repo is not None and reg.event_bus is not None
+        # R-P2-03: the no-base / no-factory path is NO LONGER an escape to the
+        # implicit Onda A defaults — it fails closed with an actionable error.
+        with pytest.raises(RuntimeError):
+            configure_kg_registry(session_factory=object())
+        # The raise happens BEFORE any build: the core embedded Onda A were NOT
+        # instantiated (no implicit _build_defaults side-effect).
+        assert counts == {"cache": 0, "rate_limiter": 0, "session_store": 0, "embedding": 0}
+        # And the registry stays unconfigured — consuming it is fail-closed too.
+        with pytest.raises(RuntimeError):
+            get_kg_registry()
     finally:
         reset_registry_for_tests()
 
@@ -141,6 +143,7 @@ def test_ts_66c96a7e_defaults_factory_path_also_composes(monkeypatch):
                 rate_limiter=_Sentinel(),
                 session_store=_Sentinel(),
                 embedding_provider=_Sentinel(),
+                config=_Sentinel(),  # R-P2-03D: config required from the composition
             )
 
         configure_kg_registry(session_factory=object(), defaults_factory=_factory)

@@ -115,16 +115,23 @@ def _build_defaults() -> KGProviderRegistry:
 
 
 def _build_graph_defaults() -> dict[str, Any]:
-    """Build ONLY the core-owned, non-Onda-A providers: the KG ``config`` and the
-    embedded Kùzu/graph adapters (graph_store / cypher_executor / transaction /
-    schema_manager / lifecycle / path_resolver).
+    """Build ONLY the core-owned graph providers: the embedded Kùzu/graph adapters
+    (graph_store / cypher_executor / transaction / schema_manager / lifecycle /
+    path_resolver).
 
     These are the providers spec #06 closed but R05 does NOT move (deferred). The
     R05-B base-registry path uses this to mount the core graph slots WITHOUT
     instantiating the Onda A embedded (cache / rate_limiter / session_store /
-    embedding) — those are supplied by the caller's ``base_registry``.
+    embedding / config) — those are supplied by the caller's ``base_registry``.
+
+    R-P2-03D: ``config`` (KGConfig) is NO LONGER filled here. The embedded
+    ``SettingsKGConfig`` default was a R05-D ledgered temporary fallback; closing
+    the config slot means a composition that does not supply ``config`` leaves it
+    ``None`` (fail-closed at ``configure_kg_registry``) rather than silently
+    receiving the core's embedded settings — runtime real is ANY composition root,
+    not only the current Community. The Kùzu/graph adapters do not need ``config``
+    to construct, so nothing here depends on it.
     """
-    from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
     from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
     from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
     from okto_pulse.core.kg.providers.embedded.kuzu_graph_lifecycle import KuzuGraphLifecycle
@@ -139,7 +146,6 @@ def _build_graph_defaults() -> dict[str, Any]:
     )
 
     return {
-        "config": SettingsKGConfig(),
         "graph_store": KuzuGraphStore(),
         "cypher_executor": KuzuCypherExecutor(),
         "graph_transaction": KuzuGraphTransaction(),
@@ -193,7 +199,17 @@ def configure_kg_registry(
         elif defaults_factory is not None:
             reg = defaults_factory()
         else:
-            reg = _build_defaults()
+            # R-P2-03: the no-base / no-factory path is NO LONGER an escape to the
+            # implicit Onda A defaults. A real runtime must supply a base_registry
+            # (Community edition adapters); tests must supply a defaults_factory
+            # (the sanctioned fake route). ``_build_defaults`` is never an implicit
+            # fallback.
+            raise RuntimeError(
+                "configure_kg_registry requires an explicit base_registry "
+                "(Community composition) or defaults_factory (tests): the core no "
+                "longer builds implicit Onda A defaults (cache_backend / "
+                "rate_limiter / session_store / config)."
+            )
 
         # R05-B: when a base/factory supplied the Onda A slots, mount the
         # core-owned non-Onda-A providers (config + Kùzu/graph) into any slot the
@@ -229,17 +245,49 @@ def configure_kg_registry(
         for key, value in overrides.items():
             if hasattr(reg, key):
                 setattr(reg, key, value)
+
+        # R-P2-03D: ``config`` (KGConfig) is a REQUIRED slot — the core no longer
+        # fills it with an implicit SettingsKGConfig. A composition that does not
+        # supply it fails closed HERE with an actionable error (not a late
+        # AttributeError when a consumer reads ``registry.config``). The Community
+        # edition supplies CommunityKGConfig explicitly via
+        # ``community.adapters.composition._apply_data_providers``; tests use the
+        # ``defaults_factory`` route, whose embedded fake includes config.
+        if reg.config is None:
+            raise RuntimeError(
+                "KG registry config (KGConfig) is required but the composition did "
+                "not supply it: a base_registry / defaults_factory (or an explicit "
+                "config= override) must provide `config`. The Community edition "
+                "supplies CommunityKGConfig via "
+                "community.adapters.composition._apply_data_providers; the core no "
+                "longer fills it with an implicit SettingsKGConfig default "
+                "(R-P2-03D)."
+            )
+
         _registry = reg
         _configured = True
 
 
 def get_kg_registry() -> KGProviderRegistry:
-    """Return the singleton registry. Lazy-init with defaults if not configured."""
-    global _registry, _configured
+    """Return the configured singleton registry.
+
+    R-P2-03: the registry is NEVER lazy-initialised with implicit Onda A
+    (cache_backend / rate_limiter / session_store / config) defaults. A real
+    runtime MUST configure it explicitly via :func:`configure_kg_registry` — the
+    Community edition supplies its adapters through a ``base_registry``; tests
+    supply the embedded fakes through a ``defaults_factory`` (the sanctioned test
+    route, ``tests.kg_registry_testing.configure_test_kg_registry``). Consuming the
+    registry before composition is a fail-closed, actionable error — never a late
+    ``AttributeError`` on a ``None`` slot.
+    """
     if _registry is None:
-        with _lock:
-            if _registry is None:
-                _registry = _build_defaults()
+        raise RuntimeError(
+            "KG registry not configured: the composition must call "
+            "configure_kg_registry(base_registry=...) (Community edition) or "
+            "configure_kg_registry(defaults_factory=...) (tests) before use. The "
+            "core no longer builds implicit Onda A defaults (cache_backend / "
+            "rate_limiter / session_store / config)."
+        )
     return _registry
 
 

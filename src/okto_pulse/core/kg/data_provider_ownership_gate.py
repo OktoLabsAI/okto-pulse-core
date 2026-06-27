@@ -46,20 +46,27 @@ LEDGERED_DATA_FALLBACK: dict[str, dict] = {
         "owner": "core-kg/registry",
         "reason": (
             "configure_kg_registry session_factory auto-wire of audit_repo "
-            "(SqlAlchemyAuditRepository) + event_bus (SqliteOutboxEventBus), plus "
-            "the SettingsKGConfig default in _build_defaults/_build_graph_defaults "
-            "— fires ONLY when the composition left the slot None "
-            "(prefer-provided); the Community edition supplies all three slots "
-            "explicitly (community.adapters.composition._apply_data_providers), so "
-            "this auto-wire never runs for it. Retro-compat (TR3) keeps it for "
-            "non-composed callers."
+            "(SqlAlchemyAuditRepository) + event_bus (SqliteOutboxEventBus) — fires "
+            "ONLY when the composition left the slot None (prefer-provided); the "
+            "Community edition supplies both explicitly "
+            "(community.adapters.composition._apply_data_providers), so this "
+            "auto-wire never runs for it. Retro-compat (TR3) keeps it for "
+            "non-composed callers. R-P2-03D RETIRED the SettingsKGConfig config "
+            "fallback: _build_graph_defaults no longer fills the config slot and "
+            "configure_kg_registry now REQUIRES config (fail-closed). The remaining "
+            "SettingsKGConfig instantiation in registry._build_defaults is the "
+            "TEST-ONLY fake route (defaults_factory), NOT a runtime fallback."
         ),
-        "target_ports": ["EventBus", "AuditRepository", "KGConfig"],
+        "target_ports": ["EventBus", "AuditRepository"],
+        "retired_ports": {
+            "KGConfig": "R-P2-03D — config is now composition-required (fail-closed)"
+        },
         "removal_criterion": (
-            "spec #04: when the Repository-UoW strangling lands and every edition "
-            "composes its data providers, drop the session_factory auto-wire + the "
-            "embedded SettingsKGConfig default from registry.py — this entry then "
-            "becomes empty and the gate enforces zero core instantiation."
+            "R-P2-03D already retired the SettingsKGConfig config fallback. spec "
+            "#04: when the Repository-UoW strangling lands and every edition "
+            "composes its data providers, drop the session_factory auto-wire of "
+            "audit_repo/event_bus — this entry then becomes empty and the gate "
+            "enforces zero core instantiation."
         ),
     },
 }

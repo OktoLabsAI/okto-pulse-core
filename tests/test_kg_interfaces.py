@@ -15,15 +15,16 @@ from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
 from okto_pulse.core.kg.interfaces.registry import (
-    configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 
@@ -166,7 +167,7 @@ class TestRegistryDefaults:
 
     def test_configure_overrides_single_provider(self):
         mock_cache = PlainCache()
-        configure_kg_registry(cache_backend=mock_cache)
+        configure_test_kg_registry(cache_backend=mock_cache)
         reg = get_kg_registry()
         assert reg.cache_backend is mock_cache
         assert reg.rate_limiter is not None
@@ -175,7 +176,7 @@ class TestRegistryDefaults:
     def test_configure_overrides_multiple_providers(self):
         mock_cache = PlainCache()
         mock_limiter = PlainRateLimiter()
-        configure_kg_registry(cache_backend=mock_cache, rate_limiter=mock_limiter)
+        configure_test_kg_registry(cache_backend=mock_cache, rate_limiter=mock_limiter)
         reg = get_kg_registry()
         assert reg.cache_backend is mock_cache
         assert reg.rate_limiter is mock_limiter
@@ -183,6 +184,7 @@ class TestRegistryDefaults:
     def test_reset_clears_singleton(self):
         reg1 = get_kg_registry()
         reset_registry_for_tests()
+        configure_test_kg_registry()
         reg2 = get_kg_registry()
         assert reg1 is not reg2
 
@@ -207,7 +209,7 @@ class TestEnvVarMechanism:
     def test_configure_works_with_env_vars_set(self, monkeypatch):
         monkeypatch.setenv("KG_CACHE_BACKEND", "redis")
         mock_cache = PlainCache()
-        configure_kg_registry(cache_backend=mock_cache)
+        configure_test_kg_registry(cache_backend=mock_cache)
         reg = get_kg_registry()
         assert reg.cache_backend is mock_cache
 

@@ -18,6 +18,27 @@ import json
 import sys
 from typing import Any
 
+# R-P2-03: the core KG registry is fail-closed — it no longer falls back to
+# implicit embedded providers. This bare-core tool is NOT an edition composition
+# root, so a real migration must be driven by an edition (the Community
+# `okto-pulse kg migrate-schema` CLI/MCP/REST, or a future composed wrapper). When
+# the registry is unconfigured we surface an ACTIONABLE hint instead of a raw
+# internal error so the deprecation of the bare-core path is clear.
+_UNCOMPOSED_HINT = (
+    "hint: the KG registry is not configured. This bare-core tool no longer "
+    "falls back to implicit embedded providers (R-P2-03). Run the migration via "
+    "an edition-composed command (e.g. the Community `okto-pulse kg migrate-schema` "
+    "CLI/MCP/REST) or configure KGProviderRegistry before invoking the core tool."
+)
+
+
+def _registry_unconfigured(summary: dict[str, Any]) -> bool:
+    """True when a board summary failed because the KG registry was not composed."""
+    return any(
+        "registry not configured" in str(err).lower()
+        for err in summary.get("errors", [])
+    )
+
 
 def _run_single_board(board_id: str) -> dict[str, Any]:
     from okto_pulse.core.kg.schema import migrate_schema_for_board
@@ -48,6 +69,8 @@ async def _list_local_boards() -> list[tuple[str, str]]:
 
 def _emit_single(summary: dict[str, Any]) -> int:
     print(json.dumps(summary, indent=2, default=str))
+    if _registry_unconfigured(summary):
+        print(_UNCOMPOSED_HINT, file=sys.stderr)
     return 0 if summary.get("migrated") and not summary.get("errors") else 1
 
 
@@ -66,6 +89,8 @@ def _emit_all(results: list[dict[str, Any]], names: dict[str, str]) -> int:
             failed += 1
             for err in r["errors"]:
                 print(f"  ERROR: {err}", file=sys.stderr)
+    if any(_registry_unconfigured(r) for r in results):
+        print(_UNCOMPOSED_HINT, file=sys.stderr)
     return 0 if failed == 0 else 1
 
 

@@ -12,9 +12,9 @@ import pytest
 
 from okto_pulse.core.kg.interfaces.event_bus import KGEvent
 from okto_pulse.core.kg.interfaces.registry import (
-    configure_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
 from okto_pulse.core.kg.providers.testing.memory_audit_repo import InMemoryAuditRepository
 from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
@@ -176,7 +176,7 @@ class TestE2EInMemory:
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
         audit_repo = InMemoryAuditRepository()
 
-        configure_kg_registry(
+        configure_test_kg_registry(
             graph_store=store,
             event_bus=event_bus,
             session_store=session_store,
@@ -266,7 +266,7 @@ class TestE2EInMemory:
     @pytest.mark.asyncio
     async def test_event_bus_in_memory_publish(self):
         bus = InMemoryEventBus()
-        configure_kg_registry(event_bus=bus)
+        configure_test_kg_registry(event_bus=bus)
 
         event = KGEvent(
             event_type="consolidation_committed",
@@ -282,7 +282,7 @@ class TestE2EInMemory:
     async def test_nothing_changed_via_audit_repo(self):
         session_store = InMemorySessionStore(default_ttl_seconds=3600)
         audit_repo = InMemoryAuditRepository()
-        configure_kg_registry(
+        configure_test_kg_registry(
             session_store=session_store,
             audit_repo=audit_repo,
         )

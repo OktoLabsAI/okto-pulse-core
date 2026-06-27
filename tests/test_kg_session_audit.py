@@ -23,6 +23,7 @@ from okto_pulse.core.kg.interfaces.registry import (
     get_kg_registry,
     reset_registry_for_tests,
 )
+from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
 from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
 from okto_pulse.core.kg.providers.testing.memory_audit_repo import InMemoryAuditRepository
@@ -31,6 +32,7 @@ from okto_pulse.core.kg.providers.testing.memory_audit_repo import InMemoryAudit
 @pytest.fixture(autouse=True)
 def _clean_registry():
     reset_registry_for_tests()
+    configure_test_kg_registry()
     yield
     reset_registry_for_tests()
 
