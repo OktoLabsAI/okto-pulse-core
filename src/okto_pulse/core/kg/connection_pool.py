@@ -26,14 +26,25 @@ import logging
 import os
 import threading
 from collections import OrderedDict
-
-from okto_pulse.core.kg.schema import BoardConnection
+from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.connection_pool")
 
 
 _DEFAULT_CAP = 8
 _ENV_VAR = "KG_CONNECTION_POOL_SIZE"
+
+
+def _new_board_connection(board_id: str) -> Any:
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    runtime = getattr(get_kg_registry(), "board_graph_runtime", None)
+    if runtime is None:
+        raise RuntimeError(
+            "Board graph runtime is not configured; connection_pool requires "
+            "KGProviderRegistry.board_graph_runtime."
+        )
+    return runtime.open_board_connection(board_id)
 
 
 def _read_cap_from_env() -> int:
@@ -100,7 +111,7 @@ class ConnectionPool:
 
     def __init__(self, cap: int = _DEFAULT_CAP) -> None:
         self._cap = max(0, cap)
-        self._conns: "OrderedDict[str, BoardConnection]" = OrderedDict()
+        self._conns: "OrderedDict[str, Any]" = OrderedDict()
         self._lock = threading.Lock()
 
     @property
@@ -119,7 +130,7 @@ class ConnectionPool:
         with self._lock:
             return board_id in self._conns
 
-    def acquire(self, board_id: str) -> BoardConnection:
+    def acquire(self, board_id: str) -> Any:
         """Return a :class:`BoardConnection` for ``board_id``.
 
         Pool hit: move entry to MRU end and return the cached handle.
@@ -128,7 +139,7 @@ class ConnectionPool:
         Disabled (``cap == 0``): every call opens a fresh, un-pooled handle.
         """
         if not self.enabled:
-            return BoardConnection(board_id)
+            return _new_board_connection(board_id)
 
         with self._lock:
             existing = self._conns.get(board_id)
@@ -140,7 +151,7 @@ class ConnectionPool:
                 evicted_id, evicted_bc = self._conns.popitem(last=False)
                 self._close_quietly(evicted_bc, evicted_id, event="evicted")
 
-            bc = BoardConnection(board_id)
+            bc = _new_board_connection(board_id)
             self._conns[board_id] = bc
             return bc
 
@@ -178,7 +189,7 @@ class ConnectionPool:
             self._close_quietly(bc, board_id, event="close_all")
 
     @staticmethod
-    def _close_quietly(bc: BoardConnection, board_id: str, *, event: str) -> None:
+    def _close_quietly(bc: Any, board_id: str, *, event: str) -> None:
         try:
             bc.close()
         except Exception as exc:

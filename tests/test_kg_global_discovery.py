@@ -3,7 +3,6 @@
 import os
 import sys
 import tempfile
-import types
 
 import pytest
 from sqlalchemy import delete, select
@@ -36,6 +35,15 @@ from okto_pulse.core.kg.global_discovery.outbox_worker import (
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    configure_test_kg_registry,
+)
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -76,8 +84,8 @@ class TestGlobalSchema:
         del conn
 
     def test_corrupt_global_discovery_wal_is_preserved_and_blocks_rebootstrap(self, monkeypatch, tmp_path):
-        from okto_pulse.core.kg import schema as kg_schema
         from okto_pulse.core.kg.global_discovery import schema as global_schema
+        from okto_pulse.core.kg.interfaces import get_kg_registry
 
         reset_global_db_for_tests()
         path = tmp_path / "global" / "discovery.lbug"
@@ -109,13 +117,10 @@ class TestGlobalSchema:
             return FakeDB()
 
         monkeypatch.setattr(global_schema, "_global_kuzu_path", lambda: path)
-        monkeypatch.setattr(kg_schema, "_open_kuzu_db", fake_open)
-        monkeypatch.setattr(kg_schema, "load_vector_extension", lambda _conn: None)
-        monkeypatch.setitem(
-            sys.modules,
-            "ladybug",
-            types.SimpleNamespace(Connection=lambda _db: FakeConn()),
-        )
+        runtime = get_kg_registry().board_graph_runtime
+        monkeypatch.setattr(runtime, "open_kuzu_db", fake_open)
+        monkeypatch.setattr(runtime, "new_connection", lambda _db: FakeConn())
+        monkeypatch.setattr(runtime, "load_vector_extension", lambda _conn: None)
 
         with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
             bootstrap_global_discovery()

@@ -35,6 +35,7 @@ from okto_pulse.core.kg.memory_pressure_collector import (
     get_samples,
     record_failure,
 )
+from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.models.db import Board
 
 # ---------------------------------------------------------------------------
@@ -167,7 +168,8 @@ def test_hwm_pct_from_real_file_sizes(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Path, "stat", _build_stat_patcher(_stat_map))
     monkeypatch.setattr(
-        "okto_pulse.core.services.kg_health_service.board_kuzu_path",
+        get_kg_registry().graph_path_resolver,
+        "board_graph_path",
         lambda _board_id: graph_path,
     )
     monkeypatch.setattr(
@@ -207,7 +209,8 @@ def test_hwm_pct_none_when_graph_absent(tmp_path, monkeypatch):
     # deliberately do NOT create it
 
     monkeypatch.setattr(
-        "okto_pulse.core.services.kg_health_service.board_kuzu_path",
+        get_kg_registry().graph_path_resolver,
+        "board_graph_path",
         lambda _board_id: nonexistent,
     )
 
@@ -247,7 +250,8 @@ def test_hwm_pct_none_on_stat_oserror(tmp_path, monkeypatch):
     mock_graph_path.parent.glob.return_value = []
 
     monkeypatch.setattr(
-        "okto_pulse.core.services.kg_health_service.board_kuzu_path",
+        get_kg_registry().graph_path_resolver,
+        "board_graph_path",
         lambda _board_id: mock_graph_path,
     )
     monkeypatch.setattr(
@@ -464,7 +468,8 @@ async def test_proxy_drives_correlation_e2e(tmp_path, db_factory, e2e_board, mon
 
     monkeypatch.setattr(Path, "stat", _build_stat_patcher(_stat_map))
     monkeypatch.setattr(
-        "okto_pulse.core.services.kg_health_service.board_kuzu_path",
+        get_kg_registry().graph_path_resolver,
+        "board_graph_path",
         lambda _board_id: graph_path,
     )
     monkeypatch.setattr(

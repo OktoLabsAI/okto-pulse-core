@@ -151,32 +151,11 @@ okto-pulse://reference/tool-docs/kg."""
         graph_layer: str = "canonical",
     ) -> str:
         """
-        Given an artifact, return its neighborhood in the KG: prior
-        decisions, applicable criteria, similar bugs, discarded alternatives.
-        Supports impact-analysis filters so an agent can scope traversal to
-        a specific edge set or direction.
-
-        Args:
-            board_id: Board ID
-            artifact_id: Source artifact reference (source_artifact_ref)
-            min_confidence: Minimum confidence (default 0.5)
-            max_rows: Maximum results (default 100)
-            rel_types: Comma- or pipe-separated edge types to restrict the
-                first hop (e.g. ``"supersedes,contradicts"`` or
-                ``"tests|relates_to"``). Empty = any type.
-            direction: ``"both"`` (default), ``"outgoing"``, or ``"incoming"``.
-                Applied to hop1 only; hop2 is always undirected.
-            max_depth: ``1`` returns center+hop1 only (hop2 fields null);
-                ``2`` (default) returns the full 2-hop context.
-            graph_layer: ``canonical`` (default) | ``working`` | ``all`` (spec
-                849d6292, FR6). The default scopes the neighborhood to canonical
-                nodes so an explored subgraph NEVER leaks ``working`` nodes;
-                pass ``working``/``all`` to widen it. Invalid values return a
-                structured error.
-
-        Returns:
-            JSON with 2-hop neighborhood context + `applied_graph_layer` echoing
-            the layer actually applied to the traversal (canonical|working|all).
+        Return a bounded KG neighborhood for an artifact: decisions, criteria,
+        bugs and alternatives. Supports edge filters, direction, max_depth and
+        graph_layer (`canonical` default, `working`, or `all`); invalid layer
+        fails closed. Response echoes `applied_graph_layer`.
+        Full docs: okto-pulse://reference/tool-docs/kg.
         """
         agent, boards = await _get_user_boards(get_agent, get_db)
         if agent is None:

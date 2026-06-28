@@ -21,7 +21,7 @@ from okto_pulse.core.kg.tier_power import (
     reset_rate_limiter_for_tests,
     validate_cypher_read_only,
 )
-from kg_registry_testing import configure_test_kg_registry
+from kg_registry_testing import RealBoardCypherExecutorForTests, configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +31,7 @@ def _reset_rate():
     # (this autouse fixture runs after the conftest one, so it must restore a
     # configured registry for the tests that read get_kg_registry()).
     reset_rate_limiter_for_tests()
-    configure_test_kg_registry()
+    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
 
 
 class TestCypherSafety:

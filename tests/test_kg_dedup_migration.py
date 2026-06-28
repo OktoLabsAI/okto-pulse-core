@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 pytestmark = pytest.mark.asyncio
@@ -38,6 +39,7 @@ def dedup_migration_tempdir(monkeypatch):
     monkeypatch.setenv("KG_BASE_DIR", str(kg_path))
     monkeypatch.setenv("KG_CLEANUP_ENABLED", "false")
     monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
+    configure_real_graph_test_kg_registry()
 
     yield base
 

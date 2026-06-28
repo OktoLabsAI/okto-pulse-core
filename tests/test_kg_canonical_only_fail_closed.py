@@ -40,6 +40,7 @@ from okto_pulse.core.kg.cypher_templates import (
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
 from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 CENTER_REF = "spec:center"
@@ -54,6 +55,7 @@ _NODES = [
 
 def _seed_layered_board() -> str:
     """center (canonical) + vizinhos canonical/working/UNCLASSIFIED(NULL)."""
+    configure_real_graph_test_kg_registry()
     board_id = f"failclosed-{uuid.uuid4().hex[:10]}"
     bootstrap_board_graph(board_id)
     ts = "2026-06-15T00:00:00"

@@ -180,7 +180,16 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
         # R-P2-02/R-P2-03D: data slots and config are required — the composition
         # must supply them and the core must not overwrite them.
         base = KGProviderRegistry(
-            event_bus=sentinel_bus, audit_repo=sentinel_audit, config=object()
+            event_bus=sentinel_bus,
+            audit_repo=sentinel_audit,
+            config=object(),
+            graph_store=object(),
+            cypher_executor=object(),
+            graph_transaction=object(),
+            graph_schema_manager=object(),
+            graph_lifecycle=object(),
+            graph_path_resolver=object(),
+            safe_write_step_adapter=object(),
         )
         configure_kg_registry(session_factory=sf, base_registry=base)
         r = reg_mod.get_kg_registry()

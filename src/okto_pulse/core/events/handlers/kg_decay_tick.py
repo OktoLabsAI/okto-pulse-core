@@ -20,7 +20,6 @@ so kg_health can surface ``last_decay_tick_at`` and
 from __future__ import annotations
 
 import asyncio
-import gc
 import logging
 import os
 import uuid
@@ -30,11 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import KGDailyTick
-from okto_pulse.core.kg.schema import (
-    NODE_TYPES,
-    board_kuzu_path,
-    open_board_connection,
-)
+from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.kg.scoring import _recompute_relevance_batch
 from okto_pulse.core.models.db import KGTickRun
 
@@ -200,47 +197,45 @@ def _process_board_sync(
 ) -> tuple[int, int]:
     """Drain stale nodes for one board. Returns (recomputed, stale_pre_count).
 
-    FR7: ``open_board_connection`` is called BEFORE entering the try/finally
-    block. This is intentional: if opening the connection itself raises (e.g.
-    RuntimeError from a corrupt or locked graph), the exception propagates to
-    the caller so the per-board try/except in ``_run_daily_tick`` can catch
-    it and increment ``boards_failed`` without entering the finally branch.
+    FR7: opening the graph transaction port happens before the per-node loop.
+    If the concrete backend raises (e.g. corrupt or locked graph), the exception
+    propagates to ``_run_daily_tick`` so only that board increments
+    ``boards_failed``.
     """
-    if not board_kuzu_path(board_id).exists():
+    registry = get_kg_registry()
+    if not registry.graph_path_resolver.exists(board_id):
         return (0, 0)
-    total = 0
-    stale_pre_count = 0
-    bc = open_board_connection(board_id)  # FR7: stays OUTSIDE try/finally
-    try:
-        stale_pre_count = _count_stale_nodes_pre_tick(bc.conn, cutoff_iso)
-        for node_type in NODE_TYPES:
-            cursor: str | None = None
-            while True:
-                stale = _fetch_stale_nodes(
-                    bc.conn, node_type, cutoff_iso, cursor,
-                    limit=batch_size,
-                )
-                if not stale:
-                    break
-                try:
-                    persisted = _recompute_relevance_batch(
-                        bc.conn, board_id, stale, trigger="daily_tick",
+
+    async def _run() -> tuple[int, int]:
+        total = 0
+        async with await registry.graph_transaction.begin(board_id) as scope:
+            stale_pre_count = _count_stale_nodes_pre_tick(scope, cutoff_iso)
+            for node_type in NODE_TYPES:
+                cursor: str | None = None
+                while True:
+                    stale = _fetch_stale_nodes(
+                        scope, node_type, cutoff_iso, cursor,
+                        limit=batch_size,
                     )
-                    total += persisted
-                except Exception as exc:
-                    # BR14 — a single batch failure does not abort the tick.
-                    logger.warning(
-                        "kg.tick.batch_failed board=%s node_type=%s err=%s",
-                        board_id, node_type, exc,
-                    )
-                cursor = stale[-1][1]
-                if len(stale) < batch_size:
-                    break
-    finally:
-        bc.close()
-        del bc
-        gc.collect()
-    return (total, stale_pre_count)
+                    if not stale:
+                        break
+                    try:
+                        persisted = _recompute_relevance_batch(
+                            scope, board_id, stale, trigger="daily_tick",
+                        )
+                        total += persisted
+                    except Exception as exc:
+                        # BR14 — a single batch failure does not abort the tick.
+                        logger.warning(
+                            "kg.tick.batch_failed board=%s node_type=%s err=%s",
+                            board_id, node_type, exc,
+                        )
+                    cursor = stale[-1][1]
+                    if len(stale) < batch_size:
+                        break
+        return (total, stale_pre_count)
+
+    return run_async_blocking(_run())
 
 
 async def _persist_tick_run(
@@ -309,7 +304,7 @@ async def _run_daily_tick(
     duration_ms, nodes_with_stale_score_pre_tick}``.
 
     FR1/TR2: each board iteration is wrapped in an independent try/except.
-    A board whose ``open_board_connection`` raises (corrupt/locked graph)
+    A board whose graph transaction open raises (corrupt/locked graph)
     increments ``boards_failed`` and emits a ``kg.tick.board_failed`` warning
     without aborting the remaining boards.
     """
@@ -337,7 +332,7 @@ async def _run_daily_tick(
             total_recomputed += recomputed
             nodes_with_stale_score_pre_tick += stale_pre
         except Exception as exc:
-            # FR1/TR2: any exception (RuntimeError from open_board_connection,
+            # FR1/TR2: any exception (RuntimeError from graph transaction open,
             # asyncio wrapper, etc.) is caught here so the fleet continues.
             boards_failed += 1
             logger.warning(

@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 import pytest
 
 import okto_pulse.core.services.kg_health_service as health_service
+from kg_registry_testing import configure_real_graph_test_kg_registry
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import (
     clear_board,
@@ -51,6 +52,11 @@ from test_kg_primitives_connectivity_guard import (
     _count_by_source_ref,
     _seed_learning_with_optional_parent,
 )
+
+
+@pytest.fixture(autouse=True)
+def _real_graph_registry_for_rematerialization():
+    configure_real_graph_test_kg_registry()
 
 
 def _fake_health(state: str, total_nodes: int | None):

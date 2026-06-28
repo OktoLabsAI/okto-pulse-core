@@ -1095,9 +1095,10 @@ def test_cypher_templates_order_by_relevance_score_unchanged():
     cypher_templates = (
         repo_root / "src" / "okto_pulse" / "core" / "kg" / "cypher_templates.py"
     ).read_text(encoding="utf-8")
+    community_repo = repo_root.parent / "okto_labs_pulse_community"
     kuzu_store = (
-        repo_root / "src" / "okto_pulse" / "core" / "kg" / "providers"
-        / "embedded" / "kuzu_graph_store.py"
+        community_repo / "src" / "okto_pulse" / "community" / "adapters"
+        / "kuzu_graph_store.py"
     ).read_text(encoding="utf-8")
 
     assert "ORDER BY d.relevance_score DESC" in cypher_templates

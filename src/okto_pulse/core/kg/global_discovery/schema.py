@@ -153,10 +153,21 @@ def _global_kuzu_path() -> Path:
     return base / "global" / GLOBAL_DISCOVERY_FILENAME
 
 
+def _board_graph_runtime():
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    runtime = getattr(get_kg_registry(), "board_graph_runtime", None)
+    if runtime is None:
+        raise RuntimeError(
+            "Board graph runtime is not configured; global discovery requires "
+            "the edition-owned graph runtime adapter."
+        )
+    return runtime
+
+
 def _is_ladybug_corruption_error(exc: BaseException) -> bool:
     try:
-        from okto_pulse.core.kg.schema import _is_ladybug_corruption_error as _is_corrupt
-        return _is_corrupt(exc)
+        return bool(_board_graph_runtime().is_ladybug_corruption_error(exc))
     except Exception:
         msg = str(exc).lower()
         return (
@@ -295,27 +306,21 @@ def bootstrap_global_discovery() -> Path:
 
     require_global_write_token()
 
-    try:
-        import ladybug as kuzu
-    except ImportError as exc:
-        raise RuntimeError("kuzu required") from exc
-
-    from okto_pulse.core.kg.schema import _open_kuzu_db, load_vector_extension
-
     path = _global_kuzu_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    runtime = _board_graph_runtime()
 
     try:
-        db = _open_kuzu_db(path)
+        db = runtime.open_kuzu_db(path)
     except Exception as exc:
         _raise_existing_global_graph_open_failed(
             path=path,
             operation="bootstrap",
             exc=exc,
         )
-    conn = kuzu.Connection(db)
+    conn = runtime.new_connection(db)
     try:
-        load_vector_extension(conn)
+        runtime.load_vector_extension(conn)
         for ddl in NODE_DDL:
             conn.execute(ddl)
         for ddl in REL_DDL:
@@ -375,8 +380,6 @@ def open_global_connection():
     pointing at the same path.
     """
     global _global_db
-    import ladybug as kuzu
-    from okto_pulse.core.kg.schema import _open_kuzu_db, load_vector_extension
 
     path = _global_kuzu_path()
     if not path.exists():
@@ -384,15 +387,15 @@ def open_global_connection():
 
     if _global_db is None:
         try:
-            _global_db = _open_kuzu_db(path)
+            _global_db = _board_graph_runtime().open_kuzu_db(path)
         except Exception as exc:
             _raise_existing_global_graph_open_failed(
                 path=path,
                 operation="open_connection",
                 exc=exc,
             )
-    conn = kuzu.Connection(_global_db)
-    load_vector_extension(conn)
+    conn = _board_graph_runtime().new_connection(_global_db)
+    _board_graph_runtime().load_vector_extension(conn)
     return _global_db, conn
 
 

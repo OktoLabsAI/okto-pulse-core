@@ -146,7 +146,6 @@ def test_anti_singleton_ledger_carries_register_before_remove_metadata() -> None
         assert meta["retirement_criterion"], name
     required_legacy_singletons = {
         "_global_db",
-        "_active_api_key",
         "_scheduler",
         "_mcp_session_factory",
         "_permission_cache",

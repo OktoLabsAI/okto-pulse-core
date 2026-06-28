@@ -392,10 +392,27 @@ def _install_tick_health(monkeypatch, graph_state):
 def _spy_publish(monkeypatch):
     published: list[object] = []
 
-    async def _publish(event, session):
-        published.append(event)
+    async def _publish_tick_events(
+        session,  # noqa: ARG001
+        *,
+        board_id,
+        actor_id=None,
+        actor_type=None,
+        scheduled_at=None,
+    ):
+        published.append(
+            SimpleNamespace(
+                board_id=board_id,
+                actor_id=actor_id,
+                actor_type=actor_type,
+                scheduled_at=scheduled_at,
+            )
+        )
+        return ["tick-test"]
 
-    monkeypatch.setattr(kg_tick, "event_publish", _publish)
+    import okto_pulse.core.events.handlers.kg_decay_tick as kg_decay_tick
+
+    monkeypatch.setattr(kg_decay_tick, "publish_tick_events", _publish_tick_events)
     return published
 
 

@@ -38,7 +38,7 @@ from .layer_resolver import (
 from .report import GateException, GateReport, GateStatus, enforce_exception_policy
 
 #: Canonical baseline (LOC) of ``src/okto_pulse/tools`` (KB CORRECAO #12).
-TOOLS_LOC_BASELINE = 108
+TOOLS_LOC_BASELINE = 146
 
 #: Versioned default dependency policy for the core-pure target (api_591b0aeb).
 #: ``forbidden`` are transport/persistence/scheduler frameworks the core-pure

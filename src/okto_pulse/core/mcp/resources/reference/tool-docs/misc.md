@@ -139,14 +139,20 @@ Ideação MCP-token-optimization Story 5.
 
 Args:
     board_id: Board ID.
-    target_type: One of: fr, functional_requirement, rule, business_rule, decision, tr,
+    target_type: One of: rule, business_rule, decision, tr,
         technical_requirement, ir, integration_requirement, or,
         observability_requirement, scenario, test_scenario, contract,
         api_contract, spec.
-        Keywords link fr rule decision tr ir or scenario contract spec.
-        Direct FR task links are traceability only; the FR coverage gate reads
-        business_rules[].linked_requirements.
-    target_id: ID of the target artifact (fr_id, rule_id, decision_id, tr_id,
+        Keywords link rule decision tr ir or scenario contract spec.
+        Legacy target names map to short codes: business_rule uses
+        target_type="rule"; decision uses target_type="decision"; technical
+        requirement uses target_type="tr"; integration requirement uses
+        target_type="ir"; observability requirement uses target_type="or";
+        test scenario uses target_type="scenario"; API contract uses
+        target_type="contract"; spec links use target_type="spec".
+        Direct FR task links are not accepted by this tool; the FR coverage gate
+        reads business_rules[].linked_requirements.
+    target_id: ID of the target artifact (rule_id, decision_id, tr_id,
         ir_id/requirement_id, or_id/requirement_id, scenario_id,
         contract_id, or spec_id when target_type=='spec').
     card_id: ID of the card to link.

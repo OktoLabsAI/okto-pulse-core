@@ -27,7 +27,7 @@ from typing import Any
 
 from okto_pulse.core.kg import cypher_templates as tpl
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
-from okto_pulse.core.kg.schema import SCHEMA_VERSION
+from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
 
 logger = logging.getLogger("okto_pulse.kg.service")
 
@@ -282,8 +282,52 @@ def _get_graph_store():
         raise KGToolError(
             code="kuzu_error",
             message="graph_store not configured in KG registry",
-        )
+    )
     return store
+
+
+def _get_cypher_executor():
+    """Return the cypher_executor from the registry."""
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    return get_kg_registry().cypher_executor
+
+
+def _run_async_blocking(coro):
+    """Run a coroutine from sync KG helpers without assuming event-loop shape."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    box: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            box["result"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised below
+            box["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
+
+
+def _execute_graph_write_sync(
+    board_id: str,
+    cypher: str,
+    params: dict[str, Any] | None = None,
+) -> None:
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    async def _run() -> None:
+        async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+            scope.execute(cypher, params or {})
+
+    _run_async_blocking(_run())
 
 
 def _filters(
@@ -305,15 +349,13 @@ def _flush_to_kuzu(
     board_id: str, node_type: str, node_id: str, delta: int, now_iso: str,
 ) -> None:
     """Sync helper: write hit counter delta to Kùzu (runs in thread pool)."""
-    from okto_pulse.core.kg.schema import open_board_connection
-
-    with open_board_connection(board_id) as (_db, conn):
-        conn.execute(
-            f"MATCH (n:{node_type} {{id: $nid}}) "
-            f"SET n.query_hits = COALESCE(n.query_hits, 0) + $delta, "
-            f"n.last_queried_at = $ts",
-            {"nid": node_id, "delta": delta, "ts": now_iso},
-        )
+    _execute_graph_write_sync(
+        board_id,
+        f"MATCH (n:{node_type} {{id: $nid}}) "
+        f"SET n.query_hits = COALESCE(n.query_hits, 0) + $delta, "
+        f"n.last_queried_at = $ts",
+        {"nid": node_id, "delta": delta, "ts": now_iso},
+    )
 
 
 async def _emit_hit_flushed_event(
@@ -594,45 +636,41 @@ class KGService:
         Returns the first hit with the shape expected by the KGNode frontend
         type; `None` when the id isn't present in any table.
         """
-        from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
 
         logger.debug("[KG] KGService.get_node_detail board_id=%s node_id=%s", board_id, node_id)
-        with open_board_connection(board_id) as (_db, conn):
-            for ntype in NODE_TYPES:
-                cypher = (
-                    f"MATCH (n:{ntype} {{id: $nid}}) "
-                    f"RETURN n.id, n.title, n.content, n.justification, "
-                    f"n.source_artifact_ref, n.source_confidence, "
-                    f"n.relevance_score, n.query_hits, n.last_queried_at, "
-                    f"n.created_at, n.superseded_by"
+        cypher_executor = _get_cypher_executor()
+        for ntype in NODE_TYPES:
+            cypher = (
+                f"MATCH (n:{ntype} {{id: $nid}}) "
+                f"RETURN n.id, n.title, n.content, n.justification, "
+                f"n.source_artifact_ref, n.source_confidence, "
+                f"n.relevance_score, n.query_hits, n.last_queried_at, "
+                f"n.created_at, n.superseded_by"
+            )
+            try:
+                result = cypher_executor.execute_read_only(
+                    board_id, cypher, {"nid": node_id}, max_rows=1
                 )
-                res = None
-                try:
-                    res = conn.execute(cypher, {"nid": node_id})
-                    if res.has_next():
-                        r = res.get_next()
-                        return {
-                            "id": r[0],
-                            "title": r[1] or "",
-                            "content": r[2] or "",
-                            "justification": r[3] or "",
-                            "source_artifact_ref": r[4],
-                            "source_confidence": r[5] if r[5] is not None else 0.0,
-                            "relevance_score": r[6] if r[6] is not None else 0.5,
-                            "query_hits": r[7] if r[7] is not None else 0,
-                            "last_queried_at": r[8],
-                            "created_at": r[9].isoformat() if r[9] else None,
-                            "superseded_by": r[10],
-                            "node_type": ntype,
-                        }
-                except Exception:
-                    continue
-                finally:
-                    if res is not None:
-                        try:
-                            res.close()
-                        except Exception:
-                            pass
+                rows = result.get("rows", [])
+                if rows:
+                    r = rows[0]
+                    return {
+                        "id": r[0],
+                        "title": r[1] or "",
+                        "content": r[2] or "",
+                        "justification": r[3] or "",
+                        "source_artifact_ref": r[4],
+                        "source_confidence": r[5] if r[5] is not None else 0.0,
+                        "relevance_score": r[6] if r[6] is not None else 0.5,
+                        "query_hits": r[7] if r[7] is not None else 0,
+                        "last_queried_at": r[8],
+                        "created_at": r[9].isoformat() if r[9] else None,
+                        "superseded_by": r[10],
+                        "node_type": ntype,
+                    }
+            except Exception:
+                continue
         return None
 
     # ------------------------------------------------------------------
@@ -656,8 +694,6 @@ class KGService:
         :func:`okto_pulse.core.api.kg_routes.encode_cursor`; the query then
         returns rows strictly "after" that cursor in the stable order.
         """
-        from okto_pulse.core.kg.schema import open_board_connection
-
         layer = normalize_graph_layer(graph_layer)
         f = _filters(min_confidence, max_rows, min_relevance, self.defaults)
         params: dict = {
@@ -681,18 +717,10 @@ class KGService:
             template = tpl.GET_ALL_NODES_BY_TYPE if node_type else tpl.GET_ALL_NODES
 
         def _query():
-            with open_board_connection(board_id) as (_db, conn):
-                result = conn.execute(template, params)
-                try:
-                    rows = []
-                    while result.has_next():
-                        rows.append(result.get_next())
-                    return rows
-                finally:
-                    try:
-                        result.close()
-                    except Exception:
-                        pass
+            result = _get_cypher_executor().execute_read_only(
+                board_id, template, params, max_rows=f.max_rows
+            )
+            return result.get("rows", [])
 
         rows = self._cached_call("get_all_nodes", board_id, params, _query)
         return [
@@ -721,8 +749,6 @@ class KGService:
         The REST ``/nodes`` endpoint exposes this as ``total_hint`` so callers
         can distinguish page size from the total filtered result size.
         """
-        from okto_pulse.core.kg.schema import open_board_connection
-
         layer = normalize_graph_layer(graph_layer)
         f = _filters(min_confidence, None, min_relevance, self.defaults)
         params: dict = {
@@ -737,18 +763,14 @@ class KGService:
             template = tpl.COUNT_ALL_NODES
 
         def _query():
-            with open_board_connection(board_id) as (_db, conn):
-                result = conn.execute(template, params)
-                try:
-                    if result.has_next():
-                        row = result.get_next()
-                        return int(row[0] if isinstance(row, (list, tuple)) else row)
-                    return 0
-                finally:
-                    try:
-                        result.close()
-                    except Exception:
-                        pass
+            result = _get_cypher_executor().execute_read_only(
+                board_id, template, params, max_rows=1
+            )
+            rows = result.get("rows", [])
+            if rows:
+                row = rows[0]
+                return int(row[0] if isinstance(row, (list, tuple)) else row)
+            return 0
 
         return int(self._cached_call("count_all_nodes", board_id, params, _query))
 
@@ -1343,21 +1365,21 @@ class KGService:
                 ids_by_board.setdefault(str(board_id), set()).add(str(node_id))
 
         existing_by_board: dict[str, set[str]] = {}
-        from okto_pulse.core.kg.schema import open_board_connection
+        cypher_executor = _get_cypher_executor()
 
         for board_id, node_ids in ids_by_board.items():
             try:
-                with open_board_connection(board_id) as (_db, conn):
-                    res = conn.execute(
-                        "MATCH (n) WHERE n.id IN $ids RETURN n.id",
-                        {"ids": list(node_ids)},
-                    )
-                    existing: set[str] = set()
-                    while res.has_next():
-                        row = res.get_next()
-                        if row and row[0]:
-                            existing.add(str(row[0]))
-                    existing_by_board[board_id] = existing
+                result = cypher_executor.execute_read_only(
+                    board_id,
+                    "MATCH (n) WHERE n.id IN $ids RETURN n.id",
+                    {"ids": list(node_ids)},
+                    max_rows=len(node_ids) or 1,
+                )
+                existing_by_board[board_id] = {
+                    str(row[0])
+                    for row in result.get("rows", [])
+                    if row and row[0]
+                }
             except Exception as exc:
                 logger.warning(
                     "kg.query_global.source_validation_failed board=%s err=%s",

@@ -1,11 +1,11 @@
-"""Tests for the core embedded KG providers and full registry wiring.
+"""Tests for the core test KG providers and full registry wiring.
 
 Validates:
 - All 3 providers satisfy their respective Protocols
 - Registry _build_defaults populates graph_store + cypher_executor
 - configure_kg_registry fails closed without explicit audit_repo + event_bus
-- KuzuGraphStore delegates to Kuzu correctly (via InMemoryGraphStore parity)
-- KuzuCypherExecutor applies safety rails
+- InMemoryGraphStore enforces the schema contract for relationship endpoints
+- InMemoryCypherExecutor satisfies the read-only execution port for tests
 - test EventBus fake lifecycle
 - kg_service.py uses graph_store from registry (no direct open_board_connection)
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from okto_pulse.core.kg.schema import SCHEMA_VERSION
+from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
@@ -41,15 +41,19 @@ def _clean_registry():
 class TestProtocolCompliance:
     """Verify new providers satisfy their Protocol interfaces."""
 
-    def test_kuzu_graph_store_satisfies_protocol(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
+    def test_memory_graph_store_satisfies_protocol(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
 
-        assert isinstance(KuzuGraphStore(), SemanticGraphStore)
+        assert isinstance(InMemoryGraphStore(), SemanticGraphStore)
 
-    def test_kuzu_cypher_executor_satisfies_protocol(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
+    def test_memory_cypher_executor_satisfies_protocol(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryCypherExecutor,
+        )
 
-        assert isinstance(KuzuCypherExecutor(), CypherExecutor)
+        assert isinstance(InMemoryCypherExecutor(), CypherExecutor)
 
     def test_sqlite_outbox_event_bus_satisfies_protocol(self):
         from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
@@ -57,43 +61,23 @@ class TestProtocolCompliance:
         assert isinstance(InMemoryEventBus(), EventBus)
 
 
-class _FakeKuzuConnection:
-    def __init__(self):
-        self.statements: list[tuple[str, dict]] = []
-
-    def execute(self, statement: str, params: dict):
-        self.statements.append((statement, params))
-
-
-class _FakeOpenBoardConnection:
-    def __init__(self, conn: _FakeKuzuConnection):
-        self.conn = conn
-
-    def __enter__(self):
-        return None, self.conn
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-class TestKuzuGraphStoreRelationshipResolution:
+class TestInMemoryGraphStoreRelationshipResolution:
     def test_create_edge_ambiguous_relationship_requires_endpoint_hints(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
-
-        with pytest.raises(ValueError, match="ambiguous.*from_type/to_type"):
-            KuzuGraphStore().create_edge("b1", "implements", "api-login", "tr-audit")
-
-    def test_create_edge_implements_constraint_honors_endpoint_hints(self, monkeypatch):
-        from okto_pulse.core.kg.providers.embedded import kuzu_graph_store as module
-
-        conn = _FakeKuzuConnection()
-        monkeypatch.setattr(
-            module,
-            "open_board_connection",
-            lambda _board_id: _FakeOpenBoardConnection(conn),
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
         )
 
-        module.KuzuGraphStore().create_edge(
+        with pytest.raises(ValueError, match="ambiguous.*from_type/to_type"):
+            InMemoryGraphStore().create_edge("b1", "implements", "api-login", "tr-audit")
+
+    def test_create_edge_implements_constraint_honors_endpoint_hints(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
+
+        store = InMemoryGraphStore()
+        store.bootstrap("b1")
+        store.create_edge(
             "b1",
             "implements",
             "api-login",
@@ -102,11 +86,8 @@ class TestKuzuGraphStoreRelationshipResolution:
             to_type="Constraint",
         )
 
-        assert len(conn.statements) == 1
-        assert (
-            "MATCH (a:APIContract {id: $from_id}), "
-            "(b:Constraint {id: $to_id})"
-        ) in conn.statements[0][0]
+        assert store._edges["b1"][0]["_from_type"] == "APIContract"
+        assert store._edges["b1"][0]["_to_type"] == "Constraint"
 
 
 # -----------------------------------------------------------------------
@@ -196,35 +177,38 @@ class TestRegistryWiring:
 
 
 # -----------------------------------------------------------------------
-# KuzuCypherExecutor safety rails
+# InMemoryCypherExecutor test port
 # -----------------------------------------------------------------------
 
 
-class TestKuzuCypherExecutorSafety:
-    """Verify safety rails are applied via the executor."""
+class TestInMemoryCypherExecutor:
+    """Verify the core test executor records read requests without runtime deps."""
 
     def test_is_supported(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryCypherExecutor,
+        )
 
-        executor = KuzuCypherExecutor()
-        assert executor.is_supported() is True
+        executor = InMemoryCypherExecutor()
+        assert executor.is_supported() is False
 
-    def test_rejects_write_cypher(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
-        from okto_pulse.core.kg.tier_power import TierPowerError
+    def test_execute_read_only_records_query(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryCypherExecutor,
+        )
 
-        executor = KuzuCypherExecutor()
-        with pytest.raises(TierPowerError) as exc_info:
-            executor.execute_read_only("board-1", "CREATE (n:Test {id: 'x'})")
-        assert exc_info.value.code == "unsafe_cypher"
-
-    def test_rejects_delete_cypher(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
-        from okto_pulse.core.kg.tier_power import TierPowerError
-
-        executor = KuzuCypherExecutor()
-        with pytest.raises(TierPowerError):
-            executor.execute_read_only("board-1", "MATCH (n) DELETE n")
+        executor = InMemoryCypherExecutor()
+        result = executor.execute_read_only(
+            "board-1",
+            "MATCH (n) RETURN n.id",
+            {"limit": 1},
+            max_rows=1,
+        )
+        assert executor.queries == [
+            ("board-1", "MATCH (n) RETURN n.id", {"limit": 1})
+        ]
+        assert result["rows"] == []
+        assert result["max_rows"] == 1
 
 
 # -----------------------------------------------------------------------

@@ -39,6 +39,23 @@ from okto_pulse.core.kg.source_maturity import (
     MATURITY_CANONICAL_ELIGIBLE,
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    RealBoardGraphLifecycleForTests,
+    RealBoardGraphPathResolverForTests,
+    RealBoardGraphTransactionForTests,
+    configure_test_kg_registry,
+)
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+        graph_path_resolver=RealBoardGraphPathResolverForTests(),
+        graph_lifecycle=RealBoardGraphLifecycleForTests(),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -259,13 +276,17 @@ def test_report_field_exposes_non_learning_loss_fallback_is_learning_only(_tmp_r
 def test_unreadable_graph_is_recorded_not_silently_passed(monkeypatch):
     board_id = _new_board()
 
-    def _boom(_board_id):
-        raise RuntimeError("simulated corrupted graph")
+    class _BrokenCypherExecutor:
+        def execute_read_only(self, *_args, **_kwargs):
+            raise RuntimeError("simulated corrupted graph")
 
-    monkeypatch.setattr(ccp, "open_board_connection", _boom, raising=False)
-    # snapshot imports open_board_connection lazily from schema; patch there too.
-    import okto_pulse.core.kg.schema as kg_schema
-    monkeypatch.setattr(kg_schema, "open_board_connection", _boom)
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    monkeypatch.setattr(
+        get_kg_registry(),
+        "cypher_executor",
+        _BrokenCypherExecutor(),
+    )
 
     snap = snapshot_canonical_cognitive(board_id)
     assert snap.readable is False

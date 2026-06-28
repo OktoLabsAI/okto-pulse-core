@@ -82,56 +82,57 @@ def detect_board_graph_stale(board_id: str) -> list[dict[str, Any]]:
     longer canonical-eligible. Never mutates. Cognitive nodes are excluded (kept
     in the R7 canonical_partition_integrity category). Degrades to ``[]`` if the
     board graph is unreadable."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     source_by_id = _source_index(board_id)
     out: list[dict[str, Any]] = []
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            for ntype in _DETERMINISTIC_SCAN_TYPES:
-                try:
-                    res = conn.execute(
-                        f"MATCH (n:{ntype}) WHERE n.graph_layer = $c "
-                        f"RETURN n.id, n.source_artifact_ref, n.created_by_agent",
-                        {"c": GRAPH_LAYER_CANONICAL},
-                    )
-                except Exception:
+        cypher = get_kg_registry().cypher_executor
+        for ntype in _DETERMINISTIC_SCAN_TYPES:
+            try:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{ntype}) WHERE n.graph_layer = $c "
+                    f"RETURN n.id, n.source_artifact_ref, n.created_by_agent",
+                    {"c": GRAPH_LAYER_CANONICAL},
+                    max_rows=10000,
+                )
+            except Exception:
+                continue
+            for row in result.get("rows", []):
+                node_id = str(row[0])
+                ref = str(row[1] or "")
+                writer = str(row[2] or "")
+                # Exclude cognitive-origin nodes (R7 territory, kept distinct).
+                if ntype in COGNITIVE_NODE_TYPES:
                     continue
-                while res.has_next():
-                    row = res.get_next()
-                    node_id = str(row[0])
-                    ref = str(row[1] or "")
-                    writer = str(row[2] or "")
-                    # Exclude cognitive-origin nodes (R7 territory, kept distinct).
-                    if ntype in COGNITIVE_NODE_TYPES:
-                        continue
-                    from okto_pulse.core.kg.connectivity_guard import (
-                        WriterClass,
-                        classify_writer_path,
-                    )
-                    if classify_writer_path(writer) == WriterClass.COGNITIVE:
-                        continue
-                    src_id = _owning_source_id(ref)
-                    if src_id is None:
-                        continue
-                    cls = source_by_id.get(src_id)
-                    if cls is not None and cls.graph_layer == GRAPH_LAYER_CANONICAL:
-                        continue  # source still canonical -> not stale
-                    out.append({
-                        "node_id": node_id,
-                        "node_type": ntype,
-                        "source_artifact_ref": ref,
-                        "owning_source_id": src_id,
-                        "board_graph_stale": True,
-                        "expected_graph_layer": (
-                            cls.graph_layer if cls else GRAPH_LAYER_WORKING
-                        ) or GRAPH_LAYER_WORKING,
-                        "expected_maturity_status": (
-                            cls.maturity_status if cls else MATURITY_WORKING_STALE
-                        ),
-                        "current_source_status": cls.artifact_status if cls else "",
-                        "recommended_action": _RECOMMENDED_ACTION,
-                    })
+                from okto_pulse.core.kg.connectivity_guard import (
+                    WriterClass,
+                    classify_writer_path,
+                )
+                if classify_writer_path(writer) == WriterClass.COGNITIVE:
+                    continue
+                src_id = _owning_source_id(ref)
+                if src_id is None:
+                    continue
+                cls = source_by_id.get(src_id)
+                if cls is not None and cls.graph_layer == GRAPH_LAYER_CANONICAL:
+                    continue  # source still canonical -> not stale
+                out.append({
+                    "node_id": node_id,
+                    "node_type": ntype,
+                    "source_artifact_ref": ref,
+                    "owning_source_id": src_id,
+                    "board_graph_stale": True,
+                    "expected_graph_layer": (
+                        cls.graph_layer if cls else GRAPH_LAYER_WORKING
+                    ) or GRAPH_LAYER_WORKING,
+                    "expected_maturity_status": (
+                        cls.maturity_status if cls else MATURITY_WORKING_STALE
+                    ),
+                    "current_source_status": cls.artifact_status if cls else "",
+                    "recommended_action": _RECOMMENDED_ACTION,
+                })
     except Exception as exc:
         logger.warning(
             "kg.stale_canonical_parity.board_read_failed board=%s err=%s",

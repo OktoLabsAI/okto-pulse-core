@@ -7,7 +7,9 @@ non-allowlisted zero-degree nodes without leaking user-authored payloads.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Protocol
@@ -16,7 +18,7 @@ from okto_pulse.core.kg.connectivity_guard import (
     KGConnectivityRuleRegistry,
     SourceResolutionStatus,
 )
-from okto_pulse.core.kg.schema import MULTI_REL_TYPES, NODE_TYPES, REL_TYPES
+from okto_pulse.core.kg.schema_contract import MULTI_REL_TYPES, NODE_TYPES, REL_TYPES
 
 logger = logging.getLogger("okto_pulse.kg.orphan_integrity")
 
@@ -30,6 +32,16 @@ ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL = "pending_backfill"
 ZERO_ORPHAN_VALIDATION_FAILED = "failed_orphan_validation"
 ZERO_ORPHAN_VALIDATION_UNAVAILABLE = "unavailable"
 ZERO_ORPHAN_VALIDATION_NOT_EVALUATED = "not_evaluated"
+
+_WRITE_KEYWORDS = (
+    " CREATE ",
+    " DELETE ",
+    " DETACH DELETE ",
+    " SET ",
+    " MERGE ",
+    " DROP ",
+    " ALTER ",
+)
 
 
 SAFE_ORPHAN_SAMPLE_FIELDS: tuple[str, ...] = (
@@ -146,6 +158,95 @@ class InMemoryOrphanAuditSink:
 
     def emit(self, record: OrphanAuditRecord) -> None:
         self.records.append(record)
+
+
+class _PortResult:
+    def __init__(self, rows: Iterable[Iterable[Any]]) -> None:
+        self._rows = [list(row) for row in rows]
+        self._index = 0
+
+    def has_next(self) -> bool:
+        return self._index < len(self._rows)
+
+    def get_next(self) -> list[Any]:
+        row = self._rows[self._index]
+        self._index += 1
+        return row
+
+    def close(self) -> None:
+        self._index = len(self._rows)
+
+
+def _run_async_blocking(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    box: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            box["result"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised below
+            box["error"] = exc
+
+    thread = threading.Thread(
+        target=_runner,
+        name="kg-orphan-integrity-graph-write",
+        daemon=True,
+    )
+    thread.start()
+    thread.join()
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
+
+
+class _BoardGraphPortConnection:
+    """Minimal connection-shaped adapter over the KG graph ports.
+
+    The scanner/backfill code predates the hexagonal ports and expects a
+    ``kconn.execute(...)`` object. This adapter preserves that local API without
+    opening backend-specific graph connections from core.
+    """
+
+    def __init__(self, board_id: str) -> None:
+        self._board_id = board_id
+
+    def execute(self, cypher: str, params: dict[str, Any] | None = None) -> Any:
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        normalized = f" {cypher.upper()} "
+        is_write = any(keyword in normalized for keyword in _WRITE_KEYWORDS)
+        if not is_write:
+            result = get_kg_registry().cypher_executor.execute_read_only(
+                self._board_id,
+                cypher,
+                params or {},
+                max_rows=10000,
+            )
+            return _PortResult(result.get("rows", []))
+
+        async def _run() -> Any:
+            async with await get_kg_registry().graph_transaction.begin(
+                self._board_id
+            ) as scope:
+                result = scope.execute(cypher, params or {})
+                rows: list[list[Any]] = []
+                try:
+                    while (
+                        result is not None
+                        and hasattr(result, "has_next")
+                        and result.has_next()
+                    ):
+                        rows.append(list(result.get_next()))
+                finally:
+                    if result is not None and hasattr(result, "close"):
+                        result.close()
+                return _PortResult(rows)
+
+        return _run_async_blocking(_run())
 
 
 class LoggingOrphanAuditSink:
@@ -409,17 +510,7 @@ class OrphanNodeScanner:
         node_types = _selected_node_types(node_type)
 
         if connection is None:
-            from okto_pulse.core.kg.schema import open_board_connection
-
-            with open_board_connection(board_id) as (_db, kconn):
-                return self._scan_with_connection(
-                    kconn,
-                    board_id=board_id,
-                    generation_id=generation_id,
-                    sample_limit=sample_limit,
-                    node_types=node_types,
-                    correlation_id=correlation_id,
-                )
+            connection = _BoardGraphPortConnection(board_id)
         return self._scan_with_connection(
             connection,
             board_id=board_id,
@@ -588,18 +679,7 @@ class OrphanBackfillReconciler:
         requested_node_ids = tuple(str(node_id) for node_id in (node_ids or ()))
 
         if connection is None:
-            from okto_pulse.core.kg.schema import open_board_connection
-
-            with open_board_connection(board_id) as (_db, kconn):
-                return self._run_with_connection(
-                    kconn,
-                    board_id=board_id,
-                    dry_run=dry_run,
-                    sample_limit=sample_limit,
-                    requested_node_ids=requested_node_ids,
-                    generation_id=generation_id,
-                    correlation_id=correlation_id,
-                )
+            connection = _BoardGraphPortConnection(board_id)
         return self._run_with_connection(
             connection,
             board_id=board_id,

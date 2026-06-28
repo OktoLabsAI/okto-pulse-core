@@ -136,10 +136,13 @@ class TestRoutingToFilteredPath:
 
 
 class TestStoreMethodSignature:
-    def test_kuzu_store_exposes_method(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
-        assert hasattr(KuzuGraphStore, "find_by_artifact_filtered")
-        sig = inspect.signature(KuzuGraphStore.find_by_artifact_filtered)
+    def test_memory_store_exposes_method(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
+
+        assert hasattr(InMemoryGraphStore, "find_by_artifact_filtered")
+        sig = inspect.signature(InMemoryGraphStore.find_by_artifact_filtered)
         assert set(sig.parameters) >= {
             "self", "board_id", "artifact_id", "filters",
             "rel_types", "direction", "max_depth", "graph_layer",

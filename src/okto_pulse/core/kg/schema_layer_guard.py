@@ -30,6 +30,7 @@ chokepoint:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -94,6 +95,28 @@ class SchemaLayerRemediation:
         """True when the schema could not be repaired and the caller should
         dead-letter the structured diagnostic instead of the raw error."""
         return self.outcome == SchemaLayerOutcome.MIGRATION_FAILED
+
+
+def _run_async_blocking(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    box: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            box["result"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised in caller
+            box["error"] = exc
+
+    thread = threading.Thread(target=_runner, name="kg-schema-layer-migrate")
+    thread.start()
+    thread.join()
+    if "error" in box:
+        raise box["error"]
+    return box["result"]
 
 
 def is_graph_layer_schema_error(error: Any) -> bool:
@@ -174,12 +197,14 @@ def ensure_graph_layer_schema(
     Emits exactly one ``kg_rebuild_schema_layer_migration_failure`` sample per
     call (or_1f52d4fd), labelled by outcome.
     """
-    # Lazy import: schema.py is a low-level module and importing it at module
-    # load time would risk an import cycle through the worker stack.
-    from okto_pulse.core.kg.schema import migrate_schema_for_board
+    # Lazy import: the edition composition configures the registry; importing it
+    # at module load time would risk an import cycle through the worker stack.
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     try:
-        result = migrate_schema_for_board(board_id)
+        result = _run_async_blocking(
+            get_kg_registry().graph_schema_manager.migrate(board_id)
+        )
     except Exception as exc:  # pragma: no cover - migrate is itself defensive
         message = build_structured_schema_layer_error(
             board_id, raw_error=raw_error, migration_errors=[f"{type(exc).__name__}: {exc}"]

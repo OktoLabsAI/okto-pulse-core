@@ -72,12 +72,12 @@ class KuzuGraphExpander:
     set. One query per edge type keeps the plan simple and lets Kùzu use
     the right relationship index."""
 
-    def __init__(self, open_connection=None) -> None:
-        # Allow injection for tests that want to stub Kùzu out.
-        if open_connection is None:
-            from okto_pulse.core.kg.schema import open_board_connection
-            open_connection = open_board_connection
-        self._open_connection = open_connection
+    def __init__(self, executor=None) -> None:
+        # Allow injection for tests that want to stub graph execution out.
+        if executor is None:
+            from okto_pulse.core.kg.interfaces import get_kg_registry
+            executor = get_kg_registry().cypher_executor
+        self._executor = executor
 
     def expand(
         self,
@@ -91,20 +91,22 @@ class KuzuGraphExpander:
             return []
         out: list[GraphNeighbor] = []
         seen: set[tuple[str, str]] = set()  # (node_id, edge_type)
-        with self._open_connection(board_id) as (_db, conn):
-            for edge in edges:
-                rows = self._expand_one_edge(conn, seed_ids, edge, max_hops)
-                for row in rows:
-                    key = (row.node_id, edge)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    out.append(row)
+        for edge in edges:
+            rows = self._expand_one_edge(
+                self._executor, board_id, seed_ids, edge, max_hops,
+            )
+            for row in rows:
+                key = (row.node_id, edge)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(row)
         return out
 
     @staticmethod
     def _expand_one_edge(
-        conn,
+        executor,
+        board_id: str,
         seed_ids: Iterable[str],
         edge: str,
         max_hops: int,
@@ -128,14 +130,15 @@ class KuzuGraphExpander:
         params = {"seed": None, "seed_ids": seed_list}
         results: list[GraphNeighbor] = []
         try:
-            res = conn.execute(stmt, params)
+            query_result = executor.execute_read_only(
+                board_id, stmt, params, max_rows=1000,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "hybrid_search.expand_failed edge=%s err=%s", edge, exc,
             )
             return []
-        while res.has_next():
-            row = res.get_next()
+        for row in query_result.get("rows", []):
             node_id, node_type, title, hop_distance, edge_conf = row
             results.append(GraphNeighbor(
                 node_id=str(node_id),

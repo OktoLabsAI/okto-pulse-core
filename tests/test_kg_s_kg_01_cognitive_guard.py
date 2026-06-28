@@ -11,7 +11,7 @@ introduced.
 Scenarios (TS-KG-01..07):
   01 Learning validates a canonical Bug                  -> accepted
   02 Learning validates a working/non-canonical Bug      -> blocked, no leak
-  03 Learning relates_to each of the 7 canonical types   -> accepted (no belongs_to)
+  03 Cognitive artifact relates_to canonical types       -> accepted (no belongs_to)
   04 Learning relates_to a type OUTSIDE the taxonomy     -> structured failure
   05 cognitive writer emits Learning belongs_to          -> forbidden_deterministic_edge
   06 operational artifact w/o deterministic connectivity -> still blocked
@@ -29,6 +29,7 @@ import pytest
 
 from okto_pulse.core.kg.cognitive_policy import (
     COGNITIVE_EDGE_TYPES,
+    COGNITIVE_PROVENANCE_NODE_TYPES,
     DETERMINISTIC_EDGE_TYPES,
     FORBIDDEN_DETERMINISTIC_EDGE_REASON,
     LEARNING_RELATES_TO_TARGETS,
@@ -133,19 +134,22 @@ def test_ts_kg_02_learning_validates_working_bug_blocked_no_canonical_leak():
 
 
 # ---------------------------------------------------------------------------
-# TS-KG-03 — Learning relates_to each of the 7 canonical endpoints, no belongs_to
+# TS-KG-03 — cognitive artifact relates_to canonical endpoints, no belongs_to
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("node_type", COGNITIVE_PROVENANCE_NODE_TYPES)
 @pytest.mark.parametrize("endpoint_type", LEARNING_RELATES_TO_TARGETS)
-def test_ts_kg_03_learning_relates_to_canonical_endpoint_accepted(endpoint_type):
+def test_ts_kg_03_cognitive_relates_to_canonical_endpoint_accepted(
+    node_type, endpoint_type
+):
     guard = KGNodeConnectivityGuard()
     result = _validate(
         guard,
         # NOT bug-derived (spec: source) — exercises the cognitive_provenance
         # group rather than the bug_learning group.
-        nodes=[_node("learn-1", "Learning", "spec:spec-1:learning:0")],
-        edges=[_edge("e1", "relates_to", "learn-1", "kg:endpoint-1")],
+        nodes=[_node("cog-1", node_type, f"spec:spec-1:{node_type.lower()}:0")],
+        edges=[_edge("e1", "relates_to", "cog-1", "kg:endpoint-1")],
         existing=[
             KGNodeRef(
                 ref_id="endpoint-1",
@@ -155,7 +159,7 @@ def test_ts_kg_03_learning_relates_to_canonical_endpoint_accepted(endpoint_type)
         ],
     )
 
-    assert result.passed is True, endpoint_type
+    assert result.passed is True, (node_type, endpoint_type)
     assert result.violations == ()
 
 
@@ -369,9 +373,10 @@ def test_ts_kg_07_taxonomy_reuses_validates_and_relates_to():
     relates_pairs = relationship_endpoint_pairs("relates_to")
     # Historical Decision -> Alternative pair is unchanged.
     assert ("Decision", "Alternative") in relates_pairs
-    # The Learning taxonomy pairs are ADDITIVELY present, reusing relates_to.
-    for target in LEARNING_RELATES_TO_TARGETS:
-        assert ("Learning", target) in relates_pairs
+    # The cognitive taxonomy pairs are ADDITIVELY present, reusing relates_to.
+    for source in COGNITIVE_PROVENANCE_NODE_TYPES:
+        for target in LEARNING_RELATES_TO_TARGETS:
+            assert (source, target) in relates_pairs
 
     # validates Learning -> Bug is unchanged (reused, not renamed).
     assert ("Learning", "Bug") in relationship_endpoint_pairs("validates")

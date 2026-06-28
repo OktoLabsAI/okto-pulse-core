@@ -80,8 +80,8 @@ def test_import_boundary_bootstrap_is_non_blocking_but_blocking_mode_enforces() 
 
 def test_package_manifest_tools_loc_baseline_passes() -> None:
     report = PackageManifestGate().run(PackageManifestGateInput())
-    assert report.evidence["tools_loc_expected"] == 108
-    assert report.evidence["tools_loc_observed"] == 108
+    assert report.evidence["tools_loc_expected"] == 146
+    assert report.evidence["tools_loc_observed"] == 146
     assert report.status == "passed"
     assert report.evidence["force_includes"], "force-includes must be enumerated"
 
@@ -90,12 +90,12 @@ def test_package_manifest_loc_drift_blocks() -> None:
     report = PackageManifestGate().run(PackageManifestGateInput(tools_loc_baseline=999))
     assert report.status == "blocking"
     assert report.evidence["error"] == "tools_loc_drift"
-    assert report.observed_value == 108
+    assert report.observed_value == 146
     assert report.expected_value == 999
 
 
-def test_package_manifest_loc_drift_against_canonical_108_blocks(tmp_path) -> None:
-    # ts_53684ed4: observed tools/ LOC != canonical 108 (no rebaseline/exception)
+def test_package_manifest_loc_drift_against_canonical_146_blocks(tmp_path) -> None:
+    # ts_53684ed4: observed tools/ LOC != canonical 146 (no rebaseline/exception)
     # blocks as tools_loc_drift, preserving observed_value, expected_value=108,
     # owner, promotion_criteria and remediation_hint. Never the stale 85.
     tools = tmp_path / "okto_pulse" / "tools"
@@ -113,8 +113,8 @@ def test_package_manifest_loc_drift_against_canonical_108_blocks(tmp_path) -> No
     assert report.status == "blocking"
     assert report.evidence["error"] == "tools_loc_drift"
     assert report.observed_value == 50
-    assert report.expected_value == 108
-    assert report.evidence["tools_loc_expected"] == 108
+    assert report.expected_value == 146
+    assert report.evidence["tools_loc_expected"] == 146
     assert report.evidence["tools_loc_expected"] != 85  # stale baseline is an error
     assert report.owner == "okto-pulse-core/architecture"
     assert report.promotion_criteria and report.remediation_hint
@@ -350,12 +350,12 @@ def test_import_boundary_prohibited_import_reports_full_evidence() -> None:
 
 def test_package_manifest_force_includes_and_baseline_not_stale_85() -> None:
     # ts_713873bb: package_manifest reports pyproject force-includes and the
-    # canonical tools baseline of 108 LOC (never the stale 85).
+    # canonical tools baseline of 146 LOC (never the stale 85).
     report = PackageManifestGate().run(PackageManifestGateInput())
     assert report.status == "passed"
-    assert report.evidence["tools_loc_expected"] == 108
+    assert report.evidence["tools_loc_expected"] == 146
     assert report.evidence["tools_loc_expected"] != 85
-    assert report.evidence["tools_loc_observed"] == 108
+    assert report.evidence["tools_loc_observed"] == 146
     # force-includes from pyproject [tool.hatch.build.targets.wheel.force-include]
     fi = report.evidence["force_includes"]
     assert fi and any("agent_instructions.md" in entry for entry in fi)

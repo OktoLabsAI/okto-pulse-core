@@ -45,18 +45,18 @@ COGNITIVE_EDGE_TYPES: Final[frozenset[str]] = frozenset({
     "contradicts",
     "supersedes",
     "depends_on",
-    "relates_to",       # Decision→Alternative + Learning→taxonomy, agent owns it
+    "relates_to",       # Decision→Alternative + cognitive artifact→taxonomy
     "validates",        # Learning→Bug, agent owns it
 })
 
 
-# S-KG-01 / BR-KG-02 — canonical Learning taxonomy. A cognitive Learning proves
+# S-KG-01 / BR-KG-02 — canonical cognitive taxonomy. A cognitive artifact proves
 # provenance through EXISTING edge names only (no new edge types): ``validates``
-# to a canonical Bug when bug-derived, otherwise ``relates_to`` to one of these
-# seven canonical operational/decision endpoints. This is the closed set the
-# connectivity guard's ``cognitive_provenance`` policy and the schema's additive
-# ``relates_to`` endpoint pairs are both derived from — so neither side can drift
-# into inventing a new edge name (learned_from/informs/constrains/…).
+# to a canonical Bug when a Learning is bug-derived, otherwise ``relates_to`` to
+# one of these seven canonical operational/decision endpoints. This is the closed
+# set the connectivity guard's ``cognitive_provenance`` policy and the schema's
+# additive ``relates_to`` endpoint pairs are both derived from — so neither side
+# can drift into inventing a new edge name (learned_from/informs/constrains/…).
 LEARNING_RELATES_TO_TARGETS: Final[tuple[str, ...]] = (
     "Entity",
     "Decision",
@@ -65,6 +65,16 @@ LEARNING_RELATES_TO_TARGETS: Final[tuple[str, ...]] = (
     "TestScenario",
     "APIContract",
     "Criterion",
+)
+
+# Cognitive artifacts that use the non-bug cognitive_provenance rule. Learning is
+# the original S-KG-01 source type; Alternative/Assumption use the same taxonomy
+# so final-report closeouts can stay connected without cognitive writers emitting
+# deterministic ``belongs_to`` edges.
+COGNITIVE_PROVENANCE_NODE_TYPES: Final[tuple[str, ...]] = (
+    "Learning",
+    "Alternative",
+    "Assumption",
 )
 
 # Reason code surfaced when a cognitive writer attempts a deterministic edge

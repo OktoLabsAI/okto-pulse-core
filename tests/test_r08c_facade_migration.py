@@ -1,22 +1,22 @@
-"""R08-C — MCP auth facades migrated to the auth shim (register-before-remove).
+"""R-P2-09 — MCP auth facades use request-scoped credentials.
 
 The leverage migration: re-pointing _get_agent_ctx / _get_authenticated_agent at
-the R08-A active_api_key_credential() shim migrates the ~227 facade call-sites
-automatically. The ContextVar STAYS (DEC-R08C-01 / FR6). The full per-transport
-family golden replay is the R08-D net (tests/test_r08d_auth_replay_gates.py,
-re-run green after this migration).
+the active_api_key_credential() request-scope shim migrates the ~227 facade
+call-sites automatically. The former _active_api_key ContextVar is removed. The
+full per-transport family golden replay is the R08-D net
+(tests/test_r08d_auth_replay_gates.py, re-run green after this migration).
 
 Scenario mapping:
   TS01 — the facades resolve the credential via active_api_key_credential() (the
-         McpCredential port DTO), NOT a direct _active_api_key read; the facade
+         McpCredential port DTO), not via a direct global carrier; the facade
          still resolves the same agent (behavioural + structural).
   TS02 — golden replay of the migrated facades: success / auth-failure /
          permission-denied preserve outcome with no response/side-effect change.
   TS03 — mcp_credential_usage_gate is ALIAS-AWARE and covers the facades: real
          core ok; aliased / qualified / assignment-chain bypass BLOCKED.
-  TS04 — _active_api_key NOT removed: still defined in server.py + ledgered as a
-         LEGACY singleton retired only in the request_scope_provider phase.
-  TS05 — the per-request ContextVar is task-isolated under concurrency (no leak).
+  TS04 — _active_api_key removed: server.py no longer defines/imports the
+         ContextVar and the singleton ledger no longer baselines it.
+  TS05 — request-scoped credentials are isolated under concurrency (no leak).
   TS06 — AntiSingletonGate adds zero new singletons (only pre-existing _worker);
          ApplicationPurityGate + mcp_credential_usage_gate green.
 """
@@ -36,6 +36,7 @@ import okto_pulse.core.app as _core_app  # noqa: F401 (register ORM models)
 import okto_pulse.core.infra.database as _db_mod
 import okto_pulse.core.mcp.server as server
 from okto_pulse.core.services.main import AgentService
+from okto_pulse.core.ports import McpCredential
 
 _HASH = AgentService.hash_api_key
 
@@ -98,13 +99,27 @@ async def _seed(tmp: str) -> None:
         await s.commit()
 
 
-def _set_key(key):
-    """Simulate ApiKeySessionMiddleware setting the per-request ContextVar."""
-    return server._active_api_key.set(key)
+class _Req:
+    def __init__(self, credential=None):
+        self.scope = {}
+        self.query_params = {}
+        self.headers = {}
+        if credential is not None:
+            self.scope[server._MCP_CREDENTIAL_SCOPE_KEY] = credential
+
+
+def _set_request_scope(monkeypatch, key: str | None):
+    """Simulate FastMCP exposing the current HTTP request to server.py."""
+    import fastmcp.server.dependencies as deps
+
+    credential = (
+        McpCredential(source="query_param", value=key) if key is not None else None
+    )
+    monkeypatch.setattr(deps, "get_http_request", lambda: _Req(credential))
 
 
 # ===========================================================================
-# TS01 — facades resolve via the shim, not a direct _active_api_key read.
+# TS01 — facades resolve via the request-scope shim, not a direct global read.
 # ===========================================================================
 def test_ts01_facades_route_credential_through_shim_structural():
     src = Path(server.__file__).read_text(encoding="utf-8")
@@ -122,21 +137,18 @@ def test_ts01_facades_route_credential_through_shim_structural():
             for n in ast.walk(fn)
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
         }
-        # routes through the R08-A shim...
+        # routes through the request-scope shim...
         assert "active_api_key_credential" in calls, name
-        # ...and does NOT read the ContextVar directly in its body.
+        # ...and does NOT read the old global carrier directly in its body.
         names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
         assert "_active_api_key" not in names, name
 
 
-async def test_ts01_facade_resolves_same_agent_behavioural(_seeded):
+async def test_ts01_facade_resolves_same_agent_behavioural(_seeded, monkeypatch):
     await _seed(_seeded)
-    token = _set_key("kA1")
-    try:
-        agent = await server._get_authenticated_agent()
-        ctx = await server._get_agent_ctx("B1")
-    finally:
-        server._active_api_key.reset(token)
+    _set_request_scope(monkeypatch, "kA1")
+    agent = await server._get_authenticated_agent()
+    ctx = await server._get_agent_ctx("B1")
     assert agent is not None and agent.id == "A1"
     assert ctx is not None and ctx.agent_id == "A1" and ctx.board_id == "B1"
 
@@ -144,15 +156,12 @@ async def test_ts01_facade_resolves_same_agent_behavioural(_seeded):
 # ===========================================================================
 # TS02 — golden replay of the migrated facades (success / auth-fail / denied).
 # ===========================================================================
-async def test_ts02_golden_replay_success_authfail_denied(_seeded):
+async def test_ts02_golden_replay_success_authfail_denied(_seeded, monkeypatch):
     await _seed(_seeded)
 
     async def _ctx(key, board):
-        token = _set_key(key)
-        try:
-            return await server._get_agent_ctx(board)
-        finally:
-            server._active_api_key.reset(token)
+        _set_request_scope(monkeypatch, key)
+        return await server._get_agent_ctx(board)
 
     # success: A1 -> B1
     ok = await _ctx("kA1", "B1")
@@ -163,6 +172,7 @@ async def test_ts02_golden_replay_success_authfail_denied(_seeded):
     # permission denied: valid A2 but not a member of B1 -> None (no bypass)
     assert await _ctx("kA2", "B1") is None
     # no credential at all -> None
+    _set_request_scope(monkeypatch, None)
     assert await server._get_agent_ctx("B1") is None
 
 
@@ -175,8 +185,8 @@ def test_ts_3e57f597_inventory_of_migrated_call_sites():
     core = Path(server.__file__).resolve().parents[1]  # .../okto_pulse/core
 
     # (1) ZERO direct CODE uses of `_active_api_key` (ast.Name / ast.Attribute)
-    # outside mcp/server.py across production core. String literals in the
-    # gate/ledger files (ast.Constant) are tracking refs, NOT credential reads.
+    # across production core. String literals in gates (ast.Constant) are stale
+    # reintroduction guards, NOT credential reads.
     code_use_files: dict[str, int] = {}
     for py in core.rglob("*.py"):
         if "__pycache__" in py.parts:
@@ -191,35 +201,23 @@ def test_ts_3e57f597_inventory_of_migrated_call_sites():
             is_attr = isinstance(n, ast.Attribute) and n.attr == "_active_api_key"
             if is_name or is_attr:
                 code_use_files[rel] = code_use_files.get(rel, 0) + 1
-    assert set(code_use_files) == {"mcp/server.py"}, code_use_files
+    assert code_use_files == {}, code_use_files
 
-    # (2) Inside server.py the `_active_api_key` reads live ONLY in the shim
-    # (active_api_key_credential) + the middleware (ApiKeySessionMiddleware
-    # __call__) + the module-level ContextVar definition — NOT in the migrated
-    # facades.
+    # (2) server.py does not import contextvars nor define the old carrier.
     server_tree = ast.parse(Path(server.__file__).read_text(encoding="utf-8"))
-    allowed_scopes = {
-        "active_api_key_credential",
-        "ApiKeySessionMiddleware",
-        "__call__",  # the middleware ASGI entrypoint
-    }
-
-    def _enclosing(target_lineno: int) -> str:
-        best = None
-        for fn in ast.walk(server_tree):
-            if isinstance(
-                fn, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-            ) and fn.lineno <= target_lineno <= (fn.end_lineno or fn.lineno):
-                if best is None or fn.lineno > best.lineno:
-                    best = fn
-        return best.name if best is not None else "<module>"
-
-    for n in ast.walk(server_tree):
-        if isinstance(n, ast.Name) and n.id == "_active_api_key":
-            scope = _enclosing(n.lineno)
-            # module-level def (<module>) or the allowlisted shim/middleware only.
-            assert scope in allowed_scopes or scope == "<module>", (n.lineno, scope)
-            assert scope not in {"_get_agent_ctx", "_get_authenticated_agent"}
+    assert not any(
+        isinstance(n, ast.ImportFrom) and n.module == "contextvars"
+        for n in ast.walk(server_tree)
+    )
+    assert not any(
+        isinstance(n, (ast.Assign, ast.AnnAssign))
+        and (
+            any(isinstance(t, ast.Name) and t.id == "_active_api_key" for t in getattr(n, "targets", ()))
+            or isinstance(getattr(n, "target", None), ast.Name)
+            and getattr(n, "target").id == "_active_api_key"
+        )
+        for n in ast.walk(server_tree)
+    )
 
     # (3) The credential-usage gate inventory classifies every sensitive-symbol
     # finding as allowlisted -> ZERO debt outside the allowlist (AC2).
@@ -275,47 +273,40 @@ def test_ts03_gate_alias_aware_real_core_ok_and_blocks_bypass(tmp_path):
 
 
 # ===========================================================================
-# TS04 — _active_api_key NOT removed: defined + ledgered legacy singleton.
+# TS04 — _active_api_key removed from runtime + singleton baseline.
 # ===========================================================================
-def test_ts04_context_var_not_removed_and_ledgered():
-    from contextvars import ContextVar
+def test_ts04_context_var_removed_and_unledgered():
+    from okto_pulse.core.application.boundary.singleton_gate import (
+        BASELINE_SINGLETONS,
+        SINGLETON_LEDGER,
+    )
 
-    from okto_pulse.core.application.boundary.singleton_gate import SINGLETON_LEDGER
-
-    # Still defined as a ContextVar in server.py (register-before-remove).
-    assert isinstance(server._active_api_key, ContextVar)
+    assert not hasattr(server, "_active_api_key")
     src = Path(server.__file__).read_text(encoding="utf-8")
-    assert "_active_api_key: ContextVar" in src
+    assert "from contextvars import ContextVar" not in src
+    assert "_active_api_key: ContextVar" not in src
 
-    # Ledgered as a legacy singleton; removal deferred to request_scope_provider.
-    entry = SINGLETON_LEDGER["_active_api_key"]
-    assert entry["file"] == "okto_pulse/core/mcp/server.py"
-    assert entry["target_provider"] == "auth"
-    crit = entry["retirement_criterion"]
-    assert "R08-C" in crit and "request_scope_provider" in crit
-    assert "register-before-remove" in crit
+    assert "_active_api_key" not in SINGLETON_LEDGER
+    assert "okto_pulse/core/mcp/server.py::_active_api_key" not in BASELINE_SINGLETONS
 
 
 # ===========================================================================
-# TS05 — per-request ContextVar is task-isolated under concurrency.
+# TS05 — request-scoped credentials are task-isolated under concurrency.
 # ===========================================================================
-async def test_ts05_context_var_task_isolated_no_leak(_seeded):
+async def test_ts05_request_scope_credentials_no_leak(_seeded):
     await _seed(_seeded)
 
     async def resolve(key):
-        token = _set_key(key)
-        try:
-            # yield control so the gathered tasks genuinely interleave
-            await asyncio.sleep(0)
-            agent = await server._get_authenticated_agent()
-            return agent.id if agent else None
-        finally:
-            server._active_api_key.reset(token)
+        credential = McpCredential(source="query_param", value=key)
+        # yield control so the gathered tasks genuinely interleave
+        await asyncio.sleep(0)
+        agent = await server._authenticate_mcp_credential(credential)
+        return agent.id if agent else None
 
     plan = [("kA1", "A1"), ("kA2", "A2")] * 6  # 12 overlapping
     results = await asyncio.gather(*(resolve(k) for k, _ in plan))
     for (_, expected), got in zip(plan, results):
-        assert got == expected  # no ContextVar / identity leak across tasks
+        assert got == expected  # no global identity carrier leak across tasks
 
 
 # ===========================================================================

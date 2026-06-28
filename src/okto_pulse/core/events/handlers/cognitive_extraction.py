@@ -360,19 +360,18 @@ def _learning_already_exists(board_id: str, bug_node_id: str) -> bool:
     installed in tests, schema drift) returns False so the handler proceeds
     and the rest of the pipeline (or its own dedup) catches the duplicate.
     """
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
     try:
-        from okto_pulse.core.kg.schema import BoardConnection
-    except Exception:
-        return False
-    try:
-        with BoardConnection(board_id) as (_db, conn):
-            res = conn.execute(
-                "MATCH (l:Learning)-[:validates]->(b:Bug {id: $bid}) "
-                "RETURN count(l) AS c",
-                {"bid": bug_node_id},
-            )
-            row = res.get_next() if res.has_next() else None
-            return bool(row and int(row[0]) > 0)
+        result = get_kg_registry().cypher_executor.execute_read_only(
+            board_id,
+            "MATCH (l:Learning)-[:validates]->(b:Bug {id: $bid}) "
+            "RETURN count(l) AS c",
+            {"bid": bug_node_id},
+            max_rows=1,
+        )
+        rows = result.get("rows", [])
+        return bool(rows and int(rows[0][0]) > 0)
     except Exception:
         return False
 
@@ -383,19 +382,18 @@ def _node_with_source_ref_exists(board_id: str, node_type: str, source_ref: str)
     Returns True iff Kùzu has at least one ``node_type`` with a matching
     ``source_artifact_ref``. Defensive against missing column / table.
     """
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
     try:
-        from okto_pulse.core.kg.schema import BoardConnection
-    except Exception:
-        return False
-    try:
-        with BoardConnection(board_id) as (_db, conn):
-            res = conn.execute(
-                f"MATCH (n:{node_type}) WHERE n.source_artifact_ref = $ref "
-                "RETURN count(n) AS c",
-                {"ref": source_ref},
-            )
-            row = res.get_next() if res.has_next() else None
-            return bool(row and int(row[0]) > 0)
+        result = get_kg_registry().cypher_executor.execute_read_only(
+            board_id,
+            f"MATCH (n:{node_type}) WHERE n.source_artifact_ref = $ref "
+            "RETURN count(n) AS c",
+            {"ref": source_ref},
+            max_rows=1,
+        )
+        rows = result.get("rows", [])
+        return bool(rows and int(rows[0][0]) > 0)
     except Exception:
         return False
 

@@ -17,8 +17,6 @@ from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
 from okto_pulse.core.kg.schema import (
     NODE_TYPES,
     PRIORITY_BOOST_COLUMNS,
-    _ensure_priority_boost_columns,
-    apply_schema_to_connection,
     bootstrap_board_graph,
     close_all_connections,
     open_board_connection,
@@ -30,6 +28,10 @@ from okto_pulse.core.kg.scoring import (
     _recompute_relevance_batch,
     reset_histogram,
 )
+
+kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+_ensure_priority_boost_columns = kg_runtime._ensure_priority_boost_columns
+apply_schema_to_connection = kg_runtime.apply_schema_to_connection
 
 
 @pytest.fixture

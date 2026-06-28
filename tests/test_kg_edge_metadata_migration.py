@@ -21,13 +21,15 @@ from okto_pulse.core.kg.schema import (
     EDGE_METADATA_COLUMNS,
     REL_TYPES,
     SCHEMA_VERSION,
-    _ensure_multi_rel_pairs,
-    _show_rel_connection_pairs,
     bootstrap_board_graph,
     close_all_connections,
-    migrate_edge_metadata,
     open_board_connection,
 )
+
+kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+_ensure_multi_rel_pairs = kg_runtime._ensure_multi_rel_pairs
+_show_rel_connection_pairs = kg_runtime._show_rel_connection_pairs
+migrate_edge_metadata = kg_runtime.migrate_edge_metadata
 
 
 @pytest.fixture
@@ -104,12 +106,12 @@ def test_board_migration_probe_detects_missing_multi_rel_pair(tmp_path, monkeypa
         del conn, db
 
     monkeypatch.setattr(kg_schema, "board_kuzu_path", lambda _board_id: graph_path)
-    kg_schema._MIGRATED_BOARDS.discard(board)
+    kg_runtime._MIGRATED_BOARDS.discard(board)
     try:
-        assert kg_schema._board_needs_migration(board) is True
+        assert kg_runtime._board_needs_migration(board) is True
     finally:
         kg_schema.close_board_db_cache(board)
-        kg_schema._MIGRATED_BOARDS.discard(board)
+        kg_runtime._MIGRATED_BOARDS.discard(board)
 
 
 def test_bootstrap_creates_rels_with_metadata_columns(board):

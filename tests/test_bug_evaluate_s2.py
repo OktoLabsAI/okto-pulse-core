@@ -9,8 +9,8 @@ twin compartilham este core):
   * ts_22aa3b7e — trivial/duplicate/no_reusable → no_action sem Learning.
   * ts_6b31aba2 — path_b_pending exige revisit_at (400).
   * ts_9fa1bd98 — DLQ/canonical_debt aberto → 409 antes de escrita.
-  * ts_494731f9 — MCP twin replica o REST via o mesmo core; missing revisit_at
-    → 400 e skip válido via write-path central.
+  * ts_494731f9 — MCP skip/no_action fail-closes at the agent boundary; direct
+    service tests still cover revisit_at 400.
 """
 
 from __future__ import annotations
@@ -214,12 +214,12 @@ async def test_create_learning_without_reusable_evidence_is_no_action(tmp_path, 
 
 
 # ---------------------------------------------------------------------------
-# ts_494731f9 — MCP twin replica o REST via o mesmo core
+# ts_494731f9 — MCP skip/no_action is a human-only control
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_ts494731f9_mcp_twin_matches_central_writepath(tmp_path, db_factory, monkeypatch):
+async def test_ts494731f9_mcp_skip_fail_closes_before_writepath(tmp_path, db_factory, monkeypatch):
     board, gen = "be-mcp", generate_kg_generation_id()
     await _board(db_factory, board)
     monkeypatch.setenv("OKTO_PULSE_REBUILD_BASE_DIR", str(tmp_path))
@@ -240,21 +240,30 @@ async def test_ts494731f9_mcp_twin_matches_central_writepath(tmp_path, db_factor
 
     tool = await mcp_server.mcp.get_tool("okto_pulse_kg_evaluate_bug_cognitive_closure")
 
-    # missing revisit_at p/ path_b_pending → 400 (twin usa o write-path central).
+    # Agent-facing skip/no_action is human-only. The MCP tool fail-closes before
+    # the central write path, so even an invalid skip reason shape must not
+    # persist or leak into the central skip ledger.
     out = json.loads(await tool.fn(
         board_id=board, bug_id=UUID_A, evidence=GOOD_EVIDENCE,
         requested_action="skip", reason_code="path_b_pending",
     ))
-    assert out["error"] == "revisit_at_required" and out["status_code"] == 400
+    assert out["error"] == "human_control_required"
+    assert out["code"] == "human_control_required"
+    assert out["details"]["mutation_allowed"] is False
+    assert out["details"]["state_changed"] is False
+    assert out["details"]["required_actor"] == "human"
+    assert out["details"]["blocked_tool"] == "okto_pulse_kg_evaluate_bug_cognitive_closure"
+    assert out["details"]["blocked_action"] == "evaluate_bug_cognitive_closure:skip"
+    assert out["details"]["target_ref"] == f"bug:{UUID_A}"
 
-    # skip terminal válido → skipped + no_action_required via write-path central.
+    # A semantically valid skip is still blocked at the same agent boundary.
     out2 = json.loads(await tool.fn(
         board_id=board, bug_id=UUID_A, evidence=GOOD_EVIDENCE,
         requested_action="skip", reason_code="trivial_fix",
     ))
-    assert out2["status"] == "skipped"
-    assert out2["outcome_type"] == "no_action_required"
-    assert out2["readiness_effect"]  # readiness do service presente
+    assert out2["error"] == "human_control_required"
+    assert out2["details"]["mutation_allowed"] is False
+    assert out2["details"]["state_changed"] is False
 
 
 # ---------------------------------------------------------------------------

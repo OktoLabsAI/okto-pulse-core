@@ -243,7 +243,7 @@ def test_ts8c088b7d_api_key_surface_untouched():
 
 
 # ===========================================================================
-# ts_0f6f619e — ledger: mcp_auth_context fail-closed in-transition (R08-C removal).
+# ts_0f6f619e — ledger: mcp_auth_context fail-closed in-transition.
 # ===========================================================================
 def test_ts0f6f619e_inventory_ledgers_mcp_auth_context_fail_closed():
     from okto_pulse.core.application.boundary.adapter_readiness_inventory import (
@@ -253,12 +253,14 @@ def test_ts0f6f619e_inventory_ledgers_mcp_auth_context_fail_closed():
     entry = next(
         e for e in build_adapter_inventory() if e.adapter_key == "mcp_auth_context"
     )
-    # Fail-closed in-transition: NOT ready/removed.
-    assert entry.status == "deferred"
+    # Fail-closed in-transition: actionable, but NOT ready/removed.
+    assert entry.status == "blocked"
     assert entry.port_ref == "AuthContext / McpAuthenticator"
     assert "boards_acl_resolution" in entry.oracles_required
-    # The removal criterion names R08-C / request_scope_provider, register-HALF.
+    # The removal criterion records request-scope completion and the remaining
+    # bridge extraction condition.
     crit = entry.removal_criterion
-    assert "R08-C" in crit
-    assert "request_scope_provider" in crit
+    assert "R-P2-09" in crit
+    assert "request scope" in crit
     assert "_active_api_key" in crit
+    assert "Community owns the concrete AuthContext bridge" in crit

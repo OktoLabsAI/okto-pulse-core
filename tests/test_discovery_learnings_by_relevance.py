@@ -10,6 +10,7 @@ import os
 
 import pytest
 
+from kg_registry_testing import RealBoardCypherExecutorForTests, configure_test_kg_registry
 from okto_pulse.core.kg.schema import (
     bootstrap_board_graph,
     close_all_connections,
@@ -18,6 +19,11 @@ from okto_pulse.core.kg.schema import (
 from okto_pulse.core.services.discovery_executor import (
     _exec_learnings_by_relevance,
 )
+
+
+@pytest.fixture(autouse=True)
+def _real_board_cypher_executor():
+    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
 
 
 @pytest.fixture

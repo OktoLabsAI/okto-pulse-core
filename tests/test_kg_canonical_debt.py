@@ -464,6 +464,14 @@ async def test_consolidation_failure_marks_canonical_debt(db_factory):
                 ConsolidationQueue.board_id == BOARD_ID
             )
         )
+        session.add(Spec(
+            id="spec-failed",
+            board_id=BOARD_ID,
+            title="Done spec with failed consolidation",
+            description="Canonical-ready source.",
+            status=SpecStatus.DONE,
+            created_by=USER_ID,
+        ))
         entry = ConsolidationQueue(
             board_id=BOARD_ID,
             artifact_type="spec",
@@ -492,6 +500,131 @@ async def test_consolidation_failure_marks_canonical_debt(db_factory):
     assert debt["canonical_state"] == "failed"
     assert debt["failure_reason"] == "consolidation_failed"
     assert debt["queue_ref"] == entry.id
+
+
+@pytest.mark.asyncio
+async def test_missing_artifact_queue_entry_is_acked_without_canonical_debt(
+    db_factory,
+):
+    missing_spec_id = "spec-stale-missing"
+    async with db_factory() as session:
+        board = await session.get(Board, BOARD_ID)
+        if board is None:
+            session.add(Board(id=BOARD_ID, name="debt", owner_id=USER_ID))
+        await session.execute(
+            CanonicalDebt.__table__.delete().where(
+                CanonicalDebt.board_id == BOARD_ID
+            )
+        )
+        await session.execute(
+            ConsolidationQueue.__table__.delete().where(
+                ConsolidationQueue.board_id == BOARD_ID
+            )
+        )
+        await session.execute(
+            Spec.__table__.delete().where(Spec.id == missing_spec_id)
+        )
+        entry = ConsolidationQueue(
+            board_id=BOARD_ID,
+            artifact_type="spec",
+            artifact_id=missing_spec_id,
+            status="pending",
+            worker_id=None,
+        )
+        session.add(entry)
+        await session.commit()
+        entry_id = entry.id
+
+    worker = ConsolidationWorker(db_factory, batch_size=1)
+    processed = await worker.process_batch()
+
+    async with db_factory() as session:
+        queue_row = await session.get(ConsolidationQueue, entry_id)
+        listed = await list_canonical_debt(session, board_id=BOARD_ID)
+
+    assert processed == 1
+    assert queue_row is None
+    assert listed.total == 0
+
+
+@pytest.mark.asyncio
+async def test_canonical_debt_persist_failure_rolls_back_before_queue_update(
+    db_factory,
+    monkeypatch,
+):
+    spec_id = "spec-debt-persist-rollback"
+
+    async with db_factory() as session:
+        board = await session.get(Board, BOARD_ID)
+        if board is None:
+            session.add(Board(id=BOARD_ID, name="debt", owner_id=USER_ID))
+        await session.execute(
+            CanonicalDebt.__table__.delete().where(
+                CanonicalDebt.board_id == BOARD_ID
+            )
+        )
+        await session.execute(
+            ConsolidationQueue.__table__.delete().where(
+                ConsolidationQueue.board_id == BOARD_ID
+            )
+        )
+        await session.execute(Spec.__table__.delete().where(Spec.id == spec_id))
+        spec = Spec(
+            id=spec_id,
+            board_id=BOARD_ID,
+            title="Done spec with debt persistence failure",
+            description="Canonical-ready source.",
+            status=SpecStatus.DONE,
+            created_by=USER_ID,
+        )
+        entry = ConsolidationQueue(
+            board_id=BOARD_ID,
+            artifact_type="spec",
+            artifact_id=spec_id,
+            status="claimed",
+            worker_id="worker-test",
+        )
+        session.add_all([spec, entry])
+        await session.commit()
+        entry_id = entry.id
+
+    async def broken_upsert(db, **kwargs):
+        db.add(CanonicalDebt(
+            board_id="missing-board-for-fk",
+            artifact_type=kwargs["artifact_type"],
+            artifact_id=kwargs["artifact_id"],
+            source_ref=kwargs["source_ref"],
+            content_hash=kwargs["content_hash"],
+            target_status=kwargs["target_status"],
+            canonical_state=kwargs["canonical_state"],
+        ))
+        await db.flush()
+
+    monkeypatch.setattr(
+        "okto_pulse.core.kg.workers.consolidation.upsert_canonical_debt",
+        broken_upsert,
+    )
+
+    async with db_factory() as session:
+        entry = await session.get(ConsolidationQueue, entry_id)
+        worker = ConsolidationWorker(lambda: None)
+        await worker._mark_failed(
+            session,
+            entry,
+            error_text="KG node connectivity guard rejected the commit",
+            max_attempts=3,
+        )
+        await session.commit()
+
+    async with db_factory() as session:
+        entry = await session.get(ConsolidationQueue, entry_id)
+        listed = await list_canonical_debt(session, board_id=BOARD_ID)
+
+    assert entry is not None
+    assert entry.attempts == 1
+    assert entry.status == "pending"
+    assert entry.last_error == "KG node connectivity guard rejected the commit"
+    assert listed.total == 0
 
 
 @pytest.mark.asyncio

@@ -18,15 +18,14 @@ Async-safety: Kùzu v0.6 is synchronous, so we wrap the connection work in
 from __future__ import annotations
 
 import asyncio
-import gc
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import KGHitFlushed
+from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.interfaces import get_kg_registry
-from okto_pulse.core.kg.schema import open_board_connection
 from okto_pulse.core.kg.scoring import _recompute_relevance
 
 logger = logging.getLogger(__name__)
@@ -35,27 +34,22 @@ logger = logging.getLogger(__name__)
 def _recompute_sync(
     board_id: str, node_type: str, node_id: str,
 ) -> float | None:
-    """Open a Kùzu connection and recompute one node's relevance score.
+    """Open a graph transaction port and recompute one node's relevance score.
 
-    Short-circuits to None when the board has no Kùzu graph yet (event
-    races with bootstrap). Always closes the connection — Kùzu v0.6 holds
-    a Windows exclusive lock for the lifetime of the Python handle.
+    Short-circuits to None when the board has no graph yet (event races with
+    bootstrap). The concrete adapter owns the underlying connection lifecycle.
     """
-    # Spec #06: existence check via the GraphPathResolver port (drop-in for
-    # board_kuzu_path; identical behavior). The connection read stays on the
-    # direct path — the async GraphTransaction port can't be adopted from this
-    # sync helper without async-ifying it (deferred as controlled baseline).
-    if not get_kg_registry().graph_path_resolver.exists(board_id):
+    registry = get_kg_registry()
+    if not registry.graph_path_resolver.exists(board_id):
         return None
-    bc = open_board_connection(board_id)
-    try:
-        return _recompute_relevance(
-            bc.conn, board_id, node_type, node_id, trigger="hit_flush",
-        )
-    finally:
-        bc.close()
-        del bc
-        gc.collect()
+
+    async def _run() -> float | None:
+        async with await registry.graph_transaction.begin(board_id) as scope:
+            return _recompute_relevance(
+                scope, board_id, node_type, node_id, trigger="hit_flush",
+            )
+
+    return run_async_blocking(_run())
 
 
 @register_handler("kg.hit_flushed")

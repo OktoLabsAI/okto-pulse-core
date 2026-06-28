@@ -3,8 +3,8 @@
 fr_95d98ef5: no new module-global singleton may be introduced in the core; a new
 one detected blocks. fr_531b74f3: the existing singletons live in a
 register-before-remove ledger with owner, target provider, expected adapter and
-a retirement criterion — headlined by ``_global_db``, ``_active_api_key``,
-``_scheduler``, ``_mcp_session_factory`` and ``_permission_cache``.
+a retirement criterion — headlined by ``_global_db``, ``_scheduler``,
+``_mcp_session_factory`` and ``_permission_cache``.
 
 Detection is deterministic and NARROW (AST, no import): a module-global is a
 singleton when it is reassigned via a ``global`` statement (mutated process
@@ -35,28 +35,6 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
         "retirement_criterion": (
             "Composition root owns the global-discovery DB handle (deferred_to_05); "
             "remove only after the provider is wired."
-        ),
-    },
-    "_active_api_key": {
-        "file": "okto_pulse/core/mcp/server.py",
-        "owner": "okto-pulse-core/inbound-mcp",
-        "target_provider": "auth",
-        "expected_adapter": (
-            "McpAuthenticator port (R08-A, ports/mcp_auth.py) — a technical "
-            "singleton accepted ONLY inside the MCP shim that bridges the "
-            "per-request credential (ContextVar) into McpCredential."
-        ),
-        "retirement_criterion": (
-            "R08-A introduced the McpAuthenticator port + Community adapter + the "
-            "transport->McpCredential conversion shim; R08-B bridged AuthSession "
-            "to the KG AuthContext; R08-C re-pointed the server facades "
-            "(_get_agent_ctx / _get_authenticated_agent) at active_api_key_credential() "
-            "so the ContextVar is read through a SINGLE shim boundary (the per-"
-            "request carrier is task-isolated). It stays as a LEGACY singleton "
-            "(register-before-remove, DEC-R08C-01 / FR6). REMOVE only in the later "
-            "request_scope_provider phase, when the inbound MCP adapter carries the "
-            "actor on the request scope and the auth provider owns per-request "
-            "identity (no ContextVar)."
         ),
     },
     "_scheduler": {
@@ -251,7 +229,6 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/kg/workers/deterministic_worker.py::_whitelist_cache",
         "okto_pulse/core/kg/write_barrier.py::_current_mode",
         "okto_pulse/core/kg/write_barrier.py::_active_guards",
-        "okto_pulse/core/mcp/server.py::_active_api_key",
         "okto_pulse/core/mcp/server.py::_mcp_session_factory",
         "okto_pulse/core/mcp/server.py::_effective_resource_catalog",
         "okto_pulse/core/mcp/server.py::_resource_catalog_frozen",

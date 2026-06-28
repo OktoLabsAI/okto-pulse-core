@@ -23,6 +23,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 pytestmark = pytest.mark.asyncio
@@ -45,6 +46,7 @@ def dedup_tempdir(monkeypatch):
     monkeypatch.setenv("KG_BASE_DIR", str(kg_path))
     monkeypatch.setenv("KG_CLEANUP_ENABLED", "false")
     monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
+    configure_real_graph_test_kg_registry()
 
     yield base
 
@@ -332,7 +334,7 @@ async def _bootstrap_test_board(monkeypatch):
     from okto_pulse.core.kg.interfaces.registry import (
         reset_registry_for_tests,
     )
-    from kg_registry_testing import configure_test_kg_registry
+    from kg_registry_testing import configure_real_graph_test_kg_registry
     from okto_pulse.core.kg.schema import bootstrap_board_graph
 
     db_url = os.environ["DATABASE_URL"]
@@ -340,7 +342,7 @@ async def _bootstrap_test_board(monkeypatch):
     await init_db()
     reset_registry_for_tests()
     session_factory = get_session_factory()
-    configure_test_kg_registry(session_factory=session_factory)
+    configure_real_graph_test_kg_registry(session_factory=session_factory)
 
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())

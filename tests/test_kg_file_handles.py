@@ -15,7 +15,6 @@ import gc
 import os
 from pathlib import Path
 
-import psutil
 import pytest
 
 from okto_pulse.core.kg.schema import (
@@ -24,6 +23,8 @@ from okto_pulse.core.kg.schema import (
     close_all_connections,
     open_board_connection,
 )
+
+psutil = pytest.importorskip("psutil")
 
 
 @pytest.fixture

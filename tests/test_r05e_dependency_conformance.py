@@ -233,16 +233,51 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
     assert asyncpg.direct_dep_no_import is True
     assert asyncpg.transitive_consumer is None
 
-    # ladybug/apscheduler/sentence-transformers are import-driven (real imports).
-    for token in ("ladybug", "apscheduler", "sentence-transformers"):
+    ladybug = index[normalize_token("ladybug")]
+    assert ladybug.classification == "community_owned"
+    assert ladybug.expected_source_import_roots == ("ladybug",)
+
+    # apscheduler is the remaining import-driven temporary exception.
+    for token in ("apscheduler",):
         entry = index[normalize_token(token)]
         assert entry.expected_source_import_roots, f"{token} must declare its import root"
+
+    sentence_transformers = index[normalize_token("sentence-transformers")]
+    assert sentence_transformers.classification == "community_owned"
+    assert sentence_transformers.expected_source_import_roots == ("sentence_transformers",)
 
     # On the real repo every temporary exception is reported as accepted.
     report = audit_dependency_conformance(audit_wheel=False)
     accepted_tokens = {normalize_token(e["token"]) for e in report.accepted_exceptions}
     for token in CANONICAL_TEMPORARY_EXCEPTION_TOKENS:
         assert normalize_token(token) in accepted_tokens, f"{token} not reported as accepted"
+    assert "ladybug" in report.community_owned
+    assert "sentence-transformers" in report.community_owned
+
+
+def test_community_owned_ladybug_reintroduction_fails_closed(tmp_path):
+    report = _synthetic_audit(
+        tmp_path,
+        pyproject_text=(
+            '[project]\nname="x"\nversion="0"\n'
+            'dependencies=["ladybug>=0.16.0"]\n'
+        ),
+        lock_text=(
+            "version = 1\n"
+            'requires-python = ">=3.11"\n\n'
+            "[[package]]\n"
+            'name = "okto-pulse-core"\n'
+            'version = "0.3.0"\n'
+            "dependencies = [\n"
+            '    { name = "ladybug" },\n'
+            "]\n"
+        ),
+        core_files={"kg_runtime.py": "import ladybug\n"},
+    )
+    assert report.ok is False
+    codes = {v.diagnostic_code for v in report.violations}
+    assert "external_owner_dependency_present" in codes
+    assert "external_owner_import_present" in codes
 
 
 # ===========================================================================
@@ -342,8 +377,9 @@ def test_report_is_actionable_and_serialisable():
     assert "asyncpg" in text
     assert "temporary_exceptions" in text
     # every accepted exception surfaces its owner_wave + removal_criterion + oracle.
-    for token in ("aiosqlite", "numpy", "ladybug", "requests", "apscheduler"):
+    for token in ("aiosqlite", "numpy", "requests", "apscheduler"):
         assert token in text
+    assert "community_owned : ladybug" in text
     assert "removal_criterion" in text
     assert "validation_oracle" in text
 
@@ -351,7 +387,7 @@ def test_report_is_actionable_and_serialisable():
     import json
 
     payload = json.dumps(report.as_dict(), sort_keys=True)
-    assert '"ledger_version": "R05-E.1"' in payload
+    assert '"ledger_version": "R05-E.2"' in payload
 
 
 def test_real_repo_is_conformant():

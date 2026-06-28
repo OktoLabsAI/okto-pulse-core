@@ -47,6 +47,7 @@ from okto_pulse.core.kg.source_maturity import (
     classify_source_for_kg,
 )
 from okto_pulse.core.mcp.kg_tools import register_kg_tools
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 COGNITIVE_CODE = "cognitive_node_candidates_must_be_canonical"
 SYSTEM_WORKER = "system:layer1_worker"
@@ -185,6 +186,7 @@ async def test_cognitive_working_candidate_rejected_without_mutating_session(
 async def test_accepted_cognitive_candidate_persists_canonical_eligible(
     board_id, agent_id, db_factory, board_handle,
 ):
+    configure_real_graph_test_kg_registry()
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     spec_ref = f"spec:{spec_id}"
     _root_id, existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)

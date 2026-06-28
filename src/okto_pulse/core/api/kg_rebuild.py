@@ -538,7 +538,7 @@ async def post_rebuild_run(
         KGSafeWriteLifecycle,
         LockOwnerProbe,
     )
-    from okto_pulse.core.kg.schema import apply_ladybug_lifecycle_step
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
     from okto_pulse.core.kg.board_rebuild_adapter import (
         BoardRebuildIngestionAdapter,
@@ -558,7 +558,7 @@ async def post_rebuild_run(
         return manifest is not None and manifest.owner_token == owner_token
 
     safe_lifecycle = KGSafeWriteLifecycle(
-        step_adapter=apply_ladybug_lifecycle_step,
+        step_adapter=get_kg_registry().safe_write_step_adapter,
         owner_probe=LockOwnerProbe(is_active_owner=_always_owner),
         health_probe=HealthProbe(
             classify=lambda b, g, status, step: "at_risk"

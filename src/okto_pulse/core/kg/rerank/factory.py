@@ -1,14 +1,14 @@
-"""Reranker factory — maps strategy names to concrete instances.
+"""Reranker factory — maps strategy names to core ports/adapters.
 
 Ideação 3070cd53. Centralises instantiation logic so callers pick a
 strategy by string (``"none"`` | ``"token_overlap"`` | ``"cross_encoder"``
-| ``"llm"``) and the factory handles degradation when a dependency is
-missing (e.g. cross-encoder requested but sentence-transformers not
-installed — falls back to token_overlap with a warning).
+| ``"llm"``). The core owns only the zero-dep strategies. ``cross_encoder`` is
+an edition-registered adapter hook and falls back to token_overlap when no
+edition provides it or when its optional dependency is unavailable.
 
 Instances are cached per strategy at module level because model
-loading is expensive (cross-encoder ~80 MB). Tests and integration
-callers can reset the cache via ``reset_reranker_cache()``.
+loading can be expensive. Tests and integration callers can reset the cache via
+``reset_reranker_cache()``.
 """
 
 from __future__ import annotations
@@ -29,11 +29,10 @@ _cache_lock = threading.Lock()
 #: (R05-B IMP3) Optional cross_encoder factory registered by the edition (e.g.
 #: the Community CrossEncoder adapter). A 1-entry dict holding
 #: ``Callable[[str | None], object]`` (model name -> reranker). When set,
-#: ``cross_encoder`` uses it instead of the core's embedded
-#: ``CrossEncoderReranker`` — so the concrete adapter can live in the Community
-#: edition WITHOUT the core importing community. Register-before-remove: the core
-#: default stays as the fallback; a factory raising ``ImportError`` (optional dep
-#: absent) degrades to ``token_overlap``, exactly like the core default.
+#: ``cross_encoder`` uses it so the concrete adapter can live in the Community
+#: edition WITHOUT the core importing community. If no edition registers a
+#: factory, or the factory raises ``ImportError`` because its optional dependency
+#: is absent, the core degrades to ``token_overlap``.
 #:
 #: It is a module CONSTANT mutated IN PLACE (never reassigned via ``global``), so
 #: the AntiSingletonGate does not classify it as a new module-global singleton.
@@ -70,9 +69,9 @@ def get_reranker(
 
     - ``"none"`` — passthrough. No reordering.
     - ``"token_overlap"`` — lexical Jaccard baseline.
-    - ``"cross_encoder"`` — sentence-transformers cross-encoder. Falls
-      back to ``token_overlap`` with a warning when the optional
-      dependency isn't installed.
+    - ``"cross_encoder"`` — edition-provided cross-encoder. Falls back to
+      ``token_overlap`` with a warning when no edition factory is registered or
+      when the optional dependency isn't installed.
     - ``"llm"`` — LLM-as-reranker. Wire it with EITHER a legacy
       ``llm_ranker_fn`` callable (takes precedence) OR an R13-A
       ``provider`` (an ``LLMProvider``), from which the bridge callable is
@@ -102,11 +101,12 @@ def get_reranker(
                 if _ce_factory is not None:
                     # Edition-registered factory (e.g. Community CrossEncoder
                     # adapter). May raise ImportError when the optional dep is
-                    # absent -> token_overlap fallback below, same as the core.
+                    # absent -> token_overlap fallback below.
                     inst = _ce_factory(cross_encoder_model)
                 else:
-                    from .cross_encoder import CrossEncoderReranker
-                    inst = CrossEncoderReranker(model_name=cross_encoder_model)
+                    raise ImportError(
+                        "no edition cross_encoder reranker factory registered"
+                    )
                 _cache[key] = inst
                 return inst
             except ImportError as e:

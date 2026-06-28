@@ -20,12 +20,9 @@ from okto_pulse.core.kg.graph_availability import (
     graph_unavailable_error,
     is_graph_unavailable_error,
 )
+from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.reconciliation import ExistingNodeSummary
-from okto_pulse.core.kg.schema import (
-    VECTOR_INDEX_TYPES,
-    open_board_connection,
-    vector_index_name,
-)
+from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES, vector_index_name
 
 logger = logging.getLogger("okto_pulse.kg.search")
 
@@ -85,36 +82,18 @@ def _fallback_manual_similarity_search(
     This is slower but works around Kùzu's vector search issues.
     """
     results: list[SimilarNodeRaw] = []
-    own_conn = False
     try:
         if conn is None:
-            conn = open_board_connection(board_id)
-            own_conn = True
-            with conn as (_db, conn):
-                cypher = (
-                    f"MATCH (n:{node_type}) "
-                    f"WHERE n.embedding IS NOT NULL "
-                    f"RETURN n.id, n.title, n.source_artifact_ref, n.embedding "
-                    f"LIMIT 500"
-                )
-                result = conn.execute(cypher)
-                while result.has_next():
-                    row = result.get_next()
-                    node_id = row[0]
-                    title = row[1]
-                    source_ref = row[2] if len(row) > 2 else None
-                    embedding = row[3] if len(row) > 3 else None
-
-                    if embedding and len(embedding) == len(query_vector):
-                        similarity = _cosine_similarity(query_vector, embedding)
-                        if similarity >= min_similarity:
-                            results.append(SimilarNodeRaw(
-                                kuzu_node_id=node_id,
-                                node_type=node_type,
-                                title=title,
-                                source_artifact_ref=source_ref,
-                                distance=1.0 - similarity,
-                            ))
+            cypher = (
+                f"MATCH (n:{node_type}) "
+                f"WHERE n.embedding IS NOT NULL "
+                f"RETURN n.id, n.title, n.source_artifact_ref, n.embedding "
+                f"LIMIT 500"
+            )
+            result = get_kg_registry().cypher_executor.execute_read_only(
+                board_id, cypher, {}, max_rows=500,
+            )
+            rows = result.get("rows", [])
         else:
             cypher = (
                 f"MATCH (n:{node_type}) "
@@ -123,23 +102,26 @@ def _fallback_manual_similarity_search(
                 f"LIMIT 500"
             )
             result = conn.execute(cypher)
+            rows = []
             while result.has_next():
-                row = result.get_next()
-                node_id = row[0]
-                title = row[1]
-                source_ref = row[2] if len(row) > 2 else None
-                embedding = row[3] if len(row) > 3 else None
+                rows.append(result.get_next())
 
-                if embedding and len(embedding) == len(query_vector):
-                    similarity = _cosine_similarity(query_vector, embedding)
-                    if similarity >= min_similarity:
-                        results.append(SimilarNodeRaw(
-                            kuzu_node_id=node_id,
-                            node_type=node_type,
-                            title=title,
-                            source_artifact_ref=source_ref,
-                            distance=1.0 - similarity,
-                        ))
+        for row in rows:
+            node_id = row[0]
+            title = row[1]
+            source_ref = row[2] if len(row) > 2 else None
+            embedding = row[3] if len(row) > 3 else None
+
+            if embedding and len(embedding) == len(query_vector):
+                similarity = _cosine_similarity(query_vector, embedding)
+                if similarity >= min_similarity:
+                    results.append(SimilarNodeRaw(
+                        kuzu_node_id=node_id,
+                        node_type=node_type,
+                        title=title,
+                        source_artifact_ref=source_ref,
+                        distance=1.0 - similarity,
+                    ))
     except Exception as exc:
         # A fail-closed graph-open failure must surface as a typed
         # graph_unavailable error, not be hidden as an empty result (FR5).
@@ -151,12 +133,6 @@ def _fallback_manual_similarity_search(
             board_id, node_type, exc,
         )
         return []
-    finally:
-        if own_conn and conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
 
     # Sort by similarity descending
     results.sort(key=lambda r: r.similarity, reverse=True)
@@ -186,30 +162,18 @@ def find_similar_nodes_by_type(
         return []
 
     results: list[SimilarNodeRaw] = []
-    own_conn = False
     try:
         if conn is None:
-            conn = open_board_connection(board_id)
-            own_conn = True
-            with conn as (_db, conn):
-                idx = vector_index_name(node_type)
-                cypher = (
-                    f"CALL QUERY_VECTOR_INDEX("
-                    f"'{node_type}', '{idx}', $vec, $k) "
-                    f"RETURN node.id, node.title, node.source_artifact_ref, distance"
-                )
-                result = conn.execute(cypher, {"vec": query_vector, "k": top_k})
-                while result.has_next():
-                    row = result.get_next()
-                    raw = SimilarNodeRaw(
-                        kuzu_node_id=row[0],
-                        node_type=node_type,
-                        title=row[1],
-                        source_artifact_ref=row[2] if len(row) > 2 else None,
-                        distance=float(row[3] if len(row) > 3 else row[-1]),
-                    )
-                    if raw.similarity >= min_similarity:
-                        results.append(raw)
+            idx = vector_index_name(node_type)
+            cypher = (
+                f"CALL QUERY_VECTOR_INDEX("
+                f"'{node_type}', '{idx}', $vec, $k) "
+                f"RETURN node.id, node.title, node.source_artifact_ref, distance"
+            )
+            result = get_kg_registry().cypher_executor.execute_read_only(
+                board_id, cypher, {"vec": query_vector, "k": top_k}, max_rows=top_k,
+            )
+            rows = result.get("rows", [])
         else:
             idx = vector_index_name(node_type)
             cypher = (
@@ -218,17 +182,19 @@ def find_similar_nodes_by_type(
                 f"RETURN node.id, node.title, node.source_artifact_ref, distance"
             )
             result = conn.execute(cypher, {"vec": query_vector, "k": top_k})
+            rows = []
             while result.has_next():
-                row = result.get_next()
-                raw = SimilarNodeRaw(
-                    kuzu_node_id=row[0],
-                    node_type=node_type,
-                    title=row[1],
-                    source_artifact_ref=row[2] if len(row) > 2 else None,
-                    distance=float(row[3] if len(row) > 3 else row[-1]),
-                )
-                if raw.similarity >= min_similarity:
-                    results.append(raw)
+                rows.append(result.get_next())
+        for row in rows:
+            raw = SimilarNodeRaw(
+                kuzu_node_id=row[0],
+                node_type=node_type,
+                title=row[1],
+                source_artifact_ref=row[2] if len(row) > 2 else None,
+                distance=float(row[3] if len(row) > 3 else row[-1]),
+            )
+            if raw.similarity >= min_similarity:
+                results.append(raw)
     except Exception as exc:
         # A fail-closed graph-open failure must surface as a typed
         # graph_unavailable error, not be hidden as an empty result (FR5).
@@ -241,12 +207,6 @@ def find_similar_nodes_by_type(
             board_id, node_type, exc,
         )
         return []
-    finally:
-        if own_conn and conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
 
     # If QUERY_VECTOR_INDEX returned no results, fall back to manual calculation
     if not results:
@@ -254,20 +214,13 @@ def find_similar_nodes_by_type(
             "kg.search.vector_index_empty board=%s type=%s using_fallback",
             board_id, node_type,
         )
-        # Bug fix (kg.search.fallback_failed: Connection is closed): when
-        # we own the connection it has already been released by the
-        # ``with conn as (_db, conn):`` block above (BoardConnection.close
-        # ran __exit__). Passing the dead handle to the fallback raises
-        # "Connection is closed" the moment it tries .execute(). Force
-        # the fallback to open its own fresh connection by passing None
-        # whenever we owned it; only forward externally-managed conns.
         return _fallback_manual_similarity_search(
             board_id=board_id,
             node_type=node_type,
             query_vector=query_vector,
             top_k=top_k,
             min_similarity=min_similarity,
-            conn=None if own_conn else conn,
+            conn=conn,
         )
 
     # Kùzu returns ordered by distance ascending; our SimilarNodeRaw exposes

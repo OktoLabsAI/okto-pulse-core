@@ -49,7 +49,7 @@ from okto_pulse.core.kg.memory_pressure_collector import (
     get_samples,
     record_sample,
 )
-from okto_pulse.core.kg.schema import board_kuzu_path
+from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.kg.scoring import get_contradict_warn_count
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.models.db import (
@@ -640,7 +640,7 @@ def _compute_board_graph_high_water_mark_pct(board_id: str) -> float | None:
     hardcoded in ``_telemetry_ok``.
     """
     try:
-        path = board_kuzu_path(board_id)
+        path = get_kg_registry().graph_path_resolver.board_graph_path(board_id)
     except Exception as exc:
         logger.debug(
             "kg.health.hwm.path_resolution_failed board=%s err=%s",
@@ -734,7 +734,7 @@ def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
         return base
 
     try:
-        path = board_kuzu_path(board_id)
+        path = get_kg_registry().graph_path_resolver.board_graph_path(board_id)
     except Exception:
         base["unavailable_reason"] = "path_resolution_failed"
         return base
@@ -803,7 +803,7 @@ def _probe_board_graph_telemetry(
             recent_commit_errors=0,
         )
     try:
-        if board_kuzu_path(board_id).exists():
+        if get_kg_registry().graph_path_resolver.exists(board_id):
             return _telemetry_wal_or_open_error("board")
     except Exception:
         return _telemetry_unavailable("board")
@@ -1965,7 +1965,8 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
     returns zeroed defaults so the health endpoint stays available.
     """
     try:
-        from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
     except Exception as exc:
         logger.warning(
             "kg.health.kuzu_import_failed board=%s err=%s",
@@ -1979,29 +1980,30 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
     relevance_n = 0
 
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            for node_type in NODE_TYPES:
-                try:
-                    res = conn.execute(
-                        f"MATCH (n:{node_type}) RETURN n.relevance_score",
-                        {},
-                    )
-                except Exception as exc:
-                    logger.debug(
-                        "kg.health.kuzu_query_failed board=%s type=%s err=%s",
-                        board_id, node_type, exc,
-                    )
-                    continue
-                while res.has_next():
-                    row = res.get_next()
-                    rel = row[0]
-                    total_nodes += 1
-                    if rel is not None:
-                        rel_f = float(rel)
-                        relevance_sum += rel_f
-                        relevance_n += 1
-                        if DEFAULT_SCORE_BAND_LOW <= rel_f <= DEFAULT_SCORE_BAND_HIGH:
-                            default_score_count += 1
+        cypher = get_kg_registry().cypher_executor
+        for node_type in NODE_TYPES:
+            try:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) RETURN n.relevance_score",
+                    {},
+                    max_rows=10000,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "kg.health.kuzu_query_failed board=%s type=%s err=%s",
+                    board_id, node_type, exc,
+                )
+                continue
+            for row in result.get("rows", []):
+                rel = row[0]
+                total_nodes += 1
+                if rel is not None:
+                    rel_f = float(rel)
+                    relevance_sum += rel_f
+                    relevance_n += 1
+                    if DEFAULT_SCORE_BAND_LOW <= rel_f <= DEFAULT_SCORE_BAND_HIGH:
+                        default_score_count += 1
     except Exception as exc:
         logger.warning(
             "kg.health.kuzu_open_failed board=%s err=%s",
@@ -2044,7 +2046,8 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
     }
     maturity_counts: dict[str, int] = {}
     try:
-        from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
     except Exception as exc:
         logger.warning(
             "kg.health.layer_counts_import_failed board=%s err=%s",
@@ -2058,35 +2061,29 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
         }
 
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            successful_node_types = 0
-            failed_node_types = 0
-            for node_type in NODE_TYPES:
-                result = None
-                try:
-                    result = conn.execute(
-                        f"MATCH (n:{node_type}) "
-                        f"RETURN n.graph_layer, n.maturity_status, count(n)"
+        cypher = get_kg_registry().cypher_executor
+        successful_node_types = 0
+        failed_node_types = 0
+        for node_type in NODE_TYPES:
+            try:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) "
+                    f"RETURN n.graph_layer, n.maturity_status, count(n)",
+                    max_rows=10000,
+                )
+                for row in result.get("rows", []):
+                    layer = str(row[0] or "unclassified")
+                    maturity = str(row[1] or "unclassified")
+                    count = int(row[2] or 0)
+                    counts[layer] = counts.get(layer, 0) + count
+                    maturity_counts[maturity] = (
+                        maturity_counts.get(maturity, 0) + count
                     )
-                    while result.has_next():
-                        row = result.get_next()
-                        layer = str(row[0] or "unclassified")
-                        maturity = str(row[1] or "unclassified")
-                        count = int(row[2] or 0)
-                        counts[layer] = counts.get(layer, 0) + count
-                        maturity_counts[maturity] = (
-                            maturity_counts.get(maturity, 0) + count
-                        )
-                    successful_node_types += 1
-                except Exception:
-                    failed_node_types += 1
-                    continue
-                finally:
-                    if result is not None:
-                        try:
-                            result.close()
-                        except Exception:
-                            pass
+                successful_node_types += 1
+            except Exception:
+                failed_node_types += 1
+                continue
     except Exception as exc:
         logger.warning(
             "kg.health.layer_counts_failed board=%s err=%s",

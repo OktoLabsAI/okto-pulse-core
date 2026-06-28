@@ -121,28 +121,42 @@ def test_enqueue_sources_resets_existing_pending_failures_for_new_rebuild(
 
 def test_prepare_board_graph_storage_quarantines_existing_graph(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from okto_pulse.core.kg import schema
-
     graph = tmp_path / "boards" / "b1" / "graph.lbug"
     graph.parent.mkdir(parents=True)
     graph.write_text("graph", encoding="utf-8")
     wal = tmp_path / "boards" / "b1" / "graph.lbug.wal"
     wal.write_text("wal", encoding="utf-8")
 
-    def fake_purge(board_id: str, *, reason: str = "manual") -> list[str]:
-        assert board_id == "b1"
-        assert reason == "explicit_rebuild:test"
-        moved: list[str] = []
-        for path in (graph, wal):
-            if path.exists():
-                moved.append(str(path))
-                path.unlink()
-        return moved
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+    from okto_pulse.core.kg.interfaces.graph_lifecycle import PurgeReport
 
-    monkeypatch.setattr(schema, "board_kuzu_path", lambda board_id: graph)
-    monkeypatch.setattr(schema, "purge_board_graph_storage", fake_purge)
+    class _Resolver:
+        def board_graph_path(self, board_id: str) -> Path:
+            assert board_id == "b1"
+            return graph
+
+    class _Lifecycle:
+        async def purge(self, board_id: str, *, reason: str) -> PurgeReport:
+            assert board_id == "b1"
+            assert reason == "explicit_rebuild:test"
+            moved: list[str] = []
+            for path in (graph, wal):
+                if path.exists():
+                    moved.append(str(path))
+                    path.unlink()
+            return PurgeReport(
+                board_id=board_id,
+                status="purged",
+                reason=reason,
+                affected_paths=tuple(moved),
+                quarantined=True,
+            )
+
+    configure_test_kg_registry()
+    get_kg_registry().graph_path_resolver = _Resolver()
+    get_kg_registry().graph_lifecycle = _Lifecycle()
 
     adapter = BoardRebuildIngestionAdapter(db_path=tmp_path / "pulse.db")
     moved = adapter.prepare_board_graph_storage(
@@ -432,22 +446,22 @@ def test_ladybug_lifecycle_reopen_probe_fails_on_unopenable_existing_graph(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from okto_pulse.core.kg import schema
+    from okto_pulse.community.adapters import kg_runtime
 
     graph = tmp_path / "boards" / "b1" / "graph.lbug"
     graph.parent.mkdir(parents=True)
     graph.write_bytes(b"not-a-valid-ladybug-graph")
 
-    monkeypatch.setattr(schema, "board_kuzu_path", lambda board_id: graph)
-    monkeypatch.setattr(schema, "close_all_connections", lambda *_: None)
-    monkeypatch.setattr(schema, "close_board_db_cache", lambda *_: None)
+    monkeypatch.setattr(kg_runtime, "board_kuzu_path", lambda board_id: graph)
+    monkeypatch.setattr(kg_runtime, "close_all_connections", lambda *_: None)
+    monkeypatch.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
     monkeypatch.setattr(
-        schema,
+        kg_runtime,
         "_open_kuzu_db_path_cached",
         lambda _path: (_ for _ in ()).throw(RuntimeError("bad wal")),
     )
 
-    result = schema.apply_ladybug_lifecycle_step(
+    result = kg_runtime.apply_ladybug_lifecycle_step(
         "b1",
         "board_graph",
         "close_reopen_probe",
@@ -458,7 +472,7 @@ def test_ladybug_lifecycle_reopen_probe_fails_on_unopenable_existing_graph(
     assert "bad wal" in result.detail
 
 
-def test_rebuild_endpoint_wires_real_ladybug_lifecycle_adapter() -> None:
+def test_rebuild_endpoint_wires_registry_lifecycle_adapter() -> None:
     endpoint = (
         Path(__file__).resolve().parents[1]
         / "src"
@@ -469,4 +483,4 @@ def test_rebuild_endpoint_wires_real_ladybug_lifecycle_adapter() -> None:
     ).read_text(encoding="utf-8")
 
     assert "step_adapter=lambda b, g, s: LifecycleStepResult(ok=True)" not in endpoint
-    assert "step_adapter=apply_ladybug_lifecycle_step" in endpoint
+    assert "step_adapter=get_kg_registry().safe_write_step_adapter" in endpoint

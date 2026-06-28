@@ -53,9 +53,24 @@ from okto_pulse.core.models.db import (
     KuzuNodeRef,
     Spec,
 )
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    RealBoardGraphPathResolverForTests,
+    RealBoardGraphTransactionForTests,
+    configure_test_kg_registry,
+)
 
 USER_ID = "user-r2-imp5"
 QUERY_TEXT = "FR alpha parity sync requirement"
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+        graph_path_resolver=RealBoardGraphPathResolverForTests(),
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)

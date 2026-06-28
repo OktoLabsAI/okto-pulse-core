@@ -8,9 +8,8 @@ Scenario mapping (1:1):
   ts_150d1298 — the gate returns ready ONLY with complete evidence.
   ts_a5c3c55c — the deferred_to_05 reconciliation maps every marker to an
                 inventory adapter_key (1:1).
-  ts_106fe9f2 — the R05-A diff moves no adapter and changes no runtime: every
-                catalogued module still exists and the inventory imports no
-                concrete/runtime module (negative).
+  ts_106fe9f2 — every catalogued module still exists at its recorded owner path
+                and the inventory imports no concrete/runtime module (negative).
   ts_9dbe515a — the module imports in isolation without concrete providers /
                 community (subprocess + AST).
   ts_088ab292 — the gate reproves a future removal attempt that is not ready
@@ -39,8 +38,9 @@ from okto_pulse.core.application.boundary.adapter_readiness_inventory import (
     run_deferred_reconciliation_gate,
 )
 
-INV_PY = Path(_inv_mod.__file__)
+INV_PY = Path(_inv_mod.__file__).resolve()
 SRC_ROOT = INV_PY.parents[4]  # .../src
+COMMUNITY_SRC_ROOT = SRC_ROOT.parents[1] / "okto_labs_pulse_community" / "src"
 
 
 def _by_key(adapter_key: str):
@@ -55,6 +55,12 @@ def _module_imports(tree) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             mods.add(node.module)
     return mods
+
+
+def _catalogued_module_path(current_module: str) -> Path:
+    if current_module.startswith("okto_pulse/community/"):
+        return COMMUNITY_SRC_ROOT / current_module
+    return SRC_ROOT / current_module
 
 
 # ===========================================================================
@@ -97,7 +103,7 @@ def test_ts_a3695d08_inventory_complete_and_metadata_filled():
     # The axis hints from the spec are honoured (plural refs).
     assert "#08_mcp_auth" in _by_key("mcp_auth_context").predecessor_refs
     assert "#16_schema_migrations" in _by_key("mcp_auth_context").predecessor_refs
-    assert _by_key("mcp_auth_context").status == "deferred"  # only R08-A done
+    assert _by_key("mcp_auth_context").status == "blocked"  # request scope done; bridge remains
     assert "#10_telemetry" in _by_key("local_telemetry_store").predecessor_refs
     assert _by_key("asyncpg_postgres_driver").wave == "R05-E"
     assert "R05-E" in _by_key("asyncpg_postgres_driver").removal_criterion
@@ -295,13 +301,14 @@ def test_r_p2_01_sqlite_raw_residual_governed_nominally(key):
 
 
 # ===========================================================================
-# ts_106fe9f2 — diff moves no adapter / changes no runtime.
+# ts_106fe9f2 — catalogued modules exist / inventory stays pure.
 # ===========================================================================
 def test_ts_106fe9f2_inventory_moves_nothing_and_imports_no_concretes():
-    # 1) every catalogued adapter module still EXISTS at its recorded path
-    #    (nothing moved / removed by R05-A).
+    # 1) every catalogued adapter module still EXISTS at its recorded owner path.
+    #    R05-A originally catalogued core paths only; later refactor specs may
+    #    move entries to Community, but the ledger must stay executable.
     for e in build_adapter_inventory():
-        path = SRC_ROOT / e.current_module
+        path = _catalogued_module_path(e.current_module)
         assert path.exists(), f"adapter module moved/removed: {e.current_module}"
 
     # 2) the inventory module imports NO concrete adapter / runtime / community.
@@ -379,7 +386,8 @@ def test_ts_088ab292_removal_blocked_without_ready():
     assert v.reasons == v_again.reasons
     assert v.missing_evidence == v_again.missing_evidence
 
-    # an upstream-gated adapter (mcp auth) is deferred to its predecessor(s).
+    # without evidence, even the now-actionable mcp auth bridge remains deferred
+    # by the evaluator until its port/evidence payload is supplied.
     mcp = _by_key("mcp_auth_context")
     v_def = evaluate_removal(mcp, AdapterEvidence())
     assert v_def.status == "deferred"

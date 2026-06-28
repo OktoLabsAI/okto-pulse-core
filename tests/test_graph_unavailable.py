@@ -4,7 +4,8 @@ Integration + unit tests for the shared open-or-classify helper
 (``core/kg/graph_availability.py``) and the vector + Cypher read-path wiring.
 
 TR6 test infra: seed a board via ``bootstrap_board_graph`` and simulate the
-fail-closed open failure by monkeypatching ``schema._open_kuzu_db_path_cached``
+fail-closed open failure by monkeypatching the community graph runtime
+``_open_kuzu_db_path_cached``
 to raise — the REAL ``_raise_existing_graph_open_failed(operation="bootstrap_probe")``
 guard then fires (we never corrupt on-disk files). The MCP tools are driven
 through a tiny FastMCP double; ACL is satisfied by stubbing ``_get_user_boards``.
@@ -28,9 +29,8 @@ import uuid
 
 import pytest
 
-import okto_pulse.core.kg.schema as schema_module
-import okto_pulse.core.kg.search as search_module
 import okto_pulse.core.mcp.kg_query_tools as kqt
+import okto_pulse.community.adapters.kg_runtime as kg_runtime
 from okto_pulse.core.kg import graph_availability as ga
 from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.kg.cache import clear_cache
@@ -45,6 +45,8 @@ from okto_pulse.core.kg.schema import (
     close_all_connections,
     reset_bootstrap_cache_for_tests,
 )
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 # --------------------------------------------------------------------------- #
@@ -108,8 +110,9 @@ def _invoke(tool, **kwargs) -> dict:
 @pytest.fixture
 def open_failure_board(monkeypatch):
     """A board whose on-disk graph EXISTS but fails to open, so the real
-    ``schema._raise_existing_graph_open_failed(operation="bootstrap_probe")``
+    ``kg_runtime._raise_existing_graph_open_failed(operation="bootstrap_probe")``
     guard fires. TR6: monkeypatch the open, never corrupt real files."""
+    configure_real_graph_test_kg_registry()
     bid = _fresh_board_id()
     _purge(bid)
     path = board_kuzu_path(bid)
@@ -121,7 +124,7 @@ def open_failure_board(monkeypatch):
             "Runtime exception: Corrupted wal file. Read out invalid WAL record type."
         )
 
-    monkeypatch.setattr(schema_module, "_open_kuzu_db_path_cached", _raise_corrupt)
+    monkeypatch.setattr(kg_runtime, "_open_kuzu_db_path_cached", _raise_corrupt)
     reset_bootstrap_cache_for_tests()
     reset_kg_service_for_tests()
     clear_cache()
@@ -133,6 +136,7 @@ def open_failure_board(monkeypatch):
 def healthy_empty_board():
     """A real, seeded board that opens successfully but has no Decision/Learning
     rows — the genuinely-empty contract (FR8)."""
+    configure_real_graph_test_kg_registry()
     bid = _fresh_board_id()
     _purge(bid)
     bootstrap_board_graph(bid)
@@ -193,7 +197,7 @@ def test_ts_f500022f_classification_preserves_files_and_guard(open_failure_board
 
     # the fail-closed guard body is unchanged: it still raises its RuntimeError
     with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
-        schema_module._raise_existing_graph_open_failed(
+        kg_runtime._raise_existing_graph_open_failed(
             board_id=bid,
             path=path,
             operation="bootstrap_probe",
@@ -282,7 +286,11 @@ def test_ts_753b6aba_non_open_failure_stays_narrow(healthy_empty_board, monkeypa
     def _raise_non_marker(_board_id):
         raise RuntimeError("transient lock contention on board graph")
 
-    monkeypatch.setattr(search_module, "open_board_connection", _raise_non_marker)
+    monkeypatch.setattr(
+        get_kg_registry().cypher_executor,
+        "execute_read_only",
+        _raise_non_marker,
+    )
 
     tools = _register_query_tools(monkeypatch, bid)
     cyp = _invoke(tools["okto_pulse_kg_get_learning_from_bugs"], board_id=bid, area="anything")
@@ -328,7 +336,7 @@ def test_is_graph_unavailable_error_is_narrow():
     surface that matching the interpolated ``bootstrap_probe`` token would open."""
     for operation in ("bootstrap_probe", "schema_migration_open"):
         with pytest.raises(RuntimeError) as exc_info:
-            schema_module._raise_existing_graph_open_failed(
+            kg_runtime._raise_existing_graph_open_failed(
                 board_id="b",
                 path=board_kuzu_path("b"),
                 operation=operation,

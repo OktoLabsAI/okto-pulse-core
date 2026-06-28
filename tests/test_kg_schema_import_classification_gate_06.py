@@ -6,7 +6,8 @@ the table carries file/symbol/category/verdict/target_port/owner/rationale
 with target GraphTransaction (ac_4c332301); board_kuzu_path / close_all_connections
 target GraphPathResolver / GraphLifecycle (ac_eacf2ac1); read-only schema
 constants are non-blocking; the count divergence (45 vs 42/77 vs live) is
-reconciled (ac_1c413377); the embedded adapter + dedup migration are allowlisted.
+reconciled (ac_1c413377); embedded adapters and dedup migration moved off
+direct schema imports.
 """
 
 from __future__ import annotations
@@ -23,7 +24,20 @@ from okto_pulse.core.kg.schema_import_classification_gate import (
 
 def test_canonical_table_has_all_fields_real_core():
     report = run_gate()
-    assert len(report.importers) >= 40
+    assert report.importers == []
+    assert report.ledgered_exceptions == []
+    assert report.ledger_detail == []
+    assert report.ok is True
+    assert report.violations == []
+
+
+def test_synthetic_importer_entries_have_required_fields(tmp_path):
+    (tmp_path / "consumer.py").write_text(
+        "from okto_pulse.core.kg.schema import open_board_connection\n",
+        encoding="utf-8",
+    )
+    report = run_gate(tmp_path)
+    assert len(report.importers) == 1
     for entry in report.importers:
         assert entry.file
         assert entry.category
@@ -36,26 +50,30 @@ def test_canonical_table_has_all_fields_real_core():
         assert entry.owner
         assert entry.rationale
         assert isinstance(entry.blocking, bool)
+
+
+def test_real_core_has_no_embedded_or_dedup_schema_imports():
+    report = run_gate()
     verdict_by_file = {i.file: i.verdict for i in report.importers}
-    # embedded adapter is legitimate; dedup migration is allowlisted
-    assert any(
-        f.startswith("kg/providers/embedded/") and v == "adapter_internal_legitimate"
-        for f, v in verdict_by_file.items()
-    )
-    assert verdict_by_file.get("kg/dedup_migration.py") == "migration_allowlisted"
-    # The allowlisted CLI lives in tools/ (outside core/) and must be in the inventory.
-    assert verdict_by_file.get("tools/kg_migrate_schema.py") == "migration_allowlisted"
+    assert not any(f.startswith("kg/providers/embedded/") for f in verdict_by_file)
+    assert "kg/dedup_migration.py" not in verdict_by_file
+    # The allowlisted CLI lives in tools/ (outside core/), but it no longer imports
+    # kg.schema; it remains documented in the allowlist and correctly drops out of
+    # the importer table.
+    assert report.allowlist["migration_cli"] == "tools/kg_migrate_schema.py"
+    assert "tools/kg_migrate_schema.py" not in verdict_by_file
 
 
-def test_allowlisted_cli_in_tools_is_counted_not_a_violation():
+def test_allowlisted_cli_without_schema_import_is_not_counted():
     report = run_gate()
     cli = next(
         (i for i in report.importers if i.file == "tools/kg_migrate_schema.py"), None
     )
-    assert cli is not None, "the kg migrate-schema CLI must be in the canonical inventory"
-    assert cli.verdict == "migration_allowlisted"
-    assert cli.blocking is False
-    assert cli not in report.violations
+    assert cli is None, (
+        "the kg migrate-schema CLI no longer imports kg.schema and must not be "
+        "invented as an importer"
+    )
+    assert report.allowlist["migration_cli"] == "tools/kg_migrate_schema.py"
 
 
 def test_reconciliation_explains_count_divergence_real_core():
@@ -131,7 +149,7 @@ def test_read_only_schema_constants_are_non_blocking(tmp_path):
     assert report.ok is True  # no blocking importer in this tree
 
 
-def test_embedded_and_allowlist_paths_are_not_violations(tmp_path):
+def test_embedded_and_migration_paths_are_blocked_after_runtime_move(tmp_path):
     embedded = tmp_path / "kg" / "providers" / "embedded"
     embedded.mkdir(parents=True)
     (embedded / "adapter.py").write_text(
@@ -146,14 +164,12 @@ def test_embedded_and_allowlist_paths_are_not_violations(tmp_path):
     adapter = next(
         i for i in report.importers if i.file == "kg/providers/embedded/adapter.py"
     )
-    assert adapter.verdict == "adapter_internal_legitimate"
-    assert adapter.blocking is False
+    assert adapter.verdict == "needs_migration"
+    assert adapter.blocking is True
     migration = next(i for i in report.importers if i.file == "kg/dedup_migration.py")
-    assert migration.verdict == "migration_allowlisted"
-    assert migration.blocking is False
-    # allowlisted/adapter consumers are not violations even though they use a
-    # forbidden symbol.
-    assert report.ok is True
+    assert migration.verdict == "needs_migration"
+    assert migration.blocking is True
+    assert report.ok is False
 
 
 def test_module_wildcard_import_is_blocked(tmp_path):

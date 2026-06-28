@@ -274,8 +274,10 @@ def test_agent_instructions_contract_matches_current_mcp_surface():
     assert "pattern correto" not in instructions
     assert "spec 3d907a87" not in instructions
     assert "spec d754d004" not in instructions
-    assert "graph.lbug" in instructions
-    assert "discovery.lbug" in instructions
+    # Core common instructions must stay storage-engine agnostic; concrete
+    # operational store names belong to the Community overlay.
+    assert "graph.lbug" not in instructions
+    assert "discovery.lbug" not in instructions
     assert "okto_pulse_kg_begin_consolidation" in instructions
     assert "okto_pulse_kg_query_natural" in instructions
     assert "okto_pulse_get_analytics" in instructions

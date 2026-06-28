@@ -7,8 +7,8 @@ Scenarios covered here (core-target):
                 community pulled into sys.modules.
   ts_c8e09c8d — the MCP server preserves the 3 transports (query param >
                 X-API-Key > Authorization Bearer), the legacy auth helpers, and
-                the per-request ContextVar set/reset; the new conversion shims
-                preserve the same precedence + source tagging.
+                the request-scope credential; the conversion shims preserve the
+                same precedence + source tagging.
   ts_2411ba5b — the credential-usage AST gate blocks NEW direct uses of the raw
                 credential symbols outside the allowlisted shim/definition.
   ts_3ce862a7 — Agent contracts are intact: AgentResponse reveals api_key (not
@@ -80,7 +80,7 @@ def test_ts_5cdbfe80_port_imports_in_isolation(tmp_path):
 
 
 # ===========================================================================
-# ts_c8e09c8d — server preserves 3 transports + legacy helpers + ContextVar.
+# ts_c8e09c8d — server preserves 3 transports + legacy helpers + request scope.
 # ===========================================================================
 def _scope(query=b"", headers=None):
     return {
@@ -90,12 +90,15 @@ def _scope(query=b"", headers=None):
 
 
 def _run_middleware(scope):
-    from okto_pulse.core.mcp.server import ApiKeySessionMiddleware, _active_api_key
+    from okto_pulse.core.mcp.server import (
+        ApiKeySessionMiddleware,
+        request_scope_mcp_credential,
+    )
 
     captured = {}
 
     async def _app(_scope, _receive, _send):
-        captured["during"] = _active_api_key.get()
+        captured["credential"] = request_scope_mcp_credential(_scope)
 
     async def _receive():
         return {"type": "http.request"}
@@ -104,29 +107,29 @@ def _run_middleware(scope):
         return None
 
     asyncio.run(ApiKeySessionMiddleware(_app)(scope, _receive, _send))
-    return captured["during"], _active_api_key.get()
+    return captured["credential"]
 
 
-def test_ts_c8e09c8d_three_transports_and_contextvar_reset():
+def test_ts_c8e09c8d_three_transports_and_request_scope():
     # query param
-    during, after = _run_middleware(_scope(query=b"api_key=QKEY"))
-    assert during == "QKEY" and after is None
+    cred = _run_middleware(_scope(query=b"api_key=QKEY"))
+    assert cred.source == "query_param" and cred.value == "QKEY"
     # X-API-Key header
-    during, after = _run_middleware(_scope(headers=[(b"x-api-key", b"HKEY")]))
-    assert during == "HKEY" and after is None
+    cred = _run_middleware(_scope(headers=[(b"x-api-key", b"HKEY")]))
+    assert cred.source == "x_api_key_header" and cred.value == "HKEY"
     # Authorization: Bearer
-    during, after = _run_middleware(
+    cred = _run_middleware(
         _scope(headers=[(b"authorization", b"Bearer BKEY")])
     )
-    assert during == "BKEY" and after is None
+    assert cred.source == "authorization_bearer" and cred.value == "BKEY"
     # precedence: query > x-api-key > bearer
-    during, _ = _run_middleware(
+    cred = _run_middleware(
         _scope(
             query=b"api_key=QWINS",
             headers=[(b"x-api-key", b"H"), (b"authorization", b"Bearer B")],
         )
     )
-    assert during == "QWINS"
+    assert cred.source == "query_param" and cred.value == "QWINS"
 
 
 def test_ts_c8e09c8d_conversion_shim_preserves_precedence_and_source():
@@ -165,10 +168,11 @@ def test_ts_c8e09c8d_request_shim_and_legacy_helpers_present():
     )
     assert cred.source == "query_param" and cred.value == "Q"
 
-    # Legacy helpers are preserved (register-before-remove), unchanged.
+    # Facade helpers are preserved; their credential source is request-scoped.
     assert callable(srv._get_authenticated_agent)
     assert callable(srv._get_agent_ctx)
     assert callable(srv.active_api_key_credential)
+    assert callable(srv.request_scope_mcp_credential)
 
 
 # ===========================================================================

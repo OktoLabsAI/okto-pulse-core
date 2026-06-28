@@ -34,6 +34,9 @@ from okto_pulse.core.models.db import ConsolidationQueue
 
 @pytest.fixture(autouse=True)
 def _reset_schema_layer_counter():
+    from kg_registry_testing import configure_test_kg_registry
+
+    configure_test_kg_registry(graph_provider="real")
     guard.reset_schema_layer_migration_counter()
     yield
     guard.reset_schema_layer_migration_counter()

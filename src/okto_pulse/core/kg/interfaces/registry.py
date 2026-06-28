@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
+from okto_pulse.core.kg.interfaces.board_graph_runtime import BoardGraphRuntime
 from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
@@ -58,6 +59,8 @@ class KGProviderRegistry:
     graph_schema_manager: GraphSchemaManager | None = None
     graph_lifecycle: GraphLifecycle | None = None
     graph_path_resolver: GraphPathResolver | None = None
+    safe_write_step_adapter: Any | None = None
+    board_graph_runtime: BoardGraphRuntime | None = None
 
 
 _registry: KGProviderRegistry | None = None
@@ -66,32 +69,32 @@ _configured = False
 
 
 def _build_defaults() -> KGProviderRegistry:
-    """Build a registry with all embedded defaults.
+    """Build a registry with test-only in-memory defaults.
 
     Populates Onda 1 (config, cache, rate_limiter, embedding), Onda 2
-    (session_store), and the core-owned graph slots. event_bus and audit_repo
-    are not defaulted here: real runtimes must compose them explicitly and tests
-    must provide fakes via defaults_factory/overrides.
+    (session_store), and in-memory graph fakes. event_bus and audit_repo are not
+    defaulted here: real runtimes must compose them explicitly and tests must
+    provide fakes via defaults_factory/overrides.
     """
     from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
     from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
     from okto_pulse.core.kg.providers.embedded.memory_rate_limiter import InMemoryTokenBucket
     from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
-    from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_lifecycle import KuzuGraphLifecycle
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_path_resolver import (
-        KuzuGraphPathResolver,
-    )
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_schema_manager import (
-        KuzuGraphSchemaManager,
-    )
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_transaction import (
-        KuzuGraphTransaction,
+    from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+        InMemoryCypherExecutor,
+        InMemoryGraphLifecycle,
+        InMemoryGraphPathResolver,
+        InMemoryGraphSchemaManager,
+        InMemoryGraphStore,
+        InMemoryGraphTransaction,
+        in_memory_safe_write_step_adapter,
     )
     from okto_pulse.core.kg.embedding import _build_provider_from_config
 
     config = SettingsKGConfig()
+    graph_store = InMemoryGraphStore()
+    graph_path_resolver = InMemoryGraphPathResolver()
+    graph_schema_manager = InMemoryGraphSchemaManager(graph_store)
     return KGProviderRegistry(
         # Onda 1
         config=config,
@@ -103,56 +106,28 @@ def _build_defaults() -> KGProviderRegistry:
             default_ttl_seconds=config.kg_session_ttl_seconds,
         ),
         # Onda 3
-        graph_store=KuzuGraphStore(),
-        cypher_executor=KuzuCypherExecutor(),
-        # Onda 4 — KG storage ports (embedded Kùzu adapters)
-        graph_transaction=KuzuGraphTransaction(),
-        graph_schema_manager=KuzuGraphSchemaManager(),
-        graph_lifecycle=KuzuGraphLifecycle(),
-        graph_path_resolver=KuzuGraphPathResolver(),
+        graph_store=graph_store,
+        cypher_executor=InMemoryCypherExecutor(),
+        # Onda 4 — test-only graph storage fakes
+        graph_transaction=InMemoryGraphTransaction(),
+        graph_schema_manager=graph_schema_manager,
+        graph_lifecycle=InMemoryGraphLifecycle(
+            resolver=graph_path_resolver,
+            schema_manager=graph_schema_manager,
+        ),
+        graph_path_resolver=graph_path_resolver,
+        safe_write_step_adapter=in_memory_safe_write_step_adapter,
         # event_bus, audit_repo, auth_context_factory supplied by composition
     )
 
 
 def _build_graph_defaults() -> dict[str, Any]:
-    """Build ONLY the core-owned graph providers: the embedded Kùzu/graph adapters
-    (graph_store / cypher_executor / transaction / schema_manager / lifecycle /
-    path_resolver).
+    """No production graph defaults exist in core.
 
-    These are the providers spec #06 closed but R05 does NOT move (deferred). The
-    R05-B base-registry path uses this to mount the core graph slots WITHOUT
-    instantiating the Onda A embedded (cache / rate_limiter / session_store /
-    embedding / config) — those are supplied by the caller's ``base_registry``.
-
-    R-P2-03D: ``config`` (KGConfig) is NO LONGER filled here. The embedded
-    ``SettingsKGConfig`` default was a R05-D ledgered temporary fallback; closing
-    the config slot means a composition that does not supply ``config`` leaves it
-    ``None`` (fail-closed at ``configure_kg_registry``) rather than silently
-    receiving the core's embedded settings — runtime real is ANY composition root,
-    not only the current Community. The Kùzu/graph adapters do not need ``config``
-    to construct, so nothing here depends on it.
+    Runtime graph providers must be supplied by the composition root (Community
+    today, future SaaS adapters later). Tests use ``_build_defaults`` fakes.
     """
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
-    from okto_pulse.core.kg.providers.embedded.kuzu_cypher_executor import KuzuCypherExecutor
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_lifecycle import KuzuGraphLifecycle
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_path_resolver import (
-        KuzuGraphPathResolver,
-    )
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_schema_manager import (
-        KuzuGraphSchemaManager,
-    )
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_transaction import (
-        KuzuGraphTransaction,
-    )
-
-    return {
-        "graph_store": KuzuGraphStore(),
-        "cypher_executor": KuzuCypherExecutor(),
-        "graph_transaction": KuzuGraphTransaction(),
-        "graph_schema_manager": KuzuGraphSchemaManager(),
-        "graph_lifecycle": KuzuGraphLifecycle(),
-        "graph_path_resolver": KuzuGraphPathResolver(),
-    }
+    return {}
 
 
 def configure_kg_registry(
@@ -212,10 +187,9 @@ def configure_kg_registry(
                 "rate_limiter / session_store / config)."
             )
 
-        # R05-B: when a base/factory supplied the Onda A slots, mount the
-        # core-owned graph providers (Kùzu/graph) into any slot the base left
-        # empty — WITHOUT instantiating the embedded Onda A. R-P2-03D: ``config``
-        # is NO LONGER mounted here; it is a required composition-supplied slot.
+        # R-P2-05: core no longer mounts Kùzu/Ladybug graph providers. A real
+        # composition root must supply graph slots explicitly; tests use
+        # _build_defaults fakes.
         if composed:
             for key, value in _build_graph_defaults().items():
                 if getattr(reg, key, None) is None:
@@ -231,9 +205,10 @@ def configure_kg_registry(
             if hasattr(reg, key):
                 setattr(reg, key, value)
 
-        # R-P2-02 / R-P2-03D: ``config`` (KGConfig), ``event_bus`` (EventBus) and
-        # ``audit_repo`` (AuditRepository) are REQUIRED composition-supplied slots —
-        # the core no longer fills any of them with an implicit/relational fallback.
+        # R-P2-02 / R-P2-03D / R-P2-05: ``config`` (KGConfig), ``event_bus``
+        # (EventBus), ``audit_repo`` (AuditRepository), and graph providers are
+        # REQUIRED composition-supplied slots — the core no longer fills any of
+        # them with an implicit/relational/Kùzu fallback.
         # A real composed runtime that omits one fails closed HERE with an actionable
         # error (never a late AttributeError when a consumer reads the slot). The
         # Community edition supplies all three explicitly via
@@ -241,19 +216,31 @@ def configure_kg_registry(
         # ``defaults_factory`` route + explicit fakes.
         _missing = [
             name
-            for name in ("config", "event_bus", "audit_repo")
+            for name in (
+                "config",
+                "event_bus",
+                "audit_repo",
+                "graph_store",
+                "cypher_executor",
+                "graph_transaction",
+                "graph_schema_manager",
+                "graph_lifecycle",
+                "graph_path_resolver",
+                "safe_write_step_adapter",
+            )
             if getattr(reg, name) is None
         ]
         if _missing:
             raise RuntimeError(
                 "KG registry is missing required composition-supplied slot(s): "
                 f"{', '.join(_missing)}. The composition root must provide config "
-                "(KGConfig), event_bus (EventBus) and audit_repo (AuditRepository) "
-                "explicitly — the core no longer auto-wires relational fallbacks "
-                "(R-P2-02, SqliteOutboxEventBus / SqlAlchemyAuditRepository) nor an "
-                "implicit SettingsKGConfig (R-P2-03D). The Community edition supplies "
-                "them via community.adapters.composition._apply_data_providers; tests "
-                "use a defaults_factory / explicit fakes."
+                "(KGConfig), event_bus (EventBus), audit_repo (AuditRepository), "
+                "and graph providers explicitly — the core no longer auto-wires "
+                "relational fallbacks (R-P2-02), implicit SettingsKGConfig "
+                "(R-P2-03D), or Kuzu/Ladybug graph defaults/step adapters "
+                "(R-P2-05). The "
+                "Community edition supplies them via community.adapters.composition; "
+                "tests use a defaults_factory / explicit fakes."
             )
 
         _registry = reg

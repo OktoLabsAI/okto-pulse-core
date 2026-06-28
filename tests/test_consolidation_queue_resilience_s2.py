@@ -288,6 +288,7 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
     """
 
     import okto_pulse.core.kg.workers.consolidation as worker
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.safe_write_lifecycle import (
         LifecycleStepResult,
     )
@@ -318,9 +319,9 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
         return LifecycleStepResult(ok=True)
 
     monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
-    monkeypatch.setattr(
-        worker, "apply_ladybug_lifecycle_step", fake_lifecycle_step
-    )
+    registry = get_kg_registry()
+    original_step_adapter = registry.safe_write_step_adapter
+    registry.safe_write_step_adapter = fake_lifecycle_step
     entry = SimpleNamespace(
         id="queue-guarded",
         board_id=BOARD_ID_S2,
@@ -336,6 +337,7 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
             db=object(),
         )
     finally:
+        registry.safe_write_step_adapter = original_step_adapter
         set_barrier_mode(original_mode)
 
     assert resp.nodes_added == 1
@@ -358,6 +360,7 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
     """
 
     import okto_pulse.core.kg.workers.consolidation as worker
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.safe_write_lifecycle import (
         STEP_CHECKPOINT,
         LifecycleStepResult,
@@ -372,9 +375,9 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
         return LifecycleStepResult(ok=True)
 
     monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
-    monkeypatch.setattr(
-        worker, "apply_ladybug_lifecycle_step", fake_lifecycle_step
-    )
+    registry = get_kg_registry()
+    original_step_adapter = registry.safe_write_step_adapter
+    registry.safe_write_step_adapter = fake_lifecycle_step
     entry = SimpleNamespace(
         id="queue-probe-failed",
         board_id=BOARD_ID_S2,
@@ -382,13 +385,16 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
         artifact_id="spec-probe-failed",
     )
 
-    with pytest.raises(RuntimeError, match="board_graph_safe_lifecycle_failed"):
-        await worker._commit_consolidation_with_board_graph_lifecycle(
-            entry=entry,
-            session_id="session-probe-failed",
-            summary_text="probe failure",
-            db=object(),
-        )
+    try:
+        with pytest.raises(RuntimeError, match="board_graph_safe_lifecycle_failed"):
+            await worker._commit_consolidation_with_board_graph_lifecycle(
+                entry=entry,
+                session_id="session-probe-failed",
+                summary_text="probe failure",
+                db=object(),
+            )
+    finally:
+        registry.safe_write_step_adapter = original_step_adapter
 
 
 # ----------------------------------------------------------------------

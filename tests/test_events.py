@@ -59,6 +59,7 @@ from okto_pulse.core.models.db import (
     Ideation,
     Refinement,
 )
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 BOARD_ID = "board-events-test"
@@ -872,6 +873,7 @@ async def test_refinement_artifact_materializes_lineage_in_worker(db_factory, cl
     """
     from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
 
+    configure_real_graph_test_kg_registry()
     ideation_id = "idea-ref-lineage"
     refinement_id = "ref-lineage"
     async with db_factory() as session:
@@ -1268,7 +1270,7 @@ def test_human_curated_migration_helper_exists_and_is_called():
     instantiating a real Kùzu connection in this unit test.
     """
     import inspect
-    from okto_pulse.core.kg import schema as schema_mod
+    import okto_pulse.community.adapters.kg_runtime as schema_mod
 
     helper = getattr(schema_mod, "_ensure_human_curated_columns", None)
     assert helper is not None, "migration helper missing"
@@ -1506,6 +1508,7 @@ async def decay_board(event_board):
     """Ensure the Kùzu graph exists and is cleaned between tests."""
     import gc as _gc
 
+    configure_real_graph_test_kg_registry()
     bootstrap_board_graph(event_board)
     _gc.collect()
     bc = open_board_connection(event_board)

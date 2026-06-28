@@ -91,7 +91,7 @@ class CoreSettings(BaseSettings):
 
     # Knowledge Graph (MVP Fase 0)
     kg_base_dir: str = "~/.okto-pulse"
-    kg_embedding_mode: str = "sentence-transformers"  # "stub" | "sentence-transformers"
+    kg_embedding_mode: str = "stub"  # core default; editions may override
     kg_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     kg_embedding_dim: int = 384
     kg_session_ttl_seconds: int = 3600

@@ -33,12 +33,15 @@ class TestSignatureContract:
 
 
 class TestStoreFindByTopicSemantic:
-    """The new store method is part of the embedded provider surface."""
+    """The semantic store method is part of the core test provider surface."""
 
-    def test_kuzu_store_exposes_method(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
-        assert hasattr(KuzuGraphStore, "find_by_topic_semantic")
-        sig = inspect.signature(KuzuGraphStore.find_by_topic_semantic)
+    def test_memory_store_exposes_method(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
+
+        assert hasattr(InMemoryGraphStore, "find_by_topic_semantic")
+        sig = inspect.signature(InMemoryGraphStore.find_by_topic_semantic)
         assert set(sig.parameters) >= {
             "self", "board_id", "node_type", "query_vec", "filters", "min_similarity"
         }

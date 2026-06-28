@@ -319,22 +319,19 @@ async def run_cognitive_closeout(
 
 def _count_nodes_by_source_ref(board_id: str, node_type: str, source_artifact_ref: str) -> int:
     """Read-only count of persisted nodes of ``node_type`` for a source_ref."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     try:
-        with open_board_connection(board_id) as (_db, kconn):
-            res = kconn.execute(
-                f"MATCH (n:{node_type}) WHERE n.source_artifact_ref = $ref RETURN count(n)",
-                {"ref": source_artifact_ref},
-            )
-            try:
-                if res.has_next():
-                    return int(res.get_next()[0] or 0)
-            finally:
-                try:
-                    res.close()
-                except Exception:
-                    pass
+        result = get_kg_registry().cypher_executor.execute_read_only(
+            board_id,
+            f"MATCH (n:{node_type}) WHERE n.source_artifact_ref = $ref "
+            "RETURN count(n)",
+            {"ref": source_artifact_ref},
+            max_rows=1,
+        )
+        rows = result.get("rows", [])
+        if rows:
+            return int(rows[0][0] or 0)
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("cognitive_closeout.count_failed ref=%s err=%s", source_artifact_ref, exc)
     return 0
@@ -348,26 +345,23 @@ def _resolve_existing_node_id(board_id: str, label: str, ref: str) -> str:
     if ":" not in ref:
         return ref
     from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
-    from okto_pulse.core.kg.schema import open_board_connection
 
     target = normalize_cognitive_artifact_id(strip_concept_suffix(ref))
     try:
-        with open_board_connection(board_id) as (_db, kconn):
-            res = kconn.execute(f"MATCH (n:{label}) RETURN n.id, n.source_artifact_ref", {})
-            try:
-                while res.has_next():
-                    nid, sref = res.get_next()
-                    if sref and normalize_cognitive_artifact_id(
-                            strip_concept_suffix(str(sref))) == target:
-                        return str(nid)
-                    if nid and normalize_cognitive_artifact_id(f"card:{nid}") == target:
-                        return str(nid)
-            finally:
-                try:
-                    res.close()
-                except Exception:
-                    pass
+        result = get_kg_registry().cypher_executor.execute_read_only(
+            board_id,
+            f"MATCH (n:{label}) RETURN n.id, n.source_artifact_ref",
+            {},
+            max_rows=10000,
+        )
+        for nid, sref in result.get("rows", []):
+            if sref and normalize_cognitive_artifact_id(
+                    strip_concept_suffix(str(sref))) == target:
+                return str(nid)
+            if nid and normalize_cognitive_artifact_id(f"card:{nid}") == target:
+                return str(nid)
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("cognitive_closeout.endpoint_resolve_failed ref=%s err=%s", ref, exc)
     return ref

@@ -14,7 +14,7 @@ import os
 
 import pytest
 
-from okto_pulse.core.kg import schema
+from okto_pulse.community.adapters import kg_runtime
 from okto_pulse.core.kg.schema import (
     bootstrap_board_graph,
     board_kuzu_path,
@@ -37,8 +37,8 @@ def lru_boards(monkeypatch):
 
 
 def _cached_keys() -> set[str]:
-    with schema._board_db_cache_lock:
-        return set(schema._board_db_cache.keys())
+    with kg_runtime._board_db_cache_lock:
+        return set(kg_runtime._board_db_cache.keys())
 
 
 def test_lru_eviction_respects_cap_and_reopens(lru_boards):

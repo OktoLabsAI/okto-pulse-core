@@ -7,13 +7,23 @@ No Kuzu dependency.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.graph_lifecycle import (
+    GraphHandle,
+    PurgeReport,
+    RebuildReport,
+)
+from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphStorageState
+from okto_pulse.core.kg.interfaces.graph_schema_manager import SchemaValidationResult
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
-from okto_pulse.core.kg.schema import (
+from okto_pulse.core.kg.safe_write_lifecycle import LifecycleStepResult
+from okto_pulse.core.kg.schema_contract import (
     NODE_TYPES,
     SCHEMA_VERSION,
     VECTOR_INDEX_TYPES,
+    resolve_relationship_endpoint_pair,
     stable_rel_type_entries,
     vector_index_name,
 )
@@ -52,15 +62,21 @@ class InMemoryGraphStore:
         from_type: str | None = None,
         to_type: str | None = None,
     ) -> None:
+        nodes = self._board_nodes(board_id)
+        from_type = from_type or nodes.get(from_id, {}).get("_type")
+        to_type = to_type or nodes.get(to_id, {}).get("_type")
+        from_type, to_type = resolve_relationship_endpoint_pair(
+            edge_type,
+            from_type=from_type,
+            to_type=to_type,
+        )
         edges = self._board_edges(board_id)
         edge = dict(attrs or {})
         edge["_type"] = edge_type
         edge["_from"] = from_id
         edge["_to"] = to_id
-        if from_type:
-            edge["_from_type"] = from_type
-        if to_type:
-            edge["_to_type"] = to_type
+        edge["_from_type"] = from_type
+        edge["_to_type"] = to_type
         edges.append(edge)
 
     def delete_nodes_by_session(self, board_id: str, session_id: str) -> int:
@@ -104,6 +120,40 @@ class InMemoryGraphStore:
                     ])
         return results[:filters.max_rows]
 
+    def find_by_topic_semantic(
+        self,
+        board_id: str,
+        node_type: str,
+        query_vec: list[float],
+        filters: QueryFilters,
+        min_similarity: float = 0.3,
+    ) -> list[list]:
+        nodes = self._board_nodes(board_id)
+        hits = self.vector_search(
+            board_id,
+            node_type,
+            query_vec,
+            top_k=filters.max_rows,
+            min_similarity=min_similarity,
+        )
+        results = []
+        for hit in hits:
+            node = nodes.get(hit["node_id"], {})
+            if float(node.get("source_confidence") or 0.0) < filters.min_confidence:
+                continue
+            if float(node.get("relevance_score") or 0.0) < filters.min_relevance:
+                continue
+            results.append([
+                node.get("id"),
+                node.get("title"),
+                node.get("content"),
+                node.get("created_at"),
+                node.get("source_confidence"),
+                node.get("relevance_score"),
+                node.get("superseded_by"),
+            ])
+        return results[:filters.max_rows]
+
     def find_by_artifact(
         self, board_id: str, artifact_id: str, filters: QueryFilters
     ) -> list[list]:
@@ -115,6 +165,19 @@ class InMemoryGraphStore:
                     n["id"], n.get("title"), None, None, None, None, None, None,
                 ])
         return results[:filters.max_rows]
+
+    def find_by_artifact_filtered(
+        self,
+        board_id: str,
+        artifact_id: str,
+        filters: QueryFilters,
+        *,
+        rel_types: list[str] | None = None,
+        direction: str = "both",
+        max_depth: int = 2,
+        graph_layer: str = "all",
+    ) -> list[list]:
+        return self.find_by_artifact(board_id, artifact_id, filters)
 
     def traverse_supersedence(
         self, board_id: str, decision_id: str, max_depth: int = 10
@@ -235,6 +298,177 @@ class InMemoryGraphStore:
         self._bootstrapped.clear()
 
 
+class InMemoryCypherExecutor:
+    """CypherExecutor fake for tests that do not exercise a real graph backend."""
+
+    def __init__(self) -> None:
+        self.queries: list[tuple[str, str, dict[str, Any]]] = []
+
+    def execute_read_only(
+        self,
+        board_id: str,
+        cypher: str,
+        params: dict[str, Any] | None = None,
+        *,
+        max_rows: int = 1000,
+    ) -> dict:
+        self.queries.append((board_id, cypher, dict(params or {})))
+        return {
+            "rows": [],
+            "row_count": 0,
+            "truncated": False,
+            "execution_time_ms": 0.0,
+            "max_rows": max_rows,
+        }
+
+    def is_supported(self) -> bool:
+        return False
+
+
+class _InMemoryGraphTransactionScope:
+    def __init__(self, board_id: str) -> None:
+        self.board_id = board_id
+        self.statements: list[tuple[str, dict[str, Any] | None]] = []
+        self.finished = False
+        self.rolled_back = False
+
+    def execute(self, cypher: str, params: dict[str, Any] | None = None) -> list:
+        self.statements.append((cypher, params))
+        return []
+
+    async def commit(self) -> None:
+        self.finished = True
+
+    async def rollback(self) -> None:
+        self.finished = True
+        self.rolled_back = True
+
+    async def __aenter__(self) -> "_InMemoryGraphTransactionScope":
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        if exc_type is not None:
+            await self.rollback()
+        else:
+            await self.commit()
+
+
+class InMemoryGraphTransaction:
+    async def begin(self, board_id: str) -> _InMemoryGraphTransactionScope:
+        return _InMemoryGraphTransactionScope(board_id)
+
+
+class InMemoryGraphPathResolver:
+    def __init__(self, base_path: Path | None = None) -> None:
+        self.base_path = base_path or Path(".okto-pulse-test-kg")
+
+    def board_graph_path(self, board_id: str) -> Path:
+        return self.base_path / "boards" / board_id / "graph.memory"
+
+    def exists(self, board_id: str) -> bool:
+        return self.board_graph_path(board_id).exists()
+
+    def storage_state(self, board_id: str) -> GraphStorageState:
+        path = self.board_graph_path(board_id)
+        return GraphStorageState(
+            board_id=board_id,
+            path=path,
+            exists=path.exists(),
+            size_bytes=path.stat().st_size if path.exists() else 0,
+            backend="memory",
+            locked=False,
+            quarantined=False,
+            sidecars=(),
+        )
+
+
+class InMemoryGraphSchemaManager:
+    def __init__(self, store: InMemoryGraphStore | None = None) -> None:
+        self.store = store or InMemoryGraphStore()
+
+    def _active_store(self):
+        try:
+            from okto_pulse.core.kg.interfaces import get_kg_registry
+
+            return get_kg_registry().graph_store or self.store
+        except RuntimeError:
+            return self.store
+
+    async def ensure_bootstrapped(self, board_id: str) -> None:
+        self.store.bootstrap(board_id)
+
+    async def migrate(self, board_id: str) -> dict[str, Any]:
+        self.store.bootstrap(board_id)
+        return {
+            "board_id": board_id,
+            "migrated": True,
+            "schema_version": SCHEMA_VERSION,
+            "columns_added": {},
+            "errors": [],
+            "duration_ms": 0,
+        }
+
+    async def current_version(self, board_id: str) -> str:
+        return self._active_store().get_schema_version(board_id) or SCHEMA_VERSION
+
+    async def validate(self, board_id: str) -> SchemaValidationResult:
+        try:
+            current = self._active_store().get_schema_version(board_id)
+        except Exception as exc:
+            return SchemaValidationResult(
+                board_id=board_id,
+                valid=False,
+                current_version=None,
+                expected_version=SCHEMA_VERSION,
+                issues=(f"schema version read failed: {exc}",),
+            )
+        return SchemaValidationResult(
+            board_id=board_id,
+            valid=current == SCHEMA_VERSION,
+            current_version=current,
+            expected_version=SCHEMA_VERSION,
+            issues=() if current == SCHEMA_VERSION else ("no schema version recorded for board",),
+        )
+
+
+class InMemoryGraphLifecycle:
+    def __init__(
+        self,
+        resolver: InMemoryGraphPathResolver | None = None,
+        schema_manager: InMemoryGraphSchemaManager | None = None,
+    ) -> None:
+        self.resolver = resolver or InMemoryGraphPathResolver()
+        self.schema_manager = schema_manager or InMemoryGraphSchemaManager()
+
+    async def open(self, board_id: str) -> GraphHandle:
+        await self.schema_manager.ensure_bootstrapped(board_id)
+        state = self.resolver.storage_state(board_id)
+        return GraphHandle(
+            board_id=board_id,
+            path=state.path,
+            opened=True,
+            backend=state.backend,
+            locked=False,
+            quarantined=False,
+        )
+
+    async def close(self, board_id: str | None = None) -> None:
+        return None
+
+    async def rebuild(self, board_id: str) -> RebuildReport:
+        await self.schema_manager.ensure_bootstrapped(board_id)
+        return RebuildReport(board_id=board_id, status="rebuilt", steps=("memory",))
+
+    async def purge(self, board_id: str, *, reason: str) -> PurgeReport:
+        return PurgeReport(
+            board_id=board_id,
+            status="noop",
+            reason=reason,
+            affected_paths=(),
+            quarantined=False,
+        )
+
+
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if len(a) != len(b):
         return 0.0
@@ -242,3 +476,11 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     na = math.sqrt(sum(x * x for x in a)) or 1.0
     nb = math.sqrt(sum(x * x for x in b)) or 1.0
     return max(0.0, min(1.0, dot / (na * nb)))
+
+
+def in_memory_safe_write_step_adapter(
+    board_id: str,
+    graph_type: str,
+    step: str,
+) -> LifecycleStepResult:
+    return LifecycleStepResult(ok=True, detail="memory")

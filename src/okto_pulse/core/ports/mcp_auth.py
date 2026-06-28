@@ -3,9 +3,9 @@
 Pure, contract-only boundary for MCP credential authentication. It defines the
 ``McpAuthenticator`` Protocol and its typed DTOs — ``McpCredential``,
 ``AuthSession`` / ``AgentAuthSession`` — so the inbound MCP server can resolve an
-agent identity from a transport-extracted credential WITHOUT the core knowing
+agent identity from a transport-extracted credential WITHOUT the port knowing
 the concrete persistence (``AgentService`` / ``Agent`` / SQLAlchemy) or the
-transport (FastAPI / Starlette ``Request`` / the ``_active_api_key`` ContextVar).
+transport (FastAPI / Starlette ``Request`` / ASGI scope details).
 
 STRICT scope (R08-A): a compatible contract + adapter that PRESERVES the current
 Community behaviour. It does NOT introduce a CredentialStore, JWT, realms/scopes
@@ -27,9 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
-#: Where a credential was extracted from. ``unknown`` is used when the
-#: originating transport is not preserved (e.g. read back from the per-request
-#: ``_active_api_key`` ContextVar shim, which stores only the raw string).
+#: Where a credential was extracted from. ``unknown`` is kept for backward
+#: compatibility with callers that cannot preserve the originating transport.
 McpCredentialSource = Literal[
     "query_param",
     "x_api_key_header",

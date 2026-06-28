@@ -6,6 +6,8 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from okto_pulse.core.kg.connectivity_guard import KGConnectivityRuleRegistry
 from okto_pulse.core.kg.orphan_integrity import (
     get_orphan_audit_fields,
@@ -30,6 +32,15 @@ from okto_pulse.core.kg.schema import (
     open_board_connection,
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    configure_test_kg_registry,
+)
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
 
 
 def _seed_node(

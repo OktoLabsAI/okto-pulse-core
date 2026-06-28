@@ -186,7 +186,11 @@ def test_resource_gate_is_the_only_done_blocking_wiring_surface() -> None:
     resource_gate_source = _read_core_source("services/resource_gate.py")
     transition_service_source = _read_core_source("services/main.py")
 
-    assert "from okto_pulse.core.services.architecture import ArchitectureFindingGate" in resource_gate_source
+    # Robust against one-line vs multi-line import formatting: the wiring must
+    # import ArchitectureFindingGate from the architecture service. The usage
+    # assertion below pins the actual gate call, so behavior stays guarded.
+    assert "from okto_pulse.core.services.architecture import" in resource_gate_source
+    assert "ArchitectureFindingGate" in resource_gate_source
     assert "ArchitectureFindingGate(self.db).evaluate" in resource_gate_source
     for token in (
         "TopologyWarningEngine",

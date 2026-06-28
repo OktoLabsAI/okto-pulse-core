@@ -47,6 +47,7 @@ from test_kg_closeout_docs_deterministic_only import (  # noqa: E402
     _assert_only_deterministic,
     _section,
 )
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 def _seed_entity_root(board_id: str, source_ref: str) -> str:
@@ -113,6 +114,7 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
 async def test_allowed_cognitive_candidates_still_commit(
     board_id, agent_id, db_factory, board_handle
 ):
+    configure_real_graph_test_kg_registry()
     # Positive case (ts_a43c9874 / TR7 / AC6): allowed cognitive node types still
     # commit while deterministic-only Criterion/Constraint remain blocked.
     spec_id = f"spec-{uuid.uuid4()}"
@@ -173,6 +175,7 @@ async def test_allowed_cognitive_candidates_still_commit(
 async def test_deterministic_only_candidates_fail_without_mutation(
     node_type, label, board_id, agent_id, db_factory, board_handle
 ):
+    configure_real_graph_test_kg_registry()
     source_ref = f"spec:{label.lower()}:{uuid.uuid4()}"
     async with db_factory() as db:
         begin = await begin_consolidation(

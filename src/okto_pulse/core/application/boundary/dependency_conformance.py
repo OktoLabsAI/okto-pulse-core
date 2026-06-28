@@ -80,8 +80,12 @@ DIAG_UNLEDGERED_DEPENDENCY = "unledgered_dependency"
 DIAG_UNLEDGERED_IMPORT = "unledgered_import"
 DIAG_REMOVED_DEPENDENCY_PRESENT = "removed_dependency_present"
 DIAG_REMOVED_IMPORT_PRESENT = "removed_import_present"
+DIAG_EXTERNAL_OWNER_DEPENDENCY_PRESENT = "external_owner_dependency_present"
+DIAG_EXTERNAL_OWNER_IMPORT_PRESENT = "external_owner_import_present"
 DIAG_LEDGER_ENTRY_INCOMPLETE = "ledger_entry_incomplete"
 DIAG_MISSING_CANONICAL_EXCEPTION = "missing_canonical_exception"
+
+EXTERNAL_OWNER_CLASSIFICATIONS = frozenset({"community_owned", "future_adapter"})
 
 
 @dataclass(frozen=True)
@@ -436,6 +440,23 @@ def audit_dependency_conformance(
                         ),
                     )
                 )
+            elif entry.classification in EXTERNAL_OWNER_CLASSIFICATIONS:
+                findings.append(
+                    AuditFinding(
+                        surface="source",
+                        token=entry.token,
+                        diagnostic_code=DIAG_EXTERNAL_OWNER_IMPORT_PRESENT,
+                        severity="blocking",
+                        origin="runtime_import",
+                        location=location,
+                        classification=entry.classification,
+                        remediation=(
+                            f"'{entry.token}' is owned outside the core "
+                            f"({entry.classification}); move it behind a port and "
+                            "wire it in the edition composition root."
+                        ),
+                    )
+                )
             else:
                 findings.append(
                     AuditFinding(
@@ -520,6 +541,23 @@ def audit_dependency_conformance(
                                 ),
                             )
                         )
+                elif entry.classification in EXTERNAL_OWNER_CLASSIFICATIONS:
+                    findings.append(
+                        AuditFinding(
+                            surface="wheel",
+                            token=entry.token,
+                            diagnostic_code=DIAG_EXTERNAL_OWNER_DEPENDENCY_PRESENT,
+                            severity="blocking",
+                            origin=origin,
+                            location=wheel_source,
+                            classification=entry.classification,
+                            remediation=(
+                                f"'{entry.token}' is owned outside the core "
+                                f"({entry.classification}); the core wheel must "
+                                "not declare it."
+                            ),
+                        )
+                    )
                 else:
                     findings.append(
                         AuditFinding(
@@ -644,6 +682,23 @@ def _audit_dependency_surface(
                     remediation=(
                         f"'{token}' is ledgered as removed; it must not be a core "
                         "direct dependency."
+                    ),
+                )
+            )
+        elif entry.classification in EXTERNAL_OWNER_CLASSIFICATIONS:
+            findings.append(
+                AuditFinding(
+                    surface=surface,
+                    token=entry.token,
+                    diagnostic_code=DIAG_EXTERNAL_OWNER_DEPENDENCY_PRESENT,
+                    severity="blocking",
+                    origin=origin,
+                    location=surface,
+                    classification=entry.classification,
+                    remediation=(
+                        f"'{entry.token}' is owned outside the core "
+                        f"({entry.classification}); declare it in the owning "
+                        "edition package instead."
                     ),
                 )
             )

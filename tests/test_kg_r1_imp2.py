@@ -43,10 +43,19 @@ from okto_pulse.core.kg.kg_service import get_kg_service
 from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.models.db import Board, GlobalUpdateOutbox, KuzuNodeRef
 from okto_pulse.core.services.kg_health_service import get_kg_health
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    configure_test_kg_registry,
+)
 
 USER_ID = "user-r1-imp2"
 QUERY_TEXT = "gateway caching parity health learning"
 MISMATCH_CODE = "digest_vs_board_layer_mismatch"
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
 
 
 @pytest.fixture(scope="module", autouse=True)

@@ -44,10 +44,19 @@ from okto_pulse.core.kg.source_maturity import (
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
 from okto_pulse.core.models.db import Board, GlobalUpdateOutbox, KuzuNodeRef
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    configure_test_kg_registry,
+)
 
 USER_ID = "user-r1-imp1"
 QUERY_TEXT = "gateway caching parity learning"
 LEGACY_UNKNOWN = "legacy_unknown"
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
 
 
 @pytest.fixture(scope="module", autouse=True)

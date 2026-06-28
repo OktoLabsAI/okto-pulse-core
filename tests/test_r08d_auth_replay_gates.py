@@ -2,11 +2,11 @@
 
 A validation/harness spec on top of R08-A (port) + R08-B (AuthContext bridge). It
 drives the REAL MCP ASGI auth path — ``ApiKeySessionMiddleware`` (the actual
-transport->_active_api_key ContextVar shim) wrapping a probe app that calls the
-REAL ``_get_authenticated_agent`` / ``_get_agent_ctx`` / KG ``_get_user_boards``
-— via ``httpx.ASGITransport`` (NOT unit mocks of the port). Everything runs in a
-single event loop per test so the async SQLAlchemy engine + the ASGI requests
-share one loop (TR1).
+transport->request-scope credential shim) wrapping a probe app that calls the
+REAL credential-auth / board-ACL helpers and the MCPAuthContext bridge — via
+``httpx.ASGITransport`` (NOT unit mocks of the port). Everything runs in a single
+event loop per test so the async SQLAlchemy engine + the ASGI requests share one
+loop (TR1).
 
 Scenario mapping:
   ts_722505d6 (TS01) — replay authenticated via query param + X-API-Key + Bearer
@@ -20,7 +20,7 @@ Scenario mapping:
   ts_8cf72513 (TS04) — a KG/MCP board-ACL path consumes AuthContext/MCPAuthContext
        and applies get_accessible_boards() (no bypass).
   ts_336479f7 (TS05) — 12 OVERLAPPING concurrent requests with distinct agents do
-       not leak identity/ACL (the _active_api_key ContextVar is task-isolated).
+       not leak identity/ACL (credentials are scoped to each ASGI request).
   ts_54bec4d3 (TS06) — ApplicationPurityGate + mcp_credential_usage_gate +
        AntiSingletonGate as regression evidence (only the pre-existing _worker
        singleton is flagged — not introduced by R08-D).
@@ -133,36 +133,44 @@ async def _seed(tmp: str) -> None:
 
 def _build_app() -> object:
     """The REAL ApiKeySessionMiddleware wrapping a probe app that calls the REAL
-    server auth helpers (transport extraction + ContextVar + DB lookup + ACL)."""
+    server auth helpers (transport extraction + request scope + DB lookup + ACL)."""
 
     async def whoami(request):
-        agent = await server._get_authenticated_agent()
+        credential = server.request_scope_mcp_credential(request.scope)
+        agent = await server._authenticate_mcp_credential(credential)
         if agent is None:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         return JSONResponse({"agent_id": agent.id})
 
     async def board_access(request):
         board_id = request.path_params["board_id"]
-        agent = await server._get_authenticated_agent()
+        credential = server.request_scope_mcp_credential(request.scope)
+        agent = await server._authenticate_mcp_credential(credential)
         if agent is None:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        ctx = await server._get_agent_ctx(board_id)
+        ctx = await server._get_agent_ctx_for_credential(board_id, credential)
         if ctx is None:
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return JSONResponse({"agent_id": ctx.agent_id, "board_id": ctx.board_id})
 
     async def kg_acl(request):
         # TS04: a KG/MCP tool path that resolves agent + boards via the AuthContext
-        # port (the registered MCPAuthContext factory) — no ACL bypass.
-        from okto_pulse.core.mcp.kg_query_tools import _get_user_boards
-
+        # bridge — no ACL bypass. This probe is Starlette, not FastMCP, so it
+        # passes the request-scoped credential into the same bridge explicitly.
         board_id = request.path_params["board_id"]
-        agent, boards = await _get_user_boards()  # AuthContext path (factory set)
-        if agent is None:
+        credential = server.request_scope_mcp_credential(request.scope)
+        factory = create_mcp_auth_factory(
+            lambda: server._authenticate_mcp_credential(credential),
+            server.get_db_for_mcp,
+        )
+        auth = factory()
+        agent_id = await auth.get_agent_id()
+        boards = await auth.get_accessible_boards()
+        if agent_id is None:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         if board_id not in boards:
             return JSONResponse({"error": "forbidden", "boards": boards}, status_code=403)
-        return JSONResponse({"agent_id": agent.id, "boards": boards})
+        return JSONResponse({"agent_id": agent_id, "boards": boards})
 
     probe = Starlette(routes=[
         Route("/whoami", whoami),
@@ -352,7 +360,7 @@ async def test_ts_336479f7_overlapping_concurrency_no_identity_leak(_harness_env
                 return r.status_code, r.json().get("agent_id")
 
             # 12 OVERLAPPING requests (gather -> separate tasks -> separate
-            # ContextVar contexts) alternating two distinct agents.
+            # ASGI scopes) alternating two distinct agents.
             plan = [("kA1", "A1"), ("kA2", "A2")] * 6
             results = await asyncio.gather(*(call(k) for k, _ in plan))
             return plan, results
@@ -361,7 +369,7 @@ async def test_ts_336479f7_overlapping_concurrency_no_identity_leak(_harness_env
     assert len(results) == 12
     for (_, expected), (status, agent_id) in zip(plan, results):
         assert status == 200
-        # Each concurrent request resolved its OWN agent — no ContextVar leak.
+        # Each concurrent request resolved its OWN agent — no global carrier leak.
         assert agent_id == expected
 
 
@@ -379,8 +387,8 @@ def test_ts_54bec4d3_purity_and_singleton_gates():
     purity = run_application_purity_gate()
     assert purity.ok is True, purity.violations
 
-    # mcp_credential_usage_gate: no _active_api_key / get_agent_by_key use outside
-    # the documented allowlisted shims.
+    # mcp_credential_usage_gate: no stale _active_api_key / get_agent_by_key use
+    # outside the documented allowlisted shims.
     cred = run_mcp_credential_usage_gate()
     assert cred.ok is True, [f.file for f in cred.violations]
 

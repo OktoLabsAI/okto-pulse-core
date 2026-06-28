@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from kg_registry_testing import configure_real_graph_and_data_test_kg_registry
 from okto_pulse.core.kg.embedding import StubEmbeddingProvider, get_embedding_provider
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
@@ -72,6 +73,7 @@ async def _commit_connected_learning_session(
     learning_title: str = "Connected learning",
     learning_content: str = "",
 ):
+    configure_real_graph_and_data_test_kg_registry(db_factory)
     root = NodeCandidate(
         candidate_id="tech_root",
         node_type=KGNodeType.ENTITY,

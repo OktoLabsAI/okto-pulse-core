@@ -1,15 +1,15 @@
-"""Embedding provider with a zero-dep stub mode for tests.
+"""Embedding provider port helpers with a zero-dep core stub.
 
-Two modes, selected by `kg_embedding_mode` in CoreSettings:
+The core package owns only the deterministic fallback used by tests and
+unconfigured runtimes. Concrete ML providers, including sentence-transformers,
+are supplied by the edition composition root through the EmbeddingProvider port.
 
-- `stub` (default) — deterministic hash-based 384-dim vectors. No external
+- `stub` — deterministic hash-based 384-dim vectors. No external
   deps. Use in unit tests and CI so suites don't pay the cost of loading a
   transformer model.
-- `sentence-transformers` — lazy-loads `sentence-transformers/all-MiniLM-L6-v2`
-  (requires installing `okto-pulse-core[kg-embeddings]`). Production mode.
-
-The provider is cached via `get_embedding_provider()` so settings changes at
-runtime need a process restart (acceptable — this is embedded, single-process).
+- `sentence-transformers`/`st` — no concrete provider is instantiated in core;
+  the builder degrades to the stub unless an edition has already registered an
+  EmbeddingProvider in the KG registry.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ import hashlib
 import logging
 import math
 import struct
-import time as _time
 from typing import Sequence
 
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
@@ -26,7 +25,6 @@ from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 __all__ = [
     "EmbeddingProvider",
     "StubEmbeddingProvider",
-    "SentenceTransformerProvider",
     "get_embedding_provider",
     "reset_embedding_provider_cache",
 ]
@@ -80,60 +78,6 @@ class StubEmbeddingProvider:
         }
 
 
-class SentenceTransformerProvider:
-    """Lazy-loaded sentence-transformers provider."""
-
-    def __init__(self, model_name: str, dim: int = 384):
-        self.model_name = model_name
-        self.dim = dim
-        self._model = None
-
-    def _get_model(self):
-        logger.debug("[KG] SentenceTransformerProvider._get_model model_name=%s", self.model_name)
-        if self._model is None:
-            t0 = _time.monotonic()
-            try:
-                from sentence_transformers import SentenceTransformer  # type: ignore
-            except ImportError as exc:
-                raise RuntimeError(
-                    "sentence-transformers is not installed — "
-                    "install with `pip install okto-pulse-core[kg-embeddings]` "
-                    "or set kg_embedding_mode=stub for stub mode"
-                ) from exc
-            self._model = SentenceTransformer(self.model_name)
-            dur = (_time.monotonic() - t0) * 1000
-            logger.debug("[KG] SentenceTransformer model loaded: name=%s time_ms=%.1f", self.model_name, dur)
-        return self._model
-
-    def encode(self, text: str) -> list[float]:
-        t0 = _time.monotonic()
-        logger.debug("[KG] SentenceTransformerProvider.encode input_len=%d", len(text or ""))
-        model = self._get_model()
-        vec = model.encode(text or "", normalize_embeddings=True)
-        result = vec.tolist() if hasattr(vec, "tolist") else list(vec)
-        dur = (_time.monotonic() - t0) * 1000
-        logger.debug("[KG] SentenceTransformerProvider.encode done dims=%d time_ms=%.1f", len(result), dur)
-        return result
-
-    def encode_batch(self, texts: Sequence[str]) -> list[list[float]]:
-        if not texts:
-            return []
-        model = self._get_model()
-        batch = model.encode(list(texts), normalize_embeddings=True)
-        return [row.tolist() if hasattr(row, "tolist") else list(row) for row in batch]
-
-    def embedding_metadata(self) -> dict:
-        """Capability metadata (R13-A) — describes the provider without a model
-        load: ``is_loaded`` reads ``_model`` directly (never calls
-        ``_get_model()``)."""
-        return {
-            "model_name": self.model_name,
-            "embedding_dimension": self.dim,
-            "is_loaded": self._model is not None,
-            "is_stub": False,
-        }
-
-
 def _build_provider_from_config(config) -> EmbeddingProvider:
     """Build an embedding provider from a KGConfig-compatible object.
 
@@ -146,13 +90,16 @@ def _build_provider_from_config(config) -> EmbeddingProvider:
     if mode == "stub":
         return StubEmbeddingProvider(dim=dim)
     if mode in ("sentence-transformers", "sentence_transformers", "st"):
-        return SentenceTransformerProvider(
-            model_name=config.kg_embedding_model,
-            dim=dim,
+        logger.warning(
+            "kg_embedding_mode=%s requires an edition-owned EmbeddingProvider; "
+            "core pure defaults to StubEmbeddingProvider until composition "
+            "registers a concrete provider",
+            mode,
         )
+        return StubEmbeddingProvider(dim=dim)
     raise ValueError(
         f"unknown kg_embedding_mode: {mode!r} "
-        f"(expected 'stub' or 'sentence-transformers')"
+        f"(expected 'stub' or an edition-owned embedding provider mode)"
     )
 
 

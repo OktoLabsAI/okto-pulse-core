@@ -255,10 +255,7 @@ class _FakeMetaProvider:
 def test_ts_b161c1d3_metadata_preserves_provider_description():
     """A descrição observável dos providers atuais permanece equivalente e é
     obtida por metadata/capabilities, não por isinstance contra classe concreta."""
-    from okto_pulse.core.kg.embedding import (
-        SentenceTransformerProvider,
-        StubEmbeddingProvider,
-    )
+    from okto_pulse.core.kg.embedding import StubEmbeddingProvider
 
     stub = StubEmbeddingProvider(dim=384)
     assert describe_embedding_provider(stub) == {
@@ -268,17 +265,6 @@ def test_ts_b161c1d3_metadata_preserves_provider_description():
         "is_loaded": True,
         "is_stub": True,
     }
-
-    st = SentenceTransformerProvider(model_name="all-MiniLM-L6-v2", dim=384)
-    # Não carregado ainda: is_loaded=False, sem disparar _get_model().
-    assert describe_embedding_provider(st) == {
-        "embedding_provider_name": "SentenceTransformerProvider",
-        "model_name": "all-MiniLM-L6-v2",
-        "embedding_dimension": 384,
-        "is_loaded": False,
-        "is_stub": False,
-    }
-    assert st._model is None  # descrição não disparou load
 
     assert describe_embedding_provider(None) == {
         "embedding_provider_name": "NoneProvider",

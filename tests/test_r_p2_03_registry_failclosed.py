@@ -93,14 +93,36 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
         InMemoryAuditRepository,
     )
     from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
+    from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+        InMemoryCypherExecutor,
+        InMemoryGraphLifecycle,
+        InMemoryGraphPathResolver,
+        InMemoryGraphSchemaManager,
+        InMemoryGraphStore,
+        InMemoryGraphTransaction,
+        in_memory_safe_write_step_adapter,
+    )
 
     reset_registry_for_tests()
+    store = InMemoryGraphStore()
+    resolver = InMemoryGraphPathResolver()
+    schema_manager = InMemoryGraphSchemaManager(store)
     try:
         configure_kg_registry(
             base_registry=KGProviderRegistry(
                 config=SettingsKGConfig(),
                 event_bus=InMemoryEventBus(),
                 audit_repo=InMemoryAuditRepository(),
+                graph_store=store,
+                cypher_executor=InMemoryCypherExecutor(),
+                graph_transaction=InMemoryGraphTransaction(),
+                graph_schema_manager=schema_manager,
+                graph_lifecycle=InMemoryGraphLifecycle(
+                    resolver=resolver,
+                    schema_manager=schema_manager,
+                ),
+                graph_path_resolver=resolver,
+                safe_write_step_adapter=in_memory_safe_write_step_adapter,
             )
         )
         assert getattr(get_kg_registry(), slot) is None, (
@@ -125,11 +147,33 @@ def test_required_data_slots_fail_closed_when_composition_omits_one(
         InMemoryAuditRepository,
     )
     from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
+    from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+        InMemoryCypherExecutor,
+        InMemoryGraphLifecycle,
+        InMemoryGraphPathResolver,
+        InMemoryGraphSchemaManager,
+        InMemoryGraphStore,
+        InMemoryGraphTransaction,
+        in_memory_safe_write_step_adapter,
+    )
 
+    store = InMemoryGraphStore()
+    resolver = InMemoryGraphPathResolver()
+    schema_manager = InMemoryGraphSchemaManager(store)
     providers = {
         "config": SettingsKGConfig(),
         "event_bus": InMemoryEventBus(),
         "audit_repo": InMemoryAuditRepository(),
+        "graph_store": store,
+        "cypher_executor": InMemoryCypherExecutor(),
+        "graph_transaction": InMemoryGraphTransaction(),
+        "graph_schema_manager": schema_manager,
+        "graph_lifecycle": InMemoryGraphLifecycle(
+            resolver=resolver,
+            schema_manager=schema_manager,
+        ),
+        "graph_path_resolver": resolver,
+        "safe_write_step_adapter": in_memory_safe_write_step_adapter,
     }
     providers[missing_slot] = None
 

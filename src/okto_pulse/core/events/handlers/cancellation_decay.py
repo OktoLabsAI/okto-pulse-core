@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import CardCancelled, CardRestored
 from okto_pulse.core.kg.interfaces import get_kg_registry
-from okto_pulse.core.kg.schema import NODE_TYPES
+from okto_pulse.core.kg.schema_contract import NODE_TYPES
 
 logger = logging.getLogger(__name__)
 

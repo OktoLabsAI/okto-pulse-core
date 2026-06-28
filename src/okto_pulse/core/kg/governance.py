@@ -666,9 +666,11 @@ def _rmtree_with_retry(path, board_id: str) -> None:
     import gc
     import time
 
-    from okto_pulse.core.kg.schema import close_all_connections
+    from okto_pulse.core.kg.async_bridge import run_async_blocking
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
-    close_all_connections(board_id)
+    lifecycle = get_kg_registry().graph_lifecycle
+    run_async_blocking(lifecycle.close(board_id))
     gc.collect()
     time.sleep(0.05)
 
@@ -702,7 +704,7 @@ def _rmtree_with_retry(path, board_id: str) -> None:
                     "backoff_seconds": backoff,
                 },
             )
-            close_all_connections(board_id)
+            run_async_blocking(lifecycle.close(board_id))
             gc.collect()
             time.sleep(backoff)
 
@@ -803,8 +805,9 @@ async def right_to_erasure(
 
     # 2. Kuzu per-board file delete
     try:
-        from okto_pulse.core.kg.schema import board_kuzu_path
-        path = board_kuzu_path(board_id)
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        path = get_kg_registry().graph_path_resolver.board_graph_path(board_id)
         if path.exists():
             _rmtree_with_retry(path, board_id)
             counts["kuzu_file_removed"] = True

@@ -36,8 +36,6 @@ from okto_pulse.core.kg.schema import (
     NODE_TYPES,
     SCHEMA_VERSION,
     _COMMON_NODE_ATTRS,
-    _ensure_last_recomputed_at_columns,
-    apply_schema_to_connection,
 )
 from okto_pulse.core.kg.scoring import (
     SEVERITY_BOOST_BY_LEVEL,
@@ -59,6 +57,10 @@ from okto_pulse.core.services.kg_health_service import (
     HEALTH_SCHEMA_VERSION,
     get_kg_health,
 )
+
+kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+_ensure_last_recomputed_at_columns = kg_runtime._ensure_last_recomputed_at_columns
+apply_schema_to_connection = kg_runtime.apply_schema_to_connection
 
 
 KG_REL_BOARD_ID = "board-kg-relevance-dynamic-test"
@@ -1441,7 +1443,10 @@ def test_doc_g_drift_review_invariants_preserved():
     """Drift review: the four invariants from KE-G hold post-IMPL-A..F."""
     import inspect
     from okto_pulse.core.kg import cypher_templates as tpl
-    from okto_pulse.core.kg.providers.embedded import kuzu_graph_store
+
+    kuzu_graph_store = pytest.importorskip(
+        "okto_pulse.community.adapters.kuzu_graph_store"
+    )
 
     # (1) BR4 — cypher_templates retain ORDER BY <var>.relevance_score DESC.
     # Templates use `d.relevance_score`, `l.relevance_score`, etc., so we

@@ -6,6 +6,7 @@ don't need to inherit — they just need to implement the methods.
 
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
 from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
+from okto_pulse.core.kg.interfaces.board_graph_runtime import BoardGraphRuntime
 from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
@@ -42,6 +43,7 @@ from okto_pulse.core.kg.interfaces.registry import (
 __all__ = [
     "AuthContext",
     "AuditRepository",
+    "BoardGraphRuntime",
     "CacheBackend",
     "CypherExecutor",
     "EmbeddingProvider",

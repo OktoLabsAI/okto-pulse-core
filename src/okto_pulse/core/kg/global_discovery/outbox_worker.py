@@ -23,7 +23,8 @@ from okto_pulse.core.kg.global_discovery.metrics import (
 )
 from okto_pulse.core.kg.cypher_templates import layer_label_projection
 from okto_pulse.core.kg.global_discovery.schema import open_global_connection
-from okto_pulse.core.kg.schema import VECTOR_INDEX_TYPES
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
 from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.outbox")
@@ -508,17 +509,18 @@ class OutboxWorker:
         nodes, so all old global digests for that board are stale.
         """
 
-        from okto_pulse.core.kg.schema import open_board_connection
-
         ids: set[str] = set()
         try:
-            with open_board_connection(board_id) as (_db, conn):
-                for ntype in DIGESTED_NODE_TYPES:
-                    res = conn.execute(f"MATCH (n:{ntype}) RETURN n.id", {})
-                    while res.has_next():
-                        row = res.get_next()
-                        if row and row[0]:
-                            ids.add(str(row[0]))
+            cypher = get_kg_registry().cypher_executor
+            for ntype in DIGESTED_NODE_TYPES:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{ntype}) RETURN n.id",
+                    max_rows=10000,
+                )
+                for row in result.get("rows", []):
+                    if row and row[0]:
+                        ids.add(str(row[0]))
         except Exception as exc:
             logger.warning(
                 "outbox.digest_reconcile_board_read_failed board=%s err=%s",
@@ -629,7 +631,6 @@ class OutboxWorker:
     ) -> list[dict] | None:
         """Read (id, title, embedding) from the per-board Kùzu for the given
         node refs, bucketed by type so we issue one MATCH per type."""
-        from okto_pulse.core.kg.schema import open_board_connection
 
         by_type: dict[str, list[str]] = {}
         for r in refs:
@@ -637,62 +638,53 @@ class OutboxWorker:
 
         out: list[dict] = []
         try:
-            with open_board_connection(board_id) as (_db, conn):
-                for ntype, ids in by_type.items():
-                    # FR3/TR2 (spec 849d6292): do NOT silently drop NULL-embedding
-                    # nodes with a WHERE filter. Read every requested node and
-                    # partition — nodes with an embedding are digested; an
-                    # eligible node missing its embedding is SKIPPED with a
-                    # structured diagnostic + counter (kg_global_discovery_
-                    # missing_embedding_skipped_total, or_a921cc64) so legacy
-                    # data without embeddings is visible, not invisible, and the
-                    # remaining nodes keep processing.
-                    # Fail-safe layer label (bug 07bdf670): a source node with
-                    # NULL/absent graph_layer mirrors into the digest as
-                    # legacy_unknown, NEVER implicit canonical, so a canonical-only
-                    # query_global cannot pull it in.
-                    cypher = (
-                        f"MATCH (n:{ntype}) WHERE n.id IN $ids "
-                        f"RETURN n.id, n.title, n.embedding, "
-                        f"{layer_label_projection('n')}"
-                    )
-                    res = conn.execute(cypher, {"ids": ids})
-                    while res.has_next():
-                        row = res.get_next()
-                        embedding = row[2]
-                        if embedding is None:
-                            emit_missing_embedding_skipped(
-                                board_id=board_id, node_type=ntype
-                            )
-                            logger.warning(
-                                "global_discovery.missing_embedding_skipped "
-                                "board=%s node_type=%s original_node_id=%s",
-                                board_id, ntype, row[0],
-                                extra={
-                                    "event":
-                                        "global_discovery.missing_embedding_skipped",
-                                    "board_id": board_id,
-                                    "node_type": ntype,
-                                    "original_node_id": row[0],
-                                },
-                            )
-                            continue
-                        out.append({
-                            "id": row[0],
-                            "title": row[1],
-                            "embedding": embedding,
-                            "graph_layer": row[3],
-                            "node_type": ntype,
-                        })
-                # R7 IMP5: enrich digested Learning nodes with the data the
-                # canonical-only completeness rule needs (source_artifact_ref +
-                # canonical/working Bug evidence degree), scoped to the ids being
-                # digested and read on this SAME board connection (no 2nd open).
-                learning_ids = by_type.get("Learning")
-                if learning_ids:
-                    OutboxWorker._attach_learning_completeness(
-                        conn, out, learning_ids
-                    )
+            cypher_executor = get_kg_registry().cypher_executor
+            for ntype, ids in by_type.items():
+                # FR3/TR2 (spec 849d6292): do NOT silently drop NULL-embedding
+                # nodes with a WHERE filter. Read every requested node and
+                # partition — nodes with an embedding are digested; an eligible
+                # node missing its embedding is SKIPPED with a structured
+                # diagnostic + counter.
+                cypher = (
+                    f"MATCH (n:{ntype}) WHERE n.id IN $ids "
+                    f"RETURN n.id, n.title, n.embedding, "
+                    f"{layer_label_projection('n')}"
+                )
+                result = cypher_executor.execute_read_only(
+                    board_id, cypher, {"ids": ids}, max_rows=len(ids) or 1
+                )
+                for row in result.get("rows", []):
+                    embedding = row[2]
+                    if embedding is None:
+                        emit_missing_embedding_skipped(
+                            board_id=board_id, node_type=ntype
+                        )
+                        logger.warning(
+                            "global_discovery.missing_embedding_skipped "
+                            "board=%s node_type=%s original_node_id=%s",
+                            board_id, ntype, row[0],
+                            extra={
+                                "event": "global_discovery.missing_embedding_skipped",
+                                "board_id": board_id,
+                                "node_type": ntype,
+                                "original_node_id": row[0],
+                            },
+                        )
+                        continue
+                    out.append({
+                        "id": row[0],
+                        "title": row[1],
+                        "embedding": embedding,
+                        "graph_layer": row[3],
+                        "node_type": ntype,
+                    })
+            # R7 IMP5: enrich digested Learning nodes with the data the
+            # canonical-only completeness rule needs.
+            learning_ids = by_type.get("Learning")
+            if learning_ids:
+                OutboxWorker._attach_learning_completeness(
+                    board_id, out, learning_ids
+                )
         except Exception as exc:
             logger.warning(
                 "outbox.read_board_failed board=%s err=%s", board_id, exc,
@@ -701,39 +693,45 @@ class OutboxWorker:
         return out
 
     @staticmethod
-    def _attach_learning_completeness(conn, out: list[dict], learning_ids: list[str]) -> None:
+    def _attach_learning_completeness(
+        board_id: str,
+        out: list[dict],
+        learning_ids: list[str],
+    ) -> None:
         """Attach ``source_artifact_ref`` + ``canonical_bug_count`` /
         ``working_bug_count`` + ``relates_to_endpoints`` to each digested Learning
         entry in ``out``.
 
-        Scoped reads over the SAME open board connection: the Learning's source
-        ref, its ``validates -> Bug`` endpoints bucketed by the Bug's layer, and
-        (S-KG-02) its ``relates_to`` taxonomy endpoints with type+layer so the
-        central completeness rule can decide a NON-bug Learning's canonical
-        publication. ``_apply_event`` feeds these into the rule; no decision is
-        made here.
+        Scoped reads over the same board graph: the Learning's source ref, its
+        ``validates -> Bug`` endpoints bucketed by the Bug's layer, and (S-KG-02)
+        its ``relates_to`` taxonomy endpoints with type+layer so the central
+        completeness rule can decide a NON-bug Learning's canonical publication.
+        ``_apply_event`` feeds these into the rule; no decision is made here.
         """
         meta: dict[str, dict] = {}
-        res = conn.execute(
+        cypher_executor = get_kg_registry().cypher_executor
+        result = cypher_executor.execute_read_only(
+            board_id,
             "MATCH (l:Learning) WHERE l.id IN $ids "
             "RETURN l.id, l.source_artifact_ref",
             {"ids": learning_ids},
+            max_rows=len(learning_ids) or 1,
         )
-        while res.has_next():
-            row = res.get_next()
+        for row in result.get("rows", []):
             meta[str(row[0])] = {
                 "source_artifact_ref": str(row[1] or ""),
                 "canonical_bug_count": 0,
                 "working_bug_count": 0,
                 "relates_to_endpoints": [],
             }
-        res = conn.execute(
+        result = cypher_executor.execute_read_only(
+            board_id,
             "MATCH (l:Learning)-[:validates]->(b:Bug) WHERE l.id IN $ids "
             "RETURN l.id, b.graph_layer",
             {"ids": learning_ids},
+            max_rows=10000,
         )
-        while res.has_next():
-            row = res.get_next()
+        for row in result.get("rows", []):
             entry = meta.get(str(row[0]))
             if entry is None:
                 continue
@@ -744,13 +742,14 @@ class OutboxWorker:
         # S-KG-02: relates_to -> taxonomy endpoints (the non-bug cognitive
         # provenance path) with type+layer, so the publication rule can canonize a
         # non-bug Learning only with a canonical S-KG-01 endpoint association.
-        res = conn.execute(
+        result = cypher_executor.execute_read_only(
+            board_id,
             "MATCH (l:Learning)-[:relates_to]->(t) WHERE l.id IN $ids "
             "RETURN l.id, label(t), t.graph_layer",
             {"ids": learning_ids},
+            max_rows=10000,
         )
-        while res.has_next():
-            row = res.get_next()
+        for row in result.get("rows", []):
             entry = meta.get(str(row[0]))
             if entry is None:
                 continue
@@ -880,7 +879,6 @@ class OutboxWorker:
         ``{node_id: {node_type, graph_layer, source_artifact_ref,
         canonical_bug_count}}`` with ``graph_layer`` fail-closed to
         ``legacy_unknown``. ``None`` means the board graph could not be read."""
-        from okto_pulse.core.kg.schema import open_board_connection
 
         by_type: dict[str, list[str]] = {}
         for nid, ntype in node_types_by_id.items():
@@ -889,59 +887,63 @@ class OutboxWorker:
 
         out: dict[str, dict] = {}
         try:
-            with open_board_connection(board_id) as (_db, conn):
-                for ntype, ids in by_type.items():
-                    res = conn.execute(
-                        f"MATCH (n:{ntype}) WHERE n.id IN $ids "
-                        f"RETURN n.id, {layer_label_projection('n')}",
-                        {"ids": ids},
-                    )
-                    while res.has_next():
-                        row = res.get_next()
-                        out[str(row[0])] = {
-                            "node_type": ntype,
-                            "graph_layer": str(row[1] or "legacy_unknown"),
-                            "source_artifact_ref": "",
-                            "canonical_bug_count": 0,
-                            "relates_to_endpoints": [],
-                        }
-                learning_ids = by_type.get("Learning") or []
-                if learning_ids:
-                    res = conn.execute(
-                        "MATCH (l:Learning) WHERE l.id IN $ids "
-                        "RETURN l.id, l.source_artifact_ref",
-                        {"ids": learning_ids},
-                    )
-                    while res.has_next():
-                        row = res.get_next()
-                        m = out.get(str(row[0]))
-                        if m is not None:
-                            m["source_artifact_ref"] = str(row[1] or "")
-                    res = conn.execute(
-                        "MATCH (l:Learning)-[:validates]->(b:Bug) "
-                        "WHERE l.id IN $ids RETURN l.id, b.graph_layer",
-                        {"ids": learning_ids},
-                    )
-                    while res.has_next():
-                        row = res.get_next()
-                        m = out.get(str(row[0]))
-                        if m is not None and str(row[1] or "") == "canonical":
-                            m["canonical_bug_count"] += 1
-                    # S-KG-02: relates_to -> taxonomy endpoints (type+layer) so the
-                    # publication rule canonizes a non-bug Learning only with a
-                    # canonical S-KG-01 endpoint association (else fail-closed).
-                    res = conn.execute(
-                        "MATCH (l:Learning)-[:relates_to]->(t) "
-                        "WHERE l.id IN $ids RETURN l.id, label(t), t.graph_layer",
-                        {"ids": learning_ids},
-                    )
-                    while res.has_next():
-                        row = res.get_next()
-                        m = out.get(str(row[0]))
-                        if m is not None:
-                            m["relates_to_endpoints"].append(
-                                (str(row[1] or ""), str(row[2] or "") or None)
-                            )
+            cypher_executor = get_kg_registry().cypher_executor
+            for ntype, ids in by_type.items():
+                result = cypher_executor.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{ntype}) WHERE n.id IN $ids "
+                    f"RETURN n.id, {layer_label_projection('n')}",
+                    {"ids": ids},
+                    max_rows=len(ids) or 1,
+                )
+                for row in result.get("rows", []):
+                    out[str(row[0])] = {
+                        "node_type": ntype,
+                        "graph_layer": str(row[1] or "legacy_unknown"),
+                        "source_artifact_ref": "",
+                        "canonical_bug_count": 0,
+                        "relates_to_endpoints": [],
+                    }
+            learning_ids = by_type.get("Learning") or []
+            if learning_ids:
+                result = cypher_executor.execute_read_only(
+                    board_id,
+                    "MATCH (l:Learning) WHERE l.id IN $ids "
+                    "RETURN l.id, l.source_artifact_ref",
+                    {"ids": learning_ids},
+                    max_rows=len(learning_ids) or 1,
+                )
+                for row in result.get("rows", []):
+                    m = out.get(str(row[0]))
+                    if m is not None:
+                        m["source_artifact_ref"] = str(row[1] or "")
+                result = cypher_executor.execute_read_only(
+                    board_id,
+                    "MATCH (l:Learning)-[:validates]->(b:Bug) "
+                    "WHERE l.id IN $ids RETURN l.id, b.graph_layer",
+                    {"ids": learning_ids},
+                    max_rows=10000,
+                )
+                for row in result.get("rows", []):
+                    m = out.get(str(row[0]))
+                    if m is not None and str(row[1] or "") == "canonical":
+                        m["canonical_bug_count"] += 1
+                # S-KG-02: relates_to -> taxonomy endpoints (type+layer) so the
+                # publication rule canonizes a non-bug Learning only with a
+                # canonical S-KG-01 endpoint association (else fail-closed).
+                result = cypher_executor.execute_read_only(
+                    board_id,
+                    "MATCH (l:Learning)-[:relates_to]->(t) "
+                    "WHERE l.id IN $ids RETURN l.id, label(t), t.graph_layer",
+                    {"ids": learning_ids},
+                    max_rows=10000,
+                )
+                for row in result.get("rows", []):
+                    m = out.get(str(row[0]))
+                    if m is not None:
+                        m["relates_to_endpoints"].append(
+                            (str(row[1] or ""), str(row[2] or "") or None)
+                        )
         except Exception as exc:
             logger.warning(
                 "outbox.reconcile_board_read_failed board=%s err=%s",
@@ -952,17 +954,12 @@ class OutboxWorker:
 
     @staticmethod
     def _board_graph_is_queryable(board_id: str) -> bool:
-        from okto_pulse.core.kg.schema import open_board_connection
-
         try:
-            with open_board_connection(board_id) as (_db, conn):
-                res = conn.execute("CALL SHOW_TABLES() RETURN name")
-                try:
-                    if res.has_next():
-                        res.get_next()
-                finally:
-                    if hasattr(res, "close"):
-                        res.close()
+            get_kg_registry().cypher_executor.execute_read_only(
+                board_id,
+                "CALL SHOW_TABLES() RETURN name",
+                max_rows=1,
+            )
             return True
         except Exception as exc:
             logger.warning(

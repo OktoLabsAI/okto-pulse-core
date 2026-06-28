@@ -33,6 +33,7 @@ from sqlalchemy.orm import selectinload
 
 from okto_pulse.core.models.db import (
     AmendmentHotfixRevision,
+    Board,
     Card,
     ConsolidationQueue,
     Ideation,
@@ -73,7 +74,7 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     LockOwnerProbe,
     SafeWriteLifecycleStatus,
 )
-from okto_pulse.core.kg.schema import apply_ladybug_lifecycle_step
+from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_NONE,
@@ -162,7 +163,7 @@ def _apply_board_graph_lifecycle_after_commit(
     """
 
     lifecycle = KGSafeWriteLifecycle(
-        step_adapter=apply_ladybug_lifecycle_step,
+        step_adapter=get_kg_registry().safe_write_step_adapter,
         owner_probe=LockOwnerProbe(is_active_owner=_worker_owner_probe),
         health_probe=HealthProbe(classify=_worker_health_probe),
     )
@@ -1005,7 +1006,10 @@ async def _process_queue_entry(
         logger.warning(
             "%s not found: %s", entry.artifact_type, entry.artifact_id,
         )
-        return False
+        # Stale queue entries can survive deleted/corrupted legacy artifacts.
+        # Retrying cannot recreate the source row, and promoting this to
+        # canonical debt pollutes KG health with a non-replayable item.
+        return True
 
     worker_result = _run_deterministic_worker(entry, artifact)
     worker_result = await _materialize_lineage_endpoint_nodes(
@@ -1646,60 +1650,75 @@ class ConsolidationWorker:
                 error_text = remediation.structured_message
 
         correlation_id = uuid.uuid4().hex
+        entry_id = entry.id
+        entry_board_id = entry.board_id
+        entry_artifact_type = entry.artifact_type
+        entry_artifact_id = entry.artifact_id
+        entry_triggered_at = entry.triggered_at
+        entry_worker_id = entry.worker_id
         try:
             classification = await _classify_queue_entry_source_for_debt(db, entry)
-            default_to_canonical_debt = (
-                classification is None
-                and entry.artifact_type in {"spec", "refinement"}
-            )
             is_canonical_failure = (
-                default_to_canonical_debt
-                or (
-                    classification is not None
-                    and classification.graph_layer == GRAPH_LAYER_CANONICAL
-                    and classification.maturity_status == MATURITY_CANONICAL_ELIGIBLE
-                )
+                classification is not None
+                and classification.graph_layer == GRAPH_LAYER_CANONICAL
+                and classification.maturity_status == MATURITY_CANONICAL_ELIGIBLE
             )
+            if is_canonical_failure:
+                board_exists = await db.get(Board, entry_board_id) is not None
+                if not board_exists:
+                    logger.warning(
+                        "canonical_debt.skipped_missing_board board=%s "
+                        "artifact=%s:%s",
+                        entry_board_id, entry_artifact_type, entry_artifact_id,
+                    )
+                    is_canonical_failure = False
             if is_canonical_failure:
                 debt_hash = hashlib.sha256(
                     "|".join([
-                        entry.board_id,
-                        entry.artifact_type,
-                        entry.artifact_id,
-                        entry.triggered_at.isoformat() if entry.triggered_at else "",
+                        entry_board_id,
+                        entry_artifact_type,
+                        entry_artifact_id,
+                        entry_triggered_at.isoformat() if entry_triggered_at else "",
                     ]).encode("utf-8")
                 ).hexdigest()
                 await upsert_canonical_debt(
                     db,
-                    board_id=entry.board_id,
-                    artifact_type=entry.artifact_type,
-                    artifact_id=entry.artifact_id,
-                    source_ref=f"{entry.artifact_type}:{entry.artifact_id}",
+                    board_id=entry_board_id,
+                    artifact_type=entry_artifact_type,
+                    artifact_id=entry_artifact_id,
+                    source_ref=f"{entry_artifact_type}:{entry_artifact_id}",
                     content_hash=debt_hash,
                     target_status="canonical_consolidation",
                     canonical_state="failed",
                     failure_reason="consolidation_failed",
                     last_error=error_text,
-                    owner_agent_id=entry.worker_id or AGENT_ID,
+                    owner_agent_id=entry_worker_id or AGENT_ID,
                     correlation_id=correlation_id,
-                    queue_ref=entry.id,
-                    graph_layer=(
-                        classification.graph_layer
-                        if classification is not None
-                        else GRAPH_LAYER_CANONICAL
-                    ),
-                    maturity_status=(
-                        classification.maturity_status
-                        if classification is not None
-                        else MATURITY_CANONICAL_ELIGIBLE
-                    ),
+                    queue_ref=entry_id,
+                    graph_layer=classification.graph_layer,
+                    maturity_status=classification.maturity_status,
                 )
         except Exception as debt_exc:
             logger.error(
                 "canonical_debt.persist_failed board=%s artifact=%s:%s err=%s",
-                entry.board_id, entry.artifact_type, entry.artifact_id,
+                entry_board_id, entry_artifact_type, entry_artifact_id,
                 debt_exc,
             )
+            # A failed flush leaves SQLAlchemy sessions in PendingRollback.
+            # Roll back and reload the queue row before updating attempts/DLQ.
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception(
+                    "canonical_debt.persist_rollback_failed board=%s "
+                    "artifact=%s:%s",
+                    entry_board_id, entry_artifact_type, entry_artifact_id,
+                )
+                return
+            reloaded = await db.get(ConsolidationQueue, entry_id)
+            if reloaded is None:
+                return
+            entry = reloaded
 
         entry.attempts = (entry.attempts or 0) + 1
         entry.last_error = error_text

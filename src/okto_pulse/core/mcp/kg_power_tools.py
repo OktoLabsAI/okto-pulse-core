@@ -243,7 +243,7 @@ okto-pulse://reference/tool-docs/kg."""
     ) -> str:
         """Natural-language search over a board's knowledge graph using hybrid search
 (embedding + HNSW + traversal), falling back to string match if embedding is
-unavailable. Deterministic — invokes NO LLM (local sentence-transformers or stub).
+unavailable. Deterministic — invokes NO LLM (configured embedding adapter or stub).
 Args include nl_query, limit (default 20), min_confidence (default 0.5), and optional
 since/until ISO-8601 bounds on created_at. graph_layer (canonical|working|all,
 default canonical) scopes results by KG layer; an invalid value fails closed with a

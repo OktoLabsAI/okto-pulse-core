@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import re
-from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -486,47 +485,31 @@ def tool_docs_uri(tool_name: str) -> str:
 # SESSION-BASED AUTH (API key extracted from request)
 # ============================================================================
 
-# Per-request api_key, async-safe via ContextVar. Spec 23350275 (Fix C):
-# isolates identity between concurrent MCP requests when the server is mounted
-# as a sub-app on the FastAPI principal. The previous module-level global was
-# safe only in the single-request-at-a-time MCP standalone.
-_active_api_key: ContextVar[str | None] = ContextVar("mcp_active_api_key", default=None)
+_MCP_CREDENTIAL_SCOPE_KEY = "okto_pulse.mcp_credential"
 
 
 class ApiKeySessionMiddleware:
-    """ASGI middleware that extracts api_key from query param or header."""
+    """ASGI middleware that stores the MCP credential on the request scope."""
 
     def __init__(self, app: ASGIApp):
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        token = None
         if scope["type"] == "http":
             request = Request(scope)
-            # Extract API key from query param, X-API-Key header, or Authorization Bearer
-            api_key = (
-                request.query_params.get("api_key")
-                or request.headers.get("x-api-key", "")
-                or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
-            )
-            if api_key:
-                token = _active_api_key.set(api_key)
+            credential = extract_mcp_credential_from_request(request)
+            if credential is not None:
+                scope[_MCP_CREDENTIAL_SCOPE_KEY] = credential
 
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            if token is not None:
-                _active_api_key.reset(token)
+        await self.app(scope, receive, send)
 
 
 # ----------------------------------------------------------------------------
 # R08-A: transport -> McpCredential conversion shims (tr_7d105709).
 #
-# Additive, register-before-remove: these convert the inbound transports into the
-# pure ``McpCredential`` port DTO WITHOUT changing the observable behaviour of
-# the middleware / ``_get_authenticated_agent`` / ``_get_agent_ctx`` below — the
-# ``_active_api_key`` ContextVar remains the transitional per-request carrier
-# (retired in R08-C). They are available for the McpAuthenticator port wiring.
+# These convert the inbound transports into the pure ``McpCredential`` port DTO
+# and keep it attached to the ASGI request scope. No Okto-owned ContextVar or
+# process-global credential carrier participates in request authentication.
 # ----------------------------------------------------------------------------
 def extract_mcp_credential_from_request(request):
     """Build an ``McpCredential`` from a Starlette ``Request`` preserving the
@@ -541,17 +524,34 @@ def extract_mcp_credential_from_request(request):
     )
 
 
-def active_api_key_credential():
-    """Wrap the per-request active api_key (``_active_api_key`` ContextVar shim)
-    as an ``McpCredential`` for the McpAuthenticator port. Returns ``None`` when no
-    key is active. ``source='unknown'`` because the originating transport is not
-    preserved past the middleware. The legacy helpers below are UNCHANGED."""
-    from okto_pulse.core.ports import McpCredential
+def request_scope_mcp_credential(scope):
+    """Return the credential attached to an ASGI request scope, if any."""
+    return scope.get(_MCP_CREDENTIAL_SCOPE_KEY)
 
-    raw = _active_api_key.get()
-    if not raw:
+
+def active_api_key_credential():
+    """Resolve the current MCP credential from FastMCP's HTTP request context.
+
+    The credential is request-scoped: ``ApiKeySessionMiddleware`` stores the
+    transport-extracted :class:`McpCredential` on the ASGI ``scope`` and this
+    shim reads it through FastMCP's current request provider. If the middleware is
+    absent, the function can still extract from the active request headers/query;
+    if no request context exists it fails closed with ``None``.
+    """
+    try:
+        from fastmcp.server.dependencies import get_http_request
+    except ImportError:
         return None
-    return McpCredential(source="unknown", value=raw)
+
+    try:
+        request = get_http_request()
+    except RuntimeError:
+        return None
+
+    credential = request_scope_mcp_credential(request.scope)
+    if credential is not None:
+        return credential
+    return extract_mcp_credential_from_request(request)
 
 
 # ============================================================================
@@ -644,17 +644,8 @@ def invalidate_agent_cache(agent_id: str) -> None:
         del _permission_cache[k]
 
 
-async def _get_authenticated_agent():
-    """Get the agent authenticated via the active API key from the request.
-
-    R08-C: the per-request credential is resolved through the R08-A shim
-    ``active_api_key_credential()`` (the ``McpCredential`` port DTO) instead of
-    reading the ``_active_api_key`` ContextVar directly. The ContextVar STAYS
-    (register-before-remove, DEC-R08C-01 / FR6) — read ONLY by
-    ``active_api_key_credential`` and set/reset by ``ApiKeySessionMiddleware`` —
-    until the request_scope_provider phase retires it. Signature/return are
-    UNCHANGED, so every facade call-site is migrated without being touched."""
-    credential = active_api_key_credential()
+async def _authenticate_mcp_credential(credential):
+    """Resolve an agent from a request-scoped MCP credential."""
     if credential is None:
         return None
     async with get_db_for_mcp() as db:
@@ -664,18 +655,17 @@ async def _get_authenticated_agent():
         return agent
 
 
-async def _get_agent_ctx(board_id: str) -> AgentContext | None:
-    """Authenticate agent from active API key and verify board access.
+async def _get_authenticated_agent():
+    """Get the agent authenticated via the current request-scoped MCP key."""
+    return await _authenticate_mcp_credential(active_api_key_credential())
 
-    Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s cache.
-    Falls back to legacy flat permissions if permission_flags is not set.
 
-    R08-C: the credential is resolved through the R08-A shim
-    ``active_api_key_credential()`` (McpCredential port DTO) rather than reading
-    ``_active_api_key`` directly (register-before-remove, DEC-R08C-01). The
-    permission cache + board ACL resolution below are UNCHANGED, so the ~227
-    facade call-sites are migrated automatically without edits."""
-    credential = active_api_key_credential()
+async def _get_agent_ctx_for_credential(board_id: str, credential) -> AgentContext | None:
+    """Authenticate a provided MCP credential and verify board access.
+
+    Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s
+    cache. Falls back to legacy flat permissions if permission_flags is not set.
+    """
     if credential is None:
         return None
     async with get_db_for_mcp() as db:
@@ -730,6 +720,11 @@ async def _get_agent_ctx(board_id: str) -> AgentContext | None:
         )
         _cache_set(agent.id, board_id, ctx)
         return ctx
+
+
+async def _get_agent_ctx(board_id: str) -> AgentContext | None:
+    """Authenticate agent from the current request-scoped MCP key."""
+    return await _get_agent_ctx_for_credential(board_id, active_api_key_credential())
 
 
 async def _log_card_activity(
@@ -2675,30 +2670,15 @@ async def okto_pulse_get_task_context(
     profile: str = "summary",
 ) -> str:
     """
-    Get the execution context for a task card: the card + its spec's structured
-    requirements (FRs/TRs/ACs/scenarios/BRs/contracts/decisions), the card's
-    linked test scenarios, validations, knowledge, mockups, architecture, Q&A.
+    Task card context: card body, linked spec requirements/scenarios/BRs/contracts,
+    validations, resources and Q&A. Use `summary` for exploration and `profile="full"`
+    before card work or status-changing moves.
 
-    `profile` (R2): `summary` (default) keeps the unique content an agent needs
-    (card body + spec requirement texts + this card's scenarios + validations) and
-    deduplicates resolved references; `full`/`legacy` return the complete prior
-    payload. **Before doing card work or a status-changing move, call with
-    `profile=full`** (see okto-pulse://reference/projection-profiles).
-
-    For `card_type='test'` the payload includes a read-only `test_card_operational_flow`
-    block (R4): test cards are NOT subject to the task-validation gate — complete them
-    by setting each linked scenario to automated/passed via
-    `okto_pulse_update_test_scenario_status`, then `okto_pulse_move_card(status='done')`.
-    The block lists `linked_scenarios`, `pending_scenarios`, `would_block_done` and the
-    operational `next_action` (it never bypasses or auto-skips a scenario).
-
-    Every payload also carries a read-only `gate_readiness` block (R4-IMP4): the board's
-    `cognitive_enforcement_active`/`cognitive_enforcement_mode` (advisory|enforced), the
-    card's own `cognitive_readiness` verdict (with an enforcement-aware `would_block_done`
-    — a `blocking` verdict under an advisory policy does NOT block done), the single
-    `active_gate` relevant to completing the card (`gate_type`/`required_tool`/
-    `would_block_done`) and a `consistency` self-check. It mirrors what the done-gate
-    enforces; it never induces a skip (`mutation_allowed=false`)."""
+    Test cards expose `test_card_operational_flow`: update linked scenarios with
+    `okto_pulse_update_test_scenario_status`, then move the card to done; task
+    validation is not used. `gate_readiness` mirrors the active done-gate and
+    cognitive-readiness verdict without mutating or skipping anything.
+    Full docs: okto-pulse://reference/tool-docs/misc."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6704,22 +6684,13 @@ async def okto_pulse_get_spec_context(
     profile: str = "summary",
 ) -> str:
     """
-    Get the consolidated context of a spec: requirements, test scenarios, business
-    rules, API contracts, IRs, ORs, decisions, mockups, knowledge, Q&A,
-    evaluations, cards, and sprints.
+    Consolidated spec context: requirements, scenarios, rules, contracts, IR/OR,
+    decisions, resources, Q&A, evaluations, cards and sprints. Use `summary` for
+    exploration and `profile="full"` before evaluating, moving, or deriving cards.
 
-    `profile` (R2): `summary` (default) keeps the structured requirement content
-    and omits semantically-empty fields; `full`/`legacy` return the complete prior
-    payload. **Before evaluating, moving, or deriving cards from a spec, call with
-    `profile=full`** (see okto-pulse://reference/projection-profiles).
-
-    The payload carries a read-only `gate_readiness` block (R4-IMP4): the board's
-    `cognitive_enforcement_active`/`cognitive_enforcement_mode` plus the spec's OWN
-    transition gates in `active_gates` (e.g. `spec_validation` when the spec is
-    `approved` and the board requires validation — derived from the same builder
-    `okto_pulse_move_spec` raises). Cognitive readiness is per-card and is NOT
-    aggregated here (`note` says so); call `okto_pulse_get_task_context` for each
-    card's verdict. `mutation_allowed=false`; a `consistency` self-check is included."""
+    Includes read-only `gate_readiness` for spec transition gates. Cognitive
+    readiness is per-card; call `okto_pulse_get_task_context` for card verdicts.
+    Full docs: okto-pulse://reference/tool-docs/misc."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13621,20 +13592,15 @@ async def okto_pulse_transition_amendment_revision(
     lineage_state: str = "",
 ) -> str:
     """
-    Transition a Path B amendment's lifecycle (status and/or lineage_state) for a
-    bug (twin of POST .../amendment-revisions/{amendment_id}/lifecycle). This is the
-    agent-facing step that promotes a created/associated amendment toward
-    approved/done + complete lineage so the bug gate can reach path_b_ready.
+    Transition a Path B amendment status/lineage for a bug. It promotes a created
+    or associated amendment toward complete lineage and approved/done status, but
+    never confirms coverage.
 
-    Fail-closed: unknown status/lineage are rejected (invalid_amendment_status /
-    invalid_lineage_state); lineage_state=complete needs declared regression
-    artifacts + the bug's authoritative origin task (incomplete_lineage_artifacts);
-    approved/done need lineage complete (cannot_promote_incomplete_lineage);
-    cancelled/superseded are TERMINAL and cannot be promoted back
-    (terminal_amendment_revision) — open a new revision. It NEVER writes coverage:
-    that stays validator-only via okto_pulse_confirm_amendment_coverage, so before
-    the validator confirms, the bug stays coverage_pending (this tool does not close
-    it)."""
+    Unknown status/lineage fail closed; complete lineage needs declared regression
+    artifacts and authoritative origin/affected tasks; approved/done need complete
+    lineage; cancelled/superseded are terminal. Validator coverage still uses
+    `okto_pulse_confirm_amendment_coverage`.
+    Full docs: okto-pulse://reference/tool-docs/card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -14586,25 +14552,14 @@ async def okto_pulse_kg_evaluate_bug_cognitive_closure(
     revisit_at: str | None = None,
 ) -> str:
     """
-    Bug cognitive-closure evidence evaluation — MCP twin of
-    `POST /api/v1/bugs/{bug_id}/cognitive-closure/evaluate` (api_8c29ce5d).
+    Read-only bug cognitive-closure evaluation. Mirrors the REST/UI classifier
+    and central CognitiveReadinessService verdict; this tool does not recompute
+    precedence.
 
-    Runs the SAME classification as the REST/UI path and obtains
-    readiness_effect / blocking / precedence_explanation from the central
-    CognitiveReadinessService (mirrored, never recomputed).
-
-    R5-IMP1 — a ``requested_action`` of ``skip`` / ``no_action`` is a HUMAN-only
-    decision: this agent-facing tool fails closed with ``human_control_required``
-    (mutation_allowed=false, state_changed=false) and never writes the ledger. An
-    agent should surface the read-only readiness state and request a human
-    decision; a human applies the skip/no_action via the authorized UI / human
-    REST control. ``evaluate`` (read-only classification) and ``create_learning``
-    (no skip persistence) stay agent-facing. On the human REST path the
-    skip/no_action write keeps its refusals: 400 revisit_at_required, 409
-    technical_debt_cannot_be_skipped (an open DLQ / canonical_debt for the
-    normalized artifact_id is never masked), and a missing bug node never
-    fabricates a relationship.
-    """
+    Agent-facing `skip`/`no_action` fails closed with `human_control_required`
+    and never writes the ledger. Human skip/no_action remains on the authorized
+    UI/REST path and cannot mask technical debt.
+    Full docs: okto-pulse://reference/tool-docs/kg."""
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -14769,27 +14724,14 @@ async def okto_pulse_kg_list_cognitive_readiness_items(
     kg_generation_id: str | None = None,
 ) -> str:
     """
-    List the board's cognitive readiness signals — MCP twin of the S3.1
-    read-model (`GET /api/v1/kg/{board_id}/cognitive-readiness/items`).
+    List board cognitive-readiness rows: cognitive items, canonical debt and
+    technical DLQ, reconciled by normalized artifact_id. Rows mirror the central
+    CognitiveReadinessService verdict; cognitive `reason_code` stays distinct
+    from technical `error_cause`.
 
-    Read-only projection of cognitive items + canonical debt + technical DLQ,
-    reconciled by normalized artifact_id (card:/bug: collapse, aggregated
-    `aliases`). Each row mirrors the central CognitiveReadinessService verdict
-    verbatim (`readiness_effect` / `precedence_explanation` / `blocking`) — never
-    recomputed. A cognitive `reason_code` is kept distinct from a technical
-    `error_cause` (`technical_dlq` / `canonical_debt_open`).
-
-    `would_block_done` is enforcement-aware: `blocking` alone does NOT mean the
-    done-gate blocks — only GATE_BLOCKING_TIERS under an active board policy do
-    (so a task/test cognitive-pending shows blocking_cognitive but
-    would_block_done=False).
-
-    Filters (agent-safe, bounded): `signal`
-    (all|cognitive_pending|skipped|revisit_required|open_canonical_debt|
-    terminal_history|dlq), `artifact_id` (normalized), `source_ref`,
-    `reason_code`, `status`, `search`, `limit` (<=200), `offset`.
-    Invalid `signal` -> 400 invalid_filter; source read failure -> 503.
-    """
+    `would_block_done` is enforcement-aware. Filters: signal, artifact_id,
+    source_ref, reason_code, status, search, limit<=200, offset.
+    Full docs: okto-pulse://reference/tool-docs/kg."""
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -14882,24 +14824,11 @@ async def okto_pulse_kg_record_cognitive_skip(
     kg_generation_id: str | None = None,
 ) -> str:
     """
-    Record a cognitive skip / no_action via the CENTRAL ledger-only write-path
-    (CognitiveReadinessService.record_cognitive_skip). NEVER touches the KG
-    worker / node / edge / connectivity guard.
-
-    Rejects BEFORE any write with canonical errors (tr_a5239f63):
-      - 400 invalid_reason_code — reason outside the closed cognitive registry
-        (a technical signal like technical_dlq is NEVER a selectable reason_code);
-      - 400 revisit_at_required — a revisit-required reason without a valid,
-        future revisit_at;
-      - 409 technical_debt_cannot_be_skipped — an open DLQ / canonical_debt for
-        the same normalized artifact_id (a skip can never mask technical debt).
-
-    R5-IMP1 — HUMAN-only control: recording a cognitive skip / no_action is a
-    human decision and is NOT applicable from the agent-facing MCP surface. This
-    tool fails closed with ``human_control_required`` (mutation_allowed=false,
-    state_changed=false) and never writes the cognitive ledger. A human operator
-    records the skip via the IDE control / the human REST surface.
-    """
+    Agent-facing cognitive skip/no_action control. This surface is HUMAN-only:
+    it fails closed with `human_control_required`, performs no state change and
+    never writes the ledger or KG. Human REST/UI keeps the canonical validations
+    for invalid reason, missing revisit date and technical debt masking.
+    Full docs: okto-pulse://reference/tool-docs/kg."""
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -15467,7 +15396,9 @@ async def okto_pulse_kg_migrate_schema(
     if not board_id and not all_boards:
         return json.dumps({"error": "missing_board_or_all_boards"})
 
-    from okto_pulse.core.kg.schema import migrate_schema_for_board
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    schema_manager = get_kg_registry().graph_schema_manager
 
     if all_boards:
         # Iterar todos os boards conhecidos via SQLite.
@@ -15480,7 +15411,7 @@ async def okto_pulse_kg_migrate_schema(
             board_pairs = list(rows.all())
         for bid, _bname in board_pairs:
             try:
-                summary = migrate_schema_for_board(bid)
+                summary = await schema_manager.migrate(bid)
                 results.append(summary)
             except Exception as exc:
                 results.append({
@@ -15493,7 +15424,7 @@ async def okto_pulse_kg_migrate_schema(
         return json.dumps({"results": results}, default=str)
 
     # Single board path
-    summary = migrate_schema_for_board(board_id)
+    summary = await schema_manager.migrate(board_id)
     return json.dumps(summary, default=str)
 
 
@@ -15925,7 +15856,7 @@ async def okto_pulse_kg_rebuild_run(
         KGSafeWriteLifecycle,
         LockOwnerProbe,
     )
-    from okto_pulse.core.kg.schema import apply_ladybug_lifecycle_step
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
 
     lock = KGSingleWriterLock(base_dir=_REBUILD_BASE_DIR / "locks")
@@ -15935,7 +15866,7 @@ async def okto_pulse_kg_rebuild_run(
         return m is not None and m.owner_token == owner_token
 
     safe_lifecycle = KGSafeWriteLifecycle(
-        step_adapter=apply_ladybug_lifecycle_step,
+        step_adapter=get_kg_registry().safe_write_step_adapter,
         owner_probe=LockOwnerProbe(is_active_owner=_always_owner),
         health_probe=HealthProbe(classify=lambda b, g, status, step: "at_risk"),
     )

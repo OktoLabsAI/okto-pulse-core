@@ -507,40 +507,21 @@ class TestCrossPageEdges:
 
     def test_fetch_edges_includes_edges_with_one_endpoint_in_page(self, monkeypatch):
         from okto_pulse.core.api import kg_routes
+        from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-        class _Result:
-            def __init__(self, rows):
-                self._rows = list(rows)
-
-            def has_next(self):
-                return bool(self._rows)
-
-            def get_next(self):
-                return self._rows.pop(0)
-
-            def close(self):
-                pass
-
-        class _Conn:
-            def execute(self, query):
+        class _CypherExecutor:
+            def execute_read_only(self, _board_id, query, _params=None, **_kwargs):
                 if ":belongs_to" in query and "(a:Requirement)" in query:
-                    return _Result([
-                        ("req-in-page", "entity-OUT-of-page", 0.9),
-                        ("req-other-page", "entity-in-page", 0.8),
-                        ("req-out", "entity-out", 0.7),
-                    ])
-                return _Result([])
+                    return {
+                        "rows": [
+                            ("req-in-page", "entity-OUT-of-page", 0.9),
+                            ("req-other-page", "entity-in-page", 0.8),
+                            ("req-out", "entity-out", 0.7),
+                        ]
+                    }
+                return {"rows": []}
 
-        class _BC:
-            def __enter__(self):
-                return (None, _Conn())
-
-            def __exit__(self, *a):
-                return None
-
-        import okto_pulse.core.kg.schema as schema
-
-        monkeypatch.setattr(schema, "open_board_connection", lambda _bid: _BC())
+        monkeypatch.setattr(get_kg_registry(), "cypher_executor", _CypherExecutor())
         monkeypatch.setattr(
             kg_routes,
             "_relation_pairs",

@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 #: Bump when the ledger schema or its accepted-exception set changes.
-LEDGER_VERSION = "R05-E.1"
+LEDGER_VERSION = "R05-E.2"
 
 #: Disposition of a non-agnostic technical token (br_913a9a9a / fr_4f86d9f0).
 DependencyClassification = Literal[
@@ -97,8 +97,7 @@ class LedgerEntry:
     #: Alternative spellings (PyPI name vs import root) that map to this entry.
     aliases: tuple[str, ...] = ()
     #: ``True`` when the token is declared as an optional-dependency extra rather
-    #: than a default dependency (e.g. ``sentence-transformers`` in
-    #: ``kg-embeddings``).
+    #: than a default dependency.
     optional_extra: bool = False
 
     def matches(self, candidate: str) -> bool:
@@ -114,12 +113,10 @@ class LedgerEntry:
 #: "requests/chardet" telemetry pair — six logical exceptions, seven tokens.
 CANONICAL_TEMPORARY_EXCEPTION_TOKENS: tuple[str, ...] = (
     "aiosqlite",
-    "ladybug",
     "numpy",
     "requests",
     "chardet",
     "apscheduler",
-    "sentence-transformers",
 )
 
 
@@ -265,29 +262,27 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
             transitive_consumer="telemetry/requests HTTP transport charset detection (governed by #10)",
             expected_source_import_roots=(),
         ),
-        # --- temporary exceptions: direct dep AND real runtime import ----------
+        # --- transferred to Community: must not reappear in core --------------
         LedgerEntry(
             token="ladybug",
-            classification="temporary_exception",
+            classification="community_owned",
             kind="dependency_and_import",
-            owner_wave="#06_kg_ports (Onda C / deferred_to_05)",
-            current_owner="okto-pulse-core/kg",
+            owner_wave="#06_kg_ports + #12_kg_runtime_extraction",
+            current_owner="okto-pulse-community/adapters",
             reason=(
-                "Embedded graph engine. KG providers import it directly "
-                "(kg/schema.py, kg/global_discovery/schema.py) until Onda C "
-                "relocates Kuzu/Ladybug to the edition. decision_6669f1a1: Ladybug "
-                "may stay embedded during Phase 1 while consumers depend on the "
-                "ports."
+                "Embedded graph engine implementation. It is now owned by the "
+                "Community KG runtime adapters; the core exposes only board graph "
+                "runtime/transaction/store/lifecycle ports and schema contracts."
             ),
             removal_criterion=(
-                "Remove once all KG writes go through the SemanticGraphStore port "
-                "and direct kg.schema consumption is gone (Onda C / deferred_to_05); "
-                "criterion: `grep ladybug src/okto_pulse/core` returns empty."
+                "Already transferred: Ladybug must be absent from the core default "
+                "manifest/lock and from runtime imports under src/okto_pulse/core. "
+                "Any reintroduction is a core-contamination violation."
             ),
             validation_oracle=(
-                "dependency_conformance accepts ladybug while its import roots are "
-                "ledgered; Onda C relocation gated by the deferred_to_05 "
-                "reconciliation (test_r05a / test_runtime_composition_03)."
+                "dependency_conformance reports ladybug as community_owned and "
+                "blocks manifest, lock, wheel or source reintroduction in the core; "
+                "the concrete implementation is tested through Community adapters."
             ),
             direct_dep_no_import=False,
             transitive_consumer=None,
@@ -319,30 +314,32 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
         ),
         LedgerEntry(
             token="sentence-transformers",
-            classification="temporary_exception",
+            classification="community_owned",
             kind="dependency_and_import",
-            owner_wave="#13_llm_embedding_rerank",
-            current_owner="okto-pulse-core/kg",
+            owner_wave="R-P2-07 (#13_llm_embedding_rerank)",
+            current_owner="okto-pulse-community/adapters",
             reason=(
-                "In-process embedding + cross-encoder reranker. Optional "
-                "kg-embeddings extra, imported lazily in kg/embedding.py and "
-                "kg/rerank/cross_encoder.py. Moves to the Community edition with the "
-                "EmbeddingProvider/Reranker adapters (#13)."
+                "Concrete embedding and cross-encoder provider dependency. The "
+                "core exposes EmbeddingProvider/Reranker ports and deterministic "
+                "fallbacks only; Community owns the sentence-transformers runtime."
             ),
             removal_criterion=(
-                "Remove the kg-embeddings extra once the #13 embedding/rerank "
-                "adapters are Community-owned via composition and the deterministic "
-                "Stub stays as the core offline fallback."
+                "Already transferred by R-P2-07: sentence-transformers must be "
+                "absent from the core manifest/lock and from runtime imports under "
+                "src/okto_pulse/core. Any reintroduction is a core-contamination "
+                "violation."
             ),
             validation_oracle=(
-                "dependency_conformance accepts sentence-transformers (optional "
-                "extra) while its import root is ledgered; #13 governs the move."
+                "dependency_conformance reports sentence-transformers as "
+                "community_owned and blocks manifest, lock, wheel or source "
+                "reintroduction in the core; Community adapters provide the "
+                "concrete providers."
             ),
             direct_dep_no_import=False,
             transitive_consumer=None,
             expected_source_import_roots=("sentence_transformers",),
             aliases=("sentence_transformers",),
-            optional_extra=True,
+            optional_extra=False,
         ),
     ]
     return tuple(entries)

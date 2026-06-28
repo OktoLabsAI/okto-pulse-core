@@ -1,11 +1,9 @@
 """R05-C (CORE target) — kg.schema import classification gate as a blocking
-oracle with the register-before-remove ledger.
+oracle after the register-before-remove ledger was retired.
 
   ts_fe24d781 — the classification gate is deterministic, the blocking oracle
-                PASSES over the real core (every blocking consumer is either an
-                embedded adapter or a ledgered temporary exception), the embedded
-                Kùzu runtime is ledgered (adapter_internal_legitimate, NOT
-                removed), and a NEW unledgered consumer BLOCKS.
+                PASSES over the real core (zero direct kg.schema runtime
+                importers remain), and a NEW consumer BLOCKS.
   ts_fe24d781 — (ruling option 2) surfaces with a DIRECT, behaviour-equivalent
                 #06 port were MIGRATED off the ledger: services/main.py bootstrap
                 → GraphSchemaManager.ensure_bootstrapped, AND every ASYNC +
@@ -39,68 +37,82 @@ def test_ts_fe24d781_gate_deterministic_blocking_oracle_with_ledger():
     assert r1.ledgered_exceptions == r2.ledgered_exceptions
     assert r1.ledger_detail == r2.ledger_detail
 
-    # Blocking oracle PASSES: no out-of-allowlist blocking importer remains —
-    # every production KG consumer is either an embedded adapter or ledgered.
+    # Blocking oracle PASSES: no production KG consumer imports the legacy
+    # schema runtime anymore.
     assert r1.ok is True
     assert r1.violations == []
+    assert r1.importers == []
 
-    # The ledger is explicit + complete (every ledgered file is present).
-    assert set(r1.ledgered_exceptions) == set(LEDGERED_EXCEPTIONS)
+    # The R05-C ledger has been retired: the real core has no schema importers.
+    assert LEDGERED_EXCEPTIONS == frozenset()
+    assert r1.ledgered_exceptions == []
     # Migrated off the ledger: services/main.py (37->36), then the class-A
-    # GraphTransaction migrations dropped api/kg_tick.py +
-    # kg/canonical_learning_partition.py (36->34). R-P2-04 then migrated six
-    # additional business consumers to CypherExecutor / GraphTransaction ports.
-    assert len(r1.ledgered_exceptions) == 28
+    # GraphTransaction migrations dropped api/kg_routes.py, api/kg_tick.py +
+    # kg/canonical_learning_partition.py. R-P2-04 then migrated six additional
+    # business consumers to CypherExecutor / GraphTransaction ports. R-P2-05 then
+    # moved safe-write/schema lifecycle call sites behind registry ports and
+    # outbox board reads behind CypherExecutor, board cascade wipes behind
+    # GraphTransaction, orphan integrity scans behind graph ports, and cognitive
+    # preservation behind CypherExecutor/GraphTransaction.
+    assert len(r1.ledgered_exceptions) == 0
     for migrated in {
+        "api/kg_rebuild.py",
         "services/main.py",
+        "api/kg_routes.py",
         "api/kg_tick.py",
+        "events/handlers/cognitive_extraction.py",
+        "events/handlers/kg_decay_tick.py",
+        "events/handlers/kg_hit_recompute.py",
+        "kg/__init__.py",
+        "kg/board_rebuild_adapter.py",
+        "kg/canonical_partition_integrity.py",
+        "kg/canonical_stale_reconciler.py",
+        "kg/health.py",
+        "kg/kg_service.py",
+        "kg/cognitive_closeout_production.py",
+        "kg/canonical_cognitive_preservation.py",
+        "kg/global_discovery/clustering.py",
+        "kg/global_discovery/outbox_worker.py",
+        "kg/governance.py",
+        "kg/hybrid_search/kuzu_adapter.py",
+        "kg/orphan_integrity.py",
+        "kg/primitives.py",
+        "kg/rebuild_service.py",
+        "kg/search.py",
         "kg/canonical_learning_partition.py",
+        "kg/schema_layer_guard.py",
+        "kg/stale_canonical_parity.py",
+        "kg/workers/consolidation.py",
+        "mcp/server.py",
         "events/handlers/cancellation_decay.py",
         "events/handlers/card_boost_recompute.py",
         "kg/tier_power.py",
         "kg/workers/cognitive_closeout.py",
         "services/cognitive_effectiveness_service.py",
         "services/discovery_executor.py",
+        "services/kg_health_service.py",
     }:
         assert migrated not in LEDGERED_EXCEPTIONS
 
-    # The embedded Kùzu runtime stays ledgered (adapter_internal_legitimate) —
-    # NOT removed (R05-C constraint).
+    # R-P2-05 removed the embedded Kuzu provider modules from core; no provider
+    # under kg/providers/embedded may remain as an adapter-internal importer.
     embedded = [i for i in r1.importers if i.file.startswith("kg/providers/embedded/")]
-    assert embedded
-    assert all(i.verdict == "adapter_internal_legitimate" for i in embedded)
+    assert embedded == []
 
-    # Ledgered production consumers are non-blocking but recorded with the R05-C
-    # REAL-exception rationale (register-before-remove).
+    # No ledgered production consumer remains.
     ledgered = [i for i in r1.importers if i.file in LEDGERED_EXCEPTIONS]
-    assert ledgered
-    assert all(not i.blocking and i.verdict == "migration_allowlisted" for i in ledgered)
-    assert any("ledgered REAL exception" in i.rationale for i in ledgered)
+    assert ledgered == []
 
 
 def test_ts_fe24d781_every_ledger_exception_has_r05e_removal_contract():
-    """The ruling's per-exception contract: owner / reason / target port /
-    OBJECTIVE R05-E removal criterion, one record per ledgered file."""
+    """The ruling's ledger is empty once every exception is migrated."""
     report = run_kg_schema_import_classification_gate()
 
     # One detail record per ledgered file present in the scan, in lockstep.
     assert {d["file"] for d in report.ledger_detail} == set(report.ledgered_exceptions)
     assert len(report.ledger_detail) == len(report.ledgered_exceptions)
 
-    for d in report.ledger_detail:
-        # Every required field is present and non-empty.
-        assert d["owner"].startswith("core")
-        assert d["target_port"] in {
-            "GraphTransaction",
-            "GraphSchemaManager",
-            "GraphLifecycle",
-            "GraphPathResolver",
-            "SemanticGraphStore",
-        }
-        assert d["reason"] and len(d["reason"]) > 20
-        # The removal criterion is OBJECTIVE: it names R05-E and a concrete trigger.
-        assert d["r05e_removal_criterion"].startswith("R05-E")
-        assert len(d["r05e_removal_criterion"]) > 20
+    assert report.ledger_detail == []
 
 
 def test_ts_fe24d781_migrated_surface_consumes_the_port_not_kg_schema():
@@ -122,9 +134,8 @@ def test_ts_fe24d781_migrated_surface_consumes_the_port_not_kg_schema():
 def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     """Ruling option 2: every ASYNC + simple-execute open_board_connection
     call-site (class A) was migrated to GraphTransaction.begin / scope.execute —
-    NOT left calling open_board_connection. Two files thereby left the ledger
-    entirely; api/kg_routes.py keeps 2 SYNC sites (class C) so it stays ledgered
-    but its async sites are now on the port."""
+    NOT left calling open_board_connection. ``api/kg_routes.py`` also migrated
+    its sync edge diagnostics to CypherExecutor, so it stays off the ledger."""
     import okto_pulse.core.api.kg_routes as kg_routes
     import okto_pulse.core.api.kg_tick as kg_tick
     import okto_pulse.core.kg.canonical_learning_partition as clp
@@ -135,18 +146,19 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
         assert "graph_transaction.begin" in src, mod.__name__
         assert "open_board_connection" not in src, mod.__name__
 
-    # kg_routes: the two async handlers consume the port; two sync helpers still
-    # use open_board_connection (class C, ledgered).
+    # kg_routes: the two async handlers consume the transaction port and the
+    # sync edge diagnostics consume CypherExecutor; no raw connection remains.
     routes_src = Path(inspect.getsourcefile(kg_routes)).read_text(encoding="utf-8")
     assert routes_src.count("graph_transaction.begin") == 2
     assert "scope.execute" in routes_src
+    assert "open_board_connection" not in routes_src
 
-    # The fully-migrated files are off the ledger; kg_routes stays (sync sites).
+    # The fully-migrated files are off the ledger.
     report = run_kg_schema_import_classification_gate()
     ledgered = set(report.ledgered_exceptions)
+    assert "api/kg_routes.py" not in ledgered
     assert "api/kg_tick.py" not in ledgered
     assert "kg/canonical_learning_partition.py" not in ledgered
-    assert "api/kg_routes.py" in ledgered
 
 
 def test_ts_fe24d781_p2_04_consumers_use_ports_not_raw_graph_connections():

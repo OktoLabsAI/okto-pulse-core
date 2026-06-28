@@ -326,62 +326,50 @@ def _fetch_edges_for_nodes(
     if not node_ids:
         return [], diagnostics
     try:
-        from okto_pulse.core.kg.schema import (
-            MULTI_REL_TYPES,
-            REL_TYPES,
-            open_board_connection,
-        )
+        from okto_pulse.core.kg.schema_contract import MULTI_REL_TYPES, REL_TYPES
+        from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
         rel_pairs = _relation_pairs(REL_TYPES, MULTI_REL_TYPES)
+        cypher_executor = get_kg_registry().cypher_executor
 
         edges = []
         seen: set[tuple[str, str, str]] = set()  # (rel, src, tgt) dedup
-        with open_board_connection(board_id) as (_db, conn):
-            for rel_name, from_type, to_type in rel_pairs:
-                diagnostics["edge_tables_scanned"] += 1
-                result = None
-                try:
-                    result = conn.execute(
-                        f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
-                        f"RETURN a.id, b.id, r.confidence "
-                        f"LIMIT 5000",
-                    )
-                    while result.has_next():
-                        row = result.get_next()
-                        src, tgt = row[0], row[1]
-                        key = (rel_name, src, tgt)
-                        if key in seen:
-                            continue
-                        # Pelo menos UMA ponta na página (era AND): com a
-                        # projeção paginada (100 nós/página), exigir ambas
-                        # as pontas escondia quase toda edge — a UI mostrava
-                        # milhares de nós conectados como se fossem órfãos.
-                        # O cliente acumula as edges e materializa cada uma
-                        # quando a outra ponta chega nas páginas seguintes
-                        # (GraphCanvas já pula edges com nó ausente).
-                        if src in node_ids or tgt in node_ids:
-                            seen.add(key)
-                            edges.append({
-                                "id": f"{src}-{rel_name}-{tgt}",
-                                "source": src,
-                                "target": tgt,
-                                "edge_type": rel_name,
-                                "confidence": row[2] if len(row) > 2 else 0.7,
-                            })
-                except Exception as exc:
-                    diagnostics["edge_tables_failed"] += 1
-                    diagnostics["edge_errors"].append({
-                        "relationship": rel_name,
-                        "from_type": from_type,
-                        "to_type": to_type,
-                        "error": str(exc),
-                    })
-                finally:
-                    if result is not None:
-                        try:
-                            result.close()
-                        except Exception:
-                            pass
+        for rel_name, from_type, to_type in rel_pairs:
+            diagnostics["edge_tables_scanned"] += 1
+            try:
+                result = cypher_executor.execute_read_only(
+                    board_id,
+                    f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
+                    f"RETURN a.id, b.id, r.confidence "
+                    f"LIMIT 5000",
+                    max_rows=5000,
+                )
+                for row in result.get("rows", []):
+                    src, tgt = row[0], row[1]
+                    key = (rel_name, src, tgt)
+                    if key in seen:
+                        continue
+                    # Pelo menos UMA ponta na página (era AND): com a projeção
+                    # paginada, exigir ambas as pontas escondia quase toda edge.
+                    # O cliente acumula as edges e materializa cada uma quando a
+                    # outra ponta chega nas páginas seguintes.
+                    if src in node_ids or tgt in node_ids:
+                        seen.add(key)
+                        edges.append({
+                            "id": f"{src}-{rel_name}-{tgt}",
+                            "source": src,
+                            "target": tgt,
+                            "edge_type": rel_name,
+                            "confidence": row[2] if len(row) > 2 else 0.7,
+                        })
+            except Exception as exc:
+                diagnostics["edge_tables_failed"] += 1
+                diagnostics["edge_errors"].append({
+                    "relationship": rel_name,
+                    "from_type": from_type,
+                    "to_type": to_type,
+                    "error": str(exc),
+                })
         if diagnostics["edge_tables_failed"]:
             diagnostics["edge_read_status"] = "partial_failure"
         diagnostics["edges_returned"] = len(edges)
@@ -422,40 +410,33 @@ def _count_edges_by_type(board_id: str) -> tuple[dict[str, int], dict[str, Any]]
         "edge_count_errors": [],
     }
     try:
-        from okto_pulse.core.kg.schema import (
-            MULTI_REL_TYPES,
-            REL_TYPES,
-            open_board_connection,
-        )
+        from okto_pulse.core.kg.schema_contract import MULTI_REL_TYPES, REL_TYPES
+        from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
         rel_names = sorted({
             rel_name
             for rel_name, *_ in _relation_pairs(REL_TYPES, MULTI_REL_TYPES)
         })
+        cypher_executor = get_kg_registry().cypher_executor
         edge_counts: dict[str, int] = {}
-        with open_board_connection(board_id) as (_db, conn):
-            for rel_name in rel_names:
-                diagnostics["edge_count_tables_scanned"] += 1
-                result = None
-                try:
-                    result = conn.execute(
-                        f"MATCH ()-[r:{rel_name}]->() RETURN count(r) AS c"
-                    )
-                    count = int(result.get_next()[0]) if result.has_next() else 0
-                    if count:
-                        edge_counts[rel_name] = count
-                except Exception as exc:
-                    diagnostics["edge_count_tables_failed"] += 1
-                    diagnostics["edge_count_errors"].append({
-                        "relationship": rel_name,
-                        "error": str(exc),
-                    })
-                finally:
-                    if result is not None:
-                        try:
-                            result.close()
-                        except Exception:
-                            pass
+        for rel_name in rel_names:
+            diagnostics["edge_count_tables_scanned"] += 1
+            try:
+                result = cypher_executor.execute_read_only(
+                    board_id,
+                    f"MATCH ()-[r:{rel_name}]->() RETURN count(r) AS c",
+                    max_rows=1,
+                )
+                rows = result.get("rows", [])
+                count = int(rows[0][0]) if rows else 0
+                if count:
+                    edge_counts[rel_name] = count
+            except Exception as exc:
+                diagnostics["edge_count_tables_failed"] += 1
+                diagnostics["edge_count_errors"].append({
+                    "relationship": rel_name,
+                    "error": str(exc),
+                })
         if diagnostics["edge_count_tables_failed"]:
             diagnostics["edge_count_status"] = "partial_failure"
         return edge_counts, diagnostics
@@ -539,7 +520,7 @@ async def get_stats(
             max_rows=1000,
             graph_layer=layer,
         )
-        from okto_pulse.core.kg.schema import NODE_TYPES
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
 
         node_counts: dict[str, int] = {
             node_type: svc.count_all_nodes(
@@ -592,13 +573,9 @@ async def get_kg_metrics(board_id: str):
     - cognitive_edge_ratio 0.15 – 0.30 in mature boards
     """
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-    from okto_pulse.core.kg.schema import (
-        MULTI_REL_TYPES,
-        REL_TYPES,
-        board_kuzu_path,
-    )
+    from okto_pulse.core.kg.schema_contract import MULTI_REL_TYPES, REL_TYPES
 
-    if not board_kuzu_path(board_id).exists():
+    if not get_kg_registry().graph_path_resolver.exists(board_id):
         return {
             "board_id": board_id,
             "kg_bootstrapped": False,
@@ -624,7 +601,7 @@ async def get_kg_metrics(board_id: str):
     # the deterministic edges Layer 1 produces.
     all_rel_names = [r[0] for r in REL_TYPES] + [m[0] for m in MULTI_REL_TYPES]
     # R05-C: read through the #06 GraphTransaction port (scope.execute) instead
-    # of the raw open_board_connection (db,conn) tuple — _db was unused and every
+    # of the direct board-connection tuple — the DB handle was unused and every
     # statement is a plain scope.execute, so the swap is behaviour-identical.
     async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
         for rel_name in all_rel_names:
@@ -649,7 +626,7 @@ async def get_kg_metrics(board_id: str):
                     edge_by_rule[rule_id] = edge_by_rule.get(rule_id, 0) + 1
 
         # Node type histogram — aggregate per type to dodge GROUP BY portability.
-        from okto_pulse.core.kg.schema import NODE_TYPES
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
         for nt in NODE_TYPES:
             try:
                 result = scope.execute(
@@ -835,8 +812,8 @@ def _describe_embedding_provider(provider: Any) -> dict[str, Any]:
 
     Delegates to the metadata-driven describer in the embedding port (R13-A):
     this common API surface no longer imports or ``isinstance``-checks
-    SentenceTransformerProvider/StubEmbeddingProvider — provider description is
-    driven by capability metadata. Reads ``_model`` directly (never calls
+    concrete provider classes — provider description is driven by capability
+    metadata. Reads ``_model`` directly (never calls
     ``_get_model()``) so /kg/settings can report the live state for a health
     banner without paying the model-load cost. See TR-4 of spec
     `sentence-transformers como dep obrigatoria` and R13-A fr_r13a_provider_metadata.
@@ -871,11 +848,10 @@ async def get_global_kg_settings():
 async def get_settings(board_id: str, db: AsyncSession = Depends(get_db)):
     """Get KG settings for a board."""
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-    from okto_pulse.core.kg.schema import board_kuzu_path
 
     registry = get_kg_registry()
     config = registry.config
-    kg_exists = board_kuzu_path(board_id).exists()
+    kg_exists = registry.graph_path_resolver.exists(board_id)
 
     # Check historical consolidation status
     progress = await get_historical_progress(db, board_id)
@@ -1382,7 +1358,7 @@ async def boost_node(
         404 — node not found in any table of the per-board graph
     """
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-    from okto_pulse.core.kg.schema import NODE_TYPES
+    from okto_pulse.core.kg.schema_contract import NODE_TYPES
     from okto_pulse.core.models.db import ConsolidationAudit
 
     BOOST_DELTA = 0.3
@@ -1492,7 +1468,7 @@ class MigrateSchemaResponse(BaseModel):
     "/{board_id}/migrate-schema",
     response_model=MigrateSchemaResponse,
 )
-def post_migrate_schema(board_id: str):
+async def post_migrate_schema(board_id: str):
     """Force-apply schema migrations for a board (idempotent).
 
     Use when consolidation fails with `Binder exception: Cannot find
@@ -1505,9 +1481,9 @@ def post_migrate_schema(board_id: str):
 
     Spec 818748f2.
     """
-    from okto_pulse.core.kg.schema import migrate_schema_for_board
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    summary = migrate_schema_for_board(board_id)
+    summary = await get_kg_registry().graph_schema_manager.migrate(board_id)
     if not summary["migrated"] and any(
         "board_not_found" in e for e in summary["errors"]
     ):

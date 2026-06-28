@@ -26,8 +26,8 @@ TARGET_PARENT = "okto_pulse.core.kg"  # for `from okto_pulse.core.kg import sche
 
 # Importers under these locations are legitimate adapter-internal / allowlisted
 # consumers of kg.schema and are NOT migration targets this phase.
-ALLOWLIST_EMBEDDED_PREFIX = "kg/providers/embedded/"
-ALLOWLIST_MIGRATION_FILES = frozenset({"kg/dedup_migration.py"})
+ALLOWLIST_EMBEDDED_PREFIX = ""
+ALLOWLIST_MIGRATION_FILES = frozenset()
 #: The `kg migrate-schema` CLI (lives outside core/, documented for completeness).
 ALLOWLIST_MIGRATION_CLI = "tools/kg_migrate_schema.py"
 
@@ -52,8 +52,11 @@ VERDICT_NEEDS_MIGRATION = "needs_migration"
 #:     (class A) → GraphTransaction (``async with begin(board_id) as scope:
 #:     scope.execute(...)``): get_kg_metrics + boost_node (api/kg_routes.py),
 #:     _reset_last_recomputed_at (api/kg_tick.py), and the three
-#:     canonical_learning_partition maintenance scans. ``api/kg_tick.py`` and
-#:     ``kg/canonical_learning_partition.py`` thereby dropped off the ledger.
+#:     canonical_learning_partition maintenance scans. ``api/kg_routes.py``,
+#:     ``api/kg_tick.py`` and ``kg/canonical_learning_partition.py`` thereby
+#:     dropped off the ledger. R-P2-05 then removed the direct safe-write/schema
+#:     lifecycle imports from rebuild/consolidation/server routes by injecting the
+#:     lifecycle step through the KG registry.
 #:
 #: What REMAINS below are REAL exceptions only (class B/C/D), each with an
 #: OBJECTIVE R05-E removal criterion derived from its most-coupled category (see
@@ -66,38 +69,7 @@ VERDICT_NEEDS_MIGRATION = "needs_migration"
 #: ``apply_ladybug_lifecycle_step`` per-step callable injected into the rebuild
 #: orchestrator (no port primitive), and adapter-internal Kùzu primitives that
 #: move with the embedded runtime in R05-E (class D).
-LEDGERED_EXCEPTIONS: frozenset[str] = frozenset(
-    {
-        "api/kg_rebuild.py",
-        "api/kg_routes.py",
-        "events/handlers/cognitive_extraction.py",
-        "events/handlers/kg_decay_tick.py",
-        "events/handlers/kg_hit_recompute.py",
-        "kg/__init__.py",
-        "kg/board_rebuild_adapter.py",
-        "kg/canonical_cognitive_preservation.py",
-        "kg/canonical_partition_integrity.py",
-        "kg/canonical_stale_reconciler.py",
-        "kg/cognitive_closeout_production.py",
-        "kg/connection_pool.py",
-        "kg/global_discovery/clustering.py",
-        "kg/global_discovery/outbox_worker.py",
-        "kg/global_discovery/schema.py",
-        "kg/governance.py",
-        "kg/health.py",
-        "kg/hybrid_search/kuzu_adapter.py",
-        "kg/kg_service.py",
-        "kg/orphan_integrity.py",
-        "kg/primitives.py",
-        "kg/rebuild_service.py",
-        "kg/schema_layer_guard.py",
-        "kg/search.py",
-        "kg/stale_canonical_parity.py",
-        "kg/workers/consolidation.py",
-        "mcp/server.py",
-        "services/kg_health_service.py",
-    }
-)
+LEDGERED_EXCEPTIONS: frozenset[str] = frozenset()
 
 #: R05-C: per-category retirement contract. Each ledgered file is mapped — via its
 #: most-coupled kg.schema category — to an OBJECTIVE R05-E removal criterion plus
@@ -323,7 +295,7 @@ def _owner_for(rel_path: str) -> str:
 
 
 def _is_allowlisted(rel_path: str) -> str | None:
-    if rel_path.startswith(ALLOWLIST_EMBEDDED_PREFIX):
+    if ALLOWLIST_EMBEDDED_PREFIX and rel_path.startswith(ALLOWLIST_EMBEDDED_PREFIX):
         return VERDICT_ADAPTER
     if rel_path in ALLOWLIST_MIGRATION_FILES or rel_path == ALLOWLIST_MIGRATION_CLI:
         return VERDICT_ALLOWLISTED
@@ -487,17 +459,18 @@ def run_kg_schema_import_classification_gate(
         "current_importer_files": current_files,
         "current_import_statements": import_statements,
         "explanation": (
-            f"Scanning the whole okto_pulse package (core/ + tools/, the `kg migrate-schema` CLI "
-            f"included), the live recount finds {current_files} importer files / {import_statements} "
+            f"Scanning the whole okto_pulse package (core/ + tools/; the `kg migrate-schema` "
+            f"CLI path is scanned and allowlisted when it imports kg.schema), the live recount "
+            f"finds {current_files} importer files / {import_statements} "
             f"import statements vs the validator baseline of {VALIDATOR_BASELINE_IMPORTER_FILES} and "
             f"the spec-local {SPEC_LOCAL_IMPORTER_FILES} files / {SPEC_LOCAL_IMPORT_STATEMENTS} "
             f"statements. The file-vs-statement gap is a counting criterion (one file may carry "
             f"several `from kg.schema import ...`). The drift from the spec-local baseline is code "
-            f"evolution tracked by this gate: spec #06 adds embedded port adapters "
-            f"(GraphTransaction/GraphSchemaManager/GraphLifecycle/GraphPathResolver) that "
-            f"legitimately wrap kg.schema (adapter_internal_legitimate), while consumers migrated to "
-            f"those ports drop direct symbols. Counts are a controlled debt baseline, not a blind "
-            f"target. (An earlier core/-only scan under-counted by omitting the tools/ CLI.)"
+            f"evolution tracked by this gate: P2-05 moved embedded Kuzu adapters out of core, "
+            f"while consumers migrated to ports drop direct symbols. Counts are a controlled "
+            f"debt baseline, not a blind target. (An earlier core/-only scan under-counted by "
+            f"omitting tools/ importers; a tools/ file that no longer imports kg.schema is "
+            f"correctly absent from the importer table.)"
         ),
     }
 

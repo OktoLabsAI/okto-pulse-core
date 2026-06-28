@@ -386,86 +386,72 @@ def _scan_graph_learnings(board_id: str) -> dict[str, dict[str, Any]]:
     ``relates_to_endpoints`` is a list of ``(endpoint_node_type, endpoint_layer)``
     (S-KG-02). Degrades to ``{}`` on a degraded/missing graph so the read model
     never 500s (the caller maps that to 503)."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     nodes: dict[str, dict[str, Any]] = {}
-    with open_board_connection(board_id) as (_db, kconn):
-        # 1. All canonical Learnings (covers provenance-only, which have no
-        #    validates->Bug edge at all).
-        res = kconn.execute(
-            "MATCH (l:Learning) WHERE l.graph_layer = 'canonical' "
-            "RETURN l.id, l.source_artifact_ref"
-        )
-        try:
-            while res.has_next():
-                row = res.get_next()
-                node_id = str(row[0])
-                if not node_id:
-                    continue
-                source_ref = str(row[1] or "")
-                nodes[node_id] = {
-                    "source_ref": source_ref,
-                    "canonical_bug_refs": [],
-                    "working_bug_refs": [],
-                    "is_bug_derived": _is_bug_derived_ref(source_ref),
-                    "relates_to_endpoints": [],
-                }
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+    cypher = get_kg_registry().cypher_executor
 
-        # 2. validates -> Bug endpoints with the Bug's layer.
-        res = kconn.execute(
-            "MATCH (l:Learning)-[r:validates]->(b:Bug) "
-            "WHERE l.graph_layer = 'canonical' "
-            "RETURN l.id, b.id, b.graph_layer"
-        )
-        try:
-            while res.has_next():
-                row = res.get_next()
-                node_id = str(row[0])
-                bug_id = str(row[1])
-                bug_layer = str(row[2] or "")
-                entry = nodes.get(node_id)
-                if entry is None:
-                    continue
-                if bug_layer == GRAPH_LAYER_CANONICAL:
-                    entry["canonical_bug_refs"].append(bug_id)
-                else:
-                    entry["working_bug_refs"].append(bug_id)
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+    # 1. All canonical Learnings (covers provenance-only, which have no
+    #    validates->Bug edge at all).
+    result = cypher.execute_read_only(
+        board_id,
+        "MATCH (l:Learning) WHERE l.graph_layer = 'canonical' "
+        "RETURN l.id, l.source_artifact_ref",
+        max_rows=10000,
+    )
+    for row in result.get("rows", []):
+        node_id = str(row[0])
+        if not node_id:
+            continue
+        source_ref = str(row[1] or "")
+        nodes[node_id] = {
+            "source_ref": source_ref,
+            "canonical_bug_refs": [],
+            "working_bug_refs": [],
+            "is_bug_derived": _is_bug_derived_ref(source_ref),
+            "relates_to_endpoints": [],
+        }
 
-        # 3. relates_to -> taxonomy endpoints (S-KG-02): the cognitive provenance
-        #    relation for a NON-bug-derived Learning. The endpoint label + layer
-        #    let the classifier decide if it is a CANONICAL S-KG-01 taxonomy
-        #    association (untyped target + label() so an off-taxonomy endpoint, if
-        #    one ever materializes, is observed rather than silently dropped).
-        res = kconn.execute(
-            "MATCH (l:Learning)-[r:relates_to]->(t) "
-            "WHERE l.graph_layer = 'canonical' "
-            "RETURN l.id, label(t), t.graph_layer"
-        )
-        try:
-            while res.has_next():
-                row = res.get_next()
-                node_id = str(row[0])
-                endpoint_type = str(row[1] or "")
-                endpoint_layer = str(row[2] or "") or None
-                entry = nodes.get(node_id)
-                if entry is None:
-                    continue
-                entry["relates_to_endpoints"].append((endpoint_type, endpoint_layer))
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+    # 2. validates -> Bug endpoints with the Bug's layer.
+    result = cypher.execute_read_only(
+        board_id,
+        "MATCH (l:Learning)-[r:validates]->(b:Bug) "
+        "WHERE l.graph_layer = 'canonical' "
+        "RETURN l.id, b.id, b.graph_layer",
+        max_rows=10000,
+    )
+    for row in result.get("rows", []):
+        node_id = str(row[0])
+        bug_id = str(row[1])
+        bug_layer = str(row[2] or "")
+        entry = nodes.get(node_id)
+        if entry is None:
+            continue
+        if bug_layer == GRAPH_LAYER_CANONICAL:
+            entry["canonical_bug_refs"].append(bug_id)
+        else:
+            entry["working_bug_refs"].append(bug_id)
+
+    # 3. relates_to -> taxonomy endpoints (S-KG-02): the cognitive provenance
+    #    relation for a NON-bug-derived Learning. The endpoint label + layer
+    #    let the classifier decide if it is a CANONICAL S-KG-01 taxonomy
+    #    association (untyped target + label() so an off-taxonomy endpoint, if
+    #    one ever materializes, is observed rather than silently dropped).
+    result = cypher.execute_read_only(
+        board_id,
+        "MATCH (l:Learning)-[r:relates_to]->(t) "
+        "WHERE l.graph_layer = 'canonical' "
+        "RETURN l.id, label(t), t.graph_layer",
+        max_rows=10000,
+    )
+    for row in result.get("rows", []):
+        node_id = str(row[0])
+        endpoint_type = str(row[1] or "")
+        endpoint_layer = str(row[2] or "") or None
+        entry = nodes.get(node_id)
+        if entry is None:
+            continue
+        entry["relates_to_endpoints"].append((endpoint_type, endpoint_layer))
     return nodes
 
 

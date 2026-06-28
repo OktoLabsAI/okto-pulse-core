@@ -14,12 +14,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from okto_pulse.core.kg.schema import (
+from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.schema_contract import (
     EDGE_METADATA_COLUMNS,
     MULTI_REL_TYPES,
     NODE_TYPES,
     REL_TYPES,
-    open_board_connection,
 )
 
 logger = logging.getLogger("okto_pulse.kg.dedup_migration")
@@ -230,8 +231,12 @@ def migrate_dedup_entities(
     total_dups = 0
     total_edges = 0
 
-    conn = open_board_connection(board_id)
-    with conn as (_kdb, kconn):
+    async def _run_migration() -> None:
+        async with await get_kg_registry().graph_transaction.begin(board_id) as kconn:
+            _run_migration_in_scope(kconn)
+
+    def _run_migration_in_scope(kconn: Any) -> None:
+        nonlocal total_dups, total_edges
         for node_type in NODE_TYPES:
             try:
                 groups = _fetch_groups(kconn, node_type)
@@ -307,6 +312,8 @@ def migrate_dedup_entities(
                 })
                 total_dups += len(duplicates)
                 total_edges += edges_for_group
+
+    run_async_blocking(_run_migration())
     completed = datetime.now(timezone.utc).isoformat()
     report = {
         "board_id": board_id,

@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
 
+from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
@@ -70,7 +71,7 @@ logger = logging.getLogger("okto_pulse.kg.primitives")
 
 
 def _allowed_edge_pairs(edge_type: str) -> tuple[tuple[str, str], ...]:
-    from okto_pulse.core.kg.schema import MULTI_REL_TYPES, REL_TYPES
+    from okto_pulse.core.kg.schema_contract import MULTI_REL_TYPES, REL_TYPES
 
     pairs = [(from_type, to_type) for rel, from_type, to_type in REL_TYPES if rel == edge_type]
     for rel, multi_pairs in MULTI_REL_TYPES:
@@ -552,8 +553,8 @@ async def get_similar_nodes(
 ) -> GetSimilarNodesResponse:
     """Return up to top_k existing Kùzu nodes similar to the candidate.
 
-    Embeds the candidate with the active embedding provider (stub or
-    sentence-transformers) and runs a k-NN query against the per-type HNSW
+    Embeds the candidate with the active embedding provider (core stub or
+    edition-owned concrete adapter) and runs a k-NN query against the per-type HNSW
     index via `kg.search.find_similar_nodes_by_type`. Returns an empty list
     if the index doesn't exist yet or the node type isn't searchable — the
     agent can still proceed with ADD in that case.
@@ -609,43 +610,34 @@ async def get_similar_nodes(
 def _find_existing_kuzu_matches(
     board_id: str, node_candidates: dict, embedder,
 ) -> dict[str, list]:
-    """Sync: find existing Kùzu nodes matching session candidates.
+    """Sync: find existing graph nodes matching session candidates.
 
     Runs in the thread pool via ``_run_kuzu``.
     """
-    from okto_pulse.core.kg.schema import open_board_connection
     from okto_pulse.core.kg.search import find_similar_for_candidate
 
     existing_matches: dict[str, list] = {}
-    conn = open_board_connection(board_id)
     try:
-        with conn as (_db, kconn):
-            for cand_id, cand in node_candidates.items():
-                node_type = (
-                    cand.node_type.value
-                    if hasattr(cand.node_type, "value")
-                    else cand.node_type
-                )
-                query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
-                matches = find_similar_for_candidate(
-                    board_id=board_id,
-                    node_type=node_type,
-                    query_vector=query_vec,
-                    top_k=5,
-                    min_similarity=0.3,
-                    conn=kconn,
-                )
-                if matches:
-                    existing_matches[cand_id] = matches
+        for cand_id, cand in node_candidates.items():
+            node_type = (
+                cand.node_type.value
+                if hasattr(cand.node_type, "value")
+                else cand.node_type
+            )
+            query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+            matches = find_similar_for_candidate(
+                board_id=board_id,
+                node_type=node_type,
+                query_vector=query_vec,
+                top_k=5,
+                min_similarity=0.3,
+            )
+            if matches:
+                existing_matches[cand_id] = matches
     except Exception as exc:
         logger.warning(
             "kg.primitives.reconciliation_search_failed err=%s", exc,
         )
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
     return existing_matches
 
 
@@ -700,19 +692,18 @@ async def propose_reconciliation(
 
 
 def _compensate_kuzu_writes(board_id: str, session_id: str, records: list) -> None:
-    """Sync: reverse Kùzu writes for a failed commit.
+    """Sync: reverse graph writes for a failed commit.
 
     Mirrors ``TransactionOrchestrator.compensate()`` but runs synchronously
     inside the thread pool. Best-effort — logs failures but does not raise.
     """
-    from okto_pulse.core.kg.schema import (
+    from okto_pulse.core.kg.schema_contract import (
         MULTI_REL_TYPES,
         REL_TYPES,
-        open_board_connection,
     )
 
-    try:
-        with open_board_connection(board_id) as (_db, kconn):
+    async def _run() -> None:
+        async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
             # Delete edges first (they reference nodes)
             rel_pairs = list(REL_TYPES)
             for rel_name, endpoint_pairs in MULTI_REL_TYPES:
@@ -722,7 +713,7 @@ def _compensate_kuzu_writes(board_id: str, session_id: str, records: list) -> No
                 )
             for rel_name, from_type, to_type in rel_pairs:
                 try:
-                    kconn.execute(
+                    scope.execute(
                         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
                         f"WHERE r.created_by_session_id = $sid DELETE r",
                         {"sid": session_id},
@@ -734,13 +725,16 @@ def _compensate_kuzu_writes(board_id: str, session_id: str, records: list) -> No
             node_types = {r.entity_type for r in records if r.kind == "node"}
             for node_type in node_types:
                 try:
-                    kconn.execute(
+                    scope.execute(
                         f"MATCH (n:{node_type}) "
                         f"WHERE n.source_session_id = $sid DETACH DELETE n",
                         {"sid": session_id},
                     )
                 except Exception:
                     pass
+
+    try:
+        run_async_blocking(_run())
     except Exception as exc:
         # Spec 818748f2 — FR4 + BR4: downgrade to warning. The compensation
         # failure is recoverable (lock contention, schema drift) and the
@@ -1509,7 +1503,7 @@ def _lookup_node_type_by_id(kconn, node_id: str) -> str | None:
 
 
 def _kg_node_types() -> tuple[str, ...]:
-    from okto_pulse.core.kg.schema import NODE_TYPES
+    from okto_pulse.core.kg.schema_contract import NODE_TYPES
 
     return tuple(NODE_TYPES)
 
@@ -1629,7 +1623,6 @@ def _do_kuzu_commit(
     on success.
     Raises ``KGPrimitiveError`` on failure (after inline compensation).
     """
-    from okto_pulse.core.kg.schema import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     writer_path = _connectivity_writer_path(agent_id)
@@ -1642,273 +1635,142 @@ def _do_kuzu_commit(
         kg_health_state=kg_health_state,
     )
 
-    board_conn = open_board_connection(board_id)
-    with board_conn as (_kdb, kconn):
-        orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,  # SQLite writes happen in async context
-            session_id=session_id,
+    kconn = run_async_blocking(
+        get_kg_registry().graph_transaction.begin(board_id)
+    )
+    orch = TransactionOrchestrator(
+        kuzu_conn=kconn,
+        sqlite_session=None,  # SQLite writes happen in async context
+        session_id=session_id,
+        board_id=board_id,
+    )
+    candidate_to_kuzu_id: dict[str, str] = {}
+    candidate_to_node_type: dict[str, str] = {}
+
+    try:
+        connectivity = _validate_kuzu_connectivity_before_commit(
+            kconn=kconn,
             board_id=board_id,
+            session_id=session_id,
+            node_candidates=node_candidates,
+            edge_candidates=edge_candidates,
+            effective_hints=effective_hints,
+            writer_path=writer_path,
+            kg_health_state=kg_health_state,
         )
-        candidate_to_kuzu_id: dict[str, str] = {}
-        candidate_to_node_type: dict[str, str] = {}
+        for cand_id, cand in node_candidates.items():
+            hint = effective_hints.get(cand_id)
+            op = _resolve_op(hint, cand.source_confidence)
+            node_type = _enum_value(cand.node_type)
 
-        try:
-            connectivity = _validate_kuzu_connectivity_before_commit(
-                kconn=kconn,
-                board_id=board_id,
-                session_id=session_id,
-                node_candidates=node_candidates,
-                edge_candidates=edge_candidates,
-                effective_hints=effective_hints,
-                writer_path=writer_path,
-                kg_health_state=kg_health_state,
-            )
-            for cand_id, cand in node_candidates.items():
-                hint = effective_hints.get(cand_id)
-                op = _resolve_op(hint, cand.source_confidence)
-                node_type = _enum_value(cand.node_type)
+            if op == ReconciliationOperation.NOOP:
+                # Spec eca49df9 (FR6): NOOP is a processed candidate too.
+                orch.counters.nodes_noop += 1
+                existing_id = _lookup_existing_node(
+                    kconn, node_type, cand.source_artifact_ref or ""
+                )
+                if existing_id:
+                    candidate_to_kuzu_id[cand_id] = existing_id
+                    candidate_to_node_type[cand_id] = node_type
+                continue
 
-                if op == ReconciliationOperation.NOOP:
-                    # Spec eca49df9 (FR6): NOOP is a processed candidate too.
-                    orch.counters.nodes_noop += 1
-                    existing_id = _lookup_existing_node(
-                        kconn, node_type, cand.source_artifact_ref or ""
+            # Spec 4007e4a3 (Ideação #3, BR4 + BR5): UPDATE path must
+            # preserve nodes that a human curator has explicitly marked
+            # as human_curated. Without an explicit override (extension
+            # point — currently signalled by hint.confidence >= 1.0 from
+            # an agent-supplied override), the UPDATE is converted to
+            # NOOP-with-mapping so downstream edges still resolve. With
+            # an override, the agent reasserts ownership and the new
+            # node defaults to human_curated=False (BR5 reset).
+            if op == ReconciliationOperation.UPDATE and hint and getattr(hint, "target_node_id", None):
+                target_node_id = hint.target_node_id
+                node_type_check = _enum_value(cand.node_type)
+                is_curated = _node_is_human_curated(kconn, node_type_check, target_node_id)
+                has_override = bool(hint.confidence and hint.confidence >= 1.0)
+                if is_curated and not has_override:
+                    logger.info(
+                        "kg.consolidation.manual_edit_preserved candidate=%s "
+                        "target_node_id=%s session=%s",
+                        cand_id, target_node_id, session_id,
+                        extra={
+                            "event": "kg.consolidation.manual_edit_preserved",
+                            "candidate_id": cand_id,
+                            "target_node_id": target_node_id,
+                            "session_id": session_id,
+                        },
                     )
-                    if existing_id:
-                        candidate_to_kuzu_id[cand_id] = existing_id
-                        candidate_to_node_type[cand_id] = node_type
+                    candidate_to_kuzu_id[cand_id] = target_node_id
+                    candidate_to_node_type[cand_id] = node_type_check
                     continue
+                if is_curated and has_override:
+                    # BR5 reset: agent reclaims authorship via override.
+                    # The downstream create_node already initialises
+                    # human_curated=False, so the reset is implicit. We
+                    # just emit the counter so observability tooling can
+                    # distinguish overrides from green-field UPDATEs.
+                    logger.info(
+                        "kg.consolidation.reset_manual_flag candidate=%s "
+                        "target_node_id=%s session=%s",
+                        cand_id, target_node_id, session_id,
+                        extra={
+                            "event": "kg.consolidation.reset_manual_flag",
+                            "candidate_id": cand_id,
+                            "target_node_id": target_node_id,
+                            "session_id": session_id,
+                        },
+                    )
 
-                # Spec 4007e4a3 (Ideação #3, BR4 + BR5): UPDATE path must
-                # preserve nodes that a human curator has explicitly marked
-                # as human_curated. Without an explicit override (extension
-                # point — currently signalled by hint.confidence >= 1.0 from
-                # an agent-supplied override), the UPDATE is converted to
-                # NOOP-with-mapping so downstream edges still resolve. With
-                # an override, the agent reasserts ownership and the new
-                # node defaults to human_curated=False (BR5 reset).
-                if op == ReconciliationOperation.UPDATE and hint and getattr(hint, "target_node_id", None):
-                    target_node_id = hint.target_node_id
-                    node_type_check = _enum_value(cand.node_type)
-                    is_curated = _node_is_human_curated(kconn, node_type_check, target_node_id)
-                    has_override = bool(hint.confidence and hint.confidence >= 1.0)
-                    if is_curated and not has_override:
-                        logger.info(
-                            "kg.consolidation.manual_edit_preserved candidate=%s "
-                            "target_node_id=%s session=%s",
-                            cand_id, target_node_id, session_id,
-                            extra={
-                                "event": "kg.consolidation.manual_edit_preserved",
-                                "candidate_id": cand_id,
-                                "target_node_id": target_node_id,
-                                "session_id": session_id,
-                            },
-                        )
-                        candidate_to_kuzu_id[cand_id] = target_node_id
-                        candidate_to_node_type[cand_id] = node_type_check
-                        continue
-                    if is_curated and has_override:
-                        # BR5 reset: agent reclaims authorship via override.
-                        # The downstream create_node already initialises
-                        # human_curated=False, so the reset is implicit. We
-                        # just emit the counter so observability tooling can
-                        # distinguish overrides from green-field UPDATEs.
-                        logger.info(
-                            "kg.consolidation.reset_manual_flag candidate=%s "
-                            "target_node_id=%s session=%s",
-                            cand_id, target_node_id, session_id,
-                            extra={
-                                "event": "kg.consolidation.reset_manual_flag",
-                                "candidate_id": cand_id,
-                                "target_node_id": target_node_id,
-                                "session_id": session_id,
-                            },
-                        )
-
-                    if not is_curated:
-                        # Spec eca49df9 (FR6/TR6): a non-curated UPDATE with a
-                        # target is an in-place semantic update — route it
-                        # through orch.update_node so nodes_updated has a real
-                        # production call site. The NC-8 dedup-reuse branch
-                        # below stays a MERGE; an UPDATE must not be miscounted
-                        # as MERGE or CREATE. (Curated+override keeps falling
-                        # through to reset-via-create.)
-                        update_attrs = {
-                            "title": cand.title,
-                            "content": cand.content or "",
-                            "context": cand.context or "",
-                            "justification": cand.justification or "",
-                            "graph_layer": getattr(cand, "graph_layer", "canonical"),
-                            "maturity_status": getattr(
-                                cand, "maturity_status", "canonical_eligible"
-                            ),
-                            "source_confidence": cand.source_confidence,
-                            "priority_boost": getattr(cand, "priority_boost", 0.0),
-                        }
-                        orch.update_node(node_type_check, target_node_id, update_attrs)
-                        candidate_to_kuzu_id[cand_id] = target_node_id
-                        candidate_to_node_type[cand_id] = node_type_check
-                        logger.info(
-                            "kg.consolidation.updated candidate=%s target=%s "
-                            "type=%s session=%s",
-                            cand_id, target_node_id, node_type_check, session_id,
-                            extra={
-                                "event": "kg.consolidation.updated",
-                                "candidate_id": cand_id,
-                                "target_node_id": target_node_id,
-                                "node_type": node_type_check,
-                                "session_id": session_id,
-                            },
-                        )
-                        continue
-
-                # Spec eca49df9 (FR4): op==SUPERSEDE must go through
-                # supersede_node (new node + superseded_by + :supersedes edge
-                # for node types the schema supports — Decision today), never
-                # fall through to a lone CREATE. supersede_node reclassifies the
-                # counter (nodes_added-1 / nodes_superseded+1) internally.
-                if (
-                    op == ReconciliationOperation.SUPERSEDE
-                    and hint
-                    and getattr(hint, "target_node_id", None)
-                ):
-                    superseded_id = hint.target_node_id
-                    new_node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
-                    embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
-                    new_attrs = {
+                if not is_curated:
+                    # Spec eca49df9 (FR6/TR6): a non-curated UPDATE with a
+                    # target is an in-place semantic update — route it
+                    # through orch.update_node so nodes_updated has a real
+                    # production call site. The NC-8 dedup-reuse branch
+                    # below stays a MERGE; an UPDATE must not be miscounted
+                    # as MERGE or CREATE. (Curated+override keeps falling
+                    # through to reset-via-create.)
+                    update_attrs = {
                         "title": cand.title,
                         "content": cand.content or "",
                         "context": cand.context or "",
                         "justification": cand.justification or "",
-                        "source_artifact_ref": cand.source_artifact_ref or "",
                         "graph_layer": getattr(cand, "graph_layer", "canonical"),
                         "maturity_status": getattr(
                             cand, "maturity_status", "canonical_eligible"
                         ),
-                        "created_at": _now_iso(),
-                        "created_by_agent": agent_id,
                         "source_confidence": cand.source_confidence,
-                        "relevance_score": getattr(cand, "relevance_score", 0.5),
-                        "query_hits": 0,
-                        "last_queried_at": None,
                         "priority_boost": getattr(cand, "priority_boost", 0.0),
-                        "human_curated": False,
-                        "embedding": embedding,
                     }
-                    orch.supersede_node(
-                        node_type, new_node_id, superseded_id, new_attrs,
-                        revocation_reason="superseded by consolidation session",
-                    )
-                    candidate_to_kuzu_id[cand_id] = new_node_id
-                    candidate_to_node_type[cand_id] = node_type
+                    orch.update_node(node_type_check, target_node_id, update_attrs)
+                    candidate_to_kuzu_id[cand_id] = target_node_id
+                    candidate_to_node_type[cand_id] = node_type_check
                     logger.info(
-                        "kg.consolidation.superseded candidate=%s new=%s old=%s "
+                        "kg.consolidation.updated candidate=%s target=%s "
                         "type=%s session=%s",
-                        cand_id, new_node_id, superseded_id, node_type, session_id,
+                        cand_id, target_node_id, node_type_check, session_id,
                         extra={
-                            "event": "kg.consolidation.superseded",
+                            "event": "kg.consolidation.updated",
                             "candidate_id": cand_id,
-                            "new_node_id": new_node_id,
-                            "superseded_node_id": superseded_id,
-                            "node_type": node_type,
+                            "target_node_id": target_node_id,
+                            "node_type": node_type_check,
                             "session_id": session_id,
                         },
                     )
                     continue
 
-                # Spec 7f23535f (NC-8): natural dedup by source_artifact_ref.
-                # Before generating a fresh UUID, check whether this artifact
-                # already has a Kuzu node from a prior session. If yes, reuse
-                # it (UPDATE attrs unless human_curated). Without this branch
-                # every spec.semantic_changed / spec.moved / spec.version_bumped
-                # event spawns a duplicate Entity for the same source.
-                source_ref = cand.source_artifact_ref or ""
-                if source_ref:
-                    existing_id = _lookup_existing_node(
-                        kconn, node_type, source_ref
-                    )
-                    if existing_id:
-                        is_curated = _node_is_human_curated(
-                            kconn, node_type, existing_id
-                        )
-                        if not is_curated:
-                            embedding = embedder.encode(
-                                f"{cand.title}\n{cand.content or ''}"
-                            )
-                            update_attrs = {
-                                "title": cand.title,
-                                "content": cand.content or "",
-                                "context": cand.context or "",
-                                "justification": cand.justification or "",
-                                "graph_layer": getattr(cand, "graph_layer", "canonical"),
-                                "maturity_status": getattr(
-                                    cand, "maturity_status", "canonical_eligible"
-                                ),
-                                "source_confidence": cand.source_confidence,
-                                "priority_boost": getattr(cand, "priority_boost", 0.0),
-                                "embedding": embedding,
-                            }
-                            _apply_kuzu_node_update_partial(
-                                orch, node_type, existing_id, update_attrs
-                            )
-                        else:
-                            # FR4 / dec_85ba8dc2 (card 302044a7): a human_curated
-                            # node keeps its PROTECTED content (title/content/
-                            # context/justification/embedding/source_confidence),
-                            # but maturity METADATA still promotes — a working
-                            # node a human curated must still reach canonical when
-                            # its source spec becomes done. Update ONLY the
-                            # maturity metadata (partial), never the curated
-                            # content.
-                            _apply_kuzu_node_update_partial(
-                                orch,
-                                node_type,
-                                existing_id,
-                                {
-                                    "graph_layer": getattr(
-                                        cand, "graph_layer", "canonical"
-                                    ),
-                                    "maturity_status": getattr(
-                                        cand, "maturity_status", "canonical_eligible"
-                                    ),
-                                },
-                            )
-                        candidate_to_kuzu_id[cand_id] = existing_id
-                        candidate_to_node_type[cand_id] = node_type
-                        # Spec eca49df9 (FR5/AC6): count + audit the NC-8
-                        # dedup-reuse (merge). No KuzuWriteRecord — the reused
-                        # node belongs to a prior session and must not enter
-                        # compensation rollback.
-                        orch.counters.nodes_merged += 1
-                        orch.counters.merge_audit_items.append({
-                            "candidate_id": cand_id,
-                            "node_type": node_type,
-                            "source_artifact_ref": source_ref,
-                            "reused_node_id": existing_id,
-                            "operation": "MERGE",
-                        })
-                        logger.info(
-                            "kg.consolidation.dedup_reused candidate=%s "
-                            "existing=%s type=%s ref=%s session=%s curated=%s",
-                            cand_id, existing_id, node_type, source_ref,
-                            session_id, is_curated,
-                            extra={
-                                "event": "kg.consolidation.dedup_reused",
-                                "cand_id": cand_id,
-                                "existing_id": existing_id,
-                                "node_type": node_type,
-                                "source_artifact_ref": source_ref,
-                                "session_id": session_id,
-                                "was_curated_preserved": is_curated,
-                            },
-                        )
-                        continue
-
-                node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
+            # Spec eca49df9 (FR4): op==SUPERSEDE must go through
+            # supersede_node (new node + superseded_by + :supersedes edge
+            # for node types the schema supports — Decision today), never
+            # fall through to a lone CREATE. supersede_node reclassifies the
+            # counter (nodes_added-1 / nodes_superseded+1) internally.
+            if (
+                op == ReconciliationOperation.SUPERSEDE
+                and hint
+                and getattr(hint, "target_node_id", None)
+            ):
+                superseded_id = hint.target_node_id
+                new_node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
                 embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
-
-                node_attrs = {
+                new_attrs = {
                     "title": cand.title,
                     "content": cand.content or "",
                     "context": cand.context or "",
@@ -1925,129 +1787,270 @@ def _do_kuzu_commit(
                     "query_hits": 0,
                     "last_queried_at": None,
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
-                    # Spec 4007e4a3 (Ideação #3): nodes are agent-managed by
-                    # default. A human curator may set human_curated=TRUE
-                    # later via back-office; the UPDATE path then skips
-                    # writes unless the agent passes an explicit override.
                     "human_curated": False,
                     "embedding": embedding,
                 }
-                _apply_kuzu_node_create_with_timestamp(
-                    orch, node_type, node_id, node_attrs
+                orch.supersede_node(
+                    node_type, new_node_id, superseded_id, new_attrs,
+                    revocation_reason="superseded by consolidation session",
                 )
-                candidate_to_kuzu_id[cand_id] = node_id
+                candidate_to_kuzu_id[cand_id] = new_node_id
                 candidate_to_node_type[cand_id] = node_type
+                logger.info(
+                    "kg.consolidation.superseded candidate=%s new=%s old=%s "
+                    "type=%s session=%s",
+                    cand_id, new_node_id, superseded_id, node_type, session_id,
+                    extra={
+                        "event": "kg.consolidation.superseded",
+                        "candidate_id": cand_id,
+                        "new_node_id": new_node_id,
+                        "superseded_node_id": superseded_id,
+                        "node_type": node_type,
+                        "session_id": session_id,
+                    },
+                )
+                continue
 
+            # Spec 7f23535f (NC-8): natural dedup by source_artifact_ref.
+            # Before generating a fresh UUID, check whether this artifact
+            # already has a Kuzu node from a prior session. If yes, reuse
+            # it (UPDATE attrs unless human_curated). Without this branch
+            # every spec.semantic_changed / spec.moved / spec.version_bumped
+            # event spawns a duplicate Entity for the same source.
+            source_ref = cand.source_artifact_ref or ""
+            if source_ref:
+                existing_id = _lookup_existing_node(
+                    kconn, node_type, source_ref
+                )
+                if existing_id:
+                    is_curated = _node_is_human_curated(
+                        kconn, node_type, existing_id
+                    )
+                    if not is_curated:
+                        embedding = embedder.encode(
+                            f"{cand.title}\n{cand.content or ''}"
+                        )
+                        update_attrs = {
+                            "title": cand.title,
+                            "content": cand.content or "",
+                            "context": cand.context or "",
+                            "justification": cand.justification or "",
+                            "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                            "maturity_status": getattr(
+                                cand, "maturity_status", "canonical_eligible"
+                            ),
+                            "source_confidence": cand.source_confidence,
+                            "priority_boost": getattr(cand, "priority_boost", 0.0),
+                            "embedding": embedding,
+                        }
+                        _apply_kuzu_node_update_partial(
+                            orch, node_type, existing_id, update_attrs
+                        )
+                    else:
+                        # FR4 / dec_85ba8dc2 (card 302044a7): a human_curated
+                        # node keeps its PROTECTED content (title/content/
+                        # context/justification/embedding/source_confidence),
+                        # but maturity METADATA still promotes — a working
+                        # node a human curated must still reach canonical when
+                        # its source spec becomes done. Update ONLY the
+                        # maturity metadata (partial), never the curated
+                        # content.
+                        _apply_kuzu_node_update_partial(
+                            orch,
+                            node_type,
+                            existing_id,
+                            {
+                                "graph_layer": getattr(
+                                    cand, "graph_layer", "canonical"
+                                ),
+                                "maturity_status": getattr(
+                                    cand, "maturity_status", "canonical_eligible"
+                                ),
+                            },
+                        )
+                    candidate_to_kuzu_id[cand_id] = existing_id
+                    candidate_to_node_type[cand_id] = node_type
+                    # Spec eca49df9 (FR5/AC6): count + audit the NC-8
+                    # dedup-reuse (merge). No KuzuWriteRecord — the reused
+                    # node belongs to a prior session and must not enter
+                    # compensation rollback.
+                    orch.counters.nodes_merged += 1
+                    orch.counters.merge_audit_items.append({
+                        "candidate_id": cand_id,
+                        "node_type": node_type,
+                        "source_artifact_ref": source_ref,
+                        "reused_node_id": existing_id,
+                        "operation": "MERGE",
+                    })
+                    logger.info(
+                        "kg.consolidation.dedup_reused candidate=%s "
+                        "existing=%s type=%s ref=%s session=%s curated=%s",
+                        cand_id, existing_id, node_type, source_ref,
+                        session_id, is_curated,
+                        extra={
+                            "event": "kg.consolidation.dedup_reused",
+                            "cand_id": cand_id,
+                            "existing_id": existing_id,
+                            "node_type": node_type,
+                            "source_artifact_ref": source_ref,
+                            "session_id": session_id,
+                            "was_curated_preserved": is_curated,
+                        },
+                    )
+                    continue
+
+            node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
+            embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+
+            node_attrs = {
+                "title": cand.title,
+                "content": cand.content or "",
+                "context": cand.context or "",
+                "justification": cand.justification or "",
+                "source_artifact_ref": cand.source_artifact_ref or "",
+                "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                "maturity_status": getattr(
+                    cand, "maturity_status", "canonical_eligible"
+                ),
+                "created_at": _now_iso(),
+                "created_by_agent": agent_id,
+                "source_confidence": cand.source_confidence,
+                "relevance_score": getattr(cand, "relevance_score", 0.5),
+                "query_hits": 0,
+                "last_queried_at": None,
+                "priority_boost": getattr(cand, "priority_boost", 0.0),
+                # Spec 4007e4a3 (Ideação #3): nodes are agent-managed by
+                # default. A human curator may set human_curated=TRUE
+                # later via back-office; the UPDATE path then skips
+                # writes unless the agent passes an explicit override.
+                "human_curated": False,
+                "embedding": embedding,
+            }
+            _apply_kuzu_node_create_with_timestamp(
+                orch, node_type, node_id, node_attrs
+            )
+            candidate_to_kuzu_id[cand_id] = node_id
+            candidate_to_node_type[cand_id] = node_type
+
+        for edge in edge_candidates.values():
+            from_id, from_xref_type = _resolve_endpoint(
+                edge.from_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+            )
+            to_id, to_xref_type = _resolve_endpoint(
+                edge.to_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+            )
+            if from_id is None or to_id is None:
+                continue
+            edge_attrs: dict[str, object] = {"confidence": edge.confidence}
+            if edge.layer:
+                edge_attrs["layer"] = edge.layer
+            if edge.rule_id:
+                edge_attrs["rule_id"] = edge.rule_id
+            if edge.created_by:
+                edge_attrs["created_by"] = edge.created_by
+            if edge.fallback_reason:
+                edge_attrs["fallback_reason"] = edge.fallback_reason
+            from_cand = node_candidates.get(edge.from_candidate_id)
+            to_cand = node_candidates.get(edge.to_candidate_id)
+            from_hint = (
+                _enum_value(from_cand.node_type) if from_cand
+                else from_xref_type
+            )
+            to_hint = (
+                _enum_value(to_cand.node_type) if to_cand
+                else to_xref_type
+            )
+            orch.create_edge(
+                edge_type=_enum_value(edge.edge_type),
+                from_id=from_id,
+                to_id=to_id,
+                attrs=edge_attrs,
+                from_type=from_hint,
+                to_type=to_hint,
+            )
+
+        # v0.3.0 R2: recompute relevance_score for every node touched by
+        # this session. This includes nodes-only fallback commits, which
+        # otherwise stay pinned to the neutral 0.5 score and inflate
+        # kg_health.default_score_ratio.
+        try:
+            from okto_pulse.core.kg.scoring import _recompute_relevance_batch
+
+            endpoints_to_recompute: list[tuple[str, str]] = []
+            seen: set[tuple[str, str]] = set()
+            for cand_id, node_id in candidate_to_kuzu_id.items():
+                node_type = candidate_to_node_type.get(cand_id)
+                if not node_type:
+                    continue
+                key = (node_type, node_id)
+                if key not in seen:
+                    seen.add(key)
+                    endpoints_to_recompute.append(key)
             for edge in edge_candidates.values():
-                from_id, from_xref_type = _resolve_endpoint(
+                from_id_resolved, from_type_resolved = _resolve_endpoint(
                     edge.from_candidate_id, candidate_to_kuzu_id, kconn=kconn,
                 )
-                to_id, to_xref_type = _resolve_endpoint(
+                if from_type_resolved is None:
+                    from_type_resolved = candidate_to_node_type.get(
+                        edge.from_candidate_id
+                    )
+                to_id_resolved, to_type_resolved = _resolve_endpoint(
                     edge.to_candidate_id, candidate_to_kuzu_id, kconn=kconn,
                 )
-                if from_id is None or to_id is None:
-                    continue
-                edge_attrs: dict[str, object] = {"confidence": edge.confidence}
-                if edge.layer:
-                    edge_attrs["layer"] = edge.layer
-                if edge.rule_id:
-                    edge_attrs["rule_id"] = edge.rule_id
-                if edge.created_by:
-                    edge_attrs["created_by"] = edge.created_by
-                if edge.fallback_reason:
-                    edge_attrs["fallback_reason"] = edge.fallback_reason
-                from_cand = node_candidates.get(edge.from_candidate_id)
-                to_cand = node_candidates.get(edge.to_candidate_id)
-                from_hint = (
-                    _enum_value(from_cand.node_type) if from_cand
-                    else from_xref_type
-                )
-                to_hint = (
-                    _enum_value(to_cand.node_type) if to_cand
-                    else to_xref_type
-                )
-                orch.create_edge(
-                    edge_type=_enum_value(edge.edge_type),
-                    from_id=from_id,
-                    to_id=to_id,
-                    attrs=edge_attrs,
-                    from_type=from_hint,
-                    to_type=to_hint,
-                )
-
-            # v0.3.0 R2: recompute relevance_score for every node touched by
-            # this session. This includes nodes-only fallback commits, which
-            # otherwise stay pinned to the neutral 0.5 score and inflate
-            # kg_health.default_score_ratio.
-            try:
-                from okto_pulse.core.kg.scoring import _recompute_relevance_batch
-
-                endpoints_to_recompute: list[tuple[str, str]] = []
-                seen: set[tuple[str, str]] = set()
-                for cand_id, node_id in candidate_to_kuzu_id.items():
-                    node_type = candidate_to_node_type.get(cand_id)
-                    if not node_type:
-                        continue
-                    key = (node_type, node_id)
+                if to_type_resolved is None:
+                    to_type_resolved = candidate_to_node_type.get(
+                        edge.to_candidate_id
+                    )
+                if from_id_resolved and from_type_resolved:
+                    key = (from_type_resolved, from_id_resolved)
                     if key not in seen:
                         seen.add(key)
                         endpoints_to_recompute.append(key)
-                for edge in edge_candidates.values():
-                    from_id_resolved, from_type_resolved = _resolve_endpoint(
-                        edge.from_candidate_id, candidate_to_kuzu_id, kconn=kconn,
-                    )
-                    if from_type_resolved is None:
-                        from_type_resolved = candidate_to_node_type.get(
-                            edge.from_candidate_id
-                        )
-                    to_id_resolved, to_type_resolved = _resolve_endpoint(
-                        edge.to_candidate_id, candidate_to_kuzu_id, kconn=kconn,
-                    )
-                    if to_type_resolved is None:
-                        to_type_resolved = candidate_to_node_type.get(
-                            edge.to_candidate_id
-                        )
-                    if from_id_resolved and from_type_resolved:
-                        key = (from_type_resolved, from_id_resolved)
-                        if key not in seen:
-                            seen.add(key)
-                            endpoints_to_recompute.append(key)
-                    if to_id_resolved and to_type_resolved:
-                        key = (to_type_resolved, to_id_resolved)
-                        if key not in seen:
-                            seen.add(key)
-                            endpoints_to_recompute.append(key)
-                if endpoints_to_recompute:
-                    _recompute_relevance_batch(
-                        kconn, board_id, endpoints_to_recompute,
-                        trigger="degree_delta",
-                    )
-            except Exception as exc:
-                logger.warning(
-                    "kg.scoring.commit_hook_failed session=%s err=%s",
-                    session_id, exc,
+                if to_id_resolved and to_type_resolved:
+                    key = (to_type_resolved, to_id_resolved)
+                    if key not in seen:
+                        seen.add(key)
+                        endpoints_to_recompute.append(key)
+            if endpoints_to_recompute:
+                _recompute_relevance_batch(
+                    kconn, board_id, endpoints_to_recompute,
+                    trigger="degree_delta",
                 )
-
-            committed_at = datetime.now(timezone.utc)
-            return (
-                candidate_to_kuzu_id,
-                orch.counters,
-                list(orch.records),
-                committed_at,
-                connectivity,
+        except Exception as exc:
+            logger.warning(
+                "kg.scoring.commit_hook_failed session=%s err=%s",
+                session_id, exc,
             )
 
-        except KGPrimitiveError:
-            raise
-        except Exception as exc:
-            _compensate_kuzu_writes(board_id, session_id, orch.records)
-            message, details = _contextualize_ladybug_commit_error(exc)
-            raise KGPrimitiveError(
-                "commit_failed",
-                f"commit failed and was compensated: {message}",
-                session_id=session_id,
-                details=details,
-            ) from exc
+        committed_at = datetime.now(timezone.utc)
+        run_async_blocking(kconn.commit())
+        return (
+            candidate_to_kuzu_id,
+            orch.counters,
+            list(orch.records),
+            committed_at,
+            connectivity,
+        )
+
+    except KGPrimitiveError:
+        try:
+            run_async_blocking(kconn.rollback())
+        except Exception:
+            pass
+        raise
+    except Exception as exc:
+        try:
+            run_async_blocking(kconn.rollback())
+        except Exception:
+            pass
+        _compensate_kuzu_writes(board_id, session_id, orch.records)
+        message, details = _contextualize_ladybug_commit_error(exc)
+        raise KGPrimitiveError(
+            "commit_failed",
+            f"commit failed and was compensated: {message}",
+            session_id=session_id,
+            details=details,
+        ) from exc
 
 
 async def commit_consolidation(

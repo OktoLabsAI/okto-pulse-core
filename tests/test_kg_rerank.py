@@ -209,38 +209,18 @@ def test_factory_llm_strategy_wires_fn():
     assert rr.name == "llm"
 
 
-def test_cross_encoder_reranker_raises_import_error_without_dep(monkeypatch):
-    """Direct-construction test: without `sentence_transformers` importable,
-    instantiating CrossEncoderReranker raises ImportError with a clear
-    pip hint. This is the precondition the factory's try/except relies
-    on — the factory-level fallback is covered by a code-level invariant
-    (see factory.py L60-72) and not unit-tested with a heavyweight
-    monkeypatch because `sentence_transformers` is typically installed
-    in CI and mocking the submodule import plus the parent package
-    attribute is brittle across Python versions on Windows.
+def test_cross_encoder_without_edition_factory_falls_back_to_token_overlap():
+    """The core no longer owns a concrete CrossEncoderReranker.
+
+    If no edition registers a cross_encoder factory, the strategy degrades to the
+    deterministic token-overlap fallback without importing sentence_transformers.
     """
-    import sys
+    from okto_pulse.core.kg.rerank.factory import reset_cross_encoder_factory
 
-    # Force-unload sentence_transformers if it was pre-loaded by another
-    # test; the ImportError path depends on the import inside __init__.
-    for mod in list(sys.modules):
-        if mod.startswith("sentence_transformers"):
-            monkeypatch.delitem(sys.modules, mod, raising=False)
-    # Make the import fail by injecting a sentinel that raises on attr
-    # lookup. Safer than `sys.modules[X] = None` which Python interprets
-    # specially.
-    class _Blocker:
-        def __getattr__(self, name):
-            raise ImportError(
-                "sentence_transformers blocked by test fixture"
-            )
-
-    monkeypatch.setitem(sys.modules, "sentence_transformers", _Blocker())
-
-    from okto_pulse.core.kg.rerank.cross_encoder import CrossEncoderReranker
-
-    with pytest.raises(ImportError, match="sentence-transformers"):
-        CrossEncoderReranker()
+    reset_reranker_cache()
+    reset_cross_encoder_factory()
+    rr = get_reranker("cross_encoder", cross_encoder_model="unregistered")
+    assert rr.name == "token_overlap"
 
 
 # ===========================================================================

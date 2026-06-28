@@ -21,7 +21,13 @@ import pytest_asyncio
 # Path setup — must happen before any okto_pulse import
 # ---------------------------------------------------------------------------
 
-sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
+_CORE_SRC = Path(__file__).parent / ".." / "src"
+_COMMUNITY_SRC = (
+    Path(__file__).resolve().parents[2] / "okto_labs_pulse_community" / "src"
+)
+sys.path.insert(0, str(_CORE_SRC))
+if _COMMUNITY_SRC.exists():
+    sys.path.insert(0, str(_COMMUNITY_SRC))
 
 # ---------------------------------------------------------------------------
 # Test logging infrastructure (must be imported early)
@@ -209,6 +215,25 @@ def _kg_registry_test_fakes():
     (the sanctioned test/fake route) so it is literal that tests run on fakes; a
     test that needs a specific composition just reconfigures the registry. Real
     runtime must supply a ``base_registry`` (Community adapters) instead.
+    """
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
+
+    reset_registry_for_tests()
+    configure_test_kg_registry()
+    yield
+    reset_registry_for_tests()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _kg_registry_module_bootstrap_seed():
+    """Seed the registry for legacy module-scoped KG fixtures.
+
+    A few older integration modules bootstrap the global discovery graph from a
+    module-scoped fixture, before the function-scoped registry fixture above can
+    run. Keep a minimal explicit test composition available for those setup
+    paths; each individual test still gets a fresh registry from
+    ``_kg_registry_test_fakes``.
     """
     from kg_registry_testing import configure_test_kg_registry
     from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests

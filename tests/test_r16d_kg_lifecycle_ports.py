@@ -12,15 +12,15 @@ Authoritative scenario mapping (1:1 with the spec/card titles):
                 close_all_connections; a KG-close failure is logged
                 (kg.shutdown.close_connections_failed) and close_db() STILL runs
                 (tr_5c727d9b).
-  ts_a627315d — Registry conformance: the default registry provides embedded
+  ts_a627315d — Registry conformance: the test registry provides in-memory
                 graph_schema_manager / graph_lifecycle / graph_path_resolver that
                 satisfy their runtime_checkable Protocols (ac_03d8a102).
   ts_960cc3bf — Regression #06/#03b green: the golden lifespan replay passes with
                 no unexpected delta and the default-only exclusions are unchanged
                 (tr_06adc038 / tr_ae79d1f2).
-  ts_f83ad3db — Scope / register-before-remove: change limited to core/app.py;
-                the extracted helper imports no kg.schema, and the kg.schema
-                lifecycle helpers + embedded adapters are NOT removed.
+  ts_f83ad3db — Scope / register-before-remove: startup helpers and the core
+                registry do not import kg.schema / embedded Kuzu runtime, while
+                test-only graph fakes remain available.
 
 Async port calls are driven via ``asyncio.run`` in sync tests (no pytest-asyncio
 dependency).
@@ -338,27 +338,27 @@ def test_ts_f967116f_close_db_continues_when_kg_close_fails():
 
 
 # ===========================================================================
-# ts_a627315d — Registry conformance (runtime_checkable + embedded adapters).
+# ts_a627315d — Registry conformance (runtime_checkable + test fakes).
 # ===========================================================================
-def test_ts_a627315d_registry_providers_conform_and_are_embedded():
+def test_ts_a627315d_registry_providers_conform_and_are_memory_fakes():
     reset_registry_for_tests()
-    configure_test_kg_registry()
+    configure_test_kg_registry(graph_provider="inmemory")
     try:
         reg = get_kg_registry()
         assert isinstance(reg.graph_schema_manager, GraphSchemaManager)
         assert isinstance(reg.graph_lifecycle, GraphLifecycle)
         assert isinstance(reg.graph_path_resolver, GraphPathResolver)
 
-        assert reg.graph_schema_manager.__class__.__name__ == "KuzuGraphSchemaManager"
-        assert reg.graph_lifecycle.__class__.__name__ == "KuzuGraphLifecycle"
-        assert reg.graph_path_resolver.__class__.__name__ == "KuzuGraphPathResolver"
+        assert reg.graph_schema_manager.__class__.__name__ == "InMemoryGraphSchemaManager"
+        assert reg.graph_lifecycle.__class__.__name__ == "InMemoryGraphLifecycle"
+        assert reg.graph_path_resolver.__class__.__name__ == "InMemoryGraphPathResolver"
         for provider in (
             reg.graph_schema_manager,
             reg.graph_lifecycle,
             reg.graph_path_resolver,
         ):
             assert provider.__class__.__module__.startswith(
-                "okto_pulse.core.kg.providers.embedded"
+                "okto_pulse.core.kg.providers.testing"
             )
         # The port methods the migrated callers use are coroutine functions.
         assert asyncio.iscoroutinefunction(reg.graph_schema_manager.ensure_bootstrapped)
@@ -424,30 +424,32 @@ def test_ts_f83ad3db_scope_limited_register_before_remove():
         f"startup_schema_sweep must not import kg.schema; saw {sorted(sweep_imports)}"
     )
 
-    # 2) register-before-remove: the kg.schema lifecycle helpers are NOT removed.
-    from okto_pulse.core.kg.schema import (  # noqa: F401
-        board_kuzu_path,
-        close_all_connections,
-        ensure_board_graph_bootstrapped,
-        migrate_schema_for_board,
-        open_board_connection,
+    # 2) The core registry no longer imports the runtime schema/Kuzu providers.
+    from okto_pulse.core.kg.interfaces import registry as _registry_mod
+
+    registry_imports = _module_imports(
+        ast.parse(Path(_registry_mod.__file__).read_text(encoding="utf-8"))
+    )
+    forbidden = [
+        mod
+        for mod in registry_imports
+        if "core.kg.schema" in mod or "core.kg.providers.embedded.kuzu" in mod
+    ]
+    assert forbidden == []
+
+    # 3) The sanctioned core graph implementations are test-only fakes.
+    from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+        InMemoryGraphLifecycle,
+        InMemoryGraphPathResolver,
+        InMemoryGraphSchemaManager,
+        InMemoryGraphTransaction,
+        InMemoryGraphStore,
     )
 
-    for fn in (
-        board_kuzu_path, close_all_connections, ensure_board_graph_bootstrapped,
-        migrate_schema_for_board, open_board_connection,
-    ):
-        assert callable(fn)
-
-    # 3) The embedded Kuzu adapters still exist (not removed/altered).
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_lifecycle import (
-        KuzuGraphLifecycle,
-    )
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_path_resolver import (
-        KuzuGraphPathResolver,
-    )
-    from okto_pulse.core.kg.providers.embedded.kuzu_graph_schema_manager import (
-        KuzuGraphSchemaManager,
-    )
-
-    assert all((KuzuGraphSchemaManager, KuzuGraphLifecycle, KuzuGraphPathResolver))
+    assert all((
+        InMemoryGraphStore,
+        InMemoryGraphTransaction,
+        InMemoryGraphSchemaManager,
+        InMemoryGraphLifecycle,
+        InMemoryGraphPathResolver,
+    ))

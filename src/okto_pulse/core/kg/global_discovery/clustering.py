@@ -13,16 +13,70 @@ Topics/Entities, GC those with zero references.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import re
+import threading
 import unicodedata
 import uuid
+from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.clustering")
 
 TOPIC_SIMILARITY_THRESHOLD = 0.75
 ENTITY_CANONICALIZATION_THRESHOLD = 0.85
+
+
+def _run_async_blocking(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    box: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            box["result"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised below
+            box["error"] = exc
+
+    thread = threading.Thread(
+        target=_runner,
+        name="kg-global-discovery-board-write",
+        daemon=True,
+    )
+    thread.start()
+    thread.join()
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
+
+
+def _execute_board_write_sync(
+    board_id: str,
+    cypher: str,
+    params: dict[str, Any] | None = None,
+) -> Any:
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    async def _run() -> Any:
+        async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+            return scope.execute(cypher, params or {})
+
+    return _run_async_blocking(_run())
+
+
+def _first_count(result: Any) -> int:
+    try:
+        if result is not None and hasattr(result, "has_next") and result.has_next():
+            row = result.get_next()
+            return int(row[0] or 0)
+    finally:
+        if result is not None and hasattr(result, "close"):
+            result.close()
+    return 0
 
 
 def normalize_name(name: str) -> str:
@@ -86,11 +140,8 @@ def board_delete_cascade(board_id: str) -> dict:
     lane first.
     """
     from okto_pulse.core.kg.global_discovery.schema import open_global_connection
-    from okto_pulse.core.kg.schema import (
-        NODE_TYPES,
-        board_kuzu_path,
-        open_board_connection,
-    )
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+    from okto_pulse.core.kg.schema_contract import NODE_TYPES
     from okto_pulse.core.kg.write_barrier import require_write_token
 
     require_write_token(board_id)
@@ -149,28 +200,28 @@ def board_delete_cascade(board_id: str) -> dict:
         )
 
     # 1. Wipe per-board Kùzu graph (skip BoardMeta singleton).
-    if board_kuzu_path(board_id).exists():
-        try:
-            with open_board_connection(board_id) as (_db, conn):
-                for node_type in NODE_TYPES:
-                    if node_type == "BoardMeta":
-                        continue
-                    try:
-                        res = conn.execute(
-                            f"MATCH (n:{node_type}) DETACH DELETE n RETURN count(n)"
-                        )
-                        if res.has_next():
-                            counts["board_nodes_removed"] += int(res.get_next()[0] or 0)
-                    except Exception as exc:
-                        logger.warning(
-                            "board_delete.per_board_wipe_failed board=%s type=%s err=%s",
-                            board_id, node_type, exc,
-                        )
-        except Exception as exc:
-            logger.warning(
-                "board_delete.per_board_open_failed board=%s err=%s",
-                board_id, exc,
-            )
+    try:
+        if get_kg_registry().graph_path_resolver.exists(board_id):
+            for node_type in NODE_TYPES:
+                if node_type == "BoardMeta":
+                    continue
+                try:
+                    result = _execute_board_write_sync(
+                        board_id,
+                        f"MATCH (n:{node_type}) DETACH DELETE n RETURN count(n)",
+                    )
+                    counts["board_nodes_removed"] += _first_count(result)
+                except Exception as exc:
+                    logger.warning(
+                        "board_delete.per_board_wipe_failed "
+                        "board=%s type=%s err=%s",
+                        board_id, node_type, exc,
+                    )
+    except Exception as exc:
+        logger.warning(
+            "board_delete.per_board_open_failed board=%s err=%s",
+            board_id, exc,
+        )
 
     gdb, gconn = open_global_connection()
     try:

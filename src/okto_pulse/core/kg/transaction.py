@@ -33,7 +33,7 @@ from typing import Any, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.kg.schema import (
+from okto_pulse.core.kg.schema_contract import (
     MULTI_REL_TYPES,
     NODE_TYPES,
     REL_TYPES,

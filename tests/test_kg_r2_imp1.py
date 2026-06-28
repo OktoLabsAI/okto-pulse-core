@@ -60,6 +60,22 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    from kg_registry_testing import (
+        RealBoardCypherExecutorForTests,
+        RealBoardGraphPathResolverForTests,
+        RealBoardGraphTransactionForTests,
+        configure_test_kg_registry,
+    )
+
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+        graph_path_resolver=RealBoardGraphPathResolverForTests(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers — real SQL source rows + real worker/orchestrator pipeline
 # ---------------------------------------------------------------------------

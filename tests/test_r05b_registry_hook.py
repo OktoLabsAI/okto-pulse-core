@@ -108,6 +108,13 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
             config=_Sentinel(),  # R-P2-03D: config is composition-supplied (required)
             event_bus=_SentinelBus(),
             audit_repo=_SentinelAudit(),
+            graph_store=_Sentinel(),
+            cypher_executor=_Sentinel(),
+            graph_transaction=_Sentinel(),
+            graph_schema_manager=_Sentinel(),
+            graph_lifecycle=_Sentinel(),
+            graph_path_resolver=_Sentinel(),
+            safe_write_step_adapter=_Sentinel(),
         )
         configure_kg_registry(session_factory=object(), base_registry=base)
         reg = get_kg_registry()
@@ -123,13 +130,13 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
         # R-P2-03D: config is the composition-supplied one, NOT a core-filled
         # implicit SettingsKGConfig (the embedded default was retired here).
         assert reg.config is base.config
-        # The core-owned graph slots ARE mounted by the core.
-        assert reg.graph_store is not None
-        assert reg.cypher_executor is not None
-        assert reg.graph_transaction is not None
-        assert reg.graph_schema_manager is not None
-        assert reg.graph_lifecycle is not None
-        assert reg.graph_path_resolver is not None
+        # R-P2-05: graph slots are composition-supplied, never mounted by core.
+        assert reg.graph_store is base.graph_store
+        assert reg.cypher_executor is base.cypher_executor
+        assert reg.graph_transaction is base.graph_transaction
+        assert reg.graph_schema_manager is base.graph_schema_manager
+        assert reg.graph_lifecycle is base.graph_lifecycle
+        assert reg.graph_path_resolver is base.graph_path_resolver
         # audit_repo / event_bus are composition-supplied, never auto-wired.
         assert reg.audit_repo is base.audit_repo
         assert reg.event_bus is base.event_bus
@@ -168,12 +175,19 @@ def test_ts_66c96a7e_defaults_factory_path_also_composes(monkeypatch):
                 config=_Sentinel(),  # R-P2-03D: config required from the composition
                 event_bus=_SentinelBus(),
                 audit_repo=_SentinelAudit(),
+                graph_store=_Sentinel(),
+                cypher_executor=_Sentinel(),
+                graph_transaction=_Sentinel(),
+                graph_schema_manager=_Sentinel(),
+                graph_lifecycle=_Sentinel(),
+                graph_path_resolver=_Sentinel(),
+                safe_write_step_adapter=_Sentinel(),
             )
 
         configure_kg_registry(session_factory=object(), defaults_factory=_factory)
         reg = get_kg_registry()
         assert counts == {"cache": 0, "rate_limiter": 0, "session_store": 0, "embedding": 0}
-        assert reg.graph_store is not None
+        assert isinstance(reg.graph_store, _Sentinel)
         assert isinstance(reg.audit_repo, _SentinelAudit)
     finally:
         reset_registry_for_tests()

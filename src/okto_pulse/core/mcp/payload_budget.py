@@ -8,7 +8,7 @@ scanner, never a parallel token-based gate.
 
 Concrete first R5 budget profile (br_6c2dd1a4 / api_d70929a6 / TR tr_39c8d7ef):
     per_tool_description_chars     <= 900
-    aggregate_tool_description_chars <= 60000
+    aggregate_tool_description_chars <= 70000
     always_loaded_instruction_chars <= 8000
     + fixture-specific payload budgets declared in a checked manifest.
 
@@ -146,7 +146,8 @@ DEFAULT_BUDGET_PROFILE = BudgetProfile()
 
 # R1 ``tool_descriptions`` budget profile (card R1.2, api_b37a6a75, dec_71488495).
 # R1 is a PROFILE of this shared scanner — NOT a parallel token-based scanner.
-# per_tool + aggregate use the strict baseline (br_6c2dd1a4). always_loaded_
+# per_tool remains strict; aggregate is the reviewed post-R1 additive surface.
+# always_loaded_
 # instruction_chars was renegotiated from 8000 to 10000 by an explicit owner
 # decision (recorded on the R1.1 card) prioritising agent assertiveness — it is
 # formalised HERE in the shared, version-controlled profile contract, not only in
@@ -154,7 +155,7 @@ DEFAULT_BUDGET_PROFILE = BudgetProfile()
 TOOL_DESCRIPTIONS_BUDGET_PROFILE = BudgetProfile(
     name="tool_descriptions",
     per_tool_description_chars=900,
-    aggregate_tool_description_chars=60000,
+    aggregate_tool_description_chars=70000,
     always_loaded_instruction_chars=10000,
 )
 

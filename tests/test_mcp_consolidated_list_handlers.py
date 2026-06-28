@@ -204,12 +204,25 @@ def _wire_mcp_session(db_factory):
 
 
 @pytest.fixture(autouse=True)
-def _set_api_key():
-    """Set the MCP active API key so _get_agent_ctx() can resolve the agent."""
-    from okto_pulse.core.mcp.server import _active_api_key
-    token = _active_api_key.set(API_KEY)
-    yield
-    _active_api_key.reset(token)
+def _set_api_key(monkeypatch):
+    """Expose a request-scoped MCP credential to direct handler calls."""
+    import fastmcp.server.dependencies as deps
+    from okto_pulse.core.mcp import server
+    from okto_pulse.core.ports import McpCredential
+
+    class _Req:
+        query_params = {}
+        headers = {}
+
+        def __init__(self):
+            self.scope = {
+                server._MCP_CREDENTIAL_SCOPE_KEY: McpCredential(
+                    source="query_param",
+                    value=API_KEY,
+                )
+            }
+
+    monkeypatch.setattr(deps, "get_http_request", lambda: _Req())
 
 
 # ---------------------------------------------------------------------------

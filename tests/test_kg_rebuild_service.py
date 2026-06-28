@@ -37,6 +37,23 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     LockOwnerProbe,
 )
 from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    RealBoardGraphLifecycleForTests,
+    RealBoardGraphPathResolverForTests,
+    RealBoardGraphTransactionForTests,
+    configure_test_kg_registry,
+)
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+        graph_path_resolver=RealBoardGraphPathResolverForTests(),
+        graph_lifecycle=RealBoardGraphLifecycleForTests(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -645,6 +662,7 @@ def test_post_rebuild_run_endpoint_is_registered_and_callable(tmp_path: Path, mo
 
     from okto_pulse.core.api.router import api_router
     from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     paths = {route.path for route in api_router.routes}
     assert "/api/v1/kg/rebuild/run" in paths
@@ -662,39 +680,50 @@ def test_post_rebuild_run_endpoint_is_registered_and_callable(tmp_path: Path, mo
 
     app.dependency_overrides[require_user] = _fake_user
 
+    registry = get_kg_registry()
+    original_step_adapter = registry.safe_write_step_adapter
+
+    def _missing_real_lifecycle_adapter(board_id: str, graph_type: str, step: str):
+        return LifecycleStepResult(ok=False, detail="real lifecycle adapter unavailable")
+
+    registry.safe_write_step_adapter = _missing_real_lifecycle_adapter
+
     # Full lifecycle via the real endpoints: preflight → confirm → run.
-    with TestClient(app) as client:
-        pre = client.post(
-            "/api/v1/kg/rebuild/preflight",
-            params={"board_id": "b-endpoint"},
-        )
-        assert pre.status_code == 200
-        manifest_ref = pre.json()["manifest_ref"]
-        preflight_hash = pre.json()["preflight_hash"]
+    try:
+        with TestClient(app) as client:
+            pre = client.post(
+                "/api/v1/kg/rebuild/preflight",
+                params={"board_id": "b-endpoint"},
+            )
+            assert pre.status_code == 200
+            manifest_ref = pre.json()["manifest_ref"]
+            preflight_hash = pre.json()["preflight_hash"]
 
-        conf = client.post(
-            "/api/v1/kg/rebuild/confirm",
-            json={
-                "board_id": "b-endpoint",
-                "operation": "rebuild",
-                "preflight_hash": preflight_hash,
-                "manifest_ref": manifest_ref,
-            },
-        )
-        assert conf.status_code == 200
-        confirmation_id = conf.json()["confirmation_id"]
+            conf = client.post(
+                "/api/v1/kg/rebuild/confirm",
+                json={
+                    "board_id": "b-endpoint",
+                    "operation": "rebuild",
+                    "preflight_hash": preflight_hash,
+                    "manifest_ref": manifest_ref,
+                },
+            )
+            assert conf.status_code == 200
+            confirmation_id = conf.json()["confirmation_id"]
 
-        run = client.post(
-            "/api/v1/kg/rebuild/run",
-            json={
-                "confirmation_id": confirmation_id,
-                "board_id": "b-endpoint",
-                "operation": "rebuild",
-                "preflight_hash": preflight_hash,
-                "manifest_ref": manifest_ref,
-                "reason": "endpoint integration smoke",
-            },
-        )
+            run = client.post(
+                "/api/v1/kg/rebuild/run",
+                json={
+                    "confirmation_id": confirmation_id,
+                    "board_id": "b-endpoint",
+                    "operation": "rebuild",
+                    "preflight_hash": preflight_hash,
+                    "manifest_ref": manifest_ref,
+                    "reason": "endpoint integration smoke",
+                },
+            )
+    finally:
+        registry.safe_write_step_adapter = original_step_adapter
     assert run.status_code == 200, run.text
     body = run.json()
     # The endpoint smoke test does not start the consolidation worker nor seed

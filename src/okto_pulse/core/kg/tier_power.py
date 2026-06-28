@@ -23,7 +23,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
-from okto_pulse.core.kg.schema import (
+from okto_pulse.core.kg.schema_contract import (
     NODE_TYPES,
     SCHEMA_VERSION,
     STABLE_NODE_PROPERTIES,

@@ -22,6 +22,7 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
   - 24 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability, rebuild preflight/confirm/run)
   - Community runtime exposure: 215 core MCP tools, 0 community-only MCP tools
 - **App factory** — `create_app()` with dependency injection for auth and storage providers
+- **Hexagonal backend ports** — runtime, telemetry, repository/UoW and KG provider seams, plus the adapter readiness ledger, documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - **Embedded Knowledge Graph** — per-board LadybugDB instance + global discovery meta-graph, deterministic + cognitive workers, 11 node types and 10 relationship types
 
 ## Governance Gate Surface
@@ -40,24 +41,23 @@ The two execution-quality additions introduced in 0.2.3 — **cognitive closeout
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Single Python process  (single Kùzu lock holder)        │
-│                                                          │
-│   ┌─────────────────┐         ┌──────────────────┐       │
-│   │  uvicorn :api   │         │  uvicorn :mcp    │       │
-│   │   FastAPI app   │         │  MCP ASGI app    │       │
-│   │   /api/v1/*     │         │  /mcp            │       │
-│   │   /static, SPA  │         │  streamable-http │       │
-│   └────────┬────────┘         └────────┬─────────┘       │
-│            │                           │                  │
-│            └─────────┬─────────────────┘                  │
-│                      │                                    │
-│           shared module-level state:                      │
-│           - Mongo session factory (init via lifespan)     │
-│           - _global_db (Kùzu cache)                       │
-│           - _active_api_key (ContextVar)                  │
-└─────────────────────────────────────────────────────────┘
+For the backend hexagonal refactor, the full port inventory and the executable
+adapter-readiness ledger, see [`ARCHITECTURE.md`](./ARCHITECTURE.md). This
+README keeps only the runtime topology summary.
+
+```text
+Single Python process
+|-- uvicorn :api
+|   |-- FastAPI REST API under /api/v1
+|   `-- static SPA assets
+`-- uvicorn :mcp
+    `-- MCP ASGI app under /mcp using streamable HTTP
+
+Shared by composition:
+- SQLAlchemy session factory registered during lifespan
+- RuntimeComposition providers for settings, auth, storage, events and scheduler control
+- KGProviderRegistry providers supplied by the active edition
+- MCP credential resolved from the ASGI/FastMCP request scope
 ```
 
 `build_mcp_asgi_app()` and `mount_mcp(app)` are the two helpers exposed from `okto_pulse.core.mcp` — pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app.
@@ -207,7 +207,7 @@ This branch turns 0.2.0 into the governed SDLC + Knowledge Graph release.
 
 #### Fix C: single-process, dual-port serve (Kùzu lock contention)
 
-`okto-pulse serve` now runs API/UI **and** MCP from a **single Python process** but on **two different ports** (`--api-port` defaults to 8100, `--mcp-port` defaults to 8101). Two `uvicorn.Server` instances run concurrently inside one `asyncio.gather` — the embedded Kùzu DB is owned by exactly one OS process (no inter-process lock contention), and the two listeners share the module-level state (the registered session factory, the `_global_db` Kùzu cache, the `_active_api_key` `ContextVar`).
+`okto-pulse serve` now runs API/UI **and** MCP from a **single Python process** but on **two different ports** (`--api-port` defaults to 8100, `--mcp-port` defaults to 8101). Two `uvicorn.Server` instances run concurrently inside one `asyncio.gather` — the embedded graph runtime is owned by exactly one OS process (no inter-process lock contention), and the two listeners share the registered session factory plus the runtime/KG registries supplied by the active edition.
 
 What you get:
 - **No Kùzu file-lock thrash** — the embedded DB does not support multiple writers, so a single Python process is the only safe topology. The `kg.db_open.lock_retry path=... attempt=N/5` warnings disappear.
@@ -215,7 +215,7 @@ What you get:
 - **One lifespan** — `init_db`, KG worker startup, scheduler boot, and `register_session_factory` all run once on the API listener; the MCP sub-app picks up the registered factory automatically.
 
 Public surface:
-- `okto_pulse.core.mcp.build_mcp_asgi_app()` — returns the MCP ASGI app wrapped in the `ApiKeySessionMiddleware` (handles `?api_key=` / `X-API-Key` / `Authorization: Bearer` and binds the key to the request `ContextVar`).
+- `okto_pulse.core.mcp.build_mcp_asgi_app()` — returns the MCP ASGI app wrapped in the `ApiKeySessionMiddleware` (handles `?api_key=` / `X-API-Key` / `Authorization: Bearer` and binds the credential to the current ASGI/FastMCP request scope).
 - `okto_pulse.core.mcp.mount_mcp(app, mount_path="/mcp")` — mounts the same ASGI app onto an existing FastAPI app at the given path (community does this when an embedded mount is needed).
 - `okto_pulse.core.mcp.register_session_factory(factory)` — call from the API lifespan so the MCP sub-app finds the DB. Idempotent.
 

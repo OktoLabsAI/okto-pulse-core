@@ -466,6 +466,7 @@ def test_purge_board_graph_storage_goes_through_quarantine(tmp_path: Path):
     """val_79e6f555 regression: purge_board_graph_storage MUST move
     files to quarantine first, never unlink directly."""
     import okto_pulse.core.kg.schema as schema_module
+    import okto_pulse.community.adapters.kg_runtime as kg_runtime
 
     storage_root = tmp_path / "okto-data" / "boards"
     storage_root.mkdir(parents=True)
@@ -480,8 +481,8 @@ def test_purge_board_graph_storage_goes_through_quarantine(tmp_path: Path):
     import okto_pulse.core.kg.quarantine as quarantine_module
     quarantine_module.reset_quarantine_counter()
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(schema_module, "board_kuzu_path", fake_board_kuzu_path)
-    monkey.setattr(schema_module, "close_board_db_cache", lambda *_: None)
+    monkey.setattr(kg_runtime, "board_kuzu_path", fake_board_kuzu_path)
+    monkey.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
 
     try:
         primary = fake_board_kuzu_path("b1")
@@ -521,6 +522,7 @@ def test_purge_board_graph_storage_aborts_when_quarantine_fails(tmp_path: Path):
     """val_79e6f555 regression: if KGQuarantineService.create raises,
     purge MUST be aborted and the original files preserved."""
     import okto_pulse.core.kg.schema as schema_module
+    import okto_pulse.community.adapters.kg_runtime as kg_runtime
     import okto_pulse.core.kg.quarantine as quarantine_module
 
     storage_root = tmp_path / "okto-data" / "boards"
@@ -532,8 +534,8 @@ def test_purge_board_graph_storage_aborts_when_quarantine_fails(tmp_path: Path):
         return d / "graph.lbug"
 
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(schema_module, "board_kuzu_path", fake_board_kuzu_path)
-    monkey.setattr(schema_module, "close_board_db_cache", lambda *_: None)
+    monkey.setattr(kg_runtime, "board_kuzu_path", fake_board_kuzu_path)
+    monkey.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
     # Make KGQuarantineService.create always raise.
     original_create = quarantine_module.KGQuarantineService.create
 

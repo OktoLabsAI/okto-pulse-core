@@ -43,6 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.kg.async_bridge import run_async_blocking
+
 logger = logging.getLogger("okto_pulse.kg.board_rebuild_adapter")
 
 
@@ -125,12 +127,10 @@ class BoardRebuildIngestionAdapter:
         the original files.
         """
 
-        from okto_pulse.core.kg.schema import (
-            board_kuzu_path,
-            purge_board_graph_storage,
-        )
+        from okto_pulse.core.kg.interfaces import get_kg_registry
 
-        path = board_kuzu_path(board_id)
+        registry = get_kg_registry()
+        path = registry.graph_path_resolver.board_graph_path(board_id)
         targets: list[Path] = []
         if path.exists():
             targets.append(path)
@@ -139,9 +139,10 @@ class BoardRebuildIngestionAdapter:
         if not targets:
             return ()
 
-        moved = tuple(
-            purge_board_graph_storage(board_id, reason=reason)
+        report = run_async_blocking(
+            registry.graph_lifecycle.purge(board_id, reason=reason)
         )
+        moved = tuple(report.affected_paths)
         still_present = [p for p in targets if p.exists()]
         if still_present:
             raise RuntimeError(

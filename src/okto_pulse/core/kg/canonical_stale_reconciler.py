@@ -40,7 +40,7 @@ from okto_pulse.core.kg.canonical_learning_partition import (
     _is_bug_derived_ref,
 )
 from okto_pulse.core.kg.connectivity_guard import WriterClass, classify_writer_path
-from okto_pulse.core.kg.schema import open_board_connection
+from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
@@ -48,7 +48,6 @@ from okto_pulse.core.kg.source_maturity import (
     SourceMaturityClassification,
     classify_source_for_kg,
 )
-from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
 logger = logging.getLogger("okto_pulse.kg.canonical_stale_reconciler")
 
@@ -160,7 +159,7 @@ def _is_cognitive(node_type: str, created_by_agent: str) -> bool:
     return classify_writer_path(str(created_by_agent or "")) == WriterClass.COGNITIVE
 
 
-def _scan_and_demote(
+async def _scan_and_demote(
     board_id: str,
     source_by_id: dict[str, SourceMaturityClassification],
     target_ids: set[str] | None,
@@ -171,16 +170,11 @@ def _scan_and_demote(
     cognitive bug-derived material cases as debt-routing intents (handled async by
     the caller). Returns the list of debt intents."""
     cognitive_debt_intents: list[dict[str, Any]] = []
-    with open_board_connection(board_id) as (_db, conn):
-        orch = TransactionOrchestrator(
-            kuzu_conn=conn,
-            sqlite_session=None,
-            session_id=f"stale_{correlation_id[:12]}",
-            board_id=board_id,
-        )
+    transaction = get_kg_registry().graph_transaction
+    async with await transaction.begin(board_id) as scope:
         for ntype in ALL_NODE_TYPES:
             try:
-                res = conn.execute(
+                res = scope.execute(
                     f"MATCH (n:{ntype}) WHERE n.graph_layer = $c "
                     f"RETURN n.id, n.source_artifact_ref, n.created_by_agent, "
                     f"n.maturity_status",
@@ -237,10 +231,16 @@ def _scan_and_demote(
                 new_maturity = cls.maturity_status if cls else MATURITY_WORKING_STALE
                 reason = cls.reason_code if cls else "source_absent"
                 src_status = cls.artifact_status if cls else ""
-                orch.update_node(ntype, node_id, {
-                    "graph_layer": GRAPH_LAYER_WORKING,
-                    "maturity_status": new_maturity,
-                })
+                scope.execute(
+                    f"MATCH (n:{ntype} {{id: $node_id}}) "
+                    "SET n.graph_layer = $graph_layer, "
+                    "n.maturity_status = $maturity_status",
+                    {
+                        "node_id": node_id,
+                        "graph_layer": GRAPH_LAYER_WORKING,
+                        "maturity_status": new_maturity,
+                    },
+                )
                 record = {
                     "node_id": node_id,
                     "node_type": ntype,
@@ -359,7 +359,7 @@ async def reconcile_stale_canonical(
     source_by_id = _build_source_classification_map(board_id)
     target_ids = _source_ids_from_refs(source_refs)
 
-    debt_intents = _scan_and_demote(
+    debt_intents = await _scan_and_demote(
         board_id, source_by_id, target_ids, corr, result
     )
     for intent in debt_intents:

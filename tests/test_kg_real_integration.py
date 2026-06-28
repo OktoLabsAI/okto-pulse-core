@@ -8,7 +8,7 @@ It must be invoked explicitly:
 Environment requirements:
 - ~/.okto-pulse/data/pulse.db must exist (the real SQLite database)
 - ~/.okto-pulse/boards/<BOARD_ID>/graph.kuzu must exist (the real Kùzu graph)
-- sentence-transformers must be installed (pip install okto-pulse-core[kg-embeddings])
+- the Community edition must be installed for real sentence-transformers tests
 - The server must NOT be running (to avoid DB lock conflicts)
 
 NOTE: This test is designed to coexist with conftest.py's autouse fixtures.
@@ -240,7 +240,7 @@ def test_real_count_relationships():
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Real embedding via SentenceTransformerProvider
+# Test 5: Real embedding via CommunitySentenceTransformerProvider
 # ---------------------------------------------------------------------------
 
 @real_kg
@@ -250,9 +250,12 @@ def test_real_embedding():
     """Test that sentence-transformers embedding works."""
     logger.info("[KG-TEST] === Test 5: Real Embedding ===")
 
-    from okto_pulse.core.kg.embedding import SentenceTransformerProvider
+    community_embedding = pytest.importorskip(
+        "okto_pulse.community.adapters.embedding",
+        reason="real sentence-transformers provider lives in okto-pulse-community",
+    )
 
-    provider = SentenceTransformerProvider(
+    provider = community_embedding.CommunitySentenceTransformerProvider(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         dim=384,
     )
@@ -286,9 +289,12 @@ def test_real_hnsw_search():
     """Run a HNSW vector search directly against real Kùzu."""
     logger.info("[KG-TEST] === Test 6: HNSW Vector Search ===")
 
-    from okto_pulse.core.kg.embedding import SentenceTransformerProvider
+    community_embedding = pytest.importorskip(
+        "okto_pulse.community.adapters.embedding",
+        reason="real sentence-transformers provider lives in okto-pulse-community",
+    )
 
-    provider = SentenceTransformerProvider(
+    provider = community_embedding.CommunitySentenceTransformerProvider(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         dim=384,
     )

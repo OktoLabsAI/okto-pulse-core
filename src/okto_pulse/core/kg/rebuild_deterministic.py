@@ -74,7 +74,7 @@ DETERMINISTIC_REBUILD_ARTIFACT_TYPES: frozenset[str] = frozenset({
 # lazily so test fakes (and Ladybug schema migrations) can patch it.
 def _current_schema_version() -> str:
     try:
-        from okto_pulse.core.kg.schema import SCHEMA_VERSION
+        from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
 
         return SCHEMA_VERSION
     except Exception:  # pragma: no cover — defensive fallback

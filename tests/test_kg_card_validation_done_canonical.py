@@ -41,6 +41,7 @@ from okto_pulse.core.models.schemas import CardCreate, CardMove
 from okto_pulse.core.models.db import CardStatus
 from okto_pulse.core.services.main import CardService
 from okto_pulse.core.services.resource_gate import ResourceGateService
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str) -> str:
@@ -179,6 +180,7 @@ async def test_validation_gate_emits_card_moved_done(db_factory):
 async def test_validation_gate_promotes_card_to_canonical(db_factory):
     """ts_2d919388 (parte 2): após o evento, o enqueuer cria ConsolidationQueue(card)
     e, drenada a fila, card:<id> aparece em canonical-only (graph_layer=canonical)."""
+    configure_real_graph_test_kg_registry()
     board_id = f"valdone-{uuid.uuid4().hex[:10]}"
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     bootstrap_board_graph(board_id)

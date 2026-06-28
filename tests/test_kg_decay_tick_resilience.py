@@ -165,9 +165,7 @@ def test_ac1b_regression_fleet_abort_without_isolation():
 
     boards = ["board-A", "board-B", "board-C"]
     with pytest.raises(RuntimeError, match="graph is locked"):
-        asyncio.get_event_loop().run_until_complete(
-            _broken_run_daily_tick(boards, raise_on="board-B")
-        )
+        asyncio.run(_broken_run_daily_tick(boards, raise_on="board-B"))
 
 
 # ---------------------------------------------------------------------------

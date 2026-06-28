@@ -191,8 +191,8 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         # --- embedding / rerank (#13) ---
         _entry(
             adapter_key="sentence_transformer_embedding_provider",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/embedding.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/embedding.py",
             port_ref="EmbeddingProvider",
             wave="R05-EMBED",
             predecessor_refs=("#13_llm_embedding_rerank",),
@@ -200,11 +200,13 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             packages=("sentence-transformers", "torch", "huggingface_hub"),
             oracles_required=("embedding_dimension_parity", "describe_provider_metadata"),
             removal_criterion=(
-                "Community wires the embedding provider via composition with the "
-                "EmbeddingProvider port + dimension-parity oracle; the Stub stays "
-                "as the core fallback until then."
+                "R-P2-07 done: Community wires the sentence-transformers embedding "
+                "provider via composition with the EmbeddingProvider port + "
+                "dimension-parity oracle. The core keeps only the deterministic "
+                "stub fallback."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "R-P2-07"),),
         ),
         _entry(
             adapter_key="stub_embedding_provider",
@@ -224,8 +226,8 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         ),
         _entry(
             adapter_key="cross_encoder_reranker",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/rerank/cross_encoder.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/rerank.py",
             port_ref="Reranker",
             wave="R05-EMBED",
             predecessor_refs=("#13_llm_embedding_rerank",),
@@ -233,10 +235,12 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             packages=("sentence-transformers",),
             oracles_required=("rerank_order_parity", "lazy_import_to_token_overlap"),
             removal_criterion=(
-                "Community wires the cross-encoder via composition; the lazy "
-                "import->token_overlap fallback (R13-C) stays until then."
+                "R-P2-07 done: Community wires the cross-encoder via composition; "
+                "core cross_encoder without a registered edition factory degrades "
+                "to token_overlap."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "R-P2-07"),),
         ),
         # --- KG registry in-memory providers (#06) ---
         _entry(
@@ -287,7 +291,7 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             ),
             status="blocked",
         ),
-        # --- MCP auth context (#08 — R08-A + R08-B done; R08-C pending) ---
+        # --- MCP auth context (#08 — request-scope carrier done; bridge still in core) ---
         _entry(
             adapter_key="mcp_auth_context",
             owner="okto-pulse-core/inbound-mcp",
@@ -303,115 +307,122 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
                 "AuthSession<->AuthContext bridge reusing MCPAuthContext + the "
                 "Community composition registering auth_context_factory pass-through "
                 "so the KG query tools resolve agent_id/boards via the port) are "
-                "DONE. MCPAuthContext stays as a fail-closed in-transition embedded "
-                "exception: REMOVE only after R08-C provides a request_scope_provider "
-                "so the per-request identity no longer rides the _active_api_key "
-                "ContextVar (it is the register-HALF — nothing removed here)."
+                "DONE. R-P2-09 also removed the _active_api_key ContextVar carrier: "
+                "per-request identity now rides the ASGI/FastMCP request scope. "
+                "MCPAuthContext remains as a fail-closed embedded bridge; remove it "
+                "only after Community owns the concrete AuthContext bridge and the "
+                "MCP auth/board-ACL replay oracles remain green."
             ),
-            status="deferred",
+            status="blocked",
         ),
         # --- KG / Kuzu / Ladybug adapters (#06, deferred_to_05 subjects) ---
         _entry(
             adapter_key="kuzu_graph_store",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/kuzu_graph_store.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/kuzu_graph_store.py",
             port_ref="SemanticGraphStore",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu graph store)",
+            target_destination="community/adapters (kuzu graph store, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("graph_store_conformance", "vector_search_parity"),
             removal_criterion=(
-                "deferred_to_05: the kuzu_store provider is composition-owned and "
-                "the SemanticGraphStore port oracle passes; remove after the move."
+                "R-P2-05 done: Community registers CommunityKuzuGraphStore behind "
+                "SemanticGraphStore and the core embedded provider has been removed."
             ),
-            status="blocked",
+            status="ready",
             deferred_provider_key="kuzu_store",
+            metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
             adapter_key="kuzu_cypher_executor",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/kuzu_cypher_executor.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/kuzu_cypher_executor.py",
             port_ref="CypherExecutor",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu cypher executor)",
+            target_destination="community/adapters (kuzu cypher executor, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("cypher_executor_conformance",),
             removal_criterion=(
-                "deferred_to_05: composition owns the kuzu_store provider with the "
-                "CypherExecutor port oracle; remove after the move."
+                "R-P2-05 done: Community registers CommunityKuzuCypherExecutor "
+                "behind CypherExecutor and the core embedded provider has been removed."
             ),
-            status="blocked",
+            status="ready",
             deferred_provider_key="kuzu_store",
+            metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
             adapter_key="kuzu_graph_schema_manager",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/kuzu_graph_schema_manager.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/kuzu_graph_schema_manager.py",
             port_ref="GraphSchemaManager",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu schema manager)",
+            target_destination="community/adapters (kuzu schema manager, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("schema_bootstrap_idempotent",),
             removal_criterion=(
-                "deferred_to_05: the kg_registry provider is composition-owned; "
-                "remove the embedded schema manager after the registry move."
+                "R-P2-05 done: Community registers CommunityKuzuGraphSchemaManager "
+                "behind GraphSchemaManager and the core embedded provider has been removed."
             ),
-            status="blocked",
+            status="ready",
             deferred_provider_key="kg_registry",
+            metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
             adapter_key="kuzu_graph_lifecycle",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/kuzu_graph_lifecycle.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/kuzu_graph_lifecycle.py",
             port_ref="GraphLifecycle",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu lifecycle)",
+            target_destination="community/adapters (kuzu lifecycle, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("lifecycle_close_releases_handles",),
             removal_criterion=(
-                "deferred_to_05: the kg_registry provider is composition-owned; "
-                "remove the embedded lifecycle after the registry move."
+                "R-P2-05 done: Community registers CommunityKuzuGraphLifecycle "
+                "behind GraphLifecycle and the core embedded provider has been removed."
             ),
-            status="blocked",
+            status="ready",
             deferred_provider_key="kg_registry",
+            metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
             adapter_key="kuzu_graph_path_resolver",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/kuzu_graph_path_resolver.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/kuzu_graph_path_resolver.py",
             port_ref="GraphPathResolver",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu path resolver)",
+            target_destination="community/adapters (kuzu path resolver, moved by R-P2-05)",
             packages=("stdlib",),
             oracles_required=("path_resolver_exists_parity",),
             removal_criterion=(
-                "deferred_to_05: the kg_registry provider is composition-owned; "
-                "remove the embedded path resolver after the registry move."
+                "R-P2-05 done: Community registers CommunityKuzuGraphPathResolver "
+                "behind GraphPathResolver and the core embedded provider has been removed."
             ),
-            status="blocked",
+            status="ready",
             deferred_provider_key="kg_registry",
+            metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
             adapter_key="kuzu_graph_transaction",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/kuzu_graph_transaction.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/kuzu_graph_transaction.py",
             port_ref="GraphTransaction",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="community/adapters (kuzu transaction)",
+            target_destination="community/adapters (kuzu transaction, moved by R-P2-05)",
             packages=("ladybug(embedded)",),
             oracles_required=("transaction_open_board_connection",),
             removal_criterion=(
-                "deferred_to_05: the kg_registry provider is composition-owned; "
-                "remove the embedded transaction after the registry move."
+                "R-P2-05 done: Community registers CommunityKuzuGraphTransaction "
+                "behind GraphTransaction and the core embedded provider has been removed."
             ),
-            status="blocked",
+            status="ready",
             deferred_provider_key="kg_registry",
+            metadata=(("moved_by", "R-P2-05"),),
         ),
         _entry(
             adapter_key="global_discovery_db",

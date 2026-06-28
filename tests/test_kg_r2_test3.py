@@ -32,8 +32,23 @@ from r2_scenario_helpers import (
 
 from okto_pulse.core.kg.stale_canonical_parity import list_stale_canonical_parity
 from okto_pulse.core.services.kg_health_service import get_kg_health
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    RealBoardGraphPathResolverForTests,
+    RealBoardGraphTransactionForTests,
+    configure_test_kg_registry,
+)
 
 SCP = "stale_canonical_parity"
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+        graph_path_resolver=RealBoardGraphPathResolverForTests(),
+    )
 
 
 @pytest.fixture(autouse=True)

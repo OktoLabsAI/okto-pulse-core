@@ -121,6 +121,7 @@ def test_open_kuzu_db_failure_message_includes_graph_settings(tmp_path):
 def test_open_kuzu_db_retries_pybind_when_capi_shared_lib_is_missing(tmp_path):
     """A missing C-API shared library is a backend issue, not KG corruption."""
     from okto_pulse.core.kg import schema as schema_module
+    import okto_pulse.community.adapters.kg_runtime as kg_runtime
 
     configure_settings(CoreSettings(
         kg_kuzu_buffer_pool_mb=512,
@@ -155,7 +156,7 @@ def test_open_kuzu_db_retries_pybind_when_capi_shared_lib_is_missing(tmp_path):
     try:
         with (
             patch.dict("sys.modules", {"ladybug": _FakeKuzuModule}),
-            patch.object(schema_module, "_ladybug_pybind_available", return_value=True),
+            patch.object(kg_runtime, "_ladybug_pybind_available", return_value=True),
         ):
             db = schema_module._open_kuzu_db(tmp_path / "graph.lbug")
     finally:

@@ -2,14 +2,12 @@
 in core (spec R08-A; alias-aware extension R08-C, tr_f200464a / ac_0bfb5f90).
 
 After R08-A the MCP credential flows through the ``McpAuthenticator`` port
-(``ports/mcp_auth.py``) + the Community adapter, and R08-C re-pointed the MCP
-server facades (``_get_agent_ctx`` / ``_get_authenticated_agent``) at the
-``active_api_key_credential()`` shim. The ``_active_api_key`` ContextVar,
-``AgentService.get_agent_by_key`` and the two server facades remain ONLY as the
-register-before-remove shim/definition inside the MCP server (the ContextVar is
-retired in the later request_scope_provider phase, FR6). This gate fails when a
-NEW core consumer references those sensitive symbols directly outside the
-allowlisted shim/definition — that consumer must go through the port instead.
+(``ports/mcp_auth.py``) + the Community adapter, and R-P2-09 removed the
+``_active_api_key`` ContextVar carrier. The MCP server facades
+(``_get_agent_ctx`` / ``_get_authenticated_agent``), direct
+``AgentService.get_agent_by_key`` calls, and the retired ``_active_api_key``
+symbol are restricted: a NEW core consumer that needs MCP identity must go
+through the request-scoped shim or the port.
 
 Detection is deterministic, AST-based and ALIAS-AWARE (R05-D lesson — the same
 import-as / from-import / qualified-attribute / ASSIGNMENT-CHAIN resolution the
@@ -25,9 +23,9 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-#: Raw credential / legacy-facade symbols whose direct use is restricted to the
-#: shim/definition. R08-C adds the two MCP server facades (the per-request
-#: identity carriers) so a NEW external consumer must use the port, not the shim.
+#: Raw credential / legacy-facade symbols whose direct use is restricted. The
+#: retired ``_active_api_key`` name stays listed so a reintroduction or an
+#: aliased stale import still fails fast.
 SENSITIVE_SYMBOLS: tuple[str, ...] = (
     "_active_api_key",
     "get_agent_by_key",
@@ -35,8 +33,8 @@ SENSITIVE_SYMBOLS: tuple[str, ...] = (
     "_get_authenticated_agent",
 )
 
-#: Core files allowed to reference the sensitive symbols (register-before-remove):
-#:  * the MCP server shim (ContextVar carrier + facades + legacy lookup calls);
+#: Core files allowed to reference the sensitive symbols:
+#:  * the MCP server request-scope shim, facades and legacy lookup calls;
 #:  * the canonical ``AgentService.get_agent_by_key`` definition.
 ALLOWLISTED_FILES: frozenset[str] = frozenset(
     {
@@ -123,7 +121,7 @@ def _sensitive_symbols_in(tree: ast.Module) -> set[str]:
             if canonical is not None:
                 found.add(canonical)
         elif isinstance(node, ast.Attribute) and node.attr in _SENSITIVE:
-            # qualified access: ``mod.get_agent_by_key`` / ``server._active_api_key``
+            # qualified access: ``mod.get_agent_by_key`` / stale ``server._active_api_key``
             found.add(node.attr)
     return found
 

@@ -131,27 +131,22 @@ def _materialized_layer_counts(board_id: str) -> dict[str, int]:
     """
     counts: dict[str, int] = {}
     try:
-        from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
 
-        with open_board_connection(board_id) as (_db, conn):
-            for node_type in NODE_TYPES:
-                res = None
-                try:
-                    res = conn.execute(
-                        f"MATCH (n:{node_type}) RETURN n.graph_layer, count(n)"
-                    )
-                    while res.has_next():
-                        row = res.get_next()
-                        layer = str(row[0] or "unclassified")
-                        counts[layer] = counts.get(layer, 0) + int(row[1] or 0)
-                except Exception:
-                    continue
-                finally:
-                    if res is not None:
-                        try:
-                            res.close()
-                        except Exception:
-                            pass
+        cypher = get_kg_registry().cypher_executor
+        for node_type in NODE_TYPES:
+            try:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) RETURN n.graph_layer, count(n)",
+                    max_rows=10000,
+                )
+                for row in result.get("rows", []):
+                    layer = str(row[0] or "unclassified")
+                    counts[layer] = counts.get(layer, 0) + int(row[1] or 0)
+            except Exception:
+                continue
     except Exception as exc:
         logger.warning(
             "kg.rebuild.materialized_layer_probe_failed board=%s err=%s",

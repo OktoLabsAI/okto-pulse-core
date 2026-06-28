@@ -33,7 +33,8 @@ from okto_pulse.core.kg.global_discovery.metrics import (
     get_missing_embedding_skipped_count,
 )
 from okto_pulse.core.kg.global_discovery.outbox_worker import DIGESTED_NODE_TYPES
-from okto_pulse.core.kg.schema import NODE_TYPES, board_kuzu_path, open_board_connection
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.models.db import (
     ConsolidationQueue,
     GlobalUpdateOutbox,
@@ -122,7 +123,7 @@ def check_kuzu(board_id: str) -> LayerHealth:
     to advise running ``okto-pulse init`` / waiting for the first
     consolidation before the check is meaningful.
     """
-    path = board_kuzu_path(board_id)
+    path = get_kg_registry().graph_path_resolver.board_graph_path(board_id)
     if not path.exists():
         return LayerHealth(
             layer="kuzu",
@@ -134,37 +135,27 @@ def check_kuzu(board_id: str) -> LayerHealth:
     counts: dict[str, int] = {node_type: 0 for node_type in NODE_TYPES}
     total = 0
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            for node_type in NODE_TYPES:
-                qr = None
-                try:
-                    qr = conn.execute(f"MATCH (n:{node_type}) RETURN count(n) AS c")
-                    # Kùzu 0.6+ exposes .get_next() / .has_next(); fall back
-                    # to iterating when the driver changes shape.
-                    row = None
-                    if hasattr(qr, "has_next") and hasattr(qr, "get_next"):
-                        if qr.has_next():
-                            row = qr.get_next()
-                    else:
-                        iterator = iter(qr)
-                        row = next(iterator, None)
-                    if row is None:
-                        continue
-                    value = row[0] if isinstance(row, (list, tuple)) else row
-                    counts[node_type] = int(value)
-                    total += int(value)
-                except Exception as exc:
-                    logger.warning(
-                        "health.kuzu.count_failed board=%s type=%s err=%s",
-                        board_id, node_type, exc,
-                        extra={"event": "health.kuzu.count_failed", "board_id": board_id},
-                    )
-                finally:
-                    if qr is not None:
-                        try:
-                            qr.close()
-                        except Exception:
-                            pass
+        cypher = get_kg_registry().cypher_executor
+        for node_type in NODE_TYPES:
+            try:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) RETURN count(n) AS c",
+                    max_rows=1,
+                )
+                rows = result.get("rows", [])
+                if not rows:
+                    continue
+                row = rows[0]
+                value = row[0] if isinstance(row, (list, tuple)) else row
+                counts[node_type] = int(value)
+                total += int(value)
+            except Exception as exc:
+                logger.warning(
+                    "health.kuzu.count_failed board=%s type=%s err=%s",
+                    board_id, node_type, exc,
+                    extra={"event": "health.kuzu.count_failed", "board_id": board_id},
+                )
     except Exception as exc:
         return LayerHealth(
             layer="kuzu",

@@ -25,14 +25,16 @@ from okto_pulse.core.kg.schema import (
     NODE_TYPES,
     RELEVANCE_COLUMNS,
     SCHEMA_VERSION,
-    _board_needs_v030_migration,
-    _node_has_legacy_columns,
-    _node_has_relevance_columns,
     bootstrap_board_graph,
     close_all_connections,
-    migrate_board_to_v030,
     open_board_connection,
 )
+
+kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+_board_needs_v030_migration = kg_runtime._board_needs_v030_migration
+_node_has_legacy_columns = kg_runtime._node_has_legacy_columns
+_node_has_relevance_columns = kg_runtime._node_has_relevance_columns
+migrate_board_to_v030 = kg_runtime.migrate_board_to_v030
 
 
 @pytest.fixture

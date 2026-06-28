@@ -34,6 +34,22 @@ from okto_pulse.core.kg.schema import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    from kg_registry_testing import (
+        RealBoardCypherExecutorForTests,
+        RealBoardGraphPathResolverForTests,
+        RealBoardGraphTransactionForTests,
+        configure_test_kg_registry,
+    )
+
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+        graph_path_resolver=RealBoardGraphPathResolverForTests(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -148,7 +164,7 @@ def test_corrupt_ladybug_wal_is_preserved_and_blocks_rebootstrap(fresh_board, mo
     preserving graph.lbug + graph.lbug.wal is safer than silently creating an
     empty graph.
     """
-    from okto_pulse.core.kg import schema as schema_module
+    from okto_pulse.community.adapters import kg_runtime
 
     path = board_kuzu_path(fresh_board)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -162,11 +178,11 @@ def test_corrupt_ladybug_wal_is_preserved_and_blocks_rebootstrap(fresh_board, mo
             "Read out invalid WAL record type."
         )
 
-    monkeypatch.setattr(schema_module, "_open_kuzu_db_path_cached", _raise_corrupt)
+    monkeypatch.setattr(kg_runtime, "_open_kuzu_db_path_cached", _raise_corrupt)
     reset_bootstrap_cache_for_tests()
 
     with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
-        schema_module._graph_needs_bootstrap(fresh_board)
+        kg_runtime._graph_needs_bootstrap(fresh_board)
     assert path.exists()
     assert wal_path.exists()
 

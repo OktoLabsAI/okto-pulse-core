@@ -25,7 +25,8 @@ from typing import Any
 # the registry is unconfigured we surface an ACTIONABLE hint instead of a raw
 # internal error so the deprecation of the bare-core path is clear.
 _UNCOMPOSED_HINT = (
-    "hint: the KG registry is not configured. This bare-core tool no longer "
+    "hint: registry not configured: the KG registry is not configured. "
+    "This bare-core tool no longer "
     "falls back to implicit embedded providers (R-P2-03). Run the migration via "
     "an edition-composed command (e.g. the Community `okto-pulse kg migrate-schema` "
     "CLI/MCP/REST) or configure KGProviderRegistry before invoking the core tool."
@@ -41,8 +42,20 @@ def _registry_unconfigured(summary: dict[str, Any]) -> bool:
 
 
 def _run_single_board(board_id: str) -> dict[str, Any]:
-    from okto_pulse.core.kg.schema import migrate_schema_for_board
-    return migrate_schema_for_board(board_id)
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    try:
+        summary = asyncio.run(get_kg_registry().graph_schema_manager.migrate(board_id))
+        summary.setdefault("duration_ms", 0)
+        return summary
+    except Exception as exc:
+        return {
+            "board_id": board_id,
+            "migrated": False,
+            "columns_added": {},
+            "errors": [f"{type(exc).__name__}: {exc}"],
+            "duration_ms": 0,
+        }
 
 
 async def _list_local_boards() -> list[tuple[str, str]]:

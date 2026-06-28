@@ -285,7 +285,7 @@ def kg_search_hybrid(
 
     - ``rerank``: one of ``"none"`` (default, passthrough),
       ``"token_overlap"`` (zero-dep lexical baseline),
-      ``"cross_encoder"`` (sentence-transformers MS MARCO),
+      ``"cross_encoder"`` (edition-registered cross-encoder adapter),
       ``"llm"`` (RankGPT-style, requires ``rerank_llm_fn``).
     - ``rerank_pool``: how many top-K first-stage results to hand over
       to the reranker. Larger pool = better precision but proportional

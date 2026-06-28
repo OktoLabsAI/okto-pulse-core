@@ -18,17 +18,16 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.kg import schema as schema_mod
 from okto_pulse.core.kg import primitives as primitives_mod
-from okto_pulse.core.kg.schema import (
-    BoardConnection,
-    NODE_TYPES,
-    _BOOTSTRAPPED_BOARDS,
-    _MIGRATED_BOARDS,
-    bootstrap_board_graph,
-    ensure_board_graph_bootstrapped,
-    migrate_schema_for_board,
-)
+from okto_pulse.core.kg.schema import NODE_TYPES
+
+schema_mod = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+BoardConnection = schema_mod.BoardConnection
+_BOOTSTRAPPED_BOARDS = schema_mod._BOOTSTRAPPED_BOARDS
+_MIGRATED_BOARDS = schema_mod._MIGRATED_BOARDS
+bootstrap_board_graph = schema_mod.bootstrap_board_graph
+ensure_board_graph_bootstrapped = schema_mod.ensure_board_graph_bootstrapped
+migrate_schema_for_board = schema_mod.migrate_schema_for_board
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +45,7 @@ def temp_okto_home(tmp_path, monkeypatch):
     monkeypatch.setenv("OKTO_PULSE_HOME", str(tmp_path))
     monkeypatch.setenv("KG_BASE_DIR", str(tmp_path))
     monkeypatch.setattr(
-        "okto_pulse.core.kg.schema.kg_base_dir",
+        "okto_pulse.community.adapters.kg_runtime.kg_base_dir",
         lambda: tmp_path / "kg",
         raising=False,
     )
@@ -247,12 +246,17 @@ def test_ts5_mcp_rest_payload_parity(fresh_board):
 def test_ts6_compensate_sync_warning_with_guidance(caplog, monkeypatch):
     """AC6: `_compensate_kuzu_writes` failure logs at WARNING level with
     `migrate-schema` guidance and NO destructive message."""
-    # `open_board_connection` is imported lazily inside the function body
-    # (see primitives.py:475). Patch the source module so the lazy import
-    # picks up the mock.
-    def boom(board_id):  # noqa: ARG001
-        raise RuntimeError("simulated_lock_contention")
-    monkeypatch.setattr(schema_mod, "open_board_connection", boom)
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    class _BrokenGraphTransaction:
+        async def begin(self, board_id):  # noqa: ARG002
+            raise RuntimeError("simulated_lock_contention")
+
+    monkeypatch.setattr(
+        get_kg_registry(),
+        "graph_transaction",
+        _BrokenGraphTransaction(),
+    )
     with caplog.at_level(logging.WARNING, logger="okto_pulse.kg.primitives"):
         primitives_mod._compensate_kuzu_writes("board-x", "session-x", [])
 

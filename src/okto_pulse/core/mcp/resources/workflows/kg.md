@@ -227,7 +227,7 @@ Cognitive artifacts (`Learning` / `Alternative` / `Assumption`) prove connectivi
 
 **When to consult:** before long consolidation cycles, after flagging contradictions, when debugging stale ranking (`default_score_ratio > 0.7`).
 
-**Storage:** each board's KG persists to a per-board LadybugDB store under the board's data directory — `graph.lbug` (the canonical + working graph that `graph_state` reports on) and `discovery.lbug` (the discovery/embedding index behind `discovery_state`). Never delete the graph store; schema migrations self-heal on the hot path. A degraded `graph_state` / `discovery_state` points at the matching `.lbug` file.
+**Storage:** each board's KG persists through the runtime graph-store adapter. The core contract reports `graph_state` for the canonical/working graph and `discovery_state` for the discovery/embedding index without naming a concrete storage engine or filesystem layout. Never delete the graph store; schema migrations self-heal on the hot path. A degraded `graph_state` / `discovery_state` points at the matching operational store owned by the active runtime adapter.
 
 ### Operational Signals — Separate Domains + Drill-Down (spec 007d1308)
 

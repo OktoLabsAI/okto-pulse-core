@@ -245,7 +245,7 @@ async def _reset_last_recomputed_at(board_id: str | None) -> None:
     """
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-    from okto_pulse.core.kg.schema import VECTOR_INDEX_TYPES
+    from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
     from okto_pulse.core.kg.write_barrier import require_write_token
     from okto_pulse.core.models.db import Board
     from sqlalchemy import select

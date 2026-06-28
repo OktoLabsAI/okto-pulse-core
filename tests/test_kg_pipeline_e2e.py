@@ -110,7 +110,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     from okto_pulse.core.kg.interfaces.registry import (
         reset_registry_for_tests,
     )
-    from kg_registry_testing import configure_test_kg_registry
+    from kg_registry_testing import configure_real_graph_and_data_test_kg_registry
     from okto_pulse.core.kg.primitives import (
         add_edge_candidate,
         begin_consolidation,
@@ -136,7 +136,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     await init_db()
     reset_registry_for_tests()
     session_factory = get_session_factory()
-    configure_test_kg_registry(session_factory=session_factory)
+    configure_real_graph_and_data_test_kg_registry(session_factory)
 
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())
