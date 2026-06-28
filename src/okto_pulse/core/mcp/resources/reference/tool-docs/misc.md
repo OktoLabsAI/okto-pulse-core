@@ -316,11 +316,17 @@ bug coverage gate.
 
 Use this after the regression test card and declared scenario have fresh
 re-executable evidence. This is the non-forgeable coverage signal consumed by
-bug movement gates.
+bug movement gates. Binding + validator authorization + reexecutable evidence are
+necessary but NOT sufficient: BEFORE persisting, the tool runs the same
+gate-consumability preflight the bug regression gate uses, so success implies the
+attestation is consumable (same-spec routes through Path A by origin/affected-task
+lineage; cross-spec routes through Path B and must reach `path_b_ready`). An inert
+tuple fails closed with `coverage_not_gate_consumable` (see `reference/errors.md`).
+There is no `bug_id` argument — the amendment carries bug/board/original_spec.
 
 Args:
     board_id: Board ID.
-    bug_id: Bug card ID.
+    amendment_id: Path B AmendmentHotfixRevision ID (carries bug/board/spec).
     regression_test_task_id: Declared regression test task ID.
     regression_scenario_id: Declared regression scenario ID.
 

@@ -2430,23 +2430,6 @@ async def okto_pulse_create_card(
         except ValueError as e:
             return json.dumps({"error": f"Invalid labels: {e}"})
 
-        # Enforce max scenarios per card from board settings
-        if scenario_ids_list:
-            board_obj = await db.get(Board, board_id)
-            max_per_card = (board_obj.settings or {}).get("max_scenarios_per_card", 3) if board_obj else 3
-            if len(scenario_ids_list) > max_per_card:
-                return json.dumps({
-                    "error": "max_scenarios_per_card_exceeded",
-                    "message": (
-                        f"Cannot link {len(scenario_ids_list)} scenarios to a single card. "
-                        f"Board limit is {max_per_card} scenarios per card. "
-                        f"Create separate test cards for better traceability."
-                    ),
-                    "provided_count": len(scenario_ids_list),
-                    "max_scenarios_per_card": max_per_card,
-                    "remediation": "Create separate test cards and keep each one within the board limit.",
-                })
-
         card_create = CardCreate(
             title=title,
             description=_desc,
@@ -2470,6 +2453,10 @@ async def okto_pulse_create_card(
             card = await service.create_card(
                 board_id, ctx.agent_id, card_create, skip_ownership_check=True
             )
+        except CardOperationError as e:
+            # Preserve the legacy MCP envelope for max_scenarios_per_card_exceeded
+            # while CardService remains the canonical enforcement point.
+            return json.dumps({"error": e.code, **e.to_dict(), **e.facts})
         except ValueError as e:
             return json.dumps({"error": str(e)})
         await db.commit()
@@ -3094,7 +3081,12 @@ async def okto_pulse_update_card(
                 return json.dumps({"error": f"Invalid linked_test_task_ids: {e}"})
 
         card_update = CardUpdate(**update_data)
-        updated = await service.update_card(card_id, ctx.agent_id, card_update)
+        try:
+            updated = await service.update_card(card_id, ctx.agent_id, card_update)
+        except CardOperationError as e:
+            return json.dumps({"error": e.code, **e.to_dict(), **e.facts})
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
 
         board_service = BoardService(db)
         await board_service._log_activity(
@@ -7606,27 +7598,22 @@ async def _link_task_to_scenario_internal(
         flag_modified(spec, "test_scenarios")
         await db.flush()
 
-        # Update card's test_scenario_ids (with max limit check)
+        # Update card's test_scenario_ids. CardService owns the board cap and
+        # spec membership validation so REST/MCP keep the same contract.
         if card:
             existing_ids = list(card.test_scenario_ids or [])
             if scenario_id not in existing_ids:
-                from okto_pulse.core.models.db import Board as BoardModel
-                board_obj = await db.get(BoardModel, board_id)
-                max_per_card = (board_obj.settings or {}).get("max_scenarios_per_card", 3) if board_obj else 3
-                if len(existing_ids) >= max_per_card:
-                    return json.dumps({
-                        "error": "max_scenarios_per_card_exceeded",
-                        "message": (
-                            f"Card already has {len(existing_ids)} linked scenarios "
-                            f"(board limit: {max_per_card}). Create a separate test card "
-                            f"for better traceability."
-                        ),
-                        "existing_count": len(existing_ids),
-                        "max_scenarios_per_card": max_per_card,
-                        "remediation": "Create a separate test card before linking this scenario.",
-                    })
                 existing_ids.append(scenario_id)
-            await card_service.update_card(card_id, ctx.agent_id, CardUpdate(test_scenario_ids=existing_ids))
+            try:
+                await card_service.update_card(
+                    card_id,
+                    ctx.agent_id,
+                    CardUpdate(test_scenario_ids=existing_ids),
+                )
+            except CardOperationError as e:
+                return json.dumps({"error": e.code, **e.to_dict(), **e.facts})
+            except ValueError as e:
+                return json.dumps({"error": str(e)})
 
         await db.commit()
 
@@ -13387,10 +13374,27 @@ async def okto_pulse_confirm_amendment_coverage(
     the test task + scenario MUST be declared by THIS amendment, the regression
     test task MUST be done with its declared scenario passed/automated carrying
     SPEC3 reexecutable evidence (test_file_path+test_function or test_run_id), and
-    the caller MUST pass the validator critical-context authorization. Lineage +
-    a generic status are NECESSARY but NOT sufficient. The bug gate DERIVES
-    coverage from this persisted, artifact-bound attestation — never a bool — so a
-    generic/non-validator metadata write can never forge coverage."""
+    the caller MUST pass the validator critical-context authorization. Binding +
+    validator authorization + reexecutable evidence are NECESSARY but NOT
+    sufficient. The bug gate DERIVES coverage from this persisted, artifact-bound
+    attestation — never a bool — so a generic/non-validator metadata write can
+    never forge coverage.
+
+    Gate-consumability preflight (BUG-01): BEFORE persisting, the tool runs the
+    SAME eligibility predicate the bug regression gate uses for this
+    `(amendment_id, regression_test_task_id, regression_scenario_id)`. Success
+    therefore implies the attestation is persisted AND consumable by the gate. A
+    same-spec scenario is routed through Path A and is eligible ONLY via the bug's
+    origin/affected-task lineage — an amendment declaration does NOT convert an
+    `unrelated_scenario` into valid Path B coverage. A cross-spec scenario is
+    routed through Path B and consumable only when the candidate attestation
+    drives `path_b_ready`. If the tuple would be inert the tool fails closed with
+    `coverage_not_gate_consumable` (bounded facts: amendment_id, bug_id,
+    original_spec_id, regression_test_task_id, regression_scenario_id,
+    scenario_spec_id, routed_path, resolver_reason, coverage_state, missing_links)
+    and a no-bypass remediation — distinct from `coverage_pending` (lineage
+    eligible, validator confirmation not yet recorded). The amendment already
+    carries bug/board/original_spec; no `bug_id` argument is taken."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13413,6 +13417,15 @@ async def okto_pulse_confirm_amendment_coverage(
             return json.dumps(
                 {"success": True, "coverage_confirmation": result}, default=str
             )
+        except CardOperationError as e:
+            # BUG-03: preserve the STRUCTURED fail-closed error (e.g.
+            # coverage_not_gate_consumable with bounded facts: amendment_id,
+            # bug_id, original_spec_id, regression_test_task_id,
+            # regression_scenario_id, scenario_spec_id, routed_path,
+            # resolver_reason, coverage_state, missing_links). Must precede the
+            # ValueError arm — CardOperationError subclasses ValueError — so it
+            # never degrades to a textual {"error": str(e)}.
+            return json.dumps({"error": e.code, **e.to_dict()})
         except GateContractError as e:
             return json.dumps(e.to_dict())
         except ResourceGateError as e:

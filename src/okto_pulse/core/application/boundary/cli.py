@@ -20,7 +20,13 @@ import json
 import sys
 from pathlib import Path
 
+from .conformance_matrix import build_conformance_matrix, render_matrix_report
 from .dependency_conformance import audit_dependency_conformance, render_report
+from .packaging_ownership_gate import (
+    PackagingOwnershipGate,
+    PackagingOwnershipGateInput,
+    render_packaging_ownership_report,
+)
 from .gates import (
     DEFAULT_CORE_PURE_FORBIDDEN_DEPENDENCIES,
     DependencyAuditGate,
@@ -120,6 +126,39 @@ def main(argv: list[str] | None = None) -> int:
     dep.add_argument("--wheel-metadata", type=Path, default=None)
     dep.add_argument("--no-wheel", action="store_true", help="Skip the wheel surface.")
 
+    matrix = sub.add_parser(
+        "conformance-matrix",
+        aliases=["fcc07a"],
+        help="Run the FCC-07A row-level conformance matrix.",
+    )
+    matrix.add_argument("--format", choices=("json", "text"), default="text")
+    matrix.add_argument("--repo-root", type=Path, default=None)
+    matrix.add_argument("--pyproject", type=Path, default=None)
+    matrix.add_argument("--lock", type=Path, default=None)
+    matrix.add_argument("--source-root", type=Path, default=None)
+    matrix.add_argument("--wheel-metadata", type=Path, default=None)
+    matrix.add_argument("--no-wheel", action="store_true", help="Skip the wheel surface.")
+
+    # FCC-07C-IMP1: packaging ownership gate — REUSES the FCC-07A matrix to fail
+    # closed on out-of-core ownership in the core packaging surfaces.
+    owner = sub.add_parser(
+        "packaging-ownership",
+        aliases=["fcc07c"],
+        help="Run the FCC-07C packaging ownership gate (reuses the FCC-07A matrix).",
+    )
+    owner.add_argument("--format", choices=("json", "text"), default="text")
+    owner.add_argument("--repo-root", type=Path, default=None)
+    owner.add_argument("--pyproject", type=Path, default=None)
+    owner.add_argument("--lock", type=Path, default=None)
+    owner.add_argument("--source-root", type=Path, default=None)
+    owner.add_argument("--wheel-metadata", type=Path, default=None)
+    owner.add_argument("--no-wheel", action="store_true", help="Skip the wheel surface.")
+    owner.add_argument(
+        "--no-import-boundary",
+        action="store_true",
+        help="Skip the import-boundary source projection.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command in ("dependency-conformance", "r05e"):
@@ -135,6 +174,39 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
         else:
             sys.stdout.write(render_report(report) + "\n")
+        return 0 if report.ok else 1
+
+    if args.command in ("conformance-matrix", "fcc07a"):
+        report = build_conformance_matrix(
+            repo_root=args.repo_root,
+            pyproject_path=args.pyproject,
+            lock_path=args.lock,
+            source_root=args.source_root,
+            wheel_metadata_path=args.wheel_metadata,
+            audit_wheel=not args.no_wheel,
+        )
+        if args.format == "json":
+            sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
+        else:
+            sys.stdout.write(render_matrix_report(report) + "\n")
+        return 0 if report.ok else 1
+
+    if args.command in ("packaging-ownership", "fcc07c"):
+        report = PackagingOwnershipGate().run(
+            PackagingOwnershipGateInput(
+                repo_root=args.repo_root,
+                pyproject_path=args.pyproject,
+                lock_path=args.lock,
+                source_root=args.source_root,
+                wheel_metadata_path=args.wheel_metadata,
+                audit_wheel=not args.no_wheel,
+                include_import_boundary=not args.no_import_boundary,
+            )
+        )
+        if args.format == "json":
+            sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
+        else:
+            sys.stdout.write(render_packaging_ownership_report(report) + "\n")
         return 0 if report.ok else 1
 
     if args.command == "audit":

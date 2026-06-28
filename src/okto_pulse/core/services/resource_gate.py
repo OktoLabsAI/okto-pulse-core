@@ -121,6 +121,25 @@ class ResourceGateService:
         board_settings = (getattr(board, "settings", None) or {}) if board else {}
         return bool(board_settings.get("require_spec_resource_task_coverage", True))
 
+    @staticmethod
+    def is_spec_architecture_required_for_validation(board: Any | None) -> bool:
+        """Return whether spec validation requires Architecture to be resolved.
+
+        The hardening is opt-in and follows the board's Spec->Card resource
+        propagation policy. When a board declares Architecture as an auto-derived
+        spec resource, a spec cannot be validated with Architecture still missing.
+        An explicit Architecture N/A mark remains valid and auditable.
+        """
+        board_settings = (getattr(board, "settings", None) or {}) if board else {}
+        if not bool(board_settings.get("auto_derive_spec_resources_enabled", False)):
+            return False
+        resource_types = board_settings.get("auto_derive_spec_resource_types") or []
+        normalized = {
+            str(getattr(resource_type, "value", resource_type))
+            for resource_type in resource_types
+        }
+        return "architecture" in normalized
+
     async def get_summary(
         self,
         board_id: str,
@@ -571,6 +590,54 @@ class ResourceGateService:
                 "architecture_findings": architecture_findings,
                 "blocking_architecture_findings": result["blocking_architecture_findings"],
                 "summary": result["summary"],
+            },
+        )
+
+    async def validate_or_raise_spec_architecture_validation_resource(
+        self,
+        board_id: str,
+        spec_id: str,
+        *,
+        board: Any | None,
+        phase: str,
+    ) -> dict[str, Any]:
+        """Block spec validation when required Architecture is still missing."""
+        if not self.is_spec_architecture_required_for_validation(board):
+            return {
+                "allowed": True,
+                "enabled": False,
+                "board_id": board_id,
+                "spec_id": spec_id,
+                "blocking_resources": [],
+            }
+
+        result = await self.validate_entity_completion(board_id, "spec", spec_id)
+        missing_architecture = [
+            resource
+            for resource in result["blocking_resources"]
+            if resource["resource_type"] == "architecture"
+        ]
+        if not missing_architecture:
+            return result
+
+        raise ResourceGateViolation(
+            "resource_gate_spec_missing_architecture",
+            (
+                "Cannot validate spec: Architecture is required by the board's "
+                "Spec resource propagation policy and is still missing. Attach "
+                "an Architecture Design to the spec or mark Architecture as N/A "
+                "with justification before validation."
+            ),
+            details={
+                "board_id": board_id,
+                "spec_id": spec_id,
+                "phase": phase,
+                "blocking_resources": missing_architecture,
+                "summary": result["summary"],
+                "policy": {
+                    "auto_derive_spec_resources_enabled": True,
+                    "required_resource_type": "architecture",
+                },
             },
         )
 

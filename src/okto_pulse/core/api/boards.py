@@ -24,7 +24,13 @@ from okto_pulse.core.models import (
 )
 from okto_pulse.core.models.db import CardStatus
 from okto_pulse.core.services.board_governance import BoardGovernanceService
-from okto_pulse.core.services import AgentService, BoardService, CardService, ShareService
+from okto_pulse.core.services import (
+    AgentService,
+    BoardService,
+    CardOperationError,
+    CardService,
+    ShareService,
+)
 
 router = APIRouter()
 
@@ -151,6 +157,8 @@ async def create_card(
     service = CardService(db)
     try:
         card = await service.create_card(board_id, user_id, data)
+    except CardOperationError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not card:

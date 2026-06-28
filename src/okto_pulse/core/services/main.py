@@ -19,6 +19,7 @@ from okto_pulse.core.models.db import (
     ActivityLog,
     Agent,
     AgentBoard,
+    AmendmentHotfixRevision,
     Attachment,
     Board,
     BoardGuideline,
@@ -110,6 +111,8 @@ from okto_pulse.core.services.bug_regression_scenarios import (
     AmendmentLineageFact,
     BugRegressionCoverageState,
     BugRegressionGateValidator,
+    CoverageConfirmationFact,
+    evaluate_coverage_confirmation_consumability,
 )
 from okto_pulse.core.services.bug_workflow_remediation import (
     BugWorkflowRemediationMessage,
@@ -1421,6 +1424,63 @@ class CardService:
             [], Any
         ] = _build_default_cognitive_readiness_service
 
+    @staticmethod
+    def _max_scenarios_per_card(board: Board | None) -> int:
+        board_settings = (getattr(board, "settings", None) or {}) if board else {}
+        try:
+            value = int(board_settings.get("max_scenarios_per_card", 3))
+        except (TypeError, ValueError):
+            value = 3
+        return max(1, value)
+
+    def _raise_max_scenarios_per_card_exceeded(
+        self,
+        *,
+        provided_count: int,
+        max_per_card: int,
+    ) -> None:
+        raise CardOperationError(
+            "max_scenarios_per_card_exceeded",
+            (
+                f"Cannot link {provided_count} scenarios to a single test card. "
+                f"Board limit is {max_per_card} scenarios per card. "
+                "Create separate test cards for better traceability."
+            ),
+            remediation=(
+                "Create separate test cards and keep each one within the board limit."
+            ),
+            facts={
+                "provided_count": provided_count,
+                "max_scenarios_per_card": max_per_card,
+            },
+        )
+
+    async def _validate_test_card_scenario_ids(
+        self,
+        *,
+        board: Board | None,
+        spec: Spec,
+        scenario_ids: list[str] | None,
+    ) -> None:
+        """Validate test-card scenario references against spec and board limits."""
+        if not scenario_ids:
+            return
+
+        max_per_card = self._max_scenarios_per_card(board)
+        if len(scenario_ids) > max_per_card:
+            self._raise_max_scenarios_per_card_exceeded(
+                provided_count=len(scenario_ids),
+                max_per_card=max_per_card,
+            )
+
+        spec_scenario_ids = {s["id"] for s in (spec.test_scenarios or [])}
+        invalid_ids = [sid for sid in scenario_ids if sid not in spec_scenario_ids]
+        if invalid_ids:
+            raise ValueError(
+                f"Test scenario(s) not found in spec '{spec.title}': {invalid_ids}. "
+                f"Available scenarios: {sorted(spec_scenario_ids)}"
+            )
+
     async def create_card(
         self, board_id: str, user_id: str, data: CardCreate, skip_ownership_check: bool = False
     ) -> Card | None:
@@ -1432,7 +1492,8 @@ class CardService:
             # Check if board exists and user owns it (for REST API)
             board_query = select(Board).where(Board.id == board_id, Board.owner_id == user_id)
         result = await self.db.execute(board_query)
-        if not result.scalar_one_or_none():
+        board = result.scalar_one_or_none()
+        if not board:
             return None
 
         # --- Bug card validations (before spec check, since spec is auto-resolved) ---
@@ -1510,15 +1571,13 @@ class CardService:
                 f"Spec '{spec.title}' is currently '{spec.status.value}'."
             )
 
-        # Validate test_scenario_ids against spec for test cards
+        # Validate test_scenario_ids against spec and board caps for test cards.
         if card_type_val == "test" and data.test_scenario_ids:
-            spec_scenario_ids = {s["id"] for s in (spec.test_scenarios or [])}
-            invalid_ids = [sid for sid in data.test_scenario_ids if sid not in spec_scenario_ids]
-            if invalid_ids:
-                raise ValueError(
-                    f"Test scenario(s) not found in spec '{spec.title}': {invalid_ids}. "
-                    f"Available scenarios: {sorted(spec_scenario_ids)}"
-                )
+            await self._validate_test_card_scenario_ids(
+                board=board,
+                spec=spec,
+                scenario_ids=list(data.test_scenario_ids),
+            )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -1723,6 +1782,25 @@ class CardService:
         old_priority = _enum_value(card.priority)
         old_severity = _enum_value(getattr(card, "severity", None))
         old_spec_id = card.spec_id
+
+        if "test_scenario_ids" in update_data:
+            next_type = update_data.get("card_type", card.card_type)
+            if getattr(next_type, "value", next_type) == CardType.TEST.value:
+                board = await self.db.get(Board, card.board_id)
+                spec_id = update_data.get("spec_id") or card.spec_id
+                spec = await self.db.get(Spec, spec_id) if spec_id else None
+                if not spec:
+                    raise ValueError("Test cards require a linked spec before updating test_scenario_ids")
+                scenario_ids = list(update_data.get("test_scenario_ids") or [])
+                if not scenario_ids:
+                    raise ValueError(
+                        "test_scenario_ids is required for test cards and must contain at least one scenario ID"
+                    )
+                await self._validate_test_card_scenario_ids(
+                    board=board,
+                    spec=spec,
+                    scenario_ids=scenario_ids,
+                )
 
         # Serialize screen_mockups if present
         if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
@@ -2310,7 +2388,7 @@ class CardService:
                 remediation="complete_regression_test_task",
                 facts={"amendment_id": amendment_id},
             )
-        evidence_ref = await self._reexecutable_evidence_ref(
+        evidence_ref, scenario_spec_id = await self._reexecutable_evidence_ref(
             test_task, regression_scenario_id
         )
         if not evidence_ref:
@@ -2322,6 +2400,22 @@ class CardService:
                 remediation="attach_reexecutable_evidence",
                 facts={"amendment_id": amendment_id},
             )
+
+        # 4. BUG-01 (FR1/FR4): gate-consumability preflight. Binding, validator
+        #    authorization and reexecutable evidence are NECESSARY but NOT
+        #    sufficient — a syntactically valid tuple can still be inert for the
+        #    bug regression gate (e.g. a same-spec unrelated scenario). Fail closed
+        #    BEFORE set_coverage_confirmation so success implies the gate will
+        #    consume the attestation. Runs AFTER the binding/precondition checks
+        #    above to preserve their error order.
+        await self._assert_coverage_gate_consumable(
+            amendment=amendment,
+            regression_test_task_id=regression_test_task_id,
+            regression_scenario_id=regression_scenario_id,
+            scenario_spec_id=scenario_spec_id,
+            evidence_ref=evidence_ref,
+            reviewer_id=reviewer_id,
+        )
 
         confirmation = {
             "validator_id": reviewer_id,
@@ -2336,10 +2430,18 @@ class CardService:
         )
         return confirmation
 
-    async def _reexecutable_evidence_ref(self, test_task: Card, scenario_id: str) -> str:
-        """Reexecutable evidence ref for the scenario if it is passed/automated
-        with SPEC3 evidence, else ''. Searches the test task's spec first, then the
-        board's specs (a Path B regression scenario may be cross-spec)."""
+    async def _reexecutable_evidence_ref(
+        self, test_task: Card, scenario_id: str
+    ) -> tuple[str, str | None]:
+        """Reexecutable evidence ref + the spec id the scenario lives on.
+
+        Returns ``(evidence_ref, scenario_spec_id)``. ``evidence_ref`` is the
+        SPEC3 ref when the scenario is passed/automated with reexecutable
+        evidence, else ``''``. ``scenario_spec_id`` is the spec that declares the
+        scenario (``None`` when it is not found on any board spec) — the BUG-01
+        consumability preflight needs it to route same-spec (Path A) vs cross-spec
+        (Path B). Searches the test task's spec first, then the board's specs (a
+        Path B regression scenario may be cross-spec)."""
         spec_ids: list[str] = []
         if test_task.spec_id:
             spec_ids.append(str(test_task.spec_id))
@@ -2359,18 +2461,119 @@ class CardService:
                 if not isinstance(sc, dict) or str(sc.get("id")) != scenario_id:
                     continue
                 if str(sc.get("status") or "").lower() not in ("passed", "automated"):
-                    return ""
+                    return "", spec_id
                 ev = sc.get("evidence")
                 if isinstance(ev, dict):
                     fp = str(ev.get("test_file_path") or "").strip()
                     fn = str(ev.get("test_function") or "").strip()
                     if fp and fn:
-                        return f"{fp}::{fn}"
+                        return f"{fp}::{fn}", spec_id
                     trid = str(ev.get("test_run_id") or "").strip()
                     if trid:
-                        return f"test_run:{trid}"
-                return ""
-        return ""
+                        return f"test_run:{trid}", spec_id
+                return "", spec_id
+        return "", None
+
+    async def _assert_coverage_gate_consumable(
+        self,
+        *,
+        amendment: AmendmentHotfixRevision,
+        regression_test_task_id: str,
+        regression_scenario_id: str,
+        scenario_spec_id: str | None,
+        evidence_ref: str,
+        reviewer_id: str,
+    ) -> None:
+        """BUG-01 (FR1/FR2/FR4): fail closed BEFORE persisting when the candidate
+        coverage confirmation would be INERT — i.e. the bug regression gate would
+        never select this ``(amendment, scenario)`` tuple.
+
+        Reuses the shared, routing-correct consumability predicate (same-spec is
+        routed through Path A, so a same-spec ``unrelated_scenario`` is rejected
+        here even when the amendment task claim intersects the bug; cross-spec is
+        routed through Path B and accepted only when the candidate attestation
+        drives ``path_b_ready``). It mirrors the ENFORCED gate inputs exactly (the
+        bug done-gate passes ``origin_task`` only; ``affected_tasks`` is not part of
+        the authoritative set), never relaxes ``unrelated_scenario`` and never
+        mutates the DB."""
+        bug_card = (
+            await self.db.get(Card, amendment.origin_bug_id)
+            if amendment.origin_bug_id
+            else None
+        )
+        original_spec = (
+            await self.db.get(Spec, bug_card.spec_id)
+            if bug_card and bug_card.spec_id
+            else None
+        )
+        if bug_card is None or original_spec is None or scenario_spec_id is None:
+            raise CardOperationError(
+                "coverage_not_gate_consumable",
+                "Coverage confirmation cannot be persisted: the bug regression "
+                "gate would not consume this attestation (bug, original spec or "
+                "scenario spec could not be resolved).",
+                remediation="create_or_link_authoritative_regression_scenario",
+                facts={
+                    "amendment_id": amendment.id,
+                    "regression_test_task_id": regression_test_task_id,
+                    "regression_scenario_id": regression_scenario_id,
+                },
+            )
+
+        origin_task = (
+            await self.db.get(Card, bug_card.origin_task_id)
+            if bug_card.origin_task_id
+            else None
+        )
+        candidate = CoverageConfirmationFact(
+            validator_id=reviewer_id,
+            amendment_revision_id=amendment.id,
+            regression_test_task_id=regression_test_task_id,
+            regression_scenario_id=regression_scenario_id,
+            evidence_ref=evidence_ref,
+        )
+        verdict = evaluate_coverage_confirmation_consumability(
+            bug_card=bug_card,
+            original_spec=original_spec,
+            origin_task=origin_task,
+            affected_tasks=None,
+            amendment_fact=AmendmentLineageFact.from_row(amendment),
+            candidate_confirmation=candidate,
+            scenario_id=regression_scenario_id,
+            scenario_spec_id=scenario_spec_id,
+        )
+        if verdict.consumable:
+            return
+
+        remediation = (
+            "create_or_link_authoritative_regression_scenario"
+            if verdict.routed_path == "path_a"
+            else "use_consumable_path_b_amendment"
+        )
+        raise CardOperationError(
+            "coverage_not_gate_consumable",
+            "Coverage confirmation was rejected before persistence: the bug "
+            "regression gate would not consume this attestation for the given "
+            f"(amendment, scenario) tuple (routed_path={verdict.routed_path}, "
+            f"coverage_state={verdict.coverage_state.value}). Binding and "
+            "reexecutable evidence are necessary but not sufficient; the scenario "
+            "must be gate-consumable.",
+            remediation=remediation,
+            facts={
+                "amendment_id": amendment.id,
+                "bug_id": bug_card.id,
+                "original_spec_id": original_spec.id,
+                "regression_test_task_id": regression_test_task_id,
+                "regression_scenario_id": regression_scenario_id,
+                "scenario_spec_id": scenario_spec_id,
+                "routed_path": verdict.routed_path,
+                "resolver_reason": (
+                    verdict.reject_reason.value if verdict.reject_reason else None
+                ),
+                "coverage_state": verdict.coverage_state.value,
+                "missing_links": list(verdict.missing_links),
+            },
+        )
 
     # ---- Coverage gate functions (used by SpecService.move_spec) ----
 
@@ -2854,9 +3057,10 @@ class CardService:
                         spec_id=card.spec_id,
                     )
 
-        # --- Bug card: block in_progress/done without properly linked test tasks ---
-        # Gate triggers when moving TO in_progress or done FROM a status before in_progress
-        # (i.e. not_started or started). Once in_progress is reached, the gate was already passed.
+        # --- Bug card: block execution-level moves without linked regression tests ---
+        # Gate triggers when the bug first crosses into execution level or beyond
+        # (in_progress, validation, on_hold, done) from a status before in_progress.
+        # Once in_progress is reached, the gate was already passed.
         # NC-6 fix: gate is now conditional on board settings:
         #   - require_test_task_for_bug=False → gate desligado (qualquer bug avança)
         #   - bug_test_gate_min_severity controla qual severity entra no gate
@@ -2879,7 +3083,8 @@ class CardService:
 
         if (
             _gate_applies
-            and data.status in (CardStatus.IN_PROGRESS, CardStatus.DONE)
+            and data.status != CardStatus.CANCELLED
+            and new_level >= self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
             and old_level < self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
             and getattr(card, "card_type", CardType.NORMAL) == CardType.BUG
         ):
@@ -5273,6 +5478,14 @@ class SpecService:
                     spec_id=spec.id, current_status=spec.status.value,
                 )
 
+            resource_gate = ResourceGateService(self.db)
+            await resource_gate.validate_or_raise_spec_architecture_validation_resource(
+                spec.board_id,
+                spec.id,
+                board=board,
+                phase="spec_validation",
+            )
+
         # Re-execute coverage gates + qualitative validation when moving to in_progress
         if data.status == SpecStatus.IN_PROGRESS and spec.status == SpecStatus.VALIDATED:
             card_service = CardService(self.db)
@@ -5414,6 +5627,12 @@ class SpecService:
             )
 
             resource_gate = ResourceGateService(self.db)
+            await resource_gate.validate_or_raise_spec_architecture_validation_resource(
+                spec.board_id,
+                spec.id,
+                board=board,
+                phase="spec_done",
+            )
             await resource_gate.validate_or_raise_spec_resource_task_coverage(
                 spec.board_id,
                 spec.id,
@@ -5660,6 +5879,12 @@ class SpecService:
         # (spec or board). See check_decisions_coverage for details.
         await card_service.check_decisions_coverage(spec, board)
         resource_gate = ResourceGateService(self.db)
+        await resource_gate.validate_or_raise_spec_architecture_validation_resource(
+            spec.board_id,
+            spec.id,
+            board=board,
+            phase="spec_validation",
+        )
         await resource_gate.validate_or_raise_spec_resource_task_coverage(
             spec.board_id,
             spec.id,
@@ -9406,6 +9631,50 @@ class SprintService:
         # checa se scenarios linked com status passed/automated têm evidence
         # persisted. Honra board.settings.skip_test_evidence_global.
         if data.status == SprintStatus.CLOSED and spec is not None:
+            open_cards_q = (
+                select(Card)
+                .where(
+                    Card.sprint_id == sprint_id,
+                    Card.archived.is_(False),
+                    Card.status.notin_([CardStatus.DONE, CardStatus.CANCELLED]),
+                )
+                .order_by(Card.created_at.asc(), Card.title.asc())
+            )
+            open_cards = (await self.db.execute(open_cards_q)).scalars().all()
+            if open_cards:
+                preview = ", ".join(
+                    f"{card.title} ({card.status.value})" for card in open_cards[:5]
+                )
+                suffix = (
+                    f" and {len(open_cards) - 5} more"
+                    if len(open_cards) > 5
+                    else ""
+                )
+                raise SprintOperationError(
+                    "sprint_has_incomplete_cards",
+                    (
+                        f"Cannot close sprint: {len(open_cards)} assigned card(s) "
+                        f"are not terminal: {preview}{suffix}. Move each card to "
+                        "'done' or 'cancelled', or remove it from the sprint before closing."
+                    ),
+                    remediation="complete_or_unassign_sprint_cards",
+                    facts={
+                        "sprint_id": sprint_id,
+                        "open_cards": [
+                            {
+                                "id": card.id,
+                                "title": card.title,
+                                "status": card.status.value,
+                            }
+                            for card in open_cards[:20]
+                        ],
+                        "terminal_statuses": [
+                            CardStatus.DONE.value,
+                            CardStatus.CANCELLED.value,
+                        ],
+                    },
+                )
+
             skip_evidence = bool(
                 (board.settings or {}).get("skip_test_evidence_global", False)
                 if board

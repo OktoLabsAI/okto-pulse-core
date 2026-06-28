@@ -35,7 +35,7 @@ closure-ready.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Iterable, Mapping, Sequence
 
@@ -844,3 +844,109 @@ class BugRegressionGateValidator:
                 seen.add(scenario_id)
                 ordered.append(scenario_id)
         return ordered
+
+
+@dataclass(frozen=True)
+class CoverageConsumabilityVerdict:
+    """Whether a CANDIDATE coverage confirmation would actually be consumed by
+    the bug regression gate (BUG-01 / spec 87acd0e3).
+
+    ``consumable`` is the single load-bearing field: ``True`` ONLY when, after the
+    candidate attestation is applied in memory, the shared eligibility resolver
+    selects ``scenario_id`` as eligible (Path A lineage, or Path B
+    ``path_b_ready``). The remaining fields are diagnostic context the writer
+    surfaces in its fail-closed structured error; they never themselves grant
+    consumability.
+    """
+
+    consumable: bool
+    routed_path: str  # "path_a" (same-spec) | "path_b" (cross-spec)
+    coverage_state: BugRegressionCoverageState
+    scenario_id: str
+    amendment_revision_id: str
+    reject_reason: BugRegressionRejectionReason | None = None
+    eligibility_reason: BugRegressionEligibilityReason | None = None
+    missing_links: tuple[str, ...] = ()
+
+
+def evaluate_coverage_confirmation_consumability(
+    *,
+    bug_card: Card,
+    original_spec: Spec,
+    origin_task: Card | None,
+    affected_tasks: Sequence[Card] | None,
+    amendment_fact: AmendmentLineageFact,
+    candidate_confirmation: CoverageConfirmationFact,
+    scenario_id: str,
+    scenario_spec_id: str,
+    resolver: BugRegressionScenarioEligibilityResolver | None = None,
+) -> CoverageConsumabilityVerdict:
+    """Pure, DB-free preflight (BUG-01 / TR1-TR3): would persisting
+    ``candidate_confirmation`` make the bug regression gate actually SELECT
+    ``scenario_id`` for ``bug_card``?
+
+    This REUSES the authoritative resolver routing instead of calling
+    ``evaluate_path_b_for_scenario`` directly (TR2). The consequence is the whole
+    point of the fix:
+
+    * A same-spec candidate (``scenario_spec_id == original_spec.id``) is routed
+      through Path A (lineage). A same-spec scenario that is not linked to the
+      bug's origin/affected tasks is rejected ``unrelated_scenario`` here EVEN IF
+      the amendment's task claim intersects the bug's authoritative tasks — Path B
+      (the cross-spec allow, where that intersection would matter) never applies
+      to a same-spec candidate. A naive Path-B-only preflight would wrongly accept
+      that tuple; reusing the resolver routes it correctly.
+    * A cross-spec candidate is routed through Path B with the candidate
+      attestation injected in memory, so rank-5 ``_coverage_confirmed_for`` can
+      flip ``coverage_pending -> path_b_ready``. It is consumable ONLY when that
+      drives ``PATH_B_READY``.
+
+    The resolver remains the single source of truth: this never mutates the DB,
+    never trusts a caller-supplied bool, and never relaxes ``unrelated_scenario``.
+    """
+    resolver = resolver or BugRegressionScenarioEligibilityResolver()
+
+    # Apply the attestation that WOULD be persisted so Path B rank-5 can evaluate
+    # the candidate in memory. For a same-spec candidate the resolver ignores the
+    # amendment entirely (Path A), so this injection is a no-op on that route.
+    fact_with_candidate = replace(
+        amendment_fact, coverage_confirmation=candidate_confirmation
+    )
+
+    result = resolver.resolve(
+        bug_card=bug_card,
+        spec=original_spec,
+        origin_task=origin_task,
+        affected_tasks=affected_tasks,
+        candidate_scenario_ids=[scenario_id],
+        candidate_spec_ids_by_scenario_id={scenario_id: scenario_spec_id},
+        amendment_facts=[fact_with_candidate],
+    )
+
+    routed_path = "path_a" if scenario_spec_id == original_spec.id else "path_b"
+    amendment_revision_id = amendment_fact.amendment_revision_id
+
+    eligible = {item.scenario_id: item for item in result.eligible_scenarios}
+    if scenario_id in eligible:
+        return CoverageConsumabilityVerdict(
+            consumable=True,
+            routed_path=routed_path,
+            coverage_state=result.coverage_state,
+            scenario_id=scenario_id,
+            amendment_revision_id=amendment_revision_id,
+            eligibility_reason=eligible[scenario_id].reason,
+            missing_links=result.missing_links,
+        )
+
+    rejected = {item.scenario_id: item for item in result.rejected_scenarios}
+    reject_reason = rejected[scenario_id].reason if scenario_id in rejected else None
+
+    return CoverageConsumabilityVerdict(
+        consumable=False,
+        routed_path=routed_path,
+        coverage_state=result.coverage_state,
+        scenario_id=scenario_id,
+        amendment_revision_id=amendment_revision_id,
+        reject_reason=reject_reason,
+        missing_links=result.missing_links,
+    )

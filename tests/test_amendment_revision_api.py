@@ -704,3 +704,96 @@ async def test_mcp_twin_transition_amendment_revision():
         board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd_id, status="frozen",
     )
     assert err["code"] == "invalid_amendment_status"
+
+
+# ---------------------------------------------------------------------------
+# BUG-03 (spec e5f61c7f) — the MCP confirm handler must PRESERVE the structured
+# CardOperationError (e.g. coverage_not_gate_consumable with bounded facts)
+# instead of degrading it to a textual {"error": str(e)} via the ValueError arm.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_inert_confirm(db):
+    """A bug whose only regression scenario is a SAME-SPEC AC scenario NOT linked
+    to its lineage (Path A unrelated). The board owner is USER_ID so the MCP
+    `_Ctx` agent passes the validator critical-context guard."""
+    suffix = uuid.uuid4().hex[:8]
+    ids = {
+        "board": f"c3-board-{suffix}", "spec": f"c3-spec-{suffix}",
+        "origin": f"c3-origin-{suffix}", "bug": f"c3-bug-{suffix}",
+        "test": f"c3-test-{suffix}", "scenario": f"ts-samespec-{suffix}",
+    }
+    db.add(Board(id=ids["board"], name="C3 Board", owner_id=USER_ID))
+    db.add(Spec(
+        id=ids["spec"], board_id=ids["board"], title="Bug spec", status=SpecStatus.DONE,
+        created_by=USER_ID, functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+        test_scenarios=[{
+            "id": ids["scenario"], "title": "AC scenario", "status": "automated",
+            "evidence": {"test_file_path": "tests/test_reg.py", "test_function": "test_reg"},
+        }],
+        business_rules=[], api_contracts=[],
+    ))
+    db.add(Card(
+        id=ids["origin"], board_id=ids["board"], spec_id=ids["spec"], title="Origin",
+        status=CardStatus.DONE, card_type=CardType.NORMAL, created_by=USER_ID,
+        test_scenario_ids=[],
+    ))
+    db.add(Card(
+        id=ids["bug"], board_id=ids["board"], spec_id=ids["spec"], title="Bug",
+        status=CardStatus.NOT_STARTED, card_type=CardType.BUG, origin_task_id=ids["origin"],
+        severity=BugSeverity.MAJOR, expected_behavior="ok", observed_behavior="bad",
+        linked_test_task_ids=[ids["test"]], created_by=USER_ID,
+    ))
+    db.add(Card(
+        id=ids["test"], board_id=ids["board"], spec_id=ids["spec"], title="Regression test",
+        status=CardStatus.DONE, card_type=CardType.TEST,
+        test_scenario_ids=[ids["scenario"]], created_by=USER_ID,
+    ))
+    await db.flush()
+    return ids
+
+
+async def test_mcp_confirm_preserves_structured_coverage_not_gate_consumable():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed_inert_confirm(db)
+        await db.commit()
+
+    # Build a done/complete amendment that DECLARES the same-spec scenario + test
+    # task and CLAIMS the origin (intersecting the bug authoritative set) — a
+    # syntactically valid but gate-inert tuple.
+    created = await _call(
+        "okto_pulse_create_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], origin_task_ids=[ids["origin"]],
+        regression_scenario_ids=[ids["scenario"]],
+    )
+    amd = created["amendment_revision"]["id"]
+    await _call(
+        "okto_pulse_associate_amendment_revision_artifacts",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd,
+        regression_test_task_ids=[ids["test"]],
+    )
+    await _call(
+        "okto_pulse_transition_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd, lineage_state="complete",
+    )
+    await _call(
+        "okto_pulse_transition_amendment_revision",
+        board_id=ids["board"], bug_id=ids["bug"], amendment_id=amd, status="done",
+    )
+
+    result = await _call(
+        "okto_pulse_confirm_amendment_coverage",
+        board_id=ids["board"], amendment_id=amd,
+        regression_test_task_id=ids["test"], regression_scenario_id=ids["scenario"],
+    )
+
+    # The handler serialized the STRUCTURED error, not a degraded textual one.
+    assert result.get("code") == "coverage_not_gate_consumable", result
+    facts = result.get("facts") or {}
+    assert facts.get("routed_path") == "path_a"
+    assert facts.get("resolver_reason") == "unrelated_scenario"
+    assert facts.get("bug_id") == ids["bug"]
+    # Regression guard: a degraded handler would return ONLY {"error": "<text>"}.
+    assert set(result) != {"error"}

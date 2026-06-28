@@ -925,6 +925,10 @@ class TestSprintStateMachine:
             data = SprintMove(status=SprintStatus.REVIEW)
             await service.move_sprint(sprint_id, AGENT_ID, data)
 
+            card = await db.get(Card, CARD_1_ID)
+            card.status = CardStatus.DONE
+            await db.flush()
+
             # Try to close without evaluation — should fail
             data = SprintMove(status=SprintStatus.CLOSED)
             with pytest.raises(ValueError, match="no evaluation"):
@@ -983,6 +987,10 @@ class TestSprintStateMachine:
             }
             await service.submit_evaluation(sprint_id, AGENT_ID, evaluation)
 
+            card = await db.get(Card, CARD_1_ID)
+            card.status = CardStatus.DONE
+            await db.flush()
+
             # Now close — should succeed
             data = SprintMove(status=SprintStatus.CLOSED)
             sprint = await service.move_sprint(sprint_id, AGENT_ID, data)
@@ -1037,6 +1045,10 @@ class TestSprintStateMachine:
                 "recommendation": "reject",
             }
             await service.submit_evaluation(sprint_id, AGENT_ID, evaluation)
+
+            card = await db.get(Card, CARD_1_ID)
+            card.status = CardStatus.DONE
+            await db.flush()
 
             data = SprintMove(status=SprintStatus.CLOSED)
             with pytest.raises(ValueError, match="reject"):
@@ -1221,6 +1233,10 @@ class TestSprintEvaluation:
             sprint = await db.get(Sprint, sprint_id)
             assert sprint.status == SprintStatus.REVIEW
 
+            card = await db.get(Card, CARD_1_ID)
+            card.status = CardStatus.DONE
+            await db.flush()
+
             # Closing should fail because of reject recommendation
             data = SprintMove(status=SprintStatus.CLOSED)
             with pytest.raises(ValueError, match="reject"):
@@ -1277,6 +1293,10 @@ class TestSprintEvaluation:
                 "recommendation": "approve",
             }
             await service.submit_evaluation(sprint_id, AGENT_ID, evaluation)
+
+            card = await db.get(Card, CARD_1_ID)
+            card.status = CardStatus.DONE
+            await db.flush()
 
             # Closing should fail — score 60 < threshold 80
             data = SprintMove(status=SprintStatus.CLOSED)
@@ -2386,6 +2406,10 @@ class TestSprintSkipFlags:
             # Move to review
             data = SprintMove(status=SprintStatus.REVIEW)
             await service.move_sprint(sprint_id, AGENT_ID, data)
+
+            card = await db.get(Card, CARD_1_ID)
+            card.status = CardStatus.DONE
+            await db.flush()
 
             # Close without evaluation — should succeed because skip_qualitative_validation
             data = SprintMove(status=SprintStatus.CLOSED)

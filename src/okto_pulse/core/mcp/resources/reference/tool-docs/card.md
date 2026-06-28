@@ -272,10 +272,24 @@ confirms coverage — that stays validator-only via
 ## `okto_pulse_confirm_amendment_coverage`
 
 VALIDATOR-ONLY. Records the non-forgeable coverage attestation that lets the gate
-treat a Path B regression artifact as closure-ready. Args: `board_id`, `bug_id`,
-`regression_test_task_id`, `regression_scenario_id` (both MUST be declared by the
-amendment). Fail-closed: the regression test task must be `done` with its declared
-scenario `passed`/`automated` carrying re-executable evidence (`test_file_path`+
-`test_function`, or an explicit replayable evidence_class such as
-`mcp_replay_manifest` plus `expected_output_snapshot`) — lineage/evidence alone is necessary but NOT
-sufficient. Until this runs, the bug stays `coverage_pending`.
+treat a Path B regression artifact as closure-ready. Args: `board_id`,
+`amendment_id`, `regression_test_task_id`, `regression_scenario_id` (the test task
++ scenario MUST be declared by the amendment). There is **no** `bug_id` argument —
+the amendment already carries bug/board/original_spec. Fail-closed: the regression
+test task must be `done` with its declared scenario `passed`/`automated` carrying
+re-executable evidence (`test_file_path`+`test_function`, or an explicit replayable
+evidence_class such as `mcp_replay_manifest` plus `expected_output_snapshot`) —
+binding + validator authorization + reexecutable evidence are necessary but NOT
+sufficient.
+
+Gate-consumability preflight (BUG-01): BEFORE persisting, the tool runs the SAME
+eligibility predicate the bug regression gate uses for this `(amendment_id,
+regression_test_task_id, regression_scenario_id)`, so success implies the
+attestation is persisted AND consumable by the gate. A **same-spec** scenario is
+routed through **Path A** and is eligible ONLY when linked to the bug's
+origin/affected-task lineage — an amendment declaration does NOT convert an
+`unrelated_scenario` into valid Path B coverage. A **cross-spec** scenario is
+routed through **Path B** and consumable only when the candidate attestation drives
+`path_b_ready`. An inert tuple fails closed with `coverage_not_gate_consumable`
+(see `reference/errors.md`), distinct from `coverage_pending`. Until a consumable
+attestation is recorded, the bug stays `coverage_pending`.

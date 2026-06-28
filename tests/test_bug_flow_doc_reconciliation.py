@@ -400,3 +400,98 @@ def test_ac9_historical_closure_checklist_enforces_path_b_without_bypass() -> No
     assert any(p in synthetic_bypass.lower() for p in _CHECKLIST_FORBIDDEN_PERMISSIVE)
     allowed_prohibition = "There is no skip/override/force path; never close without coverage."
     assert not any(p in allowed_prohibition.lower() for p in _CHECKLIST_FORBIDDEN_PERMISSIVE)
+
+
+# ---------------------------------------------------------------------------
+# BUG-03 (spec e5f61c7f) — the confirm_amendment_coverage CONTRACT served via the
+# okto-pulse:// docs must carry the gate-consumability preflight: binding +
+# validator authorization + reexecutable evidence are necessary but NOT
+# sufficient, the tool takes `amendment_id` (NOT `bug_id`), an inert tuple fails
+# `coverage_not_gate_consumable` (distinct from `coverage_pending`), and there is
+# no bypass. There is NO REST twin of confirm to reconcile — MCP/tool-docs are the
+# canonical surface (TS-BUG03-4).
+# ---------------------------------------------------------------------------
+
+MISC_CARD_DOC = RESOURCES_DIR / "reference" / "tool-docs" / "misc.md"
+API_AMENDMENT_REVISIONS = CORE_DIR / "api" / "amendment_revisions.py"
+
+_CONFIRM_HEADING = "## `okto_pulse_confirm_amendment_coverage`"
+
+
+def _confirm_section(doc: str) -> str:
+    start = doc.find(_CONFIRM_HEADING)
+    if start == -1:
+        return ""
+    rest = doc[start + len(_CONFIRM_HEADING):]
+    end = rest.find("\n## ")
+    return _CONFIRM_HEADING + (rest if end == -1 else rest[:end])
+
+
+def _confirm_contract_reconciled(section: str) -> bool:
+    """True iff a confirm_amendment_coverage doc section carries the BUG-03
+    gate-consumability contract and drops the stale `bug_id` arg. Whitespace is
+    collapsed so markdown line-wraps (e.g. "NOT\\nsufficient") still match."""
+    low = " ".join(section.lower().split())
+    return (
+        "amendment_id" in low
+        and "consumab" in low                       # the preflight is described
+        and "not sufficient" in low                 # binding+evidence not enough
+        and "coverage_not_gate_consumable" in low
+        and "path a" in low and "path b" in low
+        and "`board_id`, `bug_id`," not in low      # stale card.md arg list
+        and "bug_id: bug card id" not in low        # stale misc.md arg line
+    )
+
+
+def test_bug03_confirm_contract_served_carries_consumability_preflight() -> None:
+    from okto_pulse.core.mcp import server as _srv
+
+    registry = {uri: rel for uri, rel, _ in _srv._RESOURCE_REGISTRY}
+
+    # The served card tool-doc confirm section carries the full contract.
+    card_served = _srv._load_resource_file(registry["okto-pulse://reference/tool-docs/card"])
+    card_confirm = _confirm_section(card_served)
+    assert card_confirm, "served card.md missing confirm_amendment_coverage section"
+    assert _confirm_contract_reconciled(card_confirm)
+
+    # misc.md ALSO documents confirm; if it is a served resource it must NOT
+    # diverge (stale bug_id arg / no preflight).
+    misc_rel = registry.get("okto-pulse://reference/tool-docs/misc")
+    if misc_rel:
+        misc_confirm = _confirm_section(_srv._load_resource_file(misc_rel))
+        assert misc_confirm, "served misc.md missing confirm_amendment_coverage section"
+        assert _confirm_contract_reconciled(misc_confirm)
+
+    # The served errors + workflow surfaces mention the new error and the preflight.
+    errors_low = _srv._load_resource_file(registry["okto-pulse://reference/errors"]).lower()
+    assert "coverage_not_gate_consumable" in errors_low
+    assert "coverage_pending" in errors_low  # distinguished, both present
+    cards_low = _srv._load_resource_file(registry["okto-pulse://workflows/cards"]).lower()
+    assert "coverage_not_gate_consumable" in cards_low
+    assert "consumab" in cards_low
+
+    # Negative-wiring: a synthetic STALE confirm section (says binding+evidence
+    # SUFFICES, documents bug_id, no preflight) must FAIL the predicate — the
+    # guard is not a vacuous pass.
+    synthetic_stale = (
+        _CONFIRM_HEADING + "\nArgs: `board_id`, `bug_id`, `regression_test_task_id`.\n"
+        "Binding + reexecutable evidence are sufficient to confirm coverage.\n"
+    )
+    assert not _confirm_contract_reconciled(synthetic_stale)
+
+
+def test_bug03_no_rest_twin_of_confirm_coverage() -> None:
+    # TS-BUG03-4: api/amendment_revisions.py exposes create/list/get/associate/
+    # lifecycle ONLY — there is NO REST endpoint for coverage confirmation, so
+    # MCP/tool-docs are the canonical (and only) surface. A future REST twin would
+    # add a route whose path contains "coverage" or "confirm"; assert none exists.
+    api = _read(API_AMENDMENT_REVISIONS)
+    route_lines = [ln for ln in api.splitlines() if "@router." in ln]
+    assert route_lines, "expected FastAPI routes in api/amendment_revisions.py"
+    for ln in route_lines:
+        low = ln.lower()
+        assert "coverage" not in low and "confirm" not in low, (
+            f"unexpected REST coverage/confirm twin route: {ln.strip()!r}"
+        )
+    # And the module documents that coverage stays validator-only (MCP).
+    assert "confirm_amendment_coverage" in api

@@ -94,6 +94,8 @@ async def update_card(
     service = CardService(db)
     try:
         card = await service.update_card(card_id, user_id, data)
+    except CardOperationError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except CardResourceReadOnlyError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if not card:

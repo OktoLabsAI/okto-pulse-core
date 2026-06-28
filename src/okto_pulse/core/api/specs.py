@@ -37,6 +37,7 @@ from okto_pulse.core.models.schemas import (
 from okto_pulse.core.models.schemas import SpecHistoryResponse, SpecQAAnswer, SpecQACreate, SpecQAResponse
 from okto_pulse.core.services import (
     BoardService,
+    CardOperationError,
     QASelfAnsweringNotAllowedError,
     ResourceGateError,
     SpecKnowledgeService,
@@ -656,7 +657,13 @@ async def link_task_to_scenario(
     if scenario_id not in existing:
         existing.append(scenario_id)
     from okto_pulse.core.models.schemas import CardUpdate as CU
-    await card_service.update_card(card_id, user_id, CU(test_scenario_ids=existing))
+    try:
+        await card_service.update_card(card_id, user_id, CU(test_scenario_ids=existing))
+    except CardOperationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.to_dict(),
+        ) from exc
 
     await db.commit()
     return {"success": True, "spec_id": spec_id, "scenario_id": scenario_id, "card_id": card_id}
