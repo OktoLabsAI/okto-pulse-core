@@ -2,12 +2,11 @@
 
 import uuid
 from datetime import datetime
-from enum import Enum as PyEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    CheckConstraint,
     JSON,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -22,120 +21,27 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from okto_pulse.core.infra.database import Base
 from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
+from okto_pulse.core.domain.enums import (
+    BugSeverity,
+    CardPriority,
+    CardStatus,
+    CardType,
+    IdeationComplexity,
+    IdeationStatus,
+    RefinementStatus,
+    SpecStatus,
+    SprintLaneType,
+    SprintStatus,
+    StoryStatus,
+)
+from okto_pulse.core.infra.database import Base
 
 if TYPE_CHECKING:
     pass
-
-
-class IdeationStatus(str, PyEnum):
-    """Ideation lifecycle status."""
-
-    DRAFT = "draft"
-    REVIEW = "review"
-    APPROVED = "approved"
-    EVALUATING = "evaluating"
-    DONE = "done"
-    CANCELLED = "cancelled"
-
-
-class IdeationComplexity(str, PyEnum):
-    """Ideation complexity level — determines whether refinements are needed."""
-
-    SMALL = "small"
-    MEDIUM = "medium"
-    LARGE = "large"
-
-
-class StoryStatus(str, PyEnum):
-    """Story lifecycle status."""
-
-    DRAFT = "draft"
-    TRIAGE = "triage"
-    READY = "ready"
-    CONVERTED = "converted"
-
-
-class RefinementStatus(str, PyEnum):
-    """Refinement lifecycle status."""
-
-    DRAFT = "draft"
-    REVIEW = "review"
-    APPROVED = "approved"
-    DONE = "done"
-    CANCELLED = "cancelled"
-
-
-class SprintStatus(str, PyEnum):
-    """Sprint lifecycle status."""
-
-    DRAFT = "draft"
-    ACTIVE = "active"
-    REVIEW = "review"
-    CLOSED = "closed"
-    CANCELLED = "cancelled"
-
-
-class SprintLaneType(str, PyEnum):
-    """Sprint lane type for normal delivery and post-closure hotfix work."""
-
-    NORMAL = "normal"
-    HOTFIX = "hotfix"
-
-
-class SpecStatus(str, PyEnum):
-    """Spec lifecycle status."""
-
-    DRAFT = "draft"
-    REVIEW = "review"
-    APPROVED = "approved"
-    VALIDATED = "validated"
-    IN_PROGRESS = "in_progress"
-    DONE = "done"
-    CANCELLED = "cancelled"
-
-
-class CardStatus(str, PyEnum):
-    """Card status enum matching Kanban columns."""
-
-    NOT_STARTED = "not_started"
-    STARTED = "started"
-    IN_PROGRESS = "in_progress"
-    VALIDATION = "validation"
-    ON_HOLD = "on_hold"
-    DONE = "done"
-    CANCELLED = "cancelled"
-
-
-class CardPriority(str, PyEnum):
-    """Card priority levels."""
-
-    CRITICAL = "critical"
-    VERY_HIGH = "very_high"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-    NONE = "none"
-
-
-class CardType(str, PyEnum):
-    """Card type enum — normal task, bug, or test."""
-
-    NORMAL = "normal"
-    BUG = "bug"
-    TEST = "test"
-
-
-class BugSeverity(str, PyEnum):
-    """Bug severity levels."""
-
-    CRITICAL = "critical"
-    MAJOR = "major"
-    MINOR = "minor"
 
 
 class CardTypeType(TypeDecorator):
@@ -1242,6 +1148,10 @@ class Card(Base):
     action_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
     # IDs of test task cards linked to this bug for unblocking
     linked_test_task_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Human-controlled bypass for the task->requirement link gate.
+    skip_task_requirement_link_gate: Mapped[bool] = mapped_column(
+        default=False, nullable=False, server_default=text("false")
+    )
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -1588,14 +1498,6 @@ class QAItem(Base):
 
     # Relationships
     card: Mapped["Card"] = relationship("Card", back_populates="qa_items")
-
-
-class CommentType(str, PyEnum):
-    """Comment type enum."""
-
-    TEXT = "text"
-    CHOICE = "choice"              # Single-select choice board
-    MULTI_CHOICE = "multi_choice"  # Multi-select choice board
 
 
 class Comment(Base):

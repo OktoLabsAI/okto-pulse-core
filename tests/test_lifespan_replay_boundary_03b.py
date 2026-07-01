@@ -8,8 +8,11 @@ xfail_advisory + register-before-remove).
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
+from okto_pulse.core.app import create_app
 from okto_pulse.core.application.boundary import (
     DEFAULT_ONLY_EXCLUSIONS,
     REQUIRED_LIFECYCLE_EVENTS,
@@ -17,9 +20,15 @@ from okto_pulse.core.application.boundary import (
     CommunityLifespanReplayInput,
     CompositionBoundaryGate,
     CompositionBoundaryGateInput,
+    LifecycleFallbackGate,
     NamedLifecycleHook,
+    RuntimeWorkerBoundaryGate,
 )
 from okto_pulse.core.composition import RuntimeComposition, RuntimeProviderMissing
+from okto_pulse.core.ports.runtime_workers import (
+    RuntimeWorkerRegistry,
+    RuntimeWorkerSpec,
+)
 
 _STARTUP_EVENTS = [
     "init_db", "seed_community_defaults", "backfill_qa_answered_at",
@@ -66,6 +75,7 @@ async def test_replay_golden_observes_all_required_events() -> None:
     assert report.mcp_session_factory == "registered"
     assert report.frontend == "served"
     assert report.unexpected_deltas == []
+    assert report.order_mismatches == []
 
 
 @pytest.mark.asyncio
@@ -93,12 +103,44 @@ async def test_replay_accepted_exclusion_is_not_unexpected_but_rogue_is() -> Non
 
 
 @pytest.mark.asyncio
+async def test_replay_scheduler_event_order_mismatch_is_flagged() -> None:
+    events = list(_STARTUP_EVENTS)
+    settings_index = events.index("settings_service")
+    scheduler_index = events.index("scheduler")
+    events[settings_index], events[scheduler_index] = (
+        events[scheduler_index],
+        events[settings_index],
+    )
+    hooks = [NamedLifecycleHook(startup_event=e) for e in events]
+    hooks.append(NamedLifecycleHook(shutdown_event="close_db"))
+
+    report = await CommunityLifespanReplay().run(
+        CommunityLifespanReplayInput(composition=_composition(tuple(hooks)))
+    )
+
+    assert report.status == "lifecycle_event_order_mismatch"
+    mismatch_events = {m.event for m in report.order_mismatches}
+    assert {"settings_service", "scheduler"} <= mismatch_events
+    assert report.unexpected_deltas == []
+
+
+@pytest.mark.asyncio
 async def test_replay_strict_runtime_missing_provider_raises() -> None:
     comp = _composition(_golden_hooks(), event_bus=None)
     with pytest.raises(RuntimeProviderMissing):
         await CommunityLifespanReplay().run(
             CommunityLifespanReplayInput(composition=comp, strict_runtime=True)
         )
+
+
+@pytest.mark.asyncio
+async def test_replay_strict_runtime_empty_hooks_are_missing_provider() -> None:
+    comp = _composition(())
+    with pytest.raises(RuntimeProviderMissing) as exc:
+        await CommunityLifespanReplay().run(
+            CommunityLifespanReplayInput(composition=comp, strict_runtime=True)
+        )
+    assert exc.value.missing == ["lifecycle_hooks"]
 
 
 @pytest.mark.asyncio
@@ -248,3 +290,279 @@ def test_boundary_gate_blocking_mode_real_tree_uses_versioned_catalogue() -> Non
     }
     assert baseline_keys, "the known catalogued debt must classify as baseline"
     assert baseline_keys <= DEFAULT_COMPOSITION_BASELINE
+
+
+# --------------------------------------------------------------------------- #
+# R08B LifecycleFallbackGate
+# --------------------------------------------------------------------------- #
+def test_lifecycle_fallback_gate_real_tree_passes() -> None:
+    report = LifecycleFallbackGate().run()
+    assert report.status == "passed", report.as_dict()
+    assert report.evidence["offenders"] == []
+
+
+def test_lifecycle_fallback_gate_blocks_community_concrete_in_core_app(tmp_path) -> None:
+    core = tmp_path / "okto_pulse" / "core"
+    core.mkdir(parents=True)
+    (core / "app.py").write_text(
+        "from okto_pulse.community.adapters.data import CommunityOutboxEventBus\n\n"
+        "def fallback(session_factory):\n"
+        "    return CommunityOutboxEventBus(session_factory)\n",
+        encoding="utf-8",
+    )
+    (core / "composition.py").write_text("", encoding="utf-8")
+
+    report = LifecycleFallbackGate().run(source_root=tmp_path)
+
+    assert report.status == "blocking"
+    offenders = report.evidence["offenders"]
+    assert any(
+        item["file"] == "okto_pulse/core/app.py"
+        and item["symbol"] == "CommunityOutboxEventBus"
+        for item in offenders
+    )
+
+
+def test_lifecycle_fallback_gate_blocks_alias_import_evasion(tmp_path) -> None:
+    core = tmp_path / "okto_pulse" / "core"
+    core.mkdir(parents=True)
+    (core / "app.py").write_text(
+        "from okto_pulse.community.adapters.data import CommunityOutboxEventBus as Foo\n\n"
+        "def fallback(session_factory):\n"
+        "    return Foo(session_factory)\n",
+        encoding="utf-8",
+    )
+    (core / "composition.py").write_text("", encoding="utf-8")
+
+    report = LifecycleFallbackGate().run(source_root=tmp_path)
+
+    assert report.status == "blocking"
+    offenders = report.evidence["offenders"]
+    assert any(
+        item["kind"] == "from_import"
+        and item["symbol"] == "CommunityOutboxEventBus"
+        for item in offenders
+    )
+
+
+# --------------------------------------------------------------------------- #
+# R08C RuntimeWorkerRegistry + RuntimeWorkerBoundaryGate
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_runtime_worker_registry_start_stop_is_idempotent() -> None:
+    events: list[str] = []
+
+    class _Worker:
+        def __init__(self, family: str) -> None:
+            self.family = family
+
+        async def stop(self) -> None:
+            events.append(f"stop:{self.family}")
+
+    async def _start(family: str) -> _Worker:
+        events.append(f"start:{family}")
+        return _Worker(family)
+
+    registry = RuntimeWorkerRegistry(
+        (
+            RuntimeWorkerSpec(
+                family="event_dispatcher",
+                start=lambda: _start("event_dispatcher"),
+                stop=lambda worker: worker.stop(),
+            ),
+            RuntimeWorkerSpec(
+                family="consolidation_worker",
+                start=lambda: _start("consolidation_worker"),
+                stop=lambda worker: worker.stop(),
+            ),
+        )
+    )
+
+    assert await registry.start_all() == (
+        "event_dispatcher",
+        "consolidation_worker",
+    )
+    assert await registry.start_all() == (
+        "event_dispatcher",
+        "consolidation_worker",
+    )
+    assert registry.start_count("event_dispatcher") == 1
+    assert registry.start_count("consolidation_worker") == 1
+    failures = await registry.stop_all()
+
+    assert failures == ()
+    assert events == [
+        "start:event_dispatcher",
+        "start:consolidation_worker",
+        "stop:consolidation_worker",
+        "stop:event_dispatcher",
+    ]
+    assert registry.active_families == ()
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_registry_stop_priority_preserves_dispatcher_first() -> None:
+    events: list[str] = []
+
+    class _Worker:
+        def __init__(self, family: str) -> None:
+            self.family = family
+
+    async def _start(family: str) -> _Worker:
+        events.append(f"start:{family}")
+        return _Worker(family)
+
+    async def _stop(worker: _Worker) -> None:
+        events.append(f"stop:{worker.family}")
+
+    registry = RuntimeWorkerRegistry(
+        (
+            RuntimeWorkerSpec(
+                family="event_dispatcher",
+                start=lambda: _start("event_dispatcher"),
+                stop=_stop,
+                stop_priority=300,
+            ),
+            RuntimeWorkerSpec(
+                family="cleanup_worker",
+                start=lambda: _start("cleanup_worker"),
+                stop=_stop,
+                stop_priority=100,
+            ),
+            RuntimeWorkerSpec(
+                family="consolidation_worker",
+                start=lambda: _start("consolidation_worker"),
+                stop=_stop,
+            ),
+            RuntimeWorkerSpec(
+                family="outbox_worker",
+                start=lambda: _start("outbox_worker"),
+                stop=_stop,
+                stop_priority=200,
+            ),
+        )
+    )
+
+    await registry.start_all()
+    failures = await registry.stop_all()
+
+    assert failures == ()
+    assert events == [
+        "start:event_dispatcher",
+        "start:cleanup_worker",
+        "start:consolidation_worker",
+        "start:outbox_worker",
+        "stop:event_dispatcher",
+        "stop:outbox_worker",
+        "stop:cleanup_worker",
+        "stop:consolidation_worker",
+    ]
+
+
+def test_runtime_worker_boundary_gate_real_core_tree_passes() -> None:
+    report = RuntimeWorkerBoundaryGate().run()
+    assert report.status == "passed", report.as_dict()
+    assert "okto_pulse/core/app.py" in report.evidence["scanned_files"]
+    assert report.evidence["offenders"] == []
+
+
+def test_core_app_does_not_build_default_runtime_workers() -> None:
+    source = inspect.getsource(create_app)
+    assert "build_default_runtime_worker_registry" not in source
+    assert "runtime_worker_registry is not None" in source
+
+
+def test_runtime_worker_boundary_gate_blocks_core_direct_worker_start(tmp_path) -> None:
+    core = tmp_path / "okto_pulse" / "core"
+    core.mkdir(parents=True)
+    (core / "app.py").write_text(
+        "from okto_pulse.core.kg.workers.cleanup import get_cleanup_worker\n\n"
+        "async def boot():\n"
+        "    worker = get_cleanup_worker()\n"
+        "    await worker.start()\n",
+        encoding="utf-8",
+    )
+
+    report = RuntimeWorkerBoundaryGate().run(source_root=tmp_path)
+
+    assert report.status == "blocking"
+    offenders = report.evidence["offenders"]
+    assert any(
+        item["kind"] == "direct_worker_import"
+        and item["symbol"] == "get_cleanup_worker"
+        for item in offenders
+    )
+
+
+def test_runtime_worker_boundary_gate_blocks_worker_module_alias(tmp_path) -> None:
+    core = tmp_path / "okto_pulse" / "core"
+    core.mkdir(parents=True)
+    (core / "app.py").write_text(
+        "import okto_pulse.core.events.dispatcher as dispatcher\n\n"
+        "async def boot(session_factory):\n"
+        "    worker = dispatcher.EventDispatcher(session_factory)\n"
+        "    await worker.start()\n",
+        encoding="utf-8",
+    )
+
+    report = RuntimeWorkerBoundaryGate().run(source_root=tmp_path)
+
+    assert report.status == "blocking"
+    offenders = report.evidence["offenders"]
+    assert any(
+        item["kind"] == "direct_worker_module_import"
+        and item["symbol"] == "okto_pulse.core.events.dispatcher"
+        for item in offenders
+    )
+    assert any(
+        item["kind"] == "direct_worker_attribute_reference"
+        and item["symbol"] == "EventDispatcher"
+        for item in offenders
+    )
+
+
+def test_runtime_worker_boundary_gate_blocks_private_tick_import(tmp_path) -> None:
+    community = tmp_path / "okto_pulse" / "community"
+    community.mkdir(parents=True)
+    (community / "main.py").write_text(
+        "from okto_pulse.core.app import _emit_daily_tick\n",
+        encoding="utf-8",
+    )
+
+    report = RuntimeWorkerBoundaryGate().run(community_source_root=tmp_path)
+
+    assert report.status == "blocking"
+    offenders = report.evidence["offenders"]
+    assert any(
+        item["kind"] == "private_tick_import"
+        and item["symbol"] == "_emit_daily_tick"
+        for item in offenders
+    )
+
+
+def test_runtime_worker_boundary_gate_blocks_private_tick_module_alias(
+    tmp_path,
+) -> None:
+    community = tmp_path / "okto_pulse" / "community"
+    community.mkdir(parents=True)
+    (community / "main.py").write_text(
+        "import okto_pulse.core.app as core_app\n\n"
+        "async def tick():\n"
+        "    await core_app._emit_daily_tick()\n",
+        encoding="utf-8",
+    )
+
+    report = RuntimeWorkerBoundaryGate().run(community_source_root=tmp_path)
+
+    assert report.status == "blocking"
+    offenders = report.evidence["offenders"]
+    assert any(
+        item["kind"] == "private_tick_module_import"
+        and item["symbol"] == "okto_pulse.core.app"
+        for item in offenders
+    )
+    assert any(
+        item["kind"] == "private_tick_attribute_reference"
+        and item["symbol"] == "_emit_daily_tick"
+        for item in offenders
+    )

@@ -129,10 +129,15 @@ async def _non_maskable_items(
 
 
 async def _enforcement_active(db: AsyncSession, board_id: str) -> bool:
-    from okto_pulse.core.models.db import Board
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
     from okto_pulse.core.services.main import _cognitive_readiness_blocking_active
 
-    board = await db.get(Board, board_id)
+    # R01C IMP3 drain: resolve the board via the edition-owned repository port
+    # (the R01B FR3 ``resolve_unit_of_work_factory().wrap`` seam) instead of the ORM
+    # import. Pure existence get-by-id (no owner/permission predicate); the
+    # ``board is not None`` guard is preserved — ``boards.get`` returns None for a
+    # missing board, identical to ``db.get(Board, board_id)``.
+    board = await resolve_unit_of_work_factory().wrap(db).boards.get(board_id)
     return bool(_cognitive_readiness_blocking_active(board)) if board is not None else False
 
 

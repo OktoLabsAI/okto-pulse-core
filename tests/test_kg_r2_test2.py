@@ -43,15 +43,17 @@ from r2_scenario_helpers import (
 )
 
 from okto_pulse.core.kg import canonical_cognitive_preservation as ccp
-from okto_pulse.core.kg.board_rebuild_adapter import BoardRebuildIngestionAdapter
+from okto_pulse.community.adapters.board_rebuild_ingestion import (
+    BoardRebuildIngestionAdapter,
+)
 from okto_pulse.core.kg.canonical_cognitive_preservation import (
     restore_canonical_cognitive,
     snapshot_canonical_cognitive,
 )
-from okto_pulse.core.kg.canonical_debt_replay import _pulse_db_path
 from okto_pulse.core.kg.rebuild_service import RebuildStepInput
 from okto_pulse.core.kg.schema import bootstrap_board_graph
 from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_WORKING
+from okto_pulse.community.adapters.board_source_reader import resolve_pulse_db_path
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     RealBoardGraphLifecycleForTests,
@@ -90,7 +92,7 @@ def _empty_source_adapter():
     """Real adapter wired with an empty-source resolver (the validator-approved
     deterministic rebuild path). drain is instant because nothing is enqueued."""
     adapter = BoardRebuildIngestionAdapter(
-        db_path=_pulse_db_path(),
+        db_path=resolve_pulse_db_path(),
         drain_timeout_seconds=5.0,
         drain_poll_interval_seconds=0.02,
         drain_final_grace_seconds=0.0,
@@ -249,7 +251,7 @@ def test_without_preservation_cognitive_node_is_lost():
     # A rebuild purge WITHOUT snapshot/restore genuinely loses the node — this is
     # what makes the preservation tests above non-theater.
     snap = snapshot_canonical_cognitive(board_id)  # captured but deliberately unused
-    adapter = BoardRebuildIngestionAdapter(db_path=_pulse_db_path())
+    adapter = BoardRebuildIngestionAdapter(db_path=resolve_pulse_db_path())
     adapter.prepare_board_graph_storage(board_id=board_id, reason="r2t2_teeth")
     bootstrap_board_graph(board_id)  # fresh graph, as the worker would
     assert count_canonical(board_id, "Learning") == 0, (

@@ -6,7 +6,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from okto_pulse.core.api.specs import _spec_update_permission_requirements
+from okto_pulse.core.application.use_cases.spec_crud import (
+    _spec_update_permission_requirements,
+)
 from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus

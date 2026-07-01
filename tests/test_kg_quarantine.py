@@ -578,6 +578,7 @@ def test_purge_global_discovery_storage_goes_through_quarantine(
     discovery.lbug + sidecars to quarantine first."""
     import okto_pulse.core.kg.global_discovery.schema as gd_schema
     import okto_pulse.core.kg.quarantine as quarantine_module
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
     storage_root = tmp_path / "okto-data" / "global"
@@ -588,8 +589,9 @@ def test_purge_global_discovery_storage_goes_through_quarantine(
     sidecar.write_text("global-wal")
 
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(gd_schema, "_global_kuzu_path", lambda: primary)
-    monkey.setattr(gd_schema, "close_global_connection", lambda: None)
+    runtime = get_kg_registry().global_discovery_runtime
+    monkey.setattr(runtime, "global_graph_path", lambda: primary)
+    monkey.setattr(runtime, "close", lambda: None)
 
     quarantine_module.reset_quarantine_counter()
 
@@ -638,6 +640,7 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
     import okto_pulse.core.kg.global_discovery.schema as gd_schema
     import okto_pulse.core.kg.global_discovery.clustering as clustering
     import okto_pulse.core.kg.quarantine as quarantine_module
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     storage_root = tmp_path / "okto-data" / "global"
     storage_root.mkdir(parents=True)
@@ -654,8 +657,10 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
         primary.write_text("freshly-bootstrapped")
         return primary
 
-    monkeypatch.setattr(gd_schema, "_global_kuzu_path", lambda: primary)
-    monkeypatch.setattr(gd_schema, "close_global_connection", lambda: None)
+    runtime = get_kg_registry().global_discovery_runtime
+    monkeypatch.setattr(gd_schema, "global_discovery_graph_path", lambda: primary)
+    monkeypatch.setattr(runtime, "global_graph_path", lambda: primary)
+    monkeypatch.setattr(runtime, "close", lambda: None)
     monkeypatch.setattr(gd_schema, "bootstrap_global_discovery", fake_bootstrap)
     # clustering imports bootstrap_global_discovery and
     # purge_global_discovery_storage lazily, so patches above cover both.
@@ -709,6 +714,7 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
 def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
     import okto_pulse.core.kg.global_discovery.schema as gd_schema
     import okto_pulse.core.kg.quarantine as quarantine_module
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
     storage_root = tmp_path / "okto-data" / "global"
@@ -717,8 +723,9 @@ def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
     primary.write_text("global-evidence")
 
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(gd_schema, "_global_kuzu_path", lambda: primary)
-    monkey.setattr(gd_schema, "close_global_connection", lambda: None)
+    runtime = get_kg_registry().global_discovery_runtime
+    monkey.setattr(runtime, "global_graph_path", lambda: primary)
+    monkey.setattr(runtime, "close", lambda: None)
 
     original_create = quarantine_module.KGQuarantineService.create
 

@@ -1,8 +1,9 @@
 """MCP tool wrappers for the 9 tier primario intent-based query tools.
 
-Registered via `register_kg_query_tools(mcp, get_agent, get_db)` called from
-server.py. Each tool authenticates, resolves board ACL, delegates to
-`kg_service`, and serializes the response as JSON.
+Registered via `register_kg_query_tools(mcp, get_agent, get_uow)` called from
+server.py. Each tool authenticates and resolves board ACL through the registered
+AuthContext factory. If the composition root did not provide AuthContext, the
+tool family fails closed instead of consulting a local relational ACL fallback.
 """
 
 from __future__ import annotations
@@ -69,8 +70,15 @@ async def _get_auth_context():
     return factory()
 
 
-async def _get_user_boards(get_agent=None, get_db=None) -> tuple[Any, list[str]]:
-    """Authenticate agent and return (agent_id, board_ids) via AuthContext."""
+async def _get_user_boards(get_agent=None, get_uow=None) -> tuple[Any, list[str]]:
+    """Authenticate agent and return (agent_id, board_ids) via AuthContext.
+
+    ``get_agent`` and ``get_uow`` remain in the call signature for the MCP
+    registration contract, but are intentionally not used as a fallback. R06
+    requires a registered AuthContext/port or a fail-closed unauthenticated
+    envelope.
+    """
+    _ = (get_agent, get_uow)
     auth = await _get_auth_context()
     if auth is not None:
         agent_id = await auth.get_agent_id()
@@ -84,21 +92,16 @@ async def _get_user_boards(get_agent=None, get_db=None) -> tuple[Any, list[str]]
         boards = await auth.get_accessible_boards()
         return _Stub(agent_id), boards
 
-    if get_agent is not None:
-        agent = await get_agent()
-        if agent is None:
-            return None, []
-        async with get_db() as db:
-            from okto_pulse.core.services.main import AgentService
-            svc = AgentService(db)
-            boards = await svc.list_boards_for_agent(agent.id)
-            await db.commit()
-            return agent, [b.id for b in boards]
     return None, []
 
 
-def register_kg_query_tools(mcp, *, get_agent, get_db) -> None:
-    """Register the 9 tier primario query tools on the FastMCP instance."""
+def register_kg_query_tools(mcp, *, get_agent, get_uow) -> None:
+    """Register the 9 tier primario query tools on the FastMCP instance.
+
+    Spec R01A MCP-FU4: the shared ``_get_user_boards`` helper is injected with the
+    MCP UnitOfWorkFactory (``get_uow``) instead of a raw ``get_db`` session source,
+    so no tool in this family opens a relational session directly.
+    """
 
     @mcp.tool()
     async def okto_pulse_kg_get_decision_history(
@@ -116,7 +119,7 @@ use_semantic=False for deterministic string-only search. Tunables: min_confidenc
 (default 0.5), max_rows (default 100), min_similarity (default 0.3). Returns decisions
 ordered by similarity (semantic) or relevance_score (fallback). Full args:
 okto-pulse://reference/tool-docs/kg."""
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_get_decision_history called: board_id=%s topic=%r", board_id, topic)
@@ -157,7 +160,7 @@ okto-pulse://reference/tool-docs/kg."""
         fails closed. Response echoes `applied_graph_layer`.
         Full docs: okto-pulse://reference/tool-docs/kg.
         """
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_get_related_context called: board_id=%s artifact_id=%s", board_id, artifact_id)
@@ -207,7 +210,7 @@ okto-pulse://reference/tool-docs/kg."""
         Returns:
             JSON with chain, depth, current_active
         """
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_get_supersedence_chain called: board_id=%s decision_id=%s", board_id, decision_id)
@@ -245,7 +248,7 @@ okto-pulse://reference/tool-docs/kg."""
         Returns:
             JSON with pairs: [{id_a, title_a, id_b, title_b, confidence}]
         """
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_find_contradictions called: board_id=%s node_id=%s", board_id, node_id)
@@ -286,7 +289,7 @@ okto-pulse://reference/tool-docs/kg."""
         Returns:
             JSON with decisions ordered by combined_score DESC
         """
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_find_similar_decisions called: board_id=%s topic=%r", board_id, topic)
@@ -323,7 +326,7 @@ okto-pulse://reference/tool-docs/kg."""
         Returns:
             JSON with constraint details, origins, and violations
         """
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_explain_constraint called: board_id=%s constraint_id=%s", board_id, constraint_id)
@@ -358,7 +361,7 @@ okto-pulse://reference/tool-docs/kg."""
         Returns:
             JSON with alternatives list
         """
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_list_alternatives called: board_id=%s decision_id=%s", board_id, decision_id)
@@ -399,7 +402,7 @@ okto-pulse://reference/tool-docs/kg."""
         Returns:
             JSON with learnings: [{learning_id, learning_title, bug_id, bug_title}]
         """
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_get_learning_from_bugs called: board_id=%s area=%r", board_id, area)
@@ -444,7 +447,7 @@ okto-pulse://reference/tool-docs/kg."""
             count, applied_graph_layer}`. `applied_graph_layer` echoes the layer
             actually applied (canonical|working|all).
         """
-        agent, boards = await _get_user_boards(get_agent, get_db)
+        agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
         logger.debug("[KG] kg_query_global called: board_id=%s nl_query=%r", board_id, nl_query)

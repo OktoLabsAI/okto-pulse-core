@@ -207,7 +207,7 @@ def test_board_source_store_enumerates_amendment(tmp_path):
         AmendmentLineageState,
         AmendmentRevisionStatus,
     )
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     db_path, engine = _temp_pulse_db(tmp_path)
     board_id = "board-amd"
@@ -246,7 +246,7 @@ def test_board_source_store_amendment_working_when_not_done(tmp_path):
         AmendmentLineageState,
         AmendmentRevisionStatus,
     )
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     db_path, engine = _temp_pulse_db(tmp_path)
     board_id = "board-amd2"
@@ -272,7 +272,7 @@ def test_board_without_amendment_table_is_silent_backward_compat(tmp_path):
     from sqlalchemy import text
     from sqlalchemy.orm import Session
     from okto_pulse.core.models.db import Board
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     db_path, engine = _temp_pulse_db(tmp_path)
     board_id = "board-legacy"
@@ -303,7 +303,7 @@ def _hash_for_amendment(tmp_path, tag, **fields):
         AmendmentLineageState,
         AmendmentRevisionStatus,
     )
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     sub = tmp_path / tag
     sub.mkdir()
@@ -361,7 +361,9 @@ def test_amendment_source_is_really_enqueued_not_filtered(tmp_path):
 
     from sqlalchemy.orm import Session
     from okto_pulse.core.models.db import Board
-    from okto_pulse.core.kg.board_rebuild_adapter import BoardRebuildIngestionAdapter
+    from okto_pulse.community.adapters.board_rebuild_ingestion import (
+        BoardRebuildIngestionAdapter,
+    )
 
     db_path, engine = _temp_pulse_db(tmp_path)
     board_id = "board-enq"

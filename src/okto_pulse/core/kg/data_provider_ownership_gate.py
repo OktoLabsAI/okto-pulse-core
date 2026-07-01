@@ -4,7 +4,7 @@ Fail-closed AST/import gate guarding the move of the KG DATA providers to the
 Community composition root:
   - EventBus        -> CommunityOutboxEventBus
   - AuditRepository -> CommunityAuditRepository
-  - KGConfig        -> SettingsKGConfig
+  - KGConfig        -> SettingsKGConfig (retired core concrete)
 
 It BLOCKS (``ok=False``) when:
   1. any core module imports ``okto_pulse.community`` (the edition must never be
@@ -18,14 +18,20 @@ composition. The remaining ``SettingsKGConfig`` instantiation in
 ``registry._build_defaults`` is a narrowly allowlisted TEST-ONLY fake route; any
 new config instantiation elsewhere is still blocked. SQLAlchemy / the ORM model
 layer remains a gated #04 temporary exception; the EventBus and AuditRepository
-concrete adapters are Community-owned. Read-only static analysis (``ast`` +
-``pathlib``).
+concrete adapters are Community-owned.
+
+R07 also makes ``CommunityKGConfig`` standalone. The gate therefore scans the
+Community runtime package, when available, and blocks any import, reference, or
+subclassing of the concrete core ``SettingsKGConfig`` outside tests/allowlist.
+Legitimate protocol/DTO imports from core remain allowed. Read-only static
+analysis (``ast`` + ``pathlib``).
 """
 
 from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field
+from importlib import util as importlib_util
 from pathlib import Path
 
 #: The three data-adapter class names whose core instantiation is owned wiring.
@@ -36,6 +42,8 @@ DATA_ADAPTER_SYMBOLS: frozenset[str] = frozenset(
         "SettingsKGConfig",
     }
 )
+
+SETTINGS_CONFIG_MODULE = "okto_pulse.core.kg.providers.embedded.settings_config"
 
 #: R-P2-02 retires the last relational data-provider fallback in core. This stays
 #: as an empty public constant so previous conformance tests can assert the
@@ -50,6 +58,11 @@ TEST_ONLY_CONFIG_FAKE_ROUTES: frozenset[str] = frozenset(
     {"kg/interfaces/registry.py"}
 )
 
+# Runtime Community modules must not depend on the concrete core config helper.
+# Tests are excluded by path; this allowlist stays explicit and empty until there
+# is a documented non-runtime compatibility shim.
+COMMUNITY_SETTINGS_CONFIG_ALLOWLIST: frozenset[str] = frozenset()
+
 #: SQLAlchemy / the relational ORM model layer is a gated spec #04 temporary
 #: exception. Recorded for dependency audit, not a direct data-adapter fallback.
 SQLALCHEMY_OWNERSHIP_STATUS = "core-gated-04-temporary-exception"
@@ -62,23 +75,41 @@ class DataOwnershipReport:
     ok: bool
     community_import_offenders: list = field(default_factory=list)
     new_data_consumers: list = field(default_factory=list)
+    community_settings_config_offenders: list = field(default_factory=list)
     ledger: dict = field(default_factory=dict)
     scanned_files: int = 0
+    scanned_community_files: int = 0
 
     def as_dict(self) -> dict:
         return {
             "ok": self.ok,
             "community_import_offenders": list(self.community_import_offenders),
             "new_data_consumers": list(self.new_data_consumers),
+            "community_settings_config_offenders": list(
+                self.community_settings_config_offenders
+            ),
             "ledger": self.ledger,
             "sqlalchemy_ownership": SQLALCHEMY_OWNERSHIP_STATUS,
             "scanned_files": self.scanned_files,
+            "scanned_community_files": self.scanned_community_files,
         }
 
 
 def default_core_package_path() -> Path:
     """The ``okto_pulse/core`` package dir (this file lives in core/kg/)."""
     return Path(__file__).resolve().parents[1]
+
+
+def default_community_package_path() -> Path | None:
+    """Best-effort importable ``okto_pulse/community`` package dir."""
+    spec = importlib_util.find_spec("okto_pulse.community")
+    if spec is None or spec.submodule_search_locations is None:
+        return None
+    for location in spec.submodule_search_locations:
+        path = Path(location)
+        if path.exists():
+            return path.resolve()
+    return None
 
 
 def _norm(path: Path, base: Path) -> str:
@@ -143,6 +174,92 @@ def _build_alias_map(tree: ast.AST) -> dict[str, str]:
     return aliases
 
 
+def _attr_chain(node: ast.AST) -> tuple[str, ...]:
+    if isinstance(node, ast.Name):
+        return (node.id,)
+    if isinstance(node, ast.Attribute):
+        return (*_attr_chain(node.value), node.attr)
+    return ()
+
+
+def _settings_config_import_aliases(tree: ast.AST) -> tuple[dict[str, str], set[str]]:
+    """Return local class aliases and module aliases for SettingsKGConfig."""
+    class_aliases: dict[str, str] = {}
+    module_aliases: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module != SETTINGS_CONFIG_MODULE:
+                continue
+            for alias in node.names:
+                if alias.name == "SettingsKGConfig":
+                    class_aliases[alias.asname or alias.name] = "SettingsKGConfig"
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == SETTINGS_CONFIG_MODULE:
+                    module_aliases.add(alias.asname or alias.name.split(".")[0])
+    return class_aliases, module_aliases
+
+
+def _is_settings_config_ref(
+    node: ast.AST,
+    class_aliases: dict[str, str],
+    module_aliases: set[str],
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == "SettingsKGConfig" or node.id in class_aliases
+    if isinstance(node, ast.Attribute):
+        chain = _attr_chain(node)
+        if not chain or chain[-1] != "SettingsKGConfig":
+            return False
+        if chain[0] in module_aliases:
+            return True
+        return tuple(chain[:-1]) == tuple(SETTINGS_CONFIG_MODULE.split("."))
+    return False
+
+
+def _community_settings_config_offenders(
+    tree: ast.AST,
+) -> list[tuple[str, int, str]]:
+    """Return (kind, lineno, symbol) for concrete SettingsKGConfig runtime use."""
+    class_aliases, module_aliases = _settings_config_import_aliases(tree)
+    hits: list[tuple[str, int, str]] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "") == SETTINGS_CONFIG_MODULE:
+            for alias in node.names:
+                if alias.name == "SettingsKGConfig":
+                    hits.append(("import", node.lineno, "SettingsKGConfig"))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == SETTINGS_CONFIG_MODULE:
+                    hits.append(("import", node.lineno, "SettingsKGConfig"))
+        elif isinstance(node, ast.ClassDef):
+            for base in node.bases:
+                if _is_settings_config_ref(base, class_aliases, module_aliases):
+                    hits.append(("subclass", node.lineno, "SettingsKGConfig"))
+        elif isinstance(node, ast.Name):
+            if node.id in class_aliases or node.id == "SettingsKGConfig":
+                hits.append(("reference", node.lineno, "SettingsKGConfig"))
+        elif isinstance(node, ast.Attribute):
+            if _is_settings_config_ref(node, class_aliases, module_aliases):
+                hits.append(("reference", node.lineno, "SettingsKGConfig"))
+
+    deduped: list[tuple[str, int, str]] = []
+    seen: set[tuple[str, int, str]] = set()
+    for hit in hits:
+        if hit not in seen:
+            deduped.append(hit)
+            seen.add(hit)
+    return deduped
+
+
+def _is_test_path(path: Path, base: Path) -> bool:
+    rel_parts = path.relative_to(base).parts
+    return "tests" in rel_parts or any(part.startswith("test_") for part in rel_parts)
+
+
 def _data_instantiations(
     tree: ast.AST, alias_map: dict[str, str]
 ) -> list[tuple[str, int]]:
@@ -170,14 +287,23 @@ def _data_instantiations(
 
 def run_data_provider_ownership_gate(
     root: str | Path | None = None,
+    *,
+    community_root: str | Path | None = None,
 ) -> DataOwnershipReport:
-    """Scan the core package and enforce data-provider ownership (fail-closed)."""
+    """Scan core and Community runtime packages for data-provider ownership."""
     base = Path(root) if root is not None else default_core_package_path()
     self_file = Path(__file__).resolve()
+    community_base = (
+        Path(community_root)
+        if community_root is not None
+        else default_community_package_path()
+    )
 
     community_offenders: list[dict] = []
     new_consumers: list[dict] = []
+    community_config_offenders: list[dict] = []
     scanned = 0
+    scanned_community = 0
 
     for path in sorted(base.rglob("*.py")):
         if "__pycache__" in path.parts:
@@ -203,7 +329,31 @@ def run_data_provider_ownership_gate(
                     {"file": rel, "symbol": symbol, "line": lineno}
                 )
 
-    ok = not community_offenders and not new_consumers
+    if community_base is not None and community_base.exists():
+        for path in sorted(community_base.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            if _is_test_path(path, community_base):
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            except (OSError, SyntaxError):
+                continue
+            scanned_community += 1
+            rel = _norm(path, community_base)
+            if rel in COMMUNITY_SETTINGS_CONFIG_ALLOWLIST:
+                continue
+            for kind, lineno, symbol in _community_settings_config_offenders(tree):
+                community_config_offenders.append(
+                    {
+                        "file": rel,
+                        "symbol": symbol,
+                        "line": lineno,
+                        "kind": kind,
+                    }
+                )
+
+    ok = not community_offenders and not new_consumers and not community_config_offenders
     return DataOwnershipReport(
         ok=ok,
         community_import_offenders=sorted(
@@ -212,8 +362,13 @@ def run_data_provider_ownership_gate(
         new_data_consumers=sorted(
             new_consumers, key=lambda d: (d["file"], d["line"])
         ),
+        community_settings_config_offenders=sorted(
+            community_config_offenders,
+            key=lambda d: (d["file"], d["line"], d["kind"]),
+        ),
         ledger=dict(LEDGERED_DATA_FALLBACK),
         scanned_files=scanned,
+        scanned_community_files=scanned_community,
     )
 
 
@@ -221,8 +376,10 @@ __all__ = [
     "DATA_ADAPTER_SYMBOLS",
     "LEDGERED_DATA_FALLBACK",
     "TEST_ONLY_CONFIG_FAKE_ROUTES",
+    "COMMUNITY_SETTINGS_CONFIG_ALLOWLIST",
     "SQLALCHEMY_OWNERSHIP_STATUS",
     "DataOwnershipReport",
     "run_data_provider_ownership_gate",
     "default_core_package_path",
+    "default_community_package_path",
 ]

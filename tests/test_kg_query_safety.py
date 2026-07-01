@@ -295,7 +295,7 @@ async def test_natural_handler_rejects_oversize_before_executor():
     with patch.object(kpt, "execute_natural_query", _spy_execute), patch.object(
         kpt, "check_rate_limit", lambda *_a, **_k: None
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent, get_db=lambda: None)
+        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent)
         tool = await mcp.get_tool("okto_pulse_kg_query_natural")
         raw = await tool.fn(board_id="b1", nl_query="x" * 5000)
 
@@ -322,7 +322,7 @@ async def test_natural_handler_runs_executor_for_normal_query():
     with patch.object(kpt, "execute_natural_query", _spy_execute), patch.object(
         kpt, "check_rate_limit", lambda *_a, **_k: None
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent, get_db=lambda: None)
+        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent)
         tool = await mcp.get_tool("okto_pulse_kg_query_natural")
         raw = await tool.fn(board_id="b1", nl_query="which decisions touch caching?")
 
@@ -353,7 +353,7 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
     with patch.object(kpt, "execute_cypher_read_only", _spy_cypher), patch.object(
         kpt, "check_rate_limit", lambda *_a, **_k: None
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent, get_db=lambda: None)
+        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent)
         tool = await mcp.get_tool("okto_pulse_kg_query_cypher")
         raw = await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n.embedding")
 
@@ -380,7 +380,7 @@ async def test_cypher_handler_rejects_above_hard_cap():
     with patch.object(kpt, "execute_cypher_read_only", _spy_cypher), patch.object(
         kpt, "check_rate_limit", lambda *_a, **_k: None
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent, get_db=lambda: None)
+        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent)
         tool = await mcp.get_tool("okto_pulse_kg_query_cypher")
         raw = await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n", max_rows=5000)
 

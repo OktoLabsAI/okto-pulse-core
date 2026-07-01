@@ -23,11 +23,11 @@ mutating MCP tool.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     classify_source_for_kg,
@@ -43,27 +43,13 @@ logger = logging.getLogger("okto_pulse.kg.canonical_debt_replay")
 REPLAY_ACTOR = "system:canonical_debt_replay"
 
 
-def _pulse_db_path() -> Path:
-    try:
-        from okto_pulse.core.infra.database import get_engine
-
-        url = str(get_engine().url)
-    except Exception:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    idx = url.rfind(":///")
-    if idx < 0:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    return Path(url[idx + 4 :])
-
-
 def _build_source_index(board_id: str) -> dict[str, dict[str, Any]]:
     """``{artifact_id: {classification, content_hash, source_version, source_ref}}``
-    from the authoritative SQL source store + the maturity classifier (TR6)."""
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from the registered source reader + the maturity classifier (TR6)."""
 
-    store = BoardSourceStore(db_path=_pulse_db_path())
+    reader = get_kg_registry().require_board_source_reader()
     out: dict[str, dict[str, Any]] = {}
-    for row in store.fetch(board_id):
+    for row in reader.fetch(board_id):
         aid = str(row.get("id") or "")
         if not aid:
             continue

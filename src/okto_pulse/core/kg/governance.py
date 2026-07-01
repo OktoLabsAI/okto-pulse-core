@@ -8,8 +8,8 @@ and the global_discovery cascade from global_discovery/clustering.py.
 
 from __future__ import annotations
 
-import logging
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,6 +17,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from okto_pulse.core.domain.enums import SpecStatus, SprintStatus
 from okto_pulse.core.models.db import (
     Board,
     ConsolidationAudit,
@@ -26,9 +27,7 @@ from okto_pulse.core.models.db import (
     KuzuNodeRef,
     Refinement,
     Spec,
-    SpecStatus,
     Sprint,
-    SprintStatus,
     Story,
 )
 
@@ -441,6 +440,120 @@ async def cancel_historical(db: AsyncSession, board_id: str) -> dict:
     return {"status": "cancelled", "board_id": board_id, "removed": result.rowcount}
 
 
+async def retry_pending_entry(
+    db: AsyncSession,
+    board_id: str,
+    queue_entry_id: str,
+    *,
+    recursive: bool = False,
+) -> dict | None:
+    """Re-queue a failed/done ConsolidationQueue entry so the worker reprocesses
+    it (write, commits internally). ``recursive=True`` also re-enqueues
+    descendants below the artifact in the Ideation→Refinement→Spec→Sprint→Card
+    hierarchy.
+
+    Returns ``None`` when the entry does not exist (so this module stays
+    transport-free — the use case maps that to ``EntityNotFoundError`` → HTTP
+    404). Reproduces the legacy ``retry_pending_entry`` endpoint byte-for-byte:
+    the mutation, the recursive descendant sweep, the single ``commit`` and the
+    best-effort worker signal all live here, exactly as the endpoint relied on
+    when it passed ``db`` straight through.
+
+    Idempotency: content_hash BR still owns "nothing actually changed" no-op
+    behaviour downstream, so retrying an unchanged artifact is a cheap round-trip
+    that touches the outbox once.
+    """
+    from sqlalchemy import and_
+    from sqlalchemy import select as _select
+
+    from okto_pulse.core.models.db import (
+        Card,
+        ConsolidationQueue,
+        Refinement,
+        Spec,
+        Sprint,
+    )
+
+    entry = (await db.execute(
+        _select(ConsolidationQueue).where(and_(
+            ConsolidationQueue.id == queue_entry_id,
+            ConsolidationQueue.board_id == board_id,
+        ))
+    )).scalars().first()
+    if entry is None:
+        return None
+
+    entry.status = "pending"
+    entry.claimed_at = None
+    entry.claimed_by_session_id = None
+    entry.source = "retry_from_ui"
+    reopened = [queue_entry_id]
+
+    if recursive:
+        descendants: list[tuple[str, str]] = []
+        if entry.artifact_type == "ideation":
+            rows = (await db.execute(
+                _select(Refinement.id).where(Refinement.ideation_id == entry.artifact_id)
+            )).scalars().all()
+            descendants.extend(("refinement", r) for r in rows)
+        if entry.artifact_type in ("ideation", "refinement"):
+            refinement_ids: list[str]
+            if entry.artifact_type == "ideation":
+                refinement_ids = [r for _, r in descendants]
+            else:
+                refinement_ids = [entry.artifact_id]
+            specs = (await db.execute(
+                _select(Spec.id).where(Spec.refinement_id.in_(refinement_ids))
+            )).scalars().all()
+            descendants.extend(("spec", s) for s in specs)
+        if entry.artifact_type in ("ideation", "refinement", "spec"):
+            spec_ids = [s for t, s in descendants if t == "spec"] or [entry.artifact_id]
+            sprints = (await db.execute(
+                _select(Sprint.id).where(Sprint.spec_id.in_(spec_ids))
+            )).scalars().all()
+            descendants.extend(("sprint", sp) for sp in sprints)
+            cards = (await db.execute(
+                _select(Card.id).where(Card.spec_id.in_(spec_ids))
+            )).scalars().all()
+            descendants.extend(("card", c) for c in cards)
+
+        for artifact_type, artifact_id in descendants:
+            row = (await db.execute(
+                _select(ConsolidationQueue).where(and_(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == artifact_type,
+                    ConsolidationQueue.artifact_id == artifact_id,
+                ))
+            )).scalars().first()
+            if row is None:
+                continue
+            row.status = "pending"
+            row.claimed_at = None
+            row.claimed_by_session_id = None
+            row.source = "retry_from_ui_recursive"
+            reopened.append(row.id)
+
+    await db.commit()
+
+    # Fase 4 — wake the background worker so retried rows are picked up
+    # immediately instead of waiting for the heartbeat tick.
+    try:
+        from okto_pulse.core.kg.workers.consolidation import (
+            signal_consolidation_worker,
+        )
+        signal_consolidation_worker()
+    except Exception:  # pragma: no cover — signal is best-effort
+        pass
+
+    return {
+        "board_id": board_id,
+        "queue_entry_id": queue_entry_id,
+        "recursive": recursive,
+        "reopened_count": len(reopened),
+        "reopened_ids": reopened,
+    }
+
+
 async def get_historical_progress(db: AsyncSession, board_id: str) -> dict:
     """Return progress of historical consolidation."""
     board = await db.get(Board, board_id)
@@ -847,3 +960,134 @@ async def right_to_erasure(
         extra={"event": "governance.erasure", **counts},
     )
     return counts
+
+
+# ===========================================================================
+# Node relevance boost (spec R01A REST-FU5-S4 — kg_routes.boost_node)
+# ===========================================================================
+
+
+class BoostPersistError(Exception):
+    """Raised when the graph SET that persists a node boost fails.
+
+    The legacy ``api/kg_routes.boost_node`` endpoint caught the SET exception
+    inline and returned a 500 ``kuzu_error`` RFC 7807 problem; the REST adapter
+    catches this and reproduces that exact problem body."""
+
+
+BOOST_DELTA = 0.3
+BOOST_CLAMP_MIN = 0.0
+BOOST_CLAMP_MAX = 1.5
+
+
+async def boost_node(
+    db: AsyncSession, board_id: str, node_id: str
+) -> dict[str, Any] | None:
+    """Boost a node's ``relevance_score`` by +0.3 (clamp [0, 1.5]) and STAGE the
+    ``ConsolidationAudit`` row on ``db`` (write; the caller owns the commit via the
+    UnitOfWork).
+
+    The graph read/SET runs through the #06 ``GraphTransaction`` port (the embedded
+    store auto-commits each statement), and idempotency is NOT enforced — each call
+    stacks another +0.3 until the clamp is reached. The boost response body and the
+    +0.3/clamp arithmetic reproduce the legacy ``api/kg_routes.boost_node``
+    byte-for-byte.
+
+    Returns the response dict on success. Returns ``None`` when the node is
+    absent in every node type of the board graph (this module stays
+    transport-free — the use case maps that to ``EntityNotFoundError`` → the
+    adapter's 404 problem). A failure to persist the SET raises
+    :class:`BoostPersistError` (adapter → 500 ``kuzu_error``).
+
+    The staged audit row carries ALL required NOT-NULL columns (``artifact_type``,
+    ``started_at``, …) so it persists on a successful boost — bug 547a2aa8 fix; the
+    legacy row omitted those columns, so its commit always raised IntegrityError and
+    was silently swallowed (200 with no audit row). The caller (``BoostNodeUseCase``)
+    commits this row best-effort: the commit guard now only covers a genuinely
+    unexpected failure on the already-mutated graph (split-brain), not a deterministic
+    schema violation."""
+    import uuid
+
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+    from okto_pulse.core.kg.schema_contract import NODE_TYPES
+
+    score_before: float | None = None
+    node_type: str | None = None
+    # Stamp the audit start before the graph read/SET so the persisted
+    # ConsolidationAudit row carries a truthful ``started_at`` (bug 547a2aa8 fix).
+    started_at = datetime.now(timezone.utc)
+    # Read+write through the #06 GraphTransaction port — behaviour-identical to
+    # the legacy direct (db, conn) tuple (embedded auto-commits per statement on
+    # the SET); the relational ``db`` only carries the audit row.
+    async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+        for ntype in NODE_TYPES:
+            try:
+                res = scope.execute(
+                    f"MATCH (n:{ntype} {{id: $nid}}) RETURN n.relevance_score",
+                    {"nid": node_id},
+                )
+            except Exception:
+                continue
+            if res.has_next():
+                row = res.get_next()
+                score_before = float(row[0]) if row[0] is not None else 0.5
+                node_type = ntype
+                break
+
+        if node_type is None or score_before is None:
+            return None
+
+        score_after = max(
+            BOOST_CLAMP_MIN, min(BOOST_CLAMP_MAX, score_before + BOOST_DELTA)
+        )
+        try:
+            scope.execute(
+                f"MATCH (n:{node_type} {{id: $nid}}) "
+                f"SET n.relevance_score = $score",
+                {"nid": node_id, "score": score_after},
+            )
+        except Exception as exc:
+            raise BoostPersistError(f"Failed to persist boost: {exc}") from exc
+
+    boosted_at = datetime.now(timezone.utc)
+    boosted_by = "local-user"
+
+    # Persist the boost audit row with ALL required NOT-NULL columns populated
+    # (bug 547a2aa8 fix): the legacy staging omitted ``artifact_type`` and
+    # ``started_at``, so its commit always raised IntegrityError and was swallowed,
+    # dropping the row while the boost still returned 200. ``artifact_type="boost"``
+    # is intentionally OUTSIDE ``CONSOLIDABLE_ARTIFACT_TYPES`` — a boost bumps an
+    # existing node's relevance_score, it is not an artifact consolidation, so the
+    # rebuild/health counters must not treat it as one (and nodes_added/edges_added=0
+    # keep it out of every count). The caller (BoostNodeUseCase) commits this row;
+    # that commit stays best-effort only for the already-mutated-graph split-brain
+    # case, NOT to mask a deterministic schema violation.
+    db.add(ConsolidationAudit(
+        # session_id is the audit PK. Now that the row PERSISTS (bug 547a2aa8 fix),
+        # the legacy ``boost-{node[:8]}-{epoch_s}`` template would collide on a second
+        # boost of the same node within the same second and the duplicate would be
+        # silently swallowed by the best-effort commit guard — re-dropping the audit
+        # row. A uuid suffix makes every boost's audit row unique (stays ≤ String(36):
+        # 6 + 8 + 1 + 10 + 1 + 8 = 34). The ``boost-`` prefix is preserved.
+        session_id=(
+            f"boost-{node_id[:8]}-{int(boosted_at.timestamp())}"
+            f"-{uuid.uuid4().hex[:8]}"
+        ),
+        board_id=board_id,
+        artifact_id=node_id,
+        artifact_type="boost",
+        agent_id=boosted_by,
+        started_at=started_at,
+        committed_at=boosted_at,
+        nodes_added=0,
+        edges_added=0,
+    ))
+
+    return {
+        "node_id": node_id,
+        "node_type": node_type,
+        "score_before": round(score_before, 4),
+        "score_after": round(score_after, 4),
+        "boosted_at": boosted_at.isoformat(),
+        "boosted_by": boosted_by,
+    }

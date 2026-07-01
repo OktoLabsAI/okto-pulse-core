@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import pytest
 
-import okto_pulse.core.kg.embedding as _emb_mod
 import okto_pulse.core.kg.providers.embedded.memory_cache as _cache_mod
 import okto_pulse.core.kg.providers.embedded.memory_rate_limiter as _rl_mod
 import okto_pulse.core.kg.providers.embedded.memory_session_store as _ss_mod
+import okto_pulse.core.kg.providers.testing.embedding as _emb_mod
 from okto_pulse.core.kg.interfaces.registry import (
     KGProviderRegistry,
     configure_kg_registry,
@@ -63,7 +63,7 @@ def _instrument_onda_a(monkeypatch):
     orig_cache = _cache_mod.InMemoryCacheBackend
     orig_rl = _rl_mod.InMemoryTokenBucket
     orig_ss = _ss_mod.InMemorySessionStore
-    orig_emb = _emb_mod._build_provider_from_config
+    orig_emb = _emb_mod.build_testing_embedding_provider
 
     class _C(orig_cache):
         def __init__(self, *a, **k):
@@ -87,7 +87,7 @@ def _instrument_onda_a(monkeypatch):
     monkeypatch.setattr(_cache_mod, "InMemoryCacheBackend", _C)
     monkeypatch.setattr(_rl_mod, "InMemoryTokenBucket", _R)
     monkeypatch.setattr(_ss_mod, "InMemorySessionStore", _S)
-    monkeypatch.setattr(_emb_mod, "_build_provider_from_config", _emb)
+    monkeypatch.setattr(_emb_mod, "build_testing_embedding_provider", _emb)
     return counts
 
 
@@ -115,6 +115,8 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
             graph_lifecycle=_Sentinel(),
             graph_path_resolver=_Sentinel(),
             safe_write_step_adapter=_Sentinel(),
+            global_discovery_runtime=_Sentinel(),
+            board_source_reader=_Sentinel(),
         )
         configure_kg_registry(session_factory=object(), base_registry=base)
         reg = get_kg_registry()
@@ -182,6 +184,8 @@ def test_ts_66c96a7e_defaults_factory_path_also_composes(monkeypatch):
                 graph_lifecycle=_Sentinel(),
                 graph_path_resolver=_Sentinel(),
                 safe_write_step_adapter=_Sentinel(),
+                global_discovery_runtime=_Sentinel(),
+                board_source_reader=_Sentinel(),
             )
 
         configure_kg_registry(session_factory=object(), defaults_factory=_factory)

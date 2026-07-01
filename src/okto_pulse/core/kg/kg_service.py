@@ -575,7 +575,7 @@ class KGService:
         from okto_pulse.core.kg.graph_availability import open_or_classify
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-        cache = get_kg_registry().cache_backend
+        cache = get_kg_registry().require_cache_backend()
         t0 = _time.monotonic()
 
         if use_cache and tool_name:
@@ -1036,7 +1036,7 @@ class KGService:
                      board_id, topic, top_k)
         w = weights or self.weights
         store = _get_graph_store()
-        embedder = get_kg_registry().embedding_provider
+        embedder = get_kg_registry().require_embedding_provider()
         query_vec = embedder.encode(topic)
 
         # The vector path bypasses _cached_call. search.find_similar_nodes_by_type
@@ -1191,13 +1191,14 @@ class KGService:
         index is empty (same failure mode as per-board search).
         """
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-        from okto_pulse.core.kg.global_discovery.schema import open_global_connection
 
         if not user_boards:
             return []
 
         layer = normalize_graph_layer(graph_layer)
-        embedder = get_kg_registry().embedding_provider
+        registry = get_kg_registry()
+        embedder = registry.require_embedding_provider()
+        global_runtime = registry.require_global_discovery_runtime()
         query_vec = embedder.encode(nl_query)
         scope = list(user_boards)
         # R6-IMP3 rework: widen the HNSW window for EVERY layer (including `all`).
@@ -1209,22 +1210,19 @@ class KGService:
         search_k = max(top_k, min(top_k * 5, 500))
 
         try:
-            from okto_pulse.core.kg.global_discovery.schema import (
-                ensure_global_discovery_layer_schema,
-            )
             from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
             with under_global_safe_write(
                 "kg-query-global-layer-schema",
                 "query_global.layer_schema_migrate",
             ):
-                ensure_global_discovery_layer_schema()
+                global_runtime.ensure_layer_schema()
         except Exception as exc:
             logger.debug("kg.query_global.layer_schema_migrate_failed err=%s", exc)
 
         results: list[dict] = []
         try:
-            _, conn = open_global_connection()
+            _, conn = global_runtime.open_connection()
             res = None
             try:
                 # HNSW over DecisionDigest.embedding, joined to Board via
@@ -1297,7 +1295,7 @@ class KGService:
         # Mirrors the per-board fallback in search.py so global stays usable
         # while the meta-graph is still warming up.
         try:
-            _, conn = open_global_connection()
+            _, conn = global_runtime.open_connection()
             res = None
             try:
                 cypher = (

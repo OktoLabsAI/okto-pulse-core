@@ -101,6 +101,24 @@ class EntityNotFoundError(UseCaseError):
         super().__init__(f"{entity_type} not found: {entity_id}")
 
 
+class ConflictError(UseCaseError):
+    """A request conflicts with existing state (adapters map to HTTP 409)."""
+
+    def __init__(self, entity_type: str, entity_id: str) -> None:
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        super().__init__(f"{entity_type} conflict: {entity_id}")
+
+
+class PermissionDeniedError(UseCaseError):
+    """The actor lacks a required permission (adapters map to HTTP 403). ``message``
+    is the human-readable reason the adapter surfaces as the 403 detail."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
 # --- Transitional UnitOfWork bridge (removed when spec #04 closes the port) ---
 
 

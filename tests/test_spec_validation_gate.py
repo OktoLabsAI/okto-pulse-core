@@ -1691,13 +1691,16 @@ class TestBoardLevelConfig:
                 title="Custom Threshold Spec",
                 status=SpecStatus.APPROVED,
                 archived=False,
+                skip_decisions_coverage=True,
                 acceptance_criteria=[],
                 functional_requirements=[],
                 test_scenarios=[],
                 business_rules=[],
                 technical_requirements=[],
                 api_contracts=[],
-                decisions=[],
+                decisions=[
+                    {"id": "dec_threshold", "title": "Thresholds are board-configured", "status": "active"},
+                ],
                 created_by=USER_ID,
             ))
             await db.commit()
@@ -1746,13 +1749,16 @@ class TestBoardLevelConfig:
                 title="Custom Pass Spec",
                 status=SpecStatus.APPROVED,
                 archived=False,
+                skip_decisions_coverage=True,
                 acceptance_criteria=[],
                 functional_requirements=[],
                 test_scenarios=[],
                 business_rules=[],
                 technical_requirements=[],
                 api_contracts=[],
-                decisions=[],
+                decisions=[
+                    {"id": "dec_threshold_pass", "title": "Thresholds can pass", "status": "active"},
+                ],
                 created_by=USER_ID,
             ))
             await db.commit()
@@ -1793,13 +1799,16 @@ class TestBoardLevelConfig:
                 title="Default Threshold Spec",
                 status=SpecStatus.APPROVED,
                 archived=False,
+                skip_decisions_coverage=True,
                 acceptance_criteria=[],
                 functional_requirements=[],
                 test_scenarios=[],
                 business_rules=[],
                 technical_requirements=[],
                 api_contracts=[],
-                decisions=[],
+                decisions=[
+                    {"id": "dec_default_threshold", "title": "Default thresholds apply", "status": "active"},
+                ],
                 created_by=USER_ID,
             ))
             await db.commit()
@@ -2069,13 +2078,16 @@ class TestEdgeCases:
                 title="No Coverage Spec",
                 status=SpecStatus.APPROVED,
                 archived=False,
+                skip_decisions_coverage=True,
                 acceptance_criteria=[],
                 functional_requirements=[],
                 test_scenarios=[],
                 business_rules=[],
                 technical_requirements=[],
                 api_contracts=[],
-                decisions=[],
+                decisions=[
+                    {"id": "dec_no_coverage", "title": "Coverage arrays are empty by design", "status": "active"},
+                ],
                 created_by=USER_ID,
             ))
             await db.commit()

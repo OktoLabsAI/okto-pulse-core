@@ -108,18 +108,19 @@ async def test_mcp_canonical_debt_list_exposes_debt_drilldown(
 
     async def _fake_ctx(board_id: str):
         assert board_id == BOARD_ID
-        return object()
-
-    class _DbContext:
-        async def __aenter__(self):
-            self._session_ctx = db_factory()
-            return await self._session_ctx.__aenter__()
-
-        async def __aexit__(self, *exc):
-            return await self._session_ctx.__aexit__(*exc)
+        # MCP-FU5: the migrated tool builds the actor via MCPAdapterContract.actor
+        # (needs agent_id/agent_name/permissions) and runs over the MCP
+        # UnitOfWorkFactory — not a raw get_db_for_mcp() session.
+        return type(
+            "Ctx",
+            (),
+            {"agent_id": "mcp-agent", "agent_name": "mcp-agent", "permissions": None},
+        )()
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", lambda: _DbContext())
+    # The tool now resolves its session through get_unit_of_work_factory_for_mcp()
+    # over the registered _mcp_session_factory; point it at the test factory.
+    monkeypatch.setattr(mcp_server, "_mcp_session_factory", db_factory)
 
     tool = await mcp_server.mcp.get_tool("okto_pulse_kg_canonical_debt_list")
     raw = await tool.fn(

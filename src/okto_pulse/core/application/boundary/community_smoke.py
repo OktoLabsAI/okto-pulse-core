@@ -19,10 +19,13 @@ Returns the shared #12 :class:`GateReport`. Backend-only; no Community change.
 from __future__ import annotations
 
 import os
+import json
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .report import GateReport
 
@@ -203,6 +206,26 @@ class CoreSmokeInstallGate:
 # --------------------------------------------------------------------------- #
 # community_rebuild_reinstall_smoke (api_2f50f077) + register-before-remove
 # --------------------------------------------------------------------------- #
+COMMUNITY_SMOKE_EVIDENCE_SCHEMA_VERSION = "1"
+COMMUNITY_SMOKE_EVIDENCE_PRODUCER = "okto-pulse-community"
+COMMUNITY_SMOKE_EVIDENCE_ARTIFACT = "community_runtime_smoke_evidence.json"
+COMMUNITY_SMOKE_AXIS = "community_smoke"
+COMMUNITY_SMOKE_BASELINE_POLICY = "exact"
+COMMUNITY_SMOKE_REQUIRED_SURFACES: tuple[str, ...] = (
+    "install",
+    "imports",
+    "composition",
+    "seed",
+    "routes",
+    "mcp_tools",
+    "cli_commands",
+    "metadata",
+)
+COMMUNITY_SMOKE_ALLOWED_STATUSES = frozenset(
+    {"passed", "baseline", "xfail_advisory", "blocking", "reject"}
+)
+
+
 @dataclass(frozen=True)
 class CommunitySmokeOracle:
     """Objective baseline for the Community rebuild/reinstall smoke."""
@@ -234,6 +257,24 @@ class CommunitySmokeInput:
     community_adapters_registered: tuple[str, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class CommunitySmokeEvidenceInput:
+    """Structured Community-owned smoke evidence consumed by the core gate.
+
+    The payload is data only. The core must not import Community modules, run a
+    subprocess, or rebuild the runtime when validating this handoff.
+    """
+
+    payload: Mapping[str, Any] | str | None
+    now: datetime | None = None
+    expected_core_commit: str | None = None
+    expected_community_commit: str | None = None
+    expected_core_version: str | None = None
+    expected_community_version: str | None = None
+    expected_wheel_hashes: Mapping[str, str] | None = None
+    expected_removed_dependencies: tuple[str, ...] = ()
+
+
 _RBR_OWNER = "okto-pulse-core/architecture"
 _RBR_PROMOTION = (
     "Keep the dependency as baseline/xfail_advisory until the Community registers an "
@@ -241,10 +282,346 @@ _RBR_PROMOTION = (
 )
 
 
+def _load_evidence_payload(payload: Mapping[str, Any] | str) -> Mapping[str, Any]:
+    if isinstance(payload, str):
+        loaded = json.loads(payload)
+        if not isinstance(loaded, Mapping):
+            raise TypeError("Community smoke evidence JSON must decode to an object")
+        return loaded
+    return payload
+
+
+def _parse_evidence_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _check_status_is_passed(raw_checks: object, check_name: str) -> bool:
+    if not isinstance(raw_checks, Mapping):
+        return False
+    raw_check = raw_checks.get(check_name)
+    return isinstance(raw_check, Mapping) and raw_check.get("status") == "passed"
+
+
 class CommunityRebuildReinstallSmokeGate:
     """Preserves Community behaviour + enforces register-before-remove."""
 
     gate_id = "community_rebuild_reinstall_smoke"
+
+    def run_evidence(self, gate_input: CommunitySmokeEvidenceInput) -> GateReport:
+        """Validate Community smoke evidence without running Community code."""
+        if gate_input.payload is None or gate_input.payload == "":
+            return self._fail(
+                "smoke_evidence_missing",
+                {"error": "smoke_evidence_missing"},
+                "Community smoke evidence was not provided.",
+            )
+        try:
+            payload = _load_evidence_payload(gate_input.payload)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return self._fail(
+                "smoke_evidence_malformed",
+                {"error": "smoke_evidence_malformed", "details": str(exc)},
+                "Community smoke evidence is not a valid JSON object.",
+            )
+
+        findings: list[dict[str, object]] = []
+
+        def add(code: str, field: str, message: str, **extra: object) -> None:
+            findings.append({"code": code, "field": field, "message": message, **extra})
+
+        def require_equal(field: str, expected: object) -> None:
+            actual = payload.get(field)
+            if actual != expected:
+                add(
+                    "smoke_evidence_malformed",
+                    field,
+                    f"{field} must be {expected!r}.",
+                    expected=expected,
+                    actual=actual,
+                )
+
+        require_equal("schema_version", COMMUNITY_SMOKE_EVIDENCE_SCHEMA_VERSION)
+        require_equal("producer", COMMUNITY_SMOKE_EVIDENCE_PRODUCER)
+        require_equal("artifact_name", COMMUNITY_SMOKE_EVIDENCE_ARTIFACT)
+
+        generated_at = _parse_evidence_datetime(payload.get("generated_at"))
+        if generated_at is None:
+            add(
+                "smoke_evidence_malformed",
+                "generated_at",
+                "generated_at must be an ISO-8601 timestamp.",
+            )
+        else:
+            max_age_raw = payload.get("max_age_seconds")
+            try:
+                max_age_seconds = int(max_age_raw)
+            except (TypeError, ValueError):
+                max_age_seconds = -1
+            if max_age_seconds <= 0:
+                add(
+                    "smoke_evidence_malformed",
+                    "max_age_seconds",
+                    "max_age_seconds must be a positive integer.",
+                )
+            else:
+                clock = (gate_input.now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+                if (clock - generated_at).total_seconds() > max_age_seconds:
+                    add(
+                        "smoke_evidence_stale",
+                        "generated_at",
+                        "Community smoke evidence is older than max_age_seconds.",
+                    )
+
+        expected_fields = (
+            ("core_commit", gate_input.expected_core_commit),
+            ("community_commit", gate_input.expected_community_commit),
+            ("core_version", gate_input.expected_core_version),
+            ("community_version", gate_input.expected_community_version),
+        )
+        for field_name, expected in expected_fields:
+            if expected is not None and payload.get(field_name) != expected:
+                add(
+                    "smoke_evidence_mismatch",
+                    field_name,
+                    f"{field_name} does not match the expected value.",
+                    expected=expected,
+                    actual=payload.get(field_name),
+                )
+
+        wheel_hashes = payload.get("wheel_hashes")
+        if not isinstance(wheel_hashes, Mapping):
+            add(
+                "smoke_evidence_malformed",
+                "wheel_hashes",
+                "wheel_hashes must contain core and community hashes.",
+            )
+            wheel_hashes = {}
+        else:
+            for wheel_key in ("core", "community"):
+                if not wheel_hashes.get(wheel_key):
+                    add(
+                        "smoke_evidence_malformed",
+                        f"wheel_hashes.{wheel_key}",
+                        f"wheel_hashes.{wheel_key} is required.",
+                    )
+            for wheel_key, expected in (gate_input.expected_wheel_hashes or {}).items():
+                if wheel_hashes.get(wheel_key) != expected:
+                    add(
+                        "smoke_evidence_mismatch",
+                        f"wheel_hashes.{wheel_key}",
+                        f"wheel_hashes.{wheel_key} does not match.",
+                        expected=expected,
+                        actual=wheel_hashes.get(wheel_key),
+                    )
+
+        commands_executed = _string_list(payload.get("commands_executed"))
+        if not commands_executed:
+            add(
+                "smoke_evidence_malformed",
+                "commands_executed",
+                "commands_executed must contain the Community runner commands.",
+            )
+
+        artifact_paths = payload.get("artifact_paths")
+        if not isinstance(artifact_paths, Mapping) or not artifact_paths:
+            add(
+                "smoke_evidence_malformed",
+                "artifact_paths",
+                "artifact_paths must contain the Community smoke artifacts.",
+            )
+            artifact_paths = {}
+
+        gate_report = payload.get("gate_report")
+        if not isinstance(gate_report, Mapping):
+            add(
+                "smoke_evidence_malformed",
+                "gate_report",
+                "gate_report must be an object.",
+            )
+            gate_report = {}
+        else:
+            if gate_report.get("axis") != COMMUNITY_SMOKE_AXIS:
+                add(
+                    "smoke_evidence_malformed",
+                    "gate_report.axis",
+                    "gate_report.axis must be community_smoke.",
+                    actual=gate_report.get("axis"),
+                )
+            status = gate_report.get("status")
+            if status not in COMMUNITY_SMOKE_ALLOWED_STATUSES:
+                add(
+                    "smoke_evidence_malformed",
+                    "gate_report.status",
+                    "gate_report.status is not a canonical GateReport status.",
+                    actual=status,
+                )
+            elif status != "passed":
+                add(
+                    "smoke_evidence_failing",
+                    "gate_report.status",
+                    "Community smoke GateReport.status is not passed.",
+                    actual=status,
+                )
+            if gate_report.get("baseline_policy") != COMMUNITY_SMOKE_BASELINE_POLICY:
+                add(
+                    "smoke_evidence_failing",
+                    "gate_report.baseline_policy",
+                    "Community smoke baseline_policy must be exact.",
+                    actual=gate_report.get("baseline_policy"),
+                )
+            required = set(_string_list(gate_report.get("required_surfaces")))
+            missing_surfaces = sorted(set(COMMUNITY_SMOKE_REQUIRED_SURFACES) - required)
+            if missing_surfaces:
+                add(
+                    "smoke_evidence_malformed",
+                    "gate_report.required_surfaces",
+                    "Community smoke evidence is missing required surfaces.",
+                    missing=missing_surfaces,
+                )
+            symmetric_diff = gate_report.get("symmetric_diff")
+            if not isinstance(symmetric_diff, Mapping):
+                add(
+                    "smoke_evidence_malformed",
+                    "gate_report.symmetric_diff",
+                    "symmetric_diff must be an object for exact baselines.",
+                )
+            else:
+                for surface in ("routes", "mcp_tools"):
+                    delta = symmetric_diff.get(surface)
+                    if not isinstance(delta, Mapping):
+                        add(
+                            "smoke_evidence_malformed",
+                            f"gate_report.symmetric_diff.{surface}",
+                            f"symmetric_diff.{surface} must contain missing/extra lists.",
+                        )
+                        continue
+                    missing = _string_list(delta.get("missing"))
+                    extra = _string_list(delta.get("extra"))
+                    if missing or extra:
+                        add(
+                            "smoke_evidence_failing",
+                            f"gate_report.symmetric_diff.{surface}",
+                            "Community smoke exact baseline has a symmetric diff.",
+                            missing=missing,
+                            extra=extra,
+                        )
+
+        raw_checks = payload.get("checks")
+        for check_name in ("install", "imports", "composition", "seed", "routes", "mcp", "cli", "metadata"):
+            if not _check_status_is_passed(raw_checks, check_name):
+                add(
+                    "smoke_evidence_failing",
+                    f"checks.{check_name}",
+                    f"Community smoke check {check_name!r} is missing or not passed.",
+                )
+
+        expected_removed = set(gate_input.expected_removed_dependencies)
+        raw_rbr = payload.get("register_before_remove")
+        rbr_removed: set[str] = set()
+        if isinstance(raw_rbr, Mapping):
+            rbr_removed = set(_string_list(raw_rbr.get("removed_dependencies")))
+        if expected_removed or rbr_removed:
+            if not isinstance(raw_rbr, Mapping):
+                add(
+                    "smoke_oracle_missing",
+                    "register_before_remove",
+                    "register_before_remove evidence is required for Community cleanup.",
+                )
+            else:
+                missing_removed = sorted(expected_removed - rbr_removed)
+                if missing_removed:
+                    add(
+                        "community_adapter_missing",
+                        "register_before_remove.removed_dependencies",
+                        "Removed dependencies are not declared by the evidence package.",
+                        missing=missing_removed,
+                    )
+                adapters = set(_string_list(raw_rbr.get("community_adapters_registered")))
+                missing_adapters = sorted((expected_removed or rbr_removed) - adapters)
+                if missing_adapters:
+                    add(
+                        "community_adapter_missing",
+                        "register_before_remove.community_adapters_registered",
+                        "Equivalent Community adapters are missing for removed dependencies.",
+                        missing=missing_adapters,
+                    )
+                smoke_oracle = raw_rbr.get("smoke_oracle")
+                if not isinstance(smoke_oracle, Mapping) or smoke_oracle.get("status") != "passed":
+                    add(
+                        "smoke_oracle_missing",
+                        "register_before_remove.smoke_oracle",
+                        "A passed smoke_oracle is required before Community cleanup.",
+                    )
+                else:
+                    community_commit = payload.get("community_commit")
+                    community_hash = wheel_hashes.get("community") if isinstance(wheel_hashes, Mapping) else None
+                    if community_commit and smoke_oracle.get("commit") != community_commit:
+                        add(
+                            "smoke_oracle_missing",
+                            "register_before_remove.smoke_oracle.commit",
+                            "smoke_oracle commit does not match the evidence package.",
+                            expected=community_commit,
+                            actual=smoke_oracle.get("commit"),
+                        )
+                    if community_hash and smoke_oracle.get("wheel_hash") != community_hash:
+                        add(
+                            "smoke_oracle_missing",
+                            "register_before_remove.smoke_oracle.wheel_hash",
+                            "smoke_oracle wheel_hash does not match the Community wheel hash.",
+                            expected=community_hash,
+                            actual=smoke_oracle.get("wheel_hash"),
+                        )
+
+        if findings:
+            first = str(findings[0]["code"])
+            return self._fail(
+                first,
+                {
+                    "error": first,
+                    "diagnostics": findings,
+                    "core_commit": payload.get("core_commit"),
+                    "community_commit": payload.get("community_commit"),
+                },
+                "Produce fresh, passed Community runtime smoke evidence with exact "
+                "baseline diffs, matching commits/wheel hashes and register-before-remove proof.",
+                observed=findings,
+            )
+
+        return GateReport(
+            gate_id=self.gate_id,
+            subject="Community runtime smoke evidence",
+            status="passed",
+            severity="low",
+            owner="okto-pulse-community/runtime-smoke",
+            evidence={
+                "artifact_name": payload.get("artifact_name"),
+                "axis": COMMUNITY_SMOKE_AXIS,
+                "baseline_policy": COMMUNITY_SMOKE_BASELINE_POLICY,
+                "generated_at": payload.get("generated_at"),
+                "core_commit": payload.get("core_commit"),
+                "community_commit": payload.get("community_commit"),
+                "wheel_hashes": dict(wheel_hashes),
+                "commands_executed": commands_executed,
+                "artifact_paths": dict(artifact_paths),
+                "required_surfaces": list(COMMUNITY_SMOKE_REQUIRED_SURFACES),
+                "register_before_remove": raw_rbr if isinstance(raw_rbr, Mapping) else None,
+                "diagnostics": list(gate_report.get("diagnostics") or []),
+            },
+        )
 
     def run(self, gate_input: CommunitySmokeInput) -> GateReport:
         oracle = gate_input.oracle
@@ -352,7 +729,14 @@ class CommunityRebuildReinstallSmokeGate:
 __all__ = [
     "CommandResult",
     "CommandRunner",
+    "COMMUNITY_SMOKE_AXIS",
+    "COMMUNITY_SMOKE_BASELINE_POLICY",
+    "COMMUNITY_SMOKE_EVIDENCE_ARTIFACT",
+    "COMMUNITY_SMOKE_EVIDENCE_PRODUCER",
+    "COMMUNITY_SMOKE_EVIDENCE_SCHEMA_VERSION",
+    "COMMUNITY_SMOKE_REQUIRED_SURFACES",
     "CommunityRebuildReinstallSmokeGate",
+    "CommunitySmokeEvidenceInput",
     "CommunitySmokeInput",
     "CommunitySmokeOracle",
     "CoreSmokeInstallGate",

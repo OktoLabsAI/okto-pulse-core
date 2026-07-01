@@ -14,11 +14,10 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from okto_pulse.core.domain.enums import CardStatus, CardType
 from okto_pulse.core.models.db import (
     ArchitectureDesign,
     Card,
-    CardStatus,
-    CardType,
     Ideation,
     IdeationKnowledgeBase,
     Refinement,

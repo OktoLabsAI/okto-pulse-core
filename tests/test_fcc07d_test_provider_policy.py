@@ -20,9 +20,11 @@ from okto_pulse.core.application.boundary.conformance_matrix import (
 )
 from okto_pulse.core.application.boundary.testing_provider_policy import (
     ProviderClassification,
+    ProviderKind,
     ProviderSpec,
     classify_provider,
     evaluate_provider_policy,
+    is_community_adapter_namespace,
     is_test_only_namespace,
 )
 
@@ -191,7 +193,34 @@ def test_non_testing_namespace_is_production_allowed_in_both_contexts():
     for context in ("production", "test"):
         verdict = classify_provider(module=module, context=context)  # type: ignore[arg-type]
         assert verdict.classification == "production_allowed"
+        assert verdict.provider_kind == "productive_provider"
         assert verdict.remediation is None
+
+
+def test_community_adapter_namespace_is_production_allowed_but_distinct():
+    """Community adapters are productive providers, but the policy carries their
+    provenance separately from generic productive modules and sanctioned fakes."""
+    module = "okto_pulse.community.adapters.memory"
+    verdict = classify_provider(
+        module=module,
+        context="production",
+        provider_key="cache_backend",
+        object_type="CommunityInMemoryCache",
+    )
+
+    assert is_community_adapter_namespace(module)
+    assert not is_test_only_namespace(module)
+    assert verdict.classification == "production_allowed"
+    assert verdict.provider_kind == "community_adapter"
+    assert "Community adapter" in verdict.reason
+    assert verdict.remediation is None
+
+    fake = classify_provider(
+        module=_TESTING_PROVIDER_MODULE,
+        context="test",
+        provider_key="graph_store",
+    )
+    assert fake.provider_kind == "sanctioned_test_provider"
 
 
 # --------------------------------------------------------------------------- #
@@ -224,4 +253,12 @@ def test_classification_literal_matches_taxonomy():
         "production_allowed",
         "test_only_allowed",
         "violation",
+    }
+
+
+def test_provider_kind_literal_distinguishes_origins_without_schema_drift():
+    assert set(get_args(ProviderKind)) == {
+        "productive_provider",
+        "community_adapter",
+        "sanctioned_test_provider",
     }

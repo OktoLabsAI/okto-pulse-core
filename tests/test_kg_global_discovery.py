@@ -14,7 +14,7 @@ from okto_pulse.core.kg.global_discovery.schema import (
     GLOBAL_SCHEMA_VERSION,
     bootstrap_global_discovery,
     open_global_connection,
-    reset_global_db_for_tests,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.global_discovery.clustering import (
     ENTITY_CANONICALIZATION_THRESHOLD,
@@ -48,10 +48,10 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap():
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 class TestGlobalSchema:
@@ -87,7 +87,7 @@ class TestGlobalSchema:
         from okto_pulse.core.kg.global_discovery import schema as global_schema
         from okto_pulse.core.kg.interfaces import get_kg_registry
 
-        reset_global_db_for_tests()
+        reset_global_discovery_runtime_for_tests()
         path = tmp_path / "global" / "discovery.lbug"
         path.parent.mkdir(parents=True)
         path.write_text("bad-db", encoding="utf-8")
@@ -116,11 +116,12 @@ class TestGlobalSchema:
                 )
             return FakeDB()
 
-        monkeypatch.setattr(global_schema, "_global_kuzu_path", lambda: path)
-        runtime = get_kg_registry().board_graph_runtime
-        monkeypatch.setattr(runtime, "open_kuzu_db", fake_open)
-        monkeypatch.setattr(runtime, "new_connection", lambda _db: FakeConn())
-        monkeypatch.setattr(runtime, "load_vector_extension", lambda _conn: None)
+        global_runtime = get_kg_registry().global_discovery_runtime
+        monkeypatch.setattr(global_runtime, "global_graph_path", lambda: path)
+        board_runtime = get_kg_registry().board_graph_runtime
+        monkeypatch.setattr(board_runtime, "open_kuzu_db", fake_open)
+        monkeypatch.setattr(board_runtime, "new_connection", lambda _db: FakeConn())
+        monkeypatch.setattr(board_runtime, "load_vector_extension", lambda _conn: None)
 
         with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
             bootstrap_global_discovery()

@@ -295,9 +295,9 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
             owner_wave="#03_lifecycle_composition (RuntimeComposition)",
             current_owner="okto-pulse-core/runtime",
             reason=(
-                "Local scheduler for the KG decay tick. Imported in core/app.py and "
-                "core/services/scheduler_control_adapter.py until RuntimeComposition "
-                "owns the SchedulerControl provider."
+                "Local scheduler for the KG decay tick. Still imported in "
+                "core/app.py until the lifecycle cleanup moves scheduler boot "
+                "ownership out of Core."
             ),
             removal_criterion=(
                 "Remove once the SchedulerControl provider is composition-owned "

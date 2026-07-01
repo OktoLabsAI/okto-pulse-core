@@ -109,45 +109,45 @@ def test_ts_a3695d08_inventory_complete_and_metadata_filled():
     assert "R05-E" in _by_key("asyncpg_postgres_driver").removal_criterion
 
 
-def test_r_p2_01_raw_sqlite_residuals_are_nominally_governed():
-    """R-P2-01: the two raw SQLite residuals must stay explicitly ledgered.
+def test_r_p2_01_raw_sqlite_adapters_are_nominally_governed():
+    """R-P2-01/R10A/R10B: source reads and rebuild ingestion are moved.
 
     This test is intentionally independent from REQUIRED_ADAPTER_KEYS so removing
     both the key and the entry cannot make the generic completeness test pass.
     """
-    expected = {
-        "board_source_store": {
-            "module": "okto_pulse/core/kg/board_source_store.py",
-            "oracles": {
-                "board_source_fetch_parity",
-                "source_materialization_unaffected",
-            },
-        },
-        "board_rebuild_ingestion_adapter": {
-            "module": "okto_pulse/core/kg/board_rebuild_adapter.py",
-            "oracles": {
-                "rebuild_enqueue_receipt_parity",
-                "rebuild_quarantine_unaffected",
-            },
-        },
-    }
+    expected = {"board_source_store", "board_rebuild_ingestion_adapter"}
 
     inv = {entry.adapter_key: entry for entry in build_adapter_inventory()}
-    missing = sorted(set(expected) - set(inv))
+    missing = sorted(expected - set(inv))
     assert missing == []
 
-    for key, checks in expected.items():
-        entry = inv[key]
-        assert entry.current_module == checks["module"]
-        assert entry.owner == "okto-pulse-core/kg"
-        assert "#04_repository_uow" in entry.predecessor_refs
-        assert "stdlib(sqlite3)" in entry.packages
-        assert set(checks["oracles"]).issubset(set(entry.oracles_required))
-        assert entry.removal_criterion.strip()
-        lowered = entry.removal_criterion.lower()
-        assert "register-before-remove" in lowered
-        assert "does not remove" in lowered
-        assert entry.status == "blocked"
+    source = inv["board_source_store"]
+    assert source.current_module == "okto_pulse/community/adapters/board_source_reader.py"
+    assert source.owner == "okto-pulse-community/kg"
+    assert source.port_ref == "BoardSourceReader"
+    assert source.status == "ready"
+    assert ("moved_by", "R10A") in source.metadata
+    assert "SourceReadConsumerGate" in source.removal_criterion
+
+    ingestion = inv["board_rebuild_ingestion_adapter"]
+    assert ingestion.current_module == "okto_pulse/community/adapters/board_rebuild_ingestion.py"
+    assert ingestion.owner == "okto-pulse-community/kg"
+    assert ingestion.port_ref == "RebuildIngestionPort/StepAdapterFactory"
+    assert ingestion.status == "ready"
+    assert ("moved_by", "R10B") in ingestion.metadata
+    assert "#04_repository_uow" in ingestion.predecessor_refs
+    assert "stdlib(sqlite3)" in ingestion.packages
+    assert {
+        "rebuild_enqueue_receipt_parity",
+        "rebuild_quarantine_unaffected",
+        "rebuild_fail_closed_provider_missing",
+        "rebuild_registry_wiring",
+    }.issubset(set(ingestion.oracles_required))
+    assert ingestion.removal_criterion.strip()
+    lowered = ingestion.removal_criterion.lower()
+    assert "r10b done" in lowered
+    assert "rebuildingestionport" in lowered
+    assert "fail closed" in lowered
 
 
 # ===========================================================================
@@ -209,7 +209,7 @@ def test_ts_a5c3c55c_deferred_to_05_reconciles_with_adapter_key():
     assert report.ok, report
     assert report.marker_files, "no real deferred_to_05 markers found"
     # Aggregated authoritative deferred provider keys (composition +
-    # composition_gate + singleton _global_db debt).
+    # composition_gate deferred markers).
     assert set(report.marker_provider_keys) == {"kg_registry", "kuzu_store"}
     # The inventory covers exactly those keys (1:1).
     assert set(report.inventory_deferred_keys) == {"kg_registry", "kuzu_store"}
@@ -224,7 +224,6 @@ def test_ts_a5c3c55c_marker_files_point_to_real_sources_not_self():
     assert report.canonical_sources == (
         "okto_pulse.core.composition.DEFERRED_TO_05_PROVIDERS",
         "okto_pulse.core.application.boundary.composition_gate.DEFERRED_SYMBOLS",
-        "okto_pulse.core.application.boundary.singleton_gate.SINGLETON_LEDGER[_global_db]",
     )
     # marker_files NEVER include the ledger we just created (no self-reference).
     self_rel = "okto_pulse/core/application/boundary/adapter_readiness_inventory.py"
@@ -233,10 +232,6 @@ def test_ts_a5c3c55c_marker_files_point_to_real_sources_not_self():
     assert "okto_pulse/core/composition.py" in report.marker_files
     assert (
         "okto_pulse/core/application/boundary/composition_gate.py"
-        in report.marker_files
-    )
-    assert (
-        "okto_pulse/core/application/boundary/singleton_gate.py"
         in report.marker_files
     )
 
@@ -256,19 +251,20 @@ def test_metadata_is_immutable():
 
 
 # ===========================================================================
-# R-P2-01 — the two raw-SQLite residuals are governed NOMINALLY (looked up
+# R-P2-01/R10B — moved raw-SQLite adapters are governed NOMINALLY (looked up
 # DIRECTLY in build_adapter_inventory(), NOT via REQUIRED_ADAPTER_KEYS) so a
 # coordinated removal of BOTH the key AND the entry cannot silently satisfy the
-# generic coverage check. Governance-only: sqlite3.connect is NOT removed here.
+# generic coverage check.
 # ===========================================================================
 _R_P2_01_RESIDUALS = {
-    "board_source_store": {
-        "module": "okto_pulse/core/kg/board_source_store.py",
-        "oracles": {"board_source_fetch_parity", "source_materialization_unaffected"},
-    },
     "board_rebuild_ingestion_adapter": {
-        "module": "okto_pulse/core/kg/board_rebuild_adapter.py",
-        "oracles": {"rebuild_enqueue_receipt_parity", "rebuild_quarantine_unaffected"},
+        "module": "okto_pulse/community/adapters/board_rebuild_ingestion.py",
+        "oracles": {
+            "rebuild_enqueue_receipt_parity",
+            "rebuild_quarantine_unaffected",
+            "rebuild_fail_closed_provider_missing",
+            "rebuild_registry_wiring",
+        },
     },
 }
 
@@ -293,11 +289,10 @@ def test_r_p2_01_sqlite_raw_residual_governed_nominally(key):
     assert set(entry.oracles_required) == spec["oracles"], (
         f"{key} oracles_required={entry.oracles_required} != expected {spec['oracles']}"
     )
-    # removal_criterion is non-empty AND encodes register-before-remove + the
-    # governance-only (no removal in this spec) contract.
+    # removal_criterion is non-empty AND encodes the completed R10B ownership cut.
     assert entry.removal_criterion.strip()
-    assert "register-before-remove" in entry.removal_criterion
-    assert "does NOT remove" in entry.removal_criterion
+    assert "R10B done" in entry.removal_criterion
+    assert "RebuildIngestionPort/StepAdapterFactory" in entry.removal_criterion
 
 
 # ===========================================================================

@@ -15,7 +15,6 @@ transparent) if R1 digest metadata is unreadable — never a false healthy.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,24 +45,12 @@ GD_EVALUATED = "evaluated"
 GD_NOT_EVALUATED = "not_evaluated"
 
 
-def _pulse_db_path() -> Path:
-    try:
-        from okto_pulse.core.infra.database import get_engine
-
-        url = str(get_engine().url)
-    except Exception:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    idx = url.rfind(":///")
-    if idx < 0:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    return Path(url[idx + 4 :])
-
-
 def _source_index(board_id: str) -> dict[str, Any]:
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     out: dict[str, Any] = {}
-    for row in BoardSourceStore(db_path=_pulse_db_path()).fetch(board_id):
+    reader = get_kg_registry().require_board_source_reader()
+    for row in reader.fetch(board_id):
         aid = str(row.get("id") or "")
         if not aid:
             continue

@@ -255,11 +255,13 @@ class _FakeMetaProvider:
 def test_ts_b161c1d3_metadata_preserves_provider_description():
     """A descrição observável dos providers atuais permanece equivalente e é
     obtida por metadata/capabilities, não por isinstance contra classe concreta."""
-    from okto_pulse.core.kg.embedding import StubEmbeddingProvider
+    from okto_pulse.core.kg.providers.testing.embedding import (
+        TestingStubEmbeddingProvider,
+    )
 
-    stub = StubEmbeddingProvider(dim=384)
+    stub = TestingStubEmbeddingProvider(dim=384)
     assert describe_embedding_provider(stub) == {
-        "embedding_provider_name": "StubEmbeddingProvider",
+        "embedding_provider_name": "TestingStubEmbeddingProvider",
         "model_name": None,
         "embedding_dimension": 384,
         "is_loaded": True,

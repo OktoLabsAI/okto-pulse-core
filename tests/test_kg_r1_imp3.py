@@ -33,7 +33,7 @@ from okto_pulse.core.kg.global_discovery.schema import (
     bootstrap_global_discovery,
     ensure_global_discovery_layer_schema,
     open_global_connection,
-    reset_global_db_for_tests,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
@@ -43,10 +43,10 @@ _NULL_SENTINEL = "<null>"
 
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 def _emb():

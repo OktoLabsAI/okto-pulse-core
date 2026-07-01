@@ -17,9 +17,18 @@ from pathlib import Path
 
 from .composition_gate import CompositionBoundaryGate, CompositionBoundaryGateInput
 from .gates import ImportBoundaryGate, ImportBoundaryGateInput
+from .global_discovery_consumer_gate import GlobalDiscoveryConsumerGate
+from .lifecycle_fallback_gate import LifecycleFallbackGate
 from .port_conformance import PortConformanceGate
+from .core_settings_defaults_gate import (
+    run_core_settings_defaults_gate,
+    run_public_config_stability_gate,
+)
 from .report import GateReport
+from .runtime_worker_gate import RuntimeWorkerBoundaryGate
+from .scheduler_control_symbol_gate import SchedulerControlSymbolGate
 from .singleton_gate import AntiSingletonGate, AntiSingletonGateInput
+from .source_read_consumer_gate import SourceReadConsumerGate
 
 #: Worst-first ordering used to compute the suite's overall status.
 _STATUS_RANK = {
@@ -35,6 +44,13 @@ AXES: tuple[str, ...] = (
     "import_boundary",
     "provider_registration",
     "port_conformance",
+    "scheduler_control_symbol",
+    "lifecycle_fallback",
+    "runtime_worker_boundary",
+    "global_discovery_consumer",
+    "source_read_consumer",
+    "core_settings_defaults",
+    "public_config_stability",
     "runtime_settings_effect_split",
     "scheduler_signal",
     "community_smoke",
@@ -70,12 +86,11 @@ def settings_split_conformance(source_root: Path | None = None) -> GateReport:
         "monolith_removed": "def _maybe_reschedule_tick" not in src,
         "accepts_scheduler_control": "scheduler_control" in src,
         "no_direct_singleton_import": "kg.scheduler_singleton" not in src,
-        # R-P2-06C — the general settings-effects contract: no implicit concrete
-        # effect provider in the core (no SingletonSchedulerControl construction,
-        # no scheduler_control_adapter import) and an executable effect->port
+        # R-P2-06C/R08 — the general settings-effects contract: no implicit
+        # concrete effect provider in the core and an executable effect->port
         # inventory (SETTINGS_RUNTIME_EFFECT_PORTS) is the canonical source.
-        "no_implicit_singleton_construction": "SingletonSchedulerControl(" not in src,
-        "no_effect_adapter_import": "scheduler_control_adapter" not in src,
+        "no_implicit_singleton_construction": ("Singleton" "SchedulerControl(") not in src,
+        "no_effect_adapter_import": ("scheduler_control" "_adapter") not in src,
         "has_effect_port_inventory": "SETTINGS_RUNTIME_EFFECT_PORTS" in src,
     }
     failed = [name for name, ok in checks.items() if not ok]
@@ -93,8 +108,7 @@ def settings_split_conformance(source_root: Path | None = None) -> GateReport:
                 "settings_service must split persistence (_apply_live_tick_settings) "
                 "from runtime effects (apply_tick_runtime_effects via SchedulerControl), "
                 "must not reach kg.scheduler_singleton directly, must NOT construct a "
-                "concrete effect provider (SingletonSchedulerControl / "
-                "scheduler_control_adapter — R-P2-06C), and must declare its "
+                "concrete scheduler effect provider, and must declare its "
                 "settings->effect-port inventory in SETTINGS_RUNTIME_EFFECT_PORTS."
             ),
         )
@@ -199,6 +213,27 @@ class ConformanceSuite:
                 CompositionBoundaryGateInput(mode="bootstrap", source_root=source_root)
             ),
             "port_conformance": PortConformanceGate().run(),
+            "scheduler_control_symbol": SchedulerControlSymbolGate().run(
+                source_root=source_root
+            ),
+            "lifecycle_fallback": LifecycleFallbackGate().run(
+                source_root=source_root
+            ),
+            "runtime_worker_boundary": RuntimeWorkerBoundaryGate().run(
+                source_root=source_root
+            ),
+            "global_discovery_consumer": GlobalDiscoveryConsumerGate().run(
+                source_root=source_root
+            ),
+            "source_read_consumer": SourceReadConsumerGate().run(
+                source_root=source_root
+            ),
+            "core_settings_defaults": run_core_settings_defaults_gate(
+                source_root=source_root
+            ),
+            "public_config_stability": run_public_config_stability_gate(
+                source_root=source_root
+            ),
             "runtime_settings_effect_split": settings_split_conformance(source_root),
             "scheduler_signal": scheduler_signal_conformance(),
             "community_smoke": community_report

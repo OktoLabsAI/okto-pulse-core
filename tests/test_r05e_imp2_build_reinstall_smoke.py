@@ -72,10 +72,15 @@ import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from okto_pulse.core.application.boundary import (
+    CommunityRebuildReinstallSmokeGate,
+    CommunitySmokeEvidenceInput,
+)
 from okto_pulse.core.application.boundary.dependency_conformance import (
     audit_dependency_conformance,
 )
@@ -523,29 +528,107 @@ class TestArtifactDistributionContract:
 
 
 # =========================================================================== #
-# Section B — working_tree_runtime_smoke
+# Section B — community-owned runtime smoke evidence
 # =========================================================================== #
-class TestWorkingTreeRuntimeSmoke:
-    """COMPLEMENT to the clean wheel install: Community functional preservation
-    against the editable/working-tree install while the refactor is uncommitted."""
+def _community_smoke_evidence(now: datetime) -> dict[str, object]:
+    return {
+        "schema_version": "1",
+        "producer": "okto-pulse-community",
+        "artifact_name": "community_runtime_smoke_evidence.json",
+        "generated_at": now.isoformat(),
+        "max_age_seconds": 3600,
+        "core_version": "0.3.0",
+        "community_version": "0.3.0",
+        "core_commit": "core-sha",
+        "community_commit": "community-sha",
+        "wheel_hashes": {"core": "sha256:core", "community": "sha256:community"},
+        "artifact_paths": {"runner": "scripts/r05e_community_preservation_smoke.py"},
+        "commands_executed": ["python scripts/r05e_community_preservation_smoke.py"],
+        "gate_report": {
+            "axis": "community_smoke",
+            "status": "passed",
+            "baseline_policy": "exact",
+            "required_surfaces": [
+                "install",
+                "imports",
+                "composition",
+                "seed",
+                "routes",
+                "mcp_tools",
+                "cli_commands",
+                "metadata",
+            ],
+            "observed_counts": {"routes": 2, "mcp_tools": 1, "cli_commands": 4},
+            "symmetric_diff": {
+                "routes": {"missing": [], "extra": []},
+                "mcp_tools": {"missing": [], "extra": []},
+                "cli_commands": {"missing": [], "extra": []},
+            },
+            "diagnostics": [],
+        },
+        "register_before_remove": {
+            "removed_dependencies": ["asyncpg"],
+            "community_adapters_registered": ["asyncpg"],
+            "smoke_oracle": {
+                "status": "passed",
+                "evidence_id": "community-runtime-smoke",
+                "commit": "community-sha",
+                "wheel_hash": "sha256:community",
+            },
+        },
+        "checks": {
+            "install": {"status": "passed", "commands": ["uv pip install"]},
+            "imports": {"status": "passed", "modules": ["okto_pulse.community.cli"]},
+            "composition": {"status": "passed", "adapters": ["asyncpg"]},
+            "seed": {"status": "passed"},
+            "routes": {"status": "passed", "routes": ["/health", "/api/v1/boards"]},
+            "mcp": {"status": "passed", "tools": ["okto_pulse_create_ideation"]},
+            "cli": {"status": "passed", "commands": ["init", "serve", "status", "reset"]},
+            "metadata": {"status": "passed", "dependencies": []},
+        },
+    }
 
-    def test_community_functional_preservation_offline_subprocess(self) -> None:
-        if not _COMMUNITY_SMOKE.exists():
-            pytest.skip(f"sibling Community smoke not found at {_COMMUNITY_SMOKE}")
-        uv = _uv_or_skip()
-        proc = subprocess.run(
-            (uv, "run", "--offline", "python", str(_COMMUNITY_SMOKE)),
-            capture_output=True,
-            text=True,
-            cwd=str(_COMMUNITY_REPO),
-            timeout=600,
+
+class TestCommunityOwnedRuntimeSmokeEvidence:
+    """Core consumes Community runtime smoke as data; it never runs Community."""
+
+    def test_core_validates_community_smoke_evidence_without_runtime_fallback(self, monkeypatch) -> None:
+        now = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+        def _forbidden_subprocess(*args, **kwargs):
+            raise AssertionError(f"core validator must not run subprocess: {args!r} {kwargs!r}")
+
+        monkeypatch.setattr(subprocess, "run", _forbidden_subprocess)
+
+        report = CommunityRebuildReinstallSmokeGate().run_evidence(
+            CommunitySmokeEvidenceInput(
+                payload=_community_smoke_evidence(now),
+                now=now,
+                expected_core_commit="core-sha",
+                expected_community_commit="community-sha",
+                expected_wheel_hashes={
+                    "core": "sha256:core",
+                    "community": "sha256:community",
+                },
+                expected_removed_dependencies=("asyncpg",),
+            )
         )
-        combined = proc.stdout + proc.stderr
-        if "PRESERVATION_FAIL" in combined:
-            pytest.fail(f"Community preservation regressed: {combined[-1200:]}")
-        if "PRESERVATION_OK" in proc.stdout and proc.returncode == 0:
-            return
-        pytest.skip(f"Community editable env unavailable offline (rc={proc.returncode}): {combined[-600:]}")
+
+        assert report.status == "passed", report.evidence
+        assert report.evidence["axis"] == "community_smoke"
+        assert report.evidence["baseline_policy"] == "exact"
+
+    def test_core_rejects_invalid_community_smoke_evidence_fail_closed(self) -> None:
+        now = datetime(2026, 7, 1, tzinfo=timezone.utc)
+        payload = _community_smoke_evidence(now)
+        payload["gate_report"]["status"] = "blocking"  # type: ignore[index]
+
+        report = CommunityRebuildReinstallSmokeGate().run_evidence(
+            CommunitySmokeEvidenceInput(payload=payload, now=now)
+        )
+
+        assert report.status == "blocking"
+        assert report.evidence["error"] == "smoke_evidence_failing"
 
 
 # --------------------------------------------------------------------------- #

@@ -27,7 +27,34 @@ _GRAPH_PROVIDER_KEYS = {
     "graph_path_resolver",
     "safe_write_step_adapter",
     "board_graph_runtime",
+    "global_discovery_runtime",
 }
+
+
+def _community_source_reader() -> dict[str, Any]:
+    from okto_pulse.community.adapters.board_source_reader import (
+        CommunityBoardSourceReader,
+        resolve_pulse_db_path,
+    )
+
+    return {
+        "board_source_reader": CommunityBoardSourceReader(
+            db_path_provider=resolve_pulse_db_path
+        )
+    }
+
+
+def _community_rebuild_ingestion() -> dict[str, Any]:
+    from okto_pulse.community.adapters.board_rebuild_ingestion import (
+        CommunityBoardRebuildIngestionAdapter,
+    )
+    from okto_pulse.community.adapters.board_source_reader import resolve_pulse_db_path
+
+    return {
+        "rebuild_ingestion_port": CommunityBoardRebuildIngestionAdapter(
+            db_path_provider=resolve_pulse_db_path
+        )
+    }
 
 
 def _community_graph_providers() -> dict[str, Any]:
@@ -48,8 +75,14 @@ def _community_board_graph_runtime() -> dict[str, Any]:
     from okto_pulse.community.adapters.board_graph_runtime import (
         CommunityBoardGraphRuntime,
     )
+    from okto_pulse.community.adapters.global_discovery_runtime import (
+        CommunityGlobalDiscoveryRuntime,
+    )
 
-    return {"board_graph_runtime": CommunityBoardGraphRuntime()}
+    return {
+        "board_graph_runtime": CommunityBoardGraphRuntime(),
+        "global_discovery_runtime": CommunityGlobalDiscoveryRuntime(),
+    }
 
 
 def configure_test_kg_registry(
@@ -98,6 +131,17 @@ def configure_test_kg_registry(
     else:
         try:
             defaults.update(_community_board_graph_runtime())
+        except ModuleNotFoundError:
+            pass
+
+    if "board_source_reader" not in overrides:
+        try:
+            defaults.update(_community_source_reader())
+        except ModuleNotFoundError:
+            pass
+    if "rebuild_ingestion_port" not in overrides:
+        try:
+            defaults.update(_community_rebuild_ingestion())
         except ModuleNotFoundError:
             pass
 

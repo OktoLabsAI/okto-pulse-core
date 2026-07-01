@@ -120,3 +120,18 @@ class SQLAlchemyUnitOfWorkFactory:
         return _UnitOfWorkContext(
             self._session_factory, realm_id=realm_id, actor=actor
         )
+
+    def wrap(
+        self,
+        session: AsyncSession,
+        *,
+        realm_id: str | None = None,
+        actor: "ActorContext | None" = None,
+    ) -> "SQLAlchemyUnitOfWork":
+        """Request-scoped bridge (R01B FR3): wrap an EXTERNALLY-owned session
+        (the REST ``Depends(get_db)`` session) in a unit of work WITHOUT taking
+        over its lifecycle. The caller (``get_db``) still closes the session; the
+        returned UoW is used as a plain object (the use case commits/rolls back),
+        NOT entered as an ``async with`` context. Mirrors the historical
+        ``SQLAlchemyUnitOfWork(db)`` the REST dependency returned."""
+        return SQLAlchemyUnitOfWork(session, realm_id=realm_id, actor=actor)

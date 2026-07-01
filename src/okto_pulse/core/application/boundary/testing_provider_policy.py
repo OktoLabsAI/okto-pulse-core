@@ -35,14 +35,29 @@ ProviderClassification = Literal[
     "violation",
 ]
 
+#: Provenance bucket carried in memory for gate diagnostics. It is deliberately
+#: not part of the public api_504fbaca report schema, whose stable taxonomy
+#: remains ``ProviderClassification``.
+ProviderKind = Literal[
+    "productive_provider",
+    "community_adapter",
+    "sanctioned_test_provider",
+]
+
 #: The two evaluation contexts. There is no implicit / heuristic third state:
 #: callers must declare the context explicitly (TR2/TR5). The default everywhere
 #: in this module is ``production`` (fail-closed).
 ProviderContext = Literal["production", "test"]
 
+_COMMUNITY_ADAPTER_PREFIX = "okto_pulse.community.adapters"
+
 _REASON_PRODUCTION_ALLOWED = (
     "Module is outside the sanctioned test-only provider namespace "
     f"'{TESTING_PROVIDER_PREFIX}'; this policy does not govern it."
+)
+_REASON_COMMUNITY_ALLOWED = (
+    "Community adapter module is outside the sanctioned test-only provider "
+    f"namespace '{TESTING_PROVIDER_PREFIX}'; productive wiring is allowed."
 )
 _REASON_TEST_ONLY_ALLOWED = (
     "Sanctioned test-only provider under namespace "
@@ -92,6 +107,7 @@ class ProviderVerdict:
     object_type: str | None = None
     remediation: str | None = None
     composition_path: str | None = None
+    provider_kind: ProviderKind = "productive_provider"
 
     @property
     def is_violation(self) -> bool:
@@ -147,6 +163,19 @@ def is_test_only_namespace(module: str) -> bool:
     )
 
 
+def is_community_adapter_namespace(module: str) -> bool:
+    """True when ``module`` is under the Community adapter namespace.
+
+    The core only compares import-path strings here; it never imports the
+    Community package. This lets the policy distinguish Community productive
+    adapters from generic productive providers without coupling to edition code.
+    """
+
+    return module == _COMMUNITY_ADAPTER_PREFIX or module.startswith(
+        _COMMUNITY_ADAPTER_PREFIX + "."
+    )
+
+
 def classify_provider(
     *,
     module: str,
@@ -172,13 +201,23 @@ def classify_provider(
     """
 
     if not is_test_only_namespace(module):
+        provider_kind: ProviderKind = (
+            "community_adapter"
+            if is_community_adapter_namespace(module)
+            else "productive_provider"
+        )
         return ProviderVerdict(
             module=module,
             classification="production_allowed",
-            reason=_REASON_PRODUCTION_ALLOWED,
+            reason=(
+                _REASON_COMMUNITY_ALLOWED
+                if provider_kind == "community_adapter"
+                else _REASON_PRODUCTION_ALLOWED
+            ),
             provider_key=provider_key,
             object_type=object_type,
             remediation=None,
+            provider_kind=provider_kind,
         )
 
     # Within the test-only namespace the outcome is a pure function of the
@@ -193,6 +232,7 @@ def classify_provider(
             provider_key=provider_key,
             object_type=object_type,
             remediation=None,
+            provider_kind="sanctioned_test_provider",
         )
     return ProviderVerdict(
         module=module,
@@ -201,6 +241,7 @@ def classify_provider(
         provider_key=provider_key,
         object_type=object_type,
         remediation=_REMEDIATION_PRODUCTION_VIOLATION,
+        provider_kind="sanctioned_test_provider",
     )
 
 
@@ -248,11 +289,13 @@ def evaluate_provider_policy(
 
 __all__ = [
     "ProviderClassification",
+    "ProviderKind",
     "ProviderContext",
     "ProviderSpec",
     "ProviderVerdict",
     "TestProviderPolicyReport",
     "is_test_only_namespace",
+    "is_community_adapter_namespace",
     "classify_provider",
     "evaluate_provider_policy",
 ]

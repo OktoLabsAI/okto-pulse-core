@@ -17,18 +17,17 @@ from okto_pulse.core.discovery_params_schema import (
     DiscoveryParamsSchema,
     normalize_discovery_params_schema,
 )
-from okto_pulse.core.models.db import (
+from okto_pulse.core.domain.enums import (
     CardPriority,
     CardStatus,
     IdeationComplexity,
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    StoryStatus,
     SprintLaneType,
     SprintStatus,
+    StoryStatus,
 )
-
 
 # ============================================================================
 # Base Schemas
@@ -1013,6 +1012,9 @@ class IdeationSummary(BaseSchema):
     scope_assessment: dict | None = None
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
     open_qa_count: int = 0
+    # Count of non-archived, non-cancelled child refinements — drives the
+    # "Sem refinamento" derivation-pending badge.
+    active_refinement_count: int = 0
     id: str
     board_id: str
     title: str
@@ -1296,6 +1298,9 @@ class RefinementSummary(BaseSchema):
 
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
     open_qa_count: int = 0
+    # Count of non-archived, non-cancelled child specs — drives the
+    # "Sem spec" derivation-pending badge.
+    active_spec_count: int = 0
     id: str
     ideation_id: str
     board_id: str
@@ -1876,6 +1881,13 @@ class CardUpdate(BaseModel):
     steps_to_reproduce: str | None = Field(None, description="Passos para reproducao atualizados (apenas bug cards).")
     action_plan: str | None = Field(None, description="Plano de acao atualizado para correcao do bug (apenas bug cards).")
     linked_test_task_ids: list[str] | None = Field(None, description="IDs dos cards de teste vinculados a este bug (apenas bug cards).")
+    skip_task_requirement_link_gate: bool | None = Field(
+        None,
+        description=(
+            "Bypass humano do gate que exige vinculo direto do task card a "
+            "FR/TR/BR/IR/OR. Agentes MCP nao podem alterar este campo."
+        ),
+    )
 
 
 class ConclusionEntry(BaseModel):
@@ -1972,6 +1984,7 @@ class CardResponse(BaseSchema):
     steps_to_reproduce: str | None = None
     action_plan: str | None = None
     linked_test_task_ids: list[str] | None = None
+    skip_task_requirement_link_gate: bool = False
     validations: list[dict] | None = None
     archived: bool = False
     pre_archive_status: str | None = None
@@ -2003,6 +2016,7 @@ class CardSummary(BaseSchema):
     origin_task_id: str | None = None
     severity: str | None = None
     linked_test_task_ids: list[str] | None = None
+    skip_task_requirement_link_gate: bool = False
     archived: bool = False
     pre_archive_status: str | None = None
 
@@ -2193,6 +2207,7 @@ class BoardSettings(BaseModel):
     skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
     skip_ir_coverage_global: bool = False  # if True, all specs bypass IR→Task coverage checks
     skip_or_coverage_global: bool = False  # if True, all specs bypass OR→Task coverage checks
+    skip_task_requirement_link_gate_global: bool = False  # if True, task cards may start without direct FR/TR/BR/IR/OR links
     skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
     skip_cognitive_consolidation: bool = False  # if True, done closeout bypasses active cognitive pending blockers
     allow_agent_self_answering: bool = False  # explicit opt-in that permits same-principal Q&A answers

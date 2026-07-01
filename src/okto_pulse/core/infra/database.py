@@ -61,22 +61,22 @@ def create_database(url: str, *, echo: bool = False) -> None:
 
     _engine = create_async_engine(url, **engine_kwargs)
 
-    # Bug d0f6bab2: SQLite under aiosqlite needs WAL + busy_timeout to
-    # survive concurrent writers (consolidation_worker + event handlers +
-    # MCP tools all hit the same .db). Without WAL, every UPDATE blocks
-    # every SELECT; without busy_timeout, contention raises "database is
-    # locked" instead of waiting. Applied via @event.listens_for so it
-    # fires per-connection in the pool, not just the first one.
-    if url.startswith("sqlite"):
-        @event.listens_for(_engine.sync_engine, "connect")
-        def _enable_sqlite_wal_and_busy(dbapi_conn, _conn_record):  # noqa: ANN001
-            cursor = dbapi_conn.cursor()
-            try:
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA busy_timeout=30000")
-                cursor.execute("PRAGMA synchronous=NORMAL")
-            finally:
-                cursor.close()
+    # PRAGMA single-owner (R01B REPLAN-IMP2, TR5): the SQLite hardening listener is
+    # installed through the runtime seam so the EDITION owns the effective listener.
+    # The Community composition root registers its UNION installer
+    # (install_community_sqlite_pragmas: WAL + busy_timeout=30000 +
+    # synchronous=NORMAL + foreign_keys=ON) BEFORE this runs, so production attaches
+    # exactly ONE connect listener — the edition's — instead of THIS function and
+    # community/main.py each adding a partial one. When nothing is registered
+    # (core-standalone / the test suite that calls create_database directly) the seam
+    # resolves the EXPLICIT core-default fallback (the three historical PRAGMAs:
+    # journal_mode=WAL + busy_timeout=30000 + synchronous=NORMAL, NO foreign_keys),
+    # byte-for-byte the prior inline behavior (bug d0f6bab2 / deadlock report
+    # 2026-04-29). Wired HERE — before the first connection — and no-op for
+    # non-SQLite engines.
+    from okto_pulse.core.runtime_registry import resolve_sqlite_pragma_installer
+
+    resolve_sqlite_pragma_installer()(_engine)
 
     _session_factory = async_sessionmaker(
         _engine,
@@ -478,6 +478,32 @@ async def _migrate_add_bug_card_columns() -> None:
                     ))
                 except Exception:
                     pass
+
+
+async def _migrate_add_task_requirement_gate_card_column() -> None:
+    """Add the human-controlled task requirement gate skip to cards."""
+    from sqlalchemy import text as sa_text
+
+    dialect = get_engine().dialect.name
+    async with get_engine().begin() as conn:
+        if dialect == "postgresql":
+            table_check = await conn.execute(sa_text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'cards')"
+            ))
+            if not table_check.scalar():
+                return
+            await conn.execute(sa_text(
+                "ALTER TABLE cards ADD COLUMN IF NOT EXISTS "
+                "skip_task_requirement_link_gate BOOLEAN DEFAULT false NOT NULL"
+            ))
+        else:
+            try:
+                await conn.execute(sa_text(
+                    "ALTER TABLE cards ADD COLUMN "
+                    "skip_task_requirement_link_gate BOOLEAN DEFAULT 0 NOT NULL"
+                ))
+            except Exception:
+                pass
 
 
 async def _migrate_add_skip_rules_coverage() -> None:
@@ -1289,13 +1315,32 @@ async def _migrate_story_ideation_single_link() -> None:
 
 
 async def init_db() -> None:
-    """Initialize database tables."""
+    """Initialize database tables.
+
+    R01C FR3 dormant seam: if the edition composition root has registered a
+    relational schema-lifecycle orchestrator, delegate the WHOLE lifecycle to it
+    and return. DORMANT by default — nothing registers in production this card,
+    so ``resolve_*`` is ``None`` and the unchanged inline path below runs
+    (fail-open). Activation = R01C IMP2. This branch is the only addition; it
+    does not touch ``create_database``/engine/session/pool/PRAGMA (R01B owns
+    those).
+    """
+    from okto_pulse.core.infra.schema_lifecycle import (
+        resolve_relational_schema_lifecycle_orchestrator,
+    )
+
+    _orchestrator = resolve_relational_schema_lifecycle_orchestrator()
+    if _orchestrator is not None:
+        await _orchestrator.initialize_schema()
+        return
+
     # Migrate enum type BEFORE create_all (avoids PG enum conflicts)
     await _migrate_card_statuses()
     await _migrate_add_priority_column()
     await _migrate_add_realm_id()
     await _migrate_add_comment_choice_columns()
     await _migrate_add_bug_card_columns()
+    await _migrate_add_task_requirement_gate_card_column()
     await _migrate_add_skip_rules_coverage()
     await _migrate_add_skip_trs_coverage()
     await _migrate_add_decisions_columns()

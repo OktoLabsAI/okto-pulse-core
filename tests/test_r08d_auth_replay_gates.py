@@ -44,12 +44,14 @@ from starlette.routing import Route
 import okto_pulse.core.app as _core_app  # noqa: F401  (register ORM models)
 import okto_pulse.core.infra.database as _db_mod
 import okto_pulse.core.mcp.server as server
-from okto_pulse.core.kg.providers.embedded.mcp_auth_context import (
-    create_mcp_auth_factory,
-)
 from okto_pulse.core.services.main import AgentService
 
 _HASH = AgentService.hash_api_key
+
+
+def _create_mcp_auth_factory():
+    bridge = pytest.importorskip("okto_pulse.community.adapters.mcp_auth")
+    return bridge.create_mcp_auth_factory
 
 
 @pytest.fixture
@@ -124,6 +126,7 @@ async def _seed(tmp: str) -> None:
         await s.commit()
 
     # R08-B: AuthContext factory bound to the REAL MCP providers.
+    create_mcp_auth_factory = _create_mcp_auth_factory()
     configure_test_kg_registry(
         auth_context_factory=create_mcp_auth_factory(
             server._get_authenticated_agent, server.get_db_for_mcp
@@ -159,6 +162,7 @@ def _build_app() -> object:
         # passes the request-scoped credential into the same bridge explicitly.
         board_id = request.path_params["board_id"]
         credential = server.request_scope_mcp_credential(request.scope)
+        create_mcp_auth_factory = _create_mcp_auth_factory()
         factory = create_mcp_auth_factory(
             lambda: server._authenticate_mcp_credential(credential),
             server.get_db_for_mcp,

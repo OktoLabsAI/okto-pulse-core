@@ -1,10 +1,42 @@
-"""Agent API endpoints."""
+"""Agent API endpoints.
+
+Spec R01A (REST strangler): every endpoint routes through a transport-free
+application use case via ``get_unit_of_work`` — no raw ``AsyncSession``/``get_db``
+in this adapter. The MCP permission-cache invalidation stays in the adapter and
+ONLY on the two proven invalidation points (``update_agent`` /
+``update_board_overrides``, ac_8e695cf2); grant/revoke/delete intentionally do
+NOT invalidate.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases import (
+    ConflictError,
+    CreateAgentCommand,
+    CreateAgentUseCase,
+    DeleteAgentCommand,
+    DeleteAgentUseCase,
+    EntityNotFoundError,
+    GetAgentCommand,
+    GetAgentUseCase,
+    GrantBoardAccessCommand,
+    GrantBoardAccessUseCase,
+    ListAgentsForBoardCommand,
+    ListAgentsForBoardUseCase,
+    ListAgentsForUserCommand,
+    ListAgentsForUserUseCase,
+    RegenerateAgentKeyCommand,
+    RegenerateAgentKeyUseCase,
+    RevokeBoardAccessCommand,
+    RevokeBoardAccessUseCase,
+    UpdateAgentCommand,
+    UpdateAgentUseCase,
+    UpdateBoardOverridesCommand,
+    UpdateBoardOverridesUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models import (
     AgentBoardOverridesUpdate,
     AgentBoardResponse,
@@ -13,7 +45,7 @@ from okto_pulse.core.models import (
     AgentSummary,
     AgentUpdate,
 )
-from okto_pulse.core.services import AgentService, BoardService
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter()
 
@@ -27,59 +59,67 @@ router = APIRouter()
 async def create_agent(
     data: AgentCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a new global agent (not tied to any board)."""
-    service = AgentService(db)
-    agent, api_key = await service.create_agent(user_id, data)
-    await db.commit()
-    agent = await service.get_agent(agent.id)
-
-    response = AgentResponse.model_validate(agent)
-    response.api_key = api_key
+    result = await CreateAgentUseCase().execute(
+        CreateAgentCommand(data),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    response = AgentResponse.model_validate(result.agent)
+    response.api_key = result.api_key
     return response
 
 
 @router.get("", response_model=list[AgentResponse])
 async def list_my_agents(
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all agents owned by the current user (with api_key)."""
-    service = AgentService(db)
-    agents = await service.list_agents_for_user(user_id)
-    return agents
+    result = await ListAgentsForUserUseCase().execute(
+        ListAgentsForUserCommand(),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.agents
 
 
 @router.get("/board/{board_id}", response_model=list[AgentSummary])
 async def list_agents_for_board(
     board_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all agents with access to a board."""
-    board_service = BoardService(db)
-    board = await board_service.get_board(board_id, user_id)
-    if not board:
+    try:
+        result = await ListAgentsForBoardUseCase().execute(
+            ListAgentsForBoardCommand(board_id),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
-
-    service = AgentService(db)
-    agents = await service.list_agents_for_board(board_id)
-    return agents
+    return result.agents
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
 async def get_agent(
     agent_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get an agent by ID (owner only)."""
-    service = AgentService(db)
-    agent = await service.get_agent(agent_id)
-    if not agent or agent.created_by != user_id:
+    try:
+        result = await GetAgentUseCase().execute(
+            GetAgentCommand(agent_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
-    return agent
+    return result.agent
 
 
 @router.patch("/{agent_id}", response_model=AgentResponse)
@@ -87,56 +127,64 @@ async def update_agent(
     agent_id: str,
     data: AgentUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    """Update an agent (owner only)."""
-    service = AgentService(db)
-    agent = await service.get_agent(agent_id)
-    if not agent or agent.created_by != user_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    """Update an agent (owner only).
 
-    updated = await service.update_agent(agent_id, data)
-    await db.commit()
+    Spec R01A IMP4: routes through the transport-free use case via
+    ``get_unit_of_work`` (no raw ``AsyncSession``). The MCP permission-cache
+    invalidation stays here in the REST adapter, after a successful update — the
+    proven invalidation point (ac_8e695cf2) is preserved exactly.
+    """
+    try:
+        result = await UpdateAgentUseCase().execute(
+            UpdateAgentCommand(agent_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
 
     from okto_pulse.core.mcp.server import invalidate_agent_cache
     invalidate_agent_cache(agent_id)
 
-    updated = await service.get_agent(agent_id)
-    return updated
+    return result.agent
 
 
 @router.post("/{agent_id}/regenerate-key", response_model=dict)
 async def regenerate_agent_key(
     agent_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Regenerate an agent's API key (owner only)."""
-    service = AgentService(db)
-    agent = await service.get_agent(agent_id)
-    if not agent or agent.created_by != user_id:
+    try:
+        result = await RegenerateAgentKeyUseCase().execute(
+            RegenerateAgentKeyCommand(agent_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
 
-    updated, new_key = await service.regenerate_key(agent_id)
-    await db.commit()
-
-    return {"message": "API key regenerated", "api_key": new_key}
+    return {"message": "API key regenerated", "api_key": result.api_key}
 
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_agent(
     agent_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    """Delete an agent (owner only)."""
-    service = AgentService(db)
-    agent = await service.get_agent(agent_id)
-    if not agent or agent.created_by != user_id:
+    """Delete an agent (owner only). No cache invalidation (not a proven point)."""
+    try:
+        await DeleteAgentUseCase().execute(
+            DeleteAgentCommand(agent_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
-
-    await service.delete_agent(agent_id)
-    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -153,25 +201,23 @@ async def grant_board_access(
     agent_id: str,
     board_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    """Grant an agent access to a board. Requires owning both the agent and the board."""
-    service = AgentService(db)
-    agent = await service.get_agent(agent_id)
-    if not agent or agent.created_by != user_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    """Grant an agent access to a board. Requires owning both the agent and the board.
 
-    board_service = BoardService(db)
-    board = await board_service.get_board(board_id, user_id)
-    if not board:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
-
-    if await service.agent_has_board_access(agent_id, board_id):
+    No cache invalidation (not a proven invalidation point — ac_8e695cf2)."""
+    try:
+        result = await GrantBoardAccessUseCase().execute(
+            GrantBoardAccessCommand(agent_id, board_id),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except ConflictError:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Access already granted")
-
-    grant = await service.grant_board_access(agent_id, board_id, user_id)
-    await db.commit()
-    return grant
+    except EntityNotFoundError as exc:
+        detail = "Agent not found" if exc.entity_type == "agent" else "Board not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    return result.grant
 
 
 @router.patch("/{agent_id}/boards/{board_id}", response_model=AgentBoardResponse)
@@ -180,23 +226,29 @@ async def update_board_overrides(
     board_id: str,
     data: AgentBoardOverridesUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    """Update permission overrides for an agent on a board (ceiling model)."""
-    service = AgentService(db)
-    agent = await service.get_agent(agent_id)
-    if not agent or agent.created_by != user_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    """Update permission overrides for an agent on a board (ceiling model).
 
-    ab = await service.update_board_overrides(agent_id, board_id, data.permission_overrides)
-    if not ab:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board access not found")
-    await db.commit()
+    Spec R01A IMP4: routes through the transport-free use case via
+    ``get_unit_of_work`` (no raw ``AsyncSession``). The MCP permission-cache
+    invalidation stays here in the REST adapter, after a successful update — the
+    proven invalidation point (ac_8e695cf2) is preserved exactly.
+    """
+    try:
+        result = await UpdateBoardOverridesUseCase().execute(
+            UpdateBoardOverridesCommand(agent_id, board_id, data.permission_overrides),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        detail = "Agent not found" if exc.entity_type == "agent" else "Board access not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
     from okto_pulse.core.mcp.server import invalidate_agent_cache
     invalidate_agent_cache(agent_id)
 
-    return ab
+    return result.agent_board
 
 
 @router.delete("/{agent_id}/boards/{board_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -204,15 +256,17 @@ async def revoke_board_access(
     agent_id: str,
     board_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    """Revoke an agent's access to a board. Requires owning the agent or the board."""
-    service = AgentService(db)
-    agent = await service.get_agent(agent_id)
-    if not agent or agent.created_by != user_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    """Revoke an agent's access to a board. Requires owning the agent or the board.
 
-    revoked = await service.revoke_board_access(agent_id, board_id)
-    if not revoked:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access not found")
-    await db.commit()
+    No cache invalidation (not a proven invalidation point — ac_8e695cf2)."""
+    try:
+        await RevokeBoardAccessUseCase().execute(
+            RevokeBoardAccessCommand(agent_id, board_id),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        detail = "Agent not found" if exc.entity_type == "agent" else "Access not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)

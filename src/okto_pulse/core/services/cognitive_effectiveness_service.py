@@ -54,12 +54,11 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
     normalize_cognitive_artifact_id,
 )
+from okto_pulse.core.domain.enums import CardStatus, SpecStatus
 from okto_pulse.core.models.db import (
     Card,
-    CardStatus,
     ConsolidationDeadLetter,
     Spec,
-    SpecStatus,
 )
 
 logger = logging.getLogger("okto_pulse.core.services.cognitive_effectiveness")

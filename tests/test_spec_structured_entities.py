@@ -86,7 +86,13 @@ async def structured_rest_client(db_factory, monkeypatch):
     app.include_router(specs_api.router, prefix="/api/v1")
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[auth_mod.require_user] = lambda: actor_id
-    monkeypatch.setattr(specs_api, "_resolve_user_permissions", _allow_permissions)
+    # Spec R01A REST-FU3b-S1: the structured-entity flow now resolves permissions
+    # inside RunStructuredSpecEntityUseCase via services.main.resolve_user_permissions
+    # (Clean Core — the use case no longer routes through the api alias), so the
+    # canonical service function must be patched too for the preset switch to bite.
+    monkeypatch.setattr(
+        "okto_pulse.core.services.main.resolve_user_permissions", _allow_permissions
+    )
     client = TestClient(app)
     client.permission_preset = permission_preset
     return client, board_id, spec_id, card_id

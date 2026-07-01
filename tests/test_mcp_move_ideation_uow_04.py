@@ -23,7 +23,6 @@ from sqlalchemy import select
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
-from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
 
 USER_ID = "mcp-uow-04"
 
@@ -125,7 +124,17 @@ async def test_mcp_move_ideation_does_not_call_get_db_for_mcp():
     assert "get_unit_of_work_factory_for_mcp" in called  # uses the MCP UoW factory
 
 
-def test_get_unit_of_work_factory_for_mcp_is_over_the_session_factory():
-    mcp_server.register_session_factory(get_session_factory())
+def test_get_unit_of_work_factory_for_mcp_resolves_registered_provider():
+    # R01B FR3: the MCP path resolves the edition-registered UnitOfWorkFactory from
+    # the process-level seam (port-shaped) — it no longer constructs a core
+    # SQLAlchemyUnitOfWorkFactory inline. conftest registers a core-only provider;
+    # production registers the Community factory.
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
+
     factory = mcp_server.get_unit_of_work_factory_for_mcp()
-    assert isinstance(factory, SQLAlchemyUnitOfWorkFactory)
+    # Port-shaped: a callable factory exposing the request-scoped wrap bridge,
+    # asserted by contract, not by concrete class.
+    assert callable(factory)
+    assert hasattr(factory, "wrap")
+    # It is exactly the registered provider (no inline construction).
+    assert factory is resolve_unit_of_work_factory()

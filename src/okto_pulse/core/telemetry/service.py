@@ -16,12 +16,12 @@ from okto_pulse.core.telemetry.settings import (
     mark_migration_notice_seen,
     record_consent,
     resolve_telemetry_config,
-    save_state,
 )
 from okto_pulse.core.telemetry.event_store_registry import get_telemetry_event_store
 from okto_pulse.core.telemetry.publish_health_source_registry import (
     get_external_source_descriptors,
 )
+from okto_pulse.core.telemetry.telemetry_state_registry import save_telemetry_state
 from okto_pulse.core.ports.telemetry import PRODUCT_AGGREGATE_FAMILIES, TelemetryEventStore
 
 logger = logging.getLogger("okto_pulse.telemetry.service")
@@ -68,12 +68,12 @@ class TelemetryService:
             )
         except Exception:
             state["schema_reject_count"] = int(state.get("schema_reject_count") or 0) + 1
-            save_state(cfg.metrics_dir, state)
+            save_telemetry_state(cfg.metrics_dir, state)
             return {"written": False, "mode": cfg.mode, "rejected_fields_count": 1, "schema_version": cfg.schema_version}
         path = self.store().append_event(event)
         if rejected:
             state["rejected_fields_count"] = int(state.get("rejected_fields_count") or 0) + rejected
-            save_state(cfg.metrics_dir, state)
+            save_telemetry_state(cfg.metrics_dir, state)
         return {
             "written": True,
             "mode": cfg.mode,

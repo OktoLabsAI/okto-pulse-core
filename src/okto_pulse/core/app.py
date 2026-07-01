@@ -5,18 +5,24 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from typing import AsyncGenerator, Callable, Optional
+from datetime import timezone
+from typing import TYPE_CHECKING, AsyncGenerator, Callable, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from okto_pulse.core.infra.daily_tick import (
+    compute_tick_catch_up_next_run as _compute_tick_catch_up_next_run,
+    emit_daily_tick as _emit_daily_tick,
+    tick_next_run_from_last as _tick_next_run_from_last,  # noqa: F401
+)
 from okto_pulse.core.infra.auth import AuthProvider, configure_auth
 from okto_pulse.core.infra.config import CoreSettings, configure_settings
 from okto_pulse.core.infra.database import create_database, init_db, close_db, get_session_factory
 from okto_pulse.core.infra.storage import StorageProvider, configure_storage
 from okto_pulse.core.composition import (
-    REQUIRED_OWNED_PROVIDERS,
+    STRICT_RUNTIME_REQUIRED_PROVIDERS,
+    CompositionRuntime,
     RuntimeComposition,
     RuntimeProviderMissing,
     validate_required_providers,
@@ -24,6 +30,9 @@ from okto_pulse.core.composition import (
 from okto_pulse.core.api import api_router
 from okto_pulse.core.telemetry.http_policy import safe_route_template, should_count_http
 from okto_pulse.core.telemetry.telemetry_port_registry import get_telemetry_port
+
+if TYPE_CHECKING:
+    from okto_pulse.core.ports.runtime_workers import RuntimeWorkerRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +147,8 @@ def create_app(
     lifespan: Optional[Callable] = None,
     composition: RuntimeComposition | None = None,
     strict_runtime: bool = False,
+    runtime_shell_only: bool = False,
+    runtime_worker_registry: Optional["RuntimeWorkerRegistry"] = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -151,6 +162,13 @@ def create_app(
         strict_runtime: When True (spec #03, tr_f9d2f84f) a #03-owned provider that
             is absent fails fast with ``runtime_provider_missing`` — no silent
             fallback to a concrete default. The KG registry stays deferred to #05.
+        runtime_shell_only: Explicit opt-in shell mode for strict/core-only smoke
+            paths. When enabled, ``create_app`` does not open the default database
+            engine; callers must provide a strict ``RuntimeComposition`` with
+            lifecycle hooks. The productive default remains unchanged.
+        runtime_worker_registry: Optional explicit runtime-worker registry. The
+            core default is ``None``; edition composition roots own worker
+            start/stop decisions and may inject a registry when appropriate.
     """
     if auth_provider is None:
         raise TypeError("auth_provider is required")
@@ -162,16 +180,36 @@ def create_app(
     # (strict_runtime=False) keeps the historical behaviour intact.
     if strict_runtime:
         if composition is None:
-            raise RuntimeProviderMissing("composition", missing=list(REQUIRED_OWNED_PROVIDERS))
-        validate_required_providers(composition)
+            raise RuntimeProviderMissing(
+                "composition", missing=list(STRICT_RUNTIME_REQUIRED_PROVIDERS)
+            )
+        validate_required_providers(composition, require_lifecycle_hooks=True)
+    if runtime_shell_only and not strict_runtime:
+        raise ValueError("runtime_shell_only requires strict_runtime=True")
 
     # Register providers
     configure_settings(settings)
     configure_auth(auth_provider)
     configure_storage(storage_provider)
 
-    # Initialize database
-    create_database(settings.database_url, echo=settings.debug)
+    # Initialize database unless an explicit strict runtime shell was requested.
+    # The historical productive path still opens the database here; R08B only
+    # adds a side-effect-free path for core-only smoke and future shell adopters.
+    if not runtime_shell_only:
+        create_database(settings.database_url, echo=settings.debug)
+
+    shell_lifespan = None
+    if runtime_shell_only and lifespan is None and composition is not None:
+        shell_runtime = CompositionRuntime(
+            composition, strict_runtime=strict_runtime
+        )
+
+        @asynccontextmanager
+        async def _shell_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+            async with shell_runtime.app_lifespan():
+                yield
+
+        shell_lifespan = _shell_lifespan
 
     @asynccontextmanager
     async def _default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -247,60 +285,27 @@ def create_app(
 
         _afg_task = asyncio.create_task(_afg_backfill_task())
 
-        # Import events package BEFORE dispatcher.start — side-effect of
-        # importing handlers is @register_handler populating the registry.
-        # Dispatcher relies on the registry being complete when it drains.
-        from okto_pulse.core import events as _events  # noqa: F401
-        from okto_pulse.core.events.dispatcher import EventDispatcher, set_dispatcher
-
-        event_dispatcher = EventDispatcher(get_session_factory())
-        await event_dispatcher.start()
-        set_dispatcher(event_dispatcher)
-
-        # Start the deterministic KG consolidation worker. The dispatcher
-        # only enqueues consolidation work; this worker is the component that
-        # drains consolidation_queue into graph.lbug. Without it, DLQ
-        # reprocess and rebuild backlogs remain pending until an ad-hoc MCP
-        # process_now call runs a one-off batch.
-        consolidation_worker = None
-        try:
-            from okto_pulse.core.kg.workers.consolidation import (
-                get_consolidation_worker,
-            )
-
-            consolidation_worker = get_consolidation_worker()
-            await consolidation_worker.start()
-        except Exception as exc:
-            logger.warning(
-                "kg.consolidation_worker.start_failed err=%s",
-                exc,
-                extra={
-                    "event": "kg.consolidation_worker.start_failed",
-                    "error": str(exc),
-                },
-            )
-
-        # RKG-03: the dedicated cognitive-closeout worker drains PENDING cognitive
-        # closeout from the ledger and persists Alternative/Assumption/Learning to
-        # graph.lbug OUTSIDE the event drain (never inside the deterministic Layer-1
-        # worker, never inside the event drain transaction).
-        cognitive_closeout_worker = None
-        try:
-            from okto_pulse.core.kg.workers.cognitive_closeout import (
-                get_cognitive_closeout_worker,
-            )
-
-            cognitive_closeout_worker = get_cognitive_closeout_worker()
-            await cognitive_closeout_worker.start()
-        except Exception as exc:
-            logger.warning(
-                "kg.cognitive_closeout_worker.start_failed err=%s",
-                exc,
-                extra={
-                    "event": "kg.cognitive_closeout_worker.start_failed",
-                    "error": str(exc),
-                },
-            )
+        # R08C: core.app no longer constructs or starts local runtime workers by
+        # default. Edition composition roots own concrete worker decisions and
+        # may inject an explicit registry through the public runtime contract.
+        if runtime_worker_registry is not None:
+            await runtime_worker_registry.start_all()
+            for failure in runtime_worker_registry.start_failures:
+                _event = {
+                    "consolidation_worker": (
+                        "kg.consolidation_worker.start_failed"
+                    ),
+                    "cognitive_closeout_worker": (
+                        "kg.cognitive_closeout_worker.start_failed"
+                    ),
+                    "outbox_worker": "kg.outbox_worker.start_failed",
+                }.get(failure.family, "kg.worker.start_failed")
+                logger.warning(
+                    "%s err=%s",
+                    _event,
+                    failure.message,
+                    extra={"event": _event, "error": failure.message},
+                )
 
         # NC-10 fix: migrate per-board KG schemas idempotently on boot.
         # Boards created before SCHEMA_VERSION 0.3.3 lack the
@@ -312,36 +317,12 @@ def create_app(
         # safe to run on every startup; soft-fail per board so a single
         # broken Kùzu file does not block the app from booting.
         try:
-            from sqlalchemy import select as _select
-            from okto_pulse.core.models.db import Board as _Board
-            from okto_pulse.core.kg.interfaces import get_kg_registry
-            from okto_pulse.core.kg.startup_schema_sweep import (
-                sweep_board_schemas,
+            from okto_pulse.core.infra.startup_schema_sweep import (
+                run_startup_schema_sweep,
             )
 
             factory = get_session_factory()
-            async with factory() as _session:
-                board_ids = (
-                    await _session.execute(_select(_Board.id))
-                ).scalars().all()
-
-            # R16-D: the per-board KG schema sweep now goes through the spec #06
-            # ports — GraphPathResolver.exists (skip-missing) +
-            # GraphSchemaManager.ensure_bootstrapped (idempotent per-board
-            # migration) — instead of kg.schema.board_kuzu_path /
-            # open_board_connection. The embedded adapter runs the synchronous
-            # Kùzu work, so the helper offloads each board off the event loop,
-            # preserving the original non-blocking boot. Same skip-missing /
-            # soft-fail-per-board / count / log (migration_swept/_failed)
-            # semantics; an outer failure (table absent on fresh install / Kùzu
-            # missing) still degrades to migration_skipped below.
-            _kg_reg = get_kg_registry()
-            await sweep_board_schemas(
-                board_ids,
-                graph_path_resolver=_kg_reg.graph_path_resolver,
-                graph_schema_manager=_kg_reg.graph_schema_manager,
-                logger=logger,
-            )
+            await run_startup_schema_sweep(session_factory=factory, logger=logger)
         except Exception as _exc:
             # Tabela ainda não existe em fresh install ou Kùzu não
             # instalado — não bloqueia boot.
@@ -349,27 +330,6 @@ def create_app(
                 "kg.schema.migration_skipped err=%s", _exc,
                 extra={"event": "kg.schema.migration_skipped"},
             )
-
-        # Start the KG session cleanup worker if enabled. Safe to call even
-        # when the KG layer is unused — the worker just sweeps an empty
-        # SessionManager and costs one asyncio.sleep per interval.
-        cleanup_worker = None
-        if getattr(settings, "kg_cleanup_enabled", True):
-            from okto_pulse.core.kg.workers import get_cleanup_worker
-
-            cleanup_worker = get_cleanup_worker()
-            await cleanup_worker.start()
-        # Start the global discovery outbox worker. Populates the meta-graph
-        # from GlobalUpdateOutbox events so cross-board search works.
-        outbox_worker = None
-        try:
-            from okto_pulse.core.kg.global_discovery.outbox_worker import get_outbox_worker
-            outbox_worker = get_outbox_worker()
-            await outbox_worker.start()
-        except Exception:
-            # Kùzu may not be installed — log and continue
-            pass
-
         # spec 28583299 (Ideação #4, IMPL-D, dec_bc0eaeec): start the daily
         # decay tick scheduler. APScheduler in-process is the chosen
         # vehicle — fits FastAPI lifespan, no external broker. Multi-replica
@@ -457,16 +417,18 @@ def create_app(
                 await shutdown_kg_events_hub()
             except Exception:
                 pass
-            await event_dispatcher.stop(timeout=5.0)
-            set_dispatcher(None)
-            if consolidation_worker is not None:
-                await consolidation_worker.stop()
-            if cognitive_closeout_worker is not None:
-                await cognitive_closeout_worker.stop()
-            if cleanup_worker is not None:
-                await cleanup_worker.stop()
-            if outbox_worker is not None:
-                await outbox_worker.stop()
+            if runtime_worker_registry is not None:
+                for failure in await runtime_worker_registry.stop_all():
+                    logger.warning(
+                        "kg.worker.stop_failed family=%s err=%s",
+                        failure.family,
+                        failure.message,
+                        extra={
+                            "event": "kg.worker.stop_failed",
+                            "family": failure.family,
+                            "error": failure.message,
+                        },
+                    )
             # Release LadybugDB handles explicitly on graceful shutdown.
             # Relying on interpreter teardown can leave WAL sidecars as the
             # only holder of recent writes; a later bootstrap probe may then
@@ -481,7 +443,7 @@ def create_app(
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        lifespan=lifespan if lifespan else _default_lifespan,
+        lifespan=lifespan if lifespan else (shell_lifespan or _default_lifespan),
     )
 
     # R-P2-06B: preserve the composition so request handlers can resolve
@@ -566,96 +528,3 @@ def install_request_validation_handler(app: FastAPI) -> None:
         return await request_validation_exception_handler(request, exc)
 
 
-def _tick_next_run_from_last(
-    last_completed_at: datetime | None,
-    interval_minutes: int,
-    now: datetime,
-) -> datetime:
-    """Próximo disparo do tick honrando o histórico (função pura).
-
-    Sem histórico ou com último tick vencido → ~2min após o boot (dá tempo
-    do app estabilizar); senão → no vencimento real (last + interval)."""
-    floor = now + timedelta(seconds=120)
-    if last_completed_at is None:
-        return floor
-    if last_completed_at.tzinfo is None:
-        last_completed_at = last_completed_at.replace(tzinfo=timezone.utc)
-    due = last_completed_at + timedelta(minutes=interval_minutes)
-    return max(due, floor)
-
-
-async def _compute_tick_catch_up_next_run(
-    interval_minutes: int,
-) -> datetime | None:
-    """Lê o último tick persistido e devolve o next_run_time do job."""
-    from sqlalchemy import select
-
-    from okto_pulse.core.models.db import KGTickRun
-
-    factory = get_session_factory()
-    async with factory() as session:
-        last = (
-            await session.execute(
-                select(KGTickRun.completed_at)
-                .order_by(KGTickRun.completed_at.desc())
-                .limit(1)
-            )
-        ).scalars().first()
-    return _tick_next_run_from_last(
-        last, interval_minutes, datetime.now(timezone.utc)
-    )
-
-
-async def _emit_daily_tick() -> None:
-    """APScheduler callback — emits KGDailyTick if this replica owns the lock.
-
-    Acquires the in-process advisory lock keyed ``("kg_daily_tick", "global")``;
-    if another emitter already holds it on this loop, returns silently. The
-    handler picks up the event and runs the actual tick body.
-    """
-    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
-
-    lock = get_async_lock("kg_daily_tick", "global")
-    if lock.locked():
-        logger.info(
-            "kg.tick.skipped reason=non_leader",
-            extra={"event": "kg.tick.skipped", "reason": "non_leader"},
-        )
-        return
-    async with lock:
-        try:
-            factory = get_session_factory()
-        except AssertionError:
-            logger.warning(
-                "kg.tick.no_session_factory",
-                extra={"event": "kg.tick.no_session_factory"},
-            )
-            return
-        scheduled_at = datetime.now(timezone.utc).isoformat()
-        try:
-            # Fan-out por board real (campo 2026-06-10): o evento global
-            # board_id='*' violava a FK de domain_events com
-            # PRAGMA foreign_keys=ON (runtime community) — nenhum tick
-            # chegava a ser agendado em produção.
-            from okto_pulse.core.events.handlers.kg_decay_tick import (
-                publish_tick_events,
-            )
-
-            async with factory() as session:
-                tick_ids = await publish_tick_events(
-                    session, scheduled_at=scheduled_at,
-                )
-                await session.commit()
-            logger.info(
-                "kg.tick.emitted",
-                extra={
-                    "event": "kg.tick.emitted",
-                    "tick_count": len(tick_ids),
-                    "scheduled_at": scheduled_at,
-                },
-            )
-        except Exception as exc:
-            logger.error(
-                "kg.tick.emit_failed err=%s", exc,
-                extra={"event": "kg.tick.emit_failed", "error": str(exc)},
-            )

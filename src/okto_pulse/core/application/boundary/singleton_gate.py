@@ -3,8 +3,8 @@
 fr_95d98ef5: no new module-global singleton may be introduced in the core; a new
 one detected blocks. fr_531b74f3: the existing singletons live in a
 register-before-remove ledger with owner, target provider, expected adapter and
-a retirement criterion — headlined by ``_global_db``, ``_scheduler``,
-``_mcp_session_factory`` and ``_permission_cache``.
+a retirement criterion — headlined by ``_scheduler``, ``_mcp_session_factory``
+and ``_permission_cache``.
 
 Detection is deterministic and NARROW (AST, no import): a module-global is a
 singleton when it is reassigned via a ``global`` statement (mutated process
@@ -27,21 +27,11 @@ from .report import GateReport
 
 #: register-before-remove ledger of the HEADLINE core singletons (fr_531b74f3).
 SINGLETON_LEDGER: dict[str, dict[str, str]] = {
-    "_global_db": {
-        "file": "okto_pulse/core/kg/global_discovery/schema.py",
-        "owner": "okto-pulse-core/kg",
-        "target_provider": "kg_registry",
-        "expected_adapter": "GlobalDiscoveryDb (composition-owned handle)",
-        "retirement_criterion": (
-            "Composition root owns the global-discovery DB handle (deferred_to_05); "
-            "remove only after the provider is wired."
-        ),
-    },
     "_scheduler": {
         "file": "okto_pulse/core/kg/scheduler_singleton.py",
         "owner": "okto-pulse-core/runtime",
         "target_provider": "scheduler_control",
-        "expected_adapter": "SingletonSchedulerControl -> composition SchedulerControl",
+        "expected_adapter": "Community scheduler adapter -> composition SchedulerControl",
         "retirement_criterion": (
             "Composition root owns the SchedulerControl provider; remove the global "
             "once settings/lifespan resolve the port from composition."
@@ -140,6 +130,22 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "directly (R10-E Stage D / IMP03)."
         ),
     },
+    "_carrier": {
+        "file": "okto_pulse/core/telemetry/telemetry_state_registry.py",
+        "owner": "okto-pulse-core/telemetry",
+        "target_provider": "telemetry",
+        "expected_adapter": (
+            "Full-dict TelemetryStateCarrier (R12 FR1) - a composition root "
+            "(Community) registers CommunityTelemetryStateCarrier behind the port; "
+            "core load/save_telemetry_state fail closed until registration, matching "
+            "the R10-B/C/D/E register-before-remove factory pattern."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once every edition composes its "
+            "TelemetryStateCarrier via RuntimeComposition and core.telemetry.settings "
+            "no longer resolves state through the process-wide bridge."
+        ),
+    },
     "_effective_resource_catalog": {
         "file": "okto_pulse/core/mcp/server.py",
         "owner": "okto-pulse-core/inbound-mcp",
@@ -195,13 +201,71 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "worker lifecycle port."
         ),
     },
+    "_unit_of_work_factory": {
+        "file": "okto_pulse/core/runtime_registry.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "uow_factory",
+        "expected_adapter": (
+            "Edition relational UnitOfWorkFactory (R01B FR3) — the composition root "
+            "(Community) registers its concrete factory behind the port; the core "
+            "REST (api/deps.get_unit_of_work) and MCP "
+            "(mcp/server.get_unit_of_work_factory_for_mcp) inbounds resolve it here "
+            "instead of constructing SQLAlchemyUnitOfWorkFactory. Same "
+            "register-before-remove pattern as the telemetry registries."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once the core relational concretes "
+            "(SQLAlchemyUnitOfWork/Factory) are physically removed (R01C) and every "
+            "edition composes its UnitOfWorkFactory via RuntimeComposition."
+        ),
+    },
+    "_sqlite_pragma_installer": {
+        "file": "okto_pulse/core/runtime_registry.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "sqlite_pragma_installer",
+        "expected_adapter": (
+            "Edition SQLite PRAGMA installer (R01B TR5) — the composition root "
+            "(Community) registers its UNION installer "
+            "(install_community_sqlite_pragmas: WAL + busy_timeout + synchronous + "
+            "foreign_keys) behind the seam so create_database attaches exactly ONE "
+            "connect listener. When unregistered the core resolves an EXPLICIT "
+            "core-default fallback (3 historical PRAGMAs, no foreign_keys) used only "
+            "by core-standalone / tests. Same register-before-remove pattern as the "
+            "uow_factory seam."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once the engine + PRAGMA ownership physically "
+            "moves to Community (R01C) and the core no longer builds the SQLite "
+            "engine via create_database."
+        ),
+    },
+    "_orchestrator": {
+        "file": "okto_pulse/core/infra/schema_lifecycle.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "relational_schema_lifecycle_orchestrator",
+        "expected_adapter": (
+            "Edition relational schema-lifecycle orchestrator (R01C FR3) — the "
+            "composition root (Community) registers its concrete init_db / migration "
+            "/ bootstrap orchestrator behind the seam so core init_db delegates "
+            "schema creation to the edition. When unregistered the core stays "
+            "FAIL-OPEN and runs its in-tree schema bootstrap; the seam is DORMANT in "
+            "IMP1 (never registered in production main.py / cli.py). Same "
+            "register-before-remove pattern as the R01B uow_factory / "
+            "sqlite_pragma_installer seams."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once init_db / migrations / bootstrap "
+            "ownership physically moves to Community (R01C FR3 activation, IMP2+) and "
+            "the core no longer hosts the relational schema bootstrap."
+        ),
+    },
 }
 
 #: Frozen inventory (``file::name``) of EXISTING global-mutation / ContextVar
 #: singletons in core at spec #15. Anything detected outside this set is NEW and
-#: blocks (register-before-remove). The four headline singletons that are
-#: global/ContextVar appear here; ``_permission_cache`` is an in-place dict cache
-#: tracked by name in SINGLETON_LEDGER, not by this detector.
+#: blocks (register-before-remove). Headline global/ContextVar singletons appear
+#: here; ``_permission_cache`` is an in-place dict cache tracked by name in
+#: SINGLETON_LEDGER, not by this detector.
 BASELINE_SINGLETONS: frozenset[str] = frozenset(
     {
         "okto_pulse/core/api/kg_events_hub.py::_hub",
@@ -211,18 +275,17 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/infra/database.py::_engine",
         "okto_pulse/core/infra/database.py::_session_factory",
         "okto_pulse/core/infra/database.py::_last_stale_warn_at",
+        "okto_pulse/core/infra/schema_lifecycle.py::_orchestrator",
         "okto_pulse/core/infra/storage.py::_storage_provider",
         "okto_pulse/core/kg/backpressure.py::_default_gate",
         "okto_pulse/core/kg/connection_pool.py::_pool",
         "okto_pulse/core/kg/global_discovery/outbox_worker.py::_singleton",
-        "okto_pulse/core/kg/global_discovery/schema.py::_global_db",
         "okto_pulse/core/kg/interfaces/registry.py::_registry",
         "okto_pulse/core/kg/interfaces/registry.py::_configured",
         "okto_pulse/core/kg/kg_service.py::_default_service",
         "okto_pulse/core/kg/primitives.py::_kuzu_executor",
         "okto_pulse/core/kg/scheduler_singleton.py::_scheduler",
         "okto_pulse/core/kg/session_manager.py::_singleton",
-        "okto_pulse/core/kg/tier_power.py::_rate_limiter",
         "okto_pulse/core/kg/workers/cleanup.py::_singleton",
         "okto_pulse/core/kg/workers/consolidation.py::_singleton",
         "okto_pulse/core/kg/workers/cognitive_closeout.py::_worker",
@@ -230,6 +293,8 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/kg/write_barrier.py::_current_mode",
         "okto_pulse/core/kg/write_barrier.py::_active_guards",
         "okto_pulse/core/mcp/server.py::_mcp_session_factory",
+        "okto_pulse/core/runtime_registry.py::_unit_of_work_factory",
+        "okto_pulse/core/runtime_registry.py::_sqlite_pragma_installer",
         "okto_pulse/core/mcp/server.py::_effective_resource_catalog",
         "okto_pulse/core/mcp/server.py::_resource_catalog_frozen",
         "okto_pulse/core/mcp/server.py::_RESOURCE_REGISTRY",
@@ -240,6 +305,7 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/telemetry/publish_health_source_registry.py::_publish_health_source_provider",
         "okto_pulse/core/telemetry/sender_registry.py::_telemetry_sender_factory",
         "okto_pulse/core/telemetry/telemetry_port_registry.py::_telemetry_port_factory",
+        "okto_pulse/core/telemetry/telemetry_state_registry.py::_carrier",
     }
 )
 

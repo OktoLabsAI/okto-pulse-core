@@ -78,7 +78,9 @@ class SessionManager:
     """Backward-compat wrapper — delegates to the registry's SessionStore.
 
     Existing code that calls get_session_manager() continues to work.
-    New code should use get_kg_registry().session_store directly.
+    New runtime code should resolve the store through
+    ``get_kg_registry().require_session_store()`` so missing composition is
+    reported as ``runtime_provider_missing``.
     """
 
     def __init__(self, default_ttl_seconds: int = 3600):
@@ -87,11 +89,19 @@ class SessionManager:
     def _store(self):
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-        return get_kg_registry().session_store
+        # AC3 (base fail-closed): the session porta requires the registered store;
+        # an absent slot raises ``runtime_provider_missing`` instead of a late
+        # ``AttributeError`` on ``None`` or a silent concrete fallback.
+        return get_kg_registry().require_session_store()
 
     @property
     def default_ttl_seconds(self) -> int:
-        store = self._store()
+        # A benign config read keeps its graceful default: unlike real session
+        # operations (which go through the fail-closed ``_store()`` porta), the TTL
+        # default does not gate on provider presence.
+        from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+        store = get_kg_registry().session_store
         return store.default_ttl_seconds if store else self._default_ttl
 
     async def create(self, **kwargs) -> ConsolidationSession:

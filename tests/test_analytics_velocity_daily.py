@@ -8,9 +8,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastapi.routing import APIRoute
 
-from okto_pulse.core.api.analytics import (
+from okto_pulse.core.services.analytics_service import (
     _bucket_key,
     _build_velocity_buckets,
+)
+from okto_pulse.core.api.analytics import (
     router,
 )
 

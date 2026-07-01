@@ -13,6 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
+from okto_pulse.core.domain.amendment_eligibility import evaluate_amendment_eligibility
+from okto_pulse.core.domain.enums import (
+    CardStatus,
+    CardType,
+    IdeationComplexity,
+    IdeationStatus,
+    RefinementStatus,
+    SpecStatus,
+    SprintLaneType,
+    SprintStatus,
+    StoryStatus,
+)
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.storage import get_storage_provider
 from okto_pulse.core.models.db import (
@@ -26,16 +38,12 @@ from okto_pulse.core.models.db import (
     BoardShare,
     Card,
     CardDependency,
-    CardStatus,
-    CardType,
     Comment,
     Guideline,
     Ideation,
-    IdeationComplexity,
     IdeationHistory,
     IdeationKnowledgeBase,
     IdeationQAItem,
-    IdeationStatus,
     PermissionPreset,
     QAItem,
     Refinement,
@@ -43,20 +51,15 @@ from okto_pulse.core.models.db import (
     RefinementKnowledgeBase,
     RefinementQAItem,
     RefinementSnapshot,
-    RefinementStatus,
     Spec,
     SpecHistory,
     SpecKnowledgeBase,
     SpecQAItem,
-    SpecStatus,
-    Story,
-    StoryIdeationLink,
-    StoryStatus,
     Sprint,
     SprintHistory,
-    SprintLaneType,
     SprintQAItem,
-    SprintStatus,
+    Story,
+    StoryIdeationLink,
     Topic,
 )
 from okto_pulse.core.models.schemas import (
@@ -105,8 +108,24 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
-from okto_pulse.core.domain.amendment_eligibility import evaluate_amendment_eligibility
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
+from okto_pulse.core.services.analytics_service import (
+    _structured_ref_text,
+    resolve_linked_criteria_to_ids,
+    resolve_linked_criteria_to_indices,
+    resolve_linked_fr_indices,
+)
+from okto_pulse.core.services.board_governance import (
+    BoardGovernanceService,
+    QA_SELF_ANSWER_DENIED_ACTION,
+    QASelfAnsweringNotAllowedError,
+    build_qa_self_answer_denied_details,
+)
+from okto_pulse.core.services.bug_regression_observability import (
+    emit_no_unlock_invariant,
+    observe_bug_regression_resolution,
+    record_bug_regression_decision,
+)
 from okto_pulse.core.services.bug_regression_scenarios import (
     AmendmentLineageFact,
     BugRegressionCoverageState,
@@ -118,17 +137,6 @@ from okto_pulse.core.services.bug_workflow_remediation import (
     BugWorkflowRemediationMessage,
     BugWorkflowRemediationMessageBuilder,
     serialize_bug_workflow_remediation,
-)
-from okto_pulse.core.services.bug_regression_observability import (
-    emit_no_unlock_invariant,
-    observe_bug_regression_resolution,
-    record_bug_regression_decision,
-)
-from okto_pulse.core.services.board_governance import (
-    BoardGovernanceService,
-    QA_SELF_ANSWER_DENIED_ACTION,
-    QASelfAnsweringNotAllowedError,
-    build_qa_self_answer_denied_details,
 )
 from okto_pulse.core.services.critical_context_guard import (
     CRITICAL_CONTEXT_DECISION_ACTION,
@@ -143,13 +151,10 @@ from okto_pulse.core.services.governance_observability import (
     build_board_missing_context_warning_details,
     emit_governance_metric,
 )
-from okto_pulse.core.services.analytics_service import (
-    _structured_ref_text,
-    resolve_linked_criteria_to_ids,
-    resolve_linked_criteria_to_indices,
-    resolve_linked_fr_indices,
-)
+from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
+from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.spec_entity_canonicalization import canonicalize_fr_ac
+from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 from okto_pulse.core.services.test_scenario_lifecycle import (
     GATED_STATUSES,
     StatusNotMutableError,
@@ -161,9 +166,6 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
     validate_scenario_types_for_write,
     validate_test_scenario_evidence,
 )
-from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
-from okto_pulse.core.services.resource_gate import ResourceGateService
-from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 settings = get_settings()
 
@@ -250,6 +252,63 @@ def _cognitive_readiness_blocking_active(board: Board | None) -> bool:
         return False
 
 
+async def cognitive_enforcement_active(db, board_id: str) -> bool:
+    """Whether the board's done-gate is ACTUALLY enforcing cognitive readiness
+    (two-key rollout). Transport-free reader extracted from ``mcp/server.py`` for
+    spec R01A MCP-FU3 so the cognitive use cases can resolve enforcement without a
+    relational session in their public surface. Never recomputed — delegates to
+    :func:`_cognitive_readiness_blocking_active`."""
+    board = await db.get(Board, board_id)
+    return _cognitive_readiness_blocking_active(board)
+
+
+async def resolve_user_permissions(db, user_id: str, board_id: str):
+    """Resolve a user's best-effort permission set (same model as
+    ``/me/permissions``). Transport-free reader extracted from ``api/specs.py`` for
+    spec R01A REST-FU3a so the permission guards no longer issue SQL in the HTTP
+    adapter (Clean Core). ``board_id`` selects the per-board
+    ``AgentBoard.permission_overrides`` layer (spec R01A REST-FU6-S2 rework — the
+    legacy stories/specs adapters resolved the board overrides before
+    check_permission; restoring it here keeps board-scoped grants/denies intact)."""
+    from okto_pulse.core.infra.permissions import (
+        map_legacy_permissions,
+        resolve_permissions,
+    )
+    from okto_pulse.core.models.db import AgentBoard
+
+    result = await db.execute(select(Agent).where(Agent.created_by == user_id).limit(1))
+    agent = result.scalar_one_or_none()
+
+    agent_flags: dict | None = None
+    preset_flags: dict | None = None
+    board_overrides: dict | None = None
+
+    if agent is not None:
+        if isinstance(agent.permission_flags, dict) and agent.permission_flags:
+            agent_flags = agent.permission_flags
+        elif isinstance(agent.permissions, list) and agent.permissions:
+            agent_flags = map_legacy_permissions(agent.permissions)
+
+        if agent.preset_id:
+            preset = await db.get(PermissionPreset, agent.preset_id)
+            if preset and preset.flags:
+                preset_flags = preset.flags
+
+        if board_id:
+            agent_board = (
+                await db.execute(
+                    select(AgentBoard).where(
+                        AgentBoard.agent_id == agent.id,
+                        AgentBoard.board_id == board_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if agent_board and isinstance(agent_board.permission_overrides, dict):
+                board_overrides = agent_board.permission_overrides
+
+    return resolve_permissions(agent_flags, preset_flags, board_overrides)
+
+
 def _board_qa_require_role_separation(board: Board | None) -> bool:
     """Return True if the board requires that Q&A answers come from a different
     principal than the one who asked the question (qa_require_role_separation)."""
@@ -283,6 +342,44 @@ async def _attach_open_qa_counts(
     counts = dict(result.all())
     for r in rows:
         r.open_qa_count = counts.get(r.id, 0)
+
+
+async def _attach_active_refinement_counts(db: AsyncSession, rows: list[Ideation]) -> None:
+    """Attach active child-refinement counts for ideation summary projection."""
+    if not rows:
+        return
+    ids = [r.id for r in rows]
+    result = await db.execute(
+        select(Refinement.ideation_id, func.count())
+        .where(
+            Refinement.ideation_id.in_(ids),
+            Refinement.archived.is_(False),
+            Refinement.status != RefinementStatus.CANCELLED,
+        )
+        .group_by(Refinement.ideation_id)
+    )
+    counts = dict(result.all())
+    for r in rows:
+        r.active_refinement_count = counts.get(r.id, 0)
+
+
+async def _attach_active_spec_counts(db: AsyncSession, rows: list[Refinement]) -> None:
+    """Attach active child-spec counts for refinement summary projection."""
+    if not rows:
+        return
+    ids = [r.id for r in rows]
+    result = await db.execute(
+        select(Spec.refinement_id, func.count())
+        .where(
+            Spec.refinement_id.in_(ids),
+            Spec.archived.is_(False),
+            Spec.status != SpecStatus.CANCELLED,
+        )
+        .group_by(Spec.refinement_id)
+    )
+    counts = dict(result.all())
+    for r in rows:
+        r.active_spec_count = counts.get(r.id, 0)
 
 
 async def backfill_qa_answered_at(db: AsyncSession) -> dict[str, int]:
@@ -1046,6 +1143,97 @@ async def resolve_actor_name(db: AsyncSession, user_id: str, board_id: str) -> s
     if user_id == "dev-user":
         return "Owner"
     return user_id[:20]
+
+
+async def compute_card_activity(
+    db: AsyncSession, card_id: str, *, limit: int = 50
+) -> list[Any]:
+    """Activity log for a single card, newest first (transport-free reader).
+
+    Extracted verbatim from the legacy ``GET /cards/{id}/activity`` endpoint so the
+    ``application/use_cases`` layer never touches ``select``/ORM directly (the
+    relational ratchet gate). Runs the same ``ActivityLog`` query (card scope,
+    ``created_at`` desc, bounded by ``limit``) and the same presentation via the
+    shared ``activity_log_*`` helpers, returning the list of ``ActivityLogResponse``
+    rows the REST adapter serializes unchanged. An unknown card id yields an empty
+    list — exactly as the endpoint did (no 404).
+    """
+    from okto_pulse.core.models import ActivityLogResponse
+    from okto_pulse.core.services.activity_log import (
+        activity_log_summary,
+        activity_log_trigger,
+        sanitize_activity_details,
+    )
+
+    query = (
+        select(ActivityLog)
+        .where(ActivityLog.card_id == card_id)
+        .order_by(ActivityLog.created_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    return [
+        ActivityLogResponse(
+            id=log.id,
+            board_id=log.board_id,
+            card_id=log.card_id,
+            action=log.action,
+            actor_type=log.actor_type,
+            actor_id=log.actor_id,
+            actor_name=log.actor_name,
+            trigger=activity_log_trigger(log.details),
+            summary=activity_log_summary(log.action, log.details),
+            details=sanitize_activity_details(log.details),
+            created_at=log.created_at,
+        )
+        for log in result.scalars().all()
+    ]
+
+
+async def compute_card_seen_status(db: AsyncSession, card_id: str) -> dict:
+    """Per-item seen status (comments + QA) for a card, grouped by item id
+    (transport-free reader).
+
+    Extracted verbatim from the legacy ``GET /cards/{id}/seen`` endpoint so the
+    ``application/use_cases`` layer never touches ``select``/ORM directly. Collects
+    the card's comment/QA ids, joins ``AgentSeenItem`` to the agent name ordered by
+    ``seen_at`` and groups into ``{item_id: [{agent_id, agent_name, seen_at}]}``.
+    Returns ``{"items": {}}`` when the card has no comment/QA items.
+    """
+    from okto_pulse.core.models.db import AgentSeenItem
+
+    # Collect item IDs from this card
+    comment_ids_q = select(Comment.id).where(Comment.card_id == card_id)
+    qa_ids_q = select(QAItem.id).where(QAItem.card_id == card_id)
+
+    comment_ids = [r[0] for r in (await db.execute(comment_ids_q)).all()]
+    qa_ids = [r[0] for r in (await db.execute(qa_ids_q)).all()]
+    all_ids = set(comment_ids + qa_ids)
+
+    if not all_ids:
+        return {"items": {}}
+
+    # Get seen records for these items
+    seen_query = (
+        select(AgentSeenItem, Agent.name)
+        .join(Agent, Agent.id == AgentSeenItem.agent_id)
+        .where(AgentSeenItem.item_id.in_(all_ids))
+        .order_by(AgentSeenItem.seen_at)
+    )
+    seen_results = (await db.execute(seen_query)).all()
+
+    # Group by item_id: {item_id: [{agent_name, seen_at}]}
+    items: dict[str, list] = {}
+    for seen, agent_name in seen_results:
+        if seen.item_id not in items:
+            items[seen.item_id] = []
+        items[seen.item_id].append({
+            "agent_id": seen.agent_id,
+            "agent_name": agent_name,
+            "seen_at": seen.seen_at.isoformat(),
+        })
+
+    return {"items": items}
 
 
 async def propagate_architecture_designs(
@@ -2817,6 +3005,138 @@ class CardService:
                 f"Alternatively, enable 'skip OR coverage' on the spec or board."
             )
 
+    @staticmethod
+    def _requirement_link_item_is_active(item: dict) -> bool:
+        return str(item.get("status", "active")).lower() not in {
+            "cancelled",
+            "canceled",
+            "revoked",
+            "superseded",
+        }
+
+    @staticmethod
+    def _board_skips_task_requirement_link_gate(board: "Board | None") -> bool:
+        if board is None:
+            return False
+        settings = board.settings or {}
+        if "skip_task_requirement_link_gate_global" not in settings:
+            return True
+        return bool(settings.get("skip_task_requirement_link_gate_global", False))
+
+    @classmethod
+    def _card_has_direct_requirement_link(cls, spec: "Spec", card_id: str) -> bool:
+        """Return True when card_id is linked directly to FR/TR/BR/IR/OR."""
+        requirement_fields = (
+            "functional_requirements",
+            "technical_requirements",
+            "business_rules",
+            "integration_requirements",
+            "observability_requirements",
+        )
+        for field_name in requirement_fields:
+            for item in getattr(spec, field_name, None) or []:
+                if not isinstance(item, dict) or not cls._requirement_link_item_is_active(item):
+                    continue
+                linked_ids = {str(value) for value in (item.get("linked_task_ids") or [])}
+                if card_id in linked_ids:
+                    return True
+        return False
+
+    async def check_card_requirement_link_gate(
+        self,
+        card: "Card",
+        spec: "Spec | None",
+        board: "Board | None",
+    ) -> None:
+        """Block normal task execution without a direct FR/TR/BR/IR/OR link."""
+        if getattr(card, "card_type", CardType.NORMAL) != CardType.NORMAL:
+            return
+        if not getattr(card, "spec_id", None):
+            return
+        if self._board_skips_task_requirement_link_gate(board):
+            return
+        if getattr(card, "skip_task_requirement_link_gate", False):
+            return
+        if spec is None:
+            raise CardOperationError(
+                "task_requirement_link_required",
+                "Cannot start task card: the card must be linked to a spec and "
+                "to at least one FR/TR/BR/IR/OR requirement first.",
+                remediation="link_task_to_requirement",
+                facts={
+                    "card_id": card.id,
+                    "spec_id": getattr(card, "spec_id", None),
+                    "required_link_types": ["fr", "tr", "rule", "ir", "or"],
+                    "skip_allowed_surface": "ui_or_human_rest",
+                },
+            )
+        if self._card_has_direct_requirement_link(spec, card.id):
+            return
+        raise CardOperationError(
+            "task_requirement_link_required",
+            "Cannot start task card: link it directly to at least one "
+            "FR/TR/BR/IR/OR requirement, or use the human-only card/board skip.",
+            remediation="link_task_to_requirement",
+            facts={
+                "card_id": card.id,
+                "spec_id": spec.id,
+                "required_link_types": ["fr", "tr", "rule", "ir", "or"],
+                "skip_allowed_surface": "ui_or_human_rest",
+            },
+        )
+
+    async def check_task_requirement_links_for_spec(
+        self,
+        spec: "Spec",
+        board: "Board | None",
+    ) -> None:
+        """Block spec validation when active normal task cards are orphaned."""
+        if self._board_skips_task_requirement_link_gate(board):
+            return
+
+        result = await self.db.execute(
+            select(Card).where(
+                Card.spec_id == spec.id,
+                Card.archived.is_(False),
+                Card.card_type == CardType.NORMAL,
+                Card.status != CardStatus.CANCELLED,
+            )
+        )
+        orphaned: list[Card] = []
+        for card in result.scalars().all():
+            if getattr(card, "skip_task_requirement_link_gate", False):
+                continue
+            if not self._card_has_direct_requirement_link(spec, card.id):
+                orphaned.append(card)
+
+        if orphaned:
+            previews = ", ".join(
+                f'"{card.title or card.id}"' for card in orphaned[:3]
+            )
+            suffix = f" and {len(orphaned) - 3} more" if len(orphaned) > 3 else ""
+            raise ValueError(
+                f"Cannot validate spec: {len(orphaned)} normal task card(s) "
+                f"in spec '{spec.title}' have no direct FR/TR/BR/IR/OR link "
+                f"({previews}{suffix}). REQUIRED ACTION: Link each task via "
+                f"okto_pulse_link_task(target_type='fr'|'tr'|'rule'|'ir'|'or', ...), "
+                f"or use the human-only card/board skip in the UI."
+            )
+
+    async def check_decision_presence(self, spec: "Spec") -> None:
+        """Require at least one active Decision before spec validation/progress."""
+        decisions = list(spec.decisions or [])
+        active = [
+            d for d in decisions
+            if isinstance(d, dict) and str(d.get("status", "active")).lower() == "active"
+        ]
+        if active:
+            return
+        raise ValueError(
+            f"Cannot validate spec: spec '{spec.title}' must include at least "
+            f"one active Decision. REQUIRED ACTION: add a Decision with "
+            f"okto_pulse_add_decision before validating the spec."
+        )
+
     async def check_decisions_coverage(self, spec: "Spec", board: "Board | None") -> None:
         """Check that every active Decision has a linked task (OPT-IN).
 
@@ -3007,6 +3327,28 @@ class CardService:
                                 )
                             ),
                         )
+
+        # Task requirement link gate: normal task cards must be traceable to at
+        # least one FR/TR/BR/IR/OR before execution starts. Human-only skips are
+        # stored on the board/card and are intentionally not exposed via MCP.
+        execution_start_level = self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
+        is_normal_task = getattr(card, "card_type", CardType.NORMAL) == CardType.NORMAL
+        starts_execution = (
+            old_status == CardStatus.NOT_STARTED
+            and data.status in (CardStatus.STARTED, CardStatus.IN_PROGRESS)
+        ) or (new_level >= execution_start_level and old_level < execution_start_level)
+        if (
+            is_normal_task
+            and data.status != CardStatus.CANCELLED
+            and new_level > old_level
+            and starts_execution
+        ):
+            spec_for_requirement_gate = (
+                await self.db.get(Spec, card.spec_id) if card.spec_id else None
+            )
+            await self.check_card_requirement_link_gate(
+                card, spec_for_requirement_gate, board
+            )
 
         # --- Task Validation Gate: block in_progress→done when gate active ---
         if (
@@ -3749,6 +4091,7 @@ class AgentService:
         registry (all True), giving new agents full access by default.
         """
         import copy
+
         from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
 
         api_key = self.generate_api_key()
@@ -3883,7 +4226,9 @@ class AgentService:
           reset to the full registry (all True) — i.e. "Full Control".
         """
         import copy
+
         from sqlalchemy.orm.attributes import flag_modified
+
         from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
 
         agent = await self.get_agent(agent_id)
@@ -4368,6 +4713,13 @@ async def _validate_spec_linked_refs(
     for sc in final_scenarios:
         owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
         for tid in sc.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for idx, fr in enumerate(final_frs_raw):
+        if not isinstance(fr, dict):
+            continue
+        owner = f"FR '{fr.get('id') or fr.get('text') or idx}'"
+        for tid in fr.get("linked_task_ids") or []:
             all_task_ids.add(tid)
             task_owners.setdefault(tid, []).append(owner)
     for br in final_brs:
@@ -5456,6 +5808,8 @@ class SpecService:
             await card_service.check_contract_coverage(spec, board)
             await card_service.check_ir_coverage(spec, board)
             await card_service.check_or_coverage(spec, board)
+            await card_service.check_task_requirement_links_for_spec(spec, board)
+            await card_service.check_decision_presence(spec)
             await card_service.check_decisions_coverage(spec, board)
 
             # Spec Validation Gate: when enabled, the only path to validated is via
@@ -5495,6 +5849,8 @@ class SpecService:
             await card_service.check_contract_coverage(spec, board)
             await card_service.check_ir_coverage(spec, board)
             await card_service.check_or_coverage(spec, board)
+            await card_service.check_task_requirement_links_for_spec(spec, board)
+            await card_service.check_decision_presence(spec)
             await card_service.check_decisions_coverage(spec, board)
 
             # Qualitative validation gate
@@ -5875,6 +6231,8 @@ class SpecService:
         await card_service.check_contract_coverage(spec, board)
         await card_service.check_ir_coverage(spec, board)
         await card_service.check_or_coverage(spec, board)
+        await card_service.check_task_requirement_links_for_spec(spec, board)
+        await card_service.check_decision_presence(spec)
         # Decisions coverage is OPT-IN — no-op when skip_decisions_coverage=True
         # (spec or board). See check_decisions_coverage for details.
         await card_service.check_decisions_coverage(spec, board)
@@ -6572,6 +6930,13 @@ class StoryService:
         return (await self.db.execute(
             select(Topic).where(Topic.id == topic_id, Topic.board_id == board_id)
         )).scalar_one_or_none()
+
+    async def get_topic(self, topic_id: str) -> Topic | None:
+        """Transport-free PK load of a Topic (spec R01A REST-FU6-S2 rework): the
+        update/delete/merge use cases resolve the topic's ``board_id`` for the
+        ownership + permission gate here instead of the adapter issuing a
+        ``db.get(Topic, …)`` (keeps the REST adapter free of direct ORM)."""
+        return await self.db.get(Topic, topic_id)
 
     async def _log_activity(self, **kwargs: Any) -> None:
         self.db.add(ActivityLog(**kwargs))
@@ -7344,7 +7709,11 @@ class IdeationService:
             .where(Ideation.id == ideation_id)
         )
         result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        ideation = result.scalar_one_or_none()
+        if ideation:
+            await _attach_active_refinement_counts(self.db, [ideation])
+            await _attach_active_spec_counts(self.db, list(ideation.refinements or []))
+        return ideation
 
     async def list_ideations(self, board_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Ideation]:
         """List ideations for a board, optionally filtered by status."""
@@ -7361,6 +7730,7 @@ class IdeationService:
         result = await self.db.execute(query)
         rows = list(result.scalars().all())
         await _attach_open_qa_counts(self.db, rows, IdeationQAItem, "ideation_id")
+        await _attach_active_refinement_counts(self.db, rows)
         return rows
 
     async def update_ideation(self, ideation_id: str, user_id: str, data: IdeationUpdate) -> Ideation | None:
@@ -8228,7 +8598,10 @@ class RefinementService:
             .where(Refinement.id == refinement_id)
         )
         result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        refinement = result.scalar_one_or_none()
+        if refinement:
+            await _attach_active_spec_counts(self.db, [refinement])
+        return refinement
 
     async def list_refinements(self, ideation_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Refinement]:
         """List refinements for an ideation, optionally filtered by status."""
@@ -8245,6 +8618,7 @@ class RefinementService:
         result = await self.db.execute(query)
         rows = list(result.scalars().all())
         await _attach_open_qa_counts(self.db, rows, RefinementQAItem, "refinement_id")
+        await _attach_active_spec_counts(self.db, rows)
         return rows
 
     async def update_refinement(self, refinement_id: str, user_id: str, data: RefinementUpdate) -> Refinement | None:
@@ -9160,8 +9534,11 @@ class ArchiveService:
 
     async def restore_tree(self, entity_type: str, entity_id: str) -> dict[str, int]:
         """Restore an archived entity and all its descendants."""
-        from okto_pulse.core.models.db import (
-            IdeationStatus, RefinementStatus, SpecStatus, CardStatus,
+        from okto_pulse.core.domain.enums import (
+            CardStatus,
+            IdeationStatus,
+            RefinementStatus,
+            SpecStatus,
         )
 
         tree = await self._resolve_tree(entity_type, entity_id)
@@ -9761,6 +10138,8 @@ class SprintService:
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import (
                 SprintClosed as SprintClosedEvent,
+            )
+            from okto_pulse.core.events.types import (
                 SprintMoved as SprintMovedEvent,
             )
 
@@ -9975,6 +10354,38 @@ class SprintService:
         )
         await self.db.commit()
         return sprint
+
+    async def delete_evaluation(
+        self, sprint_id: str, evaluator_id: str, evaluation_id: str,
+    ) -> str:
+        """Delete a caller-owned evaluation from the ``Sprint.evaluations`` JSON column.
+
+        MCP-FU6 (sprint, delete_sprint_evaluation, option A): the load, the ownership
+        gate (``evaluator_id``) and the JSON mutation + ``flag_modified`` live HERE in
+        the service (relational ratchet — ORM mutation must not leak into the use-case
+        layer). This does NOT commit; the caller (the MCP use case) owns the UoW commit
+        so an unauthorized/not-found attempt persists nothing. Returns a status:
+        ``"sprint_not_found"`` | ``"eval_not_found"`` | ``"not_owner"`` | ``"deleted"``.
+        """
+        from sqlalchemy.orm.attributes import flag_modified
+
+        sprint = await self.db.get(Sprint, sprint_id)
+        if not sprint:
+            return "sprint_not_found"
+        evaluations = list(sprint.evaluations or [])
+        target = None
+        for entry in evaluations:
+            if entry.get("id") == evaluation_id:
+                target = entry
+                break
+        if not target:
+            return "eval_not_found"
+        if target.get("evaluator_id") != evaluator_id:
+            return "not_owner"
+        evaluations.remove(target)
+        sprint.evaluations = evaluations
+        flag_modified(sprint, "evaluations")
+        return "deleted"
 
     async def list_history(self, sprint_id: str, limit: int = 50) -> list[SprintHistory]:
         query = (

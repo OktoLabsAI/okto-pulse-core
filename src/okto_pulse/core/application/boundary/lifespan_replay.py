@@ -59,6 +59,7 @@ ReplayStatus = Literal[
     "passed",
     "required_lifecycle_event_missing",
     "unexpected_lifecycle_delta",
+    "lifecycle_event_order_mismatch",
     "community_replay_failed",
 ]
 
@@ -95,6 +96,22 @@ class LifecycleDelta:
 
 
 @dataclass(frozen=True)
+class LifecycleOrderMismatch:
+    event: str
+    expected_index: int
+    actual_index: int | None
+    actual_event: str | None
+
+    def as_dict(self) -> dict[str, int | str | None]:
+        return {
+            "event": self.event,
+            "expected_index": self.expected_index,
+            "actual_index": self.actual_index,
+            "actual_event": self.actual_event,
+        }
+
+
+@dataclass(frozen=True)
 class CommunityLifespanReplayInput:
     composition: RuntimeComposition
     community_root: str | None = None
@@ -113,6 +130,7 @@ class LifecycleReplayReport:
     frontend: str
     default_only_exclusions: list[str]
     unexpected_deltas: list[LifecycleDelta] = field(default_factory=list)
+    order_mismatches: list[LifecycleOrderMismatch] = field(default_factory=list)
     error: str | None = None
 
     def as_dict(self) -> dict:
@@ -126,6 +144,7 @@ class LifecycleReplayReport:
             "frontend": self.frontend,
             "default_only_exclusions": self.default_only_exclusions,
             "unexpected_deltas": [d.as_dict() for d in self.unexpected_deltas],
+            "order_mismatches": [m.as_dict() for m in self.order_mismatches],
             "error": self.error,
         }
 
@@ -136,7 +155,9 @@ class CommunityLifespanReplay:
     async def run(self, gate_input: CommunityLifespanReplayInput) -> LifecycleReplayReport:
         composition = gate_input.composition
         if gate_input.strict_runtime:
-            validate_required_providers(composition)  # may raise runtime_provider_missing
+            validate_required_providers(
+                composition, require_lifecycle_hooks=True
+            )  # may raise runtime_provider_missing
 
         recorder: list[tuple[str, str]] = []
         # Rebind the composition's named hooks onto the recorder so the actual
@@ -184,6 +205,8 @@ class CommunityLifespanReplay:
 
         missing = [e for e in REQUIRED_LIFECYCLE_EVENTS if e not in observed]
         unexpected = sorted(observed - required - exclusions)
+        actual_required_order = [e for e in [*startup_events, *shutdown_events] if e in required]
+        order_mismatches = _order_mismatches(REQUIRED_LIFECYCLE_EVENTS, actual_required_order)
         deltas = [LifecycleDelta(e, "missing") for e in missing] + [
             LifecycleDelta(e, "unexpected") for e in unexpected
         ]
@@ -191,6 +214,8 @@ class CommunityLifespanReplay:
             status: ReplayStatus = "required_lifecycle_event_missing"
         elif unexpected:
             status = "unexpected_lifecycle_delta"
+        elif order_mismatches:
+            status = "lifecycle_event_order_mismatch"
         else:
             status = "passed"
 
@@ -208,6 +233,7 @@ class CommunityLifespanReplay:
             ),
             default_only_exclusions=sorted(observed & exclusions),
             unexpected_deltas=deltas,
+            order_mismatches=order_mismatches,
         )
 
     @staticmethod
@@ -226,6 +252,7 @@ class CommunityLifespanReplay:
             frontend="not_applicable",
             default_only_exclusions=[],
             unexpected_deltas=[],
+            order_mismatches=[],
             error=error,
         )
 
@@ -236,3 +263,24 @@ def _replace_hooks(
     import dataclasses
 
     return dataclasses.replace(composition, lifecycle_hooks=hooks)
+
+
+def _order_mismatches(
+    expected: tuple[str, ...], actual: list[str]
+) -> list[LifecycleOrderMismatch]:
+    if actual == list(expected):
+        return []
+    mismatches: list[LifecycleOrderMismatch] = []
+    for index, event in enumerate(expected):
+        actual_event = actual[index] if index < len(actual) else None
+        if actual_event == event:
+            continue
+        mismatches.append(
+            LifecycleOrderMismatch(
+                event=event,
+                expected_index=index,
+                actual_index=actual.index(event) if event in actual else None,
+                actual_event=actual_event,
+            )
+        )
+    return mismatches

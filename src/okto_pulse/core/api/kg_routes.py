@@ -31,16 +31,40 @@ from okto_pulse.core.kg.tier_power import (
     execute_cypher_read_only,
     get_schema_info,
 )
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.kg.governance import (
-    cancel_historical,
-    get_historical_progress,
-    right_to_erasure,
-    start_historical_consolidation,
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.repositories import PulseUnitOfWork
+from okto_pulse.core.application.use_cases.kg_routes_crud import (
+    BoostNodeCommand,
+    BoostNodeUseCase,
+    CancelHistoricalCommand,
+    CancelHistoricalUseCase,
+    DeleteBoardKgCommand,
+    DeleteBoardKgUseCase,
+    GetHistoricalProgressCommand,
+    GetHistoricalProgressUseCase,
+    GlobalSearchCommand,
+    GlobalSearchUseCase,
+    ListAuditCommand,
+    ListAuditUseCase,
+    ListPendingCommand,
+    ListPendingTreeCommand,
+    ListPendingTreeUseCase,
+    ListPendingUseCase,
+    RetryPendingEntryCommand,
+    RetryPendingEntryUseCase,
+    StartHistoricalCommand,
+    StartHistoricalUseCase,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/kg", tags=["knowledge-graph"])
+
+# These KG dashboard endpoints are unauthenticated (community/local). The actor is
+# a formality for the transport-free use cases — the governance/reader delegates do
+# not key off it — so a fixed local-user identity is passed, matching the
+# ``local-user`` convention already used by ``boost_node`` in this module.
+_KG_ACTOR_ID = "local-user"
 logger = logging.getLogger("okto_pulse.api.kg_routes")
 
 
@@ -678,42 +702,15 @@ async def list_audit(
     board_id: str,
     limit: int = Query(50, ge=1, le=200),
     cursor: str = "",
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List consolidation audit entries."""
-    from sqlalchemy import select
-    from okto_pulse.core.models.db import ConsolidationAudit
-
-    query = (
-        select(ConsolidationAudit)
-        .where(
-            ConsolidationAudit.board_id == board_id,
-            ConsolidationAudit.committed_at.is_not(None),
-        )
-        .order_by(ConsolidationAudit.committed_at.desc())
-        .limit(limit)
+    result = await ListAuditUseCase().execute(
+        ListAuditCommand(board_id, limit=limit),
+        actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+        uow=uow,
     )
-    result = await db.execute(query)
-    rows = result.scalars().all()
-
-    entries = [
-        {
-            "session_id": r.session_id,
-            "board_id": r.board_id,
-            "artifact_id": r.artifact_id,
-            "artifact_type": getattr(r, "artifact_type", ""),
-            "agent_id": r.agent_id,
-            "committed_at": r.committed_at.isoformat() if r.committed_at else None,
-            "nodes_added": r.nodes_added or 0,
-            "nodes_updated": r.nodes_updated or 0,
-            "nodes_superseded": r.nodes_superseded or 0,
-            "edges_added": r.edges_added or 0,
-            "summary_text": r.summary_text,
-            "undo_status": r.undo_status or "none",
-        }
-        for r in rows
-    ]
-    return {"entries": entries, "next_cursor": None}
+    return {"entries": result.entries, "next_cursor": None}
 
 
 @router.post("/boards/{board_id}/audit/{session_id}/undo")
@@ -748,62 +745,82 @@ async def global_search(
     limit: int = Query(20, ge=1, le=100),
     min_similarity: float = Query(0.3, ge=0.0, le=1.0),
     graph_layer: str = "canonical",
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Cross-board global discovery search.
 
     For community edition, searches across all boards since auth is local-only.
     For production, would filter by user's accessible boards.
     """
-    # For community edition, get all boards (no user filtering)
-    from sqlalchemy import select
-    from okto_pulse.core.models.db import Board
-
-    query = select(Board).limit(100)
-    result = await db.execute(query)
-    boards = result.scalars().all()
-    user_board_ids = [b.id for b in boards]
-
-    svc = get_kg_service()
     try:
-        layer = normalize_graph_layer(graph_layer)
-        results = svc.query_global(
-            q,
-            user_boards=user_board_ids,
-            top_k=limit,
-            min_similarity=min_similarity,
-            graph_layer=layer,
+        result = await GlobalSearchUseCase().execute(
+            GlobalSearchCommand(
+                q=q,
+                limit=limit,
+                min_similarity=min_similarity,
+                graph_layer=graph_layer,
+            ),
+            actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+            uow=uow,
         )
-        return {"results": results, "total": len(results), "graph_layer": layer}
+        return {
+            "results": result.results,
+            "total": len(result.results),
+            "graph_layer": result.graph_layer,
+        }
     except KGToolError as e:
         return _handle_kg_error(e)
 
 
 @router.post("/boards/{board_id}/historical-consolidation/start")
-async def start_historical(board_id: str, db: AsyncSession = Depends(get_db)):
+async def start_historical(
+    board_id: str, uow: PulseUnitOfWork = Depends(get_unit_of_work)
+):
     """Start historical backfill."""
-    result = await start_historical_consolidation(db, board_id)
-    return result
+    result = await StartHistoricalUseCase().execute(
+        StartHistoricalCommand(board_id),
+        actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+        uow=uow,
+    )
+    return result.payload
 
 
 @router.post("/boards/{board_id}/historical-consolidation/cancel")
-async def cancel_historical_endpoint(board_id: str, db: AsyncSession = Depends(get_db)):
+async def cancel_historical_endpoint(
+    board_id: str, uow: PulseUnitOfWork = Depends(get_unit_of_work)
+):
     """Cancel historical backfill."""
-    result = await cancel_historical(db, board_id)
-    return result
+    result = await CancelHistoricalUseCase().execute(
+        CancelHistoricalCommand(board_id),
+        actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+        uow=uow,
+    )
+    return result.payload
 
 
 @router.get("/boards/{board_id}/historical-consolidation/progress")
-async def historical_progress_endpoint(board_id: str, db: AsyncSession = Depends(get_db)):
+async def historical_progress_endpoint(
+    board_id: str, uow: PulseUnitOfWork = Depends(get_unit_of_work)
+):
     """Historical consolidation progress."""
-    result = await get_historical_progress(db, board_id)
-    return result
+    result = await GetHistoricalProgressUseCase().execute(
+        GetHistoricalProgressCommand(board_id),
+        actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+        uow=uow,
+    )
+    return result.progress
 
 
 @router.delete("/boards/{board_id}/kg")
-async def delete_board_kg(board_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_board_kg(
+    board_id: str, uow: PulseUnitOfWork = Depends(get_unit_of_work)
+):
     """Wipe KG data for a board (right-to-erasure)."""
-    await right_to_erasure(db, board_id)
+    await DeleteBoardKgUseCase().execute(
+        DeleteBoardKgCommand(board_id),
+        actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+        uow=uow,
+    )
     return Response(status_code=204)
 
 
@@ -845,7 +862,9 @@ async def get_global_kg_settings():
 
 
 @router.get("/boards/{board_id}/settings")
-async def get_settings(board_id: str, db: AsyncSession = Depends(get_db)):
+async def get_settings(
+    board_id: str, uow: PulseUnitOfWork = Depends(get_unit_of_work)
+):
     """Get KG settings for a board."""
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
@@ -853,8 +872,15 @@ async def get_settings(board_id: str, db: AsyncSession = Depends(get_db)):
     config = registry.config
     kg_exists = registry.graph_path_resolver.exists(board_id)
 
-    # Check historical consolidation status
-    progress = await get_historical_progress(db, board_id)
+    # Check historical consolidation status (the only relational read in this
+    # handler; the registry/embedding introspection below is not DB-bound).
+    progress = (
+        await GetHistoricalProgressUseCase().execute(
+            GetHistoricalProgressCommand(board_id),
+            actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+            uow=uow,
+        )
+    ).progress
 
     payload = {
         "consolidation_enabled": True,
@@ -908,36 +934,17 @@ async def schema_info(board_id: str = "", include_internal: bool = False):
 
 
 @router.get("/boards/{board_id}/pending")
-async def list_pending(board_id: str, db: AsyncSession = Depends(get_db)):
+async def list_pending(
+    board_id: str, uow: PulseUnitOfWork = Depends(get_unit_of_work)
+):
     """List pending consolidation queue entries."""
-    from sqlalchemy import select
-    from okto_pulse.core.models.db import ConsolidationQueue
-
     try:
-        query = (
-            select(ConsolidationQueue)
-            .where(ConsolidationQueue.board_id == board_id)
-            .order_by(ConsolidationQueue.triggered_at.desc())
-            .limit(100)
+        result = await ListPendingUseCase().execute(
+            ListPendingCommand(board_id),
+            actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+            uow=uow,
         )
-        result = await db.execute(query)
-        rows = result.scalars().all()
-
-        entries = [
-            {
-                "id": r.id,
-                "board_id": r.board_id,
-                "artifact_id": r.artifact_id,
-                "artifact_type": r.artifact_type,
-                "priority": r.priority,
-                "source": r.source,
-                "status": r.status,
-                "triggered_at": r.triggered_at.isoformat() if r.triggered_at else None,
-                "claimed_by_session_id": r.claimed_by_session_id,
-            }
-            for r in rows
-        ]
-        return {"entries": entries, "count": len(entries)}
+        return {"entries": result.entries, "count": len(result.entries)}
     except Exception:
         return {"entries": [], "count": 0}
 
@@ -946,7 +953,7 @@ async def list_pending(board_id: str, db: AsyncSession = Depends(get_db)):
 async def list_pending_tree(
     board_id: str,
     depth: int = Query(5, ge=1, le=5),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Hierarchical pending-queue view (spec f33eb9ca — Layer 4 Pending Queue UI).
 
@@ -964,170 +971,17 @@ async def list_pending_tree(
                      refinements: ..., specs: ..., sprints: ..., cards: ...},
           "tree": [ideation-nodes with nested children]
         }
+
+    The queue-state fetch + in-Python hierarchy join lives in
+    ``kg/dashboard_readers.build_pending_tree`` (a service reader) so this
+    endpoint holds no relational symbol; the use case returns the payload verbatim.
     """
-    from sqlalchemy import select
-    from collections import defaultdict
-    from okto_pulse.core.models.db import (
-        Card, ConsolidationQueue, Ideation, Refinement, Spec, Sprint,
+    result = await ListPendingTreeUseCase().execute(
+        ListPendingTreeCommand(board_id, depth=depth),
+        actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+        uow=uow,
     )
-
-    # Fetch queue state once, then join in-Python against the hierarchy.
-    # A recursive CTE across SQLite + JSON test_scenarios would be
-    # brittle; per-table fetches keep the code portable and cover the
-    # unique-constraint-indexed case (per-board lookups are cheap).
-    q_rows = (await db.execute(
-        select(ConsolidationQueue).where(ConsolidationQueue.board_id == board_id)
-    )).scalars().all()
-    q_by_artifact: dict[tuple[str, str], ConsolidationQueue] = {
-        (r.artifact_type, r.artifact_id): r for r in q_rows
-    }
-
-    def _queue_meta(art_type: str, art_id: str) -> dict:
-        entry = q_by_artifact.get((art_type, art_id))
-        if entry is None:
-            return {"status": "not_queued", "queued_age_seconds": None,
-                    "retry_count": 0, "layer": None, "last_error": None}
-        age = None
-        if entry.triggered_at is not None:
-            # SQLite may return naive datetimes; normalise both sides to UTC.
-            trig = entry.triggered_at
-            if trig.tzinfo is None:
-                trig = trig.replace(tzinfo=timezone.utc)
-            age = (datetime.now(timezone.utc) - trig).total_seconds()
-        return {
-            "status": entry.status,
-            "queued_age_seconds": int(age) if age is not None else None,
-            "retry_count": 0,  # placeholder until retry counter lands
-            "layer": entry.source or "unknown",
-            "last_error": None,
-        }
-
-    ideas = (await db.execute(
-        select(Ideation).where(Ideation.board_id == board_id)
-    )).scalars().all()
-    refs = (await db.execute(
-        select(Refinement).where(Refinement.board_id == board_id)
-    )).scalars().all()
-    specs = (await db.execute(
-        select(Spec).where(Spec.board_id == board_id)
-    )).scalars().all()
-    sprints = (await db.execute(
-        select(Sprint).where(Sprint.board_id == board_id)
-    )).scalars().all()
-    cards = (await db.execute(
-        select(Card).where(Card.board_id == board_id)
-    )).scalars().all()
-
-    refs_by_ideation: dict[str, list] = defaultdict(list)
-    for r in refs:
-        refs_by_ideation[r.ideation_id or ""].append(r)
-    specs_by_refinement: dict[str, list] = defaultdict(list)
-    specs_orphan: list = []
-    for s in specs:
-        if s.refinement_id:
-            specs_by_refinement[s.refinement_id].append(s)
-        else:
-            specs_orphan.append(s)
-    sprints_by_spec: dict[str, list] = defaultdict(list)
-    for sp in sprints:
-        sprints_by_spec[sp.spec_id].append(sp)
-    cards_by_sprint: dict[str, list] = defaultdict(list)
-    cards_by_spec_direct: dict[str, list] = defaultdict(list)
-    for c in cards:
-        if getattr(c, "sprint_id", None):
-            cards_by_sprint[c.sprint_id].append(c)
-        else:
-            cards_by_spec_direct[c.spec_id].append(c)
-
-    levels_counter = {
-        lvl: {"pending": 0, "in_progress": 0, "done": 0, "failed": 0,
-              "not_queued": 0}
-        for lvl in ("ideations", "refinements", "specs", "sprints", "cards")
-    }
-
-    def _tally(level: str, art_type: str, art_id: str) -> str:
-        status = _queue_meta(art_type, art_id)["status"]
-        levels_counter[level][status] = levels_counter[level].get(status, 0) + 1
-        return status
-
-    def _card_node(c) -> dict:
-        meta = _queue_meta("card", c.id)
-        _tally("cards", "card", c.id)
-        return {
-            "id": c.id, "type": "card",
-            "title": c.title,
-            "card_type": str(c.card_type) if getattr(c, "card_type", None) else "normal",
-            **meta,
-            "children": [],
-        }
-
-    def _sprint_node(sp) -> dict:
-        meta = _queue_meta("sprint", sp.id)
-        _tally("sprints", "sprint", sp.id)
-        children = [_card_node(c) for c in cards_by_sprint.get(sp.id, [])]
-        if depth < 5:
-            children = []
-        return {
-            "id": sp.id, "type": "sprint", "title": sp.title,
-            **meta, "children": children,
-        }
-
-    def _spec_node(s) -> dict:
-        meta = _queue_meta("spec", s.id)
-        _tally("specs", "spec", s.id)
-        sp_children = [_sprint_node(sp) for sp in sprints_by_spec.get(s.id, [])]
-        direct_cards = [_card_node(c) for c in cards_by_spec_direct.get(s.id, [])]
-        if depth < 4:
-            sp_children = []
-            direct_cards = []
-        return {
-            "id": s.id, "type": "spec", "title": s.title,
-            **meta,
-            "children": sp_children + direct_cards,
-        }
-
-    def _refinement_node(r) -> dict:
-        meta = _queue_meta("refinement", r.id)
-        _tally("refinements", "refinement", r.id)
-        spec_children = [_spec_node(s) for s in specs_by_refinement.get(r.id, [])]
-        if depth < 3:
-            spec_children = []
-        return {
-            "id": r.id, "type": "refinement", "title": r.title,
-            **meta, "children": spec_children,
-        }
-
-    tree: list[dict] = []
-    for idea in ideas:
-        meta = _queue_meta("ideation", idea.id)
-        _tally("ideations", "ideation", idea.id)
-        ref_children = [_refinement_node(r) for r in refs_by_ideation.get(idea.id, [])]
-        if depth < 2:
-            ref_children = []
-        tree.append({
-            "id": idea.id, "type": "ideation", "title": idea.title,
-            **meta, "children": ref_children,
-        })
-
-    # Orphan specs (no refinement) go to the root alongside ideations.
-    for s in specs_orphan:
-        tree.append(_spec_node(s))
-
-    total_pending = sum(
-        sum(
-            v for k, v in counts.items()
-            if k in ("pending", "in_progress")
-        )
-        for counts in levels_counter.values()
-    )
-
-    return {
-        "board_id": board_id,
-        "depth": depth,
-        "total_pending": total_pending,
-        "levels": levels_counter,
-        "tree": tree,
-    }
+    return result.payload
 
 
 # ---------------------------------------------------------------------------
@@ -1247,7 +1101,7 @@ async def retry_pending_entry(
     board_id: str,
     queue_entry_id: str,
     recursive: bool = Query(False, description="Also re-enqueue descendant entries"),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Re-queue a failed/done ConsolidationQueue entry so the worker
     reprocesses it. `recursive=true` also re-enqueues descendants below
@@ -1256,185 +1110,77 @@ async def retry_pending_entry(
     Idempotency: content_hash BR still owns "nothing actually changed"
     no-op behaviour downstream, so retrying an unchanged artifact is a
     cheap round-trip that touches the outbox once.
+
+    The mutation + recursive sweep + commit + worker signal live in
+    ``kg/governance.retry_pending_entry`` (a service write); a missing entry comes
+    back as ``EntityNotFoundError`` which this adapter maps to the legacy 404
+    ("queue entry not found").
     """
-    from sqlalchemy import and_, select as _select
-    from okto_pulse.core.models.db import Card, ConsolidationQueue, Refinement, Spec, Sprint
-
-    entry = (await db.execute(
-        _select(ConsolidationQueue).where(and_(
-            ConsolidationQueue.id == queue_entry_id,
-            ConsolidationQueue.board_id == board_id,
-        ))
-    )).scalars().first()
-    if entry is None:
-        raise HTTPException(status_code=404, detail="queue entry not found")
-
-    entry.status = "pending"
-    entry.claimed_at = None
-    entry.claimed_by_session_id = None
-    entry.source = "retry_from_ui"
-    reopened = [queue_entry_id]
-
-    if recursive:
-        descendants: list[tuple[str, str]] = []
-        if entry.artifact_type == "ideation":
-            rows = (await db.execute(
-                _select(Refinement.id).where(Refinement.ideation_id == entry.artifact_id)
-            )).scalars().all()
-            descendants.extend(("refinement", r) for r in rows)
-        if entry.artifact_type in ("ideation", "refinement"):
-            refinement_ids: list[str]
-            if entry.artifact_type == "ideation":
-                refinement_ids = [r for _, r in descendants]
-            else:
-                refinement_ids = [entry.artifact_id]
-            specs = (await db.execute(
-                _select(Spec.id).where(Spec.refinement_id.in_(refinement_ids))
-            )).scalars().all()
-            descendants.extend(("spec", s) for s in specs)
-        if entry.artifact_type in ("ideation", "refinement", "spec"):
-            spec_ids = [s for t, s in descendants if t == "spec"] or [entry.artifact_id]
-            sprints = (await db.execute(
-                _select(Sprint.id).where(Sprint.spec_id.in_(spec_ids))
-            )).scalars().all()
-            descendants.extend(("sprint", sp) for sp in sprints)
-            cards = (await db.execute(
-                _select(Card.id).where(Card.spec_id.in_(spec_ids))
-            )).scalars().all()
-            descendants.extend(("card", c) for c in cards)
-
-        for artifact_type, artifact_id in descendants:
-            row = (await db.execute(
-                _select(ConsolidationQueue).where(and_(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_type == artifact_type,
-                    ConsolidationQueue.artifact_id == artifact_id,
-                ))
-            )).scalars().first()
-            if row is None:
-                continue
-            row.status = "pending"
-            row.claimed_at = None
-            row.claimed_by_session_id = None
-            row.source = "retry_from_ui_recursive"
-            reopened.append(row.id)
-
-    await db.commit()
-
-    # Fase 4 — wake the background worker so retried rows are picked up
-    # immediately instead of waiting for the heartbeat tick.
     try:
-        from okto_pulse.core.kg.workers.consolidation import (
-            signal_consolidation_worker,
+        result = await RetryPendingEntryUseCase().execute(
+            RetryPendingEntryCommand(board_id, queue_entry_id, recursive=recursive),
+            actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+            uow=uow,
         )
-        signal_consolidation_worker()
-    except Exception:  # pragma: no cover — signal is best-effort
-        pass
-
-    return {
-        "board_id": board_id,
-        "queue_entry_id": queue_entry_id,
-        "recursive": recursive,
-        "reopened_count": len(reopened),
-        "reopened_ids": reopened,
-    }
+    except EntityNotFoundError as exc:
+        raise RESTAdapterContract.http_error(
+            exc, not_found_detail="queue entry not found"
+        )
+    return result.payload
 
 
 @router.post("/boards/{board_id}/nodes/{node_id}/boost")
 async def boost_node(
     board_id: str,
     node_id: str,
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Increment a node's ``relevance_score`` by a fixed +0.3 with clamp [0, 1.5].
 
-    Persists an audit entry to ``ConsolidationAudit`` with event_type
-    ``kg.node.boosted``. Idempotency is NOT enforced — each call stacks
-    another +0.3 until the clamp is reached, by design (repeat clicks
-    should reflect repeat intent).
+    Persists a ``ConsolidationAudit`` row for the boost with all required NOT-NULL
+    columns populated (``artifact_type="boost"``, ``started_at``, …) — bug 547a2aa8
+    fix; the legacy row omitted ``artifact_type``/``started_at`` so its commit always
+    raised IntegrityError and was silently swallowed (200 with no audit row). Each
+    boost's audit row has a unique PK (uuid-suffixed ``session_id``) so repeated
+    boosts of the same node persist distinct rows. Idempotency is NOT enforced —
+    each call stacks another +0.3 until the clamp is reached, by design (repeat
+    clicks should reflect repeat intent).
 
     Responses:
         200 — `{node_id, node_type, score_before, score_after, boosted_at, boosted_by}`
         404 — node not found in any table of the per-board graph
+
+    The graph read/SET + ``ConsolidationAudit`` staging live in
+    ``kg.governance.boost_node``; the ``BoostNodeUseCase`` commits the staged audit
+    via the UnitOfWork (best-effort — a commit failure on the already-boosted graph
+    rolls back the audit-only row and the boost still returns 200, preserving the
+    legacy contract). A missing node comes back as ``EntityNotFoundError`` (mapped to
+    the legacy 404 problem) and a failed SET as ``BoostPersistError`` (mapped to the
+    legacy 500 ``kuzu_error`` problem).
     """
-    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-    from okto_pulse.core.kg.schema_contract import NODE_TYPES
-    from okto_pulse.core.models.db import ConsolidationAudit
-
-    BOOST_DELTA = 0.3
-    CLAMP_MIN = 0.0
-    CLAMP_MAX = 1.5
-
-    score_before: float | None = None
-    node_type: str | None = None
-    # R05-C: read+write through the #06 GraphTransaction port. _db was unused;
-    # both statements are scope.execute(cypher, params) — behaviour-identical to
-    # the old (db, conn) tuple (embedded auto-commits per statement on the SET).
-    async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
-        for ntype in NODE_TYPES:
-            try:
-                res = scope.execute(
-                    f"MATCH (n:{ntype} {{id: $nid}}) RETURN n.relevance_score",
-                    {"nid": node_id},
-                )
-            except Exception:
-                continue
-            if res.has_next():
-                row = res.get_next()
-                score_before = float(row[0]) if row[0] is not None else 0.5
-                node_type = ntype
-                break
-
-        if node_type is None or score_before is None:
-            return _problem(
-                status=404,
-                title="Node not found",
-                detail=f"Node {node_id} not present in board {board_id}",
-                error_type="not_found",
-            )
-
-        score_after = max(CLAMP_MIN, min(CLAMP_MAX, score_before + BOOST_DELTA))
-        try:
-            scope.execute(
-                f"MATCH (n:{node_type} {{id: $nid}}) "
-                f"SET n.relevance_score = $score",
-                {"nid": node_id, "score": score_after},
-            )
-        except Exception as exc:
-            return _problem(
-                status=500,
-                title="Boost persist failed",
-                detail=f"Failed to persist boost: {exc}",
-                error_type="kuzu_error",
-            )
-
-    boosted_at = datetime.now(timezone.utc)
-    boosted_by = "local-user"
+    from okto_pulse.core.kg.governance import BoostPersistError
 
     try:
-        audit_row = ConsolidationAudit(
-            session_id=f"boost-{node_id[:8]}-{int(boosted_at.timestamp())}",
-            board_id=board_id,
-            artifact_id=node_id,
-            agent_id=boosted_by,
-            committed_at=boosted_at,
-            nodes_added=0,
-            edges_added=0,
+        result = await BoostNodeUseCase().execute(
+            BoostNodeCommand(board_id, node_id),
+            actor=RESTAdapterContract.actor(_KG_ACTOR_ID),
+            uow=uow,
         )
-        db.add(audit_row)
-        await db.commit()
-    except Exception:
-        # Audit is best-effort — the boost itself is already persisted.
-        await db.rollback()
-
-    return {
-        "node_id": node_id,
-        "node_type": node_type,
-        "score_before": round(score_before, 4),
-        "score_after": round(score_after, 4),
-        "boosted_at": boosted_at.isoformat(),
-        "boosted_by": boosted_by,
-    }
+    except EntityNotFoundError:
+        return _problem(
+            status=404,
+            title="Node not found",
+            detail=f"Node {node_id} not present in board {board_id}",
+            error_type="not_found",
+        )
+    except BoostPersistError as exc:
+        return _problem(
+            status=500,
+            title="Boost persist failed",
+            detail=str(exc),
+            error_type="kuzu_error",
+        )
+    return result.payload
 
 
 @router.get("/openapi.json")

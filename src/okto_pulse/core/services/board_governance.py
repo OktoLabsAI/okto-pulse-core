@@ -20,6 +20,9 @@ GOVERNANCE_SETTING_KEYS = (
     "allow_agent_self_answering",
     "require_full_context_for_critical_actions",
 )
+LEGACY_ABSENT_SETTING_KEYS = (
+    "skip_task_requirement_link_gate_global",
+)
 QA_SELF_ANSWER_DENIED_ACTION = "qa_self_answer_denied"
 QA_SELF_ANSWER_DENIED_METRIC = METRIC_QA_SELF_ANSWER_DENIED
 SELF_ANSWERING_NOT_ALLOWED_REASON = "self_answering_not_allowed"
@@ -112,7 +115,15 @@ class BoardGovernanceService:
             if isinstance(patch, BoardSettings)
             else dict(patch or {})
         )
-        return cls.normalize_settings({**current_raw, **patch_raw})
+        preserve_absent = {
+            key
+            for key in LEGACY_ABSENT_SETTING_KEYS
+            if key not in current_raw and key not in patch_raw
+        }
+        normalized = cls.normalize_settings({**current_raw, **patch_raw})
+        for key in preserve_absent:
+            normalized.pop(key, None)
+        return normalized
 
     async def resolve(self, board_id: str) -> BoardGovernanceSettings:
         if self.db is None:

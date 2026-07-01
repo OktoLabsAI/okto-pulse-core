@@ -255,7 +255,7 @@ def _register_update_tool(agent_id: str):
         return _NullDb()
 
     mcp = _MCPRegistryDouble()
-    register_kg_tools(mcp, get_agent=_get_agent, get_db=_get_db)
+    register_kg_tools(mcp, get_agent=_get_agent, get_uow=_get_db)
     return mcp.tools["okto_pulse_kg_update_cognitive_pending_item"]
 
 

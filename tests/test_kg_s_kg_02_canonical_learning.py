@@ -156,6 +156,10 @@ def _mcp(monkeypatch, db_factory):
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
     monkeypatch.setattr(mcp_server, "get_db_for_mcp", _fake_db)
+    # MCP-FU5: the migrated partition-integrity tool resolves its session through
+    # get_unit_of_work_factory_for_mcp() over _mcp_session_factory (not the raw
+    # get_db_for_mcp patched above); point that at the test factory too.
+    monkeypatch.setattr(mcp_server, "_mcp_session_factory", db_factory)
     return mcp_server
 
 

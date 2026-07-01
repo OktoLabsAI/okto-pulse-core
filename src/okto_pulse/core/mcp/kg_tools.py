@@ -19,17 +19,13 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from okto_pulse.core.kg.commit_coordinator import run_with_commit_lock_and_retry
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     _require_open_session,
     abort_consolidation,
     add_edge_candidate,
     add_node_candidate,
-    begin_consolidation,
-    commit_consolidation,
     get_similar_nodes,
-    propose_reconciliation,
 )
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
@@ -116,14 +112,16 @@ def _maybe_record_r7_cognitive_hold(
         )
 
 
-def register_kg_tools(mcp, *, get_agent, get_db) -> None:
+def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
     """Register the 7 KG primitive tools on the given FastMCP instance.
 
     Args:
         mcp: FastMCP instance from okto_pulse.core.mcp.server
         get_agent: async callable returning the authenticated agent, or None
                    on auth failure (shared helper from server.py)
-        get_db: async context manager yielding an AsyncSession
+        get_uow: callable returning the MCP UnitOfWorkFactory (spec R01A MCP-FU1);
+                 the consolidation write tools obtain a PulseUnitOfWork from it
+                 instead of opening a raw AsyncSession.
     """
 
     @mcp.tool()
@@ -165,13 +163,26 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
             )
         except ValidationError as e:
             return _err("invalid_candidate", str(e))
-        async with get_db() as db:
-            try:
-                resp = await begin_consolidation(req, agent_id=agent.id, db=db)
-                return _ok(resp)
-            except KGPrimitiveError as e:
-                return _err(e.code, e.message, session_id=e.session_id,
-                            details=e.details)
+        # Spec R01A MCP-FU1 (MCP strangler): route through the transport-free use
+        # case + injected MCP UnitOfWorkFactory (get_uow) instead of a raw get_db()
+        # session. The commit primitive's internal persistence runs on the same
+        # session, so write behaviour is unchanged.
+        from okto_pulse.core.application.use_cases import (
+            BeginConsolidationCommand,
+            BeginConsolidationUseCase,
+        )
+        from okto_pulse.core.application.use_cases.base import ActorContext
+
+        actor = ActorContext(agent.id, "mcp")
+        try:
+            async with get_uow()(actor=actor) as uow:
+                result = await BeginConsolidationUseCase().execute(
+                    BeginConsolidationCommand(req), actor=actor, uow=uow
+                )
+            return _ok(result.resp)
+        except KGPrimitiveError as e:
+            return _err(e.code, e.message, session_id=e.session_id,
+                        details=e.details)
 
     @mcp.tool()
     async def okto_pulse_kg_add_node_candidate(
@@ -310,13 +321,24 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
             req = ProposeReconciliationRequest(session_id=session_id)
         except ValidationError as e:
             return _err("invalid_candidate", str(e))
-        async with get_db() as db:
-            try:
-                resp = await propose_reconciliation(req, agent_id=agent.id, db=db)
-                return _ok(resp)
-            except KGPrimitiveError as e:
-                return _err(e.code, e.message, session_id=e.session_id,
-                            details=e.details)
+        # Spec R01A MCP-FU1 (MCP strangler): transport-free use case + injected MCP
+        # UnitOfWorkFactory (get_uow) instead of a raw get_db() session.
+        from okto_pulse.core.application.use_cases import (
+            ProposeReconciliationCommand,
+            ProposeReconciliationUseCase,
+        )
+        from okto_pulse.core.application.use_cases.base import ActorContext
+
+        actor = ActorContext(agent.id, "mcp")
+        try:
+            async with get_uow()(actor=actor) as uow:
+                result = await ProposeReconciliationUseCase().execute(
+                    ProposeReconciliationCommand(req), actor=actor, uow=uow
+                )
+            return _ok(result.resp)
+        except KGPrimitiveError as e:
+            return _err(e.code, e.message, session_id=e.session_id,
+                        details=e.details)
 
     @mcp.tool()
     async def okto_pulse_kg_commit_consolidation(
@@ -359,28 +381,37 @@ def register_kg_tools(mcp, *, get_agent, get_db) -> None:
         except KGPrimitiveError as e:
             return _err(e.code, e.message, session_id=e.session_id,
                         details=e.details)
-        async with get_db() as db:
-            try:
-                # Wrap the actual commit in the per-board lock + retry
-                # coordinator. This serialises concurrent commits on the
-                # same board (LadybugDB holds an exclusive writer lock at the
-                # OS file level) and absorbs transient inter-process
-                # lock contention — see core/kg/commit_coordinator.py.
-                resp = await run_with_commit_lock_and_retry(
-                    session.board_id,
-                    lambda: commit_consolidation(req, agent_id=agent.id, db=db),
+        # Spec R01A MCP-FU1 (MCP strangler): transport-free use case + injected MCP
+        # UnitOfWorkFactory (get_uow) instead of a raw get_db() session. The per-board
+        # commit lock + retry coordinator (serialises concurrent commits — LadybugDB
+        # holds an exclusive OS-level writer lock) runs inside the use case. The
+        # session ownership pre-check (_require_open_session above) and the R7
+        # cognitive-hold side effect on error are unchanged.
+        from okto_pulse.core.application.use_cases import (
+            CommitConsolidationCommand,
+            CommitConsolidationUseCase,
+        )
+        from okto_pulse.core.application.use_cases.base import ActorContext
+
+        actor = ActorContext(agent.id, "mcp")
+        try:
+            async with get_uow()(actor=actor) as uow:
+                result = await CommitConsolidationUseCase().execute(
+                    CommitConsolidationCommand(req, board_id=session.board_id),
+                    actor=actor,
+                    uow=uow,
                 )
-                return _ok(resp)
-            except KGPrimitiveError as e:
-                # R7: a working-only canonical Learning bug-derived commit is an
-                # EXPECTED semantic hold — materialize the go-forward hold in the
-                # cognitive pending ledger (never CanonicalDebt/DLQ) before
-                # surfacing the structured error back to the agent.
-                _maybe_record_r7_cognitive_hold(
-                    board_id=session.board_id, error=e, actor_id=agent.id
-                )
-                return _err(e.code, e.message, session_id=e.session_id,
-                            details=e.details)
+            return _ok(result.resp)
+        except KGPrimitiveError as e:
+            # R7: a working-only canonical Learning bug-derived commit is an
+            # EXPECTED semantic hold — materialize the go-forward hold in the
+            # cognitive pending ledger (never CanonicalDebt/DLQ) before
+            # surfacing the structured error back to the agent.
+            _maybe_record_r7_cognitive_hold(
+                board_id=session.board_id, error=e, actor_id=agent.id
+            )
+            return _err(e.code, e.message, session_id=e.session_id,
+                        details=e.details)
 
     @mcp.tool()
     async def okto_pulse_kg_list_cognitive_pending_items(

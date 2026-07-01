@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from okto_pulse.core.api import stories as stories_api
+from okto_pulse.core.application.use_cases import stories_crud
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.models.db import (
     ActivityLog,
@@ -553,7 +554,7 @@ async def test_topic_rest_endpoints_return_contextual_delete_and_merge_payloads(
         await db.commit()
 
         with pytest.raises(HTTPException) as blocked:
-            await stories_api.delete_topic(source_id, user_id=owner_id, db=db)
+            await stories_api.delete_topic(source_id, user_id=owner_id, uow=db)
         assert blocked.value.status_code == 409
         assert blocked.value.detail["code"] == "topic_not_empty"
         assert blocked.value.detail["active_count"] == 1
@@ -564,14 +565,14 @@ async def test_topic_rest_endpoints_return_contextual_delete_and_merge_payloads(
             source_id,
             TopicMergeRequest(target_topic_id=target_id),
             user_id=owner_id,
-            db=db,
+            uow=db,
         )
         assert merged["success"] is True
         assert merged["moved_count"] == 1
         assert merged["source"].archived is True
         assert getattr(merged["target"], "total_associated_count") == 1
 
-        deleted = await stories_api.delete_topic(source_id, user_id=owner_id, db=db)
+        deleted = await stories_api.delete_topic(source_id, user_id=owner_id, uow=db)
         assert deleted.success is True
         assert deleted.deleted_topic_id == source_id
 
@@ -606,18 +607,18 @@ async def test_topic_rest_and_mcp_tools_enforce_granular_permissions(db_factory)
         async def capture_permission(*args, **kwargs):
             seen_permissions.append(args[3])
 
-        with patch.object(stories_api, "_require_permissions", side_effect=capture_permission):
-            await stories_api.create_topic(board_id, TopicCreate(name="Permission created"), user_id=owner_id, db=db)
-            await stories_api.list_topics(board_id, user_id=owner_id, db=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(name="Permission renamed"), user_id=owner_id, db=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(archived=True), user_id=owner_id, db=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(archived=False), user_id=owner_id, db=db)
-            await stories_api.delete_topic(empty.id, user_id=owner_id, db=db)
+        with patch.object(stories_crud, "_require_permissions", side_effect=capture_permission):
+            await stories_api.create_topic(board_id, TopicCreate(name="Permission created"), user_id=owner_id, uow=db)
+            await stories_api.list_topics(board_id, user_id=owner_id, uow=db)
+            await stories_api.update_topic(topic.id, TopicUpdate(name="Permission renamed"), user_id=owner_id, uow=db)
+            await stories_api.update_topic(topic.id, TopicUpdate(archived=True), user_id=owner_id, uow=db)
+            await stories_api.update_topic(topic.id, TopicUpdate(archived=False), user_id=owner_id, uow=db)
+            await stories_api.delete_topic(empty.id, user_id=owner_id, uow=db)
             await stories_api.merge_topics(
                 topic.id,
                 TopicMergeRequest(target_topic_id=target.id),
                 user_id=owner_id,
-                db=db,
+                uow=db,
             )
 
         flattened = [
@@ -754,7 +755,7 @@ async def test_story_links_require_editable_ideations_and_reject_duplicates(db_f
                 story.id,
                 StoryLinkCreate(ideation_id=editable.id),
                 user_id=owner_id,
-                db=db,
+                uow=db,
             )
         assert duplicate_http.value.status_code == 400
         assert "already linked" in duplicate_http.value.detail

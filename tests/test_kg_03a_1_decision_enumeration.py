@@ -29,8 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 from okto_pulse.core.kg.board_source_store import (
-    BoardSourceStore,
     _decision_id,
     _decision_sources_from_spec,
 )

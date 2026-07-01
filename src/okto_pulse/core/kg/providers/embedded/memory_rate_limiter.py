@@ -1,6 +1,6 @@
 """InMemoryTokenBucket — satisfies RateLimiter Protocol.
 
-Refactored from okto_pulse.core.kg.tier_power._TokenBucket.
+The canonical in-memory token bucket RateLimiter for the KG registry.
 30 tokens per 60s window per agent.
 """
 

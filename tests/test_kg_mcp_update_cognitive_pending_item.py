@@ -105,7 +105,7 @@ def _register_tools(get_agent_impl: Callable[[], Any]):
     def _get_db() -> _NullDb:
         return _NullDb()
 
-    register_kg_tools(mcp, get_agent=get_agent_impl, get_db=_get_db)
+    register_kg_tools(mcp, get_agent=get_agent_impl, get_uow=_get_db)
     return mcp
 
 

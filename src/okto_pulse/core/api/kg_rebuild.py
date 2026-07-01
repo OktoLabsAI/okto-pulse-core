@@ -29,7 +29,6 @@ FR10 — per-board scope (community edition):
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -72,8 +71,15 @@ async def _require_board_access(board_id: str, user_id: str, db: AsyncSession) -
     # get_user_permission returns:
     #   None  → board not found OR user has no access to an existing board.
     # Distinguish the two by checking board existence explicitly.
-    from okto_pulse.core.models.db import Board as _Board
-    board_obj = await db.get(_Board, board_id)
+    #
+    # R01C IMP3 drain: the EXISTENCE probe goes through the edition-owned repository
+    # port (``resolve_unit_of_work_factory().wrap`` — the R01B FR3 seam), removing
+    # the ``core.models.db`` import. This is a pure get-by-id (404 ↔ board is None);
+    # the AUTHORIZATION decision is unchanged — it stays in
+    # ``service.get_user_permission`` below (403), exactly as before.
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
+
+    board_obj = await resolve_unit_of_work_factory().wrap(db).boards.get(board_id)
     if board_obj is None:
         raise HTTPException(status_code=404, detail="Board not found")
 
@@ -144,41 +150,39 @@ async def _refuse_rebuild_if_quarantined(
 _REBUILD_BASE_DIR = default_rebuild_base_dir()
 
 
-def _resolve_pulse_db_path() -> Path:
-    """Return the path to the SQLite file the SQLAlchemy engine targets.
-
-    Used by BoardSourceStore + BoardRebuildIngestionAdapter — both bypass
-    the async engine because the rebuild service's adapters are sync
-    callables. Reads the URL from the engine that's already initialised.
-    """
-    try:
-        from okto_pulse.core.infra.database import get_engine
-
-        url = str(get_engine().url)
-    except Exception:
-        # Fallback to default path so preflight never crashes if the
-        # engine hasn't been initialised yet (e.g. during unit tests).
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    # url is e.g. ``sqlite+aiosqlite:///C:/Users/.../pulse.db`` or
-    # ``sqlite+aiosqlite:///./dashboard.db``.
-    marker = ":///"
-    idx = url.rfind(marker)
-    if idx < 0:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    raw = url[idx + len(marker):]
-    return Path(raw)
-
-
 def _build_source_store():
-    """Production source store reading non-cancelled specs/refinements/
-    ideations from the SQLAlchemy SQLite file. Replaces the
-    ``_empty_source_store`` stub that caused preflight to always report
-    eligible_source_count=0 (bug b4c6920c)."""
+    """Production source store supplied by the composed BoardSourceReader port."""
 
-    from okto_pulse.core.kg.board_source_store import BoardSourceStore
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
-    store = BoardSourceStore(db_path=_resolve_pulse_db_path())
-    return store.fetch
+    return get_kg_registry().require_board_source_reader().fetch
+
+
+def _provider_missing_payload(exc: Exception) -> dict[str, object]:
+    provider_key = getattr(exc, "provider_key", "rebuild_ingestion_port")
+    missing = list(getattr(exc, "missing", [provider_key]))
+    return {
+        "error": "provider_missing",
+        "provider": provider_key,
+        "missing": missing,
+        "message": str(exc),
+    }
+
+
+def _build_rebuild_step_adapter(*, manifest_store_obj):
+    """Production rebuild step adapter supplied by the composed ingestion port."""
+
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    ingestion = get_kg_registry().require_rebuild_ingestion_port()
+
+    def _step_source_resolver(req):
+        manifest = manifest_store_obj.load(req.manifest_ref)
+        if manifest is None:
+            return ()
+        return tuple(row.to_dict() for row in manifest.materializable_sources)
+
+    return ingestion.build_step_adapter(source_resolver=_step_source_resolver)
 
 
 def _empty_source_store(_board_id: str) -> list[dict]:
@@ -540,9 +544,6 @@ async def post_rebuild_run(
     )
     from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
-    from okto_pulse.core.kg.board_rebuild_adapter import (
-        BoardRebuildIngestionAdapter,
-    )
     from okto_pulse.core.kg.rebuild_audit import (
         CognitivePendingMarker,
         ConfirmationConsumptionAuditRecorder,
@@ -570,23 +571,19 @@ async def post_rebuild_run(
     enumerator = RebuildSourceEnumerator(source_store=source_store_fetch)
     manifest_store_obj = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
 
-    # bug b4c6920c fix: real step adapter that enqueues sources for the
-    # existing consolidation worker (which actually mutates graph.lbug).
-    # The KG-02.5 DeterministicStructuralRebuilder still owns the
-    # structural_hash + source_hash so KG-02.4 promotion gets a real
-    # receipt. Closure resolver loads sources from the manifest the
-    # rebuild_service just validated (KG-02.2 lifecycle).
-    ingestion = BoardRebuildIngestionAdapter(db_path=_resolve_pulse_db_path())
+    try:
+        _step_adapter_with_sources = _build_rebuild_step_adapter(
+            manifest_store_obj=manifest_store_obj,
+        )
+    except Exception as exc:
+        from okto_pulse.core.composition import RuntimeProviderMissing
 
-    def _step_source_resolver(req):
-        manifest = manifest_store_obj.load(req.manifest_ref)
-        if manifest is None:
-            return ()
-        return tuple(row.to_dict() for row in manifest.materializable_sources)
-
-    _step_adapter_with_sources = ingestion.build_step_adapter(
-        source_resolver=_step_source_resolver,
-    )
+        if isinstance(exc, RuntimeProviderMissing):
+            raise HTTPException(
+                status_code=503,
+                detail=_provider_missing_payload(exc),
+            ) from exc
+        raise
 
     # bug b4c6920c fix: real event_emitter composing publisher + marker
     # so kg.rebuilt is published AND cognitive pending is marked for the

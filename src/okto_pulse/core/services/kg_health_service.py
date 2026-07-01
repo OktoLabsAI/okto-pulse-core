@@ -844,14 +844,14 @@ def _probe_global_discovery_telemetry() -> GraphTelemetry:
 
     try:
         from okto_pulse.core.kg.global_discovery.schema import (
-            _global_kuzu_path,
+            global_discovery_graph_path,
             open_global_connection,
         )
     except Exception:
         return _telemetry_unavailable("discovery")
 
     try:
-        path = _global_kuzu_path()
+        path = global_discovery_graph_path()
     except Exception:
         return _telemetry_unavailable("discovery")
     if not path.exists():
@@ -1789,23 +1789,6 @@ def _bounded_probe_error(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__
 
 
-def _health_pulse_db_path():
-    """Resolve the SQLite file the async engine targets (read-only). Mirrors
-    api.kg_rebuild._resolve_pulse_db_path without the api dependency."""
-    from pathlib import Path
-
-    try:
-        from okto_pulse.core.infra.database import get_engine
-
-        url = str(get_engine().url)
-    except Exception:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    idx = url.rfind(":///")
-    if idx < 0:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    return Path(url[idx + 4 :])
-
-
 def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
     """Read-only probe of the deterministic rebuild source enumeration (D1/D3).
 
@@ -1815,13 +1798,11 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
     raises, never rebuilds.
     """
     try:
-        from okto_pulse.core.kg.board_source_store import BoardSourceStore
+        from okto_pulse.core.kg.interfaces import get_kg_registry
         from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
 
-        store = BoardSourceStore(db_path=_health_pulse_db_path())
-        source_set = RebuildSourceEnumerator(source_store=store.fetch).enumerate(
-            board_id=board_id
-        )
+        reader = get_kg_registry().require_board_source_reader()
+        source_set = RebuildSourceEnumerator(source_store=reader.fetch).enumerate(board_id=board_id)
         canonical = int(source_set.canonical_source_count)
         working = int(source_set.working_source_count)
         return {

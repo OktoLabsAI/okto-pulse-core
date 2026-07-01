@@ -7,7 +7,7 @@ Usage:
 
     # In consumers (kg_service.py, tier_power.py, etc.):
     from okto_pulse.core.kg.interfaces import get_kg_registry
-    cache = get_kg_registry().cache_backend
+    cache = get_kg_registry().require_cache_backend()
     hit, val = cache.get(tool_name, board_id, params)
 """
 
@@ -19,6 +19,7 @@ from typing import Any
 
 from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
 from okto_pulse.core.kg.interfaces.board_graph_runtime import BoardGraphRuntime
+from okto_pulse.core.kg.interfaces.board_source_reader import BoardSourceReader
 from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
@@ -28,8 +29,12 @@ from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphPathResolver
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
 from okto_pulse.core.kg.interfaces.graph_transaction import GraphTransaction
+from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
+    GlobalDiscoveryRuntime,
+)
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
+from okto_pulse.core.kg.interfaces.rebuild_ingestion import RebuildIngestionPort
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
 
 
@@ -61,6 +66,49 @@ class KGProviderRegistry:
     graph_path_resolver: GraphPathResolver | None = None
     safe_write_step_adapter: Any | None = None
     board_graph_runtime: BoardGraphRuntime | None = None
+    global_discovery_runtime: GlobalDiscoveryRuntime | None = None
+    board_source_reader: BoardSourceReader | None = None
+    rebuild_ingestion_port: RebuildIngestionPort | None = None
+
+    # ------------------------------------------------------------------ R03 IMP1
+    # AC3 (base fail-closed): cache_backend, rate_limiter and session_store are
+    # read-time-fail-closed PORTS, not configure-time required slots — they are
+    # deliberately NOT auto-promoted into the configure-time ``_missing`` list
+    # (br_01359bdf). A real runtime composes them via the Community adapters; a
+    # test composes sanctioned fakes through a ``defaults_factory``. Reading one
+    # the composition never supplied raises a structured ``runtime_provider_missing``
+    # at the porta — never a late ``AttributeError`` on ``None`` nor a silent
+    # concrete fallback.
+    def _require_provider(self, slot: str) -> Any:
+        value = getattr(self, slot, None)
+        if value is None:
+            # Lazy import keeps the kg layer free of a module-level dependency on
+            # the composition root while reusing the canonical structured error.
+            from okto_pulse.core.composition import RuntimeProviderMissing
+
+            raise RuntimeProviderMissing(slot)
+        return value
+
+    def require_cache_backend(self) -> CacheBackend:
+        return self._require_provider("cache_backend")
+
+    def require_rate_limiter(self) -> RateLimiter:
+        return self._require_provider("rate_limiter")
+
+    def require_session_store(self) -> SessionStore:
+        return self._require_provider("session_store")
+
+    def require_embedding_provider(self) -> EmbeddingProvider:
+        return self._require_provider("embedding_provider")
+
+    def require_global_discovery_runtime(self) -> GlobalDiscoveryRuntime:
+        return self._require_provider("global_discovery_runtime")
+
+    def require_board_source_reader(self) -> BoardSourceReader:
+        return self._require_provider("board_source_reader")
+
+    def require_rebuild_ingestion_port(self) -> RebuildIngestionPort:
+        return self._require_provider("rebuild_ingestion_port")
 
 
 _registry: KGProviderRegistry | None = None
@@ -89,7 +137,15 @@ def _build_defaults() -> KGProviderRegistry:
         InMemoryGraphTransaction,
         in_memory_safe_write_step_adapter,
     )
-    from okto_pulse.core.kg.embedding import _build_provider_from_config
+    from okto_pulse.core.kg.providers.testing.memory_global_discovery_runtime import (
+        InMemoryGlobalDiscoveryRuntime,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_board_source_reader import (
+        InMemoryBoardSourceReader,
+    )
+    from okto_pulse.core.kg.providers.testing.embedding import (
+        build_testing_embedding_provider,
+    )
 
     config = SettingsKGConfig()
     graph_store = InMemoryGraphStore()
@@ -100,7 +156,7 @@ def _build_defaults() -> KGProviderRegistry:
         config=config,
         cache_backend=InMemoryCacheBackend(),
         rate_limiter=InMemoryTokenBucket(),
-        embedding_provider=_build_provider_from_config(config),
+        embedding_provider=build_testing_embedding_provider(config),
         # Onda 2
         session_store=InMemorySessionStore(
             default_ttl_seconds=config.kg_session_ttl_seconds,
@@ -117,6 +173,8 @@ def _build_defaults() -> KGProviderRegistry:
         ),
         graph_path_resolver=graph_path_resolver,
         safe_write_step_adapter=in_memory_safe_write_step_adapter,
+        global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
+        board_source_reader=InMemoryBoardSourceReader(),
         # event_bus, audit_repo, auth_context_factory supplied by composition
     )
 
@@ -227,6 +285,8 @@ def configure_kg_registry(
                 "graph_lifecycle",
                 "graph_path_resolver",
                 "safe_write_step_adapter",
+                "global_discovery_runtime",
+                "board_source_reader",
             )
             if getattr(reg, name) is None
         ]
@@ -238,7 +298,7 @@ def configure_kg_registry(
                 "and graph providers explicitly — the core no longer auto-wires "
                 "relational fallbacks (R-P2-02), implicit SettingsKGConfig "
                 "(R-P2-03D), or Kuzu/Ladybug graph defaults/step adapters "
-                "(R-P2-05). The "
+                "(R-P2-05), or BoardSourceReader source access (R10A). The "
                 "Community edition supplies them via community.adapters.composition; "
                 "tests use a defaults_factory / explicit fakes."
             )

@@ -13,11 +13,15 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases import (
+    ListStaleCanonicalParityCommand,
+    ListStaleCanonicalParityUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.kg.stale_canonical_parity import list_stale_canonical_parity
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter()
 
@@ -30,8 +34,8 @@ async def list_stale_canonical_parity_endpoint(
     board_id: str,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    _user: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_user),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict[str, Any]:
     """Read-only list of stale-canonical parity signals.
 
@@ -39,7 +43,13 @@ async def list_stale_canonical_parity_endpoint(
     global_discovery_stale_digest, expected_graph_layer, expected_maturity_status,
     current_source_status, recommended_action. ``global_discovery_evaluation`` is
     ``not_evaluated`` (never a false healthy) if R1 digest metadata is unreadable.
+
+    Spec R01A IMP4: routes through the transport-free use case via
+    ``get_unit_of_work`` — no raw ``AsyncSession``/``get_db`` in the handler.
     """
-    return await list_stale_canonical_parity(
-        db, board_id=board_id, limit=limit, offset=offset,
+    result = await ListStaleCanonicalParityUseCase().execute(
+        ListStaleCanonicalParityCommand(board_id, limit=limit, offset=offset),
+        actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+        uow=uow,
     )
+    return result.data

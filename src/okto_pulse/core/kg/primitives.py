@@ -282,7 +282,7 @@ def _ownership(session_id: str, agent_id: str) -> KGPrimitiveError:
 async def _require_open_session(
     session_id: str, agent_id: str
 ) -> ConsolidationSession:
-    store = get_kg_registry().session_store
+    store = get_kg_registry().require_session_store()
     session = await store.get(session_id)
     if session is None:
         raise _not_found(session_id)
@@ -311,7 +311,7 @@ async def begin_consolidation(
 ) -> BeginConsolidationResponse:
     """Open a new transactional session. SHA256-dedup against the last commit."""
     registry = get_kg_registry()
-    store = registry.session_store
+    store = registry.require_session_store()
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
 
     content_hash = compute_content_hash(req.raw_content, req.artifact_id, req.board_id)
@@ -400,7 +400,7 @@ async def add_node_candidate(
     )
 
     session = await _require_open_session(req.session_id, agent_id)
-    store = get_kg_registry().session_store
+    store = get_kg_registry().require_session_store()
     cand = req.candidate
 
     # Cognitive canonical invariant (spec 007d1308 — FR1/FR3/FR4,
@@ -466,7 +466,7 @@ async def add_edge_candidate(
     agent_id: str,
 ) -> AddEdgeCandidateResponse:
     session = await _require_open_session(req.session_id, agent_id)
-    store = get_kg_registry().session_store
+    store = get_kg_registry().require_session_store()
     async with session.lock:
         cand = req.candidate
 
@@ -570,7 +570,7 @@ async def get_similar_nodes(
         )
 
     cand = session.node_candidates[req.candidate_id]
-    embedder = get_kg_registry().embedding_provider
+    embedder = get_kg_registry().require_embedding_provider()
     query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
 
     node_type = (
@@ -664,7 +664,7 @@ async def propose_reconciliation(
 
     existing_matches_by_candidate: dict[str, list] = {}
     if not nothing_changed:
-        embedder = registry.embedding_provider
+        embedder = registry.require_embedding_provider()
         existing_matches_by_candidate = await _run_kuzu(
             _find_existing_kuzu_matches,
             session.board_id,
@@ -681,7 +681,7 @@ async def propose_reconciliation(
 
     async with session.lock:
         session.reconciliation_hints = hints_by_cid
-        session.touch(registry.session_store.default_ttl_seconds)
+        session.touch(registry.require_session_store().default_ttl_seconds)
 
     return ProposeReconciliationResponse(session_id=req.session_id, hints=hints)
 
@@ -2109,7 +2109,7 @@ async def commit_consolidation(
                 dict(session.edge_candidates),
                 effective_hints,
                 agent_id,
-                registry.embedding_provider,
+                registry.require_embedding_provider(),
                 kg_health_state,
             )
         except KGPrimitiveError:
@@ -2133,9 +2133,9 @@ async def commit_consolidation(
             {"node_id": r.entity_id, "node_type": r.entity_type, "kind": r.kind}
             for r in records
         ]
-        await registry.session_store.remove(req.session_id)
+        await registry.require_session_store().remove(req.session_id)
 
-        registry.cache_backend.invalidate_board(session.board_id)
+        registry.require_cache_backend().invalidate_board(session.board_id)
 
         # Commit bem-sucedido prova que o write-path está saudável:
         # (a) limpa falhas de WAL/commit do ring buffer (sem isso, o health
@@ -2447,7 +2447,7 @@ async def abort_consolidation(
     session = await _require_open_session(req.session_id, agent_id)
     async with session.lock:
         session.status = SessionStatus.ABORTED
-    await get_kg_registry().session_store.remove(req.session_id)
+    await get_kg_registry().require_session_store().remove(req.session_id)
     return AbortConsolidationResponse(
         session_id=req.session_id,
         status=SessionStatus.ABORTED,

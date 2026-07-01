@@ -44,6 +44,7 @@ MatrixSeverity = Literal["blocking", "warning", "accepted", "info"]
 
 TESTING_PROVIDER_PREFIX = "okto_pulse.core.kg.providers.testing"
 CORE_COMMON_BASELINE_TOKENS = frozenset({"aiosqlite", "sqlalchemy"})
+DEFERRED_RELATIONAL_SEAM_ADAPTER_KEYS = frozenset({"asyncpg_postgres_driver"})
 
 # Bounded bridge from governed dependency tokens to the residual adapter inventory.
 # Prefer inventory.packages when it already carries the token; these hints cover
@@ -560,6 +561,7 @@ def _rows_from_adapter_inventory(
     for entry in inventory:
         evidence = evidence_by_key.get(entry.adapter_key, AdapterEvidence())
         verdict = evaluate_adapter_readiness(entry, evidence)
+        structural_violations = _adapter_structural_violations(entry)
         rows.append(
             ConformanceMatrixRow(
                 module=entry.current_module,
@@ -568,19 +570,67 @@ def _rows_from_adapter_inventory(
                 classification=_classification_from_adapter(entry, ledger_by_token),
                 adapter_key=entry.adapter_key,
                 owning_fcc_or_wave=entry.wave,
-                evidence_field_impact=_verdict_evidence_impact(verdict),
-                severity="info" if verdict.is_ready else "warning",
+                evidence_field_impact=(
+                    "structural_violation:" + ",".join(structural_violations)
+                    if structural_violations
+                    else _verdict_evidence_impact(verdict)
+                ),
+                severity=(
+                    "blocking"
+                    if structural_violations
+                    else ("info" if verdict.is_ready else "warning")
+                ),
                 remediation=entry.removal_criterion,
-                diagnostic_code=f"adapter_readiness:{verdict.status}",
+                diagnostic_code=(
+                    "adapter_readiness:relational_seam_contract_violation"
+                    if structural_violations
+                    else f"adapter_readiness:{verdict.status}"
+                ),
             )
         )
     return tuple(rows)
+
+
+def _adapter_structural_violations(entry: AdapterInventoryEntry) -> tuple[str, ...]:
+    """Fail closed when a residual relational seam loses its deferred contract."""
+    if entry.adapter_key not in DEFERRED_RELATIONAL_SEAM_ADAPTER_KEYS:
+        return ()
+
+    text = " ".join(
+        (
+            entry.owner,
+            entry.current_module,
+            entry.port_ref,
+            entry.wave,
+            entry.target_destination,
+            entry.removal_criterion,
+            " ".join(entry.packages),
+            " ".join(entry.oracles_required),
+        )
+    ).lower()
+    missing: list[str] = []
+    if entry.status != "deferred":
+        missing.append("status:deferred")
+    if not entry.owner.strip():
+        missing.append("owner")
+    if "community" not in text and "future" not in text:
+        missing.append("target_owner")
+    if not entry.predecessor_refs:
+        missing.append("predecessor_refs")
+    if not entry.oracles_required:
+        missing.append("oracles_required")
+    if not entry.removal_criterion.strip():
+        missing.append("removal_criterion")
+    return tuple(missing)
 
 
 def _classification_from_adapter(
     entry: AdapterInventoryEntry,
     ledger_by_token: dict[str, LedgerEntry],
 ) -> MatrixClassification:
+    if entry.adapter_key in DEFERRED_RELATIONAL_SEAM_ADAPTER_KEYS:
+        return "future_adapter"
+
     for package in entry.packages:
         ledger_entry = ledger_by_token.get(normalize_token(_package_token(package)))
         if ledger_entry and ledger_entry.classification in {
@@ -634,6 +684,7 @@ __all__ = [
     "MatrixClassification",
     "MatrixSeverity",
     "TESTING_PROVIDER_PREFIX",
+    "DEFERRED_RELATIONAL_SEAM_ADAPTER_KEYS",
     "SourceImportReference",
     "ConformanceMatrixRow",
     "ConformanceMatrixReport",

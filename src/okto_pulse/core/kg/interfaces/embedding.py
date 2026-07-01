@@ -10,8 +10,8 @@ class EmbeddingProvider(Protocol):
     """Minimal contract for producing dense vectors from text.
 
     Migrated from ABC (okto_pulse.core.kg.embedding) to Protocol.
-    Implementations such as the core StubEmbeddingProvider and edition-owned
-    concrete providers satisfy this Protocol by duck typing without inheriting.
+    Test-only fakes and edition-owned concrete providers satisfy this Protocol
+    by duck typing without inheriting.
     """
 
     dim: int

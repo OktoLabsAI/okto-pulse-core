@@ -31,7 +31,7 @@ from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
 from okto_pulse.core.kg.global_discovery.schema import (
     bootstrap_global_discovery,
     open_global_connection,
-    reset_global_db_for_tests,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
 from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
@@ -61,10 +61,10 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 @pytest.fixture(autouse=True)

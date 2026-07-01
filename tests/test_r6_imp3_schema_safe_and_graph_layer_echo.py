@@ -21,7 +21,7 @@ import pytest
 
 from okto_pulse.core.kg.global_discovery.schema import (
     bootstrap_global_discovery,
-    reset_global_db_for_tests,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.schema import (
     NODE_TYPES,
@@ -40,14 +40,14 @@ from test_kg_layer_propagation import (
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _isolated_global_db():
+def _isolated_global_discovery_runtime():
     # R6-IMP3 rework: own the global-discovery graph lifecycle for this module
     # (mirrors test_kg_layer_propagation) so this file neither inherits nor leaks
     # cross-board global-discovery state — order-robust regardless of run order.
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 # ===========================================================================
@@ -160,7 +160,7 @@ class _FakeResult:
 def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
     from okto_pulse.core.kg.embedding import get_embedding_provider
     from okto_pulse.core.kg import global_discovery as _gd  # noqa: F401
-    from okto_pulse.core.kg.global_discovery import schema as gd_schema
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.kg_service import get_kg_service
     from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
 
@@ -199,10 +199,10 @@ def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(gd_schema, "open_global_connection",
+    runtime = get_kg_registry().global_discovery_runtime
+    monkeypatch.setattr(runtime, "open_connection",
                         lambda: (object(), _FakeGlobalConn()))
-    monkeypatch.setattr(gd_schema, "ensure_global_discovery_layer_schema",
-                        lambda: None)
+    monkeypatch.setattr(runtime, "ensure_layer_schema", lambda: [])
 
     rows = get_kg_service().query_global(
         qtext, user_boards=[board_id], graph_layer="all", top_k=10, min_similarity=0.1,

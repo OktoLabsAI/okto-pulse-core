@@ -1,10 +1,8 @@
 """PortConformanceGate — structural conformance of the runtime ports (spec #15).
 
 Validates the four runtime Protocols delivered by card 72bcdfcf are still
-``runtime_checkable`` and expose exactly their frozen member contract, and that
-the known concrete adapters structurally satisfy their port. Signature drift or
-a non-conformant adapter blocks — keeping the ports honest as the strangler
-refactor proceeds.
+``runtime_checkable`` and expose exactly their frozen member contract. Signature
+drift blocks — keeping the ports honest as the strangler refactor proceeds.
 
 Imports of the ports/adapters are deferred to ``run()`` so this module stays
 import-side-effect free.
@@ -37,14 +35,8 @@ PORT_CONTRACTS: dict[str, dict[str, object]] = {
     },
 }
 
-#: Known concrete adapters expected to satisfy a port (adapter -> protocol name).
-ADAPTER_CONFORMANCE: tuple[tuple[str, str, str], ...] = (
-    (
-        "okto_pulse.core.services.scheduler_control_adapter",
-        "SingletonSchedulerControl",
-        "SchedulerControl",
-    ),
-)
+#: Edition-owned adapters are conformance-tested in their edition package.
+ADAPTER_CONFORMANCE: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -137,6 +129,7 @@ class PortConformanceGate:
         evidence = {
             "ports_checked": sorted(checked_ports),
             "adapters_checked": sorted(adapters_checked),
+            "adapter_conformance_owner": "edition",
             "contract_members": {k: sorted(v["members"]) for k, v in PORT_CONTRACTS.items()},  # type: ignore[index]
             "findings": [
                 {"subject": f.subject, "code": f.code, "detail": f.detail} for f in findings

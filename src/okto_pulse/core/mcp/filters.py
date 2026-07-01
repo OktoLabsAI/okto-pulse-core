@@ -35,8 +35,8 @@ from typing import Optional
 # okto_pulse_list_by_board
 ALLOWED_FILTERS_BY_BOARD: dict[str, list[str]] = {
     "spec": ["status", "labels", "assignee_id"],
-    "ideation": ["status", "labels"],
-    "refinement": ["status", "labels", "ideation_id"],
+    "ideation": ["status", "labels", "derivation_pending"],
+    "refinement": ["status", "labels", "ideation_id", "derivation_pending"],
     "sprint": ["status", "spec_id"],
     "story": ["status", "topic_id", "linked", "converted", "include_archived"],
     "topic": ["include_archived"],

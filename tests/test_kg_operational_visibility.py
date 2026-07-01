@@ -120,7 +120,7 @@ def _register_pending_tool():
         return _Agent()
 
     reg = _Reg()
-    register_kg_tools(reg, get_agent=_get_agent, get_db=lambda: _NullDb())
+    register_kg_tools(reg, get_agent=_get_agent, get_uow=lambda: _NullDb())
     return reg.tools["okto_pulse_kg_list_cognitive_pending_items"]
 
 

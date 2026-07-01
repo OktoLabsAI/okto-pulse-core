@@ -2140,13 +2140,11 @@ class TestSprintAnalyticsLaneBreakdown:
             bug.sprint_id = hotfix.id
             await db.commit()
 
-            from okto_pulse.core.api.analytics import board_sprints_analytics
-
-            payload = await board_sprints_analytics(
-                BOARD_ID,
-                user_id=AGENT_ID,
-                db=db,
+            from okto_pulse.core.services.analytics_service import (
+                compute_sprints_analytics,
             )
+
+            payload = await compute_sprints_analytics(db, BOARD_ID)
 
         summary = payload["summary"]
         assert summary["total_sprints"] == 3

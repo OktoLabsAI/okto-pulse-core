@@ -1,5 +1,4 @@
-"""McpCredentialUsageGate — block NEW direct uses of raw MCP credential symbols
-in core (spec R08-A; alias-aware extension R08-C, tr_f200464a / ac_0bfb5f90).
+"""McpCredentialUsageGate — block NEW direct MCP auth/ACL concretes in core.
 
 After R08-A the MCP credential flows through the ``McpAuthenticator`` port
 (``ports/mcp_auth.py``) + the Community adapter, and R-P2-09 removed the
@@ -13,8 +12,10 @@ Detection is deterministic, AST-based and ALIAS-AWARE (R05-D lesson — the same
 import-as / from-import / qualified-attribute / ASSIGNMENT-CHAIN resolution the
 data_provider_ownership_gate uses): ``from x import _get_agent_ctx as f; f()`` or
 ``g = _get_agent_ctx; g()`` is resolved to the canonical symbol BEFORE the
-allowlist check, so an aliased bypass cannot slip through. String literals are
-``ast.Constant`` and are never flagged.
+allowlist check, so an aliased bypass cannot slip through. R06 extends the same
+gate to the concrete AuthContext bridge and local board-ACL fallback symbols so a
+new core MCP/KG consumer cannot reintroduce the retired relational bridge.
+String literals are ``ast.Constant`` and are never flagged.
 """
 
 from __future__ import annotations
@@ -23,22 +24,36 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-#: Raw credential / legacy-facade symbols whose direct use is restricted. The
-#: retired ``_active_api_key`` name stays listed so a reintroduction or an
-#: aliased stale import still fails fast.
+#: Raw credential / legacy-facade / concrete AuthContext and local ACL symbols
+#: whose direct use is restricted. The retired ``_active_api_key`` name stays
+#: listed so a reintroduction or an aliased stale import still fails fast.
 SENSITIVE_SYMBOLS: tuple[str, ...] = (
     "_active_api_key",
     "get_agent_by_key",
     "_get_agent_ctx",
     "_get_authenticated_agent",
+    "MCPAuthContext",
+    "create_mcp_auth_factory",
+    "auth_context_from_session",
+    "AgentService",
+    "list_boards_for_agent",
 )
 
 #: Core files allowed to reference the sensitive symbols:
 #:  * the MCP server request-scope shim, facades and legacy lookup calls;
-#:  * the canonical ``AgentService.get_agent_by_key`` definition.
+#:  * the canonical ``AgentService`` definition;
+#:  * pre-existing application use cases that legitimately orchestrate
+#:    AgentService outside MCP/KG auth fallback paths.
 ALLOWLISTED_FILES: frozenset[str] = frozenset(
     {
+        "okto_pulse/core/application/use_cases/agent_crud.py",
+        "okto_pulse/core/application/use_cases/boards_crud.py",
+        "okto_pulse/core/application/use_cases/list_boards_for_agent.py",
+        "okto_pulse/core/application/use_cases/mcp_board_crud.py",
+        "okto_pulse/core/application/use_cases/update_agent.py",
+        "okto_pulse/core/application/use_cases/update_board_overrides.py",
         "okto_pulse/core/mcp/server.py",
+        "okto_pulse/core/services/__init__.py",
         "okto_pulse/core/services/main.py",
     }
 )

@@ -37,6 +37,7 @@ from okto_pulse.core.models.db import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import IdeationSummary, SpecSummary
+from okto_pulse.core.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWork
 from okto_pulse.core.services.main import IdeationService, SpecService
 
 USER = "open-qa-badge-user"
@@ -233,7 +234,11 @@ async def test_card_columns_open_qa_count():
         )
         await db.commit()
 
-        payload = await get_board_columns(board_id, user_id=USER, db=db)
+        payload = await get_board_columns(
+            board_id,
+            user_id=USER,
+            uow=SQLAlchemyUnitOfWork(db),
+        )
 
     cards = payload["columns"][CardStatus.IN_PROGRESS.value]
     assert len(cards) == 1

@@ -14,7 +14,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from kg_registry_testing import configure_real_graph_and_data_test_kg_registry
-from okto_pulse.core.kg.embedding import StubEmbeddingProvider, get_embedding_provider
+from okto_pulse.core.kg.embedding import get_embedding_provider
+from okto_pulse.core.kg.providers.testing.embedding import TestingStubEmbeddingProvider
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     abort_consolidation,
@@ -797,7 +798,7 @@ class TestOwnershipHNSWIdempotency:
 
     def test_embedding_stub_deterministic(self):
         prov = get_embedding_provider()
-        assert isinstance(prov, StubEmbeddingProvider)
+        assert isinstance(prov, TestingStubEmbeddingProvider)
         v1 = prov.encode("hello world")
         v2 = prov.encode("hello world")
         assert v1 == v2

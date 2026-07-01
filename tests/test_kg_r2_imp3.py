@@ -19,11 +19,10 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r2i3_"))
 
-from okto_pulse.core.kg.board_source_store import BoardSourceStore
 from okto_pulse.core.kg.canonical_debt_replay import (
-    _pulse_db_path,
     replay_canonical_debt_by_maturity,
 )
+from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.schema import bootstrap_board_graph
 from okto_pulse.core.models.db import Board, Spec
 from okto_pulse.core.services.canonical_debt_service import (
@@ -70,10 +69,11 @@ async def _set_spec_status(db_factory, spec_id, status):
 
 
 def _spec_source(board_id, spec_id) -> dict:
-    for row in BoardSourceStore(db_path=_pulse_db_path()).fetch(board_id):
+    reader = get_kg_registry().require_board_source_reader()
+    for row in reader.fetch(board_id):
         if str(row.get("id")) == spec_id and row.get("artifact_type") == "spec":
             return row
-    raise AssertionError(f"spec {spec_id} not found in BoardSourceStore")
+    raise AssertionError(f"spec {spec_id} not found in BoardSourceReader")
 
 
 async def _open_debt_count(db_factory, board_id) -> int:

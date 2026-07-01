@@ -28,10 +28,15 @@ from okto_pulse.core.repositories.interfaces import (
 from okto_pulse.core.repositories.relational_boundary_gate import (
     METRIC_RELATIONAL_BOUNDARY_VIOLATIONS,
     RELATIONAL_BASELINE,
+    RELATIONAL_BASELINE_R01B,
+    RELATIONAL_COVERAGE_BASELINE,
+    RELATIONAL_COVERAGE_SNAPSHOT_R01B,
     RelationalBoundaryReport,
     RelationalViolation,
     observe_relational_boundary_violations,
     relational_baseline_report,
+    relational_coverage_counts,
+    relational_coverage_drift,
     run_relational_boundary_gate,
 )
 from okto_pulse.core.repositories.sqlalchemy import (
@@ -66,9 +71,14 @@ __all__ = [
     # relational boundary gate
     "run_relational_boundary_gate",
     "relational_baseline_report",
+    "relational_coverage_counts",
+    "relational_coverage_drift",
     "observe_relational_boundary_violations",
     "RelationalBoundaryReport",
     "RelationalViolation",
     "RELATIONAL_BASELINE",
+    "RELATIONAL_BASELINE_R01B",
+    "RELATIONAL_COVERAGE_BASELINE",
+    "RELATIONAL_COVERAGE_SNAPSHOT_R01B",
     "METRIC_RELATIONAL_BOUNDARY_VIOLATIONS",
 ]

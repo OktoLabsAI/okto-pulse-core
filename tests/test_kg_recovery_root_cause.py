@@ -146,17 +146,14 @@ def test_safe_write_probe_reports_worst_and_drain_failure(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_source_probe_failure_is_bounded_not_raised(monkeypatch):
+def test_source_probe_failure_is_bounded_not_raised():
     class _BadStore:
-        def __init__(self, **_kw):
-            pass
-
         def fetch(self, _board_id):
             raise RuntimeError("db is locked")
 
-    monkeypatch.setattr(
-        "okto_pulse.core.kg.board_source_store.BoardSourceStore", _BadStore
-    )
+    from kg_registry_testing import configure_test_kg_registry
+
+    configure_test_kg_registry(board_source_reader=_BadStore())
     out = _probe_rebuild_source_diagnostics("board-x")
     assert out["enumeration_failure"] is True
     assert "RuntimeError" in out["error"]

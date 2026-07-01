@@ -94,12 +94,12 @@ def _register_query_tools(monkeypatch, board_id: str) -> dict:
     class _Agent:
         id = "agent-graph-unavail"
 
-    async def _stub_user_boards(get_agent=None, get_db=None):
+    async def _stub_user_boards(get_agent=None, get_uow=None):
         return _Agent(), [board_id]
 
     monkeypatch.setattr(kqt, "_get_user_boards", _stub_user_boards)
     mcp = _MCPRegistryDouble()
-    kqt.register_kg_query_tools(mcp, get_agent=lambda: None, get_db=lambda: None)
+    kqt.register_kg_query_tools(mcp, get_agent=lambda: None, get_uow=lambda: None)
     return mcp.tools
 
 

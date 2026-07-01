@@ -19,6 +19,24 @@ legacy call site has already been migrated to it. The executable source of
 truth for adapter extraction is
 `okto_pulse.core.application.boundary.adapter_readiness_inventory.build_adapter_inventory()`.
 
+## Port Family Index
+
+Core exposes ports at a few different levels. Treat the table below as the
+navigation index for the hexagonal boundary: if a concrete runtime concern does
+not fit one of these families, it should either become a new explicit port or
+remain documented as migration debt.
+
+| Port family | Core modules | What the core owns | What the edition owns today |
+| --- | --- | --- | --- |
+| Runtime composition | `core.composition`, `core.ports.runtime_*`, `core.ports.scheduler` | Provider keys, lifecycle contract and fail-closed validation for required runtime providers. | Community builds `RuntimeComposition`, lifecycle hooks, settings/session/auth/storage providers and scheduler bridge. |
+| HTTP, storage and MCP support | `core.infra.auth`, `core.infra.storage`, `core.ports.mcp_auth`, `core.ports.mcp_resources`, `core.ports.capability_descriptor` | Transport-neutral contracts and catalog hygiene checks. | Community supplies local auth, filesystem storage, MCP authentication, operational resources and capability descriptors. |
+| Initialization | `core.ports.relational_schema_migrator`, `core.ports.data_bootstrapper` | Declarative migration/bootstrap step contracts and validation semantics. | Community runs the SQLite schema migration/bootstrap plan used by `okto-pulse init` and startup. |
+| Telemetry | `core.ports.telemetry` | Event, state, sink, product aggregation and publish-health contracts. | Community owns local JSONL persistence, HTTP beacon sender, product aggregation and publish-health descriptors. |
+| Relational persistence | `core.repositories.interfaces` | Repository and Unit-of-Work Protocols for the first migrated aggregates. | SQLAlchemy adapters still live in core for now; broad extraction to Community is pending. |
+| Knowledge Graph | `core.kg.interfaces`, `core.kg.interfaces.registry` | KG provider Protocols and the fail-closed provider registry. | Community supplies KG config, memory cache/rate/session adapters, embedding/rerank adapters, audit/event adapters and Ladybug/Kuzu graph adapters. |
+| Inbound adapters | `core.inbound.*`, `core.api.*`, `core.mcp.*` | REST and MCP protocol surfaces, validation envelopes and tool/resource contracts. | Community mounts the core REST/MCP surfaces and provides the concrete runtime behind them. |
+| Boundary/conformance | `core.application.boundary.*` | Executable migration ledgers, import/dependency audits and removal gates. | Community provides evidence adapters and smoke coverage used by those gates. |
+
 ## Boundary Rules
 
 - Core must not import `okto_pulse.community`.
@@ -88,8 +106,10 @@ Telemetry contracts are in `okto_pulse.core.ports.telemetry`.
 
 Telemetry is one of the most complete extractions: the event store, sender,
 product aggregation and watermark/failure-state persistence are Community-owned.
-The remaining core-local telemetry state surface is the consent/mode settings
-helper in `core.telemetry.settings`.
+The remaining core-local telemetry surface is narrow: consent/mode settings
+resolution in `core.telemetry.settings`, plus the `core.telemetry.store`
+compatibility/ledger module that records the removed local store and is tracked
+as a deferred readiness item rather than an active JSONL runtime adapter.
 
 ### Repository and Unit-of-Work Ports
 
@@ -178,9 +198,17 @@ The executable ledger currently catalogues 21 adapter or dependency seams:
 | `settings_kg_config` | `KGConfig` | `blocked` | Community supplies `CommunityKGConfig`; core settings-backed default remains tracked. |
 | `singleton_scheduler_control` | `SchedulerControl` | `blocked` | Community composition supplies the singleton bridge; implementation still lives in core. |
 | `local_telemetry_store` | `#10 telemetry` | `deferred` | Event store moved to Community; ledger item remains governed by telemetry boundary. |
-| `asyncpg_postgres_driver` | relational driver dependency | `deferred` | Optional Postgres extra outside core defaults. |
+| `asyncpg_postgres_driver` | relational driver dependency | `deferred` | `asyncpg` is removed from core defaults; the broader SQLAlchemy/PostgreSQL seam remains gated by R01B/R01C. |
 | `board_source_store` | no port yet | `blocked` | Raw SQLite rebuild source reader still in core. |
 | `board_rebuild_ingestion_adapter` | no port yet | `blocked` | Raw SQLite rebuild ingestion still in core. |
+
+Relational dependency status is tracked on two axes. The `asyncpg` package is a
+removed dependency: it must not appear in core dependencies, lock metadata, wheel
+metadata or runtime imports. The residual SQLAlchemy/PostgreSQL branch in
+`core.infra.database` is different: it is a deferred relational seam owned by
+the R01B/R01C migration path, so documentation and gates must keep it visible
+instead of treating it as already removed or as permission to reintroduce
+`asyncpg`.
 
 Removal must pass the bounded evidence fields in the inventory:
 `port_closed`, `community_registered`, `oracle_passed`, `import_audit_passed`,
@@ -239,13 +267,13 @@ core and should remain visible during the next refactor cycle:
 
 | Area | Current core dependency | Why it remains |
 | --- | --- | --- |
-| Relational database | SQLAlchemy models, `AsyncSession` service APIs, `core.infra.database` migrations and SQLAlchemy repositories/UoW. | The repository/UoW strangler is narrow. Broad service and route migration is still pending. |
+| Relational database | SQLAlchemy models, `AsyncSession` service APIs, `core.infra.database` migrations and SQLAlchemy repositories/UoW. | The repository/UoW strangler is narrow. Broad service and route migration is still pending. Any PostgreSQL dialect branch here is R01B/R01C debt, not a license to restore `asyncpg` to the core default. |
 | Raw SQLite rebuild reads/writes | `core.kg.board_source_store` and `core.kg.board_rebuild_adapter` use `sqlite3.connect`. | No relational source-reader/rebuild-ingestion port exists yet. |
 | Global discovery DB handle | `core.kg.global_discovery.schema._global_db` owns the global `discovery.lbug` handle. | Board graph moved to Community, but global discovery DB lifecycle still needs a composition-owned slot. |
 | KG test/default providers | `core.kg.providers.embedded.memory_*` and `providers.testing.*`. | Needed for sanctioned test defaults and deterministic fakes; not production runtime ownership. |
 | MCP AuthContext bridge | `core.kg.providers.embedded.mcp_auth_context`. | Credential carrier moved to request scope, but the concrete AuthContext bridge has not moved to Community. |
 | Scheduler control implementation | `core.services.scheduler_control_adapter.SingletonSchedulerControl`. | Community composition supplies it, but the concrete singleton bridge still lives in core. |
-| Telemetry consent/mode state | `core.telemetry.settings` still persists the narrow consent/mode view in `state.json`. | Broader event, sender, product and watermark/failure-state persistence moved to Community; consent/mode settings remain core-local. |
+| Telemetry consent/mode state and store ledger | `core.telemetry.settings` still persists the narrow consent/mode view in `state.json`; `core.telemetry.store` remains as a compatibility/ledger module for the removed local store. | Broader event, sender, product and watermark/failure-state persistence moved to Community; consent/mode settings and the deferred store ledger remain core-local. |
 | Boundary gates | `core.application.boundary.*` references readiness ledgers and Community smoke-test concepts. | These are conformance/refactor controls, not product runtime adapters. |
 
 ## Adding a New Adapter

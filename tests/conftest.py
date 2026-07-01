@@ -9,6 +9,7 @@ Provides:
 """
 
 import logging
+import json
 import os
 import sys
 import tempfile
@@ -101,6 +102,41 @@ async def _db_init():
 # ============================================================================
 # Test lifecycle logging fixture (autouse — applies to ALL tests)
 # ============================================================================
+
+@pytest.fixture(autouse=True)
+def _register_test_telemetry_state_carrier():
+    """R12: explicit test carrier for the full telemetry state dict.
+
+    Production state persistence is Community-owned. Core tests register this
+    sanctioned fake so telemetry settings/service tests can exercise the same
+    registry path without creating a runtime fallback.
+    """
+    from okto_pulse.core.telemetry.telemetry_state_registry import (
+        register_telemetry_state_carrier,
+        reset_telemetry_state_carrier_for_tests,
+    )
+
+    class _TestTelemetryStateCarrier:
+        def load_state(self, metrics_dir: Path) -> dict:
+            path = Path(metrics_dir) / "state.json"
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return {}
+            return data if isinstance(data, dict) else {}
+
+        def save_state(self, metrics_dir: Path, state: dict) -> None:
+            base = Path(metrics_dir)
+            base.mkdir(parents=True, exist_ok=True)
+            tmp = (base / "state.json").with_suffix(".tmp")
+            tmp.write_text(json.dumps(dict(state), indent=2, sort_keys=True), encoding="utf-8")
+            tmp.replace(base / "state.json")
+
+    reset_telemetry_state_carrier_for_tests()
+    register_telemetry_state_carrier(_TestTelemetryStateCarrier())
+    yield
+    reset_telemetry_state_carrier_for_tests()
+
 
 @pytest.fixture(autouse=True)
 def _test_logging(request: pytest.FixtureRequest):
@@ -275,6 +311,43 @@ def agent_id():
 @pytest.fixture
 def db_factory():
     return get_session_factory()
+
+
+@pytest.fixture(autouse=True)
+def _register_test_unit_of_work_factory():
+    """R01B FR3: EXPLICIT test/transitional-compat wiring of the relational
+    UnitOfWorkFactory seam (``okto_pulse.core.runtime_registry``).
+
+    Production registers the Community factory via the composition root; the core
+    no longer self-constructs one (fail-closed). The test harness registers a
+    CORE-ONLY provider over the global session factory so the migrated REST/MCP
+    consumers resolve a provider. This is test wiring, NOT a runtime fallback —
+    reset on teardown so the negative fail-closed test can prove the empty seam."""
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from okto_pulse.core.runtime_registry import (
+        register_unit_of_work_factory,
+        reset_unit_of_work_factory,
+    )
+
+    register_unit_of_work_factory(SQLAlchemyUnitOfWorkFactory(get_session_factory()))
+    yield
+    reset_unit_of_work_factory()
+
+
+@pytest.fixture(autouse=True)
+def _reset_sqlite_pragma_installer_seam():
+    """R01B TR5: keep the SQLite PRAGMA installer seam EMPTY for each test so any
+    ``create_database()`` call resolves the EXPLICIT core-default fallback (the
+    three historical PRAGMAs: WAL + busy_timeout=30000 + synchronous=NORMAL, NO
+    foreign_keys) — identical to the prior inline behavior. This is the core-only
+    compat path, NOT the Community runtime path (which registers the UNION
+    installer). Reset before AND after so a test that registers a Community-style
+    installer cannot leak ``foreign_keys=ON`` semantics into the next test."""
+    from okto_pulse.core.runtime_registry import reset_sqlite_pragma_installer
+
+    reset_sqlite_pragma_installer()
+    yield
+    reset_sqlite_pragma_installer()
 
 
 @pytest.fixture

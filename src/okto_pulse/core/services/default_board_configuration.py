@@ -38,7 +38,10 @@ from okto_pulse.core.models.db import (
     Guideline,
 )
 from okto_pulse.core.models.schemas import BoardSettings
-from okto_pulse.core.services.board_governance import BoardGovernanceService
+from okto_pulse.core.services.board_governance import (
+    LEGACY_ABSENT_SETTING_KEYS,
+    BoardGovernanceService,
+)
 
 # Stable global template audit event types (FR9).
 EVENT_CREATED = "default_board_configuration_created"
@@ -411,6 +414,12 @@ class DefaultBoardConfigurationService:
         """Create a new draft template version (validated as BoardSettings, TR1).
         ``activate=True`` immediately activates it (single-active enforced)."""
         validated_payload = self._validate_settings(settings_payload)
+        active = await self.resolve_active(scope)
+        if isinstance(settings_payload, dict) and active is not None:
+            active_payload = active.settings_payload or {}
+            for key in LEGACY_ABSENT_SETTING_KEYS:
+                if key not in settings_payload and key not in active_payload:
+                    validated_payload.pop(key, None)
         result = await self.db.execute(
             select(func.max(DefaultBoardConfiguration.version)).where(
                 DefaultBoardConfiguration.scope == scope

@@ -33,6 +33,7 @@ from okto_pulse.core.models.db import (
     CardStatus,
     CardType,
     Ideation,
+    IdeationComplexity,
     IdeationStatus,
     Refinement,
     RefinementStatus,
@@ -247,6 +248,25 @@ def test_validate_filters_none_ok():
 def test_validate_filters_valid_key_ok():
     from okto_pulse.core.mcp.filters import validate_filters
     ok, err = validate_filters("spec", {"status": "draft"}, scope="by_board")
+    assert ok is True
+    assert err is None
+
+
+def test_validate_filters_valid_derivation_pending_key_ok():
+    from okto_pulse.core.mcp.filters import validate_filters
+    ok, err = validate_filters(
+        "ideation",
+        {"derivation_pending": True},
+        scope="by_board",
+    )
+    assert ok is True
+    assert err is None
+
+    ok, err = validate_filters(
+        "refinement",
+        {"ideation_id": "parent", "derivation_pending": "true"},
+        scope="by_board",
+    )
     assert ok is True
     assert err is None
 
@@ -534,6 +554,8 @@ async def test_list_by_board_ideation_structure(seeded_board):
             "problem_statement",
             "complexity",
             "status",
+            "active_refinement_count",
+            "derivation_pending",
             "version",
             "assignee_id",
             "labels",
@@ -577,6 +599,8 @@ async def test_list_by_board_refinement_with_ideation_id(seeded_board):
             "in_scope",
             "out_of_scope",
             "status",
+            "active_spec_count",
+            "derivation_pending",
             "version",
             "assignee_id",
             "labels",
@@ -584,6 +608,192 @@ async def test_list_by_board_refinement_with_ideation_id(seeded_board):
             "updated_at",
         }
         assert expected_keys <= set(data["items"][0].keys())
+
+
+@pytest.mark.asyncio
+async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, db_factory):
+    label = f"mcp-ideation-derivation-{uuid.uuid4().hex[:8]}"
+    pending_id = str(uuid.uuid4())
+    active_id = str(uuid.uuid4())
+    cancelled_child_id = str(uuid.uuid4())
+    small_id = str(uuid.uuid4())
+    draft_id = str(uuid.uuid4())
+
+    async with db_factory() as db:
+        pending = Ideation(
+            id=pending_id,
+            board_id=BOARD_ID,
+            title="MCP pending ideation",
+            status=IdeationStatus.DONE,
+            complexity=IdeationComplexity.MEDIUM,
+            labels=[label],
+            created_by=AGENT_ID,
+        )
+        active = Ideation(
+            id=active_id,
+            board_id=BOARD_ID,
+            title="MCP active-child ideation",
+            status=IdeationStatus.DONE,
+            complexity=IdeationComplexity.LARGE,
+            labels=[label],
+            created_by=AGENT_ID,
+        )
+        cancelled_child = Ideation(
+            id=cancelled_child_id,
+            board_id=BOARD_ID,
+            title="MCP cancelled-child ideation",
+            status=IdeationStatus.DONE,
+            complexity=IdeationComplexity.MEDIUM,
+            labels=[label],
+            created_by=AGENT_ID,
+        )
+        small = Ideation(
+            id=small_id,
+            board_id=BOARD_ID,
+            title="MCP small ideation",
+            status=IdeationStatus.DONE,
+            complexity=IdeationComplexity.SMALL,
+            labels=[label],
+            created_by=AGENT_ID,
+        )
+        draft = Ideation(
+            id=draft_id,
+            board_id=BOARD_ID,
+            title="MCP draft ideation",
+            status=IdeationStatus.DRAFT,
+            complexity=IdeationComplexity.MEDIUM,
+            labels=[label],
+            created_by=AGENT_ID,
+        )
+        db.add_all([pending, active, cancelled_child, small, draft])
+        db.add(Refinement(
+            id=str(uuid.uuid4()),
+            board_id=BOARD_ID,
+            ideation_id=active_id,
+            title="MCP active refinement child",
+            status=RefinementStatus.DRAFT,
+            created_by=AGENT_ID,
+        ))
+        db.add(Refinement(
+            id=str(uuid.uuid4()),
+            board_id=BOARD_ID,
+            ideation_id=cancelled_child_id,
+            title="MCP cancelled refinement child",
+            status=RefinementStatus.CANCELLED,
+            created_by=AGENT_ID,
+        ))
+        await db.commit()
+
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
+        board_id=BOARD_ID,
+        entity_type="ideation",
+        filters={"labels": label, "derivation_pending": True},
+    )
+    data = _parse(result)
+
+    assert "error_code" not in data
+    by_title = {item["title"]: item for item in data["items"]}
+    assert set(by_title) == {
+        "MCP pending ideation",
+        "MCP cancelled-child ideation",
+    }
+    assert all(item["derivation_pending"] is True for item in by_title.values())
+    assert all(item["active_refinement_count"] == 0 for item in by_title.values())
+
+
+@pytest.mark.asyncio
+async def test_list_by_board_filters_refinement_derivation_pending(seeded_board, db_factory):
+    label = f"mcp-refinement-derivation-{uuid.uuid4().hex[:8]}"
+    ideation_id = str(uuid.uuid4())
+    pending_id = str(uuid.uuid4())
+    active_id = str(uuid.uuid4())
+    cancelled_child_id = str(uuid.uuid4())
+    draft_id = str(uuid.uuid4())
+
+    async with db_factory() as db:
+        db.add(Ideation(
+            id=ideation_id,
+            board_id=BOARD_ID,
+            title="MCP derivation parent",
+            status=IdeationStatus.DONE,
+            complexity=IdeationComplexity.MEDIUM,
+            created_by=AGENT_ID,
+        ))
+        db.add_all([
+            Refinement(
+                id=pending_id,
+                board_id=BOARD_ID,
+                ideation_id=ideation_id,
+                title="MCP pending refinement",
+                status=RefinementStatus.DONE,
+                labels=[label],
+                created_by=AGENT_ID,
+            ),
+            Refinement(
+                id=active_id,
+                board_id=BOARD_ID,
+                ideation_id=ideation_id,
+                title="MCP active-spec refinement",
+                status=RefinementStatus.DONE,
+                labels=[label],
+                created_by=AGENT_ID,
+            ),
+            Refinement(
+                id=cancelled_child_id,
+                board_id=BOARD_ID,
+                ideation_id=ideation_id,
+                title="MCP cancelled-spec refinement",
+                status=RefinementStatus.DONE,
+                labels=[label],
+                created_by=AGENT_ID,
+            ),
+            Refinement(
+                id=draft_id,
+                board_id=BOARD_ID,
+                ideation_id=ideation_id,
+                title="MCP draft refinement",
+                status=RefinementStatus.DRAFT,
+                labels=[label],
+                created_by=AGENT_ID,
+            ),
+        ])
+        db.add(Spec(
+            id=str(uuid.uuid4()),
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            refinement_id=active_id,
+            title="MCP active child spec",
+            status=SpecStatus.DRAFT,
+            created_by=AGENT_ID,
+        ))
+        db.add(Spec(
+            id=str(uuid.uuid4()),
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            refinement_id=cancelled_child_id,
+            title="MCP cancelled child spec",
+            status=SpecStatus.CANCELLED,
+            created_by=AGENT_ID,
+        ))
+        await db.commit()
+
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
+        board_id=BOARD_ID,
+        entity_type="refinement",
+        filters={"ideation_id": ideation_id, "labels": label, "derivation_pending": "true"},
+    )
+    data = _parse(result)
+
+    assert "error_code" not in data
+    by_title = {item["title"]: item for item in data["items"]}
+    assert set(by_title) == {
+        "MCP pending refinement",
+        "MCP cancelled-spec refinement",
+    }
+    assert all(item["derivation_pending"] is True for item in by_title.values())
+    assert all(item["active_spec_count"] == 0 for item in by_title.values())
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.workers.dead_letter import list_dead_letter
@@ -97,6 +97,38 @@ def _row_to_dict(row: ConsolidationDeadLetter) -> dict[str, Any]:
             else None
         ),
     }
+
+
+async def list_cognitive_dlq_rows(
+    db: AsyncSession,
+    board_id: str,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[int, list[ConsolidationDeadLetter]]:
+    """Read the board's technical-DLQ rows for the cognitive DLQ surface
+    (spec R01A MCP-FU3B): the total count + a page of ``ConsolidationDeadLetter``
+    rows ordered by id. Extracted verbatim from the inline query in the
+    ``okto_pulse_kg_list_cognitive_dlq`` MCP tool so that tool no longer issues SQL
+    directly; the row projection (normalized artifact id, technical_dlq framing)
+    stays in the adapter."""
+    total = (
+        await db.execute(
+            select(func.count())
+            .select_from(ConsolidationDeadLetter)
+            .where(ConsolidationDeadLetter.board_id == board_id)
+        )
+    ).scalar_one()
+    rows = (
+        await db.execute(
+            select(ConsolidationDeadLetter)
+            .where(ConsolidationDeadLetter.board_id == board_id)
+            .order_by(ConsolidationDeadLetter.id)
+            .limit(limit)
+            .offset(offset)
+        )
+    ).scalars().all()
+    return total, list(rows)
 
 
 async def list_dead_letter_rows(

@@ -476,14 +476,22 @@ class TestDelegationContract:
     """
 
     def test_rest_analytics_imports_service_functions(self):
-        from okto_pulse.core.api import analytics as rest_mod
-        src = inspect.getsource(rest_mod)
+        # Post-strangler (spec R01A REST-FU2a/b/c): the REST adapter delegates to
+        # transport-free use cases, which call the analytics service functions.
+        # The delegation contract moved from the HTTP adapter to the application
+        # (use case) + service layers — assert it there, not in api/analytics.py.
+        from okto_pulse.core.application.use_cases import analytics_helpers
+        uc_src = inspect.getsource(analytics_helpers)
         for fn in (
             "compute_coverage", "compute_funnel", "compute_velocity",
-            "compute_blockers",
-            "aggregate_task_validation_gate", "aggregate_spec_validation_gate",
+            "compute_blockers", "compute_quality", "compute_validations",
+            "compute_spec_analytics", "compute_sprint_analytics",
         ):
-            assert fn in src, f"REST analytics missing service import: {fn}"
+            assert fn in uc_src, f"analytics use cases missing service delegation: {fn}"
+        from okto_pulse.core.services import analytics_service
+        svc_src = inspect.getsource(analytics_service)
+        for fn in ("aggregate_task_validation_gate", "aggregate_spec_validation_gate"):
+            assert fn in svc_src, f"analytics service missing gate aggregator: {fn}"
 
     def test_mcp_server_imports_service_functions(self):
         from okto_pulse.core.mcp import server as mcp_mod
@@ -507,15 +515,24 @@ class TestDelegationContract:
         assert hasattr(mcp_mod, "_spec_coverage")
 
     def test_architecture_rest_and_mcp_share_core_services(self):
-        from okto_pulse.core.api import architecture as rest_mod
+        # REST architecture.py was strangled (R01A FU5-S1) onto the
+        # ``architecture_crud`` use cases, which hold the repository / diagram-store
+        # / propagation-service delegation. The delegation contract moved from the
+        # HTTP adapter to the application (use case) layer — assert it there, not in
+        # api/architecture.py (mirrors the analytics delegation fix above). The MCP
+        # architecture tools are not yet migrated, so they still reference the
+        # services directly in mcp/server.py.
+        from okto_pulse.core.application.use_cases import architecture_crud
         from okto_pulse.core.mcp import server as mcp_mod
 
-        rest_src = inspect.getsource(rest_mod)
+        uc_src = inspect.getsource(architecture_crud)
         mcp_src = inspect.getsource(mcp_mod)
         for symbol in (
             "ArchitectureDesignRepository",
             "ArchitectureDiagramStore",
             "ArchitecturePropagationService",
         ):
-            assert symbol in rest_src, f"REST architecture missing service: {symbol}"
+            assert symbol in uc_src, (
+                f"architecture use case missing service: {symbol}"
+            )
             assert symbol in mcp_src, f"MCP architecture missing service: {symbol}"

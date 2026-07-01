@@ -815,11 +815,10 @@ async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
     """
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 
+    from okto_pulse.core.domain.enums import CardStatus, SprintStatus
     from okto_pulse.core.models.db import (
         CardDependency,
-        CardStatus,
         Sprint,
-        SprintStatus,
     )
 
     active_sprints = list(
@@ -1439,7 +1438,8 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
        OU por-board) e `meta.in_flight` — o frontend pode agrupar por
        categoria ou filtrar "só acionáveis".
     """
-    from okto_pulse.core.models.db import Board, SpecStatus
+    from okto_pulse.core.domain.enums import SpecStatus
+    from okto_pulse.core.models.db import Board
     from okto_pulse.core.services.analytics_service import spec_coverage_summary
 
     board = (

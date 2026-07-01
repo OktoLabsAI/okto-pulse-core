@@ -92,6 +92,7 @@ from .telemetry import (
     TelemetryResult,
     TelemetrySink,
     TelemetryState,
+    TelemetryStateCarrier,
     TelemetryStateStore,
 )
 
@@ -107,6 +108,7 @@ __all__ = [
     "TelemetryResult",
     "TelemetrySink",
     "TelemetryState",
+    "TelemetryStateCarrier",
     "TelemetryStateStore",
     "TelemetryEventStore",
     "ActorContextLike",

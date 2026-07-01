@@ -121,6 +121,80 @@ def test_ts2_gate_blocks_aliased_config_instantiation(tmp_path):
     assert hit["symbol"] == "SettingsKGConfig"
 
 
+def test_r07_gate_allows_legitimate_community_protocol_imports(tmp_path):
+    core_pkg = tmp_path / "core"
+    community_pkg = tmp_path / "community"
+    community_pkg.mkdir(parents=True, exist_ok=True)
+    core_pkg.mkdir(parents=True, exist_ok=True)
+    (community_pkg / "legit.py").write_text(
+        "from okto_pulse.core.kg.interfaces.kg_config import KGConfig\n"
+        "class CommunityKGConfig:\n"
+        "    kg_base_dir = 'x'\n",
+        encoding="utf-8",
+    )
+
+    report = run_data_provider_ownership_gate(
+        core_pkg,
+        community_root=community_pkg,
+    )
+
+    assert report.ok is True
+    assert report.community_settings_config_offenders == []
+
+
+def test_r07_gate_blocks_community_settingskgconfig_subclass(tmp_path):
+    core_pkg = tmp_path / "core"
+    community_pkg = tmp_path / "community"
+    (community_pkg / "adapters").mkdir(parents=True, exist_ok=True)
+    core_pkg.mkdir(parents=True, exist_ok=True)
+    (community_pkg / "adapters" / "data.py").write_text(
+        "from okto_pulse.core.kg.providers.embedded.settings_config "
+        "import SettingsKGConfig\n"
+        "class CommunityKGConfig(SettingsKGConfig):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+
+    report = run_data_provider_ownership_gate(
+        core_pkg,
+        community_root=community_pkg,
+    )
+
+    assert report.ok is False
+    assert {
+        ("adapters/data.py", "SettingsKGConfig", "import"),
+        ("adapters/data.py", "SettingsKGConfig", "subclass"),
+    } <= {
+        (hit["file"], hit["symbol"], hit["kind"])
+        for hit in report.community_settings_config_offenders
+    }
+
+
+def test_r07_gate_blocks_community_module_alias_reference(tmp_path):
+    core_pkg = tmp_path / "core"
+    community_pkg = tmp_path / "community"
+    community_pkg.mkdir(parents=True, exist_ok=True)
+    core_pkg.mkdir(parents=True, exist_ok=True)
+    (community_pkg / "rogue.py").write_text(
+        "import okto_pulse.core.kg.providers.embedded.settings_config as sc\n"
+        "cfg = sc.SettingsKGConfig()\n",
+        encoding="utf-8",
+    )
+
+    report = run_data_provider_ownership_gate(
+        core_pkg,
+        community_root=community_pkg,
+    )
+
+    assert report.ok is False
+    assert any(
+        hit["file"] == "rogue.py"
+        and hit["symbol"] == "SettingsKGConfig"
+        and hit["kind"] == "reference"
+        for hit in report.community_settings_config_offenders
+    )
+
+
 def test_ts2_gate_blocks_aliased_instantiation_in_registry(tmp_path):
     # The SAME alias trick INSIDE registry.py is also blocked after R-P2-02.
     d = tmp_path / "kg" / "interfaces"
@@ -190,6 +264,8 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
             graph_lifecycle=object(),
             graph_path_resolver=object(),
             safe_write_step_adapter=object(),
+            global_discovery_runtime=object(),
+            board_source_reader=object(),
         )
         configure_kg_registry(session_factory=sf, base_registry=base)
         r = reg_mod.get_kg_registry()

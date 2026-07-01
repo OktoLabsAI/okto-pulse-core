@@ -21,7 +21,8 @@ from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
-from okto_pulse.core.models.db import Card, CardType, Spec, SpecStatus
+from okto_pulse.core.domain.enums import CardType, SpecStatus
+from okto_pulse.core.models.db import Card, Spec
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_preview import (
     BugRegressionScenarioPreviewError,

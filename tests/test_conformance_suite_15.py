@@ -22,6 +22,9 @@ from okto_pulse.core.application.boundary.port_conformance import (
     PortConformanceGate,
     _protocol_members,
 )
+from okto_pulse.core.application.boundary.scheduler_control_symbol_gate import (
+    SchedulerControlSymbolGate,
+)
 from okto_pulse.core.application.boundary.singleton_gate import (
     SINGLETON_LEDGER,
     AntiSingletonGate,
@@ -145,7 +148,6 @@ def test_anti_singleton_ledger_carries_register_before_remove_metadata() -> None
         assert meta["expected_adapter"], name
         assert meta["retirement_criterion"], name
     required_legacy_singletons = {
-        "_global_db",
         "_scheduler",
         "_mcp_session_factory",
         "_permission_cache",
@@ -196,7 +198,8 @@ def test_port_conformance_passes_for_four_protocols() -> None:
         "RuntimeControl",
         "RuntimeEventBusPort",
     }
-    assert "SingletonSchedulerControl->SchedulerControl" in report.evidence["adapters_checked"]
+    assert report.evidence["adapters_checked"] == []
+    assert report.evidence["adapter_conformance_owner"] == "edition"
     assert report.evidence["findings"] == []
 
 
@@ -213,6 +216,30 @@ def test_port_conformance_detects_nonconformant_class() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# SchedulerControlSymbolGate — R08 core concrete removal
+# --------------------------------------------------------------------------- #
+def test_scheduler_control_symbol_gate_clean_tree_passes() -> None:
+    report = SchedulerControlSymbolGate().run()
+    assert report.status == "passed"
+    assert report.evidence["offenders"] == []
+
+
+def test_scheduler_control_symbol_gate_blocks_core_class_or_import(tmp_path) -> None:
+    mod = tmp_path / "okto_pulse" / "core" / "services" / "bad_scheduler.py"
+    mod.parent.mkdir(parents=True)
+    mod.write_text(
+        "from somewhere import SingletonSchedulerControl\n\n"
+        "class SingletonSchedulerControl:\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    report = SchedulerControlSymbolGate().run(source_root=tmp_path)
+    assert report.status == "blocking"
+    kinds = {item["kind"] for item in report.evidence["offenders"]}
+    assert {"from_import", "class_def"} <= kinds
+
+
+# --------------------------------------------------------------------------- #
 # ConformanceSuite — fr_13fe67d0
 # --------------------------------------------------------------------------- #
 def test_conformance_suite_reports_per_axis() -> None:
@@ -224,6 +251,9 @@ def test_conformance_suite_reports_per_axis() -> None:
         assert r["owner"], axis
     assert report["axes"]["singleton"]["status"] == "baseline"
     assert report["axes"]["port_conformance"]["status"] == "passed"
+    assert report["axes"]["scheduler_control_symbol"]["status"] == "passed"
+    assert report["axes"]["lifecycle_fallback"]["status"] == "passed"
+    assert report["axes"]["runtime_worker_boundary"]["status"] == "passed"
     assert report["axes"]["runtime_settings_effect_split"]["status"] == "baseline"
     assert report["axes"]["scheduler_signal"]["status"] == "baseline"
     # the two integration axes are deferred, with a runnable promotion path

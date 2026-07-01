@@ -566,9 +566,9 @@ async def put_runtime_settings(
     # Spec 54399628 / spec #15 (fr_93c9af44, fr_2ae7de62) — hot-reload tick
     # interval after persistence commits, split into persistence (live
     # CoreSettings) and an explicit runtime effect through the SchedulerControl
-    # port. R-P2-06B: the core NO LONGER constructs an implicit
-    # ``SingletonSchedulerControl`` fallback — ``scheduler_control`` is the port
-    # the composition injected (the API resolves it from
+    # port. R08: the core NO LONGER constructs an implicit scheduler-control
+    # adapter fallback — ``scheduler_control`` is the port the composition injected
+    # (the API resolves it from
     # ``RuntimeComposition.scheduler_control``). A ``None`` port is an explicit
     # skip handled in ``apply_tick_runtime_effects``; the core never reaches the
     # process-global scheduler singleton.

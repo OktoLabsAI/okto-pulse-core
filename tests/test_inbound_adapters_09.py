@@ -266,7 +266,7 @@ async def test_move_ideation_rest_equivalent(db_factory):
                 ideation_id=id_after,
                 data=IdeationMove(status=IdeationStatus.REVIEW),
                 user_id=USER_ID,
-                db=db,
+                uow=db,
             )
 
     before = await capture_outcome(_before, normalize=_norm_ideation)
@@ -284,7 +284,7 @@ async def test_move_ideation_rest_not_found_is_404(db_factory):
                 ideation_id="missing-09",
                 data=IdeationMove(status=IdeationStatus.REVIEW),
                 user_id=USER_ID,
-                db=db,
+                uow=db,
             )
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Ideation not found"

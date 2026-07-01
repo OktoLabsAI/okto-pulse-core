@@ -67,24 +67,46 @@ def _handler_block(name: str) -> str:
     return src[start:end]
 
 
+def _use_case_source() -> str:
+    """Source of the MCP-FU6 copy-knowledge use case (where the logic now lives)."""
+    from pathlib import Path
+
+    from okto_pulse.core.application.use_cases import mcp_card_crud
+    return Path(mcp_card_crud.__file__).read_text(encoding="utf-8")
+
+
 def test_handler_source_uses_spec_knowledge_service():
-    """The MCP handler must call SpecKnowledgeService — not SpecService."""
+    """The MCP copy path must call SpecKnowledgeService — not SpecService.
+
+    MCP-FU6 strangler: the handler now delegates to ``McpCopyKnowledgeToCardUseCase``
+    over the MCP UoW, so the ``SpecKnowledgeService`` instantiation moved to that
+    use case. The regression guard follows the logic to its new home (intent
+    unchanged: the buggy ``spec_service.list_knowledge`` must exist nowhere).
+    """
     block = _handler_block("okto_pulse_copy_knowledge_to_card")
-    assert "SpecKnowledgeService" in block, (
-        "copy_knowledge_to_card handler must instantiate SpecKnowledgeService"
+    assert "McpCopyKnowledgeToCardUseCase" in block, (
+        "handler must delegate to McpCopyKnowledgeToCardUseCase"
     )
-    # Make sure the buggy line is gone — old code did `spec_service.list_knowledge`.
+    uc_src = _use_case_source()
+    assert "SpecKnowledgeService" in uc_src, (
+        "McpCopyKnowledgeToCardUseCase must instantiate SpecKnowledgeService"
+    )
     assert "spec_service.list_knowledge" not in block
+    assert "spec_service.list_knowledge" not in uc_src
 
 
 def test_handler_copies_kb_into_card_knowledge_bases_not_comments():
-    """The task snapshot must be card-local structured KE, not a loose comment."""
-    block = _handler_block("okto_pulse_copy_knowledge_to_card")
+    """The task snapshot must be card-local structured KE, not a loose comment.
 
-    assert "CardUpdate(knowledge_bases=existing)" in block
-    assert "allow_card_resource_write=True" in block
-    assert "Comment(" not in block
-    assert "copied_from_spec:" in block
+    The write moved into ``McpCopyKnowledgeToCardUseCase`` (MCP-FU6); the guard
+    asserts the use case keeps the card-local knowledge_bases write + provenance.
+    """
+    uc_src = _use_case_source()
+
+    assert "CardUpdate(knowledge_bases=existing)" in uc_src
+    assert "allow_card_resource_write=True" in uc_src
+    assert "Comment(" not in uc_src
+    assert "copied_from_spec:" in uc_src
 
 
 # ---------------------------------------------------------------------------

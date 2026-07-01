@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from okto_pulse.core.models.db import SprintLaneType
+from okto_pulse.core.domain.enums import SprintLaneType
 
 # Bounded registry of request fields whose enum-validation failure is rendered as
 # a canonical envelope. Add a row to extend; an unlisted field returns ``None`` so

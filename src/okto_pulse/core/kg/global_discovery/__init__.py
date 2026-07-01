@@ -1,22 +1,19 @@
-"""Global Discovery Layer — LadybugDB meta-graph for cross-board search.
-
-~/.okto-pulse/global/discovery.lbug stores board summaries, topic clusters,
-canonical entities, and decision digests with HNSW embeddings. Content-free
-by design — only titles, summaries, and pointers. ACL-filtered at query time.
-"""
+"""Global Discovery Layer for cross-board search."""
 
 from okto_pulse.core.kg.global_discovery.schema import (
+    GLOBAL_SCHEMA_VERSION,
     bootstrap_global_discovery,
+    global_discovery_graph_path,
     open_global_connection,
     purge_global_discovery_storage,
-    reset_global_db_for_tests,
-    GLOBAL_SCHEMA_VERSION,
+    reset_global_discovery_runtime_for_tests,
 )
 
 __all__ = [
     "bootstrap_global_discovery",
+    "global_discovery_graph_path",
     "open_global_connection",
     "purge_global_discovery_storage",
-    "reset_global_db_for_tests",
+    "reset_global_discovery_runtime_for_tests",
     "GLOBAL_SCHEMA_VERSION",
 ]

@@ -5,34 +5,71 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.card_crud import (
+    GetBugRegressionScenarioCandidatesCommand,
+    GetBugRegressionScenarioCandidatesUseCase,
+    GetCardActivityCommand,
+    GetCardActivityUseCase,
+    GetCardKnowledgeCommand,
+    GetCardKnowledgeUseCase,
+    GetCardSeenStatusCommand,
+    GetCardSeenStatusUseCase,
+    LinkTestTaskToBugCommand,
+    LinkTestTaskToBugUseCase,
+    ListCardKnowledgeCommand,
+    ListCardKnowledgeUseCase,
+    UnlinkTestTaskFromBugCommand,
+    UnlinkTestTaskFromBugUseCase,
+)
+from okto_pulse.core.application.use_cases import (
+    AddCardDependencyCommand,
+    AddCardDependencyUseCase,
+    CommandValidationError,
+    ConflictError,
+    DeleteCardCommand,
+    DeleteCardUseCase,
+    DeleteTaskValidationCommand,
+    DeleteTaskValidationUseCase,
+    EntityNotFoundError,
+    GetCardCommand,
+    GetCardDependenciesCommand,
+    GetCardDependenciesUseCase,
+    GetCardDependentsCommand,
+    GetCardDependentsUseCase,
+    GetCardUseCase,
+    GetTaskValidationCommand,
+    GetTaskValidationUseCase,
+    ListTaskValidationsCommand,
+    ListTaskValidationsUseCase,
+    MoveCardCommand,
+    MoveCardUseCase,
+    RemoveCardDependencyCommand,
+    RemoveCardDependencyUseCase,
+    SubmitTaskValidationCommand,
+    SubmitTaskValidationUseCase,
+    UpdateCardCommand,
+    UpdateCardUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models import (
     ActivityLogResponse,
     CardMove,
     CardResponse,
     CardUpdate,
 )
-from okto_pulse.core.models.db import ActivityLog, Agent, AgentSeenItem
 from okto_pulse.core.services import (
     CARD_RESOURCE_READ_ONLY_MESSAGE,
     CardOperationError,
     CardResourceReadOnlyError,
-    CardService,
     ResourceGateError,
 )
 from okto_pulse.core.services.gate_contracts import GateContractError
-from okto_pulse.core.services.activity_log import (
-    activity_log_summary,
-    activity_log_trigger,
-    sanitize_activity_details,
-)
 from okto_pulse.core.services.bug_regression_preview import (
     BugRegressionScenarioPreviewError,
-    BugRegressionScenarioPreviewService,
 )
 
 router = APIRouter()
@@ -50,14 +87,16 @@ def _resource_gate_detail(exc: ResourceGateError) -> dict:
 async def get_card(
     card_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a card by ID with all attachments, Q&A, and comments."""
-    service = CardService(db)
-    card = await service.get_card(card_id)
-    if not card:
+    try:
+        result = await GetCardUseCase().execute(
+            GetCardCommand(card_id), actor=RESTAdapterContract.actor(user_id), uow=uow
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    return card
+    return result.card
 
 
 @router.get("/{card_id}/regression-scenario-candidates")
@@ -67,20 +106,24 @@ async def get_bug_regression_scenario_candidates(
     affected_task_ids: list[str] | None = Query(None),
     candidate_scenario_ids: list[str] | None = Query(None),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Preview reusable regression scenarios for a bug without mutating spec/card state."""
 
     try:
-        return await BugRegressionScenarioPreviewService(db).resolve(
-            board_id=board_id,
-            bug_id=card_id,
-            affected_task_ids=affected_task_ids,
-            candidate_scenario_ids=candidate_scenario_ids,
-            surface="rest",
+        result = await GetBugRegressionScenarioCandidatesUseCase().execute(
+            GetBugRegressionScenarioCandidatesCommand(
+                card_id,
+                board_id,
+                affected_task_ids=affected_task_ids,
+                candidate_scenario_ids=candidate_scenario_ids,
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
         )
     except BugRegressionScenarioPreviewError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.to_dict())
+    return result.payload
 
 
 @router.patch("/{card_id}", response_model=CardResponse)
@@ -88,22 +131,22 @@ async def update_card(
     card_id: str,
     data: CardUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Update a card."""
-    service = CardService(db)
     try:
-        card = await service.update_card(card_id, user_id, data)
+        result = await UpdateCardUseCase().execute(
+            UpdateCardCommand(card_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except CardOperationError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except CardResourceReadOnlyError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    if not card:
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    await db.commit()
-    # Re-fetch with relationships loaded
-    card = await service.get_card(card_id)
-    return card
+    return result.card
 
 
 @router.post("/{card_id}/move", response_model=CardResponse)
@@ -111,12 +154,15 @@ async def move_card(
     card_id: str,
     data: CardMove,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Move a card to a different column/position."""
-    service = CardService(db)
     try:
-        card = await service.move_card(card_id, user_id, data)
+        result = await MoveCardUseCase().execute(
+            MoveCardCommand(card_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except CardOperationError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except GateContractError as e:
@@ -128,11 +174,9 @@ async def move_card(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    if not card:
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    await db.commit()
-    card = await service.get_card(card_id)
-    return card
+    return result.card
 
 
 # ---- Dependencies ----
@@ -141,14 +185,17 @@ async def move_card(
 async def get_dependencies(
     card_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get cards this card depends on."""
-    service = CardService(db)
-    deps = await service.get_dependencies(card_id)
+    result = await GetCardDependenciesUseCase().execute(
+        GetCardDependenciesCommand(card_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
     return [
         {"id": d.id, "title": d.title, "status": d.status.value}
-        for d in deps
+        for d in result.dependencies
     ]
 
 
@@ -156,14 +203,17 @@ async def get_dependencies(
 async def get_dependents(
     card_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get cards that depend on this card."""
-    service = CardService(db)
-    deps = await service.get_dependents(card_id)
+    result = await GetCardDependentsUseCase().execute(
+        GetCardDependentsCommand(card_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
     return [
         {"id": d.id, "title": d.title, "status": d.status.value}
-        for d in deps
+        for d in result.dependents
     ]
 
 
@@ -172,18 +222,21 @@ async def add_dependency(
     card_id: str,
     depends_on_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Add a dependency: card_id depends on depends_on_id."""
-    service = CardService(db)
-    dep = await service.add_dependency(card_id, depends_on_id)
-    if not dep:
+    try:
+        result = await AddCardDependencyUseCase().execute(
+            AddCardDependencyCommand(card_id, depends_on_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except ConflictError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Dependência circular detectada ou auto-referência",
         )
-    await db.commit()
-    return {"id": dep.id, "card_id": card_id, "depends_on_id": depends_on_id}
+    return {"id": result.dependency_id, "card_id": card_id, "depends_on_id": depends_on_id}
 
 
 @router.delete("/{card_id}/dependencies/{depends_on_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -191,14 +244,17 @@ async def remove_dependency(
     card_id: str,
     depends_on_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Remove a dependency."""
-    service = CardService(db)
-    removed = await service.remove_dependency(card_id, depends_on_id)
-    if not removed:
+    try:
+        await RemoveCardDependencyUseCase().execute(
+            RemoveCardDependencyCommand(card_id, depends_on_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dependency not found")
-    await db.commit()
 
 
 @router.get("/{card_id}/activity", response_model=list[ActivityLogResponse])
@@ -206,75 +262,30 @@ async def get_card_activity(
     card_id: str,
     limit: int = Query(50, ge=1, le=200),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get activity log for a specific card."""
-    query = (
-        select(ActivityLog)
-        .where(ActivityLog.card_id == card_id)
-        .order_by(ActivityLog.created_at.desc())
-        .limit(limit)
+    result = await GetCardActivityUseCase().execute(
+        GetCardActivityCommand(card_id, limit=limit),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
     )
-    result = await db.execute(query)
-    return [
-        ActivityLogResponse(
-            id=log.id,
-            board_id=log.board_id,
-            card_id=log.card_id,
-            action=log.action,
-            actor_type=log.actor_type,
-            actor_id=log.actor_id,
-            actor_name=log.actor_name,
-            trigger=activity_log_trigger(log.details),
-            summary=activity_log_summary(log.action, log.details),
-            details=sanitize_activity_details(log.details),
-            created_at=log.created_at,
-        )
-        for log in result.scalars().all()
-    ]
+    return result.activity
 
 
 @router.get("/{card_id}/seen")
 async def get_card_seen_status(
     card_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get seen status for all items in a card (comments, QA) by agents."""
-    from okto_pulse.core.models.db import Comment, QAItem
-
-    # Collect item IDs from this card
-    comment_ids_q = select(Comment.id).where(Comment.card_id == card_id)
-    qa_ids_q = select(QAItem.id).where(QAItem.card_id == card_id)
-
-    comment_ids = [r[0] for r in (await db.execute(comment_ids_q)).all()]
-    qa_ids = [r[0] for r in (await db.execute(qa_ids_q)).all()]
-    all_ids = set(comment_ids + qa_ids)
-
-    if not all_ids:
-        return {"items": {}}
-
-    # Get seen records for these items
-    seen_query = (
-        select(AgentSeenItem, Agent.name)
-        .join(Agent, Agent.id == AgentSeenItem.agent_id)
-        .where(AgentSeenItem.item_id.in_(all_ids))
-        .order_by(AgentSeenItem.seen_at)
+    result = await GetCardSeenStatusUseCase().execute(
+        GetCardSeenStatusCommand(card_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
     )
-    seen_results = (await db.execute(seen_query)).all()
-
-    # Group by item_id: {item_id: [{agent_name, seen_at}]}
-    items: dict[str, list] = {}
-    for seen, agent_name in seen_results:
-        if seen.item_id not in items:
-            items[seen.item_id] = []
-        items[seen.item_id].append({
-            "agent_id": seen.agent_id,
-            "agent_name": agent_name,
-            "seen_at": seen.seen_at.isoformat(),
-        })
-
-    return {"items": items}
+    return result.data
 
 
 # ---- Bug card: link test tasks ----
@@ -284,69 +295,29 @@ async def link_test_task_to_bug(
     card_id: str,
     body: dict,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Link a test task to a bug card. Validates same spec and new scenario."""
-    from okto_pulse.core.models.db import Spec
-
     test_task_id = body.get("test_task_id")
-    if not test_task_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="test_task_id is required")
-
-    service = CardService(db)
-    bug_card = await service.get_card(card_id)
-    if not bug_card:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-
-    if getattr(bug_card, "card_type", "normal") != "bug":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Card is not a bug card")
-
-    test_task = await service.get_card(test_task_id)
-    if not test_task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test task not found")
-
-    # Validate same spec
-    if test_task.spec_id != bug_card.spec_id:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Test task does not belong to the same spec as the bug",
+    try:
+        result = await LinkTestTaskToBugUseCase().execute(
+            LinkTestTaskToBugCommand(card_id, test_task_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
-
-    # Validate the regression test task was created after the bug. The task may
-    # reference an existing scenario on a validated/locked spec.
-    if bug_card.created_at and test_task.created_at:
-        if test_task.created_at.isoformat() < bug_card.created_at.isoformat():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Test task was created before the bug card — link a regression test task created after the bug",
-            )
-
-    # Validate test task references scenarios that still exist on the spec.
-    if bug_card.spec_id and test_task.test_scenario_ids:
-        spec = await db.get(Spec, bug_card.spec_id)
-        if spec:
-            all_scenarios = {s["id"]: s for s in (spec.test_scenarios or [])}
-            for sid in test_task.test_scenario_ids:
-                if sid not in all_scenarios:
-                    raise HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                        detail=f"Test task references scenario '{sid}' that does not exist on the bug spec",
-                    )
-
-    # Add test task to linked_test_task_ids
-    from sqlalchemy.orm.attributes import flag_modified
-    linked = list(bug_card.linked_test_task_ids or [])
-    if test_task_id not in linked:
-        linked.append(test_task_id)
-        bug_card.linked_test_task_ids = linked
-        flag_modified(bug_card, "linked_test_task_ids")
-        await db.commit()
+    except CommandValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except EntityNotFoundError as e:
+        detail = "Card not found" if e.entity_type == "card" else "Test task not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
 
     return {
         "success": True,
         "bug_card_id": card_id,
         "test_task_id": test_task_id,
-        "is_unblocked": len(linked) >= 1,
+        "is_unblocked": result.is_unblocked,
     }
 
 
@@ -355,36 +326,32 @@ async def unlink_test_task_from_bug(
     card_id: str,
     test_task_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Unlink a test task from a bug card."""
-    from sqlalchemy.orm.attributes import flag_modified
-
-    service = CardService(db)
-    bug_card = await service.get_card(card_id)
-    if not bug_card:
+    try:
+        await UnlinkTestTaskFromBugUseCase().execute(
+            UnlinkTestTaskFromBugCommand(card_id, test_task_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-
-    linked = list(bug_card.linked_test_task_ids or [])
-    if test_task_id in linked:
-        linked.remove(test_task_id)
-        bug_card.linked_test_task_ids = linked
-        flag_modified(bug_card, "linked_test_task_ids")
-        await db.commit()
 
 
 @router.delete("/{card_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_card(
     card_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete a card."""
-    service = CardService(db)
-    deleted = await service.delete_card(card_id, user_id)
-    if not deleted:
+    try:
+        await DeleteCardUseCase().execute(
+            DeleteCardCommand(card_id), actor=RESTAdapterContract.actor(user_id), uow=uow
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    await db.commit()
 
 
 # ---- Task Validation Endpoints ----
@@ -395,49 +362,17 @@ async def submit_task_validation(
     card_id: str,
     data: dict,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Submit a task validation for a card in 'validation' status."""
-    # Validate required fields
-    required = [
-        "confidence", "confidence_justification",
-        "estimated_completeness", "completeness_justification",
-        "estimated_drift", "drift_justification",
-        "general_justification", "recommendation",
-    ]
-    missing = [f for f in required if f not in data or data[f] is None]
-    if missing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing required fields: {', '.join(missing)}",
-        )
-    if data.get("recommendation") not in ("approve", "reject"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="recommendation must be 'approve' or 'reject'",
-        )
-
-    # Resolve reviewer name via CardService helper
-    service = CardService(db)
     try:
-        from okto_pulse.core.services.main import resolve_actor_name
-        # Get card first to know the board
-        card = await service.get_card(card_id)
-        if not card:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-        reviewer_name = await resolve_actor_name(db, user_id, card.board_id)
-    except HTTPException:
-        raise
-    except Exception:
-        reviewer_name = user_id
-
-    try:
-        result = await service.submit_task_validation(
-            card_id=card_id,
-            reviewer_id=user_id,
-            reviewer_name=reviewer_name,
-            data=data,
+        result = await SubmitTaskValidationUseCase().execute(
+            SubmitTaskValidationCommand(card_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
+    except CommandValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except GateContractError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except ResourceGateError as e:
@@ -447,23 +382,31 @@ async def submit_task_validation(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
-    await db.commit()
-    return result
+    except EntityNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    return result.validation
 
 
 @router.get("/{card_id}/validations")
 async def list_task_validations(
     card_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all validations for a card (reverse chronological)."""
-    service = CardService(db)
     try:
-        validations = await service.list_task_validations(card_id)
+        result = await ListTaskValidationsUseCase().execute(
+            ListTaskValidationsCommand(card_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return {"card_id": card_id, "total": len(validations), "validations": validations}
+    return {
+        "card_id": card_id,
+        "total": len(result.validations),
+        "validations": result.validations,
+    }
 
 
 @router.get("/{card_id}/validations/{validation_id}")
@@ -471,17 +414,20 @@ async def get_task_validation(
     card_id: str,
     validation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a single validation by ID."""
-    service = CardService(db)
     try:
-        validation = await service.get_task_validation(card_id, validation_id)
+        result = await GetTaskValidationUseCase().execute(
+            GetTaskValidationCommand(card_id, validation_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    if not validation:
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Validation not found")
-    return validation
+    return result.validation
 
 
 @router.delete("/{card_id}/validations/{validation_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -489,17 +435,19 @@ async def delete_task_validation(
     card_id: str,
     validation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete a validation entry."""
-    service = CardService(db)
     try:
-        deleted = await service.delete_task_validation(card_id, validation_id, user_id)
+        await DeleteTaskValidationUseCase().execute(
+            DeleteTaskValidationCommand(card_id, validation_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    if not deleted:
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Validation not found")
-    await db.commit()
 
 
 # ==================== CARD KNOWLEDGE BASE ====================
@@ -525,14 +473,18 @@ class CardKnowledgeUpdate(BaseModel):
 async def list_card_knowledge(
     card_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all KE attached to a card."""
-    service = CardService(db)
-    card = await service.get_card(card_id)
-    if not card:
+    try:
+        result = await ListCardKnowledgeUseCase().execute(
+            ListCardKnowledgeCommand(card_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    return {"card_id": card_id, "knowledge": list(card.knowledge_bases or [])}
+    return {"card_id": card_id, "knowledge": result.knowledge}
 
 
 @router.post("/{card_id}/knowledge", status_code=status.HTTP_201_CREATED)
@@ -540,7 +492,7 @@ async def create_card_knowledge(
     card_id: str,
     data: CardKnowledgeCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Blocked: card Knowledge Base resources are read-only governed snapshots."""
     raise HTTPException(
@@ -554,17 +506,19 @@ async def get_card_knowledge(
     card_id: str,
     kb_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a single KE."""
-    service = CardService(db)
-    card = await service.get_card(card_id)
-    if not card:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    for kb in card.knowledge_bases or []:
-        if kb.get("id") == kb_id:
-            return kb
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge entry not found")
+    try:
+        result = await GetCardKnowledgeUseCase().execute(
+            GetCardKnowledgeCommand(card_id, kb_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as e:
+        detail = "Card not found" if e.entity_type == "card" else "Knowledge entry not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    return result.knowledge
 
 
 @router.patch("/{card_id}/knowledge/{kb_id}")
@@ -573,7 +527,7 @@ async def update_card_knowledge(
     kb_id: str,
     data: CardKnowledgeUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Blocked: card Knowledge Base resources are read-only governed snapshots."""
     raise HTTPException(
@@ -587,7 +541,7 @@ async def delete_card_knowledge(
     card_id: str,
     kb_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Blocked: card Knowledge Base resources are read-only governed snapshots."""
     raise HTTPException(
@@ -601,16 +555,19 @@ async def download_card_knowledge(
     card_id: str,
     kb_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Download a KE as a plain markdown file with Content-Disposition attachment."""
-    service = CardService(db)
-    card = await service.get_card(card_id)
-    if not card:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    target = next((kb for kb in (card.knowledge_bases or []) if kb.get("id") == kb_id), None)
-    if not target:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge entry not found")
+    try:
+        result = await GetCardKnowledgeUseCase().execute(
+            GetCardKnowledgeCommand(card_id, kb_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as e:
+        detail = "Card not found" if e.entity_type == "card" else "Knowledge entry not found"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    target = result.knowledge
 
     safe_title = "".join(c if c.isalnum() or c in "-_." else "_" for c in (target.get("title") or "knowledge"))
     filename = f"{safe_title or 'knowledge'}.md"

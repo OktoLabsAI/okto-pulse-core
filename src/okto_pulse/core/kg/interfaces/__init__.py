@@ -7,6 +7,14 @@ don't need to inherit — they just need to implement the methods.
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
 from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
 from okto_pulse.core.kg.interfaces.board_graph_runtime import BoardGraphRuntime
+from okto_pulse.core.kg.interfaces.board_source_reader import (
+    BoardSourceReader,
+    BoardSourceRow,
+    InvalidArtifactTypeError,
+    SourceReadError,
+    SourceReadFailure,
+    SourceUnavailableError,
+)
 from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
@@ -30,8 +38,16 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     GraphTransaction,
     GraphTransactionScope,
 )
+from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
+    GlobalDiscoveryRuntime,
+)
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
+from okto_pulse.core.kg.interfaces.rebuild_ingestion import (
+    RebuildIngestionPort,
+    RebuildSourceResolver,
+    RebuildStepAdapterFactory,
+)
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
 from okto_pulse.core.kg.interfaces.registry import (
     KGProviderRegistry,
@@ -44,6 +60,8 @@ __all__ = [
     "AuthContext",
     "AuditRepository",
     "BoardGraphRuntime",
+    "BoardSourceReader",
+    "BoardSourceRow",
     "CacheBackend",
     "CypherExecutor",
     "EmbeddingProvider",
@@ -55,6 +73,8 @@ __all__ = [
     "GraphStorageState",
     "GraphTransaction",
     "GraphTransactionScope",
+    "GlobalDiscoveryRuntime",
+    "InvalidArtifactTypeError",
     "PurgeReport",
     "RebuildReport",
     "KGConfig",
@@ -62,9 +82,15 @@ __all__ = [
     "KGProviderRegistry",
     "QueryFilters",
     "RateLimiter",
+    "RebuildIngestionPort",
+    "RebuildSourceResolver",
+    "RebuildStepAdapterFactory",
     "SchemaValidationResult",
     "SemanticGraphStore",
     "SessionStore",
+    "SourceReadError",
+    "SourceReadFailure",
+    "SourceUnavailableError",
     "configure_kg_registry",
     "get_kg_registry",
     "reset_registry_for_tests",

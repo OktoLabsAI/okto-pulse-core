@@ -12,7 +12,7 @@ PURITY (TS01): this module imports stdlib ``dataclasses`` / ``typing`` /
 The DTOs MIRROR the current serialization bit-for-bit (TS02):
   - ``TelemetryResult``  <-> ``TelemetryService.record_event`` return dict;
   - ``HealthReport``     <-> ``PublishHealth.to_dict`` (PUBLISH_HEALTH_FIELDS);
-  - ``TelemetryState``   <-> the persisted consent/state surface;
+  - ``TelemetryState``   <-> the redacted consent/state VIEW surface;
   - ``ProductState``     <-> ``ProductTelemetryAggregator.aggregate`` output.
 
 ``resolve_publish_health`` stays the PURE resolver in ``telemetry.publish_health``
@@ -210,10 +210,14 @@ class TelemetrySink(Protocol):
 
 @runtime_checkable
 class TelemetryStateStore(Protocol):
-    """Local CONSENT/STATE persistence boundary ONLY (today: the settings-state
-    JSON). R10-B: this port is RESTRICTED to ``load_state`` / ``save_state`` — it
-    does NOT own telemetry EVENT persistence (that is :class:`TelemetryEventStore`).
-    The concrete adapter owns the FS layout; this port never references it."""
+    """Local CONSENT/STATE view boundary ONLY.
+
+    This narrow DTO port is intentionally NOT the full persisted
+    ``state.json`` carrier: it excludes install-token, watermark,
+    failure-state, beacon, schema and unknown blocks. R12 keeps it as a
+    redacted view contract so no full-dict state can be truncated into this DTO.
+    It also does NOT own telemetry EVENT persistence (that is
+    :class:`TelemetryEventStore`)."""
 
     def load_state(self) -> TelemetryState:
         """Load the persisted (redacted) consent/state surface."""
@@ -221,6 +225,25 @@ class TelemetryStateStore(Protocol):
 
     def save_state(self, state: TelemetryState) -> None:
         """Persist the consent/state surface."""
+        ...
+
+
+@runtime_checkable
+class TelemetryStateCarrier(Protocol):
+    """Full-dict telemetry state carrier for ``metrics_dir/state.json``.
+
+    The concrete adapter is edition-owned (Community for the local edition) and
+    must preserve every existing key, including unknown fields, migration
+    notices, history, watermark, failure_state, install-token lifecycle and
+    beacon/schema fields. Public DTOs still use the redacted view contracts.
+    """
+
+    def load_state(self, metrics_dir: Path) -> dict[str, Any]:
+        """Load the complete persisted telemetry state dictionary."""
+        ...
+
+    def save_state(self, metrics_dir: Path, state: dict[str, Any]) -> None:
+        """Persist the complete telemetry state dictionary atomically."""
         ...
 
 
@@ -331,6 +354,7 @@ __all__ = [
     "ProductState",
     "TelemetrySink",
     "TelemetryStateStore",
+    "TelemetryStateCarrier",
     "TelemetryEventStore",
     "PublishHealthSource",
     "ProductAggregationPort",

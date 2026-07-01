@@ -160,8 +160,8 @@ List top-level entities of a board by type.
         entity_type: One of: spec, ideation, refinement, sprint, story, topic
         filters: Optional filter dict OR JSON string; validated server-side per entity_type.
             spec: status, labels, assignee_id
-            ideation: status, labels
-            refinement: status, labels, ideation_id
+            ideation: status, labels, derivation_pending
+            refinement: status, labels, ideation_id, derivation_pending
             sprint: status (requires filters.spec_id to identify parent spec)
             story: status, topic_id, linked, converted, include_archived
             topic: include_archived
@@ -170,6 +170,13 @@ List top-level entities of a board by type.
 
     Returns:
         JSON {items: [...], total: int, entity_type: str} or structured error
+
+    Notes:
+        derivation_pending=true is available for ideation and refinement only.
+        For ideations it means DONE medium/large ideations with zero active
+        child refinements. For refinements it means DONE refinements with zero
+        active child specs. Archived or cancelled children are not active
+        derivations.
 
 ## `okto_pulse_list_my_boards`
 

@@ -122,9 +122,11 @@ class TestProtocolDuckTyping:
         assert isinstance(InMemoryTokenBucket(), RateLimiter)
 
     def test_stub_embedding_satisfies_protocol(self):
-        from okto_pulse.core.kg.embedding import StubEmbeddingProvider
+        from okto_pulse.core.kg.providers.testing.embedding import (
+            TestingStubEmbeddingProvider,
+        )
 
-        assert isinstance(StubEmbeddingProvider(), EmbeddingProvider)
+        assert isinstance(TestingStubEmbeddingProvider(), EmbeddingProvider)
 
 
 # -----------------------------------------------------------------------

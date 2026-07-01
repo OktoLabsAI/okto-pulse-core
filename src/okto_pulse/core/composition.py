@@ -8,7 +8,8 @@ silent fallback to a concrete default.
 
 Ownership (Remediacao #03 v2): the providers OWNED/wired by #03 in this phase are
 settings, auth, storage, session_factory, event_bus, scheduler_control,
-telemetry, lifecycle_hooks and mcp_session_factory. The KG registry
+telemetry, lifecycle_hooks and mcp_session_factory. R01B REPLAN-IMP1 adds the
+optional ``uow_factory`` (the edition-owned relational UnitOfWorkFactory). The KG registry
 (``kg_registry``) is transitional debt deferred to #05 and is NOT a required
 provider here. ``event_bus`` is a #03-owned provider key supplied by the edition
 composition root; core code must not instantiate a concrete relational event-bus
@@ -38,6 +39,15 @@ OPTIONAL_OWNED_PROVIDERS: tuple[str, ...] = (
     "scheduler_control",
     "telemetry",
     "mcp_session_factory",
+    "uow_factory",
+    "lifecycle_hooks",
+)
+
+#: Providers that must be present when an environment explicitly opts into
+#: strict runtime-shell mode. ``lifecycle_hooks`` stays optional for the
+#: historical default path, but empty hooks are not a valid strict runtime.
+STRICT_RUNTIME_REQUIRED_PROVIDERS: tuple[str, ...] = (
+    *REQUIRED_OWNED_PROVIDERS,
     "lifecycle_hooks",
 )
 
@@ -95,11 +105,21 @@ class RuntimeComposition:
     scheduler_control: Any = None
     telemetry: Any = None
     mcp_session_factory: Any = None
+    # R01B REPLAN-IMP1: the relational UnitOfWorkFactory the edition composition
+    # root owns. Optional/duck-typed (no concrete adapter import). Supplied by the
+    # Community composition (build_community_unit_of_work_factory); re-pointing the
+    # REST/MCP consumers to it is IMP2 (FR3).
+    uow_factory: Any = None
     lifecycle_hooks: Sequence[LifecycleHook] = field(default_factory=tuple)
 
-    def missing_required(self) -> list[str]:
+    def missing_required(self, *, require_lifecycle_hooks: bool = False) -> list[str]:
         """Required owned providers that are absent (``None``)."""
-        return [key for key in REQUIRED_OWNED_PROVIDERS if getattr(self, key, None) is None]
+        missing = [
+            key for key in REQUIRED_OWNED_PROVIDERS if getattr(self, key, None) is None
+        ]
+        if require_lifecycle_hooks and not self.lifecycle_hooks:
+            missing.append("lifecycle_hooks")
+        return missing
 
     def provider_keys(self) -> list[str]:
         """All provider keys whose value is currently supplied (non-None)."""
@@ -115,9 +135,13 @@ class RuntimeComposition:
         return value
 
 
-def validate_required_providers(composition: RuntimeComposition) -> None:
+def validate_required_providers(
+    composition: RuntimeComposition, *, require_lifecycle_hooks: bool = False
+) -> None:
     """Raise ``RuntimeProviderMissing`` if any required owned provider is absent."""
-    missing = composition.missing_required()
+    missing = composition.missing_required(
+        require_lifecycle_hooks=require_lifecycle_hooks
+    )
     if missing:
         raise RuntimeProviderMissing(missing[0], missing=missing)
 
@@ -151,7 +175,9 @@ class CompositionRuntime:
         if not isinstance(composition, RuntimeComposition):
             raise InvalidRuntimeComposition("composition must be a RuntimeComposition")
         if strict_runtime:
-            validate_required_providers(composition)
+            validate_required_providers(
+                composition, require_lifecycle_hooks=True
+            )
         self._composition = composition
         self._started = False
 

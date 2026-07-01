@@ -1,6 +1,8 @@
 """MCP tools for the 3 tier power escape hatch tools.
 
-Registered via `register_kg_power_tools(mcp, get_agent, get_db)`.
+Registered via `register_kg_power_tools(mcp, get_agent)`. These graph-only escape
+hatches never open a relational session (spec R01A MCP-FU4 dropped the unused
+``get_db`` injection).
 """
 
 from __future__ import annotations
@@ -154,7 +156,7 @@ def _err(code: str, message: str, **extra: Any) -> str:
     return json.dumps(payload, default=str)
 
 
-def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
+def register_kg_power_tools(mcp, *, get_agent) -> None:
 
     @mcp.tool()
     async def okto_pulse_kg_query_cypher(
@@ -260,7 +262,7 @@ a time bound is active. Full args: okto-pulse://reference/tool-docs/kg."""
             check_rate_limit(agent.id)
             # FR0: reject an oversize natural query at the MCP boundary BEFORE
             # the embedding provider is resolved. execute_natural_query resolves
-            # registry.embedding_provider internally, so the guard MUST run
+            # registry.require_embedding_provider internally, so the guard MUST run
             # before it is offloaded — never invoking any embedding call.
             rejection = KGNaturalQueryBoundaryGuard().check(nl_query)
             if rejection is not None:

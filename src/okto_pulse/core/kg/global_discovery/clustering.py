@@ -349,13 +349,13 @@ def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
     confused responders.
     """
     from okto_pulse.core.kg.global_discovery.schema import (
-        _global_kuzu_path,
         bootstrap_global_discovery,
+        global_discovery_graph_path,
         purge_global_discovery_storage,
     )
     from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
-    path = _global_kuzu_path()
+    path = global_discovery_graph_path()
 
     purge_response: list[str] = []
     rebuild_token = f"rebuild-{uuid.uuid4().hex[:12]}"

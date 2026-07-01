@@ -51,10 +51,17 @@ async def _enforcement_active(db, board_id: str) -> bool:
     """Whether the board's done-gate actually enforces readiness (two-key
     rollout). Delegates to the existing helper — never recomputed (S3.1 carry-
     forward). Lazy import avoids a services<->api import cycle."""
-    from okto_pulse.core.models.db import Board
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
     from okto_pulse.core.services.main import _cognitive_readiness_blocking_active
 
-    board = await db.get(Board, board_id)
+    # R01C IMP3 drain: resolve the board through the edition-owned repository port
+    # (``resolve_unit_of_work_factory().wrap`` — the same R01B FR3 seam ``deps.py``
+    # uses) instead of importing the ORM model. This removes the ``core.models.db``
+    # import coupling. Equivalence: the prior call was a pure existence get-by-id
+    # (no owner/permission predicate — auth is enforced by the endpoint's
+    # ``require_user`` + board scope); ``boards.get(board_id)`` is the unscoped
+    # get-by-id and still returns the ORM Board (registered ORM_RETURN_DEBT).
+    board = await resolve_unit_of_work_factory().wrap(db).boards.get(board_id)
     return _cognitive_readiness_blocking_active(board)
 
 

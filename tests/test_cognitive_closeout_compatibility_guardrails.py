@@ -67,7 +67,7 @@ def test_mcp_list_cognitive_pending_items_name_remains_registered():
         return object()
 
     mcp = _MCPRegistryDouble()
-    register_kg_tools(mcp, get_agent=_agent, get_db=lambda: _NullDb())
+    register_kg_tools(mcp, get_agent=_agent, get_uow=lambda: _NullDb())
 
     assert "okto_pulse_kg_list_cognitive_pending_items" in mcp.tools
     assert "okto_pulse_kg_list_cognitive_closeout_items" not in mcp.tools

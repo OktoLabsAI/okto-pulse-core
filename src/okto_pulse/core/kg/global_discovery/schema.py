@@ -1,6 +1,5 @@
-"""Global discovery LadybugDB meta-graph schema.
+"""Global discovery meta-graph schema definitions.
 
-Path: ~/.okto-pulse/global/discovery.lbug
 4 node tables: Board, Topic, Entity, DecisionDigest
 7 rel tables: HAS_TOPIC, MENTIONS_ENTITY, CONTAINS_DECISION,
              TOPIC_RELATES_TO, ENTITY_RELATES_TO, DECISION_MENTIONS_ENTITY,
@@ -11,15 +10,12 @@ Path: ~/.okto-pulse/global/discovery.lbug
 
 from __future__ import annotations
 
-import gc
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.schema")
 
 GLOBAL_SCHEMA_VERSION = "0.1.1"
-GLOBAL_DISCOVERY_FILENAME = "discovery.lbug"
 DECISION_DIGEST_GRAPH_LAYER_COLUMN = ("graph_layer", "STRING")
 
 NODE_DDL = [
@@ -147,49 +143,24 @@ VECTOR_INDEXES = [
 ]
 
 
-def _global_kuzu_path() -> Path:
-    from okto_pulse.core.infra.config import get_settings
-    base = Path(os.path.expanduser(get_settings().kg_base_dir)).resolve()
-    return base / "global" / GLOBAL_DISCOVERY_FILENAME
-
-
-def _board_graph_runtime():
+def _global_runtime():
     from okto_pulse.core.kg.interfaces import get_kg_registry
 
-    runtime = getattr(get_kg_registry(), "board_graph_runtime", None)
-    if runtime is None:
-        raise RuntimeError(
-            "Board graph runtime is not configured; global discovery requires "
-            "the edition-owned graph runtime adapter."
-        )
-    return runtime
+    return get_kg_registry().require_global_discovery_runtime()
 
 
 def _is_ladybug_corruption_error(exc: BaseException) -> bool:
     try:
-        return bool(_board_graph_runtime().is_ladybug_corruption_error(exc))
+        runtime = getattr(_global_runtime(), "is_ladybug_corruption_error", None)
+        if runtime is not None:
+            return bool(runtime(exc))
     except Exception:
-        msg = str(exc).lower()
-        return (
-            "corrupted wal file" in msg
-            or "invalid wal record" in msg
-            or "not a valid lbug database file" in msg
-        )
-
-
-def _global_quarantine_service():
-    """Build the canonical KGQuarantineService for global discovery purges.
-
-    scope_roots is the global discovery storage dir. quarantine base_dir
-    lives one level up so it's siblings to per-board quarantine.
-    """
-    from okto_pulse.core.kg.quarantine import KGQuarantineService
-
-    global_dir = _global_kuzu_path().parent
-    quarantine_base = global_dir.parent  # one level up
-    return KGQuarantineService(
-        base_dir=quarantine_base,
-        scope_roots=[global_dir],
+        pass
+    msg = str(exc).lower()
+    return (
+        "corrupted wal file" in msg
+        or "invalid wal record" in msg
+        or "not a valid lbug database file" in msg
     )
 
 
@@ -225,213 +196,39 @@ def _raise_existing_global_graph_open_failed(
 
 
 def purge_global_discovery_storage(*, reason: str = "manual") -> list[str]:
-    """Quarantine-then-clear the local global LadybugDB discovery file and sidecars.
-
-    KG-01.4 (val_79e6f555 rework): purges of ``discovery.lbug`` and
-    sidecars MUST go through ``KGQuarantineService`` first. If
-    quarantine fails the whole purge is aborted with the evidence
-    preserved at the original path (per FR7 / AC10 / IR ir_f175bc42).
-
-    KG-01.3.1 boundary (val_441ad311): destructive global write path;
-    requires an active ``under_global_safe_write`` guard. In SOFT mode
-    (default) a missing guard logs + bumps the counter; in STRICT
-    raises ``WriteLifecycleViolation`` BEFORE any filesystem mutation.
-    """
-    from okto_pulse.core.kg.quarantine import QuarantineError
-    from okto_pulse.core.kg.write_barrier import require_global_write_token
-
-    require_global_write_token()
-
-    path = _global_kuzu_path()
-    close_global_connection()
-    targets: list[Path] = []
-    if path.exists():
-        targets.append(path)
-    if path.parent.exists():
-        targets.extend(sorted(path.parent.glob(path.name + ".*")))
-
-    if not targets:
-        return []
-
-    service = _global_quarantine_service()
-    try:
-        response = service.create(
-            board_id="_global",
-            graph_type="global_discovery",
-            affected_paths=[str(t) for t in targets],
-            reason=reason,
-            correlation_ids=[],
-        )
-    except QuarantineError as exc:
-        logger.error(
-            "global_discovery.purge_blocked_quarantine_failed "
-            "reason=%s code=%s err=%s",
-            reason, exc.code.value, exc.reason,
-            extra={
-                "event": "global_discovery.purge_blocked_quarantine_failed",
-                "reason": reason,
-                "code": exc.code.value,
-            },
-        )
-        return []
-
-    moved_count = response.files_moved
-    removed_str = [str(t) for t in targets[:moved_count]]
-    logger.warning(
-        "global_discovery.purged reason=%s removed=%d "
-        "quarantine_id=%s manifest=%s",
-        reason, moved_count,
-        response.quarantine_id, response.manifest_ref,
-        extra={
-            "event": "global_discovery.purged",
-            "reason": reason,
-            "quarantine_id": response.quarantine_id,
-            "manifest_ref": response.manifest_ref,
-            "files_moved": moved_count,
-        },
-    )
-    return removed_str
+    """Delegate destructive global discovery purge to the edition runtime."""
+    return _global_runtime().purge(reason=reason)
 
 
 def bootstrap_global_discovery() -> Path:
-    """Create or open the global discovery Kuzu meta-graph. Idempotent.
-
-    KG-01.3.1 boundary (val_441ad311 rework): this path runs DDL against
-    `discovery.lbug` and may invoke ``purge_global_discovery_storage`` on
-    corruption. It MUST be wrapped in ``under_global_safe_write`` by the
-    caller. The barrier check raises ``WriteLifecycleViolation`` in
-    STRICT mode and logs+bumps ``kg_unguarded_write_total`` in SOFT.
-    """
-    from okto_pulse.core.kg.write_barrier import require_global_write_token
-
-    require_global_write_token()
-
-    path = _global_kuzu_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    runtime = _board_graph_runtime()
-
-    try:
-        db = runtime.open_kuzu_db(path)
-    except Exception as exc:
-        _raise_existing_global_graph_open_failed(
-            path=path,
-            operation="bootstrap",
-            exc=exc,
-        )
-    conn = runtime.new_connection(db)
-    try:
-        runtime.load_vector_extension(conn)
-        for ddl in NODE_DDL:
-            conn.execute(ddl)
-        for ddl in REL_DDL:
-            conn.execute(ddl)
-        _ensure_decision_digest_layer_column(conn)
-        for table, idx_name, col in VECTOR_INDEXES:
-            try:
-                conn.execute(
-                    f"CALL CREATE_VECTOR_INDEX("
-                    f"'{table}', '{idx_name}', '{col}', "
-                    f"metric := 'cosine')"
-                )
-            except Exception:
-                pass
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-        try:
-            db.close()
-        except Exception:
-            pass
-        # E2E spec c2115d15 — TS-E follow-up. No Windows o Kùzu segura lock
-        # OS-level via Database C++ enquanto o objeto Python existir. Forçar
-        # gc.collect() libera o handle imediatamente para evitar lock
-        # contention quando bootstrap é seguido de open_global_connection
-        # no mesmo processo (race observado no log do servidor).
-        del db
-        gc.collect()
-    return path
+    """Create/open the edition-owned global discovery graph. Idempotent."""
+    return _global_runtime().bootstrap()
 
 
 def ensure_global_discovery_layer_schema() -> list[str]:
     """Ensure existing global discovery graphs expose DecisionDigest.graph_layer."""
-    from okto_pulse.core.kg.write_barrier import require_global_write_token
-
-    require_global_write_token()
-    _gdb, conn = open_global_connection()
-    try:
-        return _ensure_decision_digest_layer_column(conn)
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-_global_db = None
+    return _global_runtime().ensure_layer_schema()
 
 
 def open_global_connection():
-    """Open a connection to the global discovery Kuzu. Bootstrap on-demand.
-
-    Returns (db, conn). The Database is cached as a module-level singleton
-    to avoid Kuzu file-lock conflicts from multiple Database instances
-    pointing at the same path.
-    """
-    global _global_db
-
-    path = _global_kuzu_path()
-    if not path.exists():
-        bootstrap_global_discovery()
-
-    if _global_db is None:
-        try:
-            _global_db = _board_graph_runtime().open_kuzu_db(path)
-        except Exception as exc:
-            _raise_existing_global_graph_open_failed(
-                path=path,
-                operation="open_connection",
-                exc=exc,
-            )
-    conn = _board_graph_runtime().new_connection(_global_db)
-    _board_graph_runtime().load_vector_extension(conn)
-    return _global_db, conn
+    """Open a connection through the edition-owned Global Discovery runtime."""
+    return _global_runtime().open_connection()
 
 
 def close_global_connection() -> None:
-    """Close the cached global discovery ``_global_db`` and release its file lock.
+    """Close the edition-owned Global Discovery runtime handle."""
+    _global_runtime().close()
 
-    Idempotent: returns immediately if no Database is cached. Exceptions raised
-    by the underlying ``close()`` are logged as warnings and not propagated —
-    the caller is usually about to rmtree or re-bootstrap and a close failure
-    should not block that path.
 
-    ``gc.collect()`` is mandatory on Windows: Kùzu holds an OS-level lock on
-    the ``discovery.kuzu`` directory for as long as the C++ Database object
-    exists. Without the gc pass, the object can survive the ``del`` long
-    enough for the next ``rmtree`` to fail with ``WinError 32``.
-    """
-    global _global_db
-    db = _global_db
-    if db is None:
+def global_discovery_graph_path() -> Path:
+    """Return the edition-owned global discovery graph path."""
+    return _global_runtime().global_graph_path()
+
+
+def reset_global_discovery_runtime_for_tests() -> None:
+    """Reset the edition-owned Global Discovery runtime handle."""
+    try:
+        runtime = _global_runtime()
+    except RuntimeError:
         return
-    _global_db = None
-    if hasattr(db, "close"):
-        try:
-            db.close()
-        except Exception as exc:
-            logger.warning(
-                "global_connection.close_failed err=%s", exc,
-                extra={"event": "global_connection.close_failed"},
-            )
-    del db
-    gc.collect()
-
-
-def reset_global_db_for_tests() -> None:
-    """Drop the cached global Database — forces re-open on next call.
-
-    Thin wrapper around :func:`close_global_connection` for legacy test code.
-    """
-    close_global_connection()
+    runtime.reset_for_tests()

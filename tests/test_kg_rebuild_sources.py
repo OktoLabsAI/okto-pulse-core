@@ -30,7 +30,7 @@ from okto_pulse.core.kg.rebuild_sources import (
     get_enumeration_counter_labels,
     reset_enumeration_counter,
 )
-from okto_pulse.core.kg.board_source_store import BoardSourceStore
+from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 from okto_pulse.core.kg.source_maturity import classify_source_for_kg
 
 

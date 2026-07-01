@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass
@@ -12,6 +11,10 @@ from typing import Any, Literal
 
 from okto_pulse.core.infra.config import CoreSettings, DEFAULT_METRICS_BEACON_URL
 from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION
+from okto_pulse.core.telemetry.telemetry_state_registry import (
+    load_telemetry_state,
+    save_telemetry_state,
+)
 
 TelemetryMode = Literal["disabled", "local_only", "anonymous_beacon"]
 EffectiveTelemetryMode = Literal["disabled", "anonymous_beacon"]
@@ -108,24 +111,14 @@ def metrics_dir_for(settings: CoreSettings) -> Path:
     return (Path.home() / ".okto-pulse" / "metrics").resolve()
 
 
-def state_path(metrics_dir: Path) -> Path:
-    return metrics_dir / "state.json"
-
-
 def load_state(metrics_dir: Path) -> dict[str, Any]:
-    path = state_path(metrics_dir)
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    """Compatibility wrapper over the registered full-dict carrier."""
+    return load_telemetry_state(metrics_dir)
 
 
 def save_state(metrics_dir: Path, state: dict[str, Any]) -> None:
-    metrics_dir.mkdir(parents=True, exist_ok=True)
-    tmp = state_path(metrics_dir).with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
-    tmp.replace(state_path(metrics_dir))
+    """Compatibility wrapper over the registered full-dict carrier."""
+    save_telemetry_state(metrics_dir, state)
 
 
 def record_consent(
@@ -217,9 +210,10 @@ def resolve_telemetry_config(
     settings: CoreSettings,
     *,
     cli_mode: str | None = None,
+    state_snapshot: dict[str, Any] | None = None,
 ) -> ResolvedTelemetryConfig:
     metrics_dir = metrics_dir_for(settings)
-    state = load_state(metrics_dir)
+    state = dict(state_snapshot) if state_snapshot is not None else load_state(metrics_dir)
     precedence = (
         "cli_flag",
         "env",

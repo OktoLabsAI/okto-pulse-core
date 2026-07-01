@@ -348,7 +348,7 @@ def _register_add_node_tool(agent_id: str):
         return _FakeAgent(agent_id)
 
     mcp = _MCPRegistryDouble()
-    register_kg_tools(mcp, get_agent=_get_agent, get_db=lambda: _NullDb())
+    register_kg_tools(mcp, get_agent=_get_agent, get_uow=lambda: _NullDb())
     return mcp.tools["okto_pulse_kg_add_node_candidate"]
 
 

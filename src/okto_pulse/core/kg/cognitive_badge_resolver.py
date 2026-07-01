@@ -21,7 +21,7 @@ Eligibility rule (KG-03A.2 — extends KG-03.6):
 
 Rationale: decision is a first-class semantic source (KG-03A spec —
 br_6c9efd64 + dec_fee09d11). Active formal decisions emit
-``decision:<spec_id>:<decision_id>`` source rows from BoardSourceStore and
+``decision:<spec_id>:<decision_id>`` source rows from BoardSourceReader and
 participate in the cognitive pending workflow; ideations remain outside
 this surface (dec_0d0f2d9c).
 

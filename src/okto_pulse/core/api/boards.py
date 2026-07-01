@@ -3,14 +3,43 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.infra.auth import require_user, get_realm_id
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.application.use_cases import CreateBoardCommand, CreateBoardUseCase
-from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.repositories import PulseUnitOfWork
+from okto_pulse.core.application.use_cases import (
+    CreateBoardCommand,
+    CreateBoardUseCase,
+    EntityNotFoundError,
+    PermissionDeniedError,
+)
+from okto_pulse.core.application.use_cases.boards_crud import (
+    ArchiveTreeCommand,
+    ArchiveTreeUseCase,
+    CreateCardInBoardCommand,
+    CreateCardInBoardUseCase,
+    DeleteBoardCommand,
+    DeleteBoardUseCase,
+    GetBoardColumnsCommand,
+    GetBoardColumnsUseCase,
+    GetBoardCommand,
+    GetBoardUseCase,
+    ListBoardsCommand,
+    ListBoardSharesCommand,
+    ListBoardSharesUseCase,
+    ListBoardsUseCase,
+    RestoreTreeCommand,
+    RestoreTreeUseCase,
+    RevokeBoardShareCommand,
+    RevokeBoardShareUseCase,
+    ShareBoardCommand,
+    ShareBoardUseCase,
+    UpdateBoardCommand,
+    UpdateBoardShareCommand,
+    UpdateBoardShareUseCase,
+    UpdateBoardUseCase,
+)
+from okto_pulse.core.domain.enums import CardStatus
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.infra.auth import require_user, get_realm_id
 from okto_pulse.core.models import (
     BoardCreate,
     BoardResponse,
@@ -22,25 +51,10 @@ from okto_pulse.core.models import (
     CardCreate,
     CardResponse,
 )
-from okto_pulse.core.models.db import CardStatus
-from okto_pulse.core.services.board_governance import BoardGovernanceService
-from okto_pulse.core.services import (
-    AgentService,
-    BoardService,
-    CardOperationError,
-    CardService,
-    ShareService,
-)
+from okto_pulse.core.repositories import PulseUnitOfWork
+from okto_pulse.core.services import CardOperationError
 
 router = APIRouter()
-
-
-def _attach_effective_board_settings(board):
-    if board is not None:
-        board.__dict__["settings"] = BoardGovernanceService.normalize_settings(
-            getattr(board, "settings", None)
-        )
-    return board
 
 
 @router.post("", response_model=BoardResponse, status_code=status.HTTP_201_CREATED)
@@ -72,14 +86,15 @@ async def list_boards(
     view: Literal["my", "shared", "all"] = Query("my"),
     user_id: str = Depends(require_user),
     realm_id: str | None = Depends(get_realm_id),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List boards for the current user. view: my|shared|all."""
-    service = BoardService(db)
-    boards, _ = await service.list_boards(user_id, offset, limit, realm_id=realm_id, view=view)
-    for board in boards:
-        _attach_effective_board_settings(board)
-    return boards
+    result = await ListBoardsUseCase().execute(
+        ListBoardsCommand(offset=offset, limit=limit, view=view),
+        actor=RESTAdapterContract.actor(user_id, realm_id=realm_id),
+        uow=uow,
+    )
+    return result.boards
 
 
 @router.get("/{board_id}", response_model=BoardResponse)
@@ -87,29 +102,21 @@ async def get_board(
     board_id: str,
     compact: bool = Query(False, description="When true, omit inline cards/agents and return only the overview envelope with counts. Default false preserves the legacy full payload for the existing frontend."),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a board by ID. By default returns the full board (legacy shape);
     pass `compact=true` for the overview envelope (Ideação token-optimization
     Story 2 — ~200B vs ~10KB).
     """
-    service = BoardService(db)
-    board = await service.get_board(board_id, user_id)
-    if not board:
+    try:
+        result = await GetBoardUseCase().execute(
+            GetBoardCommand(board_id, compact=compact),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
-    agent_service = AgentService(db)
-    board_agents = await agent_service.list_agents_for_board(board_id)
-    cards_list = list(board.cards or [])
-    board.__dict__["counts"] = {
-        "cards": len(cards_list),
-        "agents": len(board_agents),
-    }
-    if compact:
-        board.__dict__["agents"] = []
-        board.__dict__["cards"] = []
-    else:
-        board.__dict__["agents"] = board_agents
-    return _attach_effective_board_settings(board)
+    return result.board
 
 
 @router.patch("/{board_id}", response_model=BoardResponse)
@@ -117,33 +124,35 @@ async def update_board(
     board_id: str,
     data: BoardUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Update a board."""
-    service = BoardService(db)
-    board = await service.update_board(board_id, user_id, data)
-    if not board:
+    try:
+        result = await UpdateBoardUseCase().execute(
+            UpdateBoardCommand(board_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
-    await db.commit()
-    # Re-fetch with relationships loaded
-    board = await service.get_board(board_id, user_id)
-    agent_service = AgentService(db)
-    board.__dict__["agents"] = await agent_service.list_agents_for_board(board_id)
-    return _attach_effective_board_settings(board)
+    return result.board
 
 
 @router.delete("/{board_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_board(
     board_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete a board and all its cards."""
-    service = BoardService(db)
-    deleted = await service.delete_board(board_id, user_id)
-    if not deleted:
+    try:
+        await DeleteBoardUseCase().execute(
+            DeleteBoardCommand(board_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
-    await db.commit()
 
 
 @router.post("/{board_id}/cards", response_model=CardResponse, status_code=status.HTTP_201_CREATED)
@@ -151,24 +160,24 @@ async def create_card(
     board_id: str,
     data: CardCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a new card in a board."""
-    service = CardService(db)
     try:
-        card = await service.create_card(board_id, user_id, data)
+        result = await CreateCardInBoardUseCase().execute(
+            CreateCardInBoardCommand(board_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except CardOperationError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    if not card:
+    except EntityNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Board not found or not owned by user"
         )
-    await db.commit()
-    # Re-fetch with relationships loaded
-    card = await CardService(db).get_card(card.id)
-    return card
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return result.card
 
 
 @router.get("/{board_id}/columns")
@@ -176,15 +185,19 @@ async def get_board_columns(
     board_id: str,
     include_archived: bool = Query(False, alias="include_archived"),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get board cards grouped by status/column."""
-
-    board_service = BoardService(db)
-    board = await board_service.get_board(board_id, user_id)
-    if not board:
+    try:
+        result = await GetBoardColumnsUseCase().execute(
+            GetBoardColumnsCommand(board_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
 
+    board = result.board
     # Group cards by status (exclude archived unless requested)
     columns = {s.value: [] for s in CardStatus}
     for card in board.cards:
@@ -230,17 +243,18 @@ async def archive_tree(
     entity_type: str,
     entity_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Archive an entity and all its descendants in cascade."""
-    from okto_pulse.core.services.main import ArchiveService
-    service = ArchiveService(db)
     try:
-        counts = await service.archive_tree(entity_type, entity_id)
+        result = await ArchiveTreeUseCase().execute(
+            ArchiveTreeCommand(entity_type, entity_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    await db.commit()
-    return {"success": True, "archived_count": counts}
+    return {"success": True, "archived_count": result.counts}
 
 
 @router.post("/{board_id}/restore/{entity_type}/{entity_id}")
@@ -249,17 +263,18 @@ async def restore_tree(
     entity_type: str,
     entity_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Restore an archived entity and all its descendants."""
-    from okto_pulse.core.services.main import ArchiveService
-    service = ArchiveService(db)
     try:
-        counts = await service.restore_tree(entity_type, entity_id)
+        result = await RestoreTreeUseCase().execute(
+            RestoreTreeCommand(entity_type, entity_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    await db.commit()
-    return {"success": True, "restored_count": counts}
+    return {"success": True, "restored_count": result.counts}
 
 
 # ==================== SHARES ====================
@@ -275,33 +290,36 @@ async def share_board(
     data: BoardShareCreate,
     user_id: str = Depends(require_user),
     realm_id: str | None = Depends(get_realm_id),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Share a board with another user (owner/admin only)."""
-    service = ShareService(db)
-    share = await service.share_board(board_id, user_id, realm_id or "", data)
-    if not share:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to share this board or invalid target user",
+    try:
+        result = await ShareBoardUseCase().execute(
+            ShareBoardCommand(board_id, data),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id),
+            uow=uow,
         )
-    await db.commit()
-    return share
+    except PermissionDeniedError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=e.message)
+    return result.share
 
 
 @router.get("/{board_id}/shares", response_model=list[BoardShareResponse])
 async def list_board_shares(
     board_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all shares for a board."""
-    service = ShareService(db)
-    # Verify caller has access
-    perm = await service.get_user_permission(board_id, user_id)
-    if not perm:
+    try:
+        result = await ListBoardSharesUseCase().execute(
+            ListBoardSharesCommand(board_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
-    return await service.list_shares(board_id)
+    return result.shares
 
 
 @router.patch("/{board_id}/shares/{share_id}", response_model=BoardShareResponse)
@@ -310,18 +328,18 @@ async def update_board_share(
     share_id: str,
     data: BoardShareUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Update a share's permission (owner/admin only)."""
-    service = ShareService(db)
-    share = await service.update_share(share_id, user_id, data)
-    if not share:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to update this share",
+    try:
+        result = await UpdateBoardShareUseCase().execute(
+            UpdateBoardShareCommand(share_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
-    await db.commit()
-    return share
+    except PermissionDeniedError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=e.message)
+    return result.share
 
 
 @router.delete("/{board_id}/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -329,14 +347,14 @@ async def revoke_board_share(
     board_id: str,
     share_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Revoke a share (owner/admin can revoke, shared user can leave)."""
-    service = ShareService(db)
-    revoked = await service.revoke_share(share_id, user_id)
-    if not revoked:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to revoke this share",
+    try:
+        await RevokeBoardShareUseCase().execute(
+            RevokeBoardShareCommand(share_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
-    await db.commit()
+    except PermissionDeniedError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=e.message)

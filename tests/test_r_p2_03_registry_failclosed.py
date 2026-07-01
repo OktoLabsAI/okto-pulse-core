@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from okto_pulse.core.composition import RuntimeProviderMissing
 from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.interfaces.registry import (
     KGProviderRegistry,
@@ -36,6 +37,57 @@ _SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "okto_pulse"
 # the dedicated config tests below, not the cache/rate/session "not implicitly
 # defaulted" parametrize.
 _FULLY_CLOSED_ONDA_A = ("cache_backend", "rate_limiter", "session_store")
+_READ_TIME_FAIL_CLOSED_SLOTS = (
+    "cache_backend",
+    "rate_limiter",
+    "session_store",
+    "embedding_provider",
+    "auth_context_factory",
+)
+
+
+def _base_with_required_slots_only() -> KGProviderRegistry:
+    from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+    from okto_pulse.core.kg.providers.testing.memory_audit_repo import (
+        InMemoryAuditRepository,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
+    from okto_pulse.core.kg.providers.testing.memory_board_source_reader import (
+        InMemoryBoardSourceReader,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_global_discovery_runtime import (
+        InMemoryGlobalDiscoveryRuntime,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+        InMemoryCypherExecutor,
+        InMemoryGraphLifecycle,
+        InMemoryGraphPathResolver,
+        InMemoryGraphSchemaManager,
+        InMemoryGraphStore,
+        InMemoryGraphTransaction,
+        in_memory_safe_write_step_adapter,
+    )
+
+    store = InMemoryGraphStore()
+    resolver = InMemoryGraphPathResolver()
+    schema_manager = InMemoryGraphSchemaManager(store)
+    return KGProviderRegistry(
+        config=SettingsKGConfig(),
+        event_bus=InMemoryEventBus(),
+        audit_repo=InMemoryAuditRepository(),
+        graph_store=store,
+        cypher_executor=InMemoryCypherExecutor(),
+        graph_transaction=InMemoryGraphTransaction(),
+        graph_schema_manager=schema_manager,
+        graph_lifecycle=InMemoryGraphLifecycle(
+            resolver=resolver,
+            schema_manager=schema_manager,
+        ),
+        graph_path_resolver=resolver,
+        safe_write_step_adapter=in_memory_safe_write_step_adapter,
+        global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
+        board_source_reader=InMemoryBoardSourceReader(),
+    )
 
 
 # --- AUDIT: no production code uses the test-only fake builder ----------------
@@ -93,6 +145,12 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
         InMemoryAuditRepository,
     )
     from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
+    from okto_pulse.core.kg.providers.testing.memory_board_source_reader import (
+        InMemoryBoardSourceReader,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_global_discovery_runtime import (
+        InMemoryGlobalDiscoveryRuntime,
+    )
     from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
@@ -121,10 +179,12 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
                     resolver=resolver,
                     schema_manager=schema_manager,
                 ),
-                graph_path_resolver=resolver,
-                safe_write_step_adapter=in_memory_safe_write_step_adapter,
+                    graph_path_resolver=resolver,
+                    safe_write_step_adapter=in_memory_safe_write_step_adapter,
+                    global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
+                    board_source_reader=InMemoryBoardSourceReader(),
+                )
             )
-        )
         assert getattr(get_kg_registry(), slot) is None, (
             f"{slot} was implicitly defaulted by the core in the composed path"
         )
@@ -147,6 +207,12 @@ def test_required_data_slots_fail_closed_when_composition_omits_one(
         InMemoryAuditRepository,
     )
     from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
+    from okto_pulse.core.kg.providers.testing.memory_board_source_reader import (
+        InMemoryBoardSourceReader,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_global_discovery_runtime import (
+        InMemoryGlobalDiscoveryRuntime,
+    )
     from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
@@ -174,6 +240,8 @@ def test_required_data_slots_fail_closed_when_composition_omits_one(
         ),
         "graph_path_resolver": resolver,
         "safe_write_step_adapter": in_memory_safe_write_step_adapter,
+        "global_discovery_runtime": InMemoryGlobalDiscoveryRuntime(),
+        "board_source_reader": InMemoryBoardSourceReader(),
     }
     providers[missing_slot] = None
 
@@ -194,5 +262,37 @@ def test_explicit_fake_composition_supplies_every_onda_a_slot() -> None:
         reg = get_kg_registry()
         for slot in (*_FULLY_CLOSED_ONDA_A, "config"):
             assert getattr(reg, slot) is not None, f"fake route left {slot} unset"
+    finally:
+        configure_test_kg_registry()
+
+
+def test_read_time_slots_are_not_promoted_to_configure_missing() -> None:
+    """AC4/ac_211fa2a2: read-time-fail-closed slots stay out of the registry's
+    configure-time required list. Startup composition succeeds with those slots
+    unset; runtime reads then fail closed where a require porta exists."""
+    reset_registry_for_tests()
+    try:
+        configure_kg_registry(base_registry=_base_with_required_slots_only())
+        reg = get_kg_registry()
+
+        for slot in _READ_TIME_FAIL_CLOSED_SLOTS:
+            assert getattr(reg, slot) is None
+
+        for require_name, provider_key in (
+            ("require_cache_backend", "cache_backend"),
+            ("require_rate_limiter", "rate_limiter"),
+            ("require_session_store", "session_store"),
+            ("require_embedding_provider", "embedding_provider"),
+        ):
+            with pytest.raises(RuntimeProviderMissing) as exc:
+                getattr(reg, require_name)()
+            assert exc.value.code == "runtime_provider_missing"
+            assert exc.value.provider_key == provider_key
+
+        from okto_pulse.core.kg.embedding import get_embedding_provider
+
+        with pytest.raises(RuntimeProviderMissing) as exc:
+            get_embedding_provider()
+        assert exc.value.provider_key == "embedding_provider"
     finally:
         configure_test_kg_registry()

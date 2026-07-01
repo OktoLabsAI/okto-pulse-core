@@ -41,7 +41,6 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingMarker,
     CognitivePendingOutcomeType,
     get_update_event_count,
-    get_update_samples,
     reset_update_counter,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
@@ -100,7 +99,7 @@ def update_tool(isolated_base_dir: Path) -> Callable[..., Any]:
         async def __aexit__(self, *_exc: Any) -> bool:
             return False
 
-    register_kg_tools(mcp, get_agent=_agent, get_db=lambda: _NullDb())
+    register_kg_tools(mcp, get_agent=_agent, get_uow=lambda: _NullDb())
     return mcp.tools["okto_pulse_kg_update_cognitive_pending_item"]
 
 

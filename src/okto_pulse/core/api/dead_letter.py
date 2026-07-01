@@ -17,13 +17,15 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.services.dead_letter_inspector_service import (
-    list_dead_letter_rows,
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases import (
+    ListDeadLetterRowsCommand,
+    ListDeadLetterRowsUseCase,
 )
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter()
 
@@ -54,16 +56,24 @@ async def get_dead_letter(
     board_id: str = Query(..., description="Board UUID (required)"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    _user: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_user),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> DeadLetterListResponse:
     """List dead-lettered consolidation rows for a board.
 
     Returns ``{rows, total, limit, offset}``. Each row includes the
     full ``errors[]`` history from the TR16 schema (one entry per
     attempt: error_type, message, occurred_at, traceback).
+
+    Spec R01A IMP2: the handler is the REST inbound adapter — it obtains a
+    request-scoped ``PulseUnitOfWork`` (bound to the request session via
+    ``get_db``, so the dependency override still applies) and calls the
+    transport-free use case. No raw ``AsyncSession``/``get_db`` in the handler's
+    contract with the use case; payload/permission are unchanged.
     """
-    data = await list_dead_letter_rows(
-        db, board_id, limit=limit, offset=offset,
+    result = await ListDeadLetterRowsUseCase().execute(
+        ListDeadLetterRowsCommand(board_id, limit=limit, offset=offset),
+        actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+        uow=uow,
     )
-    return DeadLetterListResponse(**data)
+    return DeadLetterListResponse(**result.data)

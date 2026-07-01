@@ -180,11 +180,19 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             predecessor_refs=("#03_lifecycle_composition",),
             target_destination="community/adapters (composition storage_provider)",
             packages=("stdlib(pathlib,shutil)",),
-            oracles_required=("storage_roundtrip", "storage_provider_conformance"),
+            oracles_required=(
+                "storage_upload",
+                "storage_download_stream",
+                "storage_delete",
+                "storage_bypass_gate",
+            ),
             removal_criterion=(
-                "Community registers a StorageProvider via composition and its "
-                "oracle passes; remove the core default only after "
-                "register-before-remove."
+                "R02: the core serves attachment downloads through the registered "
+                "StorageProvider (no FileResponse(path) / filesystem bypass). The "
+                "port is marked CLOSED only after the upload/download-stream/delete "
+                "oracle passes AND the storage-bypass gate is green — see "
+                "evaluate_storage_provider_readiness (FR3). Remove the core default "
+                "only after register-before-remove."
             ),
             status="blocked",
         ),
@@ -291,27 +299,26 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             ),
             status="blocked",
         ),
-        # --- MCP auth context (#08 — request-scope carrier done; bridge still in core) ---
+        # --- MCP auth context (#08 — concrete bridge owned by Community, fail-closed on read) ---
         _entry(
             adapter_key="mcp_auth_context",
-            owner="okto-pulse-core/inbound-mcp",
-            current_module="okto_pulse/core/kg/providers/embedded/mcp_auth_context.py",
+            owner="okto-pulse-community/inbound-mcp",
+            current_module="okto_pulse/community/adapters/mcp_auth.py",
             port_ref="AuthContext / McpAuthenticator",
-            wave="R05-MCPAUTH",
+            wave="R06-MCPAUTH",
             predecessor_refs=("#08_mcp_auth", "#16_schema_migrations"),
-            target_destination="community/adapters (mcp authenticator)",
+            target_destination="community/adapters (mcp auth context bridge)",
             packages=("stdlib",),
             oracles_required=("mcp_auth_resolve_agent", "boards_acl_resolution"),
             removal_criterion=(
-                "R08-A (McpAuthenticator port + Community adapter) and R08-B (the "
-                "AuthSession<->AuthContext bridge reusing MCPAuthContext + the "
-                "Community composition registering auth_context_factory pass-through "
-                "so the KG query tools resolve agent_id/boards via the port) are "
-                "DONE. R-P2-09 also removed the _active_api_key ContextVar carrier: "
-                "per-request identity now rides the ASGI/FastMCP request scope. "
-                "MCPAuthContext remains as a fail-closed embedded bridge; remove it "
-                "only after Community owns the concrete AuthContext bridge and the "
-                "MCP auth/board-ACL replay oracles remain green."
+                "R06 moved the concrete AuthSession<->AuthContext bridge and "
+                "auth_context_factory builder to okto_pulse.community.adapters.mcp_auth. "
+                "Core retains only AuthContext/McpAuthenticator/AuthContextFactory "
+                "contracts and KG query tools fail closed when the Community composition "
+                "does not register auth_context_factory. Do not add auth_context_factory "
+                "to KGProviderRegistry._missing; readiness is proven by Community "
+                "registration, MCP auth/board-ACL replay oracles and import/fallback "
+                "gates."
             ),
             status="blocked",
         ),
@@ -426,21 +433,23 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         ),
         _entry(
             adapter_key="global_discovery_db",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/global_discovery/schema.py",
-            port_ref="kg_registry (global-discovery DB handle)",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/global_discovery_runtime.py",
+            port_ref="GlobalDiscoveryRuntime",
             wave="R05-KG",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="composition-owned GlobalDiscoveryDb handle",
+            target_destination="community/adapters (global discovery runtime)",
             packages=("ladybug(embedded)",),
             oracles_required=("global_discovery_db_singleton_replaced",),
             removal_criterion=(
-                "deferred_to_05 (singleton ledger _global_db): the composition "
-                "root owns the global-discovery DB handle; remove the module "
-                "global only after the provider is wired."
+                "R09 done: Community registers GlobalDiscoveryRuntime behind "
+                "kg_registry and owns the local global-discovery DB handle; the "
+                "core schema module exposes only schema constants and provider "
+                "delegating wrappers."
             ),
-            status="blocked",
+            status="ready",
             deferred_provider_key="kg_registry",
+            metadata=(("moved_by", "R09"),),
         ),
         # --- infra config providers ---
         _entry(
@@ -463,7 +472,7 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         _entry(
             adapter_key="singleton_scheduler_control",
             owner="okto-pulse-core/runtime",
-            current_module="okto_pulse/core/services/scheduler_control_adapter.py",
+            current_module="okto_pulse/community/adapters/scheduler.py",
             port_ref="SchedulerControl",
             wave="R05-RUNTIME",
             predecessor_refs=("#03_lifecycle_composition",),
@@ -471,9 +480,8 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             packages=("APScheduler",),
             oracles_required=("scheduler_reschedule_signal",),
             removal_criterion=(
-                "Composition root owns the SchedulerControl provider; remove the "
-                "singleton bridge once settings/lifespan resolve it from "
-                "composition."
+                "Community owns the SchedulerControl provider; remove the remaining "
+                "scheduler singleton bridge once lifecycle boot is composition-owned."
             ),
             status="blocked",
         ),
@@ -512,37 +520,37 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             ),
             status="deferred",
         ),
-        # --- R-P2-01: raw SQLite residuals governed BEFORE any removal ---
-        # The KG source-materialization + rebuild-ingestion adapters still use raw
-        # ``sqlite3.connect``; they are ledgered here (register-before-remove) so a
-        # later spec can strangle them behind a relational port. R-P2-01 is
-        # governance-only — it does NOT remove the raw sqlite3 usage.
+        # --- R-P2-01/R10A/R10B: raw SQLite source reads + ingestion moved ---
+        # R10A closed the source-read port and moved source materialization reads
+        # to the Community adapter. Rebuild ingestion is still a raw SQLite
+        # residual governed below.
         _entry(
             adapter_key="board_source_store",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/board_source_store.py",
-            port_ref="(raw SQLite source reader — no port yet; #04 relational boundary)",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/board_source_reader.py",
+            port_ref="BoardSourceReader",
             wave="R05-RELATIONAL",
             predecessor_refs=("#04_repository_uow",),
-            target_destination="composition-owned relational source reader (Community)",
+            target_destination="community/adapters/board_source_reader.py",
             packages=("stdlib(sqlite3)",),
             oracles_required=(
                 "board_source_fetch_parity",
                 "source_materialization_unaffected",
             ),
             removal_criterion=(
-                "deferred to the relational adapter boundary (#04 repository-uow): "
-                "the composition root owns the source reader behind a port; remove "
-                "the raw sqlite3.connect only after register-before-remove + a "
-                "fetch-parity oracle. R-P2-01 governs it; it does NOT remove it."
+                "R10A done: the composition root owns source reads through "
+                "BoardSourceReader; core keeps only DTO/hash contracts and the "
+                "SourceReadConsumerGate blocks new raw BoardSourceStore/SQLite "
+                "source-read consumers."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "R10A"),),
         ),
         _entry(
             adapter_key="board_rebuild_ingestion_adapter",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/board_rebuild_adapter.py",
-            port_ref="(raw SQLite rebuild ingestion — no port yet; #04 relational boundary)",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/board_rebuild_ingestion.py",
+            port_ref="RebuildIngestionPort/StepAdapterFactory",
             wave="R05-RELATIONAL",
             predecessor_refs=("#04_repository_uow",),
             target_destination="composition-owned relational rebuild ingestion (Community)",
@@ -550,14 +558,18 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             oracles_required=(
                 "rebuild_enqueue_receipt_parity",
                 "rebuild_quarantine_unaffected",
+                "rebuild_fail_closed_provider_missing",
+                "rebuild_registry_wiring",
             ),
             removal_criterion=(
-                "deferred to the relational adapter boundary (#04 repository-uow): "
-                "the composition root owns the rebuild ingestion behind a port; "
-                "remove the raw sqlite3.connect only after register-before-remove + "
-                "an enqueue-receipt oracle. R-P2-01 governs it; it does NOT remove it."
+                "R10B done: the composition root owns rebuild ingestion behind "
+                "RebuildIngestionPort/StepAdapterFactory; core REST/MCP consumers "
+                "resolve the provider through the KG registry and fail closed when "
+                "missing. The Community adapter preserves enqueue/drain/quarantine "
+                "oracles while core keeps only pure source filters and receipt helpers."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "R10B"),),
         ),
     ]
     return tuple(entries)
@@ -634,6 +646,81 @@ def evaluate_removal(
 
 
 # ===========================================================================
+# R02 FR3 — StorageProvider readiness (3-op oracle + bypass gate), FAIL-CLOSED.
+# ===========================================================================
+#: The three runtime operations the StorageProvider oracle MUST exercise before
+#: the port can be marked closed (FR3 — "somente após oracle upload/download/
+#: delete"). ``download_stream`` is specifically the STREAMED read path (AC6).
+STORAGE_PROVIDER_ORACLE_OPS: tuple[str, ...] = ("upload", "download_stream", "delete")
+
+
+@dataclass(frozen=True)
+class StorageProviderReadinessEvidence:
+    """Bounded evidence for the StorageProvider port (R02 FR3). Each op is
+    tri-state: ``True`` passed, ``False`` failed, ``None`` absent. ``bypass_gate``
+    is the FR4/AC4 anti-bypass gate result (the core API has no path bypass)."""
+
+    upload: bool | None = None
+    download_stream: bool | None = None
+    delete: bool | None = None
+    bypass_gate: bool | None = None
+
+    def oracle_map(self) -> dict[str, bool | None]:
+        return {
+            "upload": self.upload,
+            "download_stream": self.download_stream,
+            "delete": self.delete,
+        }
+
+
+def evaluate_storage_provider_readiness(
+    evidence: StorageProviderReadinessEvidence,
+) -> AdapterReadinessVerdict:
+    """Deterministically decide whether the StorageProvider port is CLOSED/ready.
+
+    FR3 fail-closed contract: the port is ``ready`` ONLY when all three oracle ops
+    (upload, download_stream, delete) pass AND the storage-bypass gate is green.
+    Any missing/failed op makes the verdict ``blocked`` and CITES the offending op
+    in ``missing_evidence`` / ``failed_evidence``; a missing/failed bypass gate is
+    likewise blocking. The reason is never collapsed — the caller sees exactly
+    which op (or the gate) is unproven. Mirrors the fail-closed gateway logic of
+    :func:`evaluate_adapter_readiness` but with the storage-specific 3-op oracle.
+    """
+    om = evidence.oracle_map()
+    missing = tuple(op for op in STORAGE_PROVIDER_ORACLE_OPS if om[op] is None)
+    failed = tuple(op for op in STORAGE_PROVIDER_ORACLE_OPS if om[op] is False)
+    if evidence.bypass_gate is None:
+        missing = missing + ("bypass_gate",)
+    elif evidence.bypass_gate is False:
+        failed = failed + ("bypass_gate",)
+
+    required = STORAGE_PROVIDER_ORACLE_OPS + ("storage_bypass_gate",)
+    if missing or failed:
+        reasons = ("storage_oracle_incomplete",)
+        reasons += tuple(f"missing:{m}" for m in missing)
+        reasons += tuple(f"failed:{f}" for f in failed)
+        return AdapterReadinessVerdict(
+            adapter_key="filesystem_storage_provider",
+            status="blocked",
+            reasons=reasons,
+            missing_evidence=missing,
+            failed_evidence=failed,
+            oracles_required=required,
+            next_specs=("R02",),
+        )
+
+    return AdapterReadinessVerdict(
+        adapter_key="filesystem_storage_provider",
+        status="ready",
+        reasons=("storage_oracle_complete", "bypass_gate_green"),
+        missing_evidence=(),
+        failed_evidence=(),
+        oracles_required=required,
+        next_specs=("R02",),
+    )
+
+
+# ===========================================================================
 # deferred_to_05 reconciliation gate (tr_3a6b50ff) — 1:1.
 # ===========================================================================
 @dataclass(frozen=True)
@@ -666,11 +753,10 @@ def run_deferred_reconciliation_gate(
 
     The authoritative deferred provider keys are AGGREGATED from the existing
     canonical sources (not re-derived): ``composition.DEFERRED_TO_05_PROVIDERS``,
-    ``composition_gate.DEFERRED_SYMBOLS`` and the ``_global_db`` debt in
-    ``singleton_gate.SINGLETON_LEDGER``. Every key must have an inventory entry
-    (with a verifiable, non-empty removal criterion), and no inventory entry may
-    claim a deferred key absent from those sources. All three are PURE modules,
-    lazy-imported only when this gate is CALLED.
+    and ``composition_gate.DEFERRED_SYMBOLS``. Every key must have an inventory
+    entry (with a verifiable, non-empty removal criterion), and no inventory
+    entry may claim a deferred key absent from those sources. Both are PURE
+    modules, lazy-imported only when this gate is CALLED.
     """
     root = source_root or _default_source_root()
     core = root / "okto_pulse" / "core"
@@ -692,23 +778,14 @@ def run_deferred_reconciliation_gate(
     from okto_pulse.core.application.boundary.composition_gate import (
         DEFERRED_SYMBOLS,
     )
-    from okto_pulse.core.application.boundary.singleton_gate import (
-        SINGLETON_LEDGER,
-    )
     from okto_pulse.core.composition import DEFERRED_TO_05_PROVIDERS
 
     marker_provider_keys: set[str] = set()
     marker_provider_keys |= set(DEFERRED_TO_05_PROVIDERS)
     marker_provider_keys |= set(DEFERRED_SYMBOLS.values())
-    _gd = SINGLETON_LEDGER.get("_global_db", {})
-    if "deferred_to_05" in str(_gd.get("retirement_criterion", "")):
-        target = _gd.get("target_provider")
-        if target:
-            marker_provider_keys.add(target)
     canonical_sources = (
         "okto_pulse.core.composition.DEFERRED_TO_05_PROVIDERS",
         "okto_pulse.core.application.boundary.composition_gate.DEFERRED_SYMBOLS",
-        "okto_pulse.core.application.boundary.singleton_gate.SINGLETON_LEDGER[_global_db]",
     )
 
     inventory = build_adapter_inventory()
@@ -754,6 +831,9 @@ __all__ = [
     "build_adapter_inventory",
     "evaluate_adapter_readiness",
     "evaluate_removal",
+    "STORAGE_PROVIDER_ORACLE_OPS",
+    "StorageProviderReadinessEvidence",
+    "evaluate_storage_provider_readiness",
     "DeferredReconciliationReport",
     "run_deferred_reconciliation_gate",
 ]

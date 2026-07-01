@@ -6,6 +6,14 @@ v1 is read-only for the intent catalog (GET). Admin CRUD on intents
 parent spec. Saved-search and search-history write endpoints are also
 future work — v1 only ships the GET surface needed by the redesigned
 GlobalSearchView.
+
+Spec R01A REST-FU7-S4: the five read/execute endpoints now route through the
+transport-free discovery use cases + ``get_unit_of_work``; the inline SQL moved
+to ``DiscoveryCatalogReader`` and the selector read policy to
+``DiscoverySelectorRestAccessPolicy`` (both in
+``services/discovery_catalog_reader``). Each handler is a thin adapter mapping
+the use case result/errors back to HTTP, preserving the exact status codes,
+detail payloads and the selector observability metric.
 """
 
 from __future__ import annotations
@@ -15,66 +23,44 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.models.db import (
-    DiscoveryIntent,
-    DiscoverySavedSearch,
-    DiscoverySearchHistory,
-    Spec,
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases import (
+    CommandValidationError,
+    EntityNotFoundError,
 )
+from okto_pulse.core.application.use_cases.discovery_crud import (
+    ExecuteDiscoveryIntentCommand,
+    ExecuteDiscoveryIntentUseCase,
+    ListDiscoveryIntentsCommand,
+    ListDiscoveryIntentsUseCase,
+    ListDiscoverySavedSearchesCommand,
+    ListDiscoverySavedSearchesUseCase,
+    ListDiscoverySearchHistoryCommand,
+    ListDiscoverySearchHistoryUseCase,
+    ListDiscoverySelectorOptionsCommand,
+    ListDiscoverySelectorOptionsUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.models.schemas import (
     DiscoveryIntentResponse,
     DiscoverySavedSearchResponse,
     DiscoverySearchHistoryResponse,
 )
-from okto_pulse.core.services import ShareService
+from okto_pulse.core.repositories import PulseUnitOfWork
+from okto_pulse.core.services.discovery_executor import (
+    DiscoverySelectorExecutionError,
+)
 from okto_pulse.core.services.discovery_selector_catalog import (
     DiscoverySelectorAccessDenied,
-    DiscoverySelectorCatalog,
     DiscoverySelectorInvalidRequest,
     DiscoverySelectorSpecNotFound,
     DiscoverySelectorUnsafeProjection,
-    SelectorAccessPolicy,
-    get_default_discovery_selector_cache,
-)
-from okto_pulse.core.services.discovery_executor import (
-    DiscoverySelectorExecutionError,
-    execute_intent,
 )
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-class DiscoverySelectorRestAccessPolicy(SelectorAccessPolicy):
-    """Board/spec read policy used by the selector REST endpoint."""
-
-    async def can_read_board(
-        self,
-        db: AsyncSession,
-        identity: Any,
-        board_id: str,
-    ) -> bool:
-        user_id = str(identity or "")
-        if not user_id:
-            return False
-        permission = await ShareService(db).get_user_permission(board_id, user_id)
-        return permission is not None
-
-    async def can_read_spec(
-        self,
-        db: AsyncSession,
-        identity: Any,
-        spec: Spec,
-    ) -> bool:
-        board_id = getattr(spec, "board_id", None)
-        if not board_id:
-            return False
-        return await self.can_read_board(db, identity, str(board_id))
 
 
 def _selector_error(
@@ -151,15 +137,15 @@ def _selector_metric(
 )
 async def list_discovery_intents(
     _user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[DiscoveryIntent]:
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
+):
     """Return the active catalog of user-facing Discovery intents."""
-    result = await db.execute(
-        select(DiscoveryIntent)
-        .where(DiscoveryIntent.active == True)  # noqa: E712
-        .order_by(DiscoveryIntent.category, DiscoveryIntent.label)
+    result = await ListDiscoveryIntentsUseCase().execute(
+        ListDiscoveryIntentsCommand(),
+        actor=RESTAdapterContract.actor(_user_id),
+        uow=uow,
     )
-    return list(result.scalars().all())
+    return result.intents
 
 
 @router.get("/discovery/boards/{board_id}/selector-options")
@@ -174,7 +160,7 @@ async def list_discovery_selector_options(
     offset: int = Query(0, ge=0),
     include_superseded: bool = Query(False),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict[str, Any]:
     """Return metadata-only Discovery selector options for a board.
 
@@ -186,32 +172,24 @@ async def list_discovery_selector_options(
     cache_status = "bypass"
     outcome = "success"
     reason: str | None = None
-    policy = DiscoverySelectorRestAccessPolicy()
     try:
-        if not await policy.can_read_board(db, user_id, board_id):
-            outcome = "forbidden"
-            reason = "selector_access_denied"
-            raise _selector_error(status.HTTP_403_FORBIDDEN, "selector_access_denied")
-
-        catalog = DiscoverySelectorCatalog(
-            policy,
-            cache=get_default_discovery_selector_cache(),
-        )
-        result = await catalog.list_options(
-            db,
-            board_id=board_id,
-            selector_kind=selector_kind,  # type: ignore[arg-type]
-            identity=user_id,
-            spec_id=spec_id,
-            child_type=child_type,
-            status=status_filter,
-            q=q,
-            limit=limit,
-            offset=offset,
-            include_superseded=include_superseded,
+        result = await ListDiscoverySelectorOptionsUseCase().execute(
+            ListDiscoverySelectorOptionsCommand(
+                board_id,
+                selector_kind=selector_kind,
+                spec_id=spec_id,
+                child_type=child_type,
+                status_filter=status_filter,
+                q=q,
+                limit=limit,
+                offset=offset,
+                include_superseded=include_superseded,
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
         )
         cache_status = result.cache_status
-        return result.to_dict()
+        return result.payload
     except DiscoverySelectorInvalidRequest as exc:
         outcome = "invalid_request"
         reason = exc.code
@@ -248,15 +226,15 @@ async def list_discovery_selector_options(
 async def list_saved_searches(
     board_id: str,
     _user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[DiscoverySavedSearch]:
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
+):
     """Return the saved searches for a board (shared with all members)."""
-    result = await db.execute(
-        select(DiscoverySavedSearch)
-        .where(DiscoverySavedSearch.board_id == board_id)
-        .order_by(DiscoverySavedSearch.created_at.desc())
+    result = await ListDiscoverySavedSearchesUseCase().execute(
+        ListDiscoverySavedSearchesCommand(board_id),
+        actor=RESTAdapterContract.actor(_user_id, board_id=board_id),
+        uow=uow,
     )
-    return list(result.scalars().all())
+    return result.items
 
 
 @router.get(
@@ -266,19 +244,15 @@ async def list_saved_searches(
 async def list_search_history(
     board_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[DiscoverySearchHistory]:
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
+):
     """Return the current user's last 50 search entries on this board."""
-    result = await db.execute(
-        select(DiscoverySearchHistory)
-        .where(
-            DiscoverySearchHistory.board_id == board_id,
-            DiscoverySearchHistory.user_id == user_id,
-        )
-        .order_by(DiscoverySearchHistory.searched_at.desc())
-        .limit(50)
+    result = await ListDiscoverySearchHistoryUseCase().execute(
+        ListDiscoverySearchHistoryCommand(board_id),
+        actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+        uow=uow,
     )
-    return list(result.scalars().all())
+    return result.items
 
 
 @router.post("/discovery/intents/{intent_id}/execute")
@@ -286,7 +260,7 @@ async def execute_discovery_intent(
     intent_id: str,
     payload: dict[str, Any] = Body(default_factory=dict),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict[str, Any]:
     """Execute the real tool bound to an intent and return a normalized payload.
 
@@ -300,20 +274,17 @@ async def execute_discovery_intent(
     caught at runtime (a CI parity test is tracked in a separate ideation).
     """
     board_id = (payload or {}).get("board_id")
-    if not board_id:
-        raise HTTPException(status_code=400, detail="board_id is required")
-
-    intent = (
-        await db.execute(
-            select(DiscoveryIntent).where(DiscoveryIntent.id == intent_id)
-        )
-    ).scalar_one_or_none()
-    if intent is None or not intent.active:
-        raise HTTPException(status_code=404, detail="Intent not found")
-
     params = (payload or {}).get("params") or {}
     try:
-        result = await execute_intent(db, user_id, board_id, intent, params)
+        result = await ExecuteDiscoveryIntentUseCase().execute(
+            ExecuteDiscoveryIntentCommand(intent_id, board_id, params),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except CommandValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except EntityNotFoundError as e:
+        raise HTTPException(status_code=404, detail="Intent not found") from e
     except DiscoverySelectorExecutionError as e:
         raise HTTPException(
             status_code=e.status_code,
@@ -321,6 +292,4 @@ async def execute_discovery_intent(
         ) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    result["intent_id"] = intent.id
-    result["intent_name"] = intent.name
-    return result
+    return result.payload

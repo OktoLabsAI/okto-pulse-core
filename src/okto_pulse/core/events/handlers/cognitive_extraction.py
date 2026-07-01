@@ -54,7 +54,8 @@ from okto_pulse.core.kg.agent.extractors import (
     extract_alternatives,
     extract_assumptions,
 )
-from okto_pulse.core.models.db import Board, Card, CardType, Spec
+from okto_pulse.core.domain.enums import CardType
+from okto_pulse.core.models.db import Board, Card, Spec
 
 logger = logging.getLogger("okto_pulse.core.events.cognitive_extraction")
 

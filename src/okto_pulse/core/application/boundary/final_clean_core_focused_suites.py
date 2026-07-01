@@ -162,6 +162,7 @@ DEFAULT_FOCUSED_SUITES: tuple[FocusedSuite, ...] = (
         test_files=(
             "tests/test_fcc07d_test_provider_policy.py",
             "tests/test_fcc07d_runtime_guard.py",
+            "tests/test_r16_provider_backstop_matrix.py",
         ),
     ),
     # Group 4 — community adapter / wiring (#12 core/Community smoke gates).

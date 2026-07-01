@@ -23,6 +23,7 @@ TELEMETRY_ROOT = "okto_pulse.core.telemetry"
 R08_AUTH_MODULES: tuple[str, ...] = (
     "ports/mcp_auth.py",
     "kg/providers/embedded/mcp_auth_context.py",
+    "mcp/kg_query_tools.py",
     "application/boundary/mcp_credential_usage_gate.py",
 )
 

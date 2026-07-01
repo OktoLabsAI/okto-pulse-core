@@ -1,16 +1,54 @@
 """Ideation API endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.api.deps import get_unit_of_work
 from okto_pulse.core.application.use_cases import (
+    AnswerIdeationQuestionCommand,
+    AnswerIdeationQuestionUseCase,
+    CreateIdeationCommand,
+    CreateIdeationKnowledgeCommand,
+    CreateIdeationKnowledgeUseCase,
+    CreateIdeationQuestionCommand,
+    CreateIdeationQuestionUseCase,
+    CreateIdeationUseCase,
+    DeleteIdeationCommand,
+    DeleteIdeationKnowledgeCommand,
+    DeleteIdeationKnowledgeUseCase,
+    DeleteIdeationQuestionCommand,
+    DeleteIdeationQuestionUseCase,
+    DeleteIdeationUseCase,
+    DeriveSpecCommand,
+    DeriveSpecUseCase,
     EntityNotFoundError,
+    EvaluateComplexityCommand,
+    EvaluateComplexityUseCase,
+    GetIdeationCommand,
+    GetIdeationKnowledgeCommand,
+    GetIdeationKnowledgeUseCase,
+    GetIdeationSnapshotCommand,
+    GetIdeationSnapshotUseCase,
+    GetIdeationUseCase,
+    ListIdeationHistoryCommand,
+    ListIdeationHistoryUseCase,
+    ListIdeationKnowledgeCommand,
+    ListIdeationKnowledgeUseCase,
+    ListIdeationQACommand,
+    ListIdeationQAUseCase,
+    ListIdeationSnapshotsCommand,
+    ListIdeationSnapshotsUseCase,
+    ListIdeationsCommand,
+    ListIdeationsUseCase,
     MoveIdeationCommand,
     MoveIdeationUseCase,
+    SetIdeationAmbiguityGateSkipCommand,
+    SetIdeationAmbiguityGateSkipUseCase,
+    UpdateIdeationCommand,
+    UpdateIdeationUseCase,
 )
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.models.schemas import (
     IdeationAmbiguityGateSkipUpdate,
     IdeationCreate,
@@ -31,12 +69,7 @@ from okto_pulse.core.models.schemas import (
 )
 from okto_pulse.core.services import (
     AmbiguityGateError,
-    BoardService,
-    IdeationKnowledgeService,
-    IdeationQAService,
-    IdeationService,
     QASelfAnsweringNotAllowedError,
-    SpecService,
 )
 
 router = APIRouter()
@@ -51,19 +84,21 @@ async def create_ideation(
     board_id: str,
     data: IdeationCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a new ideation in a board."""
-    service = IdeationService(db)
-    ideation = await service.create_ideation(board_id, user_id, data)
-    if not ideation:
+    try:
+        result = await CreateIdeationUseCase().execute(
+            CreateIdeationCommand(board_id, data),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Board not found or not owned by user",
         )
-    await db.commit()
-    ideation = await service.get_ideation(ideation.id)
-    return ideation
+    return result.ideation
 
 
 @router.get("/boards/{board_id}/ideations", response_model=list[IdeationSummary])
@@ -72,30 +107,38 @@ async def list_ideations(
     status_filter: str | None = Query(None, alias="status"),
     include_archived: bool = Query(False, alias="include_archived"),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List ideations for a board, optionally filtered by status."""
-    board_service = BoardService(db)
-    board = await board_service.get_board(board_id, user_id)
-    if not board:
+    try:
+        result = await ListIdeationsUseCase().execute(
+            ListIdeationsCommand(
+                board_id, status_filter=status_filter, include_archived=include_archived
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
-
-    service = IdeationService(db)
-    return await service.list_ideations(board_id, status_filter, include_archived=include_archived)
+    return result.ideations
 
 
 @router.get("/ideations/{ideation_id}", response_model=IdeationResponse)
 async def get_ideation(
     ideation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get an ideation by ID with nested data."""
-    service = IdeationService(db)
-    ideation = await service.get_ideation(ideation_id)
-    if not ideation:
+    try:
+        result = await GetIdeationUseCase().execute(
+            GetIdeationCommand(ideation_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    return ideation
+    return result.ideation
 
 
 @router.patch("/ideations/{ideation_id}", response_model=IdeationResponse)
@@ -103,16 +146,18 @@ async def update_ideation(
     ideation_id: str,
     data: IdeationUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Update an ideation. Bumps version when content fields change."""
-    service = IdeationService(db)
-    ideation = await service.update_ideation(ideation_id, user_id, data)
-    if not ideation:
+    try:
+        result = await UpdateIdeationUseCase().execute(
+            UpdateIdeationCommand(ideation_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    await db.commit()
-    ideation = await service.get_ideation(ideation_id)
-    return ideation
+    return result.ideation
 
 
 @router.post("/ideations/{ideation_id}/move", response_model=IdeationResponse)
@@ -120,7 +165,7 @@ async def move_ideation(
     ideation_id: str,
     data: IdeationMove,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Change ideation status."""
     # Thin REST adapter (spec #09): delegate to the transport-free use case.
@@ -130,7 +175,7 @@ async def move_ideation(
         result = await MoveIdeationUseCase().execute(
             MoveIdeationCommand(ideation_id, data),
             actor=RESTAdapterContract.actor(user_id),
-            uow=db,
+            uow=uow,
         )
     except (AmbiguityGateError, EntityNotFoundError) as e:
         raise RESTAdapterContract.http_error(e, not_found_detail="Ideation not found") from e
@@ -142,7 +187,7 @@ async def set_ideation_ambiguity_gate_skip(
     ideation_id: str,
     data: IdeationAmbiguityGateSkipUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Persist the per-ideation Max ambiguity gate skip override (spec 2485780b).
 
@@ -150,32 +195,34 @@ async def set_ideation_ambiguity_gate_skip(
     without opening the generic update_ideation draft-only guard to other
     fields. Rejects archived ideations and emits an auditable activity entry.
     """
-    service = IdeationService(db)
     try:
-        ideation = await service.set_ambiguity_gate_skip(
-            ideation_id, user_id, data.skip_ambiguity_gate, source="rest"
+        result = await SetIdeationAmbiguityGateSkipUseCase().execute(
+            SetIdeationAmbiguityGateSkipCommand(ideation_id, data.skip_ambiguity_gate),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-    if not ideation:
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    await db.commit()
-    ideation = await service.get_ideation(ideation_id)
-    return ideation
+    return result.ideation
 
 
 @router.delete("/ideations/{ideation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_ideation(
     ideation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete an ideation."""
-    service = IdeationService(db)
-    deleted = await service.delete_ideation(ideation_id, user_id)
-    if not deleted:
+    try:
+        await DeleteIdeationUseCase().execute(
+            DeleteIdeationCommand(ideation_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    await db.commit()
 
 
 @router.post("/ideations/{ideation_id}/evaluate", response_model=IdeationResponse)
@@ -183,66 +230,54 @@ async def evaluate_complexity(
     ideation_id: str,
     request: Request,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Evaluate ideation complexity. Accepts scores + justifications in body."""
     body = await request.json()
-    service = IdeationService(db)
-
-    # Build scope_assessment from body
-    ideation = await service.get_ideation(ideation_id)
-    if not ideation:
+    try:
+        result = await EvaluateComplexityUseCase().execute(
+            EvaluateComplexityCommand(ideation_id, body),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-
-    scope = ideation.scope_assessment or {}
-    for dim in ["domains", "ambiguity", "dependencies"]:
-        if dim in body:
-            scope[dim] = int(body[dim])
-        if f"{dim}_justification" in body:
-            scope[f"{dim}_justification"] = body[f"{dim}_justification"]
-
-    # Update scope_assessment directly (bypasses draft-only edit guard since evaluation
-    # requires writing scores while in 'evaluating' status)
-    from sqlalchemy.orm.attributes import flag_modified
-    ideation.scope_assessment = scope
-    flag_modified(ideation, "scope_assessment")
-    ideation = await service.evaluate_complexity(ideation_id, user_id)
-    if not ideation:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    await db.commit()
-    ideation = await service.get_ideation(ideation_id)
-    return ideation
+    return result.ideation
 
 
 @router.post("/ideations/{ideation_id}/derive-spec", response_model=SpecResponse)
 async def derive_spec(
     ideation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a spec draft from a done ideation."""
-    service = IdeationService(db)
     try:
-        spec = await service.derive_spec(ideation_id, user_id)
+        result = await DeriveSpecUseCase().execute(
+            DeriveSpecCommand(ideation_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    if not spec:
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    await db.commit()
-    spec_service = SpecService(db)
-    spec = await spec_service.get_spec(spec.id)
-    return spec
+    return result.spec
 
 
 @router.get("/ideations/{ideation_id}/snapshots", response_model=list[IdeationSnapshotSummary])
 async def list_ideation_snapshots(
     ideation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all version snapshots for an ideation."""
-    service = IdeationService(db)
-    return await service.list_snapshots(ideation_id)
+    result = await ListIdeationSnapshotsUseCase().execute(
+        ListIdeationSnapshotsCommand(ideation_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.snapshots
 
 
 @router.get("/ideations/{ideation_id}/snapshots/{version}", response_model=IdeationSnapshotResponse)
@@ -250,14 +285,20 @@ async def get_ideation_snapshot(
     ideation_id: str,
     version: int,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a specific version snapshot of an ideation."""
-    service = IdeationService(db)
-    snapshot = await service.get_snapshot(ideation_id, version)
-    if not snapshot:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Snapshot v{version} not found")
-    return snapshot
+    try:
+        result = await GetIdeationSnapshotUseCase().execute(
+            GetIdeationSnapshotCommand(ideation_id, version),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Snapshot v{version} not found"
+        )
+    return result.snapshot
 
 
 @router.get("/ideations/{ideation_id}/history", response_model=list[IdeationHistoryResponse])
@@ -265,11 +306,15 @@ async def list_ideation_history(
     ideation_id: str,
     limit: int = Query(50, ge=1, le=200),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get detailed change history for an ideation."""
-    service = IdeationService(db)
-    return await service.list_history(ideation_id, limit)
+    result = await ListIdeationHistoryUseCase().execute(
+        ListIdeationHistoryCommand(ideation_id, limit=limit),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.history
 
 
 # ==================== IDEATION KNOWLEDGE BASE ====================
@@ -279,11 +324,15 @@ async def list_ideation_history(
 async def list_ideation_knowledge(
     ideation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all knowledge base items for an ideation."""
-    service = IdeationKnowledgeService(db)
-    return await service.list_knowledge(ideation_id)
+    result = await ListIdeationKnowledgeUseCase().execute(
+        ListIdeationKnowledgeCommand(ideation_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.items
 
 
 @router.get("/ideations/{ideation_id}/knowledge/{knowledge_id}", response_model=IdeationKnowledgeResponse)
@@ -291,14 +340,18 @@ async def get_ideation_knowledge(
     ideation_id: str,
     knowledge_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a knowledge base item with full content."""
-    service = IdeationKnowledgeService(db)
-    kb = await service.get_knowledge(knowledge_id)
-    if not kb or kb.ideation_id != ideation_id:
+    try:
+        result = await GetIdeationKnowledgeUseCase().execute(
+            GetIdeationKnowledgeCommand(ideation_id, knowledge_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base item not found")
-    return kb
+    return result.knowledge
 
 
 @router.post(
@@ -310,15 +363,18 @@ async def create_ideation_knowledge(
     ideation_id: str,
     data: IdeationKnowledgeCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a knowledge base item on an ideation."""
-    service = IdeationKnowledgeService(db)
-    kb = await service.create_knowledge(ideation_id, user_id, data)
-    if not kb:
+    try:
+        result = await CreateIdeationKnowledgeUseCase().execute(
+            CreateIdeationKnowledgeCommand(ideation_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    await db.commit()
-    return kb
+    return result.knowledge
 
 
 @router.delete("/ideations/{ideation_id}/knowledge/{knowledge_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -326,17 +382,17 @@ async def delete_ideation_knowledge(
     ideation_id: str,
     knowledge_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete a knowledge base item from an ideation."""
-    service = IdeationKnowledgeService(db)
-    kb = await service.get_knowledge(knowledge_id)
-    if not kb or kb.ideation_id != ideation_id:
+    try:
+        await DeleteIdeationKnowledgeUseCase().execute(
+            DeleteIdeationKnowledgeCommand(ideation_id, knowledge_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base item not found")
-    deleted = await service.delete_knowledge(knowledge_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base item not found")
-    await db.commit()
 
 
 # ==================== IDEATION Q&A ====================
@@ -346,11 +402,15 @@ async def delete_ideation_knowledge(
 async def list_ideation_qa(
     ideation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all Q&A items for an ideation."""
-    service = IdeationQAService(db)
-    return await service.list_qa(ideation_id)
+    result = await ListIdeationQAUseCase().execute(
+        ListIdeationQACommand(ideation_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.items
 
 
 @router.post("/ideations/{ideation_id}/qa", response_model=IdeationQAResponse, status_code=status.HTTP_201_CREATED)
@@ -358,15 +418,18 @@ async def create_ideation_question(
     ideation_id: str,
     data: IdeationQACreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Ask a question on an ideation."""
-    service = IdeationQAService(db)
-    qa = await service.create_question(ideation_id, user_id, data)
-    if not qa:
+    try:
+        result = await CreateIdeationQuestionUseCase().execute(
+            CreateIdeationQuestionCommand(ideation_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-    await db.commit()
-    return qa
+    return result.qa
 
 
 @router.post("/ideations/{ideation_id}/qa/{qa_id}/answer", response_model=IdeationQAResponse)
@@ -375,24 +438,23 @@ async def answer_ideation_question(
     qa_id: str,
     data: IdeationQAAnswer,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Answer an ideation Q&A question."""
-    service = IdeationQAService(db)
     try:
-        qa = await service.answer_question(
-            qa_id, user_id, data, actor_type="user", surface="rest"
+        result = await AnswerIdeationQuestionUseCase().execute(
+            AnswerIdeationQuestionCommand(qa_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
     except QASelfAnsweringNotAllowedError as exc:
-        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"reason": exc.reason, "message": str(exc)},
         ) from exc
-    if not qa:
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Q&A item not found")
-    await db.commit()
-    return qa
+    return result.qa
 
 
 @router.delete("/ideations/{ideation_id}/qa/{qa_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -400,11 +462,14 @@ async def delete_ideation_question(
     ideation_id: str,
     qa_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete an ideation Q&A item."""
-    service = IdeationQAService(db)
-    deleted = await service.delete_question(qa_id)
-    if not deleted:
+    try:
+        await DeleteIdeationQuestionUseCase().execute(
+            DeleteIdeationQuestionCommand(qa_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Q&A item not found")
-    await db.commit()

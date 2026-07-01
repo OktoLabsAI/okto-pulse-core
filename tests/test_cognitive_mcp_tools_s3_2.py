@@ -30,7 +30,6 @@ import pytest
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
-    CognitivePendingOutcomeType,
     compute_cognitive_item_id,
 )
 from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
@@ -99,6 +98,10 @@ def _wire(monkeypatch, tmp_path, db_factory):
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
     monkeypatch.setattr(mcp_server, "get_db_for_mcp", _fake_db)
+    # R01A MCP-FU3: the migrated cognitive tools obtain a PulseUnitOfWork from the
+    # MCP session factory; register it (the same db_factory the _fake_db patch
+    # yields) so get_unit_of_work_factory_for_mcp() resolves to the test session.
+    monkeypatch.setattr(mcp_server, "_mcp_session_factory", db_factory)
     return mcp_server
 
 

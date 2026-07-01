@@ -73,13 +73,14 @@ async def test_retry_endpoint_404_when_entry_missing(db_factory):
     from fastapi import HTTPException
 
     from okto_pulse.core.api.kg_routes import retry_pending_entry
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
 
     factory = db_factory
     async with factory() as db:
         with pytest.raises(HTTPException) as exc:
             await retry_pending_entry(
                 board_id="b", queue_entry_id="does-not-exist",
-                recursive=False, db=db,
+                recursive=False, uow=SQLAlchemyUnitOfWork(db),
             )
     assert exc.value.status_code == 404
 
@@ -88,6 +89,7 @@ async def test_retry_endpoint_404_when_entry_missing(db_factory):
 async def test_retry_endpoint_resets_failed_entry(db_factory):
     from okto_pulse.core.api.kg_routes import retry_pending_entry
     from okto_pulse.core.models.db import ConsolidationQueue
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
 
     factory = db_factory
     async with factory() as db:
@@ -106,7 +108,7 @@ async def test_retry_endpoint_resets_failed_entry(db_factory):
     async with factory() as db:
         result = await retry_pending_entry(
             board_id="b_retry", queue_entry_id=entry_id,
-            recursive=False, db=db,
+            recursive=False, uow=SQLAlchemyUnitOfWork(db),
         )
 
     assert result["reopened_count"] == 1
@@ -126,6 +128,7 @@ async def test_retry_endpoint_recursive_reopens_descendants(db_factory):
     from okto_pulse.core.models.db import (
         Board, Card, ConsolidationQueue, Spec, Sprint,
     )
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
 
     factory = db_factory
     async with factory() as db:
@@ -157,7 +160,7 @@ async def test_retry_endpoint_recursive_reopens_descendants(db_factory):
     async with factory() as db:
         result = await retry_pending_entry(
             board_id="b_rec", queue_entry_id=spec_entry_id,
-            recursive=True, db=db,
+            recursive=True, uow=SQLAlchemyUnitOfWork(db),
         )
 
     assert result["recursive"] is True

@@ -179,6 +179,7 @@ def test_ac4_injected_community_wiring_has_no_test_only_fallback():
     payload = report.as_dict()
     assert payload["summary"]["test_only_allowed"] == 0
     assert payload["summary"]["violations"] == 0
+    assert {v.provider_kind for v in report.verdicts} == {"community_adapter"}
 
 
 def test_ac4_injected_report_detects_test_only_fallback_when_present():
@@ -203,6 +204,7 @@ def test_ac4_injected_report_detects_test_only_fallback_when_present():
     assert len(offenders) == 1
     assert offenders[0].provider_key == "graph_store"
     assert offenders[0].module == f"{TESTING_PROVIDER_PREFIX}.memory_graph_store"
+    assert offenders[0].provider_kind == "sanctioned_test_provider"
 
 
 def test_ac4_core_guard_does_not_import_community():
@@ -294,6 +296,7 @@ def test_schema_matches_api_504fbaca_contract():
             "reason",
             "remediation",
         }
+        assert "provider_kind" not in row
 
     assert set(payload["summary"]) == {
         "violations",

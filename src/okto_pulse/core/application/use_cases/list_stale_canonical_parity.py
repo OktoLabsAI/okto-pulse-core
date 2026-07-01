@@ -1,0 +1,55 @@
+"""list_stale_canonical_parity use case (SaaS Refactor spec R01A IMP4, REST read-only).
+
+Behavior-preserving, transport-free reimplementation of
+``GET /api/v1/kg/{board_id}/stale-canonical-parity`` (``api/kg_stale_canonical_parity.py``).
+Delegates to the existing ``list_stale_canonical_parity`` reader so the drilldown
+payload is byte-identical to the legacy handler. Read-only: no commit. The public
+signature is transport-neutral — it never exposes ``AsyncSession``/``get_db``.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+from okto_pulse.core.kg.stale_canonical_parity import list_stale_canonical_parity
+
+
+class ListStaleCanonicalParityCommand:
+    """Input for :class:`ListStaleCanonicalParityUseCase`."""
+
+    __slots__ = ("board_id", "limit", "offset")
+
+    def __init__(self, board_id: str, *, limit: int = 50, offset: int = 0) -> None:
+        self.board_id = board_id
+        self.limit = limit
+        self.offset = offset
+
+
+class ListStaleCanonicalParityResult:
+    """Output — the drilldown mapping the legacy handler returned directly."""
+
+    __slots__ = ("data",)
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.data = data
+
+
+class ListStaleCanonicalParityUseCase:
+    """List stale-canonical parity signals without any transport dependency."""
+
+    async def execute(
+        self,
+        command: ListStaleCanonicalParityCommand,
+        *,
+        actor: ActorContext,
+        uow: Any,
+    ) -> ListStaleCanonicalParityResult:
+        session = session_of(uow)
+        data = await list_stale_canonical_parity(
+            session,
+            board_id=command.board_id,
+            limit=command.limit,
+            offset=command.offset,
+        )
+        return ListStaleCanonicalParityResult(data=data)

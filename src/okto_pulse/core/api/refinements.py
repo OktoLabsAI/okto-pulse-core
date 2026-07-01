@@ -1,10 +1,60 @@
-"""Refinement API endpoints."""
+"""Refinement API endpoints.
+
+Spec R01A REST-FU6-S3: every endpoint here now routes through a transport-free
+use case (``application/use_cases/refinements_crud.py``) over a
+``PulseUnitOfWork`` — no endpoint binds ``get_db`` / a raw ``AsyncSession``
+anymore. This module is a thin inbound adapter: it builds the command/actor, maps
+the typed use-case errors back to the EXACT legacy HTTP status + detail
+(``EntityNotFoundError`` → the per-entity 404 string, ``ValueError`` → 400 where
+the legacy endpoint caught it, ``QASelfAnsweringNotAllowedError`` → 403 with its
+``{reason, message}`` detail), and returns the service payloads. The refinement
+transition + content/critical-context gates stay inside ``RefinementService``.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases import EntityNotFoundError
+from okto_pulse.core.application.use_cases.refinements_crud import (
+    AnswerRefinementQuestionCommand,
+    AnswerRefinementQuestionUseCase,
+    CreateRefinementCommand,
+    CreateRefinementKnowledgeCommand,
+    CreateRefinementKnowledgeUseCase,
+    CreateRefinementQuestionCommand,
+    CreateRefinementQuestionUseCase,
+    CreateRefinementUseCase,
+    DeleteRefinementCommand,
+    DeleteRefinementKnowledgeCommand,
+    DeleteRefinementKnowledgeUseCase,
+    DeleteRefinementQuestionCommand,
+    DeleteRefinementQuestionUseCase,
+    DeleteRefinementUseCase,
+    DeriveSpecFromRefinementCommand,
+    DeriveSpecFromRefinementUseCase,
+    GetRefinementCommand,
+    GetRefinementKnowledgeCommand,
+    GetRefinementKnowledgeUseCase,
+    GetRefinementSnapshotCommand,
+    GetRefinementSnapshotUseCase,
+    GetRefinementUseCase,
+    ListRefinementHistoryCommand,
+    ListRefinementHistoryUseCase,
+    ListRefinementKnowledgeCommand,
+    ListRefinementKnowledgeUseCase,
+    ListRefinementQACommand,
+    ListRefinementQAUseCase,
+    ListRefinementSnapshotsCommand,
+    ListRefinementSnapshotsUseCase,
+    ListRefinementsCommand,
+    ListRefinementsUseCase,
+    MoveRefinementCommand,
+    MoveRefinementUseCase,
+    UpdateRefinementCommand,
+    UpdateRefinementUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.models.schemas import (
     RefinementCreate,
     RefinementHistoryResponse,
@@ -22,16 +72,24 @@ from okto_pulse.core.models.schemas import (
     RefinementUpdate,
     SpecResponse,
 )
-from okto_pulse.core.services import (
-    IdeationService,
-    QASelfAnsweringNotAllowedError,
-    RefinementKnowledgeService,
-    RefinementQAService,
-    RefinementService,
-    SpecService,
-)
+from okto_pulse.core.repositories import PulseUnitOfWork
+from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
 router = APIRouter()
+
+
+_NOT_FOUND_DETAIL = {
+    "refinement_ideation_owner": "Ideation not found or board not owned by user",
+    "ideation": "Ideation not found",
+    "refinement": "Refinement not found",
+    "refinement_qa": "Q&A item not found",
+    "refinement_knowledge": "Knowledge base item not found",
+}
+
+
+def _not_found(exc: EntityNotFoundError) -> str:
+    """Map the typed ``EntityNotFoundError`` back to the exact legacy 404 detail."""
+    return _NOT_FOUND_DETAIL.get(exc.entity_type, "Not found")
 
 
 @router.post(
@@ -43,22 +101,20 @@ async def create_refinement(
     ideation_id: str,
     data: RefinementCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a new refinement for a done ideation."""
-    service = RefinementService(db)
     try:
-        refinement = await service.create_refinement(ideation_id, user_id, data)
+        result = await CreateRefinementUseCase().execute(
+            CreateRefinementCommand(ideation_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    if not refinement:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ideation not found or board not owned by user",
-        )
-    await db.commit()
-    refinement = await service.get_refinement(refinement.id)
-    return refinement
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.refinement
 
 
 @router.get("/ideations/{ideation_id}/refinements", response_model=list[RefinementSummary])
@@ -67,30 +123,40 @@ async def list_refinements(
     status_filter: str | None = Query(None, alias="status"),
     include_archived: bool = Query(False, alias="include_archived"),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List refinements for an ideation, optionally filtered by status."""
-    ideation_service = IdeationService(db)
-    ideation = await ideation_service.get_ideation(ideation_id)
-    if not ideation:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ideation not found")
-
-    service = RefinementService(db)
-    return await service.list_refinements(ideation_id, status_filter, include_archived=include_archived)
+    try:
+        result = await ListRefinementsUseCase().execute(
+            ListRefinementsCommand(
+                ideation_id,
+                status_filter=status_filter,
+                include_archived=include_archived,
+            ),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.refinements
 
 
 @router.get("/refinements/{refinement_id}", response_model=RefinementResponse)
 async def get_refinement(
     refinement_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a refinement by ID with nested data."""
-    service = RefinementService(db)
-    refinement = await service.get_refinement(refinement_id)
-    if not refinement:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refinement not found")
-    return refinement
+    try:
+        result = await GetRefinementUseCase().execute(
+            GetRefinementCommand(refinement_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.refinement
 
 
 @router.patch("/refinements/{refinement_id}", response_model=RefinementResponse)
@@ -98,16 +164,18 @@ async def update_refinement(
     refinement_id: str,
     data: RefinementUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Update a refinement. Bumps version when content fields change."""
-    service = RefinementService(db)
-    refinement = await service.update_refinement(refinement_id, user_id, data)
-    if not refinement:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refinement not found")
-    await db.commit()
-    refinement = await service.get_refinement(refinement_id)
-    return refinement
+    try:
+        result = await UpdateRefinementUseCase().execute(
+            UpdateRefinementCommand(refinement_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.refinement
 
 
 @router.post("/refinements/{refinement_id}/move", response_model=RefinementResponse)
@@ -115,53 +183,57 @@ async def move_refinement(
     refinement_id: str,
     data: RefinementMove,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Change refinement status."""
-    service = RefinementService(db)
     try:
-        refinement = await service.move_refinement(refinement_id, user_id, data)
+        result = await MoveRefinementUseCase().execute(
+            MoveRefinementCommand(refinement_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    if not refinement:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refinement not found")
-    await db.commit()
-    refinement = await service.get_refinement(refinement_id)
-    return refinement
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.refinement
 
 
 @router.delete("/refinements/{refinement_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_refinement(
     refinement_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete a refinement."""
-    service = RefinementService(db)
-    deleted = await service.delete_refinement(refinement_id, user_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refinement not found")
-    await db.commit()
+    try:
+        await DeleteRefinementUseCase().execute(
+            DeleteRefinementCommand(refinement_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
 
 
 @router.post("/refinements/{refinement_id}/derive-spec", response_model=SpecResponse)
 async def derive_spec(
     refinement_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Derive a spec from a refinement."""
-    service = RefinementService(db)
     try:
-        spec = await service.derive_spec(refinement_id, user_id)
+        result = await DeriveSpecFromRefinementUseCase().execute(
+            DeriveSpecFromRefinementCommand(refinement_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    if not spec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refinement not found")
-    await db.commit()
-    spec_service = SpecService(db)
-    spec = await spec_service.get_spec(spec.id)
-    return spec
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.spec
 
 
 @router.get("/refinements/{refinement_id}/history", response_model=list[RefinementHistoryResponse])
@@ -169,11 +241,15 @@ async def list_refinement_history(
     refinement_id: str,
     limit: int = Query(50, ge=1, le=200),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get detailed change history for a refinement."""
-    service = RefinementService(db)
-    return await service.list_history(refinement_id, limit)
+    result = await ListRefinementHistoryUseCase().execute(
+        ListRefinementHistoryCommand(refinement_id, limit=limit),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.history
 
 
 # ==================== REFINEMENT Q&A ====================
@@ -183,11 +259,15 @@ async def list_refinement_history(
 async def list_refinement_qa(
     refinement_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all Q&A items for a refinement."""
-    service = RefinementQAService(db)
-    return await service.list_qa(refinement_id)
+    result = await ListRefinementQAUseCase().execute(
+        ListRefinementQACommand(refinement_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.items
 
 
 @router.post("/refinements/{refinement_id}/qa", response_model=RefinementQAResponse, status_code=status.HTTP_201_CREATED)
@@ -195,15 +275,18 @@ async def create_refinement_question(
     refinement_id: str,
     data: RefinementQACreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Ask a question on a refinement."""
-    service = RefinementQAService(db)
-    qa = await service.create_question(refinement_id, user_id, data)
-    if not qa:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refinement not found")
-    await db.commit()
-    return qa
+    try:
+        result = await CreateRefinementQuestionUseCase().execute(
+            CreateRefinementQuestionCommand(refinement_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.qa
 
 
 @router.post("/refinements/{refinement_id}/qa/{qa_id}/answer", response_model=RefinementQAResponse)
@@ -212,24 +295,23 @@ async def answer_refinement_question(
     qa_id: str,
     data: RefinementQAAnswer,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Answer a refinement Q&A question."""
-    service = RefinementQAService(db)
     try:
-        qa = await service.answer_question(
-            qa_id, user_id, data, actor_type="user", surface="rest"
+        result = await AnswerRefinementQuestionUseCase().execute(
+            AnswerRefinementQuestionCommand(qa_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
     except QASelfAnsweringNotAllowedError as exc:
-        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"reason": exc.reason, "message": str(exc)},
         ) from exc
-    if not qa:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Q&A item not found")
-    await db.commit()
-    return qa
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.qa
 
 
 @router.delete("/refinements/{refinement_id}/qa/{qa_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -237,14 +319,17 @@ async def delete_refinement_question(
     refinement_id: str,
     qa_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete a refinement Q&A item."""
-    service = RefinementQAService(db)
-    deleted = await service.delete_question(qa_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Q&A item not found")
-    await db.commit()
+    try:
+        await DeleteRefinementQuestionUseCase().execute(
+            DeleteRefinementQuestionCommand(qa_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
 
 
 # ==================== REFINEMENT SNAPSHOTS ====================
@@ -254,11 +339,15 @@ async def delete_refinement_question(
 async def list_refinement_snapshots(
     refinement_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all version snapshots for a refinement."""
-    service = RefinementService(db)
-    return await service.list_snapshots(refinement_id)
+    result = await ListRefinementSnapshotsUseCase().execute(
+        ListRefinementSnapshotsCommand(refinement_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.snapshots
 
 
 @router.get("/refinements/{refinement_id}/snapshots/{version}", response_model=RefinementSnapshotResponse)
@@ -266,14 +355,20 @@ async def get_refinement_snapshot(
     refinement_id: str,
     version: int,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a specific version snapshot of a refinement."""
-    service = RefinementService(db)
-    snapshot = await service.get_snapshot(refinement_id, version)
-    if not snapshot:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Snapshot v{version} not found")
-    return snapshot
+    try:
+        result = await GetRefinementSnapshotUseCase().execute(
+            GetRefinementSnapshotCommand(refinement_id, version),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Snapshot v{version} not found"
+        )
+    return result.snapshot
 
 
 # ==================== REFINEMENT KNOWLEDGE BASE ====================
@@ -283,11 +378,15 @@ async def get_refinement_snapshot(
 async def list_refinement_knowledge(
     refinement_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all knowledge base items for a refinement."""
-    service = RefinementKnowledgeService(db)
-    return await service.list_knowledge(refinement_id)
+    result = await ListRefinementKnowledgeUseCase().execute(
+        ListRefinementKnowledgeCommand(refinement_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.items
 
 
 @router.get("/refinements/{refinement_id}/knowledge/{knowledge_id}", response_model=RefinementKnowledgeResponse)
@@ -295,14 +394,18 @@ async def get_refinement_knowledge(
     refinement_id: str,
     knowledge_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a knowledge base item with full content."""
-    service = RefinementKnowledgeService(db)
-    kb = await service.get_knowledge(knowledge_id)
-    if not kb or kb.refinement_id != refinement_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base item not found")
-    return kb
+    try:
+        result = await GetRefinementKnowledgeUseCase().execute(
+            GetRefinementKnowledgeCommand(refinement_id, knowledge_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.knowledge
 
 
 @router.post(
@@ -314,15 +417,18 @@ async def create_refinement_knowledge(
     refinement_id: str,
     data: RefinementKnowledgeCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a knowledge base item on a refinement."""
-    service = RefinementKnowledgeService(db)
-    kb = await service.create_knowledge(refinement_id, user_id, data)
-    if not kb:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refinement not found")
-    await db.commit()
-    return kb
+    try:
+        result = await CreateRefinementKnowledgeUseCase().execute(
+            CreateRefinementKnowledgeCommand(refinement_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+    return result.knowledge
 
 
 @router.delete("/refinements/{refinement_id}/knowledge/{knowledge_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -330,11 +436,14 @@ async def delete_refinement_knowledge(
     refinement_id: str,
     knowledge_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete a knowledge base item from a refinement."""
-    service = RefinementKnowledgeService(db)
-    deleted = await service.delete_knowledge(knowledge_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base item not found")
-    await db.commit()
+    try:
+        await DeleteRefinementKnowledgeUseCase().execute(
+            DeleteRefinementKnowledgeCommand(refinement_id, knowledge_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))

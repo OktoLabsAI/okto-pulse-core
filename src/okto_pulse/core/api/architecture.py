@@ -6,11 +6,38 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases import ConflictError, EntityNotFoundError
+from okto_pulse.core.application.use_cases.architecture_crud import (
+    ArchitecturePropagationLegacyReportCommand,
+    ArchitecturePropagationLegacyReportUseCase,
+    CopyArchitectureFromSpecToCardCommand,
+    CopyArchitectureFromSpecToCardUseCase,
+    CreateArchitectureCommand,
+    CreateArchitectureUseCase,
+    DeleteArchitectureDesignCommand,
+    DeleteArchitectureDesignUseCase,
+    GetArchitectureDesignCommand,
+    GetArchitectureDesignUseCase,
+    GetArchitectureDiagramPayloadCommand,
+    GetArchitectureDiagramPayloadUseCase,
+    GetArchitectureDiffCommand,
+    GetArchitectureDiffUseCase,
+    ImportExcalidrawArchitectureDiagramCommand,
+    ImportExcalidrawArchitectureDiagramUseCase,
+    ListArchitectureCommand,
+    ListArchitectureUseCase,
+    UpdateArchitectureDesignCommand,
+    UpdateArchitectureDesignUseCase,
+    UpdateArchitectureDiagramPayloadCommand,
+    UpdateArchitectureDiagramPayloadUseCase,
+    ValidateArchitecturePayloadCommand,
+    ValidateArchitecturePayloadUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import ArchitectureDesign, Card, Ideation, Refinement, Spec
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
     ArchitectureDesignResponse,
@@ -23,15 +50,11 @@ from okto_pulse.core.models.schemas import (
     ArchitectureWarningAcknowledgementRequest,
 )
 from okto_pulse.core.services.architecture import (
-    ArchitectureDesignRepository,
-    ArchitectureDiagramStore,
     ArchitecturePayloadValidationError,
     ArchitecturePropagationBlocked,
-    ArchitecturePropagationService,
     CARD_ARCHITECTURE_READ_ONLY_MESSAGE,
     CardArchitectureReadOnlyError,
     ArchitectureWarningAcknowledgementRequired,
-    stable_architecture_finding_key,
 )
 from okto_pulse.core.services.effective_resource_propagation import (
     ResourceLineageResolutionError,
@@ -39,13 +62,6 @@ from okto_pulse.core.services.effective_resource_propagation import (
 )
 
 router = APIRouter()
-
-PARENT_MODELS = {
-    "ideation": Ideation,
-    "refinement": Refinement,
-    "spec": Spec,
-    "card": Card,
-}
 
 
 class DiagramPayloadUpdate(BaseModel):
@@ -100,46 +116,6 @@ class ArchitecturePayloadValidationResponse(BaseModel):
     summary: dict[str, Any]
 
 
-async def _get_parent(db: AsyncSession, parent_type: str, parent_id: str) -> Any | None:
-    model = PARENT_MODELS[parent_type]
-    return await db.get(model, parent_id)
-
-
-async def _ensure_parent(db: AsyncSession, parent_type: str, parent_id: str) -> Any:
-    parent = await _get_parent(db, parent_type, parent_id)
-    if parent is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{parent_type} not found")
-    return parent
-
-
-async def _ensure_spec_architecture_unlocked(db: AsyncSession, spec_id: str) -> None:
-    spec = await db.get(Spec, spec_id)
-    if spec is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")
-    current_id = getattr(spec, "current_validation_id", None)
-    validations = getattr(spec, "validations", None) or []
-    current = next((item for item in validations if item.get("id") == current_id), None)
-    if current_id and current and current.get("outcome") == "success":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Spec is locked because validation passed. Move it back to draft or approved to edit architecture.",
-        )
-
-
-async def _ensure_design_mutable(db: AsyncSession, design_id: str) -> Any:
-    design = await db.get(ArchitectureDesign, design_id)
-    if design is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Architecture design not found")
-    if design.parent_type == "card":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=CARD_ARCHITECTURE_READ_ONLY_MESSAGE,
-        )
-    if design.parent_type == "spec":
-        await _ensure_spec_architecture_unlocked(db, design.spec_id)
-    return design
-
-
 def _http_error_from_value(error: ValueError) -> HTTPException:
     if isinstance(error, ArchitectureWarningAcknowledgementRequired):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error.to_payload())
@@ -161,15 +137,44 @@ def _http_error_from_value(error: ValueError) -> HTTPException:
     return HTTPException(status_code=status_code, detail=message)
 
 
+def _http_error_from_conflict(error: ConflictError) -> HTTPException:
+    """Map a use-case ``ConflictError`` raised by the design-mutability gate back to
+    the exact legacy 409 detail: a ``card`` parent is read-only
+    (``CARD_ARCHITECTURE_READ_ONLY_MESSAGE``); a ``spec`` whose validation passed is
+    locked (the same detail the create-spec lock produces)."""
+    if error.entity_type == "card_architecture_readonly":
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=CARD_ARCHITECTURE_READ_ONLY_MESSAGE,
+        )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Spec is locked because validation passed. Move it back to draft or approved to edit architecture.",
+    )
+
+
 async def _list_architecture(
     parent_type: str,
     parent_id: str,
-    db: AsyncSession,
+    user_id: str,
+    uow: PulseUnitOfWork,
 ) -> list[ArchitectureDesignSummary]:
-    await _ensure_parent(db, parent_type, parent_id)
-    repo = ArchitectureDesignRepository(db)
-    designs = await repo.list(parent_type, parent_id)
-    return [repo.to_summary(design) for design in designs]
+    """R01A FU5-S1A: thin REST adapter over ``ListArchitectureUseCase``. The parent
+    existence gate (legacy ``_ensure_parent``) maps to the same 404
+    ``"{parent_type} not found"``; the ``select``/projection stay in the
+    repository the use case delegates to."""
+    try:
+        result = await ListArchitectureUseCase().execute(
+            ListArchitectureCommand(parent_type, parent_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
+        )
+    return result.summaries
 
 
 async def _create_architecture(
@@ -177,28 +182,40 @@ async def _create_architecture(
     parent_id: str,
     data: ArchitectureDesignCreate,
     user_id: str,
-    db: AsyncSession,
+    uow: PulseUnitOfWork,
 ) -> ArchitectureDesignResponse:
-    await _ensure_parent(db, parent_type, parent_id)
-    if parent_type == "spec":
-        await _ensure_spec_architecture_unlocked(db, parent_id)
-    repo = ArchitectureDesignRepository(db)
+    """R01A FU5-S1A: thin REST adapter over ``CreateArchitectureUseCase``. Reproduces
+    the legacy error mapping exactly — parent missing → 404 ``"{parent_type} not
+    found"``; spec-architecture lock → 409; ``repo.create``'s ``ValueError`` family
+    → ``_http_error_from_value``."""
     try:
-        design = await repo.create(parent_type, parent_id, data, user_id)
+        result = await CreateArchitectureUseCase().execute(
+            CreateArchitectureCommand(parent_type, parent_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
+        )
+    except ConflictError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Spec is locked because validation passed. Move it back to draft or approved to edit architecture.",
+        )
     except ValueError as error:
         raise _http_error_from_value(error)
-    response = repo.to_response(design)
-    await db.commit()
-    return response
+    return result.response
 
 
 @router.get("/ideations/{ideation_id}/architecture", response_model=list[ArchitectureDesignSummary])
 async def list_ideation_architecture(
     ideation_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    return await _list_architecture("ideation", ideation_id, db)
+    return await _list_architecture("ideation", ideation_id, user_id, uow)
 
 
 @router.post(
@@ -210,18 +227,18 @@ async def create_ideation_architecture(
     ideation_id: str,
     data: ArchitectureDesignCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    return await _create_architecture("ideation", ideation_id, data, user_id, db)
+    return await _create_architecture("ideation", ideation_id, data, user_id, uow)
 
 
 @router.get("/refinements/{refinement_id}/architecture", response_model=list[ArchitectureDesignSummary])
 async def list_refinement_architecture(
     refinement_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    return await _list_architecture("refinement", refinement_id, db)
+    return await _list_architecture("refinement", refinement_id, user_id, uow)
 
 
 @router.post(
@@ -233,18 +250,18 @@ async def create_refinement_architecture(
     refinement_id: str,
     data: ArchitectureDesignCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    return await _create_architecture("refinement", refinement_id, data, user_id, db)
+    return await _create_architecture("refinement", refinement_id, data, user_id, uow)
 
 
 @router.get("/specs/{spec_id}/architecture", response_model=list[ArchitectureDesignSummary])
 async def list_spec_architecture(
     spec_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    return await _list_architecture("spec", spec_id, db)
+    return await _list_architecture("spec", spec_id, user_id, uow)
 
 
 @router.post(
@@ -256,18 +273,18 @@ async def create_spec_architecture(
     spec_id: str,
     data: ArchitectureDesignCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    return await _create_architecture("spec", spec_id, data, user_id, db)
+    return await _create_architecture("spec", spec_id, data, user_id, uow)
 
 
 @router.get("/cards/{card_id}/architecture", response_model=list[ArchitectureDesignSummary])
 async def list_card_architecture(
     card_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    return await _list_architecture("card", card_id, db)
+    return await _list_architecture("card", card_id, user_id, uow)
 
 
 @router.post(
@@ -279,31 +296,26 @@ async def create_card_architecture(
     card_id: str,
     data: ArchitectureDesignCreate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    return await _create_architecture("card", card_id, data, user_id, db)
+    return await _create_architecture("card", card_id, data, user_id, uow)
 
 
 @router.post("/architecture/validate", response_model=ArchitecturePayloadValidationResponse)
 async def validate_architecture_payload(
     data: ArchitecturePayloadValidationRequest,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Return the same Architecture Design critique exposed to MCP agents."""
-    repo = ArchitectureDesignRepository(db)
     request_payload = data.model_dump(mode="json", exclude_none=True)
     design_id = request_payload.pop("design_id", None)
-    critique = repo.critique_payload(request_payload)
-    if design_id:
-        critique["structured_warnings"] = [
-            {
-                **warning,
-                "finding_key": stable_architecture_finding_key(design_id, warning),
-            }
-            for warning in (critique.get("structured_warnings") or [])
-        ]
-    return critique
+    result = await ValidateArchitecturePayloadUseCase().execute(
+        ValidateArchitecturePayloadCommand(request_payload, design_id),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+    return result.critique
 
 
 @router.get("/architecture/propagation-legacy-report")
@@ -314,25 +326,24 @@ async def architecture_propagation_legacy_report(
     include_clean: bool = Query(False),
     parent_type_filter: str = Query(""),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Spec C: read-only, forward-only diagnostic of legacy Architecture Design snapshots
     whose SOURCE is now ineligible for propagation. Bounded/idempotent; never mutates
     snapshots, findings, or SDLC status. Registered before /architecture/{design_id} so the
     static path wins route matching."""
-    from okto_pulse.core.services.architecture_propagation_legacy import (
-        build_propagation_legacy_report,
+    result = await ArchitecturePropagationLegacyReportUseCase().execute(
+        ArchitecturePropagationLegacyReportCommand(
+            board_id,
+            limit=limit,
+            offset=offset,
+            include_clean=include_clean,
+            parent_type_filter=parent_type_filter,
+        ),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
     )
-
-    return await build_propagation_legacy_report(
-        db,
-        board_id=board_id,
-        limit=limit,
-        offset=offset,
-        include_clean=include_clean,
-        parent_type_filter=parent_type_filter or None,
-        surface="rest",
-    )
+    return result.report
 
 
 @router.get("/architecture/{design_id}", response_model=ArchitectureDesignResponse)
@@ -340,13 +351,20 @@ async def get_architecture_design(
     design_id: str,
     include_payloads: bool = Query(False),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    repo = ArchitectureDesignRepository(db)
-    design = await repo.get(design_id, include_payloads=include_payloads)
-    if design is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Architecture design not found")
-    return repo.to_response(design)
+    try:
+        result = await GetArchitectureDesignUseCase().execute(
+            GetArchitectureDesignCommand(design_id, include_payloads),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
+        )
+    return result.response
 
 
 @router.patch("/architecture/{design_id}", response_model=ArchitectureDesignResponse)
@@ -354,31 +372,45 @@ async def update_architecture_design(
     design_id: str,
     data: ArchitectureDesignUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    await _ensure_design_mutable(db, design_id)
-    repo = ArchitectureDesignRepository(db)
     try:
-        design = await repo.update(design_id, data, user_id)
+        result = await UpdateArchitectureDesignUseCase().execute(
+            UpdateArchitectureDesignCommand(design_id, data),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
+        )
+    except ConflictError as exc:
+        raise _http_error_from_conflict(exc)
     except ValueError as error:
         raise _http_error_from_value(error)
-    response = repo.to_response(design)
-    await db.commit()
-    return response
+    return result.response
 
 
 @router.delete("/architecture/{design_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_architecture_design(
     design_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    await _ensure_design_mutable(db, design_id)
-    repo = ArchitectureDesignRepository(db)
-    deleted = await repo.delete(design_id, user_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Architecture design not found")
-    await db.commit()
+    try:
+        await DeleteArchitectureDesignUseCase().execute(
+            DeleteArchitectureDesignCommand(design_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
+        )
+    except ConflictError as exc:
+        raise _http_error_from_conflict(exc)
 
 
 @router.get(
@@ -389,29 +421,25 @@ async def get_architecture_diagram_payload(
     design_id: str,
     diagram_id: str,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    repo = ArchitectureDesignRepository(db)
-    design = await repo.get(design_id)
-    if design is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Architecture design not found")
-    diagram = next((item for item in design.diagrams or [] if item.get("id") == diagram_id), None)
-    if not diagram or not diagram.get("adapter_payload_ref"):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagram payload not found")
-    store = ArchitectureDiagramStore(db)
+    """R01A FU5-S1C: thin REST adapter over ``GetArchitectureDiagramPayloadUseCase``.
+    The two distinct legacy 404s are preserved via the use case's
+    ``EntityNotFoundError`` entity type — a missing design → "Architecture design
+    not found"; a missing diagram / absent ``adapter_payload_ref`` / unresolved
+    store payload → "Diagram payload not found"."""
     try:
-        payload = await store.load_payload(diagram["adapter_payload_ref"])
-        stat_info = await store.stat(diagram["adapter_payload_ref"])
-    except KeyError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagram payload not found")
-    return ArchitectureDiagramPayloadResponse(
-        design_id=design_id,
-        diagram_id=diagram_id,
-        format=stat_info["format"],
-        content_hash=stat_info["content_hash"],
-        size_bytes=stat_info["size_bytes"],
-        payload=payload,
-    )
+        result = await GetArchitectureDiagramPayloadUseCase().execute(
+            GetArchitectureDiagramPayloadCommand(design_id, diagram_id),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
+        )
+    return result.response
 
 
 @router.put("/architecture/{design_id}/diagrams/{diagram_id}/payload", response_model=ArchitectureDesignResponse)
@@ -420,31 +448,35 @@ async def update_architecture_diagram_payload(
     diagram_id: str,
     data: DiagramPayloadUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    design = await _ensure_design_mutable(db, design_id)
-    diagrams = [dict(item) for item in design.diagrams or []]
-    target = next((item for item in diagrams if item.get("id") == diagram_id), None)
-    if target is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagram not found")
-    target["format"] = data.format or target.get("format") or "raw"
-    target["adapter_payload"] = data.payload
-    repo = ArchitectureDesignRepository(db)
+    """R01A FU5-S1C: thin REST adapter over ``UpdateArchitectureDiagramPayloadUseCase``.
+    Mutability gate → 404 design / 409 card-read-only / 409 spec-locked; a missing
+    diagram → 404 "Diagram not found"; ``repo.update``'s ``ValueError`` family →
+    ``_http_error_from_value`` — exactly the legacy mapping."""
     try:
-        updated = await repo.update(
-            design_id,
-            ArchitectureDesignUpdate(
-                diagrams=diagrams,
-                change_summary=data.change_summary or f"Updated diagram payload {diagram_id}",
-                architecture_warning_acknowledgement=data.architecture_warning_acknowledgement,
+        result = await UpdateArchitectureDiagramPayloadUseCase().execute(
+            UpdateArchitectureDiagramPayloadCommand(
+                design_id,
+                diagram_id,
+                data.format,
+                data.payload,
+                data.change_summary,
+                data.architecture_warning_acknowledgement,
             ),
-            user_id,
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
+        )
+    except ConflictError as exc:
+        raise _http_error_from_conflict(exc)
     except ValueError as error:
         raise _http_error_from_value(error)
-    response = repo.to_response(updated)
-    await db.commit()
-    return response
+    return result.response
 
 
 @router.post("/architecture/{design_id}/diagrams/import-excalidraw", response_model=ArchitectureDesignResponse)
@@ -452,43 +484,39 @@ async def import_excalidraw_architecture_diagram(
     design_id: str,
     data: ExcalidrawImportRequest,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    design = await _ensure_design_mutable(db, design_id)
-    diagrams = [dict(item) for item in design.diagrams or []]
-    imported = {
-        "id": data.replace_diagram_id or None,
-        "title": data.title,
-        "diagram_type": data.diagram_type,
-        "format": "excalidraw_json",
-        "description": data.description,
-        "order_index": data.order_index,
-        "adapter_payload": data.payload,
-    }
-    if data.replace_diagram_id:
-        index = next((idx for idx, item in enumerate(diagrams) if item.get("id") == data.replace_diagram_id), -1)
-        if index < 0:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diagram not found")
-        diagrams[index] = {**diagrams[index], **imported, "id": data.replace_diagram_id}
-    else:
-        imported.pop("id")
-        diagrams.append(imported)
-    repo = ArchitectureDesignRepository(db)
+    """R01A FU5-S1C: thin REST adapter over ``ImportExcalidrawArchitectureDiagramUseCase``.
+    Mutability gate → 404 design / 409 card-read-only / 409 spec-locked; a missing
+    ``replace_diagram_id`` → 404 "Diagram not found"; ``repo.update``'s
+    ``ValueError`` family → ``_http_error_from_value`` — exactly the legacy
+    mapping."""
     try:
-        updated = await repo.update(
-            design_id,
-            ArchitectureDesignUpdate(
-                diagrams=diagrams,
-                change_summary=data.change_summary or "Imported Excalidraw diagram",
-                architecture_warning_acknowledgement=data.architecture_warning_acknowledgement,
+        result = await ImportExcalidrawArchitectureDiagramUseCase().execute(
+            ImportExcalidrawArchitectureDiagramCommand(
+                design_id,
+                data.title,
+                data.payload,
+                data.diagram_type,
+                data.description,
+                data.order_index,
+                data.replace_diagram_id,
+                data.change_summary,
+                data.architecture_warning_acknowledgement,
             ),
-            user_id,
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
         )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
+        )
+    except ConflictError as exc:
+        raise _http_error_from_conflict(exc)
     except ValueError as error:
         raise _http_error_from_value(error)
-    response = repo.to_response(updated)
-    await db.commit()
-    return response
+    return result.response
 
 
 @router.get("/architecture/{design_id}/diff", response_model=ArchitectureDiffResponse)
@@ -497,13 +525,20 @@ async def get_architecture_diff(
     from_version: int = Query(..., ge=1),
     to_version: int = Query(..., ge=1),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    repo = ArchitectureDesignRepository(db)
+    """R01A FU5-S1C: thin REST adapter over ``GetArchitectureDiffUseCase``. The
+    repository's "version not found" ``ValueError`` → ``_http_error_from_value``
+    (404) exactly as the legacy endpoint did."""
     try:
-        return await repo.diff(design_id, from_version, to_version)
+        result = await GetArchitectureDiffUseCase().execute(
+            GetArchitectureDiffCommand(design_id, from_version, to_version),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
     except ValueError as error:
         raise _http_error_from_value(error)
+    return result.response
 
 
 @router.post("/cards/{card_id}/copy-architecture-from-spec/{spec_id}", response_model=list[ArchitectureDesignResponse])
@@ -512,19 +547,29 @@ async def copy_architecture_from_spec_to_card(
     spec_id: str,
     data: CopyArchitectureRequest | None = None,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    service = ArchitecturePropagationService(db)
+    """R01A FU5-S1C: thin REST adapter over ``CopyArchitectureFromSpecToCardUseCase``.
+    A missing card → 404 "card not found" (legacy ``_ensure_parent``); the
+    propagation service's structured errors keep their EXACT legacy mapping and
+    ordering — ``ResourceLineageResolutionError`` → 422, ``ResourcePropagationError``
+    → 422 (with ``spec_id``), ``ArchitecturePropagationBlocked`` → 422 structured,
+    then the generic ``ValueError`` → ``_http_error_from_value``."""
     try:
-        designs, _plan = await service.copy_effective_spec_to_card(
-            board_id=(await _ensure_parent(db, "card", card_id)).board_id,
-            spec_id=spec_id,
-            card_id=card_id,
-            actor_id=user_id,
-            design_ids=(data.design_ids if data else None),
-            architecture_warning_acknowledgement=(
-                data.architecture_warning_acknowledgement if data else None
+        result = await CopyArchitectureFromSpecToCardUseCase().execute(
+            CopyArchitectureFromSpecToCardCommand(
+                card_id,
+                spec_id,
+                (data.design_ids if data else None),
+                (data.architecture_warning_acknowledgement if data else None),
             ),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{exc.entity_type} not found",
         )
     except ResourceLineageResolutionError as error:
         raise HTTPException(
@@ -545,7 +590,4 @@ async def copy_architecture_from_spec_to_card(
         ) from error
     except ValueError as error:
         raise _http_error_from_value(error)
-    repo = ArchitectureDesignRepository(db)
-    response = [repo.to_response(design) for design in designs]
-    await db.commit()
-    return response
+    return result.responses

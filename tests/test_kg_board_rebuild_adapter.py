@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.kg.board_rebuild_adapter import BoardRebuildIngestionAdapter
+from okto_pulse.community.adapters.board_rebuild_ingestion import (
+    BoardRebuildIngestionAdapter,
+)
 from okto_pulse.core.kg.rebuild_service import RebuildStepInput
 
 

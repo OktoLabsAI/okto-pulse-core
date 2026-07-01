@@ -15,7 +15,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.models.db import Board
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services.amendment_revision_api import reject_bypass_fields
 from okto_pulse.core.services.default_board_configuration import (
     DefaultBoardConfigurationError,
@@ -55,7 +55,11 @@ class DefaultBoardConfigApiService:
         }
 
     async def get_board_diff(self, *, board_id: str) -> dict[str, Any]:
-        board = await self._db.get(Board, board_id)
+        # R01C IMP3 drain: existence get-by-id via the edition-owned repository port
+        # (R01B FR3 ``resolve_unit_of_work_factory().wrap`` seam) instead of the ORM
+        # import. No owner/permission predicate here (access is enforced at the REST
+        # layer); the ``board is None`` → 404 mapping is preserved exactly.
+        board = await resolve_unit_of_work_factory().wrap(self._db).boards.get(board_id)
         if board is None:
             raise DefaultBoardConfigurationError(
                 "board_not_found",

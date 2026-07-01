@@ -18,9 +18,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-import time
 import unicodedata
-from dataclasses import dataclass, field
 from typing import Any
 
 from okto_pulse.core.kg.schema_contract import (
@@ -301,46 +299,31 @@ def _auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
 # ---------------------------------------------------------------------------
 # Rate limiter — token bucket (FR-5)
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class _TokenBucket:
-    rate: int = 30  # tokens per window
-    window: float = 60.0  # seconds
-    _tokens: dict[str, list[float]] = field(default_factory=dict)
-
-    def allow(self, agent_id: str) -> tuple[bool, int]:
-        """Returns (allowed, retry_after_seconds)."""
-        now = time.monotonic()
-        times = self._tokens.setdefault(agent_id, [])
-        # Purge old entries outside window
-        cutoff = now - self.window
-        self._tokens[agent_id] = [t for t in times if t > cutoff]
-        times = self._tokens[agent_id]
-        if len(times) >= self.rate:
-            oldest = times[0]
-            retry_after = int(self.window - (now - oldest)) + 1
-            return False, max(1, retry_after)
-        times.append(now)
-        return True, 0
-
-
-_rate_limiter = _TokenBucket()
+#
+# R03 IMP1 (FR2/AC2): the in-memory token bucket lives ONLY behind the
+# RateLimiter port — the canonical concrete is
+# ``kg.providers.embedded.memory_rate_limiter.InMemoryTokenBucket`` (the Community
+# edition composes ``CommunityInMemoryRateLimiter``). The duplicate module-global
+# ``_TokenBucket`` / ``_rate_limiter`` that used to live here was vestigial — the
+# runtime resolves the slot through ``require_rate_limiter()`` — so it is removed,
+# together with its ``BASELINE_SINGLETONS`` ledger entry. Token-bucket
+# semantics (30 tokens / 60s window per agent) are unchanged.
 
 
 def reset_rate_limiter_for_tests() -> None:
-    """Reset rate limiter — resets the whole KG registry."""
+    """Reset the rate limiter — drops the whole KG registry (tests only)."""
     from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
 
     reset_registry_for_tests()
-    global _rate_limiter
-    _rate_limiter = _TokenBucket()
 
 
 def check_rate_limit(agent_id: str) -> None:
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    limiter = get_kg_registry().rate_limiter
+    # AC3 (base fail-closed): read the rate limiter through the required port —
+    # an unregistered slot raises ``runtime_provider_missing`` instead of a late
+    # ``AttributeError`` on ``None`` or a silent concrete fallback.
+    limiter = get_kg_registry().require_rate_limiter()
     allowed, retry_after = limiter.allow(agent_id)
     if not allowed:
         raise TierPowerError(
@@ -782,7 +765,7 @@ def execute_natural_query(
                  board_id, nl_query[:80], limit, min_confidence)
 
     registry = get_kg_registry()
-    embedder = registry.embedding_provider
+    embedder = registry.require_embedding_provider()
     store = registry.graph_store
     warning = None
 

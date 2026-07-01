@@ -9,7 +9,7 @@ cognitive-authored node) are NEVER demoted to working: they are preserved, and a
 EXISTING R7 ``CanonicalDebt`` contract (no new taxonomy, idempotent).
 
 Design constraints (R2-IMP1 spec 9aedfe78 / card affd0444):
-- TR1: reuse ``classify_source_for_kg`` + ``BoardSourceStore`` as the maturity
+- TR1: reuse ``classify_source_for_kg`` + the BoardSourceReader port as the maturity
   source of truth.
 - TR2: internal audited primitive; NOT exposed as an MCP mutating tool. Preserves
   ``original_node_id`` / ``source_artifact_ref`` (only ``graph_layer`` /
@@ -29,12 +29,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.kg.board_source_store import BoardSourceStore
 from okto_pulse.core.kg.canonical_learning_partition import (
     _bug_artifact_id,
     _is_bug_derived_ref,
@@ -95,21 +93,6 @@ class StaleReconcileResult:
         }
 
 
-def _pulse_db_path() -> Path:
-    """Resolve the SQLite file the async engine targets (BoardSourceStore reads it
-    read-only). Mirrors api.kg_rebuild._resolve_pulse_db_path without the api dep."""
-    try:
-        from okto_pulse.core.infra.database import get_engine
-
-        url = str(get_engine().url)
-    except Exception:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    idx = url.rfind(":///")
-    if idx < 0:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    return Path(url[idx + 4 :])
-
-
 def _owning_source_id(ref: str) -> str | None:
     """Extract the owning artifact id from a deterministic node's
     ``source_artifact_ref`` (``spec:{id}``, ``spec:{id}:fr:..``, ``card:{id}`` ...).
@@ -136,10 +119,10 @@ def _source_ids_from_refs(source_refs: list[str] | None) -> set[str] | None:
 
 
 def _build_source_classification_map(board_id: str) -> dict[str, SourceMaturityClassification]:
-    """``{artifact_id: classification}`` from the authoritative SQL source store."""
-    store = BoardSourceStore(db_path=_pulse_db_path())
+    """``{artifact_id: classification}`` from the registered source reader."""
+    reader = get_kg_registry().require_board_source_reader()
     out: dict[str, SourceMaturityClassification] = {}
-    for row in store.fetch(board_id):
+    for row in reader.fetch(board_id):
         sid = str(row.get("id") or "")
         if not sid:
             continue

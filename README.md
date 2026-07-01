@@ -42,8 +42,10 @@ The two execution-quality additions introduced in 0.2.3 — **cognitive closeout
 ## Architecture
 
 For the backend hexagonal refactor, the full port inventory and the executable
-adapter-readiness ledger, see [`ARCHITECTURE.md`](./ARCHITECTURE.md). This
-README keeps only the runtime topology summary.
+adapter-readiness ledger, see [`ARCHITECTURE.md`](./ARCHITECTURE.md). It names
+the runtime, storage/MCP, initialization, telemetry, repository/UoW, Knowledge
+Graph and inbound adapter ports, plus the current ledgered exceptions that still
+need extraction. This README keeps only the runtime topology summary.
 
 ```text
 Single Python process
@@ -59,6 +61,12 @@ Shared by composition:
 - KGProviderRegistry providers supplied by the active edition
 - MCP credential resolved from the ASGI/FastMCP request scope
 ```
+
+Relational dependency cleanup is tracked on two axes. `asyncpg` is removed from
+the core default and is audited across package metadata, lock data, wheel
+metadata and runtime imports. The remaining SQLAlchemy/PostgreSQL code path in
+`core.infra.database` is deferred R01B/R01C migration debt, not evidence that the
+`asyncpg` dependency may return to the core package.
 
 `build_mcp_asgi_app()` and `mount_mcp(app)` are the two helpers exposed from `okto_pulse.core.mcp` — pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app.
 

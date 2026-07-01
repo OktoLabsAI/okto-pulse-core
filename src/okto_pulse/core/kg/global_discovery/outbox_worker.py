@@ -591,12 +591,12 @@ class OutboxWorker:
         """
 
         from okto_pulse.core.kg.global_discovery.schema import (
-            _global_kuzu_path,
             close_global_connection,
+            global_discovery_graph_path,
             open_global_connection,
         )
 
-        path = _global_kuzu_path()
+        path = global_discovery_graph_path()
         close_global_connection()
         if not path.exists():
             raise RuntimeError(f"global discovery file missing at {path}")

@@ -14,3 +14,9 @@ The 15 entity-specific `list_*` MCP tools are no longer registered.
 
 - `entity_type='refinement'` requires `filters={'ideation_id': '...'}` in `list_by_board`.
 - `entity_type='sprint'` requires `filters={'spec_id': '...'}` in `list_by_board`.
+
+## Derivation pending
+
+- `entity_type='ideation'` accepts `filters={'derivation_pending': true}` to list DONE medium/large ideations with zero active child refinements.
+- `entity_type='refinement'` accepts `filters={'ideation_id': '...', 'derivation_pending': true}` to list DONE refinements with zero active child specs.
+- Cancelled or archived child refinements/specs are not counted as active derivations.

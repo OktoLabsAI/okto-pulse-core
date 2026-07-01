@@ -31,7 +31,7 @@ from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.global_discovery.schema import (
     bootstrap_global_discovery,
     open_global_connection,
-    reset_global_db_for_tests,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
 from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
@@ -40,10 +40,10 @@ from okto_pulse.core.mcp.kg_query_tools import register_kg_query_tools
 
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +349,7 @@ def _register_query_tools(board_id, monkeypatch):
     monkeypatch.setattr(qt, "_get_user_boards", _fake_user_boards)
     double = _MCPDouble()
     register_kg_query_tools(
-        double, get_agent=lambda: None, get_db=lambda: None,
+        double, get_agent=lambda: None, get_uow=lambda: None,
     )
     return double.tools
 
