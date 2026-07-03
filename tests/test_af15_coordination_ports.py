@@ -85,6 +85,29 @@ async def test_af15_runtime_settings_read_uses_provider() -> None:
 
 
 @pytest.mark.asyncio
+async def test_af15_runtime_settings_partial_provider_merges_defaults() -> None:
+    from okto_pulse.core.infra.config import get_settings
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.services.settings_service import (
+        RUNTIME_KEYS,
+        get_runtime_settings,
+    )
+
+    provider = FakeRuntimeSettingsProvider({"kg_decay_tick_interval_minutes": 123})
+    register_coordination_providers(runtime_settings_provider=provider)
+
+    factory = get_session_factory()
+    async with factory() as db:
+        snapshot = await get_runtime_settings(db)
+
+    assert set(RUNTIME_KEYS).issubset(snapshot)
+    assert snapshot["kg_decay_tick_interval_minutes"] == 123
+    assert snapshot["kg_queue_min_interval_ms"] == int(
+        get_settings().kg_queue_min_interval_ms
+    )
+
+
+@pytest.mark.asyncio
 async def test_af15_runtime_settings_write_uses_ports() -> None:
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.services.settings_service import (

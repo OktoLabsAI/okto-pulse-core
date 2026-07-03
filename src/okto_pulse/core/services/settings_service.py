@@ -179,14 +179,18 @@ async def _load_persisted_rows(db: AsyncSession) -> dict[str, int]:
 async def _read_effective_runtime_settings() -> dict[str, int]:
     """Read effective settings through the edition port when available."""
 
+    s = get_settings()
+    effective = {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
     try:
         provider = get_runtime_settings_provider()
     except CoordinationProviderMissing:
-        s = get_settings()
-        return {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
+        return effective
 
     provided = await provider.read_runtime_settings("global")
-    return {k: int(provided[k]) for k in RUNTIME_KEYS if k in provided}
+    for key in RUNTIME_KEYS:
+        if key in provided:
+            effective[key] = _validate_runtime_setting_value(key, int(provided[key]))
+    return effective
 
 
 def _validate_runtime_settings_via_port(values: dict[str, int]) -> None:
