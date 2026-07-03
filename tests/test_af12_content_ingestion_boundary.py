@@ -3,12 +3,22 @@ from __future__ import annotations
 import inspect
 import textwrap
 
+import pytest
+
 from okto_pulse.core.application.boundary.storage_bypass_gate import (
     KIND_MCP_CONCRETE_SOURCE_PARAM,
     KIND_MCP_CONTENT_FETCH,
     run_storage_bypass_gate,
 )
 from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.ports.content_ingestion import (
+    IngestedBinaryContent,
+    IngestedTextContent,
+)
+from okto_pulse.core.runtime_registry import (
+    register_content_ingestion_resolver,
+    reset_content_ingestion_resolver,
+)
 
 
 def test_af12_core_mcp_tools_expose_abstract_content_reference_only():
@@ -45,6 +55,38 @@ def test_af12_all_known_mcp_ingestion_callsites_use_resolver_helpers():
         assert "content_reference=content_reference" in source
         assert "file_path" not in source
         assert "file_url" not in source
+
+
+@pytest.mark.asyncio
+async def test_af12_abstract_content_reference_resolves_through_core_port():
+    class FakeResolver:
+        async def resolve_text(self, reference: str, *, max_bytes: int):
+            assert reference == "object://signed/text"
+            assert max_bytes > 0
+            return IngestedTextContent(text="resolved text", source="fake-object-store")
+
+        async def resolve_binary(self, reference: str, *, max_bytes: int):
+            assert reference == "object://signed/blob"
+            assert max_bytes > 0
+            return IngestedBinaryContent(data=b"resolved bytes", source="fake-object-store")
+
+    register_content_ingestion_resolver(FakeResolver())
+    try:
+        text, text_err = await mcp_server._resolve_text_content(
+            content="",
+            content_reference="object://signed/text",
+        )
+        data, data_err = await mcp_server._resolve_binary_content(
+            content_base64="",
+            content_reference="object://signed/blob",
+        )
+    finally:
+        reset_content_ingestion_resolver()
+
+    assert text_err is None
+    assert text == "resolved text"
+    assert data_err is None
+    assert data == b"resolved bytes"
 
 
 def test_af12_storage_bypass_gate_covers_real_core_api_and_mcp():
