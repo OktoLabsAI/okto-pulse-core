@@ -187,6 +187,58 @@ class ListDigestLayerMismatchUseCase:
         return ListDigestLayerMismatchResult(data)
 
 
+class AuditOriginatesFromContractCommand:
+    """Input for :class:`AuditOriginatesFromContractUseCase`."""
+
+    __slots__ = ("board_id", "limit", "offset", "include_ok")
+
+    def __init__(
+        self,
+        board_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        include_ok: bool = False,
+    ) -> None:
+        self.board_id = board_id
+        self.limit = limit
+        self.offset = offset
+        self.include_ok = include_ok
+
+
+class AuditOriginatesFromContractResult:
+    """Output — the advisory audit mapping returned by the reader."""
+
+    __slots__ = ("data",)
+
+    def __init__(self, data: Any) -> None:
+        self.data = data
+
+
+class AuditOriginatesFromContractUseCase:
+    """Audit persisted ``originates_from`` endpoint drift without mutation."""
+
+    async def execute(
+        self,
+        command: AuditOriginatesFromContractCommand,
+        *,
+        actor: ActorContext,
+        uow: Any,
+    ) -> AuditOriginatesFromContractResult:
+        from okto_pulse.core.services.application_kg import (
+            audit_originates_from_contract,
+        )
+
+        _ = (actor, session_of(uow))
+        data = audit_originates_from_contract(
+            command.board_id,
+            limit=command.limit,
+            offset=command.offset,
+            include_ok=command.include_ok,
+        )
+        return AuditOriginatesFromContractResult(data)
+
+
 class RebuildAdmissionGateCommand:
     """Input for :class:`RebuildAdmissionGateUseCase`.
 

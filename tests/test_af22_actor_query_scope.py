@@ -9,10 +9,15 @@ from pathlib import Path
 import pytest
 
 from okto_pulse.core.application.scope import ActorScope, QueryScope
+from okto_pulse.core.application.boundary.query_scope_gate import (
+    query_scope_policy_violations,
+    run_query_scope_policy_gate,
+)
 from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.models.db import Board
 from okto_pulse.core.services import BoardService
+from okto_pulse.core.services.main import _board_scope_clauses
 
 
 CORE_ROOT = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
@@ -133,6 +138,101 @@ def test_actor_scope_derives_normalized_query_scope() -> None:
     assert scope.allowed_board_ids == frozenset({"board-af22"})
     assert scope.allows_board_id("board-af22")
     assert not scope.allows_board_id("other-board")
+
+
+def test_query_scope_default_is_not_all_boards() -> None:
+    scope = QueryScope(actor_id="user-hnd4", source="test")
+
+    assert not scope.allows_board_id("board-hnd4")
+    assert not scope.allows_board_id(None)
+
+
+def test_query_scope_empty_list_denies_without_fallback() -> None:
+    scope = QueryScope(
+        actor_id="user-hnd4",
+        source="test",
+        allowed_board_ids=frozenset(),
+        require_ownership=False,
+    )
+
+    assert not scope.allows_board_id("board-hnd4")
+
+
+def test_query_scope_explicit_global_requires_capability() -> None:
+    actor = ActorContext("user-hnd4", "rest")
+
+    with pytest.raises(PermissionError):
+        ActorScope.from_context(actor).query_scope(
+            require_ownership=False,
+            allow_all_boards=True,
+        )
+
+    admin_actor = ActorContext(
+        "admin-hnd4",
+        "rest",
+        permissions={"board.read.all": True},
+    )
+    scope = ActorScope.from_context(admin_actor).query_scope(
+        require_ownership=False,
+        allow_all_boards=True,
+    )
+
+    assert scope.allow_all_boards is True
+    assert scope.allows_board_id("board-hnd4")
+
+
+def test_board_scope_clauses_fail_closed_for_non_owner_none() -> None:
+    scope = QueryScope(
+        actor_id="user-hnd4",
+        source="test",
+        require_ownership=False,
+    )
+
+    assert (
+        _board_scope_clauses(
+            board_id="board-hnd4",
+            user_id="user-hnd4",
+            query_scope=scope,
+            require_ownership=False,
+        )
+        is None
+    )
+
+
+def test_board_scope_clauses_preserve_owner_only_none() -> None:
+    scope = QueryScope(actor_id="user-hnd4", source="test")
+
+    clauses = _board_scope_clauses(
+        board_id="board-hnd4",
+        user_id="user-hnd4",
+        query_scope=scope,
+        require_ownership=True,
+    )
+
+    assert clauses is not None
+    assert len(clauses) == 2
+
+
+def test_query_scope_policy_gate_accepts_current_tree() -> None:
+    assert run_query_scope_policy_gate(CORE_ROOT.parents[2]) == ()
+
+
+def test_query_scope_policy_gate_blocks_non_owner_none() -> None:
+    source = """
+async def bad(actor_scope):
+    return actor_scope.query_scope(require_ownership=False)
+
+async def good_owner(actor_scope):
+    return actor_scope.query_scope()
+
+async def good_empty(actor_scope):
+    return actor_scope.query_scope(allowed_board_ids=[], require_ownership=False)
+"""
+
+    violations = query_scope_policy_violations(source, file="synthetic.py")
+
+    assert [violation.line for violation in violations] == [3]
+    assert "non-owner QueryScope" in violations[0].reason
 
 
 @pytest.mark.asyncio

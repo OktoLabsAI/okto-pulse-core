@@ -32,6 +32,9 @@ class QueryScope:
 
     ``require_ownership`` preserves the existing owner-only REST semantics unless
     an adapter/use case intentionally supplies a non-owner allowed-board set.
+    ``allow_all_boards`` is the explicit sentinel for admin/operator all-board
+    reads; absent ``allowed_board_ids`` is never treated as all-boards by direct
+    board checks.
     """
 
     actor_id: str
@@ -41,6 +44,7 @@ class QueryScope:
     target_board_id: str | None = None
     allowed_board_ids: frozenset[str] | None = None
     require_ownership: bool = True
+    allow_all_boards: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "actor_id", str(self.actor_id))
@@ -56,11 +60,16 @@ class QueryScope:
             target_board_id=board_id,
             allowed_board_ids=self.allowed_board_ids,
             require_ownership=self.require_ownership,
+            allow_all_boards=self.allow_all_boards,
         )
 
     def allows_board_id(self, board_id: str | None) -> bool:
-        if board_id is None or self.allowed_board_ids is None:
+        if board_id is None:
+            return False
+        if self.allow_all_boards:
             return True
+        if self.allowed_board_ids is None:
+            return False
         return board_id in self.allowed_board_ids
 
 
@@ -100,7 +109,10 @@ class ActorScope:
         target_board_id: str | None = None,
         allowed_board_ids: set[str] | frozenset[str] | list[str] | tuple[str, ...] | None = None,
         require_ownership: bool = True,
+        allow_all_boards: bool = False,
     ) -> QueryScope:
+        if allow_all_boards and not self.has_global_board_scope_capability():
+            raise PermissionError("Global board scope requires an admin/operator capability")
         return QueryScope(
             actor_id=self.actor_id,
             source=self.source,
@@ -109,4 +121,33 @@ class ActorScope:
             target_board_id=target_board_id if target_board_id is not None else self.board_id,
             allowed_board_ids=_freeze_board_ids(allowed_board_ids),
             require_ownership=require_ownership,
+            allow_all_boards=allow_all_boards,
         )
+
+    def has_global_board_scope_capability(self) -> bool:
+        role_set = {str(role).lower() for role in self.roles}
+        if {"admin", "operator"} & role_set:
+            return True
+        permissions = self.permissions
+        if isinstance(permissions, Mapping):
+            for key in (
+                "*",
+                "admin",
+                "operator",
+                "board.read.all",
+                "boards.read.all",
+                "board.global",
+                "boards.global",
+                "kg.admin.historical_consolidation",
+            ):
+                if permissions.get(key) is True:
+                    return True
+        checker = getattr(permissions, "check", None)
+        if callable(checker):
+            for key in ("board.read.all", "boards.global", "kg.admin.historical_consolidation"):
+                try:
+                    checker(key)
+                    return True
+                except Exception:
+                    continue
+        return False

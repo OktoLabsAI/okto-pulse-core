@@ -149,6 +149,28 @@ Args:
 Returns:
     JSON with partition issue rows and bounded counts.
 
+## `okto_pulse_kg_originates_from_contract_audit`
+
+Read-only advisory audit for persisted `originates_from` KG edges whose endpoint
+labels violate the Bug->Entity contract.
+
+Use this when validating historical KG hygiene. Known endpoint pairs outside
+Bug->Entity are returned as high-confidence advisory findings; missing endpoint
+types are returned as low-confidence warnings. The tool never mutates, rebuilds,
+reprocesses, skips, or remediates graph data.
+
+Args:
+    board_id: Board ID.
+    limit: Max findings to return (1-200, default 50).
+    offset: Page offset.
+    include_ok: Include contract-satisfying edges in `items` when true.
+
+Returns:
+    JSON `{board_id, relationship_type, contract, status, items, counts, total,
+    scanned, limit, offset, read_only, mutated}`. Each item includes relationship
+    id, source/target ids, known endpoint types, classification, confidence,
+    reason, path, and `mutated=false`.
+
 ## `okto_pulse_kg_dead_letter_list`
 
 List dead-lettered consolidation rows.

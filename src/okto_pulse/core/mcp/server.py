@@ -15088,6 +15088,59 @@ async def okto_pulse_kg_digest_layer_mismatch_list(
 
 
 @mcp.tool()
+async def okto_pulse_kg_originates_from_contract_audit(
+    board_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    include_ok: bool = False,
+) -> str:
+    """
+    Read-only advisory audit for persisted KG `originates_from` edges whose
+    endpoint labels violate the Bug->Entity contract. Unknown/missing endpoint
+    labels are returned as low-confidence advisory warnings. This tool never
+    mutates, rebuilds, reprocesses, skips, or remediates graph data.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    try:
+        bounded_limit = max(1, min(int(limit), 200))
+        bounded_offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        return json.dumps({
+            "error": "invalid_pagination",
+            "detail": "limit and offset must be integers",
+        })
+
+    from okto_pulse.core.application.use_cases import (
+        AuditOriginatesFromContractCommand,
+        AuditOriginatesFromContractUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = (
+            await AuditOriginatesFromContractUseCase().execute(
+                AuditOriginatesFromContractCommand(
+                    board_id,
+                    limit=bounded_limit,
+                    offset=bounded_offset,
+                    include_ok=bool(include_ok),
+                ),
+                actor=actor,
+                uow=uow,
+            )
+        ).data
+    return json.dumps(result, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_kg_stale_canonical_parity_list(
     board_id: str,
     limit: int = 50,

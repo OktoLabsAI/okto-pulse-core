@@ -204,7 +204,12 @@ def _board_scope_clauses(
     if query_scope is not None:
         if query_scope.target_board_id and board_id and query_scope.target_board_id != board_id:
             return None
-        if not query_scope.allows_board_id(board_id):
+        if board_id is not None and (
+            query_scope.allowed_board_ids is not None or query_scope.allow_all_boards
+        ):
+            if not query_scope.allows_board_id(board_id):
+                return None
+        elif not require_ownership and not query_scope.allow_all_boards:
             return None
 
     clauses: list[Any] = []
@@ -1507,7 +1512,10 @@ class BoardService:
         if scoped_realm_id:
             filters.append(Board.realm_id == scoped_realm_id)
         if query_scope is not None:
-            if not query_scope.allows_board_id(query_scope.target_board_id):
+            if query_scope.target_board_id is not None:
+                if not query_scope.allows_board_id(query_scope.target_board_id):
+                    return [], 0
+            elif not query_scope.require_ownership and not query_scope.allow_all_boards:
                 return [], 0
             if query_scope.target_board_id:
                 filters.append(Board.id == query_scope.target_board_id)

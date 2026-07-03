@@ -25,13 +25,16 @@ from okto_pulse.core.application.boundary.storage_bypass_gate import (
     KIND_PATHLIB_IO,
     KIND_SHUTIL_IO,
     STORAGE_BYPASS_ALLOWLIST,
+    STORAGE_BYPASS_OCCURRENCE_ALLOWLIST,
     run_storage_bypass_gate,
     storage_bypass_allowlist_only_shrinks,
+    storage_bypass_occurrence_allowlist_only_shrinks,
 )
 
 
 def _write(tmp_path, name: str, body: str):
     p = tmp_path / name
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(textwrap.dedent(body), encoding="utf-8")
     return p
 
@@ -149,6 +152,105 @@ def test_gate_allowlist_ratchet_only_shrinks():
     assert not storage_bypass_allowlist_only_shrinks(
         STORAGE_BYPASS_ALLOWLIST, {"src/x.py": "reason"}
     )
+
+
+def test_occurrence_allowlist_survives_line_shift(tmp_path):
+    root = _write(
+        tmp_path,
+        "src/okto_pulse/core/mcp/server.py",
+        """
+        def _load_instructions():
+            # Line shifts and comments are diagnostics only.
+            # The semantic call below remains the same authorized occurrence.
+            for candidate in []:
+                if candidate.exists():
+                    return candidate.read_text(encoding="utf-8")
+        """,
+    ).parents[1]
+
+    report = run_storage_bypass_gate(root)
+
+    assert report.ok, [v.as_dict() for v in report.violations]
+    occurrence = next(o for o in report.occurrences if o.enclosing_qualname == "_load_instructions")
+    assert occurrence.line != 167
+    assert occurrence.key() in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
+
+
+def test_occurrence_allowlist_rejects_semantic_call_change(tmp_path):
+    root = _write(
+        tmp_path,
+        "src/okto_pulse/core/mcp/server.py",
+        """
+        def _load_instructions():
+            for candidate in []:
+                if candidate.exists():
+                    return candidate.read_text(encoding="latin-1")
+        """,
+    ).parents[1]
+
+    report = run_storage_bypass_gate(root)
+
+    assert not report.ok
+    violation = next(v for v in report.violations if v.enclosing_qualname == "_load_instructions")
+    assert violation.file == "src/okto_pulse/core/mcp/server.py"
+    assert violation.line > 0
+    assert violation.key() not in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
+
+
+def test_occurrence_fingerprint_distinguishes_identical_calls_by_scope(tmp_path):
+    root = _write(
+        tmp_path,
+        "src/okto_pulse/core/mcp/server.py",
+        """
+        def _load_instructions():
+            for candidate in []:
+                if candidate.exists():
+                    return candidate.read_text(encoding="utf-8")
+
+        def _load_resource_file(relative_path):
+            candidate = relative_path
+            if candidate.exists():
+                return candidate.read_text(encoding="utf-8")
+            return ""
+        """,
+    ).parents[1]
+
+    report = run_storage_bypass_gate(root)
+
+    assert report.ok, [v.as_dict() for v in report.violations]
+    by_scope = {o.enclosing_qualname: o for o in report.occurrences}
+    assert {
+        "_load_instructions",
+        "_load_resource_file",
+    } <= set(by_scope)
+    assert by_scope["_load_instructions"].normalized_call_ast == (
+        by_scope["_load_resource_file"].normalized_call_ast
+    )
+    assert by_scope["_load_instructions"].fingerprint != by_scope["_load_resource_file"].fingerprint
+
+
+def test_occurrence_allowlist_ratchet_only_shrinks():
+    current = STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
+    assert storage_bypass_occurrence_allowlist_only_shrinks(current, current)
+
+    first_key, first_value = next(iter(current.items()))
+    assert storage_bypass_occurrence_allowlist_only_shrinks(
+        current, {first_key: dict(first_value)}
+    )
+
+    widened = {
+        **current,
+        "new-fingerprint": {
+            "owner": "core",
+            "reason": "new bypass",
+            "removal_criteria": "remove later",
+        },
+    }
+    assert not storage_bypass_occurrence_allowlist_only_shrinks(current, widened)
+
+    changed = dict(current)
+    changed[first_key] = {**first_value, "reason": "changed"}
+    assert not storage_bypass_occurrence_allowlist_only_shrinks(current, changed)
 
 
 # --------------------------------------------------------------------------- FR3

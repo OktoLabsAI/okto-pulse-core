@@ -20,6 +20,8 @@ never scanned here (FR4 — "fora do adapter Community").
 from __future__ import annotations
 
 import ast
+import copy
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,25 +45,23 @@ _SHUTIL_IO_FUNCS = frozenset({"copyfile", "copy", "copy2", "copyfileobj", "move"
 #: the core API has no legitimate filesystem touch-point. A NEW occurrence in any
 #: file is therefore a blocking violation. Shrinks only.
 STORAGE_BYPASS_ALLOWLIST: dict[str, str] = {}
-STORAGE_BYPASS_OCCURRENCE_ALLOWLIST: dict[tuple[str, int, str, str], str] = {
-    (
-        "src/okto_pulse/core/mcp/server.py",
-        167,
-        "read_text",
-        KIND_PATHLIB_IO,
-    ): "MCP bundled prompt load; not user-supplied content ingestion.",
-    (
-        "src/okto_pulse/core/mcp/server.py",
-        199,
-        "read_text",
-        KIND_PATHLIB_IO,
-    ): "MCP bundled resource load; not user-supplied content ingestion.",
-    (
-        "src/okto_pulse/core/mcp/payload_budget.py",
-        168,
-        "read_text",
-        KIND_PATHLIB_IO,
-    ): "Explicit local manifest inspection utility, not runtime attachment/content ingestion.",
+STORAGE_BYPASS_OCCURRENCE_ALLOWLIST: dict[str, dict[str, str]] = {
+    # Fingerprints are content-anchored. Line numbers are diagnostics only.
+    "30f70245ba408cbc03a4f98a2a8efe45f470bd26ebcc1cce8209d75ac4324900": {
+        "owner": "core-mcp",
+        "reason": "MCP bundled prompt load; not user-supplied content ingestion.",
+        "removal_criteria": "Remove when MCP instructions are provided through an injected resource provider.",
+    },
+    "276d7bbdeaa4e4bbdbbd39ffc261377173a71d29d091cade4e3c900160e25623": {
+        "owner": "core-mcp",
+        "reason": "MCP bundled resource load; not user-supplied content ingestion.",
+        "removal_criteria": "Remove when MCP resources are provided through an injected resource provider.",
+    },
+    "e2284ae9a3a01e9b63b0c314c1e948ba535aa7d7f2f8b456ff907845045311fe": {
+        "owner": "core-mcp",
+        "reason": "Explicit local manifest inspection utility, not runtime attachment/content ingestion.",
+        "removal_criteria": "Remove when payload budget profiles are loaded through a resource provider.",
+    },
 }
 
 
@@ -73,12 +73,25 @@ class StorageBypassOccurrence:
     line: int
     symbol: str
     kind: str
+    enclosing_qualname: str
+    normalized_call_ast: str
+    relevant_imports: tuple[str, ...]
+    fingerprint: str
 
     def as_dict(self) -> dict:
-        return {"file": self.file, "line": self.line, "symbol": self.symbol, "kind": self.kind}
+        return {
+            "file": self.file,
+            "line": self.line,
+            "symbol": self.symbol,
+            "kind": self.kind,
+            "enclosing_qualname": self.enclosing_qualname,
+            "normalized_call_ast": self.normalized_call_ast,
+            "relevant_imports": list(self.relevant_imports),
+            "fingerprint": self.fingerprint,
+        }
 
-    def key(self) -> tuple[str, int, str, str]:
-        return (self.file, self.line, self.symbol, self.kind)
+    def key(self) -> str:
+        return self.fingerprint
 
 
 def _alias_map(tree: ast.AST) -> dict[str, str]:
@@ -121,6 +134,79 @@ def _base_name(node: ast.Attribute) -> str | None:
     return cur.id if isinstance(cur, ast.Name) else None
 
 
+def _root_name(node: ast.AST) -> str | None:
+    """Return the first Name in a call target chain.
+
+    Examples:
+    - ``candidate.read_text`` -> ``candidate``
+    - ``Path(src).read_text`` -> ``Path``
+    - ``shutil.copyfile`` -> ``shutil``
+    """
+    cur = node
+    while isinstance(cur, ast.Attribute):
+        cur = cur.value
+    if isinstance(cur, ast.Call):
+        return _root_name(cur.func)
+    return cur.id if isinstance(cur, ast.Name) else None
+
+
+def _parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+    return {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+
+
+def _enclosing_qualname(parents: dict[ast.AST, ast.AST], node: ast.AST) -> str:
+    names: list[str] = []
+    cur: ast.AST | None = node
+    while cur is not None:
+        if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.append(cur.name)
+        cur = parents.get(cur)
+    return ".".join(reversed(names)) or "<module>"
+
+
+def _canonical_ast_dump(node: ast.AST) -> str:
+    cloned = copy.deepcopy(node)
+    for child in ast.walk(cloned):
+        for attr in ("lineno", "col_offset", "end_lineno", "end_col_offset"):
+            if hasattr(child, attr):
+                setattr(child, attr, None)
+        if isinstance(child, ast.Call):
+            child.keywords = sorted(child.keywords, key=lambda kw: kw.arg or "")
+    return ast.dump(cloned, annotate_fields=True, include_attributes=False)
+
+
+def _relevant_imports(alias: dict[str, str], call_node: ast.AST | None) -> tuple[str, ...]:
+    if call_node is None:
+        return ()
+    root = _root_name(call_node)
+    if root is None:
+        return ()
+    resolved = alias.get(root)
+    return (f"{root}={resolved}",) if resolved is not None else ()
+
+
+def _fingerprint(
+    *,
+    file_label: str,
+    kind: str,
+    symbol: str,
+    normalized_call_ast: str,
+    relevant_imports: tuple[str, ...],
+    enclosing_qualname: str,
+) -> str:
+    payload = "\n".join(
+        [
+            f"file={file_label}",
+            f"kind={kind}",
+            f"symbol={symbol}",
+            f"qualname={enclosing_qualname}",
+            "imports=" + "\x1f".join(relevant_imports),
+            f"ast={normalized_call_ast}",
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _expr_uses_name(node: ast.AST, name: str) -> bool:
     return any(isinstance(child, ast.Name) and child.id == name for child in ast.walk(node))
 
@@ -136,16 +222,42 @@ def _is_mcp_tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 def _scan_module(tree: ast.AST, file_label: str) -> list[StorageBypassOccurrence]:
     """Detect every direct-filesystem touch-point in one core API module."""
     alias = _alias_map(tree)
-    found: dict[tuple[int, str], StorageBypassOccurrence] = {}
+    parents = _parent_map(tree)
+    found: dict[tuple[int, str, str, str], StorageBypassOccurrence] = {}
 
-    def record(line: int, symbol: str, kind: str) -> None:
-        found.setdefault((line, symbol), StorageBypassOccurrence(file_label, line, symbol, kind))
+    def record(node: ast.AST, symbol: str, kind: str, call_node: ast.AST | None = None) -> None:
+        call_for_fingerprint = call_node or node
+        normalized = _canonical_ast_dump(call_for_fingerprint)
+        imports = _relevant_imports(alias, call_for_fingerprint)
+        qualname = _enclosing_qualname(parents, node)
+        fingerprint = _fingerprint(
+            file_label=file_label,
+            kind=kind,
+            symbol=symbol,
+            normalized_call_ast=normalized,
+            relevant_imports=imports,
+            enclosing_qualname=qualname,
+        )
+        line = getattr(node, "lineno", 0)
+        found.setdefault(
+            (line, symbol, kind, fingerprint),
+            StorageBypassOccurrence(
+                file=file_label,
+                line=line,
+                symbol=symbol,
+                kind=kind,
+                enclosing_qualname=qualname,
+                normalized_call_ast=normalized,
+                relevant_imports=imports,
+                fingerprint=fingerprint,
+            ),
+        )
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_mcp_tool(node):
             for arg in [*node.args.args, *node.args.kwonlyargs]:
                 if arg.arg in {"file_path", "file_url"}:
-                    record(arg.lineno, arg.arg, KIND_MCP_CONCRETE_SOURCE_PARAM)
+                    record(arg, arg.arg, KIND_MCP_CONCRETE_SOURCE_PARAM)
 
         if not isinstance(node, ast.Call):
             continue
@@ -162,37 +274,37 @@ def _scan_module(tree: ast.AST, file_label: str) -> list[StorageBypassOccurrence
         if name == "FileResponse" or (
             resolved is not None and resolved.rsplit(".", 1)[-1] == "FileResponse"
         ):
-            record(node.lineno, "FileResponse", KIND_FILE_RESPONSE)
+            record(node, "FileResponse", KIND_FILE_RESPONSE, node)
             continue
 
         # builtin open(...) — only when ``open`` is a bare name (not ``x.open``).
         if isinstance(func, ast.Name) and name == "open":
-            record(node.lineno, "open", KIND_OPEN)
+            record(node, "open", KIND_OPEN, node)
             continue
 
         if isinstance(func, ast.Attribute):
             # pathlib IO: ``<path>.read_bytes()`` / ``.write_text()`` / ... or a
             # ``Path(...).open()`` chain (receiver is a Path(...) construction).
             if name in _PATHLIB_IO_METHODS:
-                record(node.lineno, name, KIND_PATHLIB_IO)
+                record(node, name, KIND_PATHLIB_IO, node)
                 continue
             if name == "open" and isinstance(func.value, ast.Call):
                 recv = _func_name(func.value.func)
                 resolved = alias.get(recv or "", recv or "")
                 if recv == "Path" or resolved.endswith(".Path"):
-                    record(node.lineno, "Path.open", KIND_PATHLIB_IO)
+                    record(node, "Path.open", KIND_PATHLIB_IO, node)
                     continue
             # shutil copy/move: ``shutil.copyfile(...)`` (resolve aliased base).
             if name in _SHUTIL_IO_FUNCS:
                 base = _base_name(func)
                 if base is not None and alias.get(base, base).split(".", 1)[0] == "shutil":
-                    record(node.lineno, f"shutil.{name}", KIND_SHUTIL_IO)
+                    record(node, f"shutil.{name}", KIND_SHUTIL_IO, node)
                     continue
 
             if name == "get" and any(
                 _expr_uses_name(arg, "file_url") for arg in [*node.args, *(kw.value for kw in node.keywords)]
             ):
-                record(node.lineno, "get(file_url)", KIND_MCP_CONTENT_FETCH)
+                record(node, "get(file_url)", KIND_MCP_CONTENT_FETCH, node)
                 continue
 
     return list(found.values())
@@ -208,6 +320,7 @@ class StorageBypassGateReport:
     occurrences: list[StorageBypassOccurrence] = field(default_factory=list)
     violations: list[StorageBypassOccurrence] = field(default_factory=list)
     allowlisted_files: list[str] = field(default_factory=list)
+    allowlisted_fingerprints: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -217,6 +330,7 @@ class StorageBypassGateReport:
             "occurrences": [o.as_dict() for o in self.occurrences],
             "violations": [o.as_dict() for o in self.violations],
             "allowlisted_files": list(self.allowlisted_files),
+            "allowlisted_fingerprints": list(self.allowlisted_fingerprints),
         }
 
 
@@ -272,6 +386,9 @@ def run_storage_bypass_gate(root: str | Path | None = None) -> StorageBypassGate
             if o.file in STORAGE_BYPASS_ALLOWLIST or o.key() in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
         }
     )
+    allowlisted_fingerprints = sorted(
+        {o.key() for o in occurrences if o.key() in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST}
+    )
     return StorageBypassGateReport(
         ok=not violations,
         scanned_files=scanned,
@@ -279,6 +396,7 @@ def run_storage_bypass_gate(root: str | Path | None = None) -> StorageBypassGate
         occurrences=occurrences,
         violations=violations,
         allowlisted_files=allowlisted_hit,
+        allowlisted_fingerprints=allowlisted_fingerprints,
     )
 
 
@@ -292,6 +410,22 @@ def storage_bypass_allowlist_only_shrinks(
         if file_label not in previous:
             return False
         if previous[file_label] != reason:
+            return False
+    return True
+
+
+def storage_bypass_occurrence_allowlist_only_shrinks(
+    previous: dict[str, dict[str, str]], current: dict[str, dict[str, str]]
+) -> bool:
+    """True iff occurrence allowlist keys/metadata only shrink.
+
+    A new fingerprint or changed owner/reason/removal criteria is a loosening and
+    must be reviewed as a new exception, not silently accepted by the ratchet.
+    """
+    for fingerprint, metadata in current.items():
+        if fingerprint not in previous:
+            return False
+        if previous[fingerprint] != metadata:
             return False
     return True
 
@@ -311,4 +445,5 @@ __all__ = [
     "default_core_mcp_path",
     "run_storage_bypass_gate",
     "storage_bypass_allowlist_only_shrinks",
+    "storage_bypass_occurrence_allowlist_only_shrinks",
 ]

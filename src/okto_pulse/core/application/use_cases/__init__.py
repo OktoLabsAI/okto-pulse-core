@@ -643,6 +643,9 @@ from okto_pulse.core.application.use_cases.mcp_card_crud import (
     McpRemoveCardDependencyUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_kg_crud import (
+    AuditOriginatesFromContractCommand,
+    AuditOriginatesFromContractResult,
+    AuditOriginatesFromContractUseCase,
     RebuildAdmissionGateCommand,
     RebuildAdmissionGateResult,
     RebuildAdmissionGateUseCase,
@@ -1367,6 +1370,9 @@ __all__ = [
     "ListDigestLayerMismatchCommand",
     "ListDigestLayerMismatchResult",
     "ListDigestLayerMismatchUseCase",
+    "AuditOriginatesFromContractCommand",
+    "AuditOriginatesFromContractResult",
+    "AuditOriginatesFromContractUseCase",
     "CopyArchitectureFromSpecToCardCommand",
     "CopyArchitectureFromSpecToCardResult",
     "CopyArchitectureFromSpecToCardUseCase",

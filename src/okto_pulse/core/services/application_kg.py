@@ -177,3 +177,11 @@ async def list_digest_layer_mismatches(*args: Any, **kwargs: Any) -> Any:
     )
 
     return await _list(*args, **kwargs)
+
+
+def audit_originates_from_contract(*args: Any, **kwargs: Any) -> Any:
+    from okto_pulse.core.kg.originates_from_audit import (
+        audit_originates_from_contract as _audit,
+    )
+
+    return _audit(*args, **kwargs)
