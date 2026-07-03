@@ -255,6 +255,84 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "RuntimeComposition for every MCP runtime entrypoint."
         ),
     },
+    "_lease_provider": {
+        "file": "okto_pulse/core/ports/coordination.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "coordination_lease_provider",
+        "expected_adapter": (
+            "Edition coordination lease provider (AF15) — the composition root "
+            "registers local-first or managed lease ownership behind the port so "
+            "core daily-tick and leadership paths do not construct process-local "
+            "coordination primitives directly. Same register-before-remove "
+            "pattern as runtime_registry seams."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once coordination providers are supplied "
+            "through RuntimeComposition or another explicit edition-scoped "
+            "composition object for every runtime entrypoint."
+        ),
+    },
+    "_write_lock_port": {
+        "file": "okto_pulse/core/ports/coordination.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "coordination_write_lock_port",
+        "expected_adapter": (
+            "Edition write-lock provider (AF15) — advisory lock and consolidation "
+            "flows resolve write locks through this port while Community owns the "
+            "local-first locking adapter and future editions can supply managed "
+            "implementations outside core."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once write-lock composition is owned by "
+            "RuntimeComposition or an equivalent edition-scoped provider registry."
+        ),
+    },
+    "_claim_repository": {
+        "file": "okto_pulse/core/ports/coordination.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "coordination_claim_repository",
+        "expected_adapter": (
+            "Edition claim repository (AF15) — dispatcher and outbox workers use "
+            "the port for claim ownership while concrete local-first persistence "
+            "or managed claim semantics remain outside common core."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once claim repository composition is owned "
+            "by RuntimeComposition or another explicit edition-scoped provider "
+            "object."
+        ),
+    },
+    "_runtime_settings_provider": {
+        "file": "okto_pulse/core/ports/coordination.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "coordination_runtime_settings_provider",
+        "expected_adapter": (
+            "Edition runtime-settings provider (AF15) — settings reads resolve "
+            "through the port so Community can preserve local settings behavior "
+            "and future SaaS editions can provide distributed/runtime settings "
+            "without core singletons."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once runtime-settings provider composition "
+            "is owned by RuntimeComposition or an equivalent edition-scoped "
+            "configuration provider."
+        ),
+    },
+    "_config_validation_port": {
+        "file": "okto_pulse/core/ports/coordination.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "coordination_config_validation_port",
+        "expected_adapter": (
+            "Edition config-validation port (AF15) — settings writes can be "
+            "validated through an edition-owned boundary while core keeps the "
+            "domain validation rules and avoids concrete runtime adapters."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once config-validation composition is owned "
+            "by RuntimeComposition or an equivalent edition-scoped configuration "
+            "provider."
+        ),
+    },
     "_orchestrator": {
         "file": "okto_pulse/core/infra/schema_lifecycle.py",
         "owner": "okto-pulse-core/runtime",
@@ -325,6 +403,11 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/kg/write_barrier.py::_current_mode",
         "okto_pulse/core/kg/write_barrier.py::_active_guards",
         "okto_pulse/core/mcp/server.py::_mcp_session_factory",
+        "okto_pulse/core/ports/coordination.py::_lease_provider",
+        "okto_pulse/core/ports/coordination.py::_write_lock_port",
+        "okto_pulse/core/ports/coordination.py::_claim_repository",
+        "okto_pulse/core/ports/coordination.py::_runtime_settings_provider",
+        "okto_pulse/core/ports/coordination.py::_config_validation_port",
         "okto_pulse/core/runtime_registry.py::_unit_of_work_factory",
         "okto_pulse/core/runtime_registry.py::_sqlite_pragma_installer",
         "okto_pulse/core/runtime_registry.py::_content_ingestion_resolver",
