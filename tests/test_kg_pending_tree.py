@@ -12,17 +12,26 @@ from __future__ import annotations
 import pytest
 
 from okto_pulse.core.api.kg_routes import list_pending_tree
+from okto_pulse.core.application.use_cases import ActorContext
 from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
+
+
+def _actor(board_id: str) -> ActorContext:
+    return ActorContext("u", "rest", board_id=board_id)
 
 
 @pytest.mark.asyncio
 async def test_pending_tree_empty_board(db_factory):
+    from okto_pulse.core.models.db import Board
+
     factory = db_factory
     async with factory() as db:
+        db.add(Board(id="bt-empty", name="b", description="", owner_id="u"))
+        await db.commit()
         result = await list_pending_tree(
-            "nonexistent-board", 5, uow=SQLAlchemyUnitOfWork(db)
+            "bt-empty", 5, actor=_actor("bt-empty"), uow=SQLAlchemyUnitOfWork(db)
         )
-    assert result["board_id"] == "nonexistent-board"
+    assert result["board_id"] == "bt-empty"
     assert result["tree"] == []
     assert result["total_pending"] == 0
     assert set(result["levels"].keys()) == {
@@ -65,7 +74,9 @@ async def test_pending_tree_hierarchical_shape(db_factory):
         await db.commit()
 
     async with factory() as db:
-        result = await list_pending_tree("bt-1", 5, uow=SQLAlchemyUnitOfWork(db))
+        result = await list_pending_tree(
+            "bt-1", 5, actor=_actor("bt-1"), uow=SQLAlchemyUnitOfWork(db)
+        )
 
     assert len(result["tree"]) == 1
     ideation_node = result["tree"][0]
@@ -104,7 +115,9 @@ async def test_pending_tree_depth_limits_children(db_factory):
         await db.commit()
 
     async with factory() as db:
-        result = await list_pending_tree("bt-2", 2, uow=SQLAlchemyUnitOfWork(db))
+        result = await list_pending_tree(
+            "bt-2", 2, actor=_actor("bt-2"), uow=SQLAlchemyUnitOfWork(db)
+        )
     ideation_node = result["tree"][0]
     ref_node = ideation_node["children"][0]
     # depth=2 stops at refinement — no spec children.
@@ -132,6 +145,8 @@ async def test_pending_tree_counters_track_queue_status(db_factory):
         await db.commit()
 
     async with factory() as db:
-        result = await list_pending_tree("bt-3", 5, uow=SQLAlchemyUnitOfWork(db))
+        result = await list_pending_tree(
+            "bt-3", 5, actor=_actor("bt-3"), uow=SQLAlchemyUnitOfWork(db)
+        )
     assert result["levels"]["specs"]["pending"] == 1
     assert result["total_pending"] == 1  # ideation=not_queued, spec=pending

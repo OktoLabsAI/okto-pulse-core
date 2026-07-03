@@ -6,6 +6,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from okto_pulse.core.application.use_cases import ActorContext
+
+
+def _actor(board_id: str) -> ActorContext:
+    return ActorContext("u", "rest", board_id=board_id)
+
 
 @pytest.mark.asyncio
 async def test_sse_endpoint_rejects_invalid_since(db_factory):
@@ -73,14 +79,17 @@ async def test_retry_endpoint_404_when_entry_missing(db_factory):
     from fastapi import HTTPException
 
     from okto_pulse.core.api.kg_routes import retry_pending_entry
+    from okto_pulse.core.models.db import Board
     from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
 
     factory = db_factory
     async with factory() as db:
+        db.add(Board(id="b", name="b", owner_id="u"))
+        await db.commit()
         with pytest.raises(HTTPException) as exc:
             await retry_pending_entry(
                 board_id="b", queue_entry_id="does-not-exist",
-                recursive=False, uow=SQLAlchemyUnitOfWork(db),
+                recursive=False, actor=_actor("b"), uow=SQLAlchemyUnitOfWork(db),
             )
     assert exc.value.status_code == 404
 
@@ -88,11 +97,12 @@ async def test_retry_endpoint_404_when_entry_missing(db_factory):
 @pytest.mark.asyncio
 async def test_retry_endpoint_resets_failed_entry(db_factory):
     from okto_pulse.core.api.kg_routes import retry_pending_entry
-    from okto_pulse.core.models.db import ConsolidationQueue
+    from okto_pulse.core.models.db import Board, ConsolidationQueue
     from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
 
     factory = db_factory
     async with factory() as db:
+        db.add(Board(id="b_retry", name="b", owner_id="u"))
         entry = ConsolidationQueue(
             board_id="b_retry",
             artifact_type="spec",
@@ -108,7 +118,7 @@ async def test_retry_endpoint_resets_failed_entry(db_factory):
     async with factory() as db:
         result = await retry_pending_entry(
             board_id="b_retry", queue_entry_id=entry_id,
-            recursive=False, uow=SQLAlchemyUnitOfWork(db),
+            recursive=False, actor=_actor("b_retry"), uow=SQLAlchemyUnitOfWork(db),
         )
 
     assert result["reopened_count"] == 1
@@ -160,7 +170,7 @@ async def test_retry_endpoint_recursive_reopens_descendants(db_factory):
     async with factory() as db:
         result = await retry_pending_entry(
             board_id="b_rec", queue_entry_id=spec_entry_id,
-            recursive=True, uow=SQLAlchemyUnitOfWork(db),
+            recursive=True, actor=_actor("b_rec"), uow=SQLAlchemyUnitOfWork(db),
         )
 
     assert result["recursive"] is True

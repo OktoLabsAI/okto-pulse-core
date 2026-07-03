@@ -25,9 +25,46 @@ from typing import Any
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
+    PermissionDeniedError,
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope
+
+
+async def _require_board_access(session: Any, actor: ActorContext, board_id: str) -> None:
+    """Fail closed unless the actor can see the target board through QueryScope."""
+    from okto_pulse.core.services.main import BoardService
+
+    actor_scope = ActorScope.from_context(actor)
+    query_scope = actor_scope.query_scope(target_board_id=board_id)
+    board = await BoardService(session).get_board(
+        board_id,
+        actor_scope.actor_id,
+        query_scope=query_scope,
+    )
+    if board is None:
+        raise PermissionDeniedError("Not authorized to access this board")
+
+
+async def _visible_board_ids(session: Any, actor: ActorContext) -> list[str]:
+    """Resolve the actor's global KG search scope using the board service."""
+    from okto_pulse.core.services.main import BoardService
+
+    actor_scope = ActorScope.from_context(actor)
+    boards, _total = await BoardService(session).list_boards(
+        actor_scope.actor_id,
+        offset=0,
+        limit=10_000_000,
+        realm_id=actor_scope.realm_id,
+        view="all",
+        query_scope=actor_scope.query_scope(),
+    )
+    scoped = actor_scope.query_scope(
+        allowed_board_ids=[board.id for board in boards],
+        require_ownership=False,
+    )
+    return sorted(scoped.allowed_board_ids or ())
 
 
 # --- list audit (reader) ----------------------------------------------------
@@ -59,6 +96,7 @@ class ListAuditUseCase:
     ) -> ListAuditResult:
         from okto_pulse.core.services.application_kg import list_consolidation_audit
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         entries = await list_consolidation_audit(
             session_of(uow), command.board_id, limit=command.limit
         )
@@ -94,23 +132,22 @@ class GlobalSearchResult:
 
 
 class GlobalSearchUseCase:
-    """Cross-board global discovery search (read, no commit). Resolves the caller's
-    boards via ``dashboard_readers.list_all_board_ids`` (community: all boards) and
-    delegates the search to ``kg_service.query_global`` after normalizing the layer
-    — exactly as the legacy endpoint did, including the order
-    (``normalize_graph_layer`` BEFORE the search). ``KGToolError`` from either call
-    propagates for the adapter to map."""
+    """Cross-board global discovery search (read, no commit).
+
+    Resolves the caller's board visibility through ``ActorScope``/``QueryScope``
+    and ``BoardService`` before delegating to ``kg_service.query_global``. An
+    unresolved scope is never treated as "all boards".
+    """
 
     async def execute(
         self, command: GlobalSearchCommand, *, actor: ActorContext, uow: Any
     ) -> GlobalSearchResult:
         from okto_pulse.core.services.application_kg import (
-            list_all_board_ids,
             normalize_graph_layer,
             query_global,
         )
 
-        user_board_ids = await list_all_board_ids(session_of(uow))
+        user_board_ids = await _visible_board_ids(session_of(uow), actor)
         layer = normalize_graph_layer(command.graph_layer)
         results = query_global(
             command.q,
@@ -150,6 +187,7 @@ class StartHistoricalUseCase:
     ) -> StartHistoricalResult:
         from okto_pulse.core.services.application_kg import start_historical_consolidation
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         payload = await start_historical_consolidation(
             session_of(uow), command.board_id
         )
@@ -183,6 +221,7 @@ class CancelHistoricalUseCase:
     ) -> CancelHistoricalResult:
         from okto_pulse.core.services.application_kg import cancel_historical
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         payload = await cancel_historical(session_of(uow), command.board_id)
         return CancelHistoricalResult(payload)
 
@@ -215,6 +254,7 @@ class GetHistoricalProgressUseCase:
     ) -> GetHistoricalProgressResult:
         from okto_pulse.core.services.application_kg import get_historical_progress
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         progress = await get_historical_progress(session_of(uow), command.board_id)
         return GetHistoricalProgressResult(progress)
 
@@ -247,6 +287,7 @@ class DeleteBoardKgUseCase:
     ) -> DeleteBoardKgResult:
         from okto_pulse.core.services.application_kg import right_to_erasure
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         counts = await right_to_erasure(session_of(uow), command.board_id)
         return DeleteBoardKgResult(counts)
 
@@ -286,6 +327,7 @@ class ListPendingUseCase:
     ) -> ListPendingResult:
         from okto_pulse.core.services.application_kg import list_pending_entries
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         entries = await list_pending_entries(session_of(uow), command.board_id)
         return ListPendingResult(entries)
 
@@ -319,6 +361,7 @@ class ListPendingTreeUseCase:
     ) -> ListPendingTreeResult:
         from okto_pulse.core.services.application_kg import build_pending_tree
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         payload = await build_pending_tree(
             session_of(uow), command.board_id, depth=command.depth
         )
@@ -359,6 +402,7 @@ class RetryPendingEntryUseCase:
     ) -> RetryPendingEntryResult:
         from okto_pulse.core.services.application_kg import retry_pending_entry
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         payload = await retry_pending_entry(
             session_of(uow),
             command.board_id,
@@ -412,8 +456,9 @@ class BoostNodeUseCase:
     ) -> BoostNodeResult:
         from okto_pulse.core.services.application_kg import boost_node
 
+        await _require_board_access(session_of(uow), actor, command.board_id)
         payload = await boost_node(
-            session_of(uow), command.board_id, command.node_id
+            session_of(uow), command.board_id, command.node_id, actor_id=actor.actor_id
         )
         if payload is None:
             raise EntityNotFoundError("node", command.node_id)

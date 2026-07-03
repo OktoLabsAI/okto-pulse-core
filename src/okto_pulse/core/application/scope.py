@@ -12,8 +12,12 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 
-def _freeze_mapping(value: Mapping[str, Any] | None) -> Mapping[str, Any]:
-    return MappingProxyType(dict(value or {}))
+def _freeze_permissions(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, Mapping):
+        return MappingProxyType(dict(value))
+    return value
 
 
 def _freeze_board_ids(value: set[str] | frozenset[str] | list[str] | tuple[str, ...] | None) -> frozenset[str] | None:
@@ -69,13 +73,13 @@ class ActorScope:
     actor_name: str | None = None
     board_id: str | None = None
     realm_id: str | None = None
-    permissions: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
+    permissions: Any = None
     roles: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "actor_id", str(self.actor_id))
         object.__setattr__(self, "source", str(self.source))
-        object.__setattr__(self, "permissions", _freeze_mapping(self.permissions))
+        object.__setattr__(self, "permissions", _freeze_permissions(self.permissions))
         object.__setattr__(self, "roles", tuple(self.roles or ()))
 
     @classmethod

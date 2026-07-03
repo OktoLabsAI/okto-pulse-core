@@ -31,6 +31,7 @@ from okto_pulse.core.api import kg_routes as kg_routes_api
 from okto_pulse.core.api.kg_routes import router as kg_router
 from okto_pulse.core.api.deps import get_unit_of_work
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.infra.auth import get_current_user, get_realm_id, require_user
 
 PREFIX = "/api/v1"
 ACTOR = "local-user"
@@ -59,9 +60,19 @@ def client():
         async with session_factory() as session:
             yield session
 
-    # These endpoints are unauthenticated; overriding get_db is enough because
-    # get_unit_of_work depends on it.
+    async def _override_user():
+        return {"sub": ACTOR, "roles": ["admin"]}
+
+    def _override_user_id():
+        return ACTOR
+
+    async def _override_realm():
+        return None
+
     app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_current_user] = _override_user
+    app.dependency_overrides[require_user] = _override_user_id
+    app.dependency_overrides[get_realm_id] = _override_realm
     return TestClient(app)
 
 

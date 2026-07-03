@@ -17,6 +17,8 @@ from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from okto_pulse.core.application.scope import ActorScope
+from okto_pulse.core.application.use_cases import ActorContext
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value, parse_options_json
@@ -702,6 +704,42 @@ async def _get_agent_ctx_for_credential(board_id: str, credential) -> AgentConte
 async def _get_agent_ctx(board_id: str) -> AgentContext | None:
     """Authenticate agent from the current request-scoped MCP key."""
     return await _get_agent_ctx_for_credential(board_id, active_api_key_credential())
+
+
+async def _get_global_agent_ctx() -> AgentContext | None:
+    """Authenticate an MCP agent without granting implicit all-board scope."""
+    credential = active_api_key_credential()
+    if credential is None:
+        return None
+    async with get_db_for_mcp() as db:
+        service = AgentService(db)
+        agent = await service.get_agent_by_key(credential.value)
+        if not agent:
+            return None
+
+        agent_flags = getattr(agent, "permission_flags", None)
+        if agent_flags is not None:
+            from okto_pulse.core.infra.permissions import resolve_permissions
+
+            preset_flags = None
+            preset_id = getattr(agent, "preset_id", None)
+            if preset_id:
+                from okto_pulse.core.models.db import PermissionPreset
+
+                preset = await db.get(PermissionPreset, preset_id)
+                if preset:
+                    preset_flags = preset.flags
+            perm_set = resolve_permissions(agent_flags, preset_flags, None)
+        else:
+            perm_set = agent.permissions
+
+        await db.commit()
+        return AgentContext(
+            agent_id=agent.id,
+            agent_name=agent.name,
+            board_id="",
+            permissions=perm_set,
+        )
 
 
 async def _log_card_activity(
@@ -16076,12 +16114,23 @@ async def okto_pulse_kg_migrate_schema(
     if not board_id and not all_boards:
         return json.dumps({"error": "missing_board_or_all_boards"})
 
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     schema_manager = get_kg_registry().graph_schema_manager
 
     if all_boards:
-        # Iterar todos os boards conhecidos via SQLite.
+        ctx = await _get_global_agent_ctx()
+        if ctx is None:
+            return _auth_error()
+        actor = MCPAdapterContract.actor(ctx)
+        actor_scope = ActorScope.from_context(actor)
+        perm_err = check_permission(
+            actor_scope.permissions, "kg.admin.historical_consolidation"
+        )
+        if perm_err:
+            return _perm_error(perm_err)
+
         from sqlalchemy import select as _select
 
         from okto_pulse.core.models.db import Board as _Board
@@ -16090,7 +16139,13 @@ async def okto_pulse_kg_migrate_schema(
         async with get_db_for_mcp() as db:
             rows = await db.execute(_select(_Board.id, _Board.name))
             board_pairs = list(rows.all())
+        query_scope = actor_scope.query_scope(
+            allowed_board_ids=[bid for bid, _name in board_pairs],
+            require_ownership=False,
+        )
         for bid, _bname in board_pairs:
+            if not query_scope.allows_board_id(bid):
+                continue
             try:
                 summary = await schema_manager.migrate(bid)
                 results.append(summary)
@@ -16105,6 +16160,23 @@ async def okto_pulse_kg_migrate_schema(
         return json.dumps({"results": results}, default=str)
 
     # Single board path
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    actor_scope = ActorScope.from_context(actor)
+    query_scope = actor_scope.query_scope(
+        target_board_id=board_id,
+        allowed_board_ids=[board_id],
+        require_ownership=False,
+    )
+    if not query_scope.allows_board_id(board_id):
+        return _perm_error("Permission denied: board outside query scope")
+    perm_err = check_permission(
+        actor_scope.permissions, "kg.admin.historical_consolidation"
+    )
+    if perm_err:
+        return _perm_error(perm_err)
     summary = await schema_manager.migrate(board_id)
     return json.dumps(summary, default=str)
 

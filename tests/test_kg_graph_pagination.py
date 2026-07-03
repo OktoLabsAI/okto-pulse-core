@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from okto_pulse.core.api import kg_routes
 from okto_pulse.core.api.kg_routes import router as kg_router
+from okto_pulse.core.application.use_cases import ActorContext
 
 
 SEED_BOARD = "board-s8-pagination"
@@ -164,6 +165,11 @@ def client(monkeypatch):
     )
     app = FastAPI()
     app.include_router(kg_router, prefix="/api/v1")
+    async def _override_actor():
+        return ActorContext("test-user", "rest", board_id=SEED_BOARD, roles=("admin",))
+
+    app.dependency_overrides[kg_routes.require_kg_actor] = _override_actor
+    app.dependency_overrides[kg_routes.require_kg_board_actor] = _override_actor
     return TestClient(app)
 
 
@@ -451,6 +457,11 @@ class TestNodesAndStats:
         )
         app = FastAPI()
         app.include_router(kg_router, prefix="/api/v1")
+        async def _override_actor():
+            return ActorContext("test-user", "rest", board_id=SEED_BOARD, roles=("admin",))
+
+        app.dependency_overrides[kg_routes.require_kg_actor] = _override_actor
+        app.dependency_overrides[kg_routes.require_kg_board_actor] = _override_actor
         local_client = TestClient(app)
 
         resp = local_client.get(f"/api/v1/kg/boards/{SEED_BOARD}/stats")

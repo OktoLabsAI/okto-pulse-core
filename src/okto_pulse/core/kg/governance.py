@@ -981,7 +981,7 @@ BOOST_CLAMP_MAX = 1.5
 
 
 async def boost_node(
-    db: AsyncSession, board_id: str, node_id: str
+    db: AsyncSession, board_id: str, node_id: str, *, actor_id: str
 ) -> dict[str, Any] | None:
     """Boost a node's ``relevance_score`` by +0.3 (clamp [0, 1.5]) and STAGE the
     ``ConsolidationAudit`` row on ``db`` (write; the caller owns the commit via the
@@ -1050,7 +1050,7 @@ async def boost_node(
             raise BoostPersistError(f"Failed to persist boost: {exc}") from exc
 
     boosted_at = datetime.now(timezone.utc)
-    boosted_by = "local-user"
+    boosted_by = actor_id
 
     # Persist the boost audit row with ALL required NOT-NULL columns populated
     # (bug 547a2aa8 fix): the legacy staging omitted ``artifact_type`` and

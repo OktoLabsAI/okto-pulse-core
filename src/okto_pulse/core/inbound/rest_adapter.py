@@ -18,6 +18,7 @@ from okto_pulse.core.application.use_cases import (
     ActorContext,
     CommandValidationError,
     EntityNotFoundError,
+    PermissionDeniedError,
 )
 from okto_pulse.core.services.main import AmbiguityGateError
 from okto_pulse.core.services.resource_gate import ResourceGateError
@@ -34,9 +35,18 @@ class RESTAdapterContract:
         *,
         realm_id: str | None = None,
         board_id: str | None = None,
+        permissions=None,
+        roles: tuple[str, ...] = (),
     ) -> ActorContext:
         """Build the transport-neutral actor from REST auth dependencies."""
-        return ActorContext(user_id, "rest", board_id=board_id, realm_id=realm_id)
+        return ActorContext(
+            user_id,
+            "rest",
+            board_id=board_id,
+            realm_id=realm_id,
+            permissions=permissions,
+            roles=roles,
+        )
 
     @staticmethod
     def http_error(exc: Exception, *, not_found_detail: str = "Not found") -> HTTPException:
@@ -53,6 +63,8 @@ class RESTAdapterContract:
             return HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=not_found_detail
             )
+        if isinstance(exc, PermissionDeniedError):
+            return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
         if isinstance(exc, AmbiguityGateError):
             return HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)

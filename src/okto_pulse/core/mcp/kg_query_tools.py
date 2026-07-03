@@ -13,6 +13,8 @@ import json
 import logging
 from typing import Any
 
+from okto_pulse.core.application.scope import ActorScope
+from okto_pulse.core.application.use_cases import ActorContext
 from okto_pulse.core.kg.kg_service import (
     KGToolError,
     get_kg_service,
@@ -89,8 +91,11 @@ async def _get_user_boards(get_agent=None, get_uow=None) -> tuple[Any, list[str]
             def __init__(self, id):
                 self.id = id
 
-        boards = await auth.get_accessible_boards()
-        return _Stub(agent_id), boards
+        boards = list(await auth.get_accessible_boards() or [])
+        query_scope = ActorScope.from_context(
+            ActorContext(agent_id, "mcp")
+        ).query_scope(allowed_board_ids=boards, require_ownership=False)
+        return _Stub(agent_id), sorted(query_scope.allowed_board_ids or ())
 
     return None, []
 
@@ -456,6 +461,8 @@ okto-pulse://reference/tool-docs/kg."""
             # R6-IMP3: normalize at the boundary so an invalid graph_layer fails
             # closed here and the applied (normalized) layer is echoed top-level.
             applied_layer = normalize_graph_layer(graph_layer)
+            if board_id:
+                svc.check_board_access(boards, board_id)
             target_boards = [board_id] if board_id else boards
             logger.debug("[KG] kg_query_global offloading to thread, target_boards=%d", len(target_boards))
             rows = await asyncio.to_thread(
