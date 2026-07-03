@@ -121,6 +121,30 @@ def test_matrix_reports_removed_dependency_in_explicit_wheel_metadata(tmp_path: 
     assert "published artifact" in (wheel_row.remediation or "")
 
 
+def test_matrix_surfaces_absent_removed_dependencies_as_accepted_rows(tmp_path: Path):
+    pyproject, src = _repo(tmp_path, [])
+
+    report = build_conformance_matrix(
+        repo_root=tmp_path,
+        pyproject_path=pyproject,
+        lock_path=tmp_path / "missing.lock",
+        source_root=src,
+        audit_wheel=False,
+        include_import_boundary=False,
+    )
+
+    removed = {
+        row.symbol_or_dependency: row
+        for row in report.rows
+        if row.surface == "dependency_conformance"
+        and row.diagnostic_code == "removed_dependency_absent"
+    }
+    assert removed["aiofiles"].classification == "removed"
+    assert removed["aiofiles"].severity == "accepted"
+    assert removed["aiofiles"].owning_fcc_or_wave == "AF-05"
+    assert removed["asyncpg"].classification == "removed"
+
+
 def test_matrix_keeps_common_relational_baseline_from_name_ban(tmp_path: Path):
     pyproject, src = _repo(
         tmp_path,

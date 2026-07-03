@@ -25,12 +25,15 @@ No vendor SDK is imported here — the concrete provider is injected.
 from __future__ import annotations
 
 import json
-import threading
 
 from okto_pulse.core.kg.interfaces.llm import (
     LLMProvider,
     LLMRequest,
     LLMResponse,
+)
+from okto_pulse.core.kg.llm_provider_bridge_cache import (
+    bridge_cache_get_or_create,
+    reset_bridge_cache_namespace,
 )
 
 from .llm_protocol import HeuristicLLM, LLMVerdict
@@ -41,24 +44,17 @@ _FAIL_CLOSED_REASONING = (
     "LLM provider unavailable; polarity unverified (fail-closed, no edge)."
 )
 
-_bridge_cache: dict[tuple, HeuristicLLM] = {}
-_bridge_lock = threading.Lock()
+_BRIDGE_CACHE_NAMESPACE = "kg.agent.heuristics"
 
 
 def _memoize(key: tuple, factory) -> HeuristicLLM:
-    with _bridge_lock:
-        obj = _bridge_cache.get(key)
-        if obj is None:
-            obj = factory()
-            _bridge_cache[key] = obj
-        return obj
+    return bridge_cache_get_or_create(_BRIDGE_CACHE_NAMESPACE, key, factory)
 
 
 def reset_bridge_cache() -> None:
     """Drop memoized bridge objects. Call in tests or when a wiring change
     requires fresh identities."""
-    with _bridge_lock:
-        _bridge_cache.clear()
+    reset_bridge_cache_namespace(_BRIDGE_CACHE_NAMESPACE)
 
 
 def _clamp01(value) -> float:

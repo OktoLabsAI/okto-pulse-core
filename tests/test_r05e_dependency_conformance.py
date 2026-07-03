@@ -12,6 +12,10 @@ Scenario mapping (spec d9d30831, card 0c066d12):
                 outside src/okto_pulse/core, and transitive-only lock entries (no
                 false positive).
 
+AF-05 extends the same harness: aiofiles is removed from the core runtime
+manifest/lock/wheel metadata and fails closed if reintroduced on any runtime
+surface.
+
 Plus: ledger purity / isolation, and the actionable report (OR-R05E-01).
 """
 
@@ -22,6 +26,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 import okto_pulse.core.application.boundary.dependency_conformance as _conf_mod
 import okto_pulse.core.application.boundary.dependency_ledger as _ledger_mod
@@ -39,8 +45,9 @@ from okto_pulse.core.application.boundary.dependency_ledger import (
 
 CONF_PY = Path(_conf_mod.__file__)
 LEDGER_PY = Path(_ledger_mod.__file__)
-SRC_ROOT = CONF_PY.parents[4]  # .../src
+SRC_ROOT = CONF_PY.resolve().parents[4]  # .../src
 REPO_ROOT = SRC_ROOT.parent
+COMMUNITY_ROOT = REPO_ROOT.parent / "okto_labs_pulse_community"
 
 
 # --------------------------------------------------------------------------- #
@@ -107,6 +114,27 @@ def test_ts_c2f39229_asyncpg_removed_from_core_default():
     report = audit_dependency_conformance(audit_wheel=False)
     assert "asyncpg" in report.removed_dependencies
     assert all(v.token != "asyncpg" for v in report.violations)
+
+
+def test_af05_aiofiles_removed_from_core_runtime_surfaces():
+    import tomllib
+
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    deps = pyproject["project"]["dependencies"]
+    names = {
+        d.split("[")[0].split(">")[0].split("<")[0].split("=")[0].strip().lower()
+        for d in deps
+    }
+    assert "aiofiles" not in names, "aiofiles still declared as a core direct dependency"
+
+    lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
+    core = next(p for p in lock["package"] if p["name"] == "okto-pulse-core")
+    lock_dep_names = {d["name"] for d in core.get("dependencies", [])}
+    assert "aiofiles" not in lock_dep_names, "uv.lock still lists aiofiles as a core direct dep"
+
+    report = audit_dependency_conformance(audit_wheel=False)
+    assert "aiofiles" in report.removed_dependencies
+    assert all(v.token != "aiofiles" for v in report.violations)
 
 
 # ===========================================================================
@@ -201,6 +229,65 @@ def test_ts_3a5d3275_explicit_wheel_metadata_with_removed_token_fails_closed(tmp
     assert all(w.diagnostic_code != "stale_removed_in_wheel" for w in report.warnings)
 
 
+def test_af05_aiofiles_reintroduction_fails_closed_on_all_runtime_surfaces(tmp_path):
+    pyproject_text = (
+        "[project]\n"
+        'name = "synthetic"\n'
+        'version = "0"\n'
+        'dependencies = ["aiofiles>=23.2"]\n'
+    )
+    lock_text = (
+        "version = 1\n"
+        'requires-python = ">=3.11"\n\n'
+        "[[package]]\n"
+        'name = "okto-pulse-core"\n'
+        'version = "0.3.0"\n'
+        "dependencies = [\n"
+        '    { name = "aiofiles" },\n'
+        "]\n"
+    )
+    metadata = tmp_path / "okto_pulse_core-0.dist-info" / "METADATA"
+    metadata.parent.mkdir()
+    metadata.write_text(
+        "Metadata-Version: 2.1\n"
+        "Name: okto-pulse-core\n"
+        "Version: 0\n"
+        "Requires-Dist: aiofiles>=23.2\n",
+        encoding="utf-8",
+    )
+
+    repo = tmp_path
+    pyproject = repo / "pyproject.toml"
+    pyproject.write_text(pyproject_text, encoding="utf-8")
+    lock = repo / "uv.lock"
+    lock.write_text(lock_text, encoding="utf-8")
+    src = repo / "src"
+    core = src / "okto_pulse" / "core"
+    core.mkdir(parents=True)
+    (core / "__init__.py").write_text("", encoding="utf-8")
+    (core / "files.py").write_text("import aiofiles\n", encoding="utf-8")
+
+    report = audit_dependency_conformance(
+        repo_root=repo,
+        source_root=src,
+        pyproject_path=pyproject,
+        lock_path=lock,
+        wheel_metadata_path=metadata,
+        audit_wheel=True,
+    )
+
+    assert report.ok is False
+    hits = [
+        v
+        for v in report.violations
+        if v.token == "aiofiles"
+        and v.diagnostic_code
+        in {"removed_dependency_present", "removed_import_present"}
+    ]
+    assert {v.surface for v in hits} == {"manifest", "lock", "source", "wheel"}
+    assert all(v.classification == "removed" for v in hits)
+
+
 # ===========================================================================
 # ts_681ca6d4 — ledger covers the remaining temporary exceptions.
 # ===========================================================================
@@ -232,6 +319,11 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
     assert asyncpg.classification == "removed"
     assert asyncpg.direct_dep_no_import is True
     assert asyncpg.transitive_consumer is None
+
+    aiofiles = index[normalize_token("aiofiles")]
+    assert aiofiles.classification == "removed"
+    assert aiofiles.direct_dep_no_import is True
+    assert aiofiles.transitive_consumer is None
 
     ladybug = index[normalize_token("ladybug")]
     assert ladybug.classification == "community_owned"
@@ -351,7 +443,7 @@ def test_conformance_module_imports_in_isolation(tmp_path):
         "import okto_pulse.core.application.boundary.dependency_conformance as m\n"
         "rep = m.audit_dependency_conformance(audit_wheel=False)\n"
         "assert hasattr(rep, 'ok')\n"
-        "forbidden = ('asyncpg','ladybug','numpy','sentence_transformers','torch','apscheduler')\n"
+        "forbidden = ('asyncpg','aiofiles','ladybug','numpy','sentence_transformers','torch','apscheduler')\n"
         "leaked = [n for n in sys.modules if any(n == p or n.startswith(p+'.') for p in forbidden)]\n"
         "assert not leaked, 'leaked concrete imports: ' + repr(leaked)\n"
         "print('ISO_OK')\n"
@@ -375,6 +467,7 @@ def test_report_is_actionable_and_serialisable():
     assert "R05-E dependency conformance:" in text
     assert "removed_dependencies" in text
     assert "asyncpg" in text
+    assert "aiofiles" in text
     assert "temporary_exceptions" in text
     # every accepted exception surfaces its owner_wave + removal_criterion + oracle.
     for token in ("aiosqlite", "numpy", "requests", "apscheduler"):
@@ -390,9 +483,35 @@ def test_report_is_actionable_and_serialisable():
     assert '"ledger_version": "R05-E.2"' in payload
 
 
+def test_af05_readmes_document_dependency_owner_matrix():
+    community_readme_path = COMMUNITY_ROOT / "README.md"
+    if not community_readme_path.exists():
+        pytest.skip("Community sibling repo not available for README matrix check")
+
+    core_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    community_readme = community_readme_path.read_text(encoding="utf-8")
+
+    for text in (core_readme, community_readme):
+        assert "AF-05 dependency owner matrix" in text
+        assert "`dependency_ledger.py`" in text
+        assert "`CANONICAL_TEMPORARY_EXCEPTION_TOKENS`" in text
+        assert "`conformance_matrix.py`" in text
+        for token, status in (
+            ("aiofiles", "removed"),
+            ("requests", "temporary_exception"),
+            ("chardet", "temporary_exception"),
+            ("apscheduler", "temporary_exception"),
+        ):
+            assert f"| `{token}` | `{status}` |" in text
+
+    assert "published core dependency" in core_readme
+    assert "published `okto-pulse-core`" in community_readme
+
+
 def test_real_repo_is_conformant():
     report = audit_dependency_conformance(audit_wheel=False)
     assert report.ledger_integrity_ok is True
     assert report.ok is True, [v.as_dict() for v in report.violations]
     assert set(report.surfaces_audited) >= {"ledger", "manifest", "lock", "source"}
     assert "asyncpg" in report.removed_dependencies
+    assert "aiofiles" in report.removed_dependencies

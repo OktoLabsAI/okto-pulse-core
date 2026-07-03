@@ -120,10 +120,18 @@ async def _seed_board_spec(db_factory, *, spec_status, require_validation=True):
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4", owner_id=USER_ID,
                      settings={"require_spec_validation": require_validation}))
+        # An active Decision satisfies the decision-required gate (spec
+        # 4028ebd4) so the moves below reach the spec_validation gate contract
+        # actually under test; Decision->Task coverage is skipped because that
+        # gate has its own suite and would fire first otherwise.
         db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=spec_status,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[],
-                    technical_requirements=[], decisions=[]))
+                    technical_requirements=[],
+                    decisions=[{"id": "dec_seed", "title": "Seed decision",
+                                "rationale": "Fixture decision for the gate contract tests.",
+                                "status": "active"}],
+                    skip_decisions_coverage=True))
         await db.commit()
     return board_id, spec_id
 

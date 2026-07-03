@@ -30,7 +30,6 @@ import uuid
 import pytest
 
 import okto_pulse.core.mcp.kg_query_tools as kqt
-import okto_pulse.community.adapters.kg_runtime as kg_runtime
 from okto_pulse.core.kg import graph_availability as ga
 from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.kg.cache import clear_cache
@@ -47,6 +46,11 @@ from okto_pulse.core.kg.schema import (
 )
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from kg_registry_testing import configure_real_graph_test_kg_registry
+
+kg_runtime = pytest.importorskip(
+    "okto_pulse.community.adapters.kg_runtime",
+    reason="AF-04 Community integration test requires the Community KG runtime adapter.",
+)
 
 
 # --------------------------------------------------------------------------- #

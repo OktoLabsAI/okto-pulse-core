@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
+from typing import AsyncContextManager
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -31,6 +33,8 @@ from okto_pulse.core.services.kg_health_service import get_kg_health
 
 logger = logging.getLogger("okto_pulse.api.kg_tick")
 router = APIRouter()
+
+SessionScopeFactory = Callable[[], AsyncContextManager[AsyncSession]]
 
 
 class TickRunNowRequest(BaseModel):
@@ -186,6 +190,7 @@ async def _dispatch_manual_tick(
     board_id: str | None,
     force_full_rebuild: bool,
     session: AsyncSession | None = None,
+    session_scope_factory: SessionScopeFactory | None = None,
 ) -> None:
     """Persist KGDailyTick event(s) through the same path as the cron.
 
@@ -196,19 +201,19 @@ async def _dispatch_manual_tick(
     tem o próprio uuid.
 
     When ``session`` is provided, the caller owns commit/rollback. MCP and
-    other non-request callers may omit it; this helper then opens and commits
-    a short-lived session.
+    other non-request callers may omit it only when composition injects a
+    ``session_scope_factory``; this helper never imports the concrete database
+    factory itself.
     """
     from okto_pulse.core.events.handlers.kg_decay_tick import (
         publish_tick_events,
     )
 
-    if force_full_rebuild:
-        await _reset_last_recomputed_at(board_id)
-
     scheduled_at = datetime.now(timezone.utc).isoformat()
 
     if session is not None:
+        if force_full_rebuild:
+            await _reset_last_recomputed_at(board_id, session=session)
         await publish_tick_events(
             session,
             board_id=board_id,
@@ -218,10 +223,15 @@ async def _dispatch_manual_tick(
         )
         return
 
-    from okto_pulse.core.infra.database import get_session_factory
+    if session_scope_factory is None:
+        raise RuntimeError(
+            "session_scope_factory is required when _dispatch_manual_tick is "
+            "called without an explicit session"
+        )
 
-    factory = get_session_factory()
-    async with factory() as owned_session:
+    async with session_scope_factory() as owned_session:
+        if force_full_rebuild:
+            await _reset_last_recomputed_at(board_id, session=owned_session)
         await publish_tick_events(
             owned_session,
             board_id=board_id,
@@ -232,7 +242,9 @@ async def _dispatch_manual_tick(
         await owned_session.commit()
 
 
-async def _reset_last_recomputed_at(board_id: str | None) -> None:
+async def _reset_last_recomputed_at(
+    board_id: str | None, *, session: AsyncSession | None = None
+) -> None:
     """Zero out `last_recomputed_at` for nodes in scope (board or global).
 
     Called when the operator passes ``force_full_rebuild=true`` — bypasses
@@ -243,20 +255,21 @@ async def _reset_last_recomputed_at(board_id: str | None) -> None:
     Cypher SET. Soft-fails per board so a single broken graph doesn't
     block the rest.
     """
-    from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
     from okto_pulse.core.kg.write_barrier import require_write_token
     from okto_pulse.core.models.db import Board
     from sqlalchemy import select
 
-    factory = get_session_factory()
-    async with factory() as session:
-        if board_id:
-            board_ids = [board_id]
-        else:
-            rows = (await session.execute(select(Board.id))).scalars().all()
-            board_ids = list(rows)
+    if board_id:
+        board_ids = [board_id]
+    else:
+        if session is None:
+            raise RuntimeError(
+                "session is required to reset all boards for force_full_rebuild"
+            )
+        rows = (await session.execute(select(Board.id))).scalars().all()
+        board_ids = list(rows)
 
     for bid in board_ids:
         # KG-01.3.1 boundary: force_full_rebuild is a write path against

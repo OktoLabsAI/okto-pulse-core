@@ -29,6 +29,19 @@ from kg_registry_testing import configure_real_graph_test_kg_registry
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def _restore_conftest_engine():
+    """FU-2 F4: tests here call create_database() against a throwaway DB,
+    which swaps the process-global engine. Restore the conftest engine on
+    teardown so later files keep seeing the session temp database."""
+    from okto_pulse.core.infra.database import create_database, get_engine
+
+    prior_url = str(get_engine().url)
+    yield
+    if str(get_engine().url) != prior_url:
+        create_database(prior_url, echo=False)
+
+
 @pytest.fixture
 def dedup_tempdir(monkeypatch):
     """Throwaway KG base dir + SQLite DB for dedup tests.

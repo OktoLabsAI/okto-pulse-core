@@ -224,7 +224,7 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         Add an edge candidate to an open session.
 
         Endpoints (from_candidate_id / to_candidate_id) must reference either
-        another in-session node candidate OR an existing LadybugDB node via the
+        another in-session node candidate OR an existing persisted KG node via the
         'kg:' prefix (kg:decision_abc123).
 
         Cognitive agents may only propose judgement edges: supersedes,
@@ -263,7 +263,7 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         min_similarity: float = 0.3,
     ) -> str:
         """
-        Fetch existing LadybugDB nodes similar to an in-session candidate.
+        Fetch existing persisted KG nodes similar to an in-session candidate.
 
         MVP uses title-prefix match as a deterministic fallback; production
         replaces with HNSW k-NN via vector index (card 00dae72a).
@@ -347,7 +347,7 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         agent_overrides: dict[str, dict] | None = None,
     ) -> str:
         """
-        Atomically commit the session: LadybugDB writes + audit row + outbox event.
+        Atomically commit the session: graph-store writes + audit row + outbox event.
 
         agent_overrides map candidate_id → ReconciliationHint for cases where
         the agent's semantic reasoning produces a different op than the
@@ -383,8 +383,8 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
                         details=e.details)
         # Spec R01A MCP-FU1 (MCP strangler): transport-free use case + injected MCP
         # UnitOfWorkFactory (get_uow) instead of a raw get_db() session. The per-board
-        # commit lock + retry coordinator (serialises concurrent commits — LadybugDB
-        # holds an exclusive OS-level writer lock) runs inside the use case. The
+        # commit lock + retry coordinator (serialises concurrent commits while the
+        # graph store holds an exclusive writer lock) runs inside the use case. The
         # session ownership pre-check (_require_open_session above) and the R7
         # cognitive-hold side effect on error are unchanged.
         from okto_pulse.core.application.use_cases import (
@@ -849,7 +849,7 @@ labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg.""
         """
         Drop an in-flight session without committing.
 
-        No compensating delete is applied — commit was never called, so LadybugDB
+        No compensating delete is applied — commit was never called, so the graph store
         has no partial writes. The session is marked aborted and removed from
         the in-memory registry.
 

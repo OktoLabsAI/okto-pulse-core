@@ -41,7 +41,7 @@ class BeginConsolidationUseCase:
     async def execute(
         self, command: BeginConsolidationCommand, *, actor: ActorContext, uow: Any
     ) -> BeginConsolidationResult:
-        from okto_pulse.core.kg.primitives import begin_consolidation
+        from okto_pulse.core.services.application_kg import begin_consolidation
 
         resp = await begin_consolidation(
             command.req, agent_id=actor.actor_id, db=session_of(uow)
@@ -69,7 +69,7 @@ class ProposeReconciliationUseCase:
     async def execute(
         self, command: ProposeReconciliationCommand, *, actor: ActorContext, uow: Any
     ) -> ProposeReconciliationResult:
-        from okto_pulse.core.kg.primitives import propose_reconciliation
+        from okto_pulse.core.services.application_kg import propose_reconciliation
 
         resp = await propose_reconciliation(
             command.req, agent_id=actor.actor_id, db=session_of(uow)
@@ -102,8 +102,10 @@ class CommitConsolidationUseCase:
     async def execute(
         self, command: CommitConsolidationCommand, *, actor: ActorContext, uow: Any
     ) -> CommitConsolidationResult:
-        from okto_pulse.core.kg.commit_coordinator import run_with_commit_lock_and_retry
-        from okto_pulse.core.kg.primitives import commit_consolidation
+        from okto_pulse.core.services.application_kg import (
+            commit_consolidation,
+            run_with_commit_lock_and_retry,
+        )
 
         session = session_of(uow)
         resp = await run_with_commit_lock_and_retry(

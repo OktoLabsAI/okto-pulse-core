@@ -163,11 +163,11 @@ async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior(monkeypatch)
     assert published[0]["board_id"] == "board-does-not-exist-uuid"
 
 
-async def test_ts5_mcp_dispatch_opens_session_when_omitted(monkeypatch):
+async def test_ts5_mcp_dispatch_uses_injected_session_scope_when_omitted(monkeypatch):
     """Regression for #27: MCP callers omit the request DB session.
 
-    _dispatch_manual_tick must create and commit a short-lived session instead
-    of passing None into event_publish.
+    _dispatch_manual_tick must use the composition-provided session scope and
+    must not fall back to core.infra.database.get_session_factory.
     """
     from okto_pulse.core.api import kg_tick
     from okto_pulse.core.events.handlers import kg_decay_tick
@@ -204,17 +204,77 @@ async def test_ts5_mcp_dispatch_opens_session_when_omitted(monkeypatch):
     monkeypatch.setattr(
         kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
     )
-    monkeypatch.setattr(database_module, "get_session_factory", lambda: _factory)
+    monkeypatch.setattr(
+        database_module,
+        "get_session_factory",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("concrete get_session_factory must not be called")
+        ),
+    )
 
     await kg_tick._dispatch_manual_tick(
         tick_id="ts5-owned-session",
         board_id="board-does-not-exist-uuid",
         force_full_rebuild=False,
+        session_scope_factory=_factory,
     )
 
     assert len(published) == 1
     assert published[0]["board_id"] == "board-does-not-exist-uuid"
     assert owned.committed is True
+
+
+async def test_ts5_dispatch_explicit_session_is_caller_owned(monkeypatch):
+    """Explicit sessions are owned by the caller.
+
+    The helper must publish with exactly that session and must not open an
+    injected scope or assume commit/rollback.
+    """
+    from okto_pulse.core.api import kg_tick
+    from okto_pulse.core.events.handlers import kg_decay_tick
+    from okto_pulse.core.infra import database as database_module
+
+    class _ExplicitSession:
+        def __init__(self) -> None:
+            self.committed = False
+            self.rolled_back = False
+
+        async def commit(self) -> None:
+            self.committed = True
+
+        async def rollback(self) -> None:
+            self.rolled_back = True
+
+    explicit = _ExplicitSession()
+    published: list[dict] = []
+
+    async def _fake_publish_tick_events(session, *, board_id=None, **kwargs):
+        assert session is explicit
+        published.append({"board_id": board_id, **kwargs})
+        return ["fanout-tick-uuid"]
+
+    monkeypatch.setattr(
+        kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
+    )
+    monkeypatch.setattr(
+        database_module,
+        "get_session_factory",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("concrete get_session_factory must not be called")
+        ),
+    )
+
+    await kg_tick._dispatch_manual_tick(
+        tick_id="ts5-explicit-session",
+        board_id="board-does-not-exist-uuid",
+        force_full_rebuild=False,
+        session=explicit,
+    )
+
+    assert len(published) == 1
+    assert published[0]["board_id"] == "board-does-not-exist-uuid"
+    assert explicit.committed is False
+    assert explicit.rolled_back is False
 
 
 async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):

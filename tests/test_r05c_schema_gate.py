@@ -135,10 +135,16 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     """Ruling option 2: every ASYNC + simple-execute open_board_connection
     call-site (class A) was migrated to GraphTransaction.begin / scope.execute —
     NOT left calling open_board_connection. ``api/kg_routes.py`` also migrated
-    its sync edge diagnostics to CypherExecutor, so it stays off the ledger."""
+    its sync edge diagnostics to CypherExecutor, so it stays off the ledger.
+
+    Since the R01A strangler (50e3193) only ``get_kg_metrics`` consumes the
+    transaction port directly in the route module; ``boost_node`` now goes
+    through ``BoostNodeUseCase`` and its graph read/SET lives in
+    ``kg.governance.boost_node``, which consumes the same port."""
     import okto_pulse.core.api.kg_routes as kg_routes
     import okto_pulse.core.api.kg_tick as kg_tick
     import okto_pulse.core.kg.canonical_learning_partition as clp
+    import okto_pulse.core.kg.governance as kg_governance
 
     # Fully migrated files: no open_board_connection left, port consumed.
     for mod in (kg_tick, clp):
@@ -146,12 +152,18 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
         assert "graph_transaction.begin" in src, mod.__name__
         assert "open_board_connection" not in src, mod.__name__
 
-    # kg_routes: the two async handlers consume the transaction port and the
+    # kg_routes: get_kg_metrics consumes the transaction port and the
     # sync edge diagnostics consume CypherExecutor; no raw connection remains.
+    # boost_node was strangled to the use-case layer in R01A (50e3193).
     routes_src = Path(inspect.getsourcefile(kg_routes)).read_text(encoding="utf-8")
-    assert routes_src.count("graph_transaction.begin") == 2
+    assert routes_src.count("graph_transaction.begin") == 1
     assert "scope.execute" in routes_src
     assert "open_board_connection" not in routes_src
+
+    # The strangled boost path still consumes the port from governance —
+    # it did not regress to a raw connection.
+    governance_src = Path(inspect.getsourcefile(kg_governance)).read_text(encoding="utf-8")
+    assert "graph_transaction.begin" in governance_src
 
     # The fully-migrated files are off the ledger.
     report = run_kg_schema_import_classification_gate()

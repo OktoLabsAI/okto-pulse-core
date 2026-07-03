@@ -43,9 +43,6 @@ from r2_scenario_helpers import (
 )
 
 from okto_pulse.core.kg import canonical_cognitive_preservation as ccp
-from okto_pulse.community.adapters.board_rebuild_ingestion import (
-    BoardRebuildIngestionAdapter,
-)
 from okto_pulse.core.kg.canonical_cognitive_preservation import (
     restore_canonical_cognitive,
     snapshot_canonical_cognitive,
@@ -53,7 +50,6 @@ from okto_pulse.core.kg.canonical_cognitive_preservation import (
 from okto_pulse.core.kg.rebuild_service import RebuildStepInput
 from okto_pulse.core.kg.schema import bootstrap_board_graph
 from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_WORKING
-from okto_pulse.community.adapters.board_source_reader import resolve_pulse_db_path
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     RealBoardGraphLifecycleForTests,
@@ -61,6 +57,18 @@ from kg_registry_testing import (
     RealBoardGraphTransactionForTests,
     configure_test_kg_registry,
 )
+
+_board_rebuild_ingestion = pytest.importorskip(
+    "okto_pulse.community.adapters.board_rebuild_ingestion",
+    reason="AF-04 Community integration test requires the Community rebuild ingestion adapter.",
+)
+BoardRebuildIngestionAdapter = _board_rebuild_ingestion.BoardRebuildIngestionAdapter
+
+_board_source_reader = pytest.importorskip(
+    "okto_pulse.community.adapters.board_source_reader",
+    reason="AF-04 Community integration test requires the Community board source reader.",
+)
+resolve_pulse_db_path = _board_source_reader.resolve_pulse_db_path
 
 
 @pytest.fixture(autouse=True)

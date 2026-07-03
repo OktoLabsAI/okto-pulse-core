@@ -39,10 +39,19 @@ _initialized = False
 @pytest.fixture(scope="module", autouse=True)
 async def _db():
     global _initialized
+    from okto_pulse.core.infra.database import get_engine
+
+    # FU-2 F4: this module swaps the process-global engine to its own tmpdb;
+    # restore the conftest engine when the module finishes so later files keep
+    # seeing the session temp database.
+    prior_url = str(get_engine().url)
     if not _initialized:
         create_database(f"sqlite+aiosqlite:///{tmpdb}", echo=False)
         await init_db()
         _initialized = True
+    yield
+    if str(get_engine().url) != prior_url:
+        create_database(prior_url, echo=False)
 
 
 @pytest.fixture(autouse=True)

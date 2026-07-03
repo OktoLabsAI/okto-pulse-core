@@ -156,10 +156,18 @@ def test_ts_8077c637_app_py_drops_kg_schema_lifecycle_imports():
 def test_ts_8077c637_app_py_wires_the_06_ports():
     src = APP_PY.read_text(encoding="utf-8")
     assert "get_kg_registry" in src
-    assert "sweep_board_schemas" in src
-    assert "graph_path_resolver" in src
-    assert "graph_schema_manager" in src
     assert "graph_lifecycle" in src
+    # Since the clean-core finalization (50e3193) the startup sweep wiring
+    # was extracted to infra/startup_schema_sweep.py: app.py delegates to
+    # run_startup_schema_sweep and the helper consumes the same #06 ports.
+    assert "run_startup_schema_sweep" in src
+    sweep_wiring_src = (APP_PY.parent / "infra" / "startup_schema_sweep.py").read_text(
+        encoding="utf-8"
+    )
+    assert "sweep_board_schemas" in sweep_wiring_src
+    assert "graph_path_resolver" in sweep_wiring_src
+    assert "graph_schema_manager" in sweep_wiring_src
+    assert "get_kg_registry" in sweep_wiring_src
 
 
 # ===========================================================================

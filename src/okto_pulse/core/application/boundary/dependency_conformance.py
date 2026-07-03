@@ -60,6 +60,7 @@ GOVERNED_TECHNICAL_TOKENS: frozenset[str] = frozenset(
     normalize_token(t)
     for t in (
         "asyncpg",
+        "aiofiles",
         "aiosqlite",
         "ladybug",
         "kuzu",

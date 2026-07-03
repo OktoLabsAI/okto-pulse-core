@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import tempfile
+from importlib import util as importlib_util
 from pathlib import Path
 
 import pytest
@@ -23,12 +24,7 @@ import pytest_asyncio
 # ---------------------------------------------------------------------------
 
 _CORE_SRC = Path(__file__).parent / ".." / "src"
-_COMMUNITY_SRC = (
-    Path(__file__).resolve().parents[2] / "okto_labs_pulse_community" / "src"
-)
 sys.path.insert(0, str(_CORE_SRC))
-if _COMMUNITY_SRC.exists():
-    sys.path.insert(0, str(_COMMUNITY_SRC))
 
 # ---------------------------------------------------------------------------
 # Test logging infrastructure (must be imported early)
@@ -80,6 +76,29 @@ from okto_pulse.core.services import settings_service as _settings_svc  # noqa: 
 
 AGENT_ID = "agent-test-001"
 BOARD_ID = "board-test-001"
+
+
+def _community_package_available() -> bool:
+    try:
+        return importlib_util.find_spec("okto_pulse.community") is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip reviewed Community-runtime tests explicitly in core-only runs."""
+    from okto_pulse.core.application.boundary.core_test_suite_import_gate import (
+        community_runtime_dependency_skip_reason,
+    )
+
+    community_available = _community_package_available()
+    for item in items:
+        reason = community_runtime_dependency_skip_reason(
+            item.nodeid,
+            community_available=community_available,
+        )
+        if reason:
+            item.add_marker(pytest.mark.skip(reason=reason))
 
 
 # ============================================================================
@@ -311,6 +330,54 @@ def agent_id():
 @pytest.fixture
 def db_factory():
     return get_session_factory()
+
+
+# Modules SANCTIONED to swap the process-global engine/env during their own
+# tests (each restores it on teardown). Every other test runs under the
+# backstop below.
+_ENGINE_SWAP_SANCTIONED = frozenset({
+    "test_kg_governance.py",
+    "test_kg_dedup_nc8.py",
+    "test_kg_dedup_migration.py",
+    "test_kg_pipeline_e2e.py",
+    "test_kg_real_integration.py",
+})
+
+
+@pytest.fixture(autouse=True)
+def _database_isolation_backstop(request):
+    """FU-2 fail-fast backstop: every test must see the session temp database.
+
+    Two past leak channels motivated this guard: a module-level
+    ``os.environ["DATABASE_URL"] = <real db>`` executed during COLLECTION
+    (test_kg_real_integration), and a ``create_app(CoreSettings(), ...)``
+    without a create_database monkeypatch re-registering the process-global
+    engine from that poisoned env (test_r_p2_06b) — silently pointing every
+    later ``db_factory`` at the user's real ~/.okto-pulse data. This fixture
+    turns either leak into an attributable failure at the FIRST victim test
+    instead of mysterious order-dependent breakage."""
+    if request.node.path.name in _ENGINE_SWAP_SANCTIONED:
+        yield
+        return
+
+    from okto_pulse.core.infra.database import get_engine
+
+    env_url = os.environ.get("DATABASE_URL", "")
+    if env_url != f"sqlite+aiosqlite:///{_tmpdb}":
+        pytest.fail(
+            f"DATABASE_URL env poisoned before {request.node.nodeid}: "
+            f"{env_url!r} (expected the session temp db {_tmpdb!r}). "
+            "Some earlier test/module mutated os.environ without restoring it."
+        )
+    engine_db = get_engine().url.database
+    if engine_db != _tmpdb:
+        pytest.fail(
+            f"process-global engine hijacked before {request.node.nodeid}: "
+            f"bound to {engine_db!r} (expected the session temp db {_tmpdb!r}). "
+            "Some earlier test called create_database()/create_app() without "
+            "restoring the conftest engine."
+        )
+    yield
 
 
 @pytest.fixture(autouse=True)

@@ -37,8 +37,15 @@ from okto_pulse.core.services.queue_health_service import (
 )
 
 USER_ID = "r6-imp2-user"
-NOW = datetime.now(timezone.utc)
 BOARD_PREFIX = "r6imp2-board"
+
+
+def _now() -> datetime:
+    # Captured per call, NOT at import: this module is imported during pytest
+    # COLLECTION, so a module-level NOW would make every seeded age drift by
+    # the collection→execution gap — in a full-suite run the "30s-old" outbox
+    # row arrives minutes old and classify_active_queue flips transient→stuck.
+    return datetime.now(timezone.utc)
 
 
 def _id(prefix: str) -> str:
@@ -88,7 +95,7 @@ def _cq(board, *, artifact_type, status, age_s=10):
     return ConsolidationQueue(
         id=_id("cq"), board_id=board, artifact_type=artifact_type,
         artifact_id=_id("art"), status=status,
-        triggered_at=NOW - timedelta(seconds=age_s),
+        triggered_at=_now() - timedelta(seconds=age_s),
     )
 
 
@@ -96,8 +103,8 @@ def _outbox(board, *, retry_count, processed=False, age_s=10):
     return GlobalUpdateOutbox(
         id=_id("ob"), event_id=_id("ev"), board_id=board, session_id="s",
         event_type="node_upsert", payload={"x": 1}, retry_count=retry_count,
-        processed_at=(NOW if processed else None),
-        created_at=NOW - timedelta(seconds=age_s),
+        processed_at=(_now() if processed else None),
+        created_at=_now() - timedelta(seconds=age_s),
     )
 
 

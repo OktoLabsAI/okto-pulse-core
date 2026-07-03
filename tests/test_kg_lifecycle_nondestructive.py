@@ -21,7 +21,6 @@ from pathlib import Path
 import pytest
 
 from okto_pulse.core.kg import schema
-import okto_pulse.community.adapters.kg_runtime as kg_runtime
 from okto_pulse.core.kg.safe_write_lifecycle import (
     DEFAULT_REQUIRED_STEPS,
     STEP_CHECKPOINT,
@@ -35,6 +34,11 @@ from okto_pulse.core.kg.schema import (
     close_all_connections,
     close_board_db_cache,
     open_board_connection,
+)
+
+kg_runtime = pytest.importorskip(
+    "okto_pulse.community.adapters.kg_runtime",
+    reason="AF-04 Community integration test requires the Community KG runtime adapter.",
 )
 
 SRC_DIR = str(Path(__file__).resolve().parents[1] / "src")

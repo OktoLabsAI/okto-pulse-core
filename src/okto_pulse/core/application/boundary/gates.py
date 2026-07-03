@@ -292,12 +292,30 @@ class ImportBoundaryGate:
             "line": v.line,
             "layer": v.layer,
             "imported": v.imported,
+            "category": ImportBoundaryGate._violation_category(v),
             "rule": v.rule,
             "status": v.status,
             "owner": v.owner,
             "promotion_criteria": v.promotion_criteria,
             "remediation_hint": v.remediation_hint,
         }
+
+    @staticmethod
+    def _violation_category(v: ImportViolation) -> str:
+        imported = v.imported
+        if imported.startswith("okto_pulse.core.kg"):
+            return "kg"
+        if imported.startswith("okto_pulse.core.models.schemas"):
+            return "schemas"
+        if imported.startswith("okto_pulse.core.infra.permissions"):
+            return "permissions"
+        if imported.startswith("sqlalchemy"):
+            return "sqlalchemy"
+        if v.rule.startswith("forbidden_target_layer:"):
+            return v.rule.removeprefix("forbidden_target_layer:")
+        if v.rule == "forbidden_import_root":
+            return imported.split(".", 1)[0]
+        return v.rule
 
 
 # --------------------------------------------------------------------------- #

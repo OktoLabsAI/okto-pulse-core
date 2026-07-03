@@ -29,6 +29,59 @@ from okto_pulse.core.application.boundary import (
 
 PURE_LAYERS = {"domain", "application", "future_target"}
 
+AF11_ELIMINATED_APPLICATION_IMPORTS = (
+    ("okto_pulse/core/application/use_cases/cognitive_readiness.py", 29, "okto_pulse.core.kg.cognitive_readiness", "kg"),
+    ("okto_pulse/core/application/use_cases/cognitive_readiness.py", 30, "okto_pulse.core.kg.rebuild_audit", "kg"),
+    ("okto_pulse/core/application/use_cases/cognitive_readiness.py", 82, "okto_pulse.core.kg.bug_cognitive_closure", "kg"),
+    ("okto_pulse/core/application/use_cases/cognitive_readiness.py", 146, "okto_pulse.core.kg.cognitive_action_center", "kg"),
+    ("okto_pulse/core/application/use_cases/consolidation.py", 44, "okto_pulse.core.kg.primitives", "kg"),
+    ("okto_pulse/core/application/use_cases/consolidation.py", 72, "okto_pulse.core.kg.primitives", "kg"),
+    ("okto_pulse/core/application/use_cases/consolidation.py", 105, "okto_pulse.core.kg.commit_coordinator", "kg"),
+    ("okto_pulse/core/application/use_cases/consolidation.py", 106, "okto_pulse.core.kg.primitives", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 60, "okto_pulse.core.kg.dashboard_readers", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 107, "okto_pulse.core.kg.dashboard_readers", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 108, "okto_pulse.core.kg.kg_service", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 148, "okto_pulse.core.kg.governance", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 181, "okto_pulse.core.kg.governance", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 213, "okto_pulse.core.kg.governance", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 245, "okto_pulse.core.kg.governance", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 284, "okto_pulse.core.kg.dashboard_readers", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 317, "okto_pulse.core.kg.dashboard_readers", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 357, "okto_pulse.core.kg.governance", "kg"),
+    ("okto_pulse/core/application/use_cases/kg_routes_crud.py", 410, "okto_pulse.core.kg.governance", "kg"),
+    ("okto_pulse/core/application/use_cases/list_stale_canonical_parity.py", 15, "okto_pulse.core.kg.stale_canonical_parity", "kg"),
+    ("okto_pulse/core/application/use_cases/mcp_kg_crud.py", 127, "okto_pulse.core.kg.canonical_partition_integrity", "kg"),
+    ("okto_pulse/core/application/use_cases/mcp_kg_crud.py", 176, "okto_pulse.core.kg.global_discovery.layer_parity", "kg"),
+    ("okto_pulse/core/application/use_cases/architecture_crud.py", 46, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/guidelines_crud.py", 43, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_card_crud.py", 490, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 368, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 472, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 571, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 753, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 907, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 1091, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 1213, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 1350, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 1526, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 1696, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_spec_crud.py", 2006, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/spec_crud.py", 23, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/spec_crud.py", 603, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/spec_crud.py", 678, "okto_pulse.core.models.schemas", "schemas"),
+    ("okto_pulse/core/application/use_cases/mcp_ideation_crud.py", 594, "okto_pulse.core.infra.permissions", "permissions"),
+    ("okto_pulse/core/application/use_cases/mcp_ideation_crud.py", 651, "okto_pulse.core.infra.permissions", "permissions"),
+    ("okto_pulse/core/application/use_cases/mcp_ideation_crud.py", 719, "okto_pulse.core.infra.permissions", "permissions"),
+    ("okto_pulse/core/application/use_cases/spec_crud.py", 350, "okto_pulse.core.infra.permissions", "permissions"),
+    ("okto_pulse/core/application/use_cases/spec_crud.py", 790, "okto_pulse.core.infra.permissions", "permissions"),
+    ("okto_pulse/core/application/use_cases/stories_crud.py", 80, "okto_pulse.core.infra.permissions", "permissions"),
+    ("okto_pulse/core/application/use_cases/card_crud.py", 575, "sqlalchemy.orm.attributes", "sqlalchemy"),
+    ("okto_pulse/core/application/use_cases/card_crud.py", 656, "sqlalchemy.orm.attributes", "sqlalchemy"),
+    ("okto_pulse/core/application/use_cases/ideations_crud.py", 281, "sqlalchemy.orm.attributes", "sqlalchemy"),
+    ("okto_pulse/core/application/use_cases/mcp_card_crud.py", 94, "sqlalchemy.orm.attributes", "sqlalchemy"),
+    ("okto_pulse/core/application/use_cases/mcp_ideation_crud.py", 559, "sqlalchemy.orm.attributes", "sqlalchemy"),
+)
+
 
 @pytest.mark.parametrize(
     "path,expected",
@@ -76,6 +129,67 @@ def test_import_boundary_bootstrap_is_non_blocking_but_blocking_mode_enforces() 
     # blocking mode enforces the same adapter coupling as blocking
     assert enforced.status == "blocking"
     assert any(v["status"] == "blocking" for v in enforced.evidence["violations"])
+
+
+def test_af11_application_import_ratchet_real_tree_stays_zero() -> None:
+    report = ImportBoundaryGate().run(ImportBoundaryGateInput(mode="bootstrap"))
+    blocking = [
+        v
+        for v in report.evidence["violations"]
+        if v["status"] == "blocking" and v["layer"] in PURE_LAYERS
+    ]
+    assert report.observed_value == 0
+    assert blocking == []
+
+    eliminated = {(file, imported, category) for file, _line, imported, category in AF11_ELIMINATED_APPLICATION_IMPORTS}
+    reintroduced = [
+        {
+            "file": v["file"],
+            "line": v["line"],
+            "imported": v["imported"],
+            "category": v["category"],
+            "rule": v["rule"],
+        }
+        for v in report.evidence["violations"]
+        if (v["file"], v["imported"], v["category"]) in eliminated
+    ]
+    assert reintroduced == []
+
+
+def test_af11_application_import_ratchet_negative_fixture_reports_categories(tmp_path: Path) -> None:
+    use_cases = tmp_path / "okto_pulse" / "core" / "application" / "use_cases"
+    use_cases.mkdir(parents=True)
+    rogue = use_cases / "ratchet_regression.py"
+    rogue.write_text(
+        "from okto_pulse.core.kg.governance import start_historical_consolidation\n"
+        "from okto_pulse.core.models.schemas import SpecUpdate\n"
+        "from okto_pulse.core.infra.permissions import check_permission\n"
+        "from sqlalchemy.orm.attributes import flag_modified\n",
+        encoding="utf-8",
+    )
+
+    report = ImportBoundaryGate().run(
+        ImportBoundaryGateInput(source_root=tmp_path, mode="bootstrap")
+    )
+    assert report.status == "blocking"
+    assert report.observed_value == 4
+
+    by_import = {v["imported"]: v for v in report.evidence["violations"]}
+    expected = {
+        "okto_pulse.core.kg.governance": ("kg", "forbidden_target_layer:outbound"),
+        "okto_pulse.core.models.schemas": ("schemas", "forbidden_target_layer:outbound"),
+        "okto_pulse.core.infra.permissions": ("permissions", "forbidden_target_layer:outbound"),
+        "sqlalchemy.orm.attributes": ("sqlalchemy", "forbidden_import_root"),
+    }
+    assert set(expected) <= set(by_import)
+    for imported, (category, rule) in expected.items():
+        violation = by_import[imported]
+        assert violation["file"] == "okto_pulse/core/application/use_cases/ratchet_regression.py"
+        assert violation["line"] > 0
+        assert violation["layer"] == "application"
+        assert violation["status"] == "blocking"
+        assert violation["category"] == category
+        assert violation["rule"] == rule
 
 
 def test_package_manifest_tools_loc_baseline_passes() -> None:

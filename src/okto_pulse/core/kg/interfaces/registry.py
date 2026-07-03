@@ -130,6 +130,7 @@ def _build_defaults() -> KGProviderRegistry:
     from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
     from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryCypherExecutor,
+        InMemoryBoardGraphRuntime,
         InMemoryGraphLifecycle,
         InMemoryGraphPathResolver,
         InMemoryGraphSchemaManager,
@@ -173,6 +174,11 @@ def _build_defaults() -> KGProviderRegistry:
         ),
         graph_path_resolver=graph_path_resolver,
         safe_write_step_adapter=in_memory_safe_write_step_adapter,
+        board_graph_runtime=InMemoryBoardGraphRuntime(
+            store=graph_store,
+            resolver=graph_path_resolver,
+            schema_manager=graph_schema_manager,
+        ),
         global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
         board_source_reader=InMemoryBoardSourceReader(),
         # event_bus, audit_repo, auth_context_factory supplied by composition

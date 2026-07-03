@@ -39,6 +39,19 @@ pytestmark = pytest.mark.e2e
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _restore_conftest_engine():
+    """FU-2 F4: the e2e contract test calls create_database() against its
+    throwaway DB, which swaps the process-global engine. Restore the conftest
+    engine on teardown so later files keep seeing the session temp database."""
+    from okto_pulse.core.infra.database import create_database, get_engine
+
+    prior_url = str(get_engine().url)
+    yield
+    if str(get_engine().url) != prior_url:
+        create_database(prior_url, echo=False)
+
+
 @pytest.fixture
 def e2e_tempdir(monkeypatch):
     """Redirect KG base dir + SQLite DB into a throwaway directory.

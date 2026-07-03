@@ -85,6 +85,16 @@ def _community_board_graph_runtime() -> dict[str, Any]:
     }
 
 
+def _skip_missing_community_integration(exc: ModuleNotFoundError) -> None:
+    import pytest
+
+    pytest.skip(
+        "Community KG integration adapter is unavailable; this test explicitly "
+        f"requires the real Community runtime ({exc.name or exc}).",
+        allow_module_level=False,
+    )
+
+
 def configure_test_kg_registry(
     *,
     graph_provider: Literal["real_if_available", "real", "inmemory"] = "real_if_available",
@@ -97,10 +107,12 @@ def configure_test_kg_registry(
     test intent is literal and greppable.
 
     By default, when the Community repo is on ``sys.path``, graph providers use
-    the real Community Ladybug adapters. Most KG integration tests seed/read the
-    real board graph through legacy helpers, so the registry must observe the
-    same graph. Pure unit tests that need in-memory graph isolation should pass
-    ``graph_provider="inmemory"`` or explicit graph-slot overrides.
+    the real Community Ladybug adapters. When it is not available, the default
+    mode stays in explicit core contract-fake mode through ``_build_defaults``.
+    Tests that truly exercise the Community runtime must pass
+    ``graph_provider="real"`` (or use ``configure_real_graph_test_kg_registry``);
+    that path skips with an explicit reason instead of silently falling back to
+    in-memory fakes.
 
     R-P2-02: ``event_bus`` and ``audit_repo`` are REQUIRED composition slots (the
     core no longer auto-wires the SqliteOutboxEventBus / SqlAlchemyAuditRepository
@@ -123,16 +135,12 @@ def configure_test_kg_registry(
     if graph_provider != "inmemory" and not graph_overridden:
         try:
             defaults.update(_community_graph_providers())
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as exc:
             if graph_provider == "real":
-                raise
+                _skip_missing_community_integration(exc)
             # Some pure-core boundary tests intentionally run without the Community
-            # repo on sys.path. They keep the in-memory graph fakes.
-    else:
-        try:
-            defaults.update(_community_board_graph_runtime())
-        except ModuleNotFoundError:
-            pass
+            # repo on sys.path. They keep the explicit in-memory graph fakes from
+            # _build_defaults, including InMemoryBoardGraphRuntime.
 
     if "board_source_reader" not in overrides:
         try:
@@ -169,7 +177,10 @@ def configure_real_graph_and_data_test_kg_registry(
     It keeps the dependency explicit in test code and avoids reintroducing the
     retired core relational fallback.
     """
-    from okto_pulse.community.adapters.data import build_community_data_providers
+    try:
+        from okto_pulse.community.adapters.data import build_community_data_providers
+    except ModuleNotFoundError as exc:
+        _skip_missing_community_integration(exc)
 
     real_data = build_community_data_providers(session_factory)
     real_data.update(overrides)

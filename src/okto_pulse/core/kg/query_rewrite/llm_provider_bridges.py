@@ -42,7 +42,6 @@ for the lifetime of the entry.
 
 from __future__ import annotations
 
-import threading
 from typing import Callable
 
 from okto_pulse.core.kg.interfaces.llm import (
@@ -50,6 +49,10 @@ from okto_pulse.core.kg.interfaces.llm import (
     LLMProviderError,
     LLMRequest,
     LLMResponse,
+)
+from okto_pulse.core.kg.llm_provider_bridge_cache import (
+    bridge_cache_get_or_create,
+    reset_bridge_cache_namespace,
 )
 
 __all__ = [
@@ -59,26 +62,17 @@ __all__ = [
     "reset_bridge_cache",
 ]
 
-# Memoize bridge callables by (flow, id(provider), board_id, actor_id) so the
-# same wiring context returns the SAME object (stable id -> factory cache hit).
-_bridge_cache: dict[tuple, Callable] = {}
-_bridge_lock = threading.Lock()
+_BRIDGE_CACHE_NAMESPACE = "kg.query_rewrite"
 
 
 def _memoize(key: tuple, factory: Callable[[], Callable]) -> Callable:
-    with _bridge_lock:
-        fn = _bridge_cache.get(key)
-        if fn is None:
-            fn = factory()
-            _bridge_cache[key] = fn
-        return fn
+    return bridge_cache_get_or_create(_BRIDGE_CACHE_NAMESPACE, key, factory)
 
 
 def reset_bridge_cache() -> None:
     """Drop memoized bridge callables. Call in tests or when a wiring change
     requires fresh callable identities."""
-    with _bridge_lock:
-        _bridge_cache.clear()
+    reset_bridge_cache_namespace(_BRIDGE_CACHE_NAMESPACE)
 
 
 def _require_provider(provider: LLMProvider | None, flow: str) -> None:

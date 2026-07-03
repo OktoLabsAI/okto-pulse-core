@@ -177,10 +177,10 @@ def test_gate_catches_aliased_relational_module_bypasses(tmp_path):
 # The exact frozen snapshot shape the drift checker is fed in the unit tests
 # below (the 3 aggregates + the per-surface breakdown of classified call-sites).
 _SNAP = {
-    "relational_imports": 384,
-    "relational_symbols": 841,
-    "classified_call_sites": 1422,
-    "by_surface": {"rest": 166, "service": 1143, "mcp": 113},
+    "relational_imports": 371,
+    "relational_symbols": 851,
+    "classified_call_sites": 1429,
+    "by_surface": {"rest": 163, "service": 1149, "mcp": 117},
 }
 
 
@@ -206,7 +206,11 @@ def test_relational_coverage_frozen_snapshot_clears_floors_and_no_drift():
 def test_relational_coverage_undeclared_drift_fails():
     # (a) a DROP with no declaration is undeclared drift — even while the
     #     aggregate is still ABOVE its floor (800 >= 605).
-    live_drop = {**_SNAP, "relational_symbols": 800, "by_surface": dict(_SNAP["by_surface"])}
+    live_drop = {
+        **_SNAP,
+        "relational_symbols": _SNAP["relational_symbols"] - 41,
+        "by_surface": dict(_SNAP["by_surface"]),
+    }
     verdict = relational_coverage_drift(live_drop, snapshot=_SNAP)
     assert verdict["ok"] is False
     assert verdict["floor_violations"] == []  # still above the 605 floor
@@ -219,8 +223,11 @@ def test_relational_coverage_undeclared_drift_fails():
     #     always undeclared drift, even when a declaration is (wrongly) supplied.
     live_rise = {
         **_SNAP,
-        "classified_call_sites": 1432,
-        "by_surface": {"rest": 166, "service": 1153, "mcp": 113},
+        "classified_call_sites": _SNAP["classified_call_sites"] + 10,
+        "by_surface": {
+            **_SNAP["by_surface"],
+            "service": _SNAP["by_surface"]["service"] + 10,
+        },
     }
     verdict2 = relational_coverage_drift(
         live_rise,
@@ -238,10 +245,12 @@ def test_relational_coverage_declared_r01_drawdown_passes():
     # An R01C strangle removes 100 service call-sites: a DECLARED drawdown that
     # still clears the floor (1322 >= 276) passes the gate.
     live = {
-        "relational_imports": 384,
-        "relational_symbols": 841,
-        "classified_call_sites": 1322,
-        "by_surface": {"rest": 166, "service": 1043, "mcp": 113},
+        **_SNAP,
+        "classified_call_sites": _SNAP["classified_call_sites"] - 100,
+        "by_surface": {
+            **_SNAP["by_surface"],
+            "service": _SNAP["by_surface"]["service"] - 100,
+        },
     }
     declared = {
         "classified_call_sites": {"count": 100, "task": "R01C-strangle-service"},

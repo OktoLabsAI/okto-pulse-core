@@ -179,6 +179,7 @@ def build_conformance_matrix(
             lock_path=lock_path,
         )
     )
+    rows.extend(_rows_from_removed_dependencies(dep_report, ledger_by_token=ledger_by_token))
 
     if include_import_boundary:
         boundary_report = ImportBoundaryGate().run(
@@ -431,6 +432,31 @@ def _core_common_row(token: str, surface: str) -> ConformanceMatrixRow:
         remediation=None,
         diagnostic_code="core_common_baseline",
     )
+
+
+def _rows_from_removed_dependencies(
+    dep_report: DependencyConformanceReport,
+    *,
+    ledger_by_token: dict[str, LedgerEntry],
+) -> tuple[ConformanceMatrixRow, ...]:
+    rows: list[ConformanceMatrixRow] = []
+    for token in dep_report.removed_dependencies:
+        entry = ledger_by_token.get(normalize_token(token))
+        rows.append(
+            ConformanceMatrixRow(
+                module="manifest+lock+source",
+                symbol_or_dependency=token,
+                surface="dependency_conformance",
+                classification="removed",
+                adapter_key=None,
+                owning_fcc_or_wave=entry.owner_wave if entry else None,
+                evidence_field_impact="confirmed_absent_from_manifest_lock_source",
+                severity="accepted",
+                remediation=None,
+                diagnostic_code="removed_dependency_absent",
+            )
+        )
+    return tuple(rows)
 
 
 def _rows_from_import_boundary(

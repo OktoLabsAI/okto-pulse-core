@@ -124,7 +124,7 @@ class ListCanonicalPartitionIntegrityUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> ListCanonicalPartitionIntegrityResult:
-        from okto_pulse.core.kg.canonical_partition_integrity import (
+        from okto_pulse.core.services.application_kg import (
             list_canonical_partition_integrity,
         )
 
@@ -173,7 +173,7 @@ class ListDigestLayerMismatchUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> ListDigestLayerMismatchResult:
-        from okto_pulse.core.kg.global_discovery.layer_parity import (
+        from okto_pulse.core.services.application_kg import (
             list_digest_layer_mismatches,
         )
 

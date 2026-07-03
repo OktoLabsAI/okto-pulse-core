@@ -299,6 +299,31 @@ def scan_forbidden_terms(
     return tuple(findings)
 
 
+def scan_forbidden_text_surfaces(
+    surfaces: dict[str, str],
+    *,
+    terms: tuple[str, ...] = FORBIDDEN_COMMON_TERMS,
+) -> tuple[dict, ...]:
+    """Scan already-selected COMMON agent-facing text surfaces.
+
+    Callers must pass the exact surfaces an agent can read, such as static
+    instructions/resources or registered MCP tool descriptions. This keeps the
+    R11 guard out of comments and internal helper docstrings unless they are
+    actually exposed.
+    """
+    normalized = tuple(t.lower() for t in terms)
+    findings: list[dict] = []
+    for surface, raw in surfaces.items():
+        text = raw or ""
+        blob = text.lower()
+        for term in normalized:
+            if term in blob:
+                findings.append({"surface": surface, "term": term})
+        for match in _LOCAL_PATH_RE.findall(text):
+            findings.append({"surface": surface, "term": LOCAL_PATH_TERM, "match": match})
+    return tuple(findings)
+
+
 __all__ = [
     "RESOURCE_URI_SCHEME",
     "RESOURCE_KIND_COMMON",
@@ -312,4 +337,5 @@ __all__ = [
     "catalog_uri_conflicts",
     "catalog_link_integrity",
     "scan_forbidden_terms",
+    "scan_forbidden_text_surfaces",
 ]

@@ -504,9 +504,20 @@ async def test_consolidation_failure_marks_canonical_debt(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_missing_artifact_queue_entry_is_acked_without_canonical_debt(
+async def test_missing_artifact_queue_entry_stays_visible_without_canonical_debt(
     db_factory,
 ):
+    """RKG-04 AC3 (ts_317b11ef): a missing source artifact is a persistent
+    failure and must stay VISIBLE — the worker returns False, so the entry is
+    failure-handled (attempts++, backoff, re-pending; DLQ only after
+    ``kg_queue_max_attempts``) instead of silently acked. A missing artifact
+    still never mints canonical debt rows.
+
+    Traceability: formerly ``test_missing_artifact_queue_entry_is_acked_
+    without_canonical_debt`` — introduced together with the ack-on-missing
+    regression later reverted (bug 99ac1fc3); rewritten to the adjudicated
+    contract (FU-1 57c3cab9, census 649abf70).
+    """
     missing_spec_id = "spec-stale-missing"
     async with db_factory() as session:
         board = await session.get(Board, BOARD_ID)
@@ -517,11 +528,12 @@ async def test_missing_artifact_queue_entry_is_acked_without_canonical_debt(
                 CanonicalDebt.board_id == BOARD_ID
             )
         )
-        await session.execute(
-            ConsolidationQueue.__table__.delete().where(
-                ConsolidationQueue.board_id == BOARD_ID
-            )
-        )
+        # Hermetic seed: process_batch's claim is board-AGNOSTIC with
+        # limit=batch_size, and the test DB is session-scoped/shared —
+        # leftover queue rows from earlier tests crowd this entry out of
+        # the batch, leaving it unclaimed (attempts stays 0). Drain the
+        # whole queue so the worker under test sees exactly one entry.
+        await session.execute(ConsolidationQueue.__table__.delete())
         await session.execute(
             Spec.__table__.delete().where(Spec.id == missing_spec_id)
         )
@@ -543,8 +555,16 @@ async def test_missing_artifact_queue_entry_is_acked_without_canonical_debt(
         queue_row = await session.get(ConsolidationQueue, entry_id)
         listed = await list_canonical_debt(session, board_id=BOARD_ID)
 
-    assert processed == 1
-    assert queue_row is None
+    # Not a success: False routes the entry through _mark_failed.
+    assert processed == 0
+    # The entry stays visible — re-pended with the failure recorded, bound
+    # for the DLQ only after kg_queue_max_attempts consecutive failures.
+    assert queue_row is not None
+    assert queue_row.status == "pending"
+    assert queue_row.attempts == 1
+    assert queue_row.next_retry_at is not None
+    assert queue_row.last_error == "processing returned False"
+    # A missing artifact never mints canonical debt.
     assert listed.total == 0
 
 

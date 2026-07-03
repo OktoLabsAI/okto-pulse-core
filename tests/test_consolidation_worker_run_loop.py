@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -66,15 +65,87 @@ async def test_queue_entry_processing_is_serialized_per_board(
     assert max_active == 1
 
 
-def test_app_lifespan_starts_and_stops_consolidation_worker() -> None:
-    app_source = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "okto_pulse"
-        / "core"
-        / "app.py"
-    ).read_text(encoding="utf-8")
+# Since R08C core.app no longer constructs workers itself: edition composition
+# roots inject a RuntimeWorkerRegistry and the default lifespan drives
+# start_all()/stop_all(). The old source-inspection assert on
+# get_consolidation_worker went stale; this behavioral twin proves the same
+# contract (lifespan starts and stops the consolidation worker) through the
+# injected registry. Database/scheduler side effects of the default lifespan
+# are neutralized the same way the #03/R08B shell tests do, without touching
+# the worker-registry wire under test.
+def test_app_lifespan_starts_and_stops_consolidation_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
 
-    assert "get_consolidation_worker" in app_source
-    assert "await consolidation_worker.start()" in app_source
-    assert "await consolidation_worker.stop()" in app_source
+    from okto_pulse.core import app as app_mod
+    from okto_pulse.core.infra import auth as auth_mod
+    from okto_pulse.core.infra import storage as storage_mod
+    from okto_pulse.core.infra.config import configure_settings, get_settings
+    from okto_pulse.core.ports.runtime_workers import (
+        RuntimeWorkerRegistry,
+        RuntimeWorkerSpec,
+    )
+
+    events: list[str] = []
+
+    class _Handle:
+        async def stop(self) -> None:
+            events.append("stop:consolidation_worker")
+
+    async def _start() -> _Handle:
+        events.append("start:consolidation_worker")
+        return _Handle()
+
+    registry = RuntimeWorkerRegistry(
+        (
+            RuntimeWorkerSpec(
+                family="consolidation_worker",
+                start=_start,
+                stop=lambda handle: handle.stop(),
+            ),
+        )
+    )
+
+    monkeypatch.setenv("KG_DAILY_TICK_DISABLED", "1")
+    monkeypatch.setattr(app_mod, "create_database", lambda *args, **kwargs: None)
+
+    async def _noop_init_db() -> None:
+        return None
+
+    async def _noop_shutdown(close_db, logger=None) -> None:
+        return None
+
+    monkeypatch.setattr(app_mod, "init_db", _noop_init_db)
+    monkeypatch.setattr(app_mod, "shutdown_kg_then_db", _noop_shutdown)
+
+    settings = SimpleNamespace(
+        app_name="Worker Lifespan Smoke",
+        app_version="test",
+        database_url="sqlite+aiosqlite:///:memory:",
+        debug=False,
+    )
+    original_settings = get_settings()
+    original_auth = auth_mod._auth_provider
+    original_storage = storage_mod._storage_provider
+    try:
+        app = app_mod.create_app(
+            settings,
+            object(),
+            object(),
+            runtime_worker_registry=registry,
+        )
+        with TestClient(app) as client:
+            assert client.get("/health").status_code == 200
+            assert registry.active_families == ("consolidation_worker",)
+            assert registry.start_count("consolidation_worker") == 1
+            assert events == ["start:consolidation_worker"]
+        assert registry.active_families == ()
+        assert events == [
+            "start:consolidation_worker",
+            "stop:consolidation_worker",
+        ]
+    finally:
+        configure_settings(original_settings)
+        auth_mod._auth_provider = original_auth
+        storage_mod._storage_provider = original_storage

@@ -43,7 +43,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
-from okto_pulse.core.models.schemas import (
+from okto_pulse.core.services.application_schemas import (
     ArchitectureDesignUpdate,
     ArchitectureDiagramPayloadResponse,
 )

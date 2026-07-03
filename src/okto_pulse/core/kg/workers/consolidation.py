@@ -1006,10 +1006,12 @@ async def _process_queue_entry(
         logger.warning(
             "%s not found: %s", entry.artifact_type, entry.artifact_id,
         )
-        # Stale queue entries can survive deleted/corrupted legacy artifacts.
-        # Retrying cannot recreate the source row, and promoting this to
-        # canonical debt pollutes KG health with a non-replayable item.
-        return True
+        # RKG-04 AC3 (ts_317b11ef): a missing source row is a persistent
+        # failure and must stay visible — False routes the entry through
+        # _mark_failed -> backoff -> ConsolidationDeadLetter where diagnose
+        # keeps it actionable. True would mask it as success and falsely
+        # clear the connectivity class (stale legacy entries included).
+        return False
 
     worker_result = _run_deterministic_worker(entry, artifact)
     worker_result = await _materialize_lineage_endpoint_nodes(

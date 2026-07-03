@@ -83,7 +83,21 @@ async def _seed_board_and_spec(
             technical_requirements=[],
             integration_requirements=[],
             observability_requirements=[],
-            decisions=[],
+            # Spec 4028ebd4 (decision-required gate): submit_spec_validation
+            # demands at least one active Decision before any other gate under
+            # test here (resource/architecture policy) gets a chance to run.
+            # Decision->Task coverage is skipped: that gate has its own suite
+            # (tests/test_task_requirement_link_gate.py) and would otherwise
+            # fire before the contracts under test.
+            decisions=[
+                {
+                    "id": "dec_seed",
+                    "title": "Seed decision",
+                    "rationale": "Fixture decision satisfying the decision-required gate.",
+                    "status": "active",
+                },
+            ],
+            skip_decisions_coverage=True,
         )
     )
     await db.flush()

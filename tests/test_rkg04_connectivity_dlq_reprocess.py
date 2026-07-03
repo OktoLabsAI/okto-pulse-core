@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select
 
+from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
+from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
 from okto_pulse.core.kg.workers.dead_letter import route_to_dead_letter
@@ -79,6 +81,23 @@ async def _dlq_ids(db_factory, board_id) -> set[str]:
             select(ConsolidationDeadLetter).where(
                 ConsolidationDeadLetter.board_id == board_id))).scalars().all()
     return {r.id for r in rows}
+
+
+def _find_by_artifact_rows(board_id: str, artifact_ref: str) -> list:
+    """Query through the registered graph_store port (production surface).
+
+    Unlike ``_count_nodes_containing`` (raw Ladybug connection, ts2-only),
+    this runs against whichever provider the registry serves: the real
+    Community adapter or the sanctioned core in-memory provider. Both match
+    ``source_artifact_ref`` by equality, so an absence assert is equivalent
+    in either environment. Filters are wide open so nothing masks a
+    falsely-materialised node.
+    """
+    store = get_kg_registry().graph_store
+    return store.find_by_artifact(
+        board_id, artifact_ref,
+        QueryFilters(min_confidence=0.0, max_rows=10, min_relevance=0.0),
+    )
 
 
 def _count_nodes_containing(board_id: str, needle: str) -> int:
@@ -261,8 +280,10 @@ async def test_ts3_persistent_failure_stays_visible(db_factory):
         await db.commit()
     assert ok is False  # failure surfaced, not masked as success
 
-    # no false materialisation for the failing artifact.
-    assert _count_nodes_containing(board_id, missing_spec_id) == 0
+    # no false materialisation for the failing artifact — through the
+    # registered graph_store port so the assert runs in core-only AND with
+    # the real Community runtime (ts2 keeps the raw-connection coverage).
+    assert _find_by_artifact_rows(board_id, f"spec:{missing_spec_id}") == []
     # the failure remains an actionable connectivity-guard technical_dlq.
     async with db_factory() as db:
         diag = await diagnose_connectivity_guard_dlq(db, board_id)

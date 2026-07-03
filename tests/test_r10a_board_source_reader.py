@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from kg_registry_testing import configure_test_kg_registry
-from okto_pulse.community.adapters.board_source_reader import CommunityBoardSourceReader
 from okto_pulse.core.application.boundary.source_read_consumer_gate import (
     SourceReadConsumerGate,
 )
@@ -20,6 +19,12 @@ from okto_pulse.core.kg.board_source_store import (
     _canonical_content_hash,
 )
 from okto_pulse.core.kg.interfaces.board_source_reader import SourceReadError
+
+_board_source_reader = pytest.importorskip(
+    "okto_pulse.community.adapters.board_source_reader",
+    reason="AF-04 Community integration test requires the Community board source reader.",
+)
+CommunityBoardSourceReader = _board_source_reader.CommunityBoardSourceReader
 
 
 def _source_db(tmp_path: Path) -> Path:

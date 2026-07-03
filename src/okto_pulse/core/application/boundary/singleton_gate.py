@@ -8,8 +8,9 @@ and ``_permission_cache``.
 
 Detection is deterministic and NARROW (AST, no import): a module-global is a
 singleton when it is reassigned via a ``global`` statement (mutated process
-state) or is a ``ContextVar``. Module constants — ``__all__``, lookup tables,
-metric sample buffers — are NOT singletons and are never flagged.
+state), is a ``ContextVar``, or is provider-bridge cache/lock state in a
+``llm_provider_bridges.py`` module. Module constants — ``__all__``, lookup
+tables, metric sample buffers — are NOT singletons and are never flagged.
 
 The current inventory of such singletons is frozen in ``BASELINE_SINGLETONS``
 (register-before-remove): introducing a NEW one fails the gate until it is
@@ -259,6 +260,21 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "the core no longer hosts the relational schema bootstrap."
         ),
     },
+    "_bridge_cache_registry": {
+        "file": "okto_pulse/core/kg/llm_provider_bridge_cache.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "llm_provider_bridge_cache",
+        "expected_adapter": (
+            "Core-owned bounded LLMProvider bridge cache. Provider bridges use "
+            "namespaced entries instead of per-module _bridge_cache/_bridge_lock "
+            "singletons while preserving stable callable identity for downstream "
+            "id(llm_fn) caches."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once provider bridge cache lifecycle is "
+            "owned by RuntimeComposition or a scoped KG provider cache service."
+        ),
+    },
 }
 
 #: Frozen inventory (``file::name``) of EXISTING global-mutation / ContextVar
@@ -290,6 +306,7 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/kg/workers/consolidation.py::_singleton",
         "okto_pulse/core/kg/workers/cognitive_closeout.py::_worker",
         "okto_pulse/core/kg/workers/deterministic_worker.py::_whitelist_cache",
+        "okto_pulse/core/kg/llm_provider_bridge_cache.py::_bridge_cache_registry",
         "okto_pulse/core/kg/write_barrier.py::_current_mode",
         "okto_pulse/core/kg/write_barrier.py::_active_guards",
         "okto_pulse/core/mcp/server.py::_mcp_session_factory",
@@ -316,7 +333,7 @@ class SingletonOccurrence:
 
     name: str
     file: str
-    kind: str  # "global_mutation" | "contextvar"
+    kind: str  # "global_mutation" | "contextvar" | "provider_bridge_global_state"
 
     @property
     def key(self) -> str:
@@ -359,6 +376,124 @@ def _module_level_targets(tree: ast.Module) -> dict[str, ast.expr | None]:
     return out
 
 
+_PROVIDER_BRIDGE_STATE_NAMES = frozenset({"_bridge_cache", "_bridge_lock"})
+_MUTATING_METHODS = frozenset(
+    {
+        "add",
+        "append",
+        "clear",
+        "discard",
+        "extend",
+        "pop",
+        "popitem",
+        "remove",
+        "setdefault",
+        "update",
+    }
+)
+
+
+def _is_provider_bridge_file(rel: str) -> bool:
+    return rel.startswith("okto_pulse/core/") and rel.endswith("/llm_provider_bridges.py")
+
+
+def _is_module_constant_name(name: str) -> bool:
+    stripped = name.strip("_")
+    return bool(stripped) and stripped.upper() == stripped
+
+
+def _call_name(expr: ast.expr | None) -> str:
+    if not isinstance(expr, ast.Call):
+        return ""
+    func = expr.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _is_mutable_or_lock_value(value: ast.expr | None) -> bool:
+    if isinstance(value, (ast.Dict, ast.List, ast.Set)):
+        return True
+    call_name = _call_name(value)
+    return call_name in {"Lock", "RLock", "defaultdict", "OrderedDict"}
+
+
+def _root_name(expr: ast.AST) -> str | None:
+    if isinstance(expr, ast.Name):
+        return expr.id
+    if isinstance(expr, ast.Subscript):
+        return _root_name(expr.value)
+    if isinstance(expr, ast.Attribute):
+        return _root_name(expr.value)
+    return None
+
+
+def _mutated_module_names(tree: ast.Module) -> set[str]:
+    mutated: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets: list[ast.AST]
+            if isinstance(node, ast.Assign):
+                targets = list(node.targets)
+            else:
+                targets = [node.target]
+            for target in targets:
+                if isinstance(target, (ast.Subscript, ast.Attribute)):
+                    name = _root_name(target)
+                    if name:
+                        mutated.add(name)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            name = _root_name(node.func.value)
+            if name and node.func.attr in _MUTATING_METHODS:
+                mutated.add(name)
+    return mutated
+
+
+def _is_provider_bridge_state_name(name: str) -> bool:
+    if name in _PROVIDER_BRIDGE_STATE_NAMES:
+        return True
+    if _is_module_constant_name(name):
+        return False
+    lower = name.lower()
+    return name.startswith("_") and "bridge" in lower and (
+        "cache" in lower or "lock" in lower
+    )
+
+
+def _provider_bridge_occurrences(
+    rel: str,
+    tree: ast.Module,
+    module_names: dict[str, ast.expr | None],
+) -> list[SingletonOccurrence]:
+    if not _is_provider_bridge_file(rel):
+        return []
+    mutated_names = _mutated_module_names(tree)
+    found: list[SingletonOccurrence] = []
+    for name, value in module_names.items():
+        if not _is_provider_bridge_state_name(name):
+            continue
+        if name in _PROVIDER_BRIDGE_STATE_NAMES:
+            found.append(
+                SingletonOccurrence(
+                    name=name,
+                    file=rel,
+                    kind="provider_bridge_global_state",
+                )
+            )
+            continue
+        if name in mutated_names or _is_mutable_or_lock_value(value):
+            found.append(
+                SingletonOccurrence(
+                    name=name,
+                    file=rel,
+                    kind="provider_bridge_global_state",
+                )
+            )
+    return found
+
+
 def _scan_module(rel: str, tree: ast.Module) -> list[SingletonOccurrence]:
     module_names = _module_level_targets(tree)
     global_names: set[str] = set()
@@ -374,6 +509,7 @@ def _scan_module(rel: str, tree: ast.Module) -> list[SingletonOccurrence]:
         else:
             continue
         found.append(SingletonOccurrence(name=name, file=rel, kind=kind))
+    found.extend(_provider_bridge_occurrences(rel, tree, module_names))
     return found
 
 

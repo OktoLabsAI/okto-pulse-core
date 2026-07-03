@@ -6,6 +6,8 @@ must not import the embedded graph runtime or any Community adapter.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.kg.cognitive_policy import (
@@ -14,6 +16,15 @@ from okto_pulse.core.kg.cognitive_policy import (
 )
 
 SCHEMA_VERSION = "0.3.7"
+
+
+@dataclass(frozen=True)
+class BoardGraphHandle:
+    """Compatibility DTO returned by board graph bootstrap implementations."""
+
+    board_id: str
+    path: Path
+    schema_version: str
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
 # `layer` is a closed enum validated by the worker/agent and the layer_isolation
@@ -285,6 +296,7 @@ def vector_index_name(node_type: str) -> str:
 
 
 __all__ = [
+    "BoardGraphHandle",
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
     "HUMAN_CURATED_COLUMNS",

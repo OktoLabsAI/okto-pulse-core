@@ -9,21 +9,21 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 ## What's inside
 
-- **52 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, KG queues, rebuild/cognitive-candidate records, discovery entities and audit/outbox records. (Skills entity dropped in 0.2.0.)
-- **28 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. (Skills service dropped in 0.2.0.)
-- **33 API route modules** — FastAPI REST endpoints
+- **59 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, KG queues, rebuild/cognitive-candidate records, discovery entities and audit/outbox records. Source: classes with `__tablename__` in `core/models/db.py`, checked against `Base.registry.mappers`; historical Skills entities remain removed.
+- **33 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
+- **43 API route modules** — FastAPI REST endpoints. Source: `core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`; the raw glob has 46 Python files, or 45 without only `__init__.py`.
 - **17 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence, bug traceability and sprint health controls.
-- **215 MCP tools** — Complete Model Context Protocol server for AI agent integration, including:
+- **259 MCP tools** — Complete Model Context Protocol server for AI agent integration, counted from the FastMCP registry after importing the server, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
   - 24 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability, rebuild preflight/confirm/run)
-  - Community runtime exposure: 215 core MCP tools, 0 community-only MCP tools
+  - Community runtime exposure: 259 core MCP tools, 0 community-only MCP tools
 - **App factory** — `create_app()` with dependency injection for auth and storage providers
 - **Hexagonal backend ports** — runtime, telemetry, repository/UoW and KG provider seams, plus the adapter readiness ledger, documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
-- **Embedded Knowledge Graph** — per-board LadybugDB instance + global discovery meta-graph, deterministic + cognitive workers, 11 node types and 10 relationship types
+- **Knowledge Graph contracts and orchestration** — graph schema vocabulary, query/consolidation semantics, deterministic + cognitive workers, 11 node types and **13 relationship types**. Source: `len(KGEdgeType)` in `core/kg/schemas.py`; the concrete LadybugDB/Kuzu board and global graph runtimes are supplied by the active edition
 
 ## Governance Gate Surface
 
@@ -50,17 +50,20 @@ need extraction. This README keeps only the runtime topology summary.
 ```text
 Single Python process
 |-- uvicorn :api
-|   |-- FastAPI REST API under /api/v1
-|   `-- static SPA assets
+|   `-- FastAPI REST API under /api/v1
 `-- uvicorn :mcp
     `-- MCP ASGI app under /mcp using streamable HTTP
 
 Shared by composition:
-- SQLAlchemy session factory registered during lifespan
+- SQLAlchemy session factory registered by the edition lifespan
 - RuntimeComposition providers for settings, auth, storage, events and scheduler control
 - KGProviderRegistry providers supplied by the active edition
 - MCP credential resolved from the ASGI/FastMCP request scope
 ```
+
+The Community package mounts the bundled React SPA and owns the local-first
+runtime adapters. Core keeps the REST/MCP contracts and the application rules
+that those transports expose.
 
 Relational dependency cleanup is tracked on two axes. `asyncpg` is removed from
 the core default and is audited across package metadata, lock data, wheel
@@ -68,7 +71,42 @@ metadata and runtime imports. The remaining SQLAlchemy/PostgreSQL code path in
 `core.infra.database` is deferred R01B/R01C migration debt, not evidence that the
 `asyncpg` dependency may return to the core package.
 
-`build_mcp_asgi_app()` and `mount_mcp(app)` are the two helpers exposed from `okto_pulse.core.mcp` — pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app.
+Current boundary status is intentionally mixed. The adapter readiness inventory
+currently reports 21 seams: 11 `ready`, 7 `blocked` and 3 `deferred`. The moved
+Community-owned surfaces include sentence-transformers embeddings, cross-encoder
+rerank, Ladybug/Kuzu board graph adapters, global discovery runtime, board source
+reads and rebuild ingestion. Remaining extraction debt includes broad
+SQLAlchemy/`AsyncSession` usage, local defaults in `CoreSettings`, the default
+core lifespan/scheduler path and a small set of ledgered direct dependencies
+(`requests`, `chardet`, `apscheduler`, `aiosqlite`, `numpy`).
+
+AF-05 dependency owner matrix. The source of truth is
+`dependency_ledger.py`, `CANONICAL_TEMPORARY_EXCEPTION_TOKENS` and
+`conformance_matrix.py`; README text must follow those gates, not the other way
+around.
+
+| Dependency | Status | Current owner and evidence | Community packaging note |
+| --- | --- | --- | --- |
+| `aiofiles` | `removed` | AF-05 removed the orphaned core runtime dependency. It must stay absent from the core manifest, lock, wheel metadata and runtime imports; `dependency_conformance` fails closed if it reappears and `conformance_matrix` emits `removed_dependency_absent`. | Not Community-owned and not moved to Community without a direct adapter consumer. A stale Community lock can still show the published core dependency until the isolated artifact smoke resolves against the local core build. |
+| `requests` | `temporary_exception` | Ledgered under `#10_telemetry` and `tr_03abf5ab`; core source must not import it, but the manifest remains governed until the telemetry oracle is green. | The Community telemetry sender imports `requests`, but AF-05 does not reassign ownership or declare it here just because it is currently reached through core packaging. |
+| `chardet` | `temporary_exception` | Ledgered as the requests/telemetry charset companion under `#10_telemetry`; it stays in `CANONICAL_TEMPORARY_EXCEPTION_TOKENS`. | Kept with `requests`; do not remove, move or omit it from reports before the same telemetry oracle is green. |
+| `apscheduler` | `temporary_exception` | Ledgered under `#03_lifecycle_composition`; `core/app.py` still imports APScheduler in the default lifespan/scheduler path. | Community has local scheduler wiring, but the core declaration remains a lifecycle-composition exception until `SchedulerControl` ownership is fully moved. |
+
+The AF-11 import-boundary pass is application-first. Its done criterion is
+`ImportBoundaryGate(mode="bootstrap").observed_value == 0` for blocking
+application-layer violations in the real source tree. It does not claim to retire
+the inbound/outbound/legacy baseline debt above; those remain governed by the
+adapter readiness ledger and their existing gates.
+
+| Category removed from application use cases | Application-facing contract | Current implementation/owner | Evidence |
+| --- | --- | --- | --- |
+| KG consumers (22 historical imports) | `okto_pulse.core.services.application_kg` facade for governance, dashboard readers, consolidation primitives, cognitive readiness/closeout and canonical parity | Core owns the application/KG rules; the facade delegates to the current `core.kg` services while Community continues to provide local graph/runtime adapters | R01A KG parity suites, `tests/test_boundary_audit_12.py`, `tests/test_conformance_suite_15.py` |
+| Transport/schema DTOs (17 historical imports) | `okto_pulse.core.services.application_schemas` sanctioned DTO facade | Core owns REST/MCP contracts and DTO compatibility; this pass removes direct `core.models.schemas` imports from application use cases without changing payload semantics | R01A spec/card/MCP parity suites, boundary/conformance oracles |
+| Permission checks (6 historical imports) | `okto_pulse.core.services.permission_policy` application permission facade | Core owns transition and authorization policy; the facade preserves the existing `core.infra.permissions` evaluator and its patchable test seam | R01A permission/spec/story/ideation parity suites |
+| Mutable persistence marking (5 historical imports) | `okto_pulse.core.services.persistence_mutation.mark_mutable_field_modified` | Core still owns the current SQLAlchemy-backed persistence path until the repository/UoW strangler completes; use cases no longer import `sqlalchemy.orm.attributes` directly | Card/ideation mutation parity suites and boundary/conformance oracles |
+| Ratchet evidence | `ImportBoundaryGate` violation evidence now includes `category`; AF-11 tests pin the eliminated application import inventory | Core boundary gate owns regression detection. The ratchet fails on real-tree reintroduction and on negative fixtures rather than by rebaselining or downgrading violations | `test_af11_application_import_ratchet_real_tree_stays_zero`, `test_af11_application_import_ratchet_negative_fixture_reports_categories` |
+
+`build_mcp_asgi_app(trace_sink=None)` and `mount_mcp(app, trace_sink=None)` are the two helpers exposed from `okto_pulse.core.mcp`. Pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app. The optional `trace_sink` is a core port; core never resolves environment variables or writes local JSONL traces by itself.
 
 ## Docker
 
@@ -223,8 +261,8 @@ What you get:
 - **One lifespan** — `init_db`, KG worker startup, scheduler boot, and `register_session_factory` all run once on the API listener; the MCP sub-app picks up the registered factory automatically.
 
 Public surface:
-- `okto_pulse.core.mcp.build_mcp_asgi_app()` — returns the MCP ASGI app wrapped in the `ApiKeySessionMiddleware` (handles `?api_key=` / `X-API-Key` / `Authorization: Bearer` and binds the credential to the current ASGI/FastMCP request scope).
-- `okto_pulse.core.mcp.mount_mcp(app, mount_path="/mcp")` — mounts the same ASGI app onto an existing FastAPI app at the given path (community does this when an embedded mount is needed).
+- `okto_pulse.core.mcp.build_mcp_asgi_app(trace_sink=None)` — returns the MCP ASGI app wrapped in the `ApiKeySessionMiddleware` (handles `?api_key=` / `X-API-Key` / `Authorization: Bearer` and binds the credential to the current ASGI/FastMCP request scope). Pass an implementation of `okto_pulse.core.ports.McpTraceSink` to record MCP calls; omit it to keep tracing disabled.
+- `okto_pulse.core.mcp.mount_mcp(app, mount_path="/mcp", trace_sink=None)` — mounts the same ASGI app onto an existing FastAPI app at the given path (community does this when an embedded mount is needed) and forwards the optional trace sink.
 - `okto_pulse.core.mcp.register_session_factory(factory)` — call from the API lifespan so the MCP sub-app finds the DB. Idempotent.
 
 #### Spec Skills entity removed in its entirety

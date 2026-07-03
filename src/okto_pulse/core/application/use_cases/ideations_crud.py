@@ -278,7 +278,9 @@ class EvaluateComplexityUseCase:
     async def execute(
         self, command: EvaluateComplexityCommand, *, actor: ActorContext, uow: Any
     ) -> EvaluateComplexityResult:
-        from sqlalchemy.orm.attributes import flag_modified
+        from okto_pulse.core.services.persistence_mutation import (
+            mark_mutable_field_modified,
+        )
 
         service = IdeationService(session_of(uow))
         ideation = await service.get_ideation(command.ideation_id)
@@ -294,7 +296,7 @@ class EvaluateComplexityUseCase:
                 scope[f"{dim}_justification"] = body[f"{dim}_justification"]
 
         ideation.scope_assessment = scope
-        flag_modified(ideation, "scope_assessment")
+        mark_mutable_field_modified(ideation, "scope_assessment")
 
         ideation = await service.evaluate_complexity(command.ideation_id, actor.actor_id)
         if not ideation:

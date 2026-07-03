@@ -30,8 +30,13 @@ from okto_pulse.core.kg.rebuild_sources import (
     get_enumeration_counter_labels,
     reset_enumeration_counter,
 )
-from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 from okto_pulse.core.kg.source_maturity import classify_source_for_kg
+
+_board_source_reader = pytest.importorskip(
+    "okto_pulse.community.adapters.board_source_reader",
+    reason="AF-04 Community integration test requires the Community board source reader.",
+)
+BoardSourceStore = _board_source_reader.BoardSourceStore
 
 
 # ---------------------------------------------------------------------------

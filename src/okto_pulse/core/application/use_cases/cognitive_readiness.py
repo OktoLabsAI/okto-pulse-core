@@ -26,15 +26,9 @@ from okto_pulse.core.application.use_cases.base import ActorContext, session_of
 def _readiness_service():
     """Central readiness service over the shared item store — mirrors the legacy
     ``_build_cognitive_readiness_service`` (kg modules only; no server import)."""
-    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
-    from okto_pulse.core.kg.rebuild_audit import (
-        CognitiveConsolidationItemStore,
-        default_rebuild_base_dir,
-    )
+    from okto_pulse.core.services.application_kg import build_cognitive_readiness_service
 
-    return CognitiveReadinessService(
-        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
-    )
+    return build_cognitive_readiness_service()
 
 
 class EvaluateBugCognitiveClosureCommand:
@@ -79,7 +73,7 @@ class EvaluateBugCognitiveClosureUseCase:
     async def execute(
         self, command: EvaluateBugCognitiveClosureCommand, *, actor: ActorContext, uow: Any
     ) -> EvaluateBugCognitiveClosureResult:
-        from okto_pulse.core.kg.bug_cognitive_closure import evaluate_bug_cognitive_closure
+        from okto_pulse.core.services.application_kg import evaluate_bug_cognitive_closure
 
         data = await evaluate_bug_cognitive_closure(
             _readiness_service(),
@@ -143,11 +137,13 @@ class ListCognitiveReadinessItemsUseCase:
     async def execute(
         self, command: ListCognitiveReadinessItemsCommand, *, actor: ActorContext, uow: Any
     ) -> ListCognitiveReadinessItemsResult:
-        from okto_pulse.core.kg.cognitive_action_center import CognitiveActionCenterReadModel
+        from okto_pulse.core.services.application_kg import (
+            build_cognitive_action_center_read_model,
+        )
         from okto_pulse.core.services.main import cognitive_enforcement_active
 
         session = session_of(uow)
-        read_model = CognitiveActionCenterReadModel(_readiness_service())
+        read_model = build_cognitive_action_center_read_model(_readiness_service())
         result = await read_model.list_signals(
             session,
             board_id=command.board_id,

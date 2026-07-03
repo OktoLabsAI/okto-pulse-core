@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import ActorContext, session_of
-from okto_pulse.core.kg.stale_canonical_parity import list_stale_canonical_parity
+from okto_pulse.core.services.application_kg import list_stale_canonical_parity
 
 
 class ListStaleCanonicalParityCommand:

@@ -20,7 +20,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value, parse_options_json
-from okto_pulse.core.mcp.trace_middleware import install_if_enabled as _install_trace
+from okto_pulse.core.mcp.trace_middleware import install_trace_sink as _install_trace
+from okto_pulse.core.ports.mcp_trace import McpTraceSink
 from okto_pulse.core.models.db import Board
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
 from okto_pulse.core.services.activity_log import (
@@ -9880,7 +9881,7 @@ async def okto_pulse_remove_business_rule(
 # Decisions — formalized design choices on a spec (spec b66d2562)
 #
 # Decision vs BusinessRule: a Decision records *why* a choice was made
-# ("We chose LadybugDB over Neo4j because..."); a BusinessRule is a prescriptive
+# ("We chose graph store A over graph store B because..."); a BusinessRule is a prescriptive
 # norm ("The system MUST clamp scores at 1.5"). They're distinct entities
 # with distinct semantics — don't mix them.
 # ============================================================================
@@ -13003,7 +13004,7 @@ async def okto_pulse_update_sprint(
 
     # S-LANE-01: fail-closed DTO build (an invalid lane_type surfaces the canonical
     # envelope, nothing persists) BEFORE the use case.
-        from pydantic import ValidationError
+    from pydantic import ValidationError
     try:
         data = SprintUpdate(**kwargs)
     except ValidationError as exc:
@@ -13714,32 +13715,19 @@ async def okto_pulse_confirm_amendment_coverage(
     """
     Confirm Path B amendment coverage (validator-only · G2 · card c9cf9781).
 
-    Writes the SINGLE non-forgeable coverage attestation that lets the bug gate
-    treat a cross-spec Path B regression artifact as closure-ready. Fail-closed:
-    the test task + scenario MUST be declared by THIS amendment, the regression
-    test task MUST be done with its declared scenario passed/automated carrying
-    SPEC3 reexecutable evidence (test_file_path+test_function or test_run_id), and
-    the caller MUST pass the validator critical-context authorization. Binding +
-    validator authorization + reexecutable evidence are NECESSARY but NOT
-    sufficient. The bug gate DERIVES coverage from this persisted, artifact-bound
-    attestation — never a bool — so a generic/non-validator metadata write can
-    never forge coverage.
+    Writes the single non-forgeable attestation letting the bug gate treat a
+    cross-spec Path B regression artifact as closure-ready. Fail-closed: the
+    test task + scenario MUST be declared by THIS amendment, the test task MUST
+    be done with SPEC3 reexecutable evidence, and the caller MUST hold validator
+    critical-context authorization — all NECESSARY but NOT sufficient; the gate
+    derives coverage from the persisted attestation.
 
-    Gate-consumability preflight (BUG-01): BEFORE persisting, the tool runs the
-    SAME eligibility predicate the bug regression gate uses for this
-    `(amendment_id, regression_test_task_id, regression_scenario_id)`. Success
-    therefore implies the attestation is persisted AND consumable by the gate. A
-    same-spec scenario is routed through Path A and is eligible ONLY via the bug's
-    origin/affected-task lineage — an amendment declaration does NOT convert an
-    `unrelated_scenario` into valid Path B coverage. A cross-spec scenario is
-    routed through Path B and consumable only when the candidate attestation
-    drives `path_b_ready`. If the tuple would be inert the tool fails closed with
-    `coverage_not_gate_consumable` (bounded facts: amendment_id, bug_id,
-    original_spec_id, regression_test_task_id, regression_scenario_id,
-    scenario_spec_id, routed_path, resolver_reason, coverage_state, missing_links)
-    and a no-bypass remediation — distinct from `coverage_pending` (lineage
-    eligible, validator confirmation not yet recorded). The amendment already
-    carries bug/board/original_spec; no `bug_id` argument is taken."""
+    Preflight (BUG-01): BEFORE persisting, runs the SAME eligibility predicate
+    the bug regression gate uses; success implies the attestation is persisted
+    AND gate-consumable. An inert tuple fails closed with
+    `coverage_not_gate_consumable` (bounded facts, no-bypass remediation) —
+    distinct from `coverage_pending` (validator confirmation not yet recorded).
+    Full docs: okto-pulse://reference/tool-docs/card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -15183,6 +15171,7 @@ async def okto_pulse_kg_evaluate_bug_cognitive_closure(
     and central CognitiveReadinessService verdict; this tool does not recompute
     precedence.
 
+    Allowed agent actions: `evaluate` (default) and `create_learning`.
     Agent-facing `skip`/`no_action` fails closed with `human_control_required`
     and never writes the ledger. Human skip/no_action remains on the authorized
     UI/REST path and cannot mask technical debt.
@@ -16082,8 +16071,8 @@ async def okto_pulse_kg_migrate_schema(
     Idempotente: re-rodar em board já migrado retorna `migrated=true`
     com `columns_added` vazio (no-op).
 
-    NUNCA delete `graph.lbug` para "consertar" — destruiria todo o KG
-    do board. Use esta tool em vez disso."""
+    NUNCA apague o armazenamento persistente do KG para "consertar" —
+    destruiria todo o KG do board. Use esta tool em vez disso."""
     if not board_id and not all_boards:
         return json.dumps({"error": "missing_board_or_all_boards"})
 
@@ -16178,9 +16167,8 @@ async def okto_pulse_kg_tick_run_now(
     # short-lived one. Runs after the lock check, before tick_id allocation.
     if board_id:
         from okto_pulse.core.api.kg_tick import _refuse_tick_if_degraded
-        from okto_pulse.core.infra.database import get_session_factory
 
-        async with get_session_factory()() as _health_session:
+        async with get_db_for_mcp() as _health_session:
             refusal = await _refuse_tick_if_degraded(board_id, _health_session)
         if refusal is not None:
             return json.dumps(refusal)
@@ -16211,6 +16199,7 @@ async def okto_pulse_kg_tick_run_now(
             tick_id=tick_id,
             board_id=board_id or None,
             force_full_rebuild=force_full_rebuild,
+            session_scope_factory=get_db_for_mcp,
         )
     except Exception as exc:
         _tick_logger.error(
@@ -17247,32 +17236,39 @@ async def okto_pulse_list_snapshots(
 # ============================================================================
 
 
-def build_mcp_asgi_app():
+def build_mcp_asgi_app(trace_sink: McpTraceSink | None = None):
     """Build the MCP ASGI application wrapped with the API-key middleware.
 
     Returns the ASGI app that should be served by uvicorn (or mounted
     elsewhere). Single-process callers (``okto_pulse.community.main.serve``)
     use this to bind the MCP transport to its own port while sharing the
-    same Python process as the API server, so the LadybugDB lock is held by a
+    same Python process as the API server, so the graph-store lock is held by a
     single process. The caller is responsible for invoking
     ``register_session_factory`` once before the first MCP request lands.
 
-    ``_install_trace`` is idempotent (env-gated); calling this multiple
-    times is safe.
+    The core factory never resolves local trace paths. When ``trace_sink`` is
+    ``None`` no trace middleware is installed; editions that want replay traces
+    must inject a concrete sink from their composition root.
     """
-    _install_trace(mcp)
+    _install_trace(mcp, trace_sink)
     http_app = mcp.http_app(transport="streamable-http")
     return ApiKeySessionMiddleware(http_app)
 
 
-def mount_mcp(app, *, mount_path: str = "/mcp") -> None:
+def mount_mcp(
+    app,
+    *,
+    mount_path: str = "/mcp",
+    trace_sink: McpTraceSink | None = None,
+) -> None:
     """Mount the MCP sub-app at ``mount_path`` on a FastAPI/Starlette app.
 
     Kept for callers that prefer path-based routing on the same port as the
     API. The default deployment path (``okto_pulse.community.main.serve``)
-    serves the MCP on its own port via :func:`build_mcp_asgi_app`.
+    serves the MCP on its own port via :func:`build_mcp_asgi_app`. Tracing is
+    disabled unless the caller injects a sink.
     """
-    app.mount(mount_path, build_mcp_asgi_app())
+    app.mount(mount_path, build_mcp_asgi_app(trace_sink=trace_sink))
 
 
 def run_mcp_server():
@@ -17291,6 +17287,9 @@ def run_mcp_server():
     NOT call ``create_database`` again — it shares the SAME engine built by
     ``create_app``, which was hardened with the Community UNION installer (adds
     foreign_keys=ON) — so the production MCP path inherits the edition registration.
+
+    This core-only standalone path also does not inject a trace sink; local
+    MCP replay JSONL is enabled by the Community composition root.
     """
     from okto_pulse.core.infra.config import get_settings
     from okto_pulse.core.infra.database import create_database, get_session_factory

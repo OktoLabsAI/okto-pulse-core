@@ -32,6 +32,7 @@ from .mcp_auth import (
     mcp_credential_from_sources,
     require_authenticator,
 )
+from .mcp_trace import McpTraceRecord, McpTraceSink, TraceWriteResult
 from .relational_schema_migrator import (
     MIGRATION_PHASES,
     MigrationPhase,
@@ -111,6 +112,7 @@ __all__ = [
     "TelemetryStateCarrier",
     "TelemetryStateStore",
     "TelemetryEventStore",
+    "TraceWriteResult",
     "ActorContextLike",
     "AgentAuthSession",
     "AuthSession",
@@ -143,6 +145,8 @@ __all__ = [
     "McpAuthenticator",
     "McpCredential",
     "McpCredentialSource",
+    "McpTraceRecord",
+    "McpTraceSink",
     "mcp_credential_from_sources",
     "require_authenticator",
     "KG_TICK_RESCHEDULE_FAILED_SIGNAL",

@@ -162,10 +162,10 @@ def test_ts07_resource_count_and_payload_within_baseline():
 def test_ts07_preexisting_wide_failures_are_out_of_scope_baseline():
     """Carry-forward #2: the wide PRE-EXISTING failures are a TOOL/health baseline,
     NOT MCP-resource regressions, so the R11-C resource guard must not own them."""
-    # the r1 tool-count guard asserts a STALE *tool* count (`== 220`) — it is a
+    # the r1 tool-count guard asserts a *tool* count (`== 259`) — it is a
     # tool-surface concern, orthogonal to the effective RESOURCE catalog.
     r1_src = Path(__file__).parent.joinpath("test_r1_tool_compaction.py").read_text(encoding="utf-8")
-    assert "== 220" in r1_src  # the stale tool-count baseline (drifted to 259+)
+    assert "== 259" in r1_src
     # the f16/f17 KG-health meta-suite is a health-gate concern, also not resources.
     f16_src = Path(__file__).parent.joinpath("test_r1_degraded_kg_fallback_gate.py").read_text(encoding="utf-8")
     assert "f16_f17" in f16_src

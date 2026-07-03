@@ -14,12 +14,16 @@ import os
 
 import pytest
 
-from okto_pulse.community.adapters import kg_runtime
 from okto_pulse.core.kg.schema import (
     bootstrap_board_graph,
     board_kuzu_path,
     close_all_connections,
     open_board_connection,
+)
+
+kg_runtime = pytest.importorskip(
+    "okto_pulse.community.adapters.kg_runtime",
+    reason="AF-04 Community integration test requires the Community KG runtime adapter.",
 )
 
 

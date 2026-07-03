@@ -25,6 +25,13 @@ ANALYSIS = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _require_real_community_graph(_kg_registry_test_fakes):
+    from kg_registry_testing import configure_real_graph_test_kg_registry
+
+    configure_real_graph_test_kg_registry()
+
+
 def _seed_node(board_id: str, node_type: str, source_ref: str, *, node_id: str | None = None,
                graph_layer: str = "canonical") -> str:
     """Seed a canonical node (Entity provenance root / Decision / Bug) directly."""

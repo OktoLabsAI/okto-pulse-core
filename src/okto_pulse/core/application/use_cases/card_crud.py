@@ -572,9 +572,10 @@ class LinkTestTaskToBugUseCase:
     async def execute(
         self, command: LinkTestTaskToBugCommand, *, actor: ActorContext, uow: Any
     ) -> LinkTestTaskToBugResult:
-        from sqlalchemy.orm.attributes import flag_modified
-
         from okto_pulse.core.services import SpecService
+        from okto_pulse.core.services.persistence_mutation import (
+            mark_mutable_field_modified,
+        )
 
         if not command.test_task_id:
             raise CommandValidationError("test_task_id is required")
@@ -622,7 +623,7 @@ class LinkTestTaskToBugUseCase:
         if command.test_task_id not in linked:
             linked.append(command.test_task_id)
             bug_card.linked_test_task_ids = linked
-            flag_modified(bug_card, "linked_test_task_ids")
+            mark_mutable_field_modified(bug_card, "linked_test_task_ids")
             await commit(uow)
 
         return LinkTestTaskToBugResult(is_unblocked=len(linked) >= 1)
@@ -653,7 +654,9 @@ class UnlinkTestTaskFromBugUseCase:
     async def execute(
         self, command: UnlinkTestTaskFromBugCommand, *, actor: ActorContext, uow: Any
     ) -> UnlinkTestTaskFromBugResult:
-        from sqlalchemy.orm.attributes import flag_modified
+        from okto_pulse.core.services.persistence_mutation import (
+            mark_mutable_field_modified,
+        )
 
         service = CardService(session_of(uow))
         bug_card = await service.get_card(command.card_id)
@@ -664,7 +667,7 @@ class UnlinkTestTaskFromBugUseCase:
         if command.test_task_id in linked:
             linked.remove(command.test_task_id)
             bug_card.linked_test_task_ids = linked
-            flag_modified(bug_card, "linked_test_task_ids")
+            mark_mutable_field_modified(bug_card, "linked_test_task_ids")
             await commit(uow)
         return UnlinkTestTaskFromBugResult()
 

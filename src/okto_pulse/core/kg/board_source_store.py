@@ -37,6 +37,56 @@ SPEC_CONTENT_COLUMNS_V2: tuple[str, ...] = _SPEC_CONTENT_COLUMNS_BASE + (
     "observability_requirements",
 )
 
+STORY_CONTENT_COLUMNS: tuple[str, ...] = (
+    "title",
+    "description",
+    "actor",
+    "goal",
+    "benefit",
+    "topic_id",
+    "status",
+    "labels",
+)
+
+IDEATION_CONTENT_COLUMNS: tuple[str, ...] = (
+    "title",
+    "description",
+    "problem_statement",
+    "proposed_approach",
+    "scope_assessment",
+    "complexity",
+    "status",
+    "version",
+    "labels",
+)
+
+REFINEMENT_CONTENT_COLUMNS: tuple[str, ...] = (
+    "title",
+    "description",
+    "in_scope",
+    "out_of_scope",
+    "analysis",
+    "decisions",
+    "status",
+    "version",
+    "labels",
+)
+
+SPRINT_CONTENT_COLUMNS: tuple[str, ...] = (
+    "title",
+    "description",
+    "spec_id",
+    "spec_version",
+    "status",
+    "lane_type",
+    "objective",
+    "expected_outcome",
+    "test_scenario_ids",
+    "business_rule_ids",
+    "evaluations",
+    "version",
+    "labels",
+)
 
 CARD_CONTENT_COLUMNS: tuple[str, ...] = (
     "title",
@@ -222,9 +272,13 @@ def _decision_sources_from_spec(row: Any) -> list[dict[str, Any]]:
 __all__ = [
     "AMENDMENT_CONTENT_COLUMNS",
     "CARD_CONTENT_COLUMNS",
+    "IDEATION_CONTENT_COLUMNS",
+    "REFINEMENT_CONTENT_COLUMNS",
     "SPEC_CONTENT_COLUMNS_V1",
     "SPEC_CONTENT_COLUMNS_V2",
     "SPEC_SOURCE_MANIFEST_VERSION",
+    "SPRINT_CONTENT_COLUMNS",
+    "STORY_CONTENT_COLUMNS",
     "_bug_has_minimal_evidence",
     "_canonical_content_hash",
     "_canonical_payload_hash",

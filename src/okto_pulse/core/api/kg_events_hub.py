@@ -27,6 +27,7 @@ import asyncio
 import json
 import logging
 import uuid as _uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -38,6 +39,7 @@ POLL_INTERVAL_SECONDS = 1.0
 # antigos (o snapshot de progresso é autoritativo, então perda é benigna).
 SUBSCRIBER_QUEUE_MAXSIZE = 512
 OUTBOX_BATCH_LIMIT = 50
+SessionScopeFactory = Callable[[], Any]
 
 
 def format_sse(event_type: str, payload: dict[str, Any]) -> str:
@@ -180,10 +182,22 @@ class _BoardStream:
 class KgEventsHub:
     """Singleton de processo — um poller por board com assinantes ativos."""
 
-    def __init__(self, poll_interval: float = POLL_INTERVAL_SECONDS) -> None:
+    def __init__(
+        self,
+        poll_interval: float = POLL_INTERVAL_SECONDS,
+        *,
+        session_scope_factory: SessionScopeFactory | None = None,
+    ) -> None:
         self._poll_interval = poll_interval
+        self._session_scope_factory = session_scope_factory
         self._streams: dict[str, _BoardStream] = {}
         self._closed = False
+
+    def configure_session_scope_factory(
+        self,
+        session_scope_factory: SessionScopeFactory,
+    ) -> None:
+        self._session_scope_factory = session_scope_factory
 
     def subscribe(self, board_id: str) -> KgEventsSubscription:
         if self._closed:
@@ -231,9 +245,13 @@ class KgEventsHub:
 
     async def _poll_board(self, stream: _BoardStream) -> None:
         """Loop único de DB por board — nunca roda dentro de uma request."""
-        from okto_pulse.core.infra.database import get_session_factory
-
-        session_factory = get_session_factory()
+        if self._session_scope_factory is None:
+            raise RuntimeError(
+                "KgEventsHub session_scope_factory is not configured. The "
+                "composition root must inject a DB session scope before the "
+                "poller starts."
+            )
+        session_factory = self._session_scope_factory
         while stream.subscribers and not self._closed:
             try:
                 async with session_factory() as session:
@@ -268,6 +286,18 @@ class KgEventsHub:
 
 
 _hub: KgEventsHub | None = None
+
+
+def configure_kg_events_hub_session_factory(
+    session_scope_factory: SessionScopeFactory,
+) -> KgEventsHub:
+    """Register the session scope owned by the runtime composition root."""
+    global _hub
+    if _hub is None or _hub._closed:
+        _hub = KgEventsHub(session_scope_factory=session_scope_factory)
+    else:
+        _hub.configure_session_scope_factory(session_scope_factory)
+    return _hub
 
 
 def get_kg_events_hub() -> KgEventsHub:

@@ -7,11 +7,11 @@ delegates runtime operations to ``KGProviderRegistry.board_graph_runtime``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.kg.schema_contract import (
+    BoardGraphHandle,
     EDGE_LAYERS,
     EDGE_METADATA_COLUMNS,
     HUMAN_CURATED_COLUMNS,
@@ -47,15 +47,6 @@ CORRUPT_DB_ERROR_MARKERS = (
     "unreachable_code",
 )
 CAPI_SHARED_LIB_MISSING_MARKER = "could not find lbug c api shared library"
-
-
-@dataclass(frozen=True)
-class BoardGraphHandle:
-    """Compatibility DTO returned by edition-owned bootstrap implementations."""
-
-    board_id: str
-    path: Path
-    schema_version: str
 
 
 class BoardConnection:

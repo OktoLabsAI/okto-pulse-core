@@ -186,6 +186,57 @@ def test_anti_singleton_module_constants_are_not_flagged(tmp_path) -> None:
     assert report.evidence["new_singletons"] == []
 
 
+def test_anti_singleton_provider_bridge_cache_state_blocks(tmp_path) -> None:
+    mod = (
+        tmp_path
+        / "okto_pulse"
+        / "core"
+        / "kg"
+        / "rogue"
+        / "llm_provider_bridges.py"
+    )
+    mod.parent.mkdir(parents=True)
+    mod.write_text(
+        "_bridge_cache = {}\n"
+        "_bridge_lock = object()\n\n"
+        "def memoize(key, value):\n"
+        "    _bridge_cache[key] = value\n"
+        "    return _bridge_cache[key]\n",
+        encoding="utf-8",
+    )
+
+    report = AntiSingletonGate().run(AntiSingletonGateInput(source_root=tmp_path))
+
+    assert report.status == "blocking"
+    assert report.evidence["error"] == "new_singleton"
+    new = {(s["name"], s["kind"]) for s in report.evidence["new_singletons"]}
+    assert ("_bridge_cache", "provider_bridge_global_state") in new
+    assert ("_bridge_lock", "provider_bridge_global_state") in new
+
+
+def test_anti_singleton_provider_bridge_namespace_constant_is_not_flagged(tmp_path) -> None:
+    mod = (
+        tmp_path
+        / "okto_pulse"
+        / "core"
+        / "kg"
+        / "clean"
+        / "llm_provider_bridges.py"
+    )
+    mod.parent.mkdir(parents=True)
+    mod.write_text(
+        "_BRIDGE_CACHE_NAMESPACE = 'kg.clean'\n"
+        "def make():\n"
+        "    return _BRIDGE_CACHE_NAMESPACE\n",
+        encoding="utf-8",
+    )
+
+    report = AntiSingletonGate().run(AntiSingletonGateInput(source_root=tmp_path))
+
+    assert report.status == "baseline"
+    assert report.evidence["new_singletons"] == []
+
+
 # --------------------------------------------------------------------------- #
 # PortConformanceGate — ac_c43799ff axis support
 # --------------------------------------------------------------------------- #

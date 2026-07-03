@@ -98,20 +98,73 @@ def test_under_safe_write_unblocks_each_barrier_point():
 # --- Global discovery barrier wiring (KG-01.3.1 rework val_441ad311) ---------
 
 
-def test_bootstrap_global_discovery_calls_require_global_write_token():
+def test_bootstrap_global_discovery_calls_require_global_write_token(monkeypatch):
+    """Since R09 the core wrapper no longer calls require_global_write_token
+    itself: the edition runtime owns the global barrier (the Community adapter
+    invokes it before any storage mutation — proven by the
+    *_blocked_in_strict_without_guard twins below, which run only with
+    Community installed). Core-side the same contract reads: bootstrap
+    delegates to the composed GlobalDiscoveryRuntime port and fails closed
+    when none is composed, so no core path reaches global discovery storage
+    without going through the barrier-owning runtime."""
+    from pathlib import Path
+
+    from okto_pulse.core.composition import RuntimeProviderMissing
+    from okto_pulse.core.kg import interfaces as interfaces_pkg
     from okto_pulse.core.kg.global_discovery import schema
+    from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 
-    src = inspect.getsource(schema.bootstrap_global_discovery)
-    assert "require_global_write_token" in src
-    assert "require_global_write_token()" in src
+    calls: list[str] = []
+
+    class _Runtime:
+        def bootstrap(self) -> Path:
+            calls.append("bootstrap")
+            return Path("global-discovery.lbug")
+
+    reg = KGProviderRegistry(global_discovery_runtime=_Runtime())
+    monkeypatch.setattr(interfaces_pkg, "get_kg_registry", lambda: reg, raising=True)
+    assert schema.bootstrap_global_discovery() == Path("global-discovery.lbug")
+    assert calls == ["bootstrap"]
+
+    empty = KGProviderRegistry()
+    monkeypatch.setattr(
+        interfaces_pkg, "get_kg_registry", lambda: empty, raising=True,
+    )
+    with pytest.raises(RuntimeProviderMissing) as excinfo:
+        schema.bootstrap_global_discovery()
+    assert excinfo.value.provider_key == "global_discovery_runtime"
+    assert calls == ["bootstrap"]  # the failed call never reached a runtime
 
 
-def test_purge_global_discovery_storage_calls_require_global_write_token():
+def test_purge_global_discovery_storage_calls_require_global_write_token(monkeypatch):
+    """Purge twin of the bootstrap test above: the destructive path delegates
+    to the barrier-owning runtime (reason kwarg preserved) and fails closed
+    without a composed runtime — never a silent core-side purge."""
+    from okto_pulse.core.composition import RuntimeProviderMissing
+    from okto_pulse.core.kg import interfaces as interfaces_pkg
     from okto_pulse.core.kg.global_discovery import schema
+    from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 
-    src = inspect.getsource(schema.purge_global_discovery_storage)
-    assert "require_global_write_token" in src
-    assert "require_global_write_token()" in src
+    calls: list[tuple[str, str]] = []
+
+    class _Runtime:
+        def purge(self, *, reason: str = "manual") -> list[str]:
+            calls.append(("purge", reason))
+            return ["quarantined-a"]
+
+    reg = KGProviderRegistry(global_discovery_runtime=_Runtime())
+    monkeypatch.setattr(interfaces_pkg, "get_kg_registry", lambda: reg, raising=True)
+    assert schema.purge_global_discovery_storage(reason="test") == ["quarantined-a"]
+    assert calls == [("purge", "test")]
+
+    empty = KGProviderRegistry()
+    monkeypatch.setattr(
+        interfaces_pkg, "get_kg_registry", lambda: empty, raising=True,
+    )
+    with pytest.raises(RuntimeProviderMissing) as excinfo:
+        schema.purge_global_discovery_storage(reason="test")
+    assert excinfo.value.provider_key == "global_discovery_runtime"
+    assert calls == [("purge", "test")]
 
 
 def test_gc_orphans_calls_require_global_write_token():

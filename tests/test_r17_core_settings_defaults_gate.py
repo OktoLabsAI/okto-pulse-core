@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from okto_pulse.community.config import CommunitySettings
+import pytest
+
 from okto_pulse.core.application.boundary.conformance_suite import ConformanceSuite
 from okto_pulse.core.application.boundary.core_settings_defaults_gate import (
     COMMUNITY_PARITY_FIELDS,
@@ -21,6 +22,12 @@ from okto_pulse.core.application.boundary.core_settings_defaults_gate import (
     run_public_config_stability_gate,
 )
 from okto_pulse.core.infra.config import CoreSettings
+
+_community_config = pytest.importorskip(
+    "okto_pulse.community.config",
+    reason="AF-04 R17 conformance requires CommunitySettings parity surface.",
+)
+CommunitySettings = _community_config.CommunitySettings
 
 
 _CONFIG_SOURCE = (

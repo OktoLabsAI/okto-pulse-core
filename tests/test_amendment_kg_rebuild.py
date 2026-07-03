@@ -401,13 +401,31 @@ def test_amendment_source_is_really_enqueued_not_filtered(tmp_path):
     assert amd_rows[0]["artifact_type"] == AMD
     assert amd_rows[0]["status"] == "pending"
 
-    # idempotent re-enqueue resets the SAME row to pending (no duplicate row).
+    # idempotent re-enqueue leaves the active pending row alone (no duplicate row).
     counts2 = adapter.enqueue_sources(
         board_id=board_id,
         run_id="run-2",
         sources=[{"artifact_type": AMD, "id": "amd1"}],
     )
-    assert counts2["reset_to_pending"] == 1
+    assert counts2["inserted"] == 0
+    assert counts2["reset_to_pending"] == 0
+    assert counts2["left_alone"] == 1
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        amd_rows_after = conn.execute(
+            "SELECT artifact_type, status, source FROM consolidation_queue "
+            "WHERE board_id=? AND artifact_id=?",
+            (board_id, "amd1"),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert len(amd_rows_after) == 1
+    assert amd_rows_after[0]["artifact_type"] == AMD
+    assert amd_rows_after[0]["status"] == "pending"
+    assert amd_rows_after[0]["source"] == "rebuild:run-1"
 
 
 # ---------------------------------------------------------------------------

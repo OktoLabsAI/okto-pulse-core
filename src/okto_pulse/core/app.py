@@ -237,8 +237,12 @@ def create_app(
         # timestamp). Idempotente — só carimba linhas respondidas órfãs.
         try:
             from okto_pulse.core.services.main import backfill_qa_answered_at
+            from okto_pulse.core.api.kg_events_hub import (
+                configure_kg_events_hub_session_factory,
+            )
 
             factory = get_session_factory()
+            configure_kg_events_hub_session_factory(factory)
             async with factory() as _qa_session:
                 _qa_fixed = await backfill_qa_answered_at(_qa_session)
             if _qa_fixed:

@@ -556,7 +556,9 @@ class McpEvaluateIdeationUseCase:
     async def execute(
         self, command: McpEvaluateIdeationCommand, *, actor: ActorContext, uow: Any
     ) -> McpEvaluateIdeationResult:
-        from sqlalchemy.orm.attributes import flag_modified
+        from okto_pulse.core.services.persistence_mutation import (
+            mark_mutable_field_modified,
+        )
 
         session = session_of(uow)
         service = IdeationService(session)
@@ -568,7 +570,7 @@ class McpEvaluateIdeationUseCase:
             existing_scope = ideation.scope_assessment or {}
             existing_scope.update(command.scope)
             ideation.scope_assessment = existing_scope
-            flag_modified(ideation, "scope_assessment")
+            mark_mutable_field_modified(ideation, "scope_assessment")
 
         ideation = await service.evaluate_complexity(
             command.ideation_id, actor.actor_id
@@ -591,24 +593,18 @@ class McpEvaluateIdeationUseCase:
 def _mcp_story_state_perm(
     permissions: Any, granular: str, legacy: str | None, story: Any
 ) -> str | None:
-    from okto_pulse.core.infra.permissions import PermissionSet
+    from okto_pulse.core.services.permission_policy import check_story_state_permission
     from okto_pulse.core.services.story_permissions import story_state
 
-    if not granular:
-        return None
-    if isinstance(permissions, PermissionSet):
-        return permissions.check_with_state(
-            granular,
-            "story",
-            story_state(story.status, archived=bool(getattr(story, "archived", False))),
-        )
-    if permissions is None:
-        return None
-    if granular in permissions:
-        return None
-    if legacy and legacy in permissions:
-        return None
-    return f"Permission denied: requires '{granular}'"
+    return check_story_state_permission(
+        permissions,
+        granular,
+        legacy,
+        story,
+        story_state=story_state(
+            story.status, archived=bool(getattr(story, "archived", False))
+        ),
+    )
 
 
 class McpLinkStoryToIdeationCommand:
@@ -648,7 +644,7 @@ class McpLinkStoryToIdeationUseCase:
     async def execute(
         self, command: McpLinkStoryToIdeationCommand, *, actor: ActorContext, uow: Any
     ) -> McpLinkStoryToIdeationResult:
-        from okto_pulse.core.infra.permissions import Permissions
+        from okto_pulse.core.services.permission_policy import Permissions
         from okto_pulse.core.services import StoryService
 
         session = session_of(uow)
@@ -716,7 +712,7 @@ class McpConvertStoriesUseCase:
     async def execute(
         self, command: McpConvertStoriesCommand, *, actor: ActorContext, uow: Any
     ) -> McpConvertStoriesResult:
-        from okto_pulse.core.infra.permissions import Permissions
+        from okto_pulse.core.services.permission_policy import Permissions
         from okto_pulse.core.services import StoryService
 
         session = session_of(uow)

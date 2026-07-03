@@ -64,6 +64,11 @@ async def spec_eval_client(db_factory):
             skip_trs_coverage=True, skip_contract_coverage=True,
             skip_ir_coverage=True, skip_or_coverage=True,
             skip_decisions_coverage=True,
+            # O gate decision-required (spec 4028ebd4) ignora o skip acima e
+            # roda antes do gate qualitativo de evaluations sob teste.
+            decisions=[{"id": "dec_seed", "title": "Seed decision",
+                        "rationale": "Decision de fixture p/ o gate decision-required.",
+                        "status": "active"}],
         ))
         db.add(Spec(
             id=draft_spec_id, board_id=board_id, title="Draft Spec",

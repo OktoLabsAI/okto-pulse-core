@@ -18,7 +18,7 @@ import inspect
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
 from okto_pulse.core.kg.workers import consolidation as consolidation_mod
@@ -34,6 +34,13 @@ async def _seed_queue_entry(factory, board_id: str) -> str:
 
     entry_id = f"cq-{uuid.uuid4().hex[:10]}"
     async with factory() as db:
+        # Hermetic seed: process_batch's claim is board-AGNOSTIC with
+        # limit=batch_size ordered by priority/triggered_at asc, and the test
+        # DB is session-scoped/shared — leftover queue rows from earlier tests
+        # crowd this entry out of the batch AND get fed to the monkeypatched
+        # per-entry callbacks (foreign acks / duplicate-marker IntegrityError).
+        # Drain the queue so the worker under test sees exactly one entry.
+        await db.execute(delete(ConsolidationQueue))
         if await db.get(Board, board_id) is None:
             db.add(Board(id=board_id, name="imp6", owner_id="imp6-owner"))
         db.add(

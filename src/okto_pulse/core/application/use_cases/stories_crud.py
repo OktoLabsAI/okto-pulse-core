@@ -77,7 +77,7 @@ async def _require_permissions(
     enforces each permission in order, using ``check_with_state`` when an entity
     + status is supplied (the story state gate) and ``check_permission``
     otherwise; raises ``PermissionDeniedError`` on the first failure."""
-    from okto_pulse.core.infra.permissions import PermissionSet, check_permission
+    from okto_pulse.core.services.permission_policy import PermissionSet, check_permission
     from okto_pulse.core.services.main import resolve_user_permissions
 
     if permissions is None:

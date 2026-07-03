@@ -97,10 +97,26 @@ def test_no_tick_change_is_a_noop():
 
 
 # --- app: composition preserved on app.state ---------------------------------
-def test_create_app_preserves_composition_on_app_state():
-    from okto_pulse.core.app import create_app
+def test_create_app_preserves_composition_on_app_state(monkeypatch):
+    from okto_pulse.core import app as app_mod
     from okto_pulse.core.composition import RuntimeComposition
-    from okto_pulse.core.infra.config import CoreSettings
+    from okto_pulse.core.infra.config import (
+        CoreSettings,
+        configure_settings,
+        get_settings,
+    )
+
+    # This test only asserts composition preservation on app.state. Letting
+    # create_app open a real database would re-register the process-global
+    # engine from CoreSettings() (i.e. the CURRENT env) and hijack db_factory
+    # for every test that runs after this file — same guard as
+    # test_runtime_composition_03.
+    db_calls: list[str] = []
+    monkeypatch.setattr(
+        app_mod,
+        "create_database",
+        lambda *args, **kwargs: db_calls.append("create_database"),
+    )
 
     class _Auth:
         async def get_current_user(self, *a, **k):  # pragma: no cover - unused
@@ -124,11 +140,18 @@ def test_create_app_preserves_composition_on_app_state():
         event_bus=object(),
         scheduler_control=_FakeScheduler(),
     )
-    app = create_app(
-        settings=CoreSettings(),
-        auth_provider=_Auth(),
-        storage_provider=_Storage(),
-        composition=composition,
-    )
+    original_settings = get_settings()
+    try:
+        app = app_mod.create_app(
+            settings=CoreSettings(),
+            auth_provider=_Auth(),
+            storage_provider=_Storage(),
+            composition=composition,
+        )
+    finally:
+        configure_settings(original_settings)
+    # The productive path still initialises the database — just not against
+    # this test process' engine.
+    assert db_calls == ["create_database"]
     assert app.state.runtime_composition is composition
     assert app.state.runtime_composition.scheduler_control is composition.scheduler_control

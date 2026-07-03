@@ -128,7 +128,7 @@ async def _record_cypher_hits(
     """Fire-and-forget loop that increments the hit counter for each pair.
 
     ``record_query_hit`` is a thin wrapper around the in-process counter
-    that lazy-flushes to LadybugDB when ``HIT_FLUSH_THRESHOLD`` is reached. The
+    that lazy-flushes to the graph store when ``HIT_FLUSH_THRESHOLD`` is reached. The
     invocation must NEVER block the query response (BR3 + dec_3a6eb8ad).
     """
     try:

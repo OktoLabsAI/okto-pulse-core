@@ -91,7 +91,9 @@ class McpCreateCardUseCase:
         if command.scenario_ids_list:
             spec_obj = await SpecService(session).get_spec(command.spec_id)
             if spec_obj and spec_obj.test_scenarios:
-                from sqlalchemy.orm.attributes import flag_modified
+                from okto_pulse.core.services.persistence_mutation import (
+                    mark_mutable_field_modified,
+                )
 
                 scenarios = list(spec_obj.test_scenarios)
                 changed = False
@@ -104,7 +106,7 @@ class McpCreateCardUseCase:
                             changed = True
                 if changed:
                     spec_obj.test_scenarios = scenarios
-                    flag_modified(spec_obj, "test_scenarios")
+                    mark_mutable_field_modified(spec_obj, "test_scenarios")
                     await session.flush()
 
         await BoardService(session)._log_activity(
@@ -487,7 +489,7 @@ class McpCopyKnowledgeToCardUseCase:
         if command.id_filter is not None:
             items = [it for it in items if it["id"] in command.id_filter]
 
-        from okto_pulse.core.models.schemas import CardUpdate
+        from okto_pulse.core.services.application_schemas import CardUpdate
 
         existing = list(card.knowledge_bases or [])
         existing_sources = {

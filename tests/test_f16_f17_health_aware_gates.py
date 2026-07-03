@@ -510,7 +510,17 @@ async def test_ts_67fe9fd2_mcp_twin_inherits_refusal(monkeypatch):
     async def _fake_ctx(board_id):
         return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
 
+    health_session = _FakeSession()
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return health_session
+
+        async def __aexit__(self, *_args):
+            return None
+
     monkeypatch.setattr(server, "_get_agent_ctx", _fake_ctx)
+    monkeypatch.setattr(server, "get_db_for_mcp", lambda: _SessionContext())
 
     # ensure the global advisory lock is free
     assert not get_async_lock("kg_daily_tick", "global").locked()

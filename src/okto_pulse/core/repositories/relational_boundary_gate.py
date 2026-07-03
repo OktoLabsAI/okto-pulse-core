@@ -433,13 +433,23 @@ RELATIONAL_COVERAGE_BASELINE = {
 #:     ``core/domain/enums.py`` and ``core/infra/schema_lifecycle.py``.
 #: This is a structural re-baseline (enums leaving the relational layer), NOT a
 #: gate relaxation: the stable FLOORS below are untouched and live >> floor.
+#:
+#: AF-02 IMP3 re-baseline (2026-07-02) keeps the exact-live gate semantics and
+#: only updates this frozen snapshot after attributing HEAD 50e3193 -> worktree.
+#: Residual drift already committed before this window: MCP factory counter +2,
+#: async session type counter +1, import aggregate -5, symbol aggregate +6,
+#: call-site aggregate +3 (rest -3/service +4/mcp +2), file_count +22.
+#: Current sanctioned window: AF-02 transport factory strangler in
+#: ``mcp/server.py`` and ``api/kg_tick.py``, injected ``kg_events_hub`` factory
+#: wiring, AF-11 cleanup, and 8 new AF-02/03/04/09/11 gate/facade modules.
+#: Stable floors stay untouched; this remains an exact drift detector.
 RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
-    "relational_imports": 384,
-    "relational_symbols": 841,
-    "classified_call_sites": 1422,
-    "by_surface": {"rest": 166, "service": 1143, "mcp": 113},
+    "relational_imports": 371,
+    "relational_symbols": 851,
+    "classified_call_sites": 1429,
+    "by_surface": {"rest": 163, "service": 1149, "mcp": 117},
     "source_root": "okto_pulse/core",
-    "file_count": 431,
+    "file_count": 461,
 }
 
 #: R01B drawn-down counter baseline (ac_28f50f9d), SEPARATE from the spec #04
@@ -450,10 +460,18 @@ RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
 #: the mid-flight provisional (76/168/419), which predated the FR3 REST/MCP
 #: repointing, the TR5 PRAGMA-seam edits and this AC5 module; the small deltas
 #: are that re-measurement, not a guess.
+#:
+#: AF-02 IMP3 re-baseline (2026-07-02) updates the exact counters to the
+#: attributed live tree after the same 50e3193 split above. The MCP factory
+#: delta includes the sanctioned MCP twin health/session-scope wiring in
+#: ``mcp/server.py``; the async session type counter reflects the typed injected scope in
+#: ``api/kg_tick.py`` plus pre-existing committed drift. These counters are not
+#: floors or relaxations: tests still require exact live equality and mutation
+#: teeth prove mismatches fail.
 RELATIONAL_BASELINE_R01B = {
     "depends_get_db": 79,
-    "get_db_for_mcp": 171,
-    "async_session": 422,
+    "get_db_for_mcp": 175,
+    "async_session": 425,
 }
 
 _COVERAGE_AGGREGATES = ("relational_imports", "relational_symbols", "classified_call_sites")

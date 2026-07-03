@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from okto_pulse.core.kg.primitives import KGPrimitiveError, _validate_local_edge_pair
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
+from okto_pulse.core.ports.mcp_resources import (
+    FORBIDDEN_COMMON_TERMS,
+    scan_forbidden_text_surfaces,
+)
 
 
 def _agent_doc_surface() -> str:
@@ -25,6 +30,29 @@ def _agent_doc_surface() -> str:
     if res.is_dir():
         parts += [p.read_text(encoding="utf-8") for p in sorted(res.rglob("*.md"))]
     return "\n".join(parts)
+
+
+def _agent_facing_common_surfaces() -> dict[str, str]:
+    from okto_pulse.core.mcp import server as mcp_server
+
+    base = Path(__file__).parents[1] / "src" / "okto_pulse" / "core" / "mcp"
+    surfaces = {
+        "agent_instructions.md": (base / "agent_instructions.md").read_text(encoding="utf-8")
+    }
+    for spec in mcp_server.effective_resource_catalog().specs():
+        if spec.is_common:
+            surfaces[spec.uri] = (spec.description or "") + "\n" + spec.read()
+    surfaces.update(_registered_tool_description_surfaces(mcp_server.mcp))
+    return surfaces
+
+
+def _registered_tool_description_surfaces(mcp) -> dict[str, str]:
+    from okto_pulse.core.mcp.payload_budget import snapshot_tool_descriptions
+
+    return {
+        f"tool:{name}": description
+        for name, description in snapshot_tool_descriptions(mcp).items()
+    }
 
 
 class _FakeResult:
@@ -276,8 +304,13 @@ def test_agent_instructions_contract_matches_current_mcp_surface():
     assert "spec d754d004" not in instructions
     # Core common instructions must stay storage-engine agnostic; concrete
     # operational store names belong to the Community overlay.
-    assert "graph.lbug" not in instructions
-    assert "discovery.lbug" not in instructions
+    surfaces = _agent_facing_common_surfaces()
+    tool_surfaces = {name: value for name, value in surfaces.items() if name.startswith("tool:")}
+    assert len(tool_surfaces) >= 200
+    assert "tool:okto_pulse_kg_add_edge_candidate" in tool_surfaces
+
+    findings = scan_forbidden_text_surfaces(surfaces)
+    assert findings == ()
     assert "okto_pulse_kg_begin_consolidation" in instructions
     assert "okto_pulse_kg_query_natural" in instructions
     assert "okto_pulse_get_analytics" in instructions
@@ -287,6 +320,39 @@ def test_agent_instructions_contract_matches_current_mcp_surface():
     # "interfaces do not own source/target" is still enforced (architecture.py)
     # and still delivered to agents — but via the architecture tool's dynamic
     # docstring (server.py), not the static doc surface this test inspects.
+
+
+def test_registered_mcp_tool_description_forbidden_terms_fail_closed():
+    fake_mcp = SimpleNamespace(
+        _tool_manager=SimpleNamespace(
+            _tools={
+                "clean": SimpleNamespace(description="Fetch canonical graph-store nodes."),
+                "rogue": SimpleNamespace(description="Fetch a LadybugDB node from graph.lbug"),
+            }
+        )
+    )
+    surfaces = _registered_tool_description_surfaces(fake_mcp)
+
+    findings = scan_forbidden_text_surfaces(
+        surfaces,
+        terms=FORBIDDEN_COMMON_TERMS,
+    )
+
+    assert {"surface": "tool:rogue", "term": "ladybug"} in findings
+    assert {"surface": "tool:rogue", "term": ".lbug"} in findings
+    assert all(finding["surface"] != "tool:clean" for finding in findings)
+
+
+def test_agent_facing_scan_ignores_internal_unregistered_text():
+    internal_helper_doc = "Internal helper can mention LadybugDB without exposure."
+
+    findings = scan_forbidden_text_surfaces(
+        {"tool:clean": "Fetch existing canonical graph store nodes."},
+        terms=FORBIDDEN_COMMON_TERMS,
+    )
+
+    assert "LadybugDB" in internal_helper_doc
+    assert findings == ()
 
 
 def test_agent_instructions_do_not_use_bare_mcp_tool_aliases():

@@ -97,11 +97,13 @@ and the MCP listener. Two ports because the SPA fetches go to one
 (`http://localhost:8100`) and the AI tool's MCP HTTP transport hits the other
 (`http://localhost:8101/mcp`).
 
-`build_mcp_asgi_app()` is the helper the community runner calls to construct
-the MCP ASGI app for its second uvicorn server. `mount_mcp(app)` is an
-alternative path that mounts the MCP sub-app onto an existing FastAPI app.
-Either approach hits the same `register_session_factory` / `ContextVar`
-state.
+`build_mcp_asgi_app(trace_sink=None)` is the helper the community runner calls
+to construct the MCP ASGI app for its second uvicorn server. `mount_mcp(app,
+trace_sink=None)` is an alternative path that mounts the MCP sub-app onto an
+existing FastAPI app. Either approach hits the same `register_session_factory`
+/ `ContextVar` state. MCP replay tracing is enabled only when an edition injects
+an `McpTraceSink`; core does not read `MCP_TRACE_*` / `KG_BASE_DIR`, create
+directories, or write JSONL files directly.
 
 ### MCP host binding
 

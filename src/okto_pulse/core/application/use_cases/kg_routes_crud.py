@@ -57,7 +57,7 @@ class ListAuditUseCase:
     async def execute(
         self, command: ListAuditCommand, *, actor: ActorContext, uow: Any
     ) -> ListAuditResult:
-        from okto_pulse.core.kg.dashboard_readers import list_consolidation_audit
+        from okto_pulse.core.services.application_kg import list_consolidation_audit
 
         entries = await list_consolidation_audit(
             session_of(uow), command.board_id, limit=command.limit
@@ -104,12 +104,15 @@ class GlobalSearchUseCase:
     async def execute(
         self, command: GlobalSearchCommand, *, actor: ActorContext, uow: Any
     ) -> GlobalSearchResult:
-        from okto_pulse.core.kg.dashboard_readers import list_all_board_ids
-        from okto_pulse.core.kg.kg_service import get_kg_service, normalize_graph_layer
+        from okto_pulse.core.services.application_kg import (
+            list_all_board_ids,
+            normalize_graph_layer,
+            query_global,
+        )
 
         user_board_ids = await list_all_board_ids(session_of(uow))
         layer = normalize_graph_layer(command.graph_layer)
-        results = get_kg_service().query_global(
+        results = query_global(
             command.q,
             user_boards=user_board_ids,
             top_k=command.limit,
@@ -145,7 +148,7 @@ class StartHistoricalUseCase:
     async def execute(
         self, command: StartHistoricalCommand, *, actor: ActorContext, uow: Any
     ) -> StartHistoricalResult:
-        from okto_pulse.core.kg.governance import start_historical_consolidation
+        from okto_pulse.core.services.application_kg import start_historical_consolidation
 
         payload = await start_historical_consolidation(
             session_of(uow), command.board_id
@@ -178,7 +181,7 @@ class CancelHistoricalUseCase:
     async def execute(
         self, command: CancelHistoricalCommand, *, actor: ActorContext, uow: Any
     ) -> CancelHistoricalResult:
-        from okto_pulse.core.kg.governance import cancel_historical
+        from okto_pulse.core.services.application_kg import cancel_historical
 
         payload = await cancel_historical(session_of(uow), command.board_id)
         return CancelHistoricalResult(payload)
@@ -210,7 +213,7 @@ class GetHistoricalProgressUseCase:
     async def execute(
         self, command: GetHistoricalProgressCommand, *, actor: ActorContext, uow: Any
     ) -> GetHistoricalProgressResult:
-        from okto_pulse.core.kg.governance import get_historical_progress
+        from okto_pulse.core.services.application_kg import get_historical_progress
 
         progress = await get_historical_progress(session_of(uow), command.board_id)
         return GetHistoricalProgressResult(progress)
@@ -242,7 +245,7 @@ class DeleteBoardKgUseCase:
     async def execute(
         self, command: DeleteBoardKgCommand, *, actor: ActorContext, uow: Any
     ) -> DeleteBoardKgResult:
-        from okto_pulse.core.kg.governance import right_to_erasure
+        from okto_pulse.core.services.application_kg import right_to_erasure
 
         counts = await right_to_erasure(session_of(uow), command.board_id)
         return DeleteBoardKgResult(counts)
@@ -281,7 +284,7 @@ class ListPendingUseCase:
     async def execute(
         self, command: ListPendingCommand, *, actor: ActorContext, uow: Any
     ) -> ListPendingResult:
-        from okto_pulse.core.kg.dashboard_readers import list_pending_entries
+        from okto_pulse.core.services.application_kg import list_pending_entries
 
         entries = await list_pending_entries(session_of(uow), command.board_id)
         return ListPendingResult(entries)
@@ -314,7 +317,7 @@ class ListPendingTreeUseCase:
     async def execute(
         self, command: ListPendingTreeCommand, *, actor: ActorContext, uow: Any
     ) -> ListPendingTreeResult:
-        from okto_pulse.core.kg.dashboard_readers import build_pending_tree
+        from okto_pulse.core.services.application_kg import build_pending_tree
 
         payload = await build_pending_tree(
             session_of(uow), command.board_id, depth=command.depth
@@ -354,7 +357,7 @@ class RetryPendingEntryUseCase:
     async def execute(
         self, command: RetryPendingEntryCommand, *, actor: ActorContext, uow: Any
     ) -> RetryPendingEntryResult:
-        from okto_pulse.core.kg.governance import retry_pending_entry
+        from okto_pulse.core.services.application_kg import retry_pending_entry
 
         payload = await retry_pending_entry(
             session_of(uow),
@@ -407,7 +410,7 @@ class BoostNodeUseCase:
     async def execute(
         self, command: BoostNodeCommand, *, actor: ActorContext, uow: Any
     ) -> BoostNodeResult:
-        from okto_pulse.core.kg.governance import boost_node
+        from okto_pulse.core.services.application_kg import boost_node
 
         payload = await boost_node(
             session_of(uow), command.board_id, command.node_id

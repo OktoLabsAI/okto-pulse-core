@@ -156,6 +156,32 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
             transitive_consumer=None,
             expected_source_import_roots=(),
         ),
+        LedgerEntry(
+            token="aiofiles",
+            classification="removed",
+            kind="dependency",
+            owner_wave="AF-05",
+            current_owner="none (orphaned core dependency)",
+            reason=(
+                "Async filesystem helper declared by the core runtime manifest "
+                "without any import consumer in src/okto_pulse/core or "
+                "src/okto_pulse/community. It is not required by the common core "
+                "package and is not moved to Community without a direct adapter use."
+            ),
+            removal_criterion=(
+                "Removed now: aiofiles must NOT appear as a core direct "
+                "dependency (pyproject / uv.lock okto-pulse-core package), wheel "
+                "Requires-Dist entry, or runtime import under src/okto_pulse/core."
+            ),
+            validation_oracle=(
+                "dependency_conformance auditor: removed aiofiles is absent from "
+                "manifest+lock+source and explicit wheel metadata, and synthetic "
+                "reintroduction fails closed on all four surfaces."
+            ),
+            direct_dep_no_import=True,
+            transitive_consumer=None,
+            expected_source_import_roots=(),
+        ),
         # --- temporary exceptions: direct dep, NO import, pinned transitively ---
         LedgerEntry(
             token="aiosqlite",

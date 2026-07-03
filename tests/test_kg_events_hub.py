@@ -20,6 +20,7 @@ from okto_pulse.core.api.kg_events_hub import (
     SUBSCRIBER_QUEUE_MAXSIZE,
     KgEventsHub,
     _BoardStream,
+    configure_kg_events_hub_session_factory,
     get_kg_events_hub,
     shutdown_kg_events_hub,
 )
@@ -59,7 +60,10 @@ async def _drain_until(queue: asyncio.Queue, predicate, timeout: float = 6.0) ->
 
 
 async def test_fanout_outbox_event_to_multiple_subscribers():
-    hub = KgEventsHub(poll_interval=0.1)
+    hub = KgEventsHub(
+        poll_interval=0.1,
+        session_scope_factory=get_session_factory(),
+    )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub_a = hub.subscribe(board_id)
     sub_b = hub.subscribe(board_id)
@@ -76,7 +80,10 @@ async def test_fanout_outbox_event_to_multiple_subscribers():
 
 
 async def test_progress_snapshot_broadcast_on_first_cycle():
-    hub = KgEventsHub(poll_interval=0.1)
+    hub = KgEventsHub(
+        poll_interval=0.1,
+        session_scope_factory=get_session_factory(),
+    )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub = hub.subscribe(board_id)
     try:
@@ -90,7 +97,10 @@ async def test_progress_snapshot_broadcast_on_first_cycle():
 
 
 async def test_poller_stops_when_last_subscriber_leaves():
-    hub = KgEventsHub(poll_interval=0.1)
+    hub = KgEventsHub(
+        poll_interval=0.1,
+        session_scope_factory=get_session_factory(),
+    )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub = hub.subscribe(board_id)
     stream_task = hub._streams[board_id].task
@@ -117,12 +127,65 @@ async def test_subscriber_queue_is_bounded_and_keeps_newest():
     assert items[0] == "chunk-100"
 
 
+async def test_hub_poller_uses_injected_session_scope(monkeypatch):
+    from okto_pulse.core.api import kg_events_hub
+    from okto_pulse.core.infra import database as database_module
+
+    class _SessionScope:
+        def __init__(self) -> None:
+            self.entered = False
+            self.exited = False
+
+        async def __aenter__(self):
+            self.entered = True
+            return object()
+
+        async def __aexit__(self, *_args) -> None:
+            self.exited = True
+
+    scopes: list[_SessionScope] = []
+
+    def _factory() -> _SessionScope:
+        scope = _SessionScope()
+        scopes.append(scope)
+        return scope
+
+    async def _fake_rows(_session, _board_id, _after, limit=50):
+        return []
+
+    async def _fake_snapshot(_session, _board_id):
+        return {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
+
+    monkeypatch.setattr(kg_events_hub, "query_outbox_rows", _fake_rows)
+    monkeypatch.setattr(kg_events_hub, "query_queue_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        database_module,
+        "get_session_factory",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("concrete get_session_factory must not be called")
+        ),
+    )
+
+    hub = KgEventsHub(poll_interval=0.01, session_scope_factory=_factory)
+    sub = hub.subscribe("board-injected")
+    try:
+        await _drain_until(sub.queue, lambda c: "kg.queue.progress" in c, timeout=2.0)
+    finally:
+        hub.unsubscribe(sub)
+        await hub.aclose()
+
+    assert scopes
+    assert scopes[0].entered is True
+    assert scopes[0].exited is True
+
+
 async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
     """O cenário de produção: cliente SSE desconecta → task da request é
     hard-cancelada. O contrato do fix: nenhuma conexão do pool fica
     checked-out e o hub remove o assinante."""
     from okto_pulse.core.api.kg_routes import stream_kg_events
 
+    configure_kg_events_hub_session_factory(get_session_factory())
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     response = await stream_kg_events(board_id, since=None)
     hub = get_kg_events_hub()
@@ -158,6 +221,7 @@ async def test_sse_route_replays_backlog_since_cursor():
     """Reconexão com `since` re-entrega eventos perdidos via cancel_safe_session."""
     from okto_pulse.core.api.kg_routes import stream_kg_events
 
+    configure_kg_events_hub_session_factory(get_session_factory())
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     event_id = await _insert_outbox_event(board_id)
     # O evento foi inserido com created_at ~1s no futuro; `since` bem no

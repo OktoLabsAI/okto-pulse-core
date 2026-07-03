@@ -30,30 +30,22 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# ENVIRONMENT SETUP — must happen BEFORE any okto_pulse import
+# ENVIRONMENT SETUP — real paths, applied per-module via fixture below.
+#
+# NEVER mutate os.environ at module level here: this module is imported during
+# pytest COLLECTION of any broad run, and a bare os.environ assignment would
+# repoint DATABASE_URL at the user's real ~/.okto-pulse database for the whole
+# test session (any later create_database(CoreSettings().database_url) call
+# would then hijack the process-global engine and leak test writes into real
+# data). The env swap now lives in `_real_env`, which only runs when a test in
+# THIS module actually executes (explicit `-m real_kg` invocation) and undoes
+# itself afterwards.
 # ---------------------------------------------------------------------------
 
 _REAL_DATA_DIR = Path(os.path.expanduser("~/.okto-pulse"))
 _REAL_BOARD_ID = "72474fc3-0162-4bd9-8444-f7b8ffcf1bcf"
 _REAL_SQLITE_DB = _REAL_DATA_DIR / "data" / "pulse.db"
 _REAL_KUZU_GRAPH = _REAL_DATA_DIR / "boards" / _REAL_BOARD_ID / "graph.kuzu"
-
-# Set env vars BEFORE importing any okto_pulse module
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_REAL_SQLITE_DB}"
-os.environ["KG_BASE_DIR"] = str(_REAL_DATA_DIR)
-os.environ["KG_EMBEDDING_MODE"] = "sentence-transformers"
-os.environ["KG_CLEANUP_ENABLED"] = "false"
-os.environ["KG_CLEANUP_INTERVAL_SECONDS"] = "3600"
-
-# ---------------------------------------------------------------------------
-# Verbose logging setup — show ALL [KG] debug messages
-# ---------------------------------------------------------------------------
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s %(name)s %(levelname)s [KG-TEST] %(message)s",
-    force=True,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +77,31 @@ skip_no_real_kuzu = pytest.mark.skipif(
 
 real_kg = pytest.mark.real_kg
 real_timeout = pytest.mark.timeout(60)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _real_env():
+    """Point the environment at the real ~/.okto-pulse data — execution only.
+
+    Module-scoped so the swap happens once per explicit run of this file, and
+    ONLY when a test here actually executes (skipped/deselected tests never
+    trigger it). MonkeyPatch.undo() restores the suite's temp-database env.
+    """
+    mp = pytest.MonkeyPatch()
+    mp.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{_REAL_SQLITE_DB}")
+    mp.setenv("KG_BASE_DIR", str(_REAL_DATA_DIR))
+    mp.setenv("KG_EMBEDDING_MODE", "sentence-transformers")
+    mp.setenv("KG_CLEANUP_ENABLED", "false")
+    mp.setenv("KG_CLEANUP_INTERVAL_SECONDS", "3600")
+    # Verbose logging for the explicit real-KG run — also execution-only so a
+    # broad run's logging config is never force-reset during collection.
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(name)s %(levelname)s [KG-TEST] %(message)s",
+        force=True,
+    )
+    yield
+    mp.undo()
 
 
 # ---------------------------------------------------------------------------

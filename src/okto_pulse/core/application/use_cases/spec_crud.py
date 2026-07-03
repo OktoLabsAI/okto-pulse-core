@@ -20,7 +20,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
-from okto_pulse.core.models.schemas import SpecUpdate
+from okto_pulse.core.services.application_schemas import SpecUpdate
 from okto_pulse.core.services import BoardService, SpecService
 
 
@@ -347,7 +347,7 @@ class UpdateSpecUseCase:
     async def execute(
         self, command: UpdateSpecCommand, *, actor: ActorContext, uow: Any
     ) -> UpdateSpecResult:
-        from okto_pulse.core.infra.permissions import check_permission
+        from okto_pulse.core.services.permission_policy import check_permission
         from okto_pulse.core.services.main import resolve_user_permissions
 
         session = session_of(uow)
@@ -600,7 +600,7 @@ class LinkTaskToScenarioUseCase:
     async def execute(
         self, command: LinkTaskToScenarioCommand, *, actor: ActorContext, uow: Any
     ) -> LinkTaskToScenarioResult:
-        from okto_pulse.core.models.schemas import CardUpdate
+        from okto_pulse.core.services.application_schemas import CardUpdate
         from okto_pulse.core.services import CardService
 
         session = session_of(uow)
@@ -675,7 +675,7 @@ class UnlinkTaskFromScenarioUseCase:
     async def execute(
         self, command: UnlinkTaskFromScenarioCommand, *, actor: ActorContext, uow: Any
     ) -> UnlinkTaskFromScenarioResult:
-        from okto_pulse.core.models.schemas import CardUpdate
+        from okto_pulse.core.services.application_schemas import CardUpdate
         from okto_pulse.core.services import CardService
 
         session = session_of(uow)
@@ -787,7 +787,7 @@ async def _check_requirement_link_permissions(
     """Resolve the actor's permission set and enforce ``permissions`` in order,
     raising ``PermissionDeniedError`` on the first failure — the transport-free
     equivalent of the legacy ``_require_permissions`` guard."""
-    from okto_pulse.core.infra.permissions import check_permission
+    from okto_pulse.core.services.permission_policy import check_permission
     from okto_pulse.core.services.main import resolve_user_permissions
 
     permission_set = await resolve_user_permissions(session, actor_id, board_id)

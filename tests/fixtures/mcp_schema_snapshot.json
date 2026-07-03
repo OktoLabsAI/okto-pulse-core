@@ -1,5 +1,5 @@
 {
-  "version": "0.2.5",
+  "version": "0.3.0",
   "tools": {
     "okto_pulse_get_card": {
       "title": "Get card details.",
@@ -301,6 +301,19 @@
           "default": null,
           "description": "IDs dos cards de teste vinculados a este bug (apenas bug cards).",
           "title": "Linked Test Task Ids"
+        },
+        "skip_task_requirement_link_gate": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bypass humano do gate que exige vinculo direto do task card a FR/TR/BR/IR/OR. Agentes MCP nao podem alterar este campo.",
+          "title": "Skip Task Requirement Link Gate"
         }
       },
       "required": []

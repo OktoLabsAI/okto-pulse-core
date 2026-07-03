@@ -29,7 +29,6 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 from okto_pulse.core.kg.board_source_store import (
     _decision_id,
     _decision_sources_from_spec,
@@ -40,6 +39,12 @@ from okto_pulse.core.kg.board_rebuild_adapter import (
 from okto_pulse.core.kg.rebuild_deterministic import (
     DETERMINISTIC_REBUILD_ARTIFACT_TYPES,
 )
+
+_board_source_reader = pytest.importorskip(
+    "okto_pulse.community.adapters.board_source_reader",
+    reason="AF-04 Community integration test requires the Community board source reader.",
+)
+BoardSourceStore = _board_source_reader.BoardSourceStore
 
 
 def _make_spec_db(tmp_path: Path, decisions_json: list[dict]) -> Path:

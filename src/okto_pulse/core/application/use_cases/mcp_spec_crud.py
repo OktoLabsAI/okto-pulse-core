@@ -365,7 +365,7 @@ class McpAddBusinessRuleUseCase:
     async def execute(
         self, command: McpAddBusinessRuleCommand, *, actor: ActorContext, uow: Any
     ) -> McpAddBusinessRuleResult:
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             resolve_linked_requirements_to_ids,
         )
@@ -469,7 +469,7 @@ class McpUpdateBusinessRuleUseCase:
     async def execute(
         self, command: McpUpdateBusinessRuleCommand, *, actor: ActorContext, uow: Any
     ) -> McpUpdateBusinessRuleResult:
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             resolve_linked_requirements_to_ids,
         )
@@ -568,7 +568,7 @@ class McpRemoveSpecEntityUseCase:
     async def execute(
         self, command: McpRemoveSpecEntityCommand, *, actor: ActorContext, uow: Any
     ) -> McpRemoveSpecEntityResult:
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.traceability import spec_coverage_summary
 
         session = session_of(uow)
@@ -750,7 +750,7 @@ class McpAddApiContractUseCase:
     ) -> McpAddApiContractResult:
         from pydantic import ValidationError
 
-        from okto_pulse.core.models.schemas import ApiContract, SpecUpdate
+        from okto_pulse.core.services.application_schemas import ApiContract, SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
@@ -904,7 +904,7 @@ class McpUpdateApiContractUseCase:
     ) -> McpUpdateApiContractResult:
         from pydantic import ValidationError
 
-        from okto_pulse.core.models.schemas import ApiContract, SpecUpdate
+        from okto_pulse.core.services.application_schemas import ApiContract, SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
@@ -1088,7 +1088,7 @@ class McpAddDecisionUseCase:
     async def execute(
         self, command: McpAddDecisionCommand, *, actor: ActorContext, uow: Any
     ) -> McpAddDecisionResult:
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
@@ -1210,7 +1210,7 @@ class McpUpdateDecisionUseCase:
     async def execute(
         self, command: McpUpdateDecisionCommand, *, actor: ActorContext, uow: Any
     ) -> McpUpdateDecisionResult:
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
@@ -1347,7 +1347,7 @@ class McpAddIntegrationRequirementUseCase:
     async def execute(
         self, command: McpAddIntegrationRequirementCommand, *, actor: ActorContext, uow: Any
     ) -> McpAddIntegrationRequirementResult:
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
@@ -1523,7 +1523,7 @@ class McpAddObservabilityRequirementUseCase:
     async def execute(
         self, command: McpAddObservabilityRequirementCommand, *, actor: ActorContext, uow: Any
     ) -> McpAddObservabilityRequirementResult:
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
@@ -1693,7 +1693,7 @@ class McpAddTestScenarioUseCase:
     async def execute(
         self, command: McpAddTestScenarioCommand, *, actor: ActorContext, uow: Any
     ) -> McpAddTestScenarioResult:
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
             available_structured_ids,
             resolve_linked_criteria_to_ids,
@@ -2003,7 +2003,7 @@ class McpMigrateSpecDecisionsUseCase:
         import re
         import uuid as _uuid
 
-        from okto_pulse.core.models.schemas import SpecUpdate
+        from okto_pulse.core.services.application_schemas import SpecUpdate
 
         session = session_of(uow)
         service = SpecService(session)

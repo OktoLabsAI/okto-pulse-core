@@ -50,6 +50,13 @@ ACTOR = "local-user"
 _MIGRATED_ENDPOINTS = ("boost_node",)
 
 
+@pytest.fixture(autouse=True)
+def _require_real_community_graph(_kg_registry_test_fakes):
+    from kg_registry_testing import configure_real_graph_test_kg_registry
+
+    configure_real_graph_test_kg_registry()
+
+
 @pytest.fixture
 def client():
     app = FastAPI()
