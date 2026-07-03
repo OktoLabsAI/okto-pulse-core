@@ -11,9 +11,9 @@ Scenarios covered here (core-target):
                 same precedence + source tagging.
   ts_2411ba5b — the credential-usage AST gate blocks NEW direct uses of the raw
                 credential symbols outside the allowlisted shim/definition.
-  ts_3ce862a7 — Agent contracts are intact: AgentResponse reveals api_key (not
-                api_key_hash), the Agent model keeps api_key + api_key_hash,
-                hash_api_key is unchanged SHA-256.
+  ts_3ce862a7 — Agent contracts are intact: AgentResponse is secret-free,
+                AgentRevealResponse reveals once, the Agent model keeps api_key
+                + api_key_hash, hash_api_key is unchanged SHA-256.
   ts_178da21e — the R08-A diff introduces NO SaaS redesign (no CredentialStore /
                 JWT / realm / scope / OAuth / password symbols) and removes
                 nothing from the Agent credential contract.
@@ -208,21 +208,22 @@ def test_ts_2411ba5b_new_direct_use_is_blocked(tmp_path):
 
 
 # ===========================================================================
-# ts_3ce862a7 — Agent / AgentResponse contracts intact.
+# ts_3ce862a7 — Agent / AgentResponse credential contracts intact.
 # ===========================================================================
 def test_ts_3ce862a7_agent_contracts_unchanged():
-    from okto_pulse.core.models.schemas import AgentResponse
+    from okto_pulse.core.models.schemas import AgentResponse, AgentRevealResponse
 
     fields = set(AgentResponse.model_fields)
-    assert "api_key" in fields  # global AgentResponse still reveals the key
+    assert "api_key" not in fields  # list/get responses never reveal the key
     assert "is_active" in fields
     assert "last_used_at" in fields
     assert "api_key_hash" not in fields  # response never leaks the stored hash
+    assert "reveal_once_secret" in AgentRevealResponse.model_fields
 
     from okto_pulse.core.models.db import Agent
 
     cols = {c.name for c in Agent.__table__.columns}
-    assert {"api_key", "api_key_hash"} <= cols  # neither column removed
+    assert {"api_key", "api_key_hash"} <= cols  # transitional columns stay
 
     from okto_pulse.core.services.main import AgentService
 

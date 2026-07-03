@@ -41,6 +41,7 @@ from okto_pulse.core.models import (
     AgentBoardOverridesUpdate,
     AgentBoardResponse,
     AgentCreate,
+    AgentRevealResponse,
     AgentResponse,
     AgentSummary,
     AgentUpdate,
@@ -55,21 +56,22 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
-@router.post("", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=AgentRevealResponse, status_code=status.HTTP_201_CREATED)
 async def create_agent(
     data: AgentCreate,
     user_id: str = Depends(require_user),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    """Create a new global agent (not tied to any board)."""
+    """Create a new global agent and reveal its credential once."""
     result = await CreateAgentUseCase().execute(
         CreateAgentCommand(data),
         actor=RESTAdapterContract.actor(user_id),
         uow=uow,
     )
-    response = AgentResponse.model_validate(result.agent)
-    response.api_key = result.api_key
-    return response
+    return AgentRevealResponse(
+        agent=AgentResponse.model_validate(result.agent),
+        reveal_once_secret=result.reveal_once_secret,
+    )
 
 
 @router.get("", response_model=list[AgentResponse])
@@ -77,7 +79,7 @@ async def list_my_agents(
     user_id: str = Depends(require_user),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    """List all agents owned by the current user (with api_key)."""
+    """List all agents owned by the current user without credentials."""
     result = await ListAgentsForUserUseCase().execute(
         ListAgentsForUserCommand(),
         actor=RESTAdapterContract.actor(user_id),
@@ -151,13 +153,13 @@ async def update_agent(
     return result.agent
 
 
-@router.post("/{agent_id}/regenerate-key", response_model=dict)
+@router.post("/{agent_id}/regenerate-key", response_model=AgentRevealResponse)
 async def regenerate_agent_key(
     agent_id: str,
     user_id: str = Depends(require_user),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
-    """Regenerate an agent's API key (owner only)."""
+    """Regenerate an agent's API key and reveal the new credential once."""
     try:
         result = await RegenerateAgentKeyUseCase().execute(
             RegenerateAgentKeyCommand(agent_id),
@@ -167,7 +169,11 @@ async def regenerate_agent_key(
     except EntityNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
 
-    return {"message": "API key regenerated", "api_key": result.api_key}
+    return AgentRevealResponse(
+        agent=AgentResponse.model_validate(result.agent),
+        reveal_once_secret=result.reveal_once_secret,
+        message="API key regenerated",
+    )
 
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)

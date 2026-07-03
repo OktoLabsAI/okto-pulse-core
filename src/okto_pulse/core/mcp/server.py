@@ -1,6 +1,7 @@
 """MCP Server for Okto Pulse Core - enables AI agents to interact with the board."""
 
 import base64
+import binascii
 import functools
 import inspect
 import json
@@ -18,11 +19,11 @@ from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from okto_pulse.core.application.scope import ActorScope
-from okto_pulse.core.application.use_cases import ActorContext
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value, parse_options_json
 from okto_pulse.core.mcp.trace_middleware import install_trace_sink as _install_trace
+from okto_pulse.core.ports.content_ingestion import ContentIngestionError
 from okto_pulse.core.ports.mcp_trace import McpTraceSink
 from okto_pulse.core.models.db import Board
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
@@ -1129,119 +1130,75 @@ async def _mcp_architecture_for_parent(
     return [_dump_model(repo.to_response(design)) for design in designs]
 
 
-# Maximum bytes loadable via file_path/file_url (16 MB). Prevents runaway memory on large files.
+# Maximum bytes accepted by content ingestion (16 MB).
 _MAX_CONTENT_BYTES = 16 * 1024 * 1024
 
 
 async def _resolve_text_content(
     *,
     content: str,
-    file_path: str | None,
-    file_url: str | None,
+    content_reference: str | None,
 ) -> tuple[str | None, str | None]:
-    """Resolve text content from inline string, local file path, or URL.
-
-    Exactly one source must be provided. When file_path/file_url is used,
-    the MCP server reads the content server-side — the bytes never cross
-    the LLM context, saving tokens.
-
-    Returns:
-        (resolved_content, error) — exactly one is non-None.
-    """
-    provided = [bool(content), bool(file_path), bool(file_url)]
+    """Resolve text content from inline payload or an abstract runtime reference."""
+    provided = [bool(content), bool(content_reference)]
     if sum(provided) == 0:
-        return None, "One of 'content', 'file_path', or 'file_url' must be provided"
+        return None, "One of 'content' or 'content_reference' must be provided"
     if sum(provided) > 1:
-        return None, "Only one of 'content', 'file_path', or 'file_url' may be provided"
+        return None, "Only one of 'content' or 'content_reference' may be provided"
 
     if content:
-        return content.replace("\\n", "\n"), None
+        normalized = content.replace("\\n", "\n")
+        if len(normalized.encode("utf-8")) > _MAX_CONTENT_BYTES:
+            return None, f"content exceeds {_MAX_CONTENT_BYTES} bytes"
+        return normalized, None
 
-    if file_path:
-        try:
-            p = Path(file_path).expanduser().resolve(strict=True)
-        except (OSError, RuntimeError) as e:
-            return None, f"file_path could not be resolved: {e}"
-        if not p.is_file():
-            return None, f"file_path is not a regular file: {p}"
-        try:
-            size = p.stat().st_size
-            if size > _MAX_CONTENT_BYTES:
-                return None, f"file_path exceeds {_MAX_CONTENT_BYTES} bytes ({size})"
-            return p.read_text(encoding="utf-8"), None
-        except (OSError, UnicodeDecodeError) as e:
-            return None, f"file_path could not be read as UTF-8 text: {e}"
+    from okto_pulse.core.runtime_registry import resolve_content_ingestion_resolver
 
-    # file_url
+    resolver = resolve_content_ingestion_resolver()
+    if resolver is None:
+        return None, "content_reference requires a registered content ingestion resolver"
     try:
-        import httpx
-
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-            resp = await client.get(file_url)
-            resp.raise_for_status()
-            raw = resp.content
-            if len(raw) > _MAX_CONTENT_BYTES:
-                return None, f"file_url exceeds {_MAX_CONTENT_BYTES} bytes ({len(raw)})"
-            try:
-                return raw.decode("utf-8"), None
-            except UnicodeDecodeError as e:
-                return None, f"file_url response is not valid UTF-8 text: {e}"
-    except Exception as e:
-        return None, f"file_url fetch failed: {e}"
+        resolved = await resolver.resolve_text(content_reference, max_bytes=_MAX_CONTENT_BYTES)
+        return resolved.text, None
+    except ContentIngestionError as e:
+        return None, f"{e.code}: {e.message}"
+    except Exception:
+        return None, "content_reference resolution failed"
 
 
 async def _resolve_binary_content(
     *,
     content_base64: str,
-    file_path: str | None,
-    file_url: str | None,
+    content_reference: str | None,
 ) -> tuple[bytes | None, str | None]:
-    """Resolve binary content from base64 string, local file path, or URL.
-
-    Mirrors _resolve_text_content but returns raw bytes for binary uploads.
-    """
-    import base64
-
-    provided = [bool(content_base64), bool(file_path), bool(file_url)]
+    """Resolve binary content from base64 payload or an abstract runtime reference."""
+    provided = [bool(content_base64), bool(content_reference)]
     if sum(provided) == 0:
-        return None, "One of 'content_base64', 'file_path', or 'file_url' must be provided"
+        return None, "One of 'content_base64' or 'content_reference' must be provided"
     if sum(provided) > 1:
-        return None, "Only one of 'content_base64', 'file_path', or 'file_url' may be provided"
+        return None, "Only one of 'content_base64' or 'content_reference' may be provided"
 
     if content_base64:
         try:
-            return base64.b64decode(content_base64), None
-        except Exception as e:
+            decoded = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as e:
             return None, f"Invalid base64 content: {e}"
+        if len(decoded) > _MAX_CONTENT_BYTES:
+            return None, f"content_base64 exceeds {_MAX_CONTENT_BYTES} bytes ({len(decoded)})"
+        return decoded, None
 
-    if file_path:
-        try:
-            p = Path(file_path).expanduser().resolve(strict=True)
-        except (OSError, RuntimeError) as e:
-            return None, f"file_path could not be resolved: {e}"
-        if not p.is_file():
-            return None, f"file_path is not a regular file: {p}"
-        try:
-            size = p.stat().st_size
-            if size > _MAX_CONTENT_BYTES:
-                return None, f"file_path exceeds {_MAX_CONTENT_BYTES} bytes ({size})"
-            return p.read_bytes(), None
-        except OSError as e:
-            return None, f"file_path could not be read: {e}"
+    from okto_pulse.core.runtime_registry import resolve_content_ingestion_resolver
 
-    # file_url
+    resolver = resolve_content_ingestion_resolver()
+    if resolver is None:
+        return None, "content_reference requires a registered content ingestion resolver"
     try:
-        import httpx
-
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-            resp = await client.get(file_url)
-            resp.raise_for_status()
-            raw = resp.content
-            if len(raw) > _MAX_CONTENT_BYTES:
-                return None, f"file_url exceeds {_MAX_CONTENT_BYTES} bytes ({len(raw)})"
-            return raw, None
-    except Exception as e:
-        return None, f"file_url fetch failed: {e}"
+        resolved = await resolver.resolve_binary(content_reference, max_bytes=_MAX_CONTENT_BYTES)
+        return resolved.data, None
+    except ContentIngestionError as e:
+        return None, f"{e.code}: {e.message}"
+    except Exception:
+        return None, "content_reference resolution failed"
 
 
 # D-8: helpers canônicos em services/analytics_service.py — re-exports para
@@ -4081,15 +4038,12 @@ async def okto_pulse_upload_attachment(
     filename: str,
     content_base64: str = "",
     mime_type: str = "application/octet-stream",
-    file_path: str | None = None,
-    file_url: str | None = None,
+    content_reference: str | None = None,
 ) -> str:
     """
     Upload a file attachment to a card.
 
-    Provide exactly ONE of: content_base64, file_path, or file_url. Prefer
-    file_path or file_url for binary files — the bytes are loaded server-side
-    and never pass through the LLM context, saving tokens."""
+    Provide exactly ONE of: content_base64 or content_reference."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4099,7 +4053,7 @@ async def okto_pulse_upload_attachment(
         return _perm_error(perm_err)
 
     content, err = await _resolve_binary_content(
-        content_base64=content_base64, file_path=file_path, file_url=file_url
+        content_base64=content_base64, content_reference=content_reference
     )
     if err:
         return json.dumps({"error": err})
@@ -5739,13 +5693,12 @@ async def okto_pulse_add_ideation_knowledge(
     content: str = "",
     description: str = "",
     mime_type: str = "text/markdown",
-    file_path: str | None = None,
-    file_url: str | None = None,
+    content_reference: str | None = None,
 ) -> str:
     """
     Add a knowledge base item to an ideation.
 
-    Provide exactly ONE of content, file_path, or file_url. Ideation KBs are
+    Provide exactly ONE of content or content_reference. Ideation KBs are
     propagated to refinements/specs by default when those artifacts are derived
     or created from the ideation.
     """
@@ -5758,7 +5711,7 @@ async def okto_pulse_add_ideation_knowledge(
         return _perm_error(perm_err)
 
     resolved_content, err = await _resolve_text_content(
-        content=content, file_path=file_path, file_url=file_url
+        content=content, content_reference=content_reference
     )
     if err:
         return json.dumps({"error": err})
@@ -12600,16 +12553,13 @@ async def okto_pulse_add_spec_knowledge(
     content: str = "",
     description: str = "",
     mime_type: str = "text/markdown",
-    file_path: str | None = None,
-    file_url: str | None = None,
+    content_reference: str | None = None,
 ) -> str:
     """
     Add a knowledge base item to a spec. Use this to attach reference documents,
     design docs, API specs, or any context that helps agents understand the spec.
 
-    Provide exactly ONE of: content, file_path, or file_url. Prefer file_path or
-    file_url for large documents — the content is loaded server-side and never
-    passes through the LLM context, saving tokens."""
+    Provide exactly ONE of: content or content_reference."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12619,7 +12569,7 @@ async def okto_pulse_add_spec_knowledge(
         return _perm_error(perm_err)
 
     resolved_content, err = await _resolve_text_content(
-        content=content, file_path=file_path, file_url=file_url
+        content=content, content_reference=content_reference
     )
     if err:
         return json.dumps({"error": err})
@@ -12786,16 +12736,13 @@ async def okto_pulse_add_refinement_knowledge(
     content: str = "",
     description: str = "",
     mime_type: str = "text/markdown",
-    file_path: str | None = None,
-    file_url: str | None = None,
+    content_reference: str | None = None,
 ) -> str:
     """
     Add a knowledge base item to a refinement. Use this to attach reference documents,
     design docs, analysis notes, or any context that helps agents understand the refinement.
 
-    Provide exactly ONE of: content, file_path, or file_url. Prefer file_path or
-    file_url for large documents — the content is loaded server-side and never
-    passes through the LLM context, saving tokens."""
+    Provide exactly ONE of: content or content_reference."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12805,7 +12752,7 @@ async def okto_pulse_add_refinement_knowledge(
         return _perm_error(perm_err)
 
     resolved_content, err = await _resolve_text_content(
-        content=content, file_path=file_path, file_url=file_url
+        content=content, content_reference=content_reference
     )
     if err:
         return json.dumps({"error": err})

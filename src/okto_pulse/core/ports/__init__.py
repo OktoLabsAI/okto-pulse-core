@@ -19,6 +19,12 @@ from .data_bootstrapper import (
     DataBootstrapper,
     require_bootstrapper,
 )
+from .content_ingestion import (
+    ContentIngestionError,
+    ContentIngestionResolver,
+    IngestedBinaryContent,
+    IngestedTextContent,
+)
 from .mcp_auth import (
     MCP_AUTH_FAILURE_REASONS,
     MCP_CREDENTIAL_SOURCES,
@@ -101,7 +107,11 @@ __all__ = [
     "HEALTH_REPORT_FIELDS",
     "PRODUCT_AGGREGATE_FAMILIES",
     "PRODUCT_METRIC_KEYS",
+    "ContentIngestionError",
+    "ContentIngestionResolver",
     "HealthReport",
+    "IngestedBinaryContent",
+    "IngestedTextContent",
     "ProductAggregationPort",
     "ProductState",
     "PublishHealthSource",

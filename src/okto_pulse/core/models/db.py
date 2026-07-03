@@ -1557,6 +1557,8 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     objective: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Legacy NOT NULL column kept for schema compatibility. New writes store a
+    # non-recoverable marker; authentication uses api_key_hash.
     api_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)

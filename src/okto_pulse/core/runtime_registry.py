@@ -55,6 +55,7 @@ from typing import Any
 #: The edition-registered relational UnitOfWorkFactory (None until a composition
 #: root — or the test harness — registers one). NO implicit default.
 _unit_of_work_factory: Any = None
+_content_ingestion_resolver: Any = None
 
 
 def register_unit_of_work_factory(factory: Any) -> None:
@@ -98,6 +99,38 @@ def resolve_unit_of_work_factory(*, preferred: Any = None) -> Any:
             "core no longer constructs a SQLAlchemyUnitOfWorkFactory fallback."
         )
     return factory
+
+
+# ---------------------------------------------------------------------------
+# MCP content ingestion resolver seam (AF12)
+# ---------------------------------------------------------------------------
+
+
+def register_content_ingestion_resolver(resolver: Any) -> None:
+    """Register the edition-owned resolver for MCP content references.
+
+    The core MCP tools may accept direct inline payloads or an abstract
+    ``content_reference``. Concrete local file/URL behavior is edition-owned, so
+    Community registers a resolver here instead of the core importing pathlib or
+    http clients in tool handlers.
+    """
+    global _content_ingestion_resolver
+    _content_ingestion_resolver = resolver
+
+
+def reset_content_ingestion_resolver() -> None:
+    """Drop the registered content-ingestion resolver (test isolation)."""
+    global _content_ingestion_resolver
+    _content_ingestion_resolver = None
+
+
+def resolve_content_ingestion_resolver(*, preferred: Any = None) -> Any | None:
+    """Return the registered content resolver, if any.
+
+    This seam is optional because inline MCP payloads are a complete core path.
+    A missing resolver only fails calls that provide ``content_reference``.
+    """
+    return preferred if preferred is not None else _content_ingestion_resolver
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +217,9 @@ __all__ = [
     "reset_unit_of_work_factory",
     "is_unit_of_work_factory_registered",
     "resolve_unit_of_work_factory",
+    "register_content_ingestion_resolver",
+    "reset_content_ingestion_resolver",
+    "resolve_content_ingestion_resolver",
     "register_sqlite_pragma_installer",
     "reset_sqlite_pragma_installer",
     "is_sqlite_pragma_installer_registered",

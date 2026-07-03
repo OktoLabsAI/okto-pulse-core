@@ -83,13 +83,12 @@ class AgentSelfUpdate(BaseModel):
 
 
 class AgentResponse(BaseSchema):
-    """Schema for agent response (global, always includes api_key)."""
+    """Schema for agent response without recoverable credentials."""
 
     id: str
     name: str
     description: str | None
     objective: str | None = None
-    api_key: str
     is_active: bool
     permissions: list[str] | None
     preset_id: str | None = None
@@ -111,6 +110,14 @@ class AgentSummary(BaseSchema):
     permission_flags: dict[str, Any] | None = None
     created_at: datetime
     last_used_at: datetime | None
+
+
+class AgentRevealResponse(BaseSchema):
+    """Create/rotate response that exposes the raw credential exactly once."""
+
+    agent: AgentResponse
+    reveal_once_secret: str
+    message: str | None = None
 
 
 class AgentBoardResponse(BaseSchema):

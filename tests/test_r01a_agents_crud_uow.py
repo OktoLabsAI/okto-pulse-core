@@ -99,9 +99,11 @@ async def test_create_agent_returns_api_key_and_persists() -> None:
     resp = client.post("/api/v1/agents", json={"name": "fu1-created"})
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["name"] == "fu1-created"
-    assert body["api_key"]
-    assert await _agent_exists(body["id"])
+    assert body["agent"]["name"] == "fu1-created"
+    assert body["reveal_once_secret"]
+    assert "api_key" not in body
+    assert "api_key" not in body["agent"]
+    assert await _agent_exists(body["agent"]["id"])
 
 
 @pytest.mark.asyncio
@@ -111,6 +113,7 @@ async def test_list_my_agents_returns_owned() -> None:
     resp = client.get("/api/v1/agents")
     assert resp.status_code == 200, resp.text
     assert agent_id in {a["id"] for a in resp.json()}
+    assert all("api_key" not in a for a in resp.json())
 
 
 @pytest.mark.asyncio
@@ -147,7 +150,9 @@ async def test_regenerate_key_returns_new_key_and_404_for_non_owner() -> None:
     agent_id = await _seed_agent()
     resp = _client().post(f"/api/v1/agents/{agent_id}/regenerate-key")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["api_key"]
+    assert resp.json()["reveal_once_secret"]
+    assert "api_key" not in resp.json()
+    assert "api_key" not in resp.json()["agent"]
     # non-owner
     other = _client(OTHER).post(f"/api/v1/agents/{agent_id}/regenerate-key")
     assert other.status_code == 404

@@ -15,7 +15,7 @@ Scenario mapping:
        agent without board access -> 403; each fail-closed NON-MUTATING (agent
        entities + permission cache snapshot identical before/after).
   ts_722a1f06 (TS03) — agent lifecycle through the REAL AgentService: create
-       preserves api_key (+ api_key_hash persistence + hash lookup), list shape,
+       returns reveal-once secret, persists marker + api_key_hash, list shape,
        regenerate invalidates the old key.
   ts_8cf72513 (TS04) — a KG/MCP board-ACL path consumes AuthContext/MCPAuthContext
        and applies get_accessible_boards() (no bypass).
@@ -288,7 +288,7 @@ async def test_ts_f7f329c5_no_board_access_403_no_privilege_escalation(_harness_
 # ===========================================================================
 # TS03 (ts_722a1f06) — agent lifecycle via the REAL AgentService.
 # ===========================================================================
-async def test_ts_722a1f06_agent_lifecycle_api_key_preserved(_harness_env):
+async def test_ts_722a1f06_agent_lifecycle_reveal_once_hash_lookup(_harness_env):
     from okto_pulse.core.models.schemas import AgentCreate, AgentResponse
 
     async def scenario():
@@ -299,9 +299,10 @@ async def test_ts_722a1f06_agent_lifecycle_api_key_preserved(_harness_env):
             agent, raw_key = await svc.create_agent("owner", AgentCreate(name="LC"))
             await db.commit()
             agent_id = agent.id
-            # AgentResponse exposes api_key; persisted hash captured BEFORE
+            # AgentResponse is secret-free; persisted hash captured BEFORE
             # regenerate (regenerate mutates the same ORM object's hash).
             resp = AgentResponse.model_validate(agent)
+            marker = agent.api_key
             created_hash = agent.api_key_hash
             found = await svc.get_agent_by_key(raw_key)
             listed = await svc.list_agents_for_user("owner")
@@ -310,14 +311,16 @@ async def test_ts_722a1f06_agent_lifecycle_api_key_preserved(_harness_env):
             await db.commit()
             old_after = await svc.get_agent_by_key(raw_key)
             new_after = await svc.get_agent_by_key(new_key)
-            return (agent_id, raw_key, resp, created_hash, found, listed,
+            return (agent_id, raw_key, resp, marker, created_hash, found, listed,
                     old_after, new_after, new_key)
 
-    agent_id, raw_key, resp, created_hash, found, listed, old_after, new_after, new_key = (
+    agent_id, raw_key, resp, marker, created_hash, found, listed, old_after, new_after, new_key = (
         await scenario()
     )
-    # api_key preserved on response + raw key persisted as hash (pre-regenerate).
-    assert resp.api_key == raw_key
+    # response is secret-free; raw key is persisted only as hash + non-recoverable marker.
+    assert "api_key" not in type(resp).model_fields
+    assert marker.startswith("sha256:")
+    assert marker != raw_key
     assert created_hash == _HASH(raw_key)
     # hash lookup resolves the agent.
     assert found is not None and found.id == agent_id

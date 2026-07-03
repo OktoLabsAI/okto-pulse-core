@@ -28,7 +28,7 @@ Returns:
 
 Add a knowledge base item to an ideation.
 
-Provide exactly ONE of content, file_path, or file_url. Ideation KBs are
+Provide exactly ONE of content or content_reference. Ideation KBs are
 propagated to refinements/specs by default when those artifacts are derived
 or created from the ideation.
 
@@ -37,19 +37,16 @@ or created from the ideation.
 Add a knowledge base item to a refinement. Use this to attach reference documents,
 design docs, analysis notes, or any context that helps agents understand the refinement.
 
-Provide exactly ONE of: content, file_path, or file_url. Prefer file_path or
-file_url for large documents — the content is loaded server-side and never
-passes through the LLM context, saving tokens.
+Provide exactly ONE of: content or content_reference.
 
 Args:
     board_id: Board ID
     refinement_id: Refinement ID
     title: Title of the knowledge base item
     content: Inline text content (use for small snippets)
+    content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
-    file_path: Absolute path to a local UTF-8 text file on the MCP server host
-    file_url: HTTP(S) URL of a UTF-8 text document to fetch
 
 Returns:
     JSON with created knowledge base item
@@ -59,19 +56,16 @@ Returns:
 Add a knowledge base item to a spec. Use this to attach reference documents,
 design docs, API specs, or any context that helps agents understand the spec.
 
-Provide exactly ONE of: content, file_path, or file_url. Prefer file_path or
-file_url for large documents — the content is loaded server-side and never
-passes through the LLM context, saving tokens.
+Provide exactly ONE of: content or content_reference.
 
 Args:
     board_id: Board ID
     spec_id: Spec ID
     title: Title of the knowledge base item
     content: Inline text content (use for small snippets)
+    content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
-    file_path: Absolute path to a local UTF-8 text file on the MCP server host
-    file_url: HTTP(S) URL of a UTF-8 text document to fetch
 
 Returns:
     JSON with created knowledge base item

@@ -38,11 +38,11 @@ class CreateAgentCommand:
 
 
 class CreateAgentResult:
-    __slots__ = ("agent", "api_key")
+    __slots__ = ("agent", "reveal_once_secret")
 
-    def __init__(self, agent: Any, api_key: str) -> None:
+    def __init__(self, agent: Any, reveal_once_secret: str) -> None:
         self.agent = agent
-        self.api_key = api_key
+        self.reveal_once_secret = reveal_once_secret
 
 
 class CreateAgentUseCase:
@@ -52,10 +52,10 @@ class CreateAgentUseCase:
         self, command: CreateAgentCommand, *, actor: ActorContext, uow: Any
     ) -> CreateAgentResult:
         service = AgentService(session_of(uow))
-        agent, api_key = await service.create_agent(actor.actor_id, command.data)
+        agent, reveal_once_secret = await service.create_agent(actor.actor_id, command.data)
         await commit(uow)
         refetched = await service.get_agent(agent.id)
-        return CreateAgentResult(agent=refetched, api_key=api_key)
+        return CreateAgentResult(agent=refetched, reveal_once_secret=reveal_once_secret)
 
 
 # --- list (user) ------------------------------------------------------------
@@ -158,10 +158,11 @@ class RegenerateAgentKeyCommand:
 
 
 class RegenerateAgentKeyResult:
-    __slots__ = ("api_key",)
+    __slots__ = ("agent", "reveal_once_secret")
 
-    def __init__(self, api_key: str) -> None:
-        self.api_key = api_key
+    def __init__(self, agent: Any, reveal_once_secret: str) -> None:
+        self.agent = agent
+        self.reveal_once_secret = reveal_once_secret
 
 
 class RegenerateAgentKeyUseCase:
@@ -174,9 +175,9 @@ class RegenerateAgentKeyUseCase:
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
-        _updated, new_key = await service.regenerate_key(command.agent_id)
+        updated, reveal_once_secret = await service.regenerate_key(command.agent_id)
         await commit(uow)
-        return RegenerateAgentKeyResult(api_key=new_key)
+        return RegenerateAgentKeyResult(agent=updated, reveal_once_secret=reveal_once_secret)
 
 
 # --- delete -----------------------------------------------------------------

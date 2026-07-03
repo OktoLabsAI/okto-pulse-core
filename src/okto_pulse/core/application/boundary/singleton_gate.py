@@ -240,6 +240,21 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "engine via create_database."
         ),
     },
+    "_content_ingestion_resolver": {
+        "file": "okto_pulse/core/runtime_registry.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "content_ingestion_resolver",
+        "expected_adapter": (
+            "Edition MCP content-ingestion resolver (AF12) — core tools accept "
+            "inline payloads or an abstract content_reference, while Community "
+            "owns local file/URL resolution, root confinement, size limits, and "
+            "SSRF policy behind this optional seam."
+        ),
+        "retirement_criterion": (
+            "Remove the module global when content ingestion is supplied through "
+            "RuntimeComposition for every MCP runtime entrypoint."
+        ),
+    },
     "_orchestrator": {
         "file": "okto_pulse/core/infra/schema_lifecycle.py",
         "owner": "okto-pulse-core/runtime",
@@ -312,6 +327,7 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/mcp/server.py::_mcp_session_factory",
         "okto_pulse/core/runtime_registry.py::_unit_of_work_factory",
         "okto_pulse/core/runtime_registry.py::_sqlite_pragma_installer",
+        "okto_pulse/core/runtime_registry.py::_content_ingestion_resolver",
         "okto_pulse/core/mcp/server.py::_effective_resource_catalog",
         "okto_pulse/core/mcp/server.py::_resource_catalog_frozen",
         "okto_pulse/core/mcp/server.py::_RESOURCE_REGISTRY",

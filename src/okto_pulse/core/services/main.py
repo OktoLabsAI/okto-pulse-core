@@ -4204,6 +4204,11 @@ class AgentService:
         """Hash an API key for storage."""
         return hashlib.sha256(key.encode()).hexdigest()
 
+    @staticmethod
+    def credential_marker(key_hash: str) -> str:
+        """Return a non-recoverable value for the legacy NOT NULL api_key column."""
+        return f"sha256:{key_hash[:57]}"
+
     async def create_agent(
         self, user_id: str, data: AgentCreate
     ) -> tuple[Agent, str]:
@@ -4218,7 +4223,8 @@ class AgentService:
 
         from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
 
-        api_key = self.generate_api_key()
+        reveal_once_secret = self.generate_api_key()
+        key_hash = self.hash_api_key(reveal_once_secret)
 
         flags: dict | None = data.permission_flags
         preset_id = data.preset_id
@@ -4233,8 +4239,8 @@ class AgentService:
             name=data.name,
             description=data.description,
             objective=data.objective,
-            api_key=api_key,
-            api_key_hash=self.hash_api_key(api_key),
+            api_key=self.credential_marker(key_hash),
+            api_key_hash=key_hash,
             permissions=data.permissions,
             preset_id=preset_id,
             permission_flags=flags,
@@ -4242,7 +4248,7 @@ class AgentService:
         )
         self.db.add(agent)
         await self.db.flush()
-        return agent, api_key
+        return agent, reveal_once_secret
 
     async def get_agent(self, agent_id: str) -> Agent | None:
         """Get an agent by ID."""
@@ -4388,10 +4394,11 @@ class AgentService:
         if not agent:
             return None, None
 
-        new_key = self.generate_api_key()
-        agent.api_key = new_key
-        agent.api_key_hash = self.hash_api_key(new_key)
-        return agent, new_key
+        reveal_once_secret = self.generate_api_key()
+        key_hash = self.hash_api_key(reveal_once_secret)
+        agent.api_key = self.credential_marker(key_hash)
+        agent.api_key_hash = key_hash
+        return agent, reveal_once_secret
 
     async def delete_agent(self, agent_id: str) -> bool:
         """Delete an agent."""

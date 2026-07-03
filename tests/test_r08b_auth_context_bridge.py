@@ -241,15 +241,15 @@ def test_ts8c088b7d_server_facades_not_removed():
     assert "_permission_cache" in src  # permission cache facade preserved
 
 
-def test_ts8c088b7d_api_key_surface_untouched():
-    # TR1/TR5: R08-B does NOT remove/alter Agent.api_key/api_key_hash or
-    # AgentResponse.api_key.
+def test_ts8c088b7d_api_key_surface_secret_free():
+    # TR1/TR5: R08-B does NOT remove/alter Agent.api_key/api_key_hash, while
+    # AgentResponse stays secret-free.
     from okto_pulse.core.models.db import Agent
     from okto_pulse.core.models.schemas import AgentResponse
 
     agent_cols = {c.name for c in Agent.__table__.columns}
     assert {"api_key", "api_key_hash"} <= agent_cols
-    assert "api_key" in AgentResponse.model_fields
+    assert "api_key" not in AgentResponse.model_fields
 
 
 # ===========================================================================

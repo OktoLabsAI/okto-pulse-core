@@ -1,13 +1,9 @@
 """Storage-bypass anti-regression gate (SaaS Refactor spec R02, FR4 / AC4 ac_067d8d8e).
 
-A pure, delta-aware AST gate over the core HTTP API tree (``src/okto_pulse/core/api``)
-that FAILS when an attachment/resource endpoint reaches the filesystem DIRECTLY
-instead of going through the registered ``StorageProvider`` — i.e. it returns a
-``FileResponse`` (which needs a concrete path), calls the builtin ``open``, uses
-``pathlib.Path`` read/write IO, or calls a ``shutil`` copy/move. After R02 IMP1 the
-core ``download_attachment`` serves bytes through ``StorageProvider``; this gate is
-the TEETH that keep any future code from quietly reintroducing a path bypass (the
-``BR - StorageProvider é único caminho runtime de attachment`` business rule).
+A pure, delta-aware AST gate over the core HTTP API and MCP trees
+(``src/okto_pulse/core/api`` and ``src/okto_pulse/core/mcp``) that FAILS when an
+attachment/resource endpoint or MCP tool reaches concrete files/URLs directly
+instead of going through the registered runtime ports.
 
 Register-before-remove governance mirrors :mod:`core_orm_import_gate`: the
 :data:`STORAGE_BYPASS_ALLOWLIST` is a FROZEN literal capturing the CURRENT set of
@@ -32,6 +28,8 @@ KIND_FILE_RESPONSE = "file_response"
 KIND_OPEN = "open_call"
 KIND_PATHLIB_IO = "pathlib_io"
 KIND_SHUTIL_IO = "shutil_io"
+KIND_MCP_CONTENT_FETCH = "mcp_content_fetch"
+KIND_MCP_CONCRETE_SOURCE_PARAM = "mcp_concrete_source_param"
 
 #: ``pathlib.Path`` read/write IO methods (a ``Path(...).read_bytes()`` style call
 #: is a direct filesystem read/write — the bypass the StorageProvider replaces).
@@ -45,6 +43,26 @@ _SHUTIL_IO_FUNCS = frozenset({"copyfile", "copy", "copy2", "copyfileobj", "move"
 #: the core API has no legitimate filesystem touch-point. A NEW occurrence in any
 #: file is therefore a blocking violation. Shrinks only.
 STORAGE_BYPASS_ALLOWLIST: dict[str, str] = {}
+STORAGE_BYPASS_OCCURRENCE_ALLOWLIST: dict[tuple[str, int, str, str], str] = {
+    (
+        "src/okto_pulse/core/mcp/server.py",
+        167,
+        "read_text",
+        KIND_PATHLIB_IO,
+    ): "MCP bundled prompt load; not user-supplied content ingestion.",
+    (
+        "src/okto_pulse/core/mcp/server.py",
+        199,
+        "read_text",
+        KIND_PATHLIB_IO,
+    ): "MCP bundled resource load; not user-supplied content ingestion.",
+    (
+        "src/okto_pulse/core/mcp/payload_budget.py",
+        168,
+        "read_text",
+        KIND_PATHLIB_IO,
+    ): "Explicit local manifest inspection utility, not runtime attachment/content ingestion.",
+}
 
 
 @dataclass(frozen=True)
@@ -58,6 +76,9 @@ class StorageBypassOccurrence:
 
     def as_dict(self) -> dict:
         return {"file": self.file, "line": self.line, "symbol": self.symbol, "kind": self.kind}
+
+    def key(self) -> tuple[str, int, str, str]:
+        return (self.file, self.line, self.symbol, self.kind)
 
 
 def _alias_map(tree: ast.AST) -> dict[str, str]:
@@ -100,6 +121,18 @@ def _base_name(node: ast.Attribute) -> str | None:
     return cur.id if isinstance(cur, ast.Name) else None
 
 
+def _expr_uses_name(node: ast.AST, name: str) -> bool:
+    return any(isinstance(child, ast.Name) and child.id == name for child in ast.walk(node))
+
+
+def _is_mcp_tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if isinstance(target, ast.Attribute) and target.attr == "tool":
+            return True
+    return False
+
+
 def _scan_module(tree: ast.AST, file_label: str) -> list[StorageBypassOccurrence]:
     """Detect every direct-filesystem touch-point in one core API module."""
     alias = _alias_map(tree)
@@ -109,6 +142,11 @@ def _scan_module(tree: ast.AST, file_label: str) -> list[StorageBypassOccurrence
         found.setdefault((line, symbol), StorageBypassOccurrence(file_label, line, symbol, kind))
 
     for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_mcp_tool(node):
+            for arg in [*node.args.args, *node.args.kwonlyargs]:
+                if arg.arg in {"file_path", "file_url"}:
+                    record(arg.lineno, arg.arg, KIND_MCP_CONCRETE_SOURCE_PARAM)
+
         if not isinstance(node, ast.Call):
             continue
         func = node.func
@@ -151,6 +189,12 @@ def _scan_module(tree: ast.AST, file_label: str) -> list[StorageBypassOccurrence
                     record(node.lineno, f"shutil.{name}", KIND_SHUTIL_IO)
                     continue
 
+            if name == "get" and any(
+                _expr_uses_name(arg, "file_url") for arg in [*node.args, *(kw.value for kw in node.keywords)]
+            ):
+                record(node.lineno, "get(file_url)", KIND_MCP_CONTENT_FETCH)
+                continue
+
     return list(found.values())
 
 
@@ -181,6 +225,11 @@ def default_core_api_path() -> Path:
     return Path(__file__).resolve().parents[2] / "api"
 
 
+def default_core_mcp_path() -> Path:
+    # src/okto_pulse/core/application/boundary/storage_bypass_gate.py -> core/mcp
+    return Path(__file__).resolve().parents[2] / "mcp"
+
+
 def _label(path: Path) -> str:
     """Stable ``src/okto_pulse/core/...`` label — identical for the real tree and a
     mirrored ``tmp/src/okto_pulse/core/...`` fixture tree (so teeth need no real
@@ -192,31 +241,41 @@ def _label(path: Path) -> str:
 
 
 def run_storage_bypass_gate(root: str | Path | None = None) -> StorageBypassGateReport:
-    """Scan every ``*.py`` under ``root`` (default: ``src/okto_pulse/core/api``) for
+    """Scan every ``*.py`` under ``root`` (default: core api + mcp) for
     a direct-filesystem bypass. ``ok`` is True only when every detected occurrence
-    is in a file registered in :data:`STORAGE_BYPASS_ALLOWLIST` (delta-aware: a NEW
-    bypass outside the allowlist makes ``ok`` False, citing file:line:kind).
+    is registered in a file or occurrence allowlist (delta-aware: a NEW bypass
+    outside the allowlist makes ``ok`` False, citing file:line:kind).
     """
-    base = Path(root) if root is not None else default_core_api_path()
+    bases = [Path(root)] if root is not None else [default_core_api_path(), default_core_mcp_path()]
     occurrences: list[StorageBypassOccurrence] = []
-    files = sorted(base.rglob("*.py")) if base.exists() else []
     scanned = 0
-    for path in files:
-        if "__pycache__" in path.parts:
-            continue
-        scanned += 1
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (OSError, SyntaxError):
-            continue
-        occurrences.extend(_scan_module(tree, _label(path)))
+    for base in bases:
+        files = sorted(base.rglob("*.py")) if base.exists() else []
+        for path in files:
+            if "__pycache__" in path.parts:
+                continue
+            scanned += 1
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            except (OSError, SyntaxError):
+                continue
+            occurrences.extend(_scan_module(tree, _label(path)))
 
-    violations = [o for o in occurrences if o.file not in STORAGE_BYPASS_ALLOWLIST]
-    allowlisted_hit = sorted({o.file for o in occurrences if o.file in STORAGE_BYPASS_ALLOWLIST})
+    def _allowlisted(o: StorageBypassOccurrence) -> bool:
+        return o.file in STORAGE_BYPASS_ALLOWLIST or o.key() in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
+
+    violations = [o for o in occurrences if not _allowlisted(o)]
+    allowlisted_hit = sorted(
+        {
+            o.file
+            for o in occurrences
+            if o.file in STORAGE_BYPASS_ALLOWLIST or o.key() in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
+        }
+    )
     return StorageBypassGateReport(
         ok=not violations,
         scanned_files=scanned,
-        guarded_path=str(base),
+        guarded_path=";".join(str(base) for base in bases),
         occurrences=occurrences,
         violations=violations,
         allowlisted_files=allowlisted_hit,
@@ -242,10 +301,14 @@ __all__ = [
     "KIND_OPEN",
     "KIND_PATHLIB_IO",
     "KIND_SHUTIL_IO",
+    "KIND_MCP_CONTENT_FETCH",
+    "KIND_MCP_CONCRETE_SOURCE_PARAM",
     "STORAGE_BYPASS_ALLOWLIST",
+    "STORAGE_BYPASS_OCCURRENCE_ALLOWLIST",
     "StorageBypassOccurrence",
     "StorageBypassGateReport",
     "default_core_api_path",
+    "default_core_mcp_path",
     "run_storage_bypass_gate",
     "storage_bypass_allowlist_only_shrinks",
 ]
