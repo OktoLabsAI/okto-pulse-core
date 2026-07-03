@@ -22,12 +22,13 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from okto_pulse.core.events import bus as _bus_module
 from okto_pulse.core.events.types import DomainEvent, resolve_event_class
 from okto_pulse.core.models.db import DomainEventHandlerExecution, DomainEventRow
+from okto_pulse.core.ports.coordination import ClaimRepository, get_claim_repository
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,14 @@ class EventDispatcher:
     bus module doesn't need to hold a loop-bound singleton at import time.
     """
 
-    def __init__(self, session_factory: async_sessionmaker) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker,
+        *,
+        claim_repository: ClaimRepository | None = None,
+    ) -> None:
         self._session_factory = session_factory
+        self._claim_repository = claim_repository
         self._task: asyncio.Task | None = None
         self._running = False
         self._wake_event: asyncio.Event | None = None
@@ -145,28 +152,13 @@ class EventDispatcher:
     async def _drain_once(self) -> None:
         """Fetch up to DRAIN_BATCH_SIZE ready executions and process each."""
         now = _utcnow()
+        claim_repository = self._claim_repository or get_claim_repository()
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(
-                    DomainEventHandlerExecution.id,
-                    DomainEventHandlerExecution.event_id,
-                )
-                .join(
-                    DomainEventRow,
-                    DomainEventRow.id == DomainEventHandlerExecution.event_id,
-                )
-                .where(DomainEventHandlerExecution.status == "pending")
-                .where(
-                    (DomainEventHandlerExecution.next_attempt_at.is_(None))
-                    | (DomainEventHandlerExecution.next_attempt_at <= now)
-                )
-                .order_by(
-                    DomainEventRow.occurred_at.asc(),
-                    DomainEventRow.id.asc(),
-                )
-                .limit(DRAIN_BATCH_SIZE)
+            pairs = await claim_repository.claim_domain_event_executions(
+                session,
+                limit=DRAIN_BATCH_SIZE,
+                now=now,
             )
-            pairs = result.all()
 
         for execution_id, event_id in pairs:
             if not self._running:

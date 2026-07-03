@@ -48,6 +48,11 @@ from okto_pulse.core.kg.interfaces.rebuild_ingestion import (
     RebuildSourceResolver,
     RebuildStepAdapterFactory,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+    RebuildAuditNamespace,
+)
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
 from okto_pulse.core.kg.interfaces.registry import (
     KGProviderRegistry,
@@ -83,6 +88,9 @@ __all__ = [
     "QueryFilters",
     "RateLimiter",
     "RebuildIngestionPort",
+    "RebuildAuditArtifactStore",
+    "RebuildAuditKey",
+    "RebuildAuditNamespace",
     "RebuildSourceResolver",
     "RebuildStepAdapterFactory",
     "SchemaValidationResult",

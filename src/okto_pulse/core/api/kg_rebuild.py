@@ -588,11 +588,19 @@ async def post_rebuild_run(
     # bug b4c6920c fix: real event_emitter composing publisher + marker
     # so kg.rebuilt is published AND cognitive pending is marked for the
     # new generation (KG-02.7 wiring that was missing).
+    artifact_store = get_kg_registry().rebuild_audit_artifact_store
     audit_recorder = ConfirmationConsumptionAuditRecorder(
-        base_dir=_REBUILD_BASE_DIR
+        base_dir=_REBUILD_BASE_DIR,
+        artifact_store=artifact_store,
     )
-    event_publisher = KGRebuiltEventPublisher(base_dir=_REBUILD_BASE_DIR)
-    cognitive_marker = CognitivePendingMarker(base_dir=_REBUILD_BASE_DIR)
+    event_publisher = KGRebuiltEventPublisher(
+        base_dir=_REBUILD_BASE_DIR,
+        artifact_store=artifact_store,
+    )
+    cognitive_marker = CognitivePendingMarker(
+        base_dir=_REBUILD_BASE_DIR,
+        artifact_store=artifact_store,
+    )
 
     def _source_resolver(event_payload):
         manifest = manifest_store_obj.load(event_payload.get("manifest_ref", ""))
@@ -631,6 +639,7 @@ async def post_rebuild_run(
             board_id=board_id,
             generation_id=generation_id,
         ),
+        artifact_store=artifact_store,
     )
 
     # `KGRebuildService.run()` is synchronous and the rebuild step now waits

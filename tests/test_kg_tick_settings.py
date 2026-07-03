@@ -15,8 +15,26 @@ from __future__ import annotations
 
 import pytest
 
+from coordination_fakes import FakeLeaseProvider, FakeWriteLockPort
+from okto_pulse.core.ports.coordination import (
+    get_lease_provider,
+    register_coordination_providers,
+    reset_coordination_providers_for_tests,
+)
+
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _coordination_ports():
+    reset_coordination_providers_for_tests()
+    register_coordination_providers(
+        lease_provider=FakeLeaseProvider(),
+        write_lock_port=FakeWriteLockPort(),
+    )
+    yield
+    reset_coordination_providers_for_tests()
 
 
 async def test_ts1_get_settings_returns_three_new_defaults():
@@ -291,11 +309,7 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
         TickRunNowResponse,
         run_tick_now,
     )
-    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
     from fastapi import HTTPException
-
-    # Garante lock livre antes do teste.
-    lock = get_async_lock("kg_daily_tick", "global")
 
     payload = TickRunNowRequest(
         board_id="board-does-not-exist-uuid",
@@ -346,11 +360,16 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     assert fake_db.rolled_back is False
     assert len(published) == 1
 
-    # Capture lock to simulate in-flight tick — second call must 409.
-    async with lock:
+    # Capture lease to simulate in-flight tick — second call must 409.
+    lease_provider = get_lease_provider()
+    lease = await lease_provider.try_acquire("kg_daily_tick", ttl_seconds=300)
+    assert lease is not None
+    try:
         with pytest.raises(HTTPException) as exc_info:
             await run_tick_now(payload, user="test-user-2", db=_FakeSession())
         assert exc_info.value.status_code == 409
         detail = exc_info.value.detail
         assert isinstance(detail, dict)
         assert detail.get("error") == "tick_already_running"
+    finally:
+        await lease_provider.release(lease)

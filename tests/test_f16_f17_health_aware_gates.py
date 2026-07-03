@@ -27,6 +27,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from coordination_fakes import FakeLeaseProvider, FakeWriteLockPort
 import okto_pulse.core.api.kg_tick as kg_tick
 import okto_pulse.core.kg.cognitive_closeout_gate as gate_mod
 import okto_pulse.core.mcp.server as server
@@ -60,6 +61,22 @@ from okto_pulse.core.models.db import (
     SpecStatus,
 )
 from okto_pulse.core.services.main import CardService
+from okto_pulse.core.ports.coordination import (
+    get_lease_provider,
+    register_coordination_providers,
+    reset_coordination_providers_for_tests,
+)
+
+
+@pytest.fixture(autouse=True)
+def _coordination_ports():
+    reset_coordination_providers_for_tests()
+    register_coordination_providers(
+        lease_provider=FakeLeaseProvider(),
+        write_lock_port=FakeWriteLockPort(),
+    )
+    yield
+    reset_coordination_providers_for_tests()
 
 
 # --------------------------------------------------------------------------- #
@@ -473,10 +490,14 @@ async def test_ts_58aac88a_lock_contention_wins_over_health(monkeypatch):
     _spy_publish(monkeypatch)
     payload = TickRunNowRequest(board_id="board-degraded", force_full_rebuild=False)
 
-    lock = get_async_lock("kg_daily_tick", "global")
-    async with lock:  # in-flight tick holds the lock
+    lease_provider = get_lease_provider()
+    lease = await lease_provider.try_acquire("kg_daily_tick", ttl_seconds=300)
+    assert lease is not None
+    try:
         with pytest.raises(HTTPException) as exc_info:
             await run_tick_now(payload, user="op", db=_FakeSession())
+    finally:
+        await lease_provider.release(lease)
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail["error"] == "tick_already_running"

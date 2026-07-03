@@ -3,8 +3,8 @@
 Manual endpoint `POST /api/v1/kg/tick/run-now` lets an operator or MCP
 agent schedule an immediate tick without waiting for the periodic cron.
 
-Pattern compartilha o mesmo `get_async_lock("kg_daily_tick", "global")`
-do `_emit_daily_tick` em `core/app.py` — primeiro a chegar ganha; segundo
+Pattern compartilha a mesma `LeaseProvider` do `_emit_daily_tick` — primeiro
+a chegar ganha; segundo
 recebe HTTP 409. Resposta 202 + tick_id só é retornada depois que o evento
 e suas execuções de handler foram gravados e commitados.
 
@@ -28,7 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
-from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
+from okto_pulse.core.ports.coordination import (
+    CoordinationProviderMissing,
+    get_lease_provider,
+)
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 logger = logging.getLogger("okto_pulse.api.kg_tick")
@@ -90,7 +93,7 @@ async def run_tick_now(
     db: AsyncSession = Depends(get_db),
 ) -> TickRunNowResponse:
     """Trigger the KG decay tick manually (idempotent — concurrent calls
-    return 409 until the in-flight tick releases the advisory lock).
+    return 409 until the in-flight tick releases the lease).
 
     Body:
         - ``board_id`` (optional): scope the tick to a single board. When
@@ -102,11 +105,23 @@ async def run_tick_now(
     Returns 202 after the tick event has been durably scheduled.
     Operator monitors progress via KGHealthView snapshot polling (30s).
 
-    Returns 409 when the advisory lock is already held by the cron OR
+    Returns 409 when the tick lease is already held by the cron OR
     another manual trigger.
     """
-    lock = get_async_lock("kg_daily_tick", "global")
-    if lock.locked():
+    try:
+        lease_provider = get_lease_provider()
+    except CoordinationProviderMissing as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": exc.code,
+                "provider": exc.provider_key,
+                "message": "Tick lease provider is not configured",
+            },
+        ) from exc
+
+    lease = await lease_provider.try_acquire("kg_daily_tick", ttl_seconds=300)
+    if lease is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -116,7 +131,7 @@ async def run_tick_now(
         )
 
     # F17 admission gate: refuse a manual tick on a degraded CONCRETE board with
-    # a structured 409 — AFTER the lock check (so tick_already_running keeps
+    # a structured 409 — AFTER the lease check (so tick_already_running keeps
     # priority, TR7) and BEFORE any tick_id is allocated (no doomed tick). The
     # global tick (board_id is None) is not health-gated (FR9).
     refusal = await _refuse_tick_if_degraded(payload.board_id, db)
@@ -143,7 +158,7 @@ async def run_tick_now(
         },
     )
 
-    async with lock:
+    try:
         try:
             await _dispatch_manual_tick(
                 tick_id=tick_id,
@@ -176,6 +191,8 @@ async def run_tick_now(
                     "detail": str(exc),
                 },
             ) from exc
+    finally:
+        await lease_provider.release(lease)
 
     return TickRunNowResponse(
         tick_id=tick_id,

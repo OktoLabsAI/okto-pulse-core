@@ -6,6 +6,7 @@ import asyncio
 
 import pytest
 
+from coordination_fakes import FakeWriteLockPort
 from okto_pulse.core.kg.workers.advisory_lock import (
     advisory_lock,
     advisory_lock_sync,
@@ -13,13 +14,20 @@ from okto_pulse.core.kg.workers.advisory_lock import (
     get_sync_lock,
     reset_locks_for_tests,
 )
+from okto_pulse.core.ports.coordination import (
+    register_coordination_providers,
+    reset_coordination_providers_for_tests,
+)
 
 
 @pytest.fixture(autouse=True)
 def _reset():
+    reset_coordination_providers_for_tests()
+    register_coordination_providers(write_lock_port=FakeWriteLockPort())
     reset_locks_for_tests()
     yield
     reset_locks_for_tests()
+    reset_coordination_providers_for_tests()
 
 
 def test_get_async_lock_returns_same_instance_for_same_key():

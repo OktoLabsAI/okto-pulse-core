@@ -35,6 +35,9 @@ from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
 from okto_pulse.core.kg.interfaces.rebuild_ingestion import RebuildIngestionPort
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+)
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
 
 
@@ -69,6 +72,7 @@ class KGProviderRegistry:
     global_discovery_runtime: GlobalDiscoveryRuntime | None = None
     board_source_reader: BoardSourceReader | None = None
     rebuild_ingestion_port: RebuildIngestionPort | None = None
+    rebuild_audit_artifact_store: RebuildAuditArtifactStore | None = None
 
     # ------------------------------------------------------------------ R03 IMP1
     # AC3 (base fail-closed): cache_backend, rate_limiter and session_store are
@@ -110,6 +114,9 @@ class KGProviderRegistry:
     def require_rebuild_ingestion_port(self) -> RebuildIngestionPort:
         return self._require_provider("rebuild_ingestion_port")
 
+    def require_rebuild_audit_artifact_store(self) -> RebuildAuditArtifactStore:
+        return self._require_provider("rebuild_audit_artifact_store")
+
 
 _registry: KGProviderRegistry | None = None
 _lock = threading.Lock()
@@ -143,6 +150,9 @@ def _build_defaults() -> KGProviderRegistry:
     )
     from okto_pulse.core.kg.providers.testing.memory_board_source_reader import (
         InMemoryBoardSourceReader,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+        InMemoryRebuildAuditArtifactStore,
     )
     from okto_pulse.core.kg.providers.testing.embedding import (
         build_testing_embedding_provider,
@@ -181,6 +191,7 @@ def _build_defaults() -> KGProviderRegistry:
         ),
         global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
         board_source_reader=InMemoryBoardSourceReader(),
+        rebuild_audit_artifact_store=InMemoryRebuildAuditArtifactStore(),
         # event_bus, audit_repo, auth_context_factory supplied by composition
     )
 

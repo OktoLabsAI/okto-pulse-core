@@ -59,6 +59,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+
 logger = logging.getLogger("okto_pulse.kg.rebuild_service")
 
 
@@ -359,6 +364,7 @@ class KGRebuildService:
     # Lock TTL while the rebuild runs. Default 1h — enough for the
     # 1000-iter stress at KG-01.6 plus headroom.
     lock_ttl_seconds: int = 3600
+    artifact_store: RebuildAuditArtifactStore | None = None
 
     # --- public API --------------------------------------------------------
 
@@ -1156,9 +1162,6 @@ class KGRebuildService:
         event_emitted: bool = False,
     ) -> RebuildRunResult:
         finished_at = datetime.now(timezone.utc)
-        audit_dir = self.base_dir / REBUILD_DIRNAME / AUDIT_DIRNAME
-        audit_dir.mkdir(parents=True, exist_ok=True)
-        audit_path = audit_dir / f"{run_id}.json"
         # val_8fa8019d rework: NEVER persist the raw confirmation_id in
         # the legacy run audit. Replace it with the canonical SHA256
         # fingerprint produced by KG-02.7 so operators can still join
@@ -1196,9 +1199,23 @@ class KGRebuildService:
             "event_emitted": event_emitted,
             "detail": detail,
         }
+        audit_ref = ""
         try:
-            with audit_path.open("w", encoding="utf-8") as fh:
-                json.dump(audit_payload, fh, indent=2)
+            if self.artifact_store is not None:
+                audit_key = RebuildAuditKey(
+                    namespace="run_audit",
+                    board_id=board_id,
+                    artifact_id=run_id,
+                )
+                self.artifact_store.write_json_atomic(audit_key, audit_payload)
+                audit_ref = audit_key.to_ref()
+            else:
+                audit_dir = self.base_dir / REBUILD_DIRNAME / AUDIT_DIRNAME
+                audit_dir.mkdir(parents=True, exist_ok=True)
+                audit_path = audit_dir / f"{run_id}.json"
+                with audit_path.open("w", encoding="utf-8") as fh:
+                    json.dump(audit_payload, fh, indent=2)
+                audit_ref = str(audit_path)
         except Exception as exc:
             logger.error(
                 "kg.rebuild.audit_persist_failed run_id=%s err=%s",
@@ -1210,14 +1227,14 @@ class KGRebuildService:
             "kg.rebuild.run_finalised run_id=%s board=%s actor=%s "
             "operation=%s outcome=%s reason=%s audit_ref=%s report_ref=%s",
             run_id, board_id, actor_id, operation, outcome.value, reason.value,
-            audit_path, report_ref,
+            audit_ref, report_ref,
         )
 
         return RebuildRunResult(
             run_id=run_id,
             outcome=outcome.value,
             reason=reason.value,
-            audit_ref=str(audit_path),
+            audit_ref=audit_ref,
             previous_kg_generation_id=previous_kg_generation_id,
             current_kg_generation_id=current_kg_generation_id,
             started_at=started_at.isoformat(),

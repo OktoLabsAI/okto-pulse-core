@@ -70,19 +70,32 @@ async def emit_daily_tick(
     *,
     session_factory_provider: Callable[[], Any] | None = None,
 ) -> None:
-    """Emit KGDailyTick events when this replica owns the in-process lock."""
+    """Emit KGDailyTick events when this replica owns the lease."""
 
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_lease_provider,
+    )
 
-    lock = get_async_lock("kg_daily_tick", "global")
-    if lock.locked():
+    try:
+        lease_provider = get_lease_provider()
+    except CoordinationProviderMissing:
+        logger.warning(
+            "kg.tick.no_lease_provider",
+            extra={"event": "kg.tick.no_lease_provider"},
+        )
+        return
+
+    lease = await lease_provider.try_acquire("kg_daily_tick", ttl_seconds=300)
+    if lease is None:
         logger.info(
             "kg.tick.skipped reason=non_leader",
             extra={"event": "kg.tick.skipped", "reason": "non_leader"},
         )
         return
-    async with lock:
+
+    try:
         try:
             factory = (
                 session_factory_provider()
@@ -120,6 +133,8 @@ async def emit_daily_tick(
                 exc,
                 extra={"event": "kg.tick.emit_failed", "error": str(exc)},
             )
+    finally:
+        await lease_provider.release(lease)
 
 
 __all__ = [

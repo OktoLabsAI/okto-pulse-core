@@ -26,6 +26,7 @@ from okto_pulse.core.kg.global_discovery.schema import open_global_connection
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
 from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
+from okto_pulse.core.ports.coordination import ClaimRepository, get_claim_repository
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.outbox")
 
@@ -59,9 +60,16 @@ DIGESTED_NODE_TYPES: tuple[str, ...] = VECTOR_INDEX_TYPES
 
 
 class OutboxWorker:
-    def __init__(self, session_factory, interval_seconds: int = 5):
+    def __init__(
+        self,
+        session_factory,
+        interval_seconds: int = 5,
+        *,
+        claim_repository: ClaimRepository | None = None,
+    ):
         self._factory = session_factory
         self._interval = interval_seconds
+        self._claim_repository = claim_repository
         self._task: asyncio.Task | None = None
         self._running = False
 
@@ -96,17 +104,13 @@ class OutboxWorker:
         async with self._factory() as db:
             await self._recover_dead_lettered_global_open_failures(db)
             await self._recover_dead_lettered_board_read_failures(db)
-            pending = await db.execute(
-                select(GlobalUpdateOutbox)
-                .where(
-                    GlobalUpdateOutbox.processed_at.is_(None),
-                    GlobalUpdateOutbox.retry_count >= 0,
-                    GlobalUpdateOutbox.retry_count < MAX_RETRIES,
+            claim_repository = self._claim_repository or get_claim_repository()
+            events = list(
+                await claim_repository.claim_global_outbox(
+                    db,
+                    limit=50,
                 )
-                .order_by(GlobalUpdateOutbox.created_at.asc())
-                .limit(50)
             )
-            events = list(pending.scalars().all())
             processed_events: list[GlobalUpdateOutbox] = []
             for event in events:
                 try:

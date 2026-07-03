@@ -1,131 +1,205 @@
-"""In-process advisory lock keyed by ``(board_id, artifact_id)``.
+"""Write-lock facade for KG workers.
 
-Kùzu does not expose native advisory locks (unlike PostgreSQL). For the
-Layer 1 deterministic worker + cognitive session isolation invariant
-(spec c48a5c33 TR ``tr_f2bca830``) we need a single-process mutex so that
-two concurrent consolidations on the same artifact can't both write. This
-module is the cheapest implementation that still honours the contract:
-
-- Lock is re-entrant-free: the same ``asyncio`` task trying to acquire the
-  same key twice will deadlock (by design; surface the bug rather than hide
-  it).
-- Locks live in a ``WeakValueDictionary`` so the GC can collect them after
-  the last ``release()``. Memory usage stays bounded regardless of artifact
-  cardinality.
-- Works across async callers (cognitive session) and sync callers (Layer 1
-  worker called from a thread) via ``AdvisoryLock.acquire_sync``.
-
-For multi-process deployments a real fcntl/advisory lock on a per-artifact
-sentinel file would be the next step — out of scope here since the MVP is
-single-process.
+The concrete local-first lock implementation lives in an edition adapter. This
+module preserves the historical import surface (`get_async_lock`,
+`advisory_lock`, etc.) while delegating every operation through
+``WriteLockPort``.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import threading
 import weakref
 from contextlib import asynccontextmanager, contextmanager
 from typing import AsyncIterator, Iterator
 
+from okto_pulse.core.ports.coordination import (
+    WriteLockHandle,
+    get_write_lock_port,
+)
+
 logger = logging.getLogger("okto_pulse.kg.advisory_lock")
 
 
-_ASYNC_LOCKS: "weakref.WeakValueDictionary[tuple[str, str], asyncio.Lock]" = (
+class _AsyncWriteLockProxy:
+    def __init__(self, board_id: str, artifact_id: str) -> None:
+        self.board_id = board_id
+        self.artifact_id = artifact_id
+        self._handle: WriteLockHandle | None = None
+
+    def locked(self) -> bool:
+        return get_write_lock_port().is_locked(self.board_id, self.artifact_id)
+
+    async def acquire(self) -> bool:
+        self._handle = await get_write_lock_port().acquire(
+            self.board_id,
+            self.artifact_id,
+        )
+        return True
+
+    def release(self) -> None:
+        if self._handle is None:
+            raise RuntimeError("lock is not held by this proxy")
+        handle = self._handle
+        self._handle = None
+        port = get_write_lock_port()
+        release = port.release(handle)
+        try:
+            release.send(None)
+        except StopIteration:
+            return
+        raise RuntimeError("async lock release must be awaited via advisory_lock")
+
+    async def __aenter__(self):
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self._handle is None:
+            return
+        handle = self._handle
+        self._handle = None
+        await get_write_lock_port().release(handle)
+
+
+class _SyncWriteLockProxy:
+    def __init__(self, board_id: str, artifact_id: str) -> None:
+        self.board_id = board_id
+        self.artifact_id = artifact_id
+        self._handle: WriteLockHandle | None = None
+
+    def locked(self) -> bool:
+        return get_write_lock_port().is_locked(self.board_id, self.artifact_id)
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        if not blocking or timeout not in (-1, None):
+            raise NotImplementedError(
+                "non-blocking/timeout sync lock acquisition is adapter-specific"
+            )
+        self._handle = get_write_lock_port().acquire_sync(
+            self.board_id,
+            self.artifact_id,
+        )
+        return True
+
+    def release(self) -> None:
+        if self._handle is None:
+            raise RuntimeError("lock is not held by this proxy")
+        handle = self._handle
+        self._handle = None
+        get_write_lock_port().release_sync(handle)
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.release()
+
+
+_ASYNC_PROXIES: "weakref.WeakValueDictionary[tuple[str, str], _AsyncWriteLockProxy]" = (
     weakref.WeakValueDictionary()
 )
-_SYNC_LOCKS: "weakref.WeakValueDictionary[tuple[str, str], threading.Lock]" = (
+_SYNC_PROXIES: "weakref.WeakValueDictionary[tuple[str, str], _SyncWriteLockProxy]" = (
     weakref.WeakValueDictionary()
 )
-_REGISTRY_LOCK = threading.Lock()
 
 
 def _key(board_id: str, artifact_id: str) -> tuple[str, str]:
     return (board_id, artifact_id)
 
 
-def get_async_lock(board_id: str, artifact_id: str) -> asyncio.Lock:
-    """Return the shared asyncio.Lock for this (board, artifact).
+def get_async_lock(board_id: str, artifact_id: str) -> _AsyncWriteLockProxy:
+    """Return a stable proxy for the board/artifact write lock."""
 
-    Two callers asking for the same pair get the same instance; distinct
-    pairs get distinct locks (fine-grained, avoids head-of-line blocking).
-    """
     key = _key(board_id, artifact_id)
-    with _REGISTRY_LOCK:
-        lock = _ASYNC_LOCKS.get(key)
-        if lock is None:
-            lock = asyncio.Lock()
-            _ASYNC_LOCKS[key] = lock
-        return lock
+    lock = _ASYNC_PROXIES.get(key)
+    if lock is None:
+        lock = _AsyncWriteLockProxy(board_id, artifact_id)
+        _ASYNC_PROXIES[key] = lock
+    return lock
 
 
-def get_sync_lock(board_id: str, artifact_id: str) -> threading.Lock:
-    """Return the shared threading.Lock for this (board, artifact)."""
+def get_sync_lock(board_id: str, artifact_id: str) -> _SyncWriteLockProxy:
+    """Return a stable proxy for the board/artifact sync write lock."""
+
     key = _key(board_id, artifact_id)
-    with _REGISTRY_LOCK:
-        lock = _SYNC_LOCKS.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            _SYNC_LOCKS[key] = lock
-        return lock
+    lock = _SYNC_PROXIES.get(key)
+    if lock is None:
+        lock = _SyncWriteLockProxy(board_id, artifact_id)
+        _SYNC_PROXIES[key] = lock
+    return lock
 
 
 @asynccontextmanager
 async def advisory_lock(
     board_id: str, artifact_id: str,
 ) -> AsyncIterator[None]:
-    """Async context manager — acquires the per-artifact lock for the block.
+    """Async context manager for a board/artifact write lock."""
 
-    Usage:
-        async with advisory_lock(board_id, artifact_id):
-            # safe to write to Kùzu for this artifact
-            ...
-    """
     lock = get_async_lock(board_id, artifact_id)
-    acquired_at = asyncio.get_event_loop().time()
-    await lock.acquire()
-    try:
-        held_for = asyncio.get_event_loop().time() - acquired_at
+    async with lock:
         logger.info(
-            "advisory_lock.acquired board=%s artifact=%s wait_s=%.4f",
-            board_id, artifact_id, held_for,
-            extra={"event": "advisory_lock.acquired",
-                   "board_id": board_id, "artifact_id": artifact_id,
-                   "wait_s": held_for},
+            "advisory_lock.acquired board=%s artifact=%s",
+            board_id,
+            artifact_id,
+            extra={
+                "event": "advisory_lock.acquired",
+                "board_id": board_id,
+                "artifact_id": artifact_id,
+            },
         )
-        yield
-    finally:
-        lock.release()
-        logger.info(
-            "advisory_lock.released board=%s artifact=%s",
-            board_id, artifact_id,
-            extra={"event": "advisory_lock.released",
-                   "board_id": board_id, "artifact_id": artifact_id},
-        )
+        try:
+            yield
+        finally:
+            logger.info(
+                "advisory_lock.released board=%s artifact=%s",
+                board_id,
+                artifact_id,
+                extra={
+                    "event": "advisory_lock.released",
+                    "board_id": board_id,
+                    "artifact_id": artifact_id,
+                },
+            )
 
 
 @contextmanager
 def advisory_lock_sync(
     board_id: str, artifact_id: str,
 ) -> Iterator[None]:
-    """Sync counterpart — for Layer 1 worker calls that aren't in an event loop."""
+    """Sync counterpart for worker calls that are not in an event loop."""
+
     lock = get_sync_lock(board_id, artifact_id)
-    lock.acquire()
-    try:
+    with lock:
         logger.info(
             "advisory_lock.acquired_sync board=%s artifact=%s",
-            board_id, artifact_id,
-            extra={"event": "advisory_lock.acquired_sync",
-                   "board_id": board_id, "artifact_id": artifact_id},
+            board_id,
+            artifact_id,
+            extra={
+                "event": "advisory_lock.acquired_sync",
+                "board_id": board_id,
+                "artifact_id": artifact_id,
+            },
         )
         yield
-    finally:
-        lock.release()
 
 
 def reset_locks_for_tests() -> None:
-    """Drop every registered lock — test hook only. Never call in prod."""
-    with _REGISTRY_LOCK:
-        _ASYNC_LOCKS.clear()
-        _SYNC_LOCKS.clear()
+    """Reset proxy caches and delegate adapter state reset when available."""
+
+    _ASYNC_PROXIES.clear()
+    _SYNC_PROXIES.clear()
+    try:
+        get_write_lock_port().reset_for_tests()
+    except Exception:
+        pass
+
+
+__all__ = [
+    "advisory_lock",
+    "advisory_lock_sync",
+    "get_async_lock",
+    "get_sync_lock",
+    "reset_locks_for_tests",
+]

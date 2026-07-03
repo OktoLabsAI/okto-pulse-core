@@ -45,6 +45,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+
 
 def confirmation_fingerprint(confirmation_id: str) -> str:
     """val_302bdec8 — produce a safe reference for a confirmation token.
@@ -70,6 +75,14 @@ AUDIT_DIRNAME = "audit"
 CONFIRMATION_AUDIT_DIRNAME = "confirmation"
 EVENT_AUDIT_DIRNAME = "events"
 COGNITIVE_PENDING_DIRNAME = "cognitive_pending"
+
+
+def _require_base_dir(base_dir: Path | None) -> Path:
+    if base_dir is None:
+        raise RuntimeError(
+            "base_dir is required when RebuildAuditArtifactStore is not supplied"
+        )
+    return base_dir
 
 
 def default_rebuild_base_dir() -> Path:
@@ -263,16 +276,26 @@ class KGRebuiltEventPublisher:
     re-drive the event from the audit without losing the report.
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
     publish_adapter: KGRebuiltPublishAdapter = _default_publish_adapter
+    artifact_store: RebuildAuditArtifactStore | None = None
 
     def _audit_dir(self, board_id: str) -> Path:
+        base_dir = _require_base_dir(self.base_dir)
         return (
-            self.base_dir
+            base_dir
             / REBUILD_DIRNAME
             / AUDIT_DIRNAME
             / EVENT_AUDIT_DIRNAME
             / board_id
+        )
+
+    @staticmethod
+    def _audit_key(board_id: str, event_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="event_audit",
+            board_id=board_id,
+            artifact_id=event_id,
         )
 
     def publish(
@@ -295,21 +318,27 @@ class KGRebuiltEventPublisher:
                 detail=reason,
             )
 
-        directory = self._audit_dir(board_id)
         try:
-            directory.mkdir(parents=True, exist_ok=True)
             event_id = f"evt_{uuid.uuid4().hex}"
-            audit_path = directory / f"{event_id}.json"
             audit_payload = {
                 "event_id": event_id,
                 "event": "kg.rebuilt",
                 "persisted_at": datetime.now(timezone.utc).isoformat(),
                 **dict(event_payload),
             }
-            tmp = audit_path.with_suffix(".json.tmp")
-            with tmp.open("w", encoding="utf-8") as fh:
-                json.dump(audit_payload, fh, indent=2)
-            tmp.replace(audit_path)
+            if self.artifact_store is not None:
+                audit_key = self._audit_key(board_id, event_id)
+                self.artifact_store.write_json_atomic(audit_key, audit_payload)
+                audit_ref = audit_key.to_ref()
+            else:
+                directory = self._audit_dir(board_id)
+                directory.mkdir(parents=True, exist_ok=True)
+                audit_path = directory / f"{event_id}.json"
+                tmp = audit_path.with_suffix(".json.tmp")
+                with tmp.open("w", encoding="utf-8") as fh:
+                    json.dump(audit_payload, fh, indent=2)
+                tmp.replace(audit_path)
+                audit_ref = str(audit_path)
         except Exception as exc:
             logger.error(
                 "kg.rebuilt.audit_persist_failed board=%s err=%s",
@@ -343,7 +372,7 @@ class KGRebuiltEventPublisher:
                 accepted=False,
                 outcome=EventPublishOutcome.PUBLISH_FAILED.value,
                 event_ref=event_id,
-                audit_ref=str(audit_path),
+                audit_ref=audit_ref,
                 error_code=EventPublishErrorCode.EVENT_PUBLISH_FAILED.value,
                 detail=f"publish_adapter_exception={type(exc).__name__}",
             )
@@ -358,7 +387,7 @@ class KGRebuiltEventPublisher:
                 accepted=False,
                 outcome=EventPublishOutcome.PUBLISH_FAILED.value,
                 event_ref=event_id,
-                audit_ref=str(audit_path),
+                audit_ref=audit_ref,
                 error_code=EventPublishErrorCode.EVENT_PUBLISH_FAILED.value,
                 detail="publish_adapter_returned_false",
             )
@@ -372,7 +401,7 @@ class KGRebuiltEventPublisher:
             accepted=True,
             outcome=EventPublishOutcome.PUBLISHED.value,
             event_ref=event_id,
-            audit_ref=str(audit_path),
+            audit_ref=audit_ref,
         )
 
 
@@ -1473,16 +1502,26 @@ class CognitiveConsolidationItemStore:
     marker writes them.
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
+    @staticmethod
+    def _record_key(board_id: str, kg_generation_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board_id,
+            kg_generation_id=kg_generation_id,
+        )
+
     def _record_path(
         self, board_id: str, kg_generation_id: str
     ) -> Path:
+        base_dir = _require_base_dir(self.base_dir)
         return (
-            self.base_dir
+            base_dir
             / REBUILD_DIRNAME
             / AUDIT_DIRNAME
             / COGNITIVE_PENDING_DIRNAME
@@ -1491,8 +1530,9 @@ class CognitiveConsolidationItemStore:
         )
 
     def _board_dir(self, board_id: str) -> Path:
+        base_dir = _require_base_dir(self.base_dir)
         return (
-            self.base_dir
+            base_dir
             / REBUILD_DIRNAME
             / AUDIT_DIRNAME
             / COGNITIVE_PENDING_DIRNAME
@@ -1504,6 +1544,18 @@ class CognitiveConsolidationItemStore:
     ) -> dict[str, Any] | None:
         """Read the aggregate + items record. Returns None if not found
         or unparseable."""
+
+        if self.artifact_store is not None:
+            try:
+                return self.artifact_store.read_json(
+                    self._record_key(board_id, kg_generation_id)
+                )
+            except Exception as exc:
+                logger.error(
+                    "kg.cognitive_item_store.read_failed board=%s gen=%s err=%s",
+                    board_id, kg_generation_id, exc,
+                )
+                return None
 
         path = self._record_path(board_id, kg_generation_id)
         if not path.exists():
@@ -1525,6 +1577,10 @@ class CognitiveConsolidationItemStore:
         by MCP/REST adapters to distinguish ``generation_not_found`` from
         an empty-but-extant record (api_ae3a932a + api_cce40fa6)."""
 
+        if self.artifact_store is not None:
+            return self.artifact_store.exists(
+                self._record_key(board_id, kg_generation_id)
+            )
         return self._record_path(board_id, kg_generation_id).exists()
 
     def is_legacy_record(
@@ -1618,40 +1674,51 @@ class CognitiveConsolidationItemStore:
         between dedupe-carry-forward and reopen).
         """
 
-        board_dir = self._board_dir(board_id)
-        if not board_dir.exists():
-            return {}
-
         terminal_statuses = {
             CognitiveItemStatus.CONSOLIDATED.value,
             CognitiveItemStatus.SKIPPED.value,
             CognitiveItemStatus.FAILED.value,
         }
 
-        entries: list[tuple[str, str, Path]] = []
-        for entry in board_dir.glob("*.json"):
-            gen_id = entry.stem
-            if gen_id == exclude_generation_id:
-                continue
-            try:
-                with entry.open("r", encoding="utf-8") as fh:
-                    record = json.load(fh)
-            except Exception:
-                continue
-            recorded_at = str(record.get("recorded_at", ""))
-            entries.append((recorded_at, gen_id, entry))
+        entries: list[tuple[str, str, dict[str, Any]]] = []
+        if self.artifact_store is not None:
+            records = self.artifact_store.list_json(
+                RebuildAuditKey(
+                    namespace="cognitive_pending",
+                    board_id=board_id,
+                )
+            )
+            for record in records:
+                gen_id = str(record.get("kg_generation_id", ""))
+                if not gen_id or gen_id == exclude_generation_id:
+                    continue
+                recorded_at = str(record.get("recorded_at", ""))
+                entries.append((recorded_at, gen_id, dict(record)))
+        else:
+            board_dir = self._board_dir(board_id)
+            if not board_dir.exists():
+                return {}
+            for entry in board_dir.glob("*.json"):
+                gen_id = entry.stem
+                if gen_id == exclude_generation_id:
+                    continue
+                try:
+                    with entry.open("r", encoding="utf-8") as fh:
+                        record = json.load(fh)
+                except Exception:
+                    continue
+                recorded_at = str(record.get("recorded_at", ""))
+                entries.append((recorded_at, gen_id, record))
+
+        if not entries:
+            return {}
 
         # Newest first; ties broken by lexically greater generation_id
         # (deterministic for UUID v4).
         entries.sort(key=lambda t: (t[0], t[1]), reverse=True)
 
         terminal_by_source: dict[str, dict[str, Any]] = {}
-        for _, _, entry in entries:
-            try:
-                with entry.open("r", encoding="utf-8") as fh:
-                    record = json.load(fh)
-            except Exception:
-                continue
+        for _, _, record in entries:
             raw_items = record.get("items")
             if not isinstance(raw_items, list):
                 continue
@@ -1670,11 +1737,26 @@ class CognitiveConsolidationItemStore:
     def latest_generation(self, board_id: str) -> str | None:
         """Per br_d510e1e3: deterministic latest-generation fallback.
 
-        Reads recorded_at across all <gen>.json files in the board dir
-        and returns the generation_id with the most recent ISO8601
-        timestamp. Ties (same timestamp) broken by lexically greater
-        generation_id, which is deterministic for UUID v4 strings.
+        Reads recorded_at across all generation records and returns the
+        generation_id with the most recent ISO8601 timestamp. Ties (same
+        timestamp) are broken by lexically greater generation_id.
         """
+
+        if self.artifact_store is not None:
+            best: tuple[str, str] | None = None
+            for record in self.artifact_store.list_json(
+                RebuildAuditKey(
+                    namespace="cognitive_pending",
+                    board_id=board_id,
+                )
+            ):
+                gen_id = str(record.get("kg_generation_id", ""))
+                if not gen_id:
+                    continue
+                recorded_at = str(record.get("recorded_at", ""))
+                if best is None or (recorded_at, gen_id) > best:
+                    best = (recorded_at, gen_id)
+            return best[1] if best else None
 
         board_dir = self._board_dir(board_id)
         if not board_dir.exists():
@@ -1789,7 +1871,7 @@ class CognitiveConsolidationItemStore:
         int,
         list[CognitiveConsolidationItem],
         dict[str, int],
-        Path,
+        str,
     ]:
         """Internal helper that performs the atomic write. Returns
         ``(item_count, items, counts_by_type, record_path)``.
@@ -1937,7 +2019,6 @@ class CognitiveConsolidationItemStore:
             )
 
         with self._lock:
-            self._board_dir(board_id).mkdir(parents=True, exist_ok=True)
             active_refs = sorted({
                 i.source_ref
                 for i in items
@@ -1953,13 +2034,20 @@ class CognitiveConsolidationItemStore:
                 "recorded_at": recorded_at,
                 "items": [i.to_dict() for i in items],
             }
-            path = self._record_path(board_id, kg_generation_id)
-            tmp = path.with_suffix(".json.tmp")
-            with tmp.open("w", encoding="utf-8") as fh:
-                json.dump(payload, fh, indent=2)
-            tmp.replace(path)
+            if self.artifact_store is not None:
+                key = self._record_key(board_id, kg_generation_id)
+                self.artifact_store.write_json_atomic(key, payload)
+                record_ref = key.to_ref()
+            else:
+                self._board_dir(board_id).mkdir(parents=True, exist_ok=True)
+                path = self._record_path(board_id, kg_generation_id)
+                tmp = path.with_suffix(".json.tmp")
+                with tmp.open("w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, indent=2)
+                tmp.replace(path)
+                record_ref = str(path)
 
-        return len(items), items, counts_by_type, path
+        return len(items), items, counts_by_type, record_ref
 
     def update_item(
         self,
@@ -2098,11 +2186,18 @@ class CognitiveConsolidationItemStore:
             record["pending_count"] = len(active_refs)
             record["pending_refs"] = active_refs
 
-            path = self._record_path(board_id, kg_generation_id)
-            tmp = path.with_suffix(".json.tmp")
-            with tmp.open("w", encoding="utf-8") as fh:
-                json.dump(record, fh, indent=2)
-            tmp.replace(path)
+            if self.artifact_store is not None:
+                key = self._record_key(board_id, kg_generation_id)
+                self.artifact_store.replace_json(
+                    key,
+                    lambda _current: record,
+                )
+            else:
+                path = self._record_path(board_id, kg_generation_id)
+                tmp = path.with_suffix(".json.tmp")
+                with tmp.open("w", encoding="utf-8") as fh:
+                    json.dump(record, fh, indent=2)
+                tmp.replace(path)
 
             # NOTE (Codex audit val_036cb81e):
             # update_item MUST NOT emit on
@@ -2337,14 +2432,16 @@ class CognitivePendingMarker:
     the new KG generation. NEVER marks completed (br_0d710a8f + TR9).
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
     pending_adapter: CognitivePendingAdapter = _default_pending_adapter
+    artifact_store: RebuildAuditArtifactStore | None = None
 
     def _record_path(
         self, board_id: str, kg_generation_id: str
     ) -> Path:
+        base_dir = _require_base_dir(self.base_dir)
         return (
-            self.base_dir
+            base_dir
             / REBUILD_DIRNAME
             / AUDIT_DIRNAME
             / COGNITIVE_PENDING_DIRNAME
@@ -2426,7 +2523,10 @@ class CognitivePendingMarker:
         # sample with labels (board_id, outcome) and item_count value.
         recorded_at = datetime.now(timezone.utc).isoformat()
         try:
-            item_store = CognitiveConsolidationItemStore(base_dir=self.base_dir)
+            item_store = CognitiveConsolidationItemStore(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            )
             materialization = item_store.materialize_from_marker(
                 board_id=board_id,
                 kg_generation_id=kg_generation_id,
@@ -2650,15 +2750,25 @@ class ConfirmationConsumptionAuditRecorder:
     * audit row persisted atomically before the counter bump.
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
 
     def _audit_dir(self, board_id: str) -> Path:
+        base_dir = _require_base_dir(self.base_dir)
         return (
-            self.base_dir
+            base_dir
             / REBUILD_DIRNAME
             / AUDIT_DIRNAME
             / CONFIRMATION_AUDIT_DIRNAME
             / board_id
+        )
+
+    @staticmethod
+    def _audit_key(board_id: str, audit_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="confirmation_audit",
+            board_id=board_id,
+            artifact_id=audit_id,
         )
 
     def record(
@@ -2730,21 +2840,27 @@ class ConfirmationConsumptionAuditRecorder:
                 detail=f"unsafe_field={reason_safe}",
             )
 
-        directory = self._audit_dir(board_id)
         try:
-            directory.mkdir(parents=True, exist_ok=True)
             audit_id = f"audit_{uuid.uuid4().hex}"
-            audit_path = directory / f"{audit_id}.json"
             recorded_at = datetime.now(timezone.utc).isoformat()
             record_payload = {
                 "audit_id": audit_id,
                 "recorded_at": recorded_at,
                 **payload,
             }
-            tmp = audit_path.with_suffix(".json.tmp")
-            with tmp.open("w", encoding="utf-8") as fh:
-                json.dump(record_payload, fh, indent=2)
-            tmp.replace(audit_path)
+            if self.artifact_store is not None:
+                audit_key = self._audit_key(board_id, audit_id)
+                self.artifact_store.write_json_atomic(audit_key, record_payload)
+                audit_ref = audit_key.to_ref()
+            else:
+                directory = self._audit_dir(board_id)
+                directory.mkdir(parents=True, exist_ok=True)
+                audit_path = directory / f"{audit_id}.json"
+                tmp = audit_path.with_suffix(".json.tmp")
+                with tmp.open("w", encoding="utf-8") as fh:
+                    json.dump(record_payload, fh, indent=2)
+                tmp.replace(audit_path)
+                audit_ref = str(audit_path)
         except Exception as exc:
             logger.error(
                 "kg.confirmation_audit.persist_failed board=%s op=%s err=%s",
@@ -2760,7 +2876,7 @@ class ConfirmationConsumptionAuditRecorder:
 
         _bump_audit(board_id=board_id, operation=operation, outcome=outcome)
         return ConfirmationAuditResult(
-            audit_ref=str(audit_path),
+            audit_ref=audit_ref,
             recorded_at=recorded_at,
             outcome=outcome,
         )

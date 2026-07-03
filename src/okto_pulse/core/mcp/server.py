@@ -15279,13 +15279,18 @@ async def okto_pulse_kg_evaluate_bug_cognitive_closure(
 def _build_cognitive_readiness_service():
     """Central readiness service over the shared item store (no own store)."""
     from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.rebuild_audit import (
         CognitiveConsolidationItemStore,
         default_rebuild_base_dir,
     )
 
+    artifact_store = get_kg_registry().rebuild_audit_artifact_store
     return CognitiveReadinessService(
-        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        CognitiveConsolidationItemStore(
+            base_dir=default_rebuild_base_dir(),
+            artifact_store=artifact_store,
+        )
     )
 
 
@@ -16223,10 +16228,22 @@ async def okto_pulse_kg_tick_run_now(
         # Global scope — allow any authenticated agent (no per-board check).
         triggered_by = "agent-mcp-global"
 
-    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_lease_provider,
+    )
 
-    lock = get_async_lock("kg_daily_tick", "global")
-    if lock.locked():
+    try:
+        lease_provider = get_lease_provider()
+    except CoordinationProviderMissing as exc:
+        return json.dumps({
+            "error": exc.code,
+            "provider": exc.provider_key,
+            "message": "Tick lease provider is not configured",
+        })
+
+    lease = await lease_provider.try_acquire("kg_daily_tick", ttl_seconds=300)
+    if lease is None:
         return json.dumps({
             "error": "tick_already_running",
             "message": "Tick already running, retry shortly",
@@ -16236,7 +16253,7 @@ async def okto_pulse_kg_tick_run_now(
     # SAME structured graph_recovery_needed refusal as the REST endpoint, via the
     # SAME shared _refuse_tick_if_degraded gate (one predicate, no MCP-side
     # duplication). The MCP path owns no request session, so probe under a
-    # short-lived one. Runs after the lock check, before tick_id allocation.
+    # short-lived one. Runs after the lease check, before tick_id allocation.
     if board_id:
         from okto_pulse.core.api.kg_tick import _refuse_tick_if_degraded
 
@@ -16267,33 +16284,36 @@ async def okto_pulse_kg_tick_run_now(
     )
 
     try:
-        await _dispatch_manual_tick(
-            tick_id=tick_id,
-            board_id=board_id or None,
-            force_full_rebuild=force_full_rebuild,
-            session_scope_factory=get_db_for_mcp,
-        )
-    except Exception as exc:
-        _tick_logger.error(
-            "kg.tick.manual_schedule_failed tick_id=%s err=%s source=mcp",
-            tick_id, exc,
-            extra={
-                "event": "kg.tick.manual_schedule_failed",
-                "tick_id": tick_id,
-                "board_id": board_id or None,
-                "force_full_rebuild": force_full_rebuild,
-                "source": "mcp",
-                "error": str(exc),
-            },
-        )
-        return json.dumps({
-            "error": "tick_schedule_failed",
-            "message": (
-                "Failed to persist the KG tick event. "
-                "No background tick was scheduled."
-            ),
-            "detail": str(exc),
-        })
+        try:
+            await _dispatch_manual_tick(
+                tick_id=tick_id,
+                board_id=board_id or None,
+                force_full_rebuild=force_full_rebuild,
+                session_scope_factory=get_db_for_mcp,
+            )
+        except Exception as exc:
+            _tick_logger.error(
+                "kg.tick.manual_schedule_failed tick_id=%s err=%s source=mcp",
+                tick_id, exc,
+                extra={
+                    "event": "kg.tick.manual_schedule_failed",
+                    "tick_id": tick_id,
+                    "board_id": board_id or None,
+                    "force_full_rebuild": force_full_rebuild,
+                    "source": "mcp",
+                    "error": str(exc),
+                },
+            )
+            return json.dumps({
+                "error": "tick_schedule_failed",
+                "message": (
+                    "Failed to persist the KG tick event. "
+                    "No background tick was scheduled."
+                ),
+                "detail": str(exc),
+            })
+    finally:
+        await lease_provider.release(lease)
 
     return json.dumps({
         "tick_id": tick_id,
@@ -16670,9 +16690,19 @@ async def okto_pulse_kg_rebuild_run(
             return json.dumps(_provider_missing_payload(exc))
         raise
 
-    audit_recorder = ConfirmationConsumptionAuditRecorder(base_dir=_REBUILD_BASE_DIR)
-    event_publisher = KGRebuiltEventPublisher(base_dir=_REBUILD_BASE_DIR)
-    cognitive_marker = CognitivePendingMarker(base_dir=_REBUILD_BASE_DIR)
+    artifact_store = get_kg_registry().rebuild_audit_artifact_store
+    audit_recorder = ConfirmationConsumptionAuditRecorder(
+        base_dir=_REBUILD_BASE_DIR,
+        artifact_store=artifact_store,
+    )
+    event_publisher = KGRebuiltEventPublisher(
+        base_dir=_REBUILD_BASE_DIR,
+        artifact_store=artifact_store,
+    )
+    cognitive_marker = CognitivePendingMarker(
+        base_dir=_REBUILD_BASE_DIR,
+        artifact_store=artifact_store,
+    )
 
     def _source_resolver(event_payload):
         m = manifest_store_obj.load(event_payload.get("manifest_ref", ""))
@@ -16708,6 +16738,7 @@ async def okto_pulse_kg_rebuild_run(
             board_id=board_id,
             generation_id=generation_id,
         ),
+        artifact_store=artifact_store,
     )
 
     try:

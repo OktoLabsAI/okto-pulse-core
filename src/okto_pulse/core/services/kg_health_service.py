@@ -992,12 +992,18 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     # Bug fix (Playwright E2E reproduzido): se o usuário fechar o modal
     # enquanto o tick roda e voltar, o frontend perde o state local de
     # "running" e re-habilita o botão. Para o frontend conseguir desabilitar
-    # através de remount, expomos o estado real do advisory lock global
-    # ``("kg_daily_tick", "global")``. Reuso do lock que kg_tick.py e o
-    # cron já consultam — single source of truth.
-    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
-    tick_lock = get_async_lock("kg_daily_tick", "global")
-    tick_in_progress = tick_lock.locked()
+    # através de remount, expomos o estado real da lease ``kg_daily_tick``.
+    # Reuso da LeaseProvider que kg_tick.py e o cron consultam — single source
+    # of truth, sem primitiva concreta no core.
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_lease_provider,
+    )
+
+    try:
+        tick_in_progress = get_lease_provider().is_held("kg_daily_tick")
+    except CoordinationProviderMissing:
+        tick_in_progress = False
     if tick_in_progress or tick_evidence.get("running_row") is not None:
         last_tick_status = "running"
     decay_scheduler_diagnostics = _build_decay_scheduler_diagnostics(

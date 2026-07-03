@@ -15,10 +15,10 @@ Precedence at boot (documented in BR2 ``Precedencia de config``):
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import warnings
+from contextlib import asynccontextmanager
 from typing import Any, Final
 
 from sqlalchemy import String, select
@@ -38,6 +38,12 @@ from okto_pulse.core.ports.runtime_settings import (
     build_reschedule_failed_signal,
 )
 from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
+from okto_pulse.core.ports.coordination import (
+    CoordinationProviderMissing,
+    get_config_validation_port,
+    get_runtime_settings_provider,
+    get_write_lock_port,
+)
 
 logger = logging.getLogger("okto_pulse.services.settings")
 
@@ -108,7 +114,6 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-_write_lock = asyncio.Lock()
 # Snapshot of the values loaded at boot. Used to compute restart_required.
 _boot_snapshot: dict[str, int] = {}
 
@@ -169,6 +174,46 @@ async def _load_persisted_rows(db: AsyncSession) -> dict[str, int]:
     except Exception as exc:
         logger.warning("settings.load_failed err=%s", exc)
         return {}
+
+
+async def _read_effective_runtime_settings() -> dict[str, int]:
+    """Read effective settings through the edition port when available."""
+
+    try:
+        provider = get_runtime_settings_provider()
+    except CoordinationProviderMissing:
+        s = get_settings()
+        return {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
+
+    provided = await provider.read_runtime_settings("global")
+    return {k: int(provided[k]) for k in RUNTIME_KEYS if k in provided}
+
+
+def _validate_runtime_settings_via_port(values: dict[str, int]) -> None:
+    """Let the edition validate runtime settings when it registered a port."""
+
+    try:
+        validation_port = get_config_validation_port()
+    except CoordinationProviderMissing:
+        return
+    validation_port.validate_runtime_settings(values)
+
+
+@asynccontextmanager
+async def _settings_write_guard():
+    """Serialize runtime-settings writes through the registered write-lock port."""
+
+    try:
+        write_lock = get_write_lock_port()
+    except CoordinationProviderMissing:
+        yield
+        return
+
+    handle = await write_lock.acquire("_runtime", "settings")
+    try:
+        yield
+    finally:
+        await write_lock.release(handle)
 
 
 def _resolve_legacy_env_aliases() -> dict[str, int]:
@@ -282,8 +327,7 @@ async def get_runtime_settings(db: AsyncSession) -> dict[str, Any]:
     hot-reload (worker pool re-reads on every claim with 5s cache TTL) so
     persisting them never marks restart_required (spec bdcda842, BR8/TR11).
     """
-    s = get_settings()
-    effective = {k: int(getattr(s, k)) for k in RUNTIME_KEYS}
+    effective = await _read_effective_runtime_settings()
 
     persisted = await _load_persisted_rows(db)
     boot = _read_boot_snapshot()
@@ -551,11 +595,17 @@ async def put_runtime_settings(
                 audit_event=decision.audit_event,
             )
 
-    async with _write_lock:
-        for key, value in values.items():
-            if key not in RUNTIME_KEYS:
-                continue
-            parsed = _validate_runtime_setting_value(key, int(value))
+    parsed_values: dict[str, int] = {}
+    for key, value in values.items():
+        if key not in RUNTIME_KEYS:
+            continue
+        parsed_values[key] = _validate_runtime_setting_value(key, int(value))
+
+    if parsed_values:
+        _validate_runtime_settings_via_port(parsed_values)
+
+    async with _settings_write_guard():
+        for key, parsed in parsed_values.items():
             row = await db.get(AppSetting, key)
             if row is None:
                 db.add(AppSetting(key=key, value=str(parsed)))

@@ -83,6 +83,7 @@ from okto_pulse.core.kg.source_maturity import (
     classify_source_for_kg,
 )
 from okto_pulse.core.kg.write_barrier import under_safe_write
+from okto_pulse.core.kg.workers.advisory_lock import advisory_lock
 from okto_pulse.core.kg.workers.deterministic_worker import (
     DeterministicWorker,
     EmittedEdge,
@@ -112,17 +113,6 @@ WORKER_COMMIT_LIFECYCLE_STEPS: tuple[str, ...] = (
     STEP_FLUSH,
     STEP_FSYNC,
 )
-
-_board_processing_locks: dict[str, asyncio.Lock] = {}
-
-
-def _get_board_processing_lock(board_id: str) -> asyncio.Lock:
-    lock = _board_processing_locks.get(board_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _board_processing_locks[board_id] = lock
-    return lock
-
 
 def _worker_owner_probe(_board_id: str, owner_token: str) -> bool:
     """Validate process-local consolidation owner tokens.
@@ -254,7 +244,7 @@ async def _process_queue_entry_serialized(
     different rows for the same board and collide at commit time.
     """
 
-    async with _get_board_processing_lock(entry.board_id):
+    async with advisory_lock(entry.board_id, "consolidation"):
         return await _process_queue_entry(db, entry)
 
 
