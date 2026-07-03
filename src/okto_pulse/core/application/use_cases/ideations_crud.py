@@ -29,6 +29,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services import (
     BoardService,
     IdeationKnowledgeService,
@@ -36,6 +37,10 @@ from okto_pulse.core.services import (
     IdeationService,
     SpecService,
 )
+
+
+def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
 
 
 # --- create -----------------------------------------------------------------
@@ -66,7 +71,12 @@ class CreateIdeationUseCase:
         self, command: CreateIdeationCommand, *, actor: ActorContext, uow: Any
     ) -> CreateIdeationResult:
         service = IdeationService(session_of(uow))
-        ideation = await service.create_ideation(command.board_id, actor.actor_id, command.data)
+        ideation = await service.create_ideation(
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not ideation:
             raise EntityNotFoundError("board", command.board_id)
         await commit(uow)
@@ -102,7 +112,11 @@ class ListIdeationsUseCase:
         self, command: ListIdeationsCommand, *, actor: ActorContext, uow: Any
     ) -> ListIdeationsResult:
         session = session_of(uow)
-        board = await BoardService(session).get_board(command.board_id, actor.actor_id)
+        board = await BoardService(session).get_board(
+            command.board_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
         ideations = await IdeationService(session).list_ideations(
@@ -333,7 +347,11 @@ class DeriveSpecUseCase:
         self, command: DeriveSpecCommand, *, actor: ActorContext, uow: Any
     ) -> DeriveSpecResult:
         session = session_of(uow)
-        spec = await IdeationService(session).derive_spec(command.ideation_id, actor.actor_id)
+        spec = await IdeationService(session).derive_spec(
+            command.ideation_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor),
+        )
         if not spec:
             raise EntityNotFoundError("ideation", command.ideation_id)
         await commit(uow)

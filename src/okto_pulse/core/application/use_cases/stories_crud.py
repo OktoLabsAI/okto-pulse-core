@@ -48,16 +48,27 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services import BoardService, StoryService
 
 
 # --- shared transport-free guards (legacy _ensure_board / _require_permissions)
 
 
-async def _ensure_board(session: Any, board_id: str, user_id: str) -> None:
+def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
+
+
+async def _ensure_board(
+    session: Any,
+    board_id: str,
+    user_id: str,
+    *,
+    query_scope: QueryScope | None = None,
+) -> None:
     """Reproduce the legacy ``_ensure_board``: raise ``EntityNotFoundError("board")``
     (adapter → 404 "Board not found") when the board is missing / not owned."""
-    board = await BoardService(session).get_board(board_id, user_id)
+    board = await BoardService(session).get_board(board_id, user_id, query_scope=query_scope)
     if not board:
         raise EntityNotFoundError("board", board_id)
 
@@ -777,7 +788,13 @@ class ConvertStoriesUseCase:
         from okto_pulse.core.services.story_permissions import story_state
 
         session = session_of(uow)
-        await _ensure_board(session, command.board_id, actor.actor_id)
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
+        await _ensure_board(
+            session,
+            command.board_id,
+            actor.actor_id,
+            query_scope=query_scope,
+        )
         await _require_permissions(
             session, actor.actor_id, command.board_id, "story.conversion.to_ideation"
         )
@@ -793,7 +810,12 @@ class ConvertStoriesUseCase:
                     entity="story",
                     entity_status=story_state(story.status, archived=bool(story.archived)),
                 )
-        result = await service.convert_stories(command.board_id, actor.actor_id, command.data)
+        result = await service.convert_stories(
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            query_scope=query_scope,
+        )
         if not result:
             raise EntityNotFoundError("board", command.board_id)
         ideation, links, propagated = result

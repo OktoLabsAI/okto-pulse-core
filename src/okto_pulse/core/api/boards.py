@@ -102,6 +102,7 @@ async def get_board(
     board_id: str,
     compact: bool = Query(False, description="When true, omit inline cards/agents and return only the overview envelope with counts. Default false preserves the legacy full payload for the existing frontend."),
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get a board by ID. By default returns the full board (legacy shape);
@@ -111,7 +112,7 @@ async def get_board(
     try:
         result = await GetBoardUseCase().execute(
             GetBoardCommand(board_id, compact=compact),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id),
             uow=uow,
         )
     except EntityNotFoundError:
@@ -124,13 +125,14 @@ async def update_board(
     board_id: str,
     data: BoardUpdate,
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Update a board."""
     try:
         result = await UpdateBoardUseCase().execute(
             UpdateBoardCommand(board_id, data),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id),
             uow=uow,
         )
     except EntityNotFoundError:
@@ -142,13 +144,14 @@ async def update_board(
 async def delete_board(
     board_id: str,
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Delete a board and all its cards."""
     try:
         await DeleteBoardUseCase().execute(
             DeleteBoardCommand(board_id),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id),
             uow=uow,
         )
     except EntityNotFoundError:
@@ -160,13 +163,14 @@ async def create_card(
     board_id: str,
     data: CardCreate,
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Create a new card in a board."""
     try:
         result = await CreateCardInBoardUseCase().execute(
             CreateCardInBoardCommand(board_id, data),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id),
             uow=uow,
         )
     except CardOperationError as e:
@@ -185,13 +189,14 @@ async def get_board_columns(
     board_id: str,
     include_archived: bool = Query(False, alias="include_archived"),
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Get board cards grouped by status/column."""
     try:
         result = await GetBoardColumnsUseCase().execute(
             GetBoardColumnsCommand(board_id),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id),
             uow=uow,
         )
     except EntityNotFoundError:
@@ -243,13 +248,14 @@ async def archive_tree(
     entity_type: str,
     entity_id: str,
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Archive an entity and all its descendants in cascade."""
     try:
         result = await ArchiveTreeUseCase().execute(
             ArchiveTreeCommand(entity_type, entity_id),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id, board_id=board_id),
             uow=uow,
         )
     except ValueError as e:
@@ -263,13 +269,14 @@ async def restore_tree(
     entity_type: str,
     entity_id: str,
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Restore an archived entity and all its descendants."""
     try:
         result = await RestoreTreeUseCase().execute(
             RestoreTreeCommand(entity_type, entity_id),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id, board_id=board_id),
             uow=uow,
         )
     except ValueError as e:
@@ -308,13 +315,14 @@ async def share_board(
 async def list_board_shares(
     board_id: str,
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """List all shares for a board."""
     try:
         result = await ListBoardSharesUseCase().execute(
             ListBoardSharesCommand(board_id),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id, board_id=board_id),
             uow=uow,
         )
     except EntityNotFoundError:
@@ -328,13 +336,14 @@ async def update_board_share(
     share_id: str,
     data: BoardShareUpdate,
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Update a share's permission (owner/admin only)."""
     try:
         result = await UpdateBoardShareUseCase().execute(
             UpdateBoardShareCommand(share_id, data),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id, board_id=board_id),
             uow=uow,
         )
     except PermissionDeniedError as e:
@@ -347,13 +356,14 @@ async def revoke_board_share(
     board_id: str,
     share_id: str,
     user_id: str = Depends(require_user),
+    realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Revoke a share (owner/admin can revoke, shared user can leave)."""
     try:
         await RevokeBoardShareUseCase().execute(
             RevokeBoardShareCommand(share_id),
-            actor=RESTAdapterContract.actor(user_id),
+            actor=RESTAdapterContract.actor(user_id, realm_id=realm_id, board_id=board_id),
             uow=uow,
         )
     except PermissionDeniedError as e:

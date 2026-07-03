@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
+from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.core.domain.amendment_eligibility import evaluate_amendment_eligibility
 from okto_pulse.core.domain.enums import (
     CardStatus,
@@ -168,6 +169,83 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
 )
 
 settings = get_settings()
+
+
+def _scope_actor_id(user_id: str | None, query_scope: QueryScope | None = None) -> str | None:
+    return query_scope.actor_id if query_scope is not None else user_id
+
+
+def _scope_realm_id(
+    realm_id: str | None = None,
+    query_scope: QueryScope | None = None,
+) -> str | None:
+    if query_scope is not None and query_scope.realm_id is not None:
+        return query_scope.realm_id
+    return realm_id
+
+
+def _board_owner_matches(
+    board: Board | None,
+    user_id: str | None,
+    query_scope: QueryScope | None = None,
+) -> bool:
+    scoped_actor_id = _scope_actor_id(user_id, query_scope)
+    return bool(board and scoped_actor_id and board.owner_id == scoped_actor_id)
+
+
+def _board_scope_clauses(
+    *,
+    board_id: str | None = None,
+    user_id: str | None = None,
+    realm_id: str | None = None,
+    query_scope: QueryScope | None = None,
+    require_ownership: bool = True,
+) -> list[Any] | None:
+    if query_scope is not None:
+        if query_scope.target_board_id and board_id and query_scope.target_board_id != board_id:
+            return None
+        if not query_scope.allows_board_id(board_id):
+            return None
+
+    clauses: list[Any] = []
+    if board_id:
+        clauses.append(Board.id == board_id)
+
+    scoped_realm_id = _scope_realm_id(realm_id, query_scope)
+    if scoped_realm_id:
+        clauses.append(Board.realm_id == scoped_realm_id)
+
+    if query_scope is not None and query_scope.allowed_board_ids is not None:
+        allowed_board_ids = tuple(query_scope.allowed_board_ids)
+        if not allowed_board_ids:
+            return None
+        clauses.append(Board.id.in_(allowed_board_ids))
+
+    scoped_actor_id = _scope_actor_id(user_id, query_scope)
+    if require_ownership and scoped_actor_id:
+        clauses.append(Board.owner_id == scoped_actor_id)
+
+    return clauses
+
+
+def _board_scope_select(
+    *,
+    board_id: str | None = None,
+    user_id: str | None = None,
+    realm_id: str | None = None,
+    query_scope: QueryScope | None = None,
+    require_ownership: bool = True,
+):
+    clauses = _board_scope_clauses(
+        board_id=board_id,
+        user_id=user_id,
+        realm_id=realm_id,
+        query_scope=query_scope,
+        require_ownership=require_ownership,
+    )
+    if clauses is None:
+        return None
+    return select(Board).where(*clauses)
 
 CARD_RESOURCE_READ_ONLY_MESSAGE = (
     "Card resources are read-only governed snapshots. Copy Knowledge Base, "
@@ -1132,13 +1210,19 @@ async def propagate_artifacts(
             await db.flush()
 
 
-async def resolve_actor_name(db: AsyncSession, user_id: str, board_id: str) -> str:
+async def resolve_actor_name(
+    db: AsyncSession,
+    user_id: str,
+    board_id: str,
+    *,
+    query_scope: QueryScope | None = None,
+) -> str:
     """Resolve a user/agent ID to a friendly display name."""
     agent = await db.get(Agent, user_id)
     if agent:
         return agent.name
     board = await db.get(Board, board_id)
-    if board and board.owner_id == user_id:
+    if _board_owner_matches(board, user_id, query_scope):
         return "Owner"
     if user_id == "dev-user":
         return "Owner"
@@ -1379,24 +1463,37 @@ class BoardService:
             )
         return board
 
-    async def get_board(self, board_id: str, user_id: str | None = None) -> Board | None:
+    async def get_board(
+        self,
+        board_id: str,
+        user_id: str | None = None,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> Board | None:
         """Get a board by ID with all relationships."""
+        clauses = _board_scope_clauses(
+            board_id=board_id,
+            user_id=user_id,
+            query_scope=query_scope,
+            require_ownership=True,
+        )
+        if clauses is None:
+            return None
         query = (
             select(Board)
             .options(selectinload(Board.cards).selectinload(Card.attachments))
             .options(selectinload(Board.cards).selectinload(Card.qa_items))
             .options(selectinload(Board.cards).selectinload(Card.comments))
             .options(selectinload(Board.cards).selectinload(Card.architecture_designs))
-            .where(Board.id == board_id)
+            .where(*clauses)
         )
-        if user_id:
-            query = query.where(Board.owner_id == user_id)
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
     async def list_boards(
         self, user_id: str, offset: int = 0, limit: int = 20, realm_id: str | None = None,
         view: str = "my",
+        query_scope: QueryScope | None = None,
     ) -> tuple[list[Board], int]:
         """List boards for a user.
 
@@ -1404,38 +1501,50 @@ class BoardService:
         """
         from okto_pulse.core.models.db import BoardShare
 
+        scoped_user_id = _scope_actor_id(user_id, query_scope) or user_id
+        scoped_realm_id = _scope_realm_id(realm_id, query_scope)
         filters = []
-        if realm_id:
-            filters.append(Board.realm_id == realm_id)
+        if scoped_realm_id:
+            filters.append(Board.realm_id == scoped_realm_id)
+        if query_scope is not None:
+            if not query_scope.allows_board_id(query_scope.target_board_id):
+                return [], 0
+            if query_scope.target_board_id:
+                filters.append(Board.id == query_scope.target_board_id)
+            if query_scope.allowed_board_ids is not None:
+                allowed_board_ids = tuple(query_scope.allowed_board_ids)
+                if not allowed_board_ids:
+                    return [], 0
+                filters.append(Board.id.in_(allowed_board_ids))
 
         if view == "shared":
             # Boards shared with the user (not owned)
             base = (
                 select(Board)
                 .join(BoardShare, BoardShare.board_id == Board.id)
-                .where(BoardShare.user_id == user_id, *filters)
+                .where(BoardShare.user_id == scoped_user_id, *filters)
             )
             count_base = (
                 select(func.count())
                 .select_from(Board)
                 .join(BoardShare, BoardShare.board_id == Board.id)
-                .where(BoardShare.user_id == user_id, *filters)
+                .where(BoardShare.user_id == scoped_user_id, *filters)
             )
         elif view == "all":
             # Owned OR shared
-            owned = select(Board.id).where(Board.owner_id == user_id, *filters)
+            owned = select(Board.id).where(Board.owner_id == scoped_user_id, *filters)
             shared = (
                 select(Board.id)
                 .join(BoardShare, BoardShare.board_id == Board.id)
-                .where(BoardShare.user_id == user_id, *filters)
+                .where(BoardShare.user_id == scoped_user_id, *filters)
             )
             combined_ids = owned.union(shared).subquery()
-            base = select(Board).where(Board.id.in_(select(combined_ids)))
-            count_base = select(func.count()).select_from(Board).where(Board.id.in_(select(combined_ids)))
+            base = select(Board).where(Board.id.in_(select(combined_ids.c.id)))
+            count_base = select(func.count()).select_from(Board).where(Board.id.in_(select(combined_ids.c.id)))
         else:
             # "my" - owned boards only
-            base = select(Board).where(Board.owner_id == user_id, *filters)
-            count_base = select(func.count()).select_from(Board).where(Board.owner_id == user_id, *filters)
+            base = select(Board).where(Board.owner_id == scoped_user_id, *filters)
+            count_base = select(func.count()).select_from(Board).where(Board.owner_id == scoped_user_id, *filters)
 
         total = (await self.db.execute(count_base)).scalar() or 0
         query = base.order_by(Board.updated_at.desc()).offset(offset).limit(limit)
@@ -1443,9 +1552,16 @@ class BoardService:
         boards = list(result.scalars().all())
         return boards, total
 
-    async def update_board(self, board_id: str, user_id: str, data: BoardUpdate) -> Board | None:
+    async def update_board(
+        self,
+        board_id: str,
+        user_id: str,
+        data: BoardUpdate,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> Board | None:
         """Update a board."""
-        board = await self.get_board(board_id, user_id)
+        board = await self.get_board(board_id, user_id, query_scope=query_scope)
         if not board:
             return None
 
@@ -1670,15 +1786,23 @@ class CardService:
             )
 
     async def create_card(
-        self, board_id: str, user_id: str, data: CardCreate, skip_ownership_check: bool = False
+        self,
+        board_id: str,
+        user_id: str,
+        data: CardCreate,
+        skip_ownership_check: bool = False,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> Card | None:
         """Create a new card in a board."""
-        if skip_ownership_check:
-            # Just verify the board exists (for MCP agents)
-            board_query = select(Board).where(Board.id == board_id)
-        else:
-            # Check if board exists and user owns it (for REST API)
-            board_query = select(Board).where(Board.id == board_id, Board.owner_id == user_id)
+        board_query = _board_scope_select(
+            board_id=board_id,
+            user_id=user_id,
+            query_scope=None if skip_ownership_check else query_scope,
+            require_ownership=not skip_ownership_check,
+        )
+        if board_query is None:
+            return None
         result = await self.db.execute(board_query)
         board = result.scalar_one_or_none()
         if not board:
@@ -4852,13 +4976,23 @@ class SpecService:
         return changes
 
     async def create_spec(
-        self, board_id: str, user_id: str, data: SpecCreate, skip_ownership_check: bool = False
+        self,
+        board_id: str,
+        user_id: str,
+        data: SpecCreate,
+        skip_ownership_check: bool = False,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> Spec | None:
         """Create a new spec in a board."""
-        if skip_ownership_check:
-            board_query = select(Board).where(Board.id == board_id)
-        else:
-            board_query = select(Board).where(Board.id == board_id, Board.owner_id == user_id)
+        board_query = _board_scope_select(
+            board_id=board_id,
+            user_id=user_id,
+            query_scope=None if skip_ownership_check else query_scope,
+            require_ownership=not skip_ownership_check,
+        )
+        if board_query is None:
+            return None
         result = await self.db.execute(board_query)
         if not result.scalar_one_or_none():
             return None
@@ -6773,14 +6907,21 @@ class ShareService:
         self.db = db
 
     async def share_board(
-        self, board_id: str, owner_id: str, realm_id: str, data: BoardShareCreate
+        self,
+        board_id: str,
+        owner_id: str,
+        realm_id: str,
+        data: BoardShareCreate,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> BoardShare | None:
         """Share a board with another user. Only owner/admin can share."""
         # Check board exists and caller is owner or admin
-        if not await self._can_manage_shares(board_id, owner_id):
+        if not await self._can_manage_shares(board_id, owner_id, query_scope=query_scope):
             return None
 
-        if data.user_id == owner_id:
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        if data.user_id == scoped_owner_id:
             return None  # Can't share with yourself
 
         share = BoardShare(
@@ -6788,7 +6929,7 @@ class ShareService:
             user_id=data.user_id,
             realm_id=realm_id,
             permission=data.permission,
-            shared_by=owner_id,
+            shared_by=scoped_owner_id,
         )
         self.db.add(share)
         await self.db.flush()
@@ -6805,62 +6946,92 @@ class ShareService:
         return list(result.scalars().all())
 
     async def update_share(
-        self, share_id: str, caller_id: str, data: BoardShareUpdate
+        self,
+        share_id: str,
+        caller_id: str,
+        data: BoardShareUpdate,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> BoardShare | None:
         """Update a share permission. Only owner/admin can update."""
         share = await self.db.get(BoardShare, share_id)
         if not share:
             return None
 
-        if not await self._can_manage_shares(share.board_id, caller_id):
+        if not await self._can_manage_shares(share.board_id, caller_id, query_scope=query_scope):
             return None
 
         share.permission = data.permission
         return share
 
-    async def revoke_share(self, share_id: str, caller_id: str) -> bool:
+    async def revoke_share(
+        self,
+        share_id: str,
+        caller_id: str,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> bool:
         """Revoke a share. Owner/admin can revoke, or user can leave."""
         share = await self.db.get(BoardShare, share_id)
         if not share:
             return False
 
         # Allow if caller is the shared user (leaving) or can manage shares
-        if share.user_id != caller_id and not await self._can_manage_shares(share.board_id, caller_id):
+        scoped_caller_id = _scope_actor_id(caller_id, query_scope) or caller_id
+        if share.user_id != scoped_caller_id and not await self._can_manage_shares(
+            share.board_id,
+            caller_id,
+            query_scope=query_scope,
+        ):
             return False
 
         await self.db.delete(share)
         return True
 
-    async def get_user_permission(self, board_id: str, user_id: str) -> str | None:
+    async def get_user_permission(
+        self,
+        board_id: str,
+        user_id: str,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> str | None:
         """Get a user's permission level for a board. Returns None if no access."""
         # Check if owner
         board = await self.db.get(Board, board_id)
         if not board:
             return None
-        if board.owner_id == user_id:
+        if _board_owner_matches(board, user_id, query_scope):
             return "owner"
 
         # Check shares
+        scoped_user_id = _scope_actor_id(user_id, query_scope) or user_id
         query = select(BoardShare).where(
             BoardShare.board_id == board_id,
-            BoardShare.user_id == user_id,
+            BoardShare.user_id == scoped_user_id,
         )
         result = await self.db.execute(query)
         share = result.scalar_one_or_none()
         return share.permission if share else None
 
-    async def _can_manage_shares(self, board_id: str, user_id: str) -> bool:
+    async def _can_manage_shares(
+        self,
+        board_id: str,
+        user_id: str,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> bool:
         """Check if user is owner or admin of the board."""
         board = await self.db.get(Board, board_id)
         if not board:
             return False
-        if board.owner_id == user_id:
+        if _board_owner_matches(board, user_id, query_scope):
             return True
 
         # Check if admin via share
+        scoped_user_id = _scope_actor_id(user_id, query_scope) or user_id
         query = select(BoardShare).where(
             BoardShare.board_id == board_id,
-            BoardShare.user_id == user_id,
+            BoardShare.user_id == scoped_user_id,
             BoardShare.permission == "admin",
         )
         result = await self.db.execute(query)
@@ -6920,10 +7091,22 @@ class StoryService:
         IdeationStatus.EVALUATING,
     )
 
-    async def _ensure_board(self, board_id: str, user_id: str, skip_ownership_check: bool = False) -> Board | None:
-        query = select(Board).where(Board.id == board_id)
-        if not skip_ownership_check:
-            query = query.where(Board.owner_id == user_id)
+    async def _ensure_board(
+        self,
+        board_id: str,
+        user_id: str,
+        skip_ownership_check: bool = False,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> Board | None:
+        query = _board_scope_select(
+            board_id=board_id,
+            user_id=user_id,
+            query_scope=None if skip_ownership_check else query_scope,
+            require_ownership=not skip_ownership_check,
+        )
+        if query is None:
+            return None
         return (await self.db.execute(query)).scalar_one_or_none()
 
     async def _topic_for_board(self, topic_id: str, board_id: str) -> Topic | None:
@@ -7465,8 +7648,14 @@ class StoryService:
         data: StoryConversionRequest,
         *,
         skip_ownership_check: bool = False,
+        query_scope: QueryScope | None = None,
     ) -> tuple[Ideation, list[StoryIdeationLink], int] | None:
-        if not await self._ensure_board(board_id, user_id, skip_ownership_check):
+        if not await self._ensure_board(
+            board_id,
+            user_id,
+            skip_ownership_check,
+            query_scope=query_scope,
+        ):
             return None
         stories = list((await self.db.execute(
             select(Story)
@@ -7509,6 +7698,7 @@ class StoryService:
                     labels=sorted({label for story in stories for label in (story.labels or [])}) or None,
                 ),
                 skip_ownership_check=skip_ownership_check,
+                query_scope=query_scope,
             )
             if not ideation:
                 return None
@@ -7645,13 +7835,23 @@ class IdeationService:
         return changes
 
     async def create_ideation(
-        self, board_id: str, user_id: str, data: IdeationCreate, skip_ownership_check: bool = False
+        self,
+        board_id: str,
+        user_id: str,
+        data: IdeationCreate,
+        skip_ownership_check: bool = False,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> Ideation | None:
         """Create a new ideation in a board."""
-        if skip_ownership_check:
-            board_query = select(Board).where(Board.id == board_id)
-        else:
-            board_query = select(Board).where(Board.id == board_id, Board.owner_id == user_id)
+        board_query = _board_scope_select(
+            board_id=board_id,
+            user_id=user_id,
+            query_scope=None if skip_ownership_check else query_scope,
+            require_ownership=not skip_ownership_check,
+        )
+        if board_query is None:
+            return None
         result = await self.db.execute(board_query)
         if not result.scalar_one_or_none():
             return None
@@ -8169,6 +8369,7 @@ class IdeationService:
         mockup_ids: list[str] | None = None, kb_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
+        query_scope: QueryScope | None = None,
     ) -> Spec | None:
         """Create a Spec draft linked to an ideation.
 
@@ -8222,7 +8423,11 @@ class IdeationService:
         )
         spec_service = SpecService(self.db)
         spec = await spec_service.create_spec(
-            ideation.board_id, user_id, spec_data, skip_ownership_check=skip_ownership_check
+            ideation.board_id,
+            user_id,
+            spec_data,
+            skip_ownership_check=skip_ownership_check,
+            query_scope=query_scope,
         )
         if spec:
             # Propagate mockups and Q&A from ideation to spec
@@ -8463,7 +8668,13 @@ class RefinementService:
         return changes
 
     async def create_refinement(
-        self, ideation_id: str, user_id: str, data: RefinementCreate, skip_ownership_check: bool = False
+        self,
+        ideation_id: str,
+        user_id: str,
+        data: RefinementCreate,
+        skip_ownership_check: bool = False,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> Refinement | None:
         """Create a new refinement for a done ideation.
 
@@ -8484,7 +8695,14 @@ class RefinementService:
 
         board_id = ideation.board_id
         if not skip_ownership_check:
-            board_query = select(Board).where(Board.id == board_id, Board.owner_id == user_id)
+            board_query = _board_scope_select(
+                board_id=board_id,
+                user_id=user_id,
+                query_scope=query_scope,
+                require_ownership=True,
+            )
+            if board_query is None:
+                return None
             result = await self.db.execute(board_query)
             if not result.scalar_one_or_none():
                 return None
@@ -8933,6 +9151,7 @@ class RefinementService:
         mockup_ids: list[str] | None = None, kb_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
+        query_scope: QueryScope | None = None,
     ) -> Spec | None:
         """Create a Spec draft linked to a refinement.
 
@@ -8999,7 +9218,11 @@ class RefinementService:
         )
         spec_service = SpecService(self.db)
         spec = await spec_service.create_spec(
-            refinement.board_id, user_id, spec_data, skip_ownership_check=skip_ownership_check
+            refinement.board_id,
+            user_id,
+            spec_data,
+            skip_ownership_check=skip_ownership_check,
+            query_scope=query_scope,
         )
         if spec:
             # Propagate artifacts using pre-flush snapshots
@@ -9742,14 +9965,24 @@ class SprintService:
     async def create_sprint(
         self, board_id: str, user_id: str, data: SprintCreate,
         skip_ownership_check: bool = False,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> Sprint | None:
         """Create a new sprint for a spec."""
         spec = await self.db.get(Spec, data.spec_id)
         if not spec or spec.board_id != board_id:
             return None
         if not skip_ownership_check:
-            board = await self.db.get(Board, board_id)
-            if not board or board.owner_id != user_id:
+            board_query = _board_scope_select(
+                board_id=board_id,
+                user_id=user_id,
+                query_scope=query_scope,
+                require_ownership=True,
+            )
+            if board_query is None:
+                return None
+            result = await self.db.execute(board_query)
+            if not result.scalar_one_or_none():
                 return None
 
         await self._validate_hotfix_lane_create(board_id, spec, data)

@@ -46,7 +46,12 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.main import CardService, SprintService
+
+
+def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
 
 
 # ===========================================================================
@@ -255,7 +260,12 @@ class CreateSprintUseCase:
     ) -> CreateSprintResult:
         session = session_of(uow)
         service = SprintService(session)
-        sprint = await service.create_sprint(command.board_id, actor.actor_id, command.data)
+        sprint = await service.create_sprint(
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not sprint:
             raise EntityNotFoundError("spec_or_board", command.board_id)
         await commit(uow)

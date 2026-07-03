@@ -35,6 +35,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services import (
     AgentService,
     BoardService,
@@ -52,6 +53,18 @@ def _attach_effective_board_settings(board: Any) -> Any:
             getattr(board, "settings", None)
         )
     return board
+
+
+def _query_scope_for_actor(
+    actor: ActorContext,
+    *,
+    board_id: str | None = None,
+    require_ownership: bool = True,
+) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(
+        target_board_id=board_id,
+        require_ownership=require_ownership,
+    )
 
 
 # --- list -------------------------------------------------------------------
@@ -86,8 +99,8 @@ class ListBoardsUseCase:
             actor.actor_id,
             command.offset,
             command.limit,
-            realm_id=actor.realm_id,
             view=command.view,
+            query_scope=_query_scope_for_actor(actor),
         )
         for board in boards:
             _attach_effective_board_settings(board)
@@ -122,7 +135,11 @@ class GetBoardUseCase:
         self, command: GetBoardCommand, *, actor: ActorContext, uow: Any
     ) -> GetBoardResult:
         session = session_of(uow)
-        board = await BoardService(session).get_board(command.board_id, actor.actor_id)
+        board = await BoardService(session).get_board(
+            command.board_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
         board_agents = await AgentService(session).list_agents_for_board(command.board_id)
@@ -168,11 +185,20 @@ class UpdateBoardUseCase:
     ) -> UpdateBoardResult:
         session = session_of(uow)
         service = BoardService(session)
-        board = await service.update_board(command.board_id, actor.actor_id, command.data)
+        board = await service.update_board(
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
         await commit(uow)
-        board = await service.get_board(command.board_id, actor.actor_id)
+        board = await service.get_board(
+            command.board_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         board.__dict__["agents"] = await AgentService(session).list_agents_for_board(
             command.board_id
         )
@@ -241,7 +267,12 @@ class CreateCardInBoardUseCase:
         self, command: CreateCardInBoardCommand, *, actor: ActorContext, uow: Any
     ) -> CreateCardInBoardResult:
         service = CardService(session_of(uow))
-        card = await service.create_card(command.board_id, actor.actor_id, command.data)
+        card = await service.create_card(
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not card:
             raise EntityNotFoundError("board", command.board_id)
         await commit(uow)
@@ -276,7 +307,9 @@ class GetBoardColumnsUseCase:
         self, command: GetBoardColumnsCommand, *, actor: ActorContext, uow: Any
     ) -> GetBoardColumnsResult:
         board = await BoardService(session_of(uow)).get_board(
-            command.board_id, actor.actor_id
+            command.board_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
         )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
@@ -381,7 +414,11 @@ class ShareBoardUseCase:
         self, command: ShareBoardCommand, *, actor: ActorContext, uow: Any
     ) -> ShareBoardResult:
         share = await ShareService(session_of(uow)).share_board(
-            command.board_id, actor.actor_id, actor.realm_id or "", command.data
+            command.board_id,
+            actor.actor_id,
+            actor.realm_id or "",
+            command.data,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
         )
         if not share:
             raise PermissionDeniedError(
@@ -415,7 +452,11 @@ class ListBoardSharesUseCase:
         self, command: ListBoardSharesCommand, *, actor: ActorContext, uow: Any
     ) -> ListBoardSharesResult:
         service = ShareService(session_of(uow))
-        perm = await service.get_user_permission(command.board_id, actor.actor_id)
+        perm = await service.get_user_permission(
+            command.board_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not perm:
             raise EntityNotFoundError("board", command.board_id)
         return ListBoardSharesResult(await service.list_shares(command.board_id))
@@ -446,7 +487,10 @@ class UpdateBoardShareUseCase:
         self, command: UpdateBoardShareCommand, *, actor: ActorContext, uow: Any
     ) -> UpdateBoardShareResult:
         share = await ShareService(session_of(uow)).update_share(
-            command.share_id, actor.actor_id, command.data
+            command.share_id,
+            actor.actor_id,
+            command.data,
+            query_scope=_query_scope_for_actor(actor),
         )
         if not share:
             raise PermissionDeniedError("Not authorized to update this share")
@@ -475,7 +519,9 @@ class RevokeBoardShareUseCase:
         self, command: RevokeBoardShareCommand, *, actor: ActorContext, uow: Any
     ) -> RevokeBoardShareResult:
         revoked = await ShareService(session_of(uow)).revoke_share(
-            command.share_id, actor.actor_id
+            command.share_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor),
         )
         if not revoked:
             raise PermissionDeniedError("Not authorized to revoke this share")

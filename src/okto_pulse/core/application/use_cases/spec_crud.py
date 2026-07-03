@@ -20,8 +20,13 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.application_schemas import SpecUpdate
 from okto_pulse.core.services import BoardService, SpecService
+
+
+def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
 
 
 # --- create -----------------------------------------------------------------
@@ -50,7 +55,12 @@ class CreateSpecUseCase:
         self, command: CreateSpecCommand, *, actor: ActorContext, uow: Any
     ) -> CreateSpecResult:
         service = SpecService(session_of(uow))
-        spec = await service.create_spec(command.board_id, actor.actor_id, command.data)
+        spec = await service.create_spec(
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not spec:
             raise EntityNotFoundError("board", command.board_id)
         await commit(uow)
@@ -85,7 +95,11 @@ class ListSpecsUseCase:
         self, command: ListSpecsCommand, *, actor: ActorContext, uow: Any
     ) -> ListSpecsResult:
         session = session_of(uow)
-        board = await BoardService(session).get_board(command.board_id, actor.actor_id)
+        board = await BoardService(session).get_board(
+            command.board_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
         specs = await SpecService(session).list_specs(

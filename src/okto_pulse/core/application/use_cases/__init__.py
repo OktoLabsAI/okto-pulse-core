@@ -89,6 +89,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.application.use_cases.cognitive_readiness import (
     EvaluateBugCognitiveClosureCommand,
     EvaluateBugCognitiveClosureResult,

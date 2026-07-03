@@ -49,6 +49,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services import (
     IdeationService,
     RefinementKnowledgeService,
@@ -56,6 +57,10 @@ from okto_pulse.core.services import (
     RefinementService,
     SpecService,
 )
+
+
+def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
 
 
 # ===========================================================================
@@ -94,7 +99,10 @@ class CreateRefinementUseCase:
     ) -> CreateRefinementResult:
         service = RefinementService(session_of(uow))
         refinement = await service.create_refinement(
-            command.ideation_id, actor.actor_id, command.data
+            command.ideation_id,
+            actor.actor_id,
+            command.data,
+            query_scope=_query_scope_for_actor(actor),
         )
         if not refinement:
             raise EntityNotFoundError("refinement_ideation_owner", command.ideation_id)
@@ -313,7 +321,9 @@ class DeriveSpecFromRefinementUseCase:
     ) -> DeriveSpecFromRefinementResult:
         session = session_of(uow)
         spec = await RefinementService(session).derive_spec(
-            command.refinement_id, actor.actor_id
+            command.refinement_id,
+            actor.actor_id,
+            query_scope=_query_scope_for_actor(actor),
         )
         if not spec:
             raise EntityNotFoundError("refinement", command.refinement_id)
