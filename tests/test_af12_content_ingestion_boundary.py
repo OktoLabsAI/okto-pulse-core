@@ -30,6 +30,23 @@ def test_af12_core_mcp_tools_expose_abstract_content_reference_only():
         assert "file_url" not in schema_params
 
 
+def test_af12_all_known_mcp_ingestion_callsites_use_resolver_helpers():
+    expected_helpers = {
+        "okto_pulse_upload_attachment": "_resolve_binary_content",
+        "okto_pulse_add_ideation_knowledge": "_resolve_text_content",
+        "okto_pulse_add_spec_knowledge": "_resolve_text_content",
+        "okto_pulse_add_refinement_knowledge": "_resolve_text_content",
+    }
+
+    for tool_name, helper_name in expected_helpers.items():
+        tool = getattr(mcp_server, tool_name)
+        source = inspect.getsource(tool.fn)
+        assert helper_name in source
+        assert "content_reference=content_reference" in source
+        assert "file_path" not in source
+        assert "file_url" not in source
+
+
 def test_af12_storage_bypass_gate_covers_real_core_api_and_mcp():
     report = run_storage_bypass_gate()
     assert report.ok, [v.as_dict() for v in report.violations]

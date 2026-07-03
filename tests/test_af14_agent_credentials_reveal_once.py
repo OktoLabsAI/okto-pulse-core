@@ -16,6 +16,7 @@ from okto_pulse.core.application.boundary.agent_secret_surface_gate import (
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.models.schemas import AgentCreate, AgentResponse, AgentRevealResponse
+from okto_pulse.core.ports.mcp_auth import McpCredential, mcp_credential_from_sources
 from okto_pulse.core.services import AgentService
 
 USER = "af14-user"
@@ -62,6 +63,50 @@ async def test_af14_service_persists_marker_and_authenticates_by_hash():
         assert await service.get_agent_by_key(first_secret) is None
         assert (await service.get_agent_by_key(second_secret)).id == agent.id
         assert agent.api_key != second_secret
+
+
+@pytest.mark.asyncio
+async def test_af14_mcp_query_header_and_bearer_authenticate_by_hash():
+    from okto_pulse.core.mcp import server as mcp_server
+
+    mcp_server.register_session_factory(get_session_factory())
+
+    async with get_session_factory()() as db:
+        service = AgentService(db)
+        agent, secret = await service.create_agent(USER, AgentCreate(name="af14-mcp"))
+        await db.commit()
+        assert agent.api_key.startswith("sha256:")
+        agent_id = agent.id
+
+    credentials = [
+        mcp_credential_from_sources(
+            query_param=secret,
+            x_api_key_header=None,
+            authorization_header=None,
+        ),
+        mcp_credential_from_sources(
+            query_param=None,
+            x_api_key_header=secret,
+            authorization_header=None,
+        ),
+        mcp_credential_from_sources(
+            query_param=None,
+            x_api_key_header=None,
+            authorization_header=f"Bearer {secret}",
+        ),
+    ]
+    assert [credential.source for credential in credentials if credential] == [
+        "query_param",
+        "x_api_key_header",
+        "authorization_bearer",
+    ]
+
+    for credential in credentials:
+        assert isinstance(credential, McpCredential)
+        resolved = await mcp_server._authenticate_mcp_credential(credential)
+        assert resolved is not None
+        assert resolved.id == agent_id
+        assert resolved.api_key != secret
 
 
 def test_af14_rest_create_list_get_and_regenerate_are_secret_free_except_reveal_once():
