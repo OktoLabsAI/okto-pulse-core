@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from .gates import (
     DEFAULT_CORE_PURE_FORBIDDEN_DEPENDENCIES,
+    IMPORT_BOUNDARY_BASELINE_LEDGER,
     TOOLS_LOC_BASELINE,
     DependencyAuditGate,
     DependencyAuditGateInput,
+    ImportBaselineLedgerEntry,
     ImportBoundaryGate,
     ImportBoundaryGateInput,
     ImportSideEffectSmokeGate,
@@ -87,6 +89,8 @@ from .report import (
 )
 from .singleton_gate import (
     BASELINE_SINGLETONS,
+    BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER,
+    RUNTIME_SINGLETON_BASELINE_LEDGER,
     SINGLETON_LEDGER,
     AntiSingletonGate,
     AntiSingletonGateInput,
@@ -252,6 +256,7 @@ __all__ = [
     "AntiSingletonGate",
     "AntiSingletonGateInput",
     "BASELINE_SINGLETONS",
+    "BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER",
     "BLOCKING_CLASSIFICATIONS",
     "OWNERSHIP_SURFACES",
     "REQUIRED_BACKSTOP_FIELDS",
@@ -369,6 +374,7 @@ __all__ = [
     "SchedulerControlSymbolFinding",
     "SchedulerControlSymbolGate",
     "SINGLETON_LEDGER",
+    "RUNTIME_SINGLETON_BASELINE_LEDGER",
     "scheduler_signal_conformance",
     "settings_split_conformance",
     "CommunityLifespanReplay",
@@ -409,6 +415,8 @@ __all__ = [
     "GateReport",
     "GateSeverity",
     "GateStatus",
+    "IMPORT_BOUNDARY_BASELINE_LEDGER",
+    "ImportBaselineLedgerEntry",
     "ImportBoundaryGate",
     "ImportBoundaryGateInput",
     "ImportSideEffectSmokeGate",

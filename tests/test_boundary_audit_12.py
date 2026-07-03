@@ -27,7 +27,7 @@ from okto_pulse.core.application.boundary import (
     enforce_exception_policy,
 )
 
-PURE_LAYERS = {"domain", "application", "future_target"}
+PURE_LAYERS = {"domain", "application", "ports", "future_target"}
 
 AF11_ELIMINATED_APPLICATION_IMPORTS = (
     ("okto_pulse/core/application/use_cases/cognitive_readiness.py", 29, "okto_pulse.core.kg.cognitive_readiness", "kg"),
@@ -100,7 +100,7 @@ AF11_ELIMINATED_APPLICATION_IMPORTS = (
         ("okto_pulse/core/telemetry/store.py", "outbound"),
         ("okto_pulse/core/models/db.py", "outbound"),
         ("okto_pulse/core/events/bus.py", "event_runtime_messaging"),
-        ("okto_pulse/core/ports/foo.py", "future_target"),
+        ("okto_pulse/core/ports/foo.py", "ports"),
         ("okto_pulse/tools/x.py", "packaging_ops_edition"),
         ("pyproject.toml", "packaging_ops_edition"),
         ("okto_pulse/weird/z.py", "unclassified"),
@@ -108,6 +108,12 @@ AF11_ELIMINATED_APPLICATION_IMPORTS = (
 )
 def test_layer_resolver_current_tree_v2(path: str, expected: str) -> None:
     assert LayerResolver().resolve(path).layer == expected
+
+
+def test_layer_resolver_current_core_ports_is_not_future_governance() -> None:
+    resolution = LayerResolver().resolve("okto_pulse/core/ports/foo.py")
+    assert resolution.layer == "ports"
+    assert resolution.requires_governance is False
 
 
 def test_import_boundary_pure_layers_have_no_blocking_on_real_tree() -> None:

@@ -370,6 +370,115 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
     },
 }
 
+#: Equivalent per-occurrence runtime ledger for singleton names that are reused
+#: across modules (for example ``_singleton``). The historical
+#: ``SINGLETON_LEDGER`` stays keyed by name for public compatibility; this keyed
+#: ledger removes ambiguity when enforcing BASELINE_SINGLETONS coverage.
+RUNTIME_SINGLETON_BASELINE_LEDGER: dict[str, dict[str, str]] = {
+    "okto_pulse/core/api/kg_events_hub.py::_hub": {
+        "file": "okto_pulse/core/api/kg_events_hub.py",
+        "owner": "okto-pulse-core/inbound-events",
+        "target_provider": "kg_events_hub",
+        "retirement_criterion": "Move the process-wide KG event hub behind an inbound event-bus provider.",
+    },
+    "okto_pulse/core/events/dispatcher.py::_dispatcher": {
+        "file": "okto_pulse/core/events/dispatcher.py",
+        "owner": "okto-pulse-core/events",
+        "target_provider": "domain_event_dispatcher",
+        "retirement_criterion": "Compose the dispatcher through RuntimeComposition or an edition-scoped event bus.",
+    },
+    "okto_pulse/core/infra/auth.py::_auth_provider": {
+        "file": "okto_pulse/core/infra/auth.py",
+        "owner": "okto-pulse-core/auth-boundary",
+        "target_provider": "auth_provider",
+        "retirement_criterion": "Inject auth providers through composition instead of a process-global setter.",
+    },
+    "okto_pulse/core/infra/config.py::_settings_instance": {
+        "file": "okto_pulse/core/infra/config.py",
+        "owner": "okto-pulse-core/settings",
+        "target_provider": "settings_provider",
+        "retirement_criterion": "Resolve settings from an edition-scoped provider rather than a module singleton.",
+    },
+    "okto_pulse/core/infra/database.py::_engine": {
+        "file": "okto_pulse/core/infra/database.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "relational_engine",
+        "retirement_criterion": "Remove after relational engine ownership is fully composed by each edition.",
+    },
+    "okto_pulse/core/infra/database.py::_session_factory": {
+        "file": "okto_pulse/core/infra/database.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "relational_session_factory",
+        "retirement_criterion": "Remove after UnitOfWork/session factory composition replaces direct core storage.",
+    },
+    "okto_pulse/core/infra/storage.py::_storage_provider": {
+        "file": "okto_pulse/core/infra/storage.py",
+        "owner": "okto-pulse-core/storage",
+        "target_provider": "storage_provider",
+        "retirement_criterion": "Resolve storage providers through composition for every edition.",
+    },
+    "okto_pulse/core/kg/backpressure.py::_default_gate": {
+        "file": "okto_pulse/core/kg/backpressure.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_backpressure_gate",
+        "retirement_criterion": "Move the default KG backpressure gate behind KG runtime composition.",
+    },
+    "okto_pulse/core/kg/connection_pool.py::_pool": {
+        "file": "okto_pulse/core/kg/connection_pool.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_connection_pool",
+        "retirement_criterion": "Provide KG connection pools through the graph runtime store/provider.",
+    },
+    "okto_pulse/core/kg/global_discovery/outbox_worker.py::_singleton": {
+        "file": "okto_pulse/core/kg/global_discovery/outbox_worker.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "global_discovery_outbox_worker",
+        "retirement_criterion": "Move the global discovery outbox worker lifecycle behind runtime composition.",
+    },
+    "okto_pulse/core/kg/interfaces/registry.py::_registry": {
+        "file": "okto_pulse/core/kg/interfaces/registry.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_provider_registry",
+        "retirement_criterion": "Replace the process KG registry with edition-scoped graph runtime providers.",
+    },
+    "okto_pulse/core/kg/interfaces/registry.py::_configured": {
+        "file": "okto_pulse/core/kg/interfaces/registry.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_provider_registry",
+        "retirement_criterion": "Move KG registry configured state into the edition-scoped provider lifecycle.",
+    },
+    "okto_pulse/core/kg/kg_service.py::_default_service": {
+        "file": "okto_pulse/core/kg/kg_service.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_service",
+        "retirement_criterion": "Resolve KG service instances through application/runtime composition.",
+    },
+    "okto_pulse/core/kg/primitives.py::_kuzu_executor": {
+        "file": "okto_pulse/core/kg/primitives.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "semantic_graph_executor",
+        "retirement_criterion": "Replace the legacy Kuzu executor global with a graph runtime store capability.",
+    },
+    "okto_pulse/core/kg/session_manager.py::_singleton": {
+        "file": "okto_pulse/core/kg/session_manager.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_session_manager",
+        "retirement_criterion": "Move KG session manager lifecycle behind composition-owned KG providers.",
+    },
+    "okto_pulse/core/kg/workers/cleanup.py::_singleton": {
+        "file": "okto_pulse/core/kg/workers/cleanup.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_cleanup_worker",
+        "retirement_criterion": "Move cleanup worker lifecycle behind the KG worker lifecycle port.",
+    },
+    "okto_pulse/core/kg/workers/consolidation.py::_singleton": {
+        "file": "okto_pulse/core/kg/workers/consolidation.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_consolidation_worker",
+        "retirement_criterion": "Move consolidation worker lifecycle behind the KG worker lifecycle port.",
+    },
+}
+
 #: Frozen inventory (``file::name``) of EXISTING global-mutation / ContextVar
 #: singletons in core at spec #15. Anything detected outside this set is NEW and
 #: blocks (register-before-remove). Headline global/ContextVar singletons appear
@@ -424,6 +533,19 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/telemetry/telemetry_state_registry.py::_carrier",
     }
 )
+
+BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER: frozenset[str] = frozenset(
+    {
+        "okto_pulse/core/infra/database.py::_last_stale_warn_at",
+        "okto_pulse/core/kg/write_barrier.py::_current_mode",
+        "okto_pulse/core/kg/write_barrier.py::_active_guards",
+        "okto_pulse/core/kg/workers/deterministic_worker.py::_whitelist_cache",
+        "okto_pulse/core/mcp/server.py::_XML_SAFETY_DECORATED_COUNT",
+        "okto_pulse/core/services/queue_health_service.py::_ALERT_FIRED_TOTAL",
+    }
+)
+
+_REQUIRED_RUNTIME_LEDGER_FIELDS = ("owner", "target_provider", "retirement_criterion")
 
 
 @dataclass(frozen=True)
@@ -612,6 +734,45 @@ def _scan_module(rel: str, tree: ast.Module) -> list[SingletonOccurrence]:
     return found
 
 
+def _runtime_ledger_entry(o: SingletonOccurrence) -> dict[str, str] | None:
+    keyed = RUNTIME_SINGLETON_BASELINE_LEDGER.get(o.key)
+    if keyed is not None:
+        return keyed if keyed.get("file") == o.file else None
+    named = SINGLETON_LEDGER.get(o.name)
+    if named is not None and named.get("file") == o.file:
+        return named
+    return None
+
+
+def _missing_runtime_ledger_entries(
+    occurrences: list[SingletonOccurrence],
+    baseline: set[str],
+) -> list[dict[str, str]]:
+    missing: list[dict[str, str]] = []
+    for occurrence in occurrences:
+        if occurrence.key not in baseline:
+            continue
+        if occurrence.key in BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER:
+            continue
+        entry = _runtime_ledger_entry(occurrence)
+        reason = ""
+        if entry is None:
+            reason = "missing_runtime_ledger"
+        elif any(not entry.get(field) for field in _REQUIRED_RUNTIME_LEDGER_FIELDS):
+            reason = "missing_runtime_ledger_metadata"
+        if reason:
+            missing.append(
+                {
+                    "key": occurrence.key,
+                    "name": occurrence.name,
+                    "file": occurrence.file,
+                    "kind": occurrence.kind,
+                    "reason": reason,
+                }
+            )
+    return sorted(missing, key=lambda item: item["key"])
+
+
 class AntiSingletonGate:
     """Blocks new module-global singletons; ledgers the known ones."""
 
@@ -635,20 +796,48 @@ class AntiSingletonGate:
             occurrences.extend(_scan_module(rel, tree))
 
         new_singletons = [o for o in occurrences if o.key not in baseline]
+        missing_runtime_ledger = _missing_runtime_ledger_entries(occurrences, baseline)
         ledger_view = {
             name: {**meta, "status": "ledgered"}
             for name, meta in SINGLETON_LEDGER.items()
         }
+        runtime_ledger_view = {
+            key: {**meta, "status": "ledgered"}
+            for key, meta in RUNTIME_SINGLETON_BASELINE_LEDGER.items()
+        }
         evidence = {
             "ledger": ledger_view,
+            "runtime_baseline_ledger": runtime_ledger_view,
+            "non_runtime_baseline_exemptions": sorted(
+                BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER
+            ),
             "baseline_count": len(baseline),
             "detected_count": len(occurrences),
             "new_singletons": [
                 {"name": o.name, "file": o.file, "kind": o.kind}
                 for o in sorted(new_singletons, key=lambda o: o.key)
             ],
+            "missing_runtime_ledger": missing_runtime_ledger,
             "scanned_root": core.relative_to(root).as_posix(),
         }
+
+        if missing_runtime_ledger:
+            return GateReport(
+                gate_id=self.gate_id,
+                subject="core module-global singletons",
+                status="blocking",
+                severity="high",
+                owner="okto-pulse-core/architecture",
+                evidence={**evidence, "error": "missing_singleton_ledger"},
+                observed_value=[entry["key"] for entry in missing_runtime_ledger],
+                expected_value=[],
+                remediation_hint=(
+                    "A baselined runtime singleton is missing owner, target provider "
+                    "or retirement criterion. Add it to SINGLETON_LEDGER or the "
+                    "per-occurrence RUNTIME_SINGLETON_BASELINE_LEDGER before accepting "
+                    "the baseline."
+                ),
+            )
 
         if new_singletons:
             return GateReport(

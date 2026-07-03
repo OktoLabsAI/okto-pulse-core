@@ -1,10 +1,11 @@
 """LayerResolver current-tree-v2 — maps the physical source tree to layers.
 
 Spec #12, tr_c3f8fa6d + contract ``api_24add273``. Canonical mapping of the
-*current* repository layout (NOT an aspirational one): ``core/domain`` and
-``core/application`` are REAL layers; ``core/services`` / ``core/commands`` are
-legacy/transitional debt and must never absorb the new architecture; only an
-ABSENT ``core/ports`` is ``future_target``. Anything unmapped is
+*current* repository layout (NOT an aspirational one): ``core/domain``,
+``core/application`` and the existing ``core/ports`` package are REAL layers;
+``core/services`` / ``core/commands`` are legacy/transitional debt and must
+never absorb the new architecture. Future target is reserved for aspirational
+paths that do not exist in the current tree. Anything unmapped is
 ``unclassified`` and must surface with owner/promotion_criteria — never a silent
 pass.
 
@@ -19,6 +20,7 @@ from pathlib import PurePosixPath
 # Layer identifiers (contract api_24add273 LayerResolver keys).
 DOMAIN = "domain"
 APPLICATION = "application"
+PORTS = "ports"
 INBOUND = "inbound"
 OUTBOUND = "outbound"
 EVENT_RUNTIME_MESSAGING = "event_runtime_messaging"
@@ -40,11 +42,11 @@ _EXACT_FILE_LAYERS: tuple[tuple[str, str], ...] = (
 )
 
 #: Prefix rules, ordered most-specific-first so ``core/application`` is matched
-#: before ``core`` and ``core/ports`` before any broader fallback.
+#: before any broader fallback.
 _PREFIX_LAYERS: tuple[tuple[str, str], ...] = (
     ("okto_pulse/core/domain/", DOMAIN),
     ("okto_pulse/core/application/", APPLICATION),
-    ("okto_pulse/core/ports/", FUTURE_TARGET),
+    ("okto_pulse/core/ports/", PORTS),
     ("okto_pulse/core/inbound/", INBOUND),
     ("okto_pulse/core/api/", INBOUND),
     ("okto_pulse/core/mcp/", INBOUND),

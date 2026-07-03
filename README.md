@@ -106,6 +106,20 @@ adapter readiness ledger and their existing gates.
 | Mutable persistence marking (5 historical imports) | `okto_pulse.core.services.persistence_mutation.mark_mutable_field_modified` | Core still owns the current SQLAlchemy-backed persistence path until the repository/UoW strangler completes; use cases no longer import `sqlalchemy.orm.attributes` directly | Card/ideation mutation parity suites and boundary/conformance oracles |
 | Ratchet evidence | `ImportBoundaryGate` violation evidence now includes `category`; AF-11 tests pin the eliminated application import inventory | Core boundary gate owns regression detection. The ratchet fails on real-tree reintroduction and on negative fixtures rather than by rebaselining or downgrading violations | `test_af11_application_import_ratchet_real_tree_stays_zero`, `test_af11_application_import_ratchet_negative_fixture_reports_categories` |
 
+AF-20 hardens the same boundary policy for non-relational import-boundary
+baseline debt. New non-relational baselines are fail-closed unless they are
+declared in `IMPORT_BOUNDARY_BASELINE_LEDGER` with per-item owner, reason,
+removal criterion, source spec/wave and risk. Relational debt remains governed
+by the existing R01B/R01C ratchet and is not rebaselined by AF-20. The existing
+`okto_pulse/core/ports` package is a real pure `ports` layer, not a
+`future_target`, so its imports are governed like domain/application code.
+Runtime singleton baselines must have owner, target provider and retirement
+criterion in `SINGLETON_LEDGER` or the per-occurrence
+`RUNTIME_SINGLETON_BASELINE_LEDGER`; counters, metric totals and guard flags are
+explicit non-runtime exemptions. Adapter-specific debt belongs in Community when
+the concrete dependency is local-first; core keeps the rule, gate and transition
+logic that future SaaS editions must share.
+
 `build_mcp_asgi_app(trace_sink=None)` and `mount_mcp(app, trace_sink=None)` are the two helpers exposed from `okto_pulse.core.mcp`. Pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app. The optional `trace_sink` is a core port; core never resolves environment variables or writes local JSONL traces by itself.
 
 ## Docker

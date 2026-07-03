@@ -30,6 +30,7 @@ from .layer_resolver import (
     LEGACY_APPLICATION_TRANSITIONAL_DEBT,
     OUTBOUND,
     PACKAGING_OPS_EDITION,
+    PORTS,
 )
 from .report import GateStatus
 
@@ -120,6 +121,7 @@ _PERMISSIVE_RULE = AllowDenyRule(status_on_violation="passed")
 LAYER_IMPORT_MATRIX: dict[str, AllowDenyRule] = {
     DOMAIN: _PURE_RULE,
     APPLICATION: _PURE_RULE,
+    PORTS: _PURE_RULE,
     FUTURE_TARGET: _PURE_RULE,
     INBOUND: _INBOUND_RULE,
     OUTBOUND: _OUTBOUND_RULE,

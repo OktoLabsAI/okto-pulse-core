@@ -32,6 +32,7 @@ from .layer_resolver import (
     DOMAIN,
     FUTURE_TARGET,
     LAYER_RESOLVER_VERSION,
+    PORTS,
     UNCLASSIFIED,
     LayerResolver,
 )
@@ -76,12 +77,68 @@ def _worst(statuses: list[str]) -> GateStatus:
 #: Layers that must be clean IMMEDIATELY — their violations stay ``blocking`` even
 #: in bootstrap mode. Adapter layers (inbound/outbound/event) carry known
 #: pre-refactor coupling that bootstrap records as ``baseline`` debt.
-_PURE_LAYERS: frozenset[str] = frozenset({DOMAIN, APPLICATION, FUTURE_TARGET})
+_PURE_LAYERS: frozenset[str] = frozenset({DOMAIN, APPLICATION, PORTS, FUTURE_TARGET})
 
 _BOOTSTRAP_PROMOTION = (
     "Strangler debt: migrate this adapter onto a port before the gate runs in "
     "blocking mode; tracked as baseline until then."
 )
+
+_RELATIONAL_BASELINE_CATEGORIES: frozenset[str] = frozenset(
+    {"sqlalchemy", "aiosqlite", "asyncpg"}
+)
+
+
+@dataclass(frozen=True)
+class ImportBaselineLedgerEntry:
+    owner: str
+    reason: str
+    removal_criterion: str
+    spec_or_wave: str
+    risk: str
+
+
+IMPORT_BOUNDARY_BASELINE_LEDGER: dict[str, ImportBaselineLedgerEntry] = {
+    "okto_pulse/core/infra/auth.py|fastapi|forbidden_import_root": ImportBaselineLedgerEntry(
+        owner="okto-pulse-core/auth-boundary",
+        reason=(
+            "Local API-key auth still imports FastAPI primitives in the outbound "
+            "auth provider while the inbound auth port is being split."
+        ),
+        removal_criterion=(
+            "Move HTTP credential extraction to inbound/composition and keep the "
+            "core auth provider transport-agnostic."
+        ),
+        spec_or_wave="AF20-R1 non-relational import-boundary ledger",
+        risk="medium: transport framework remains visible in an outbound adapter.",
+    ),
+    "okto_pulse/core/infra/auth.py|fastapi.security|forbidden_import_root": ImportBaselineLedgerEntry(
+        owner="okto-pulse-core/auth-boundary",
+        reason=(
+            "The current local auth seam still references FastAPI security helpers "
+            "before the auth provider is fully transport-agnostic."
+        ),
+        removal_criterion=(
+            "Replace FastAPI security helper usage with an inbound-only adapter and "
+            "inject a framework-neutral auth credential object into core services."
+        ),
+        spec_or_wave="AF20-R1 non-relational import-boundary ledger",
+        risk="medium: transport-specific security helper is coupled to core auth.",
+    ),
+    "okto_pulse/core/kg/kg_service.py|okto_pulse.core.api.kg_routes|forbidden_target_layer:inbound": ImportBaselineLedgerEntry(
+        owner="okto-pulse-core/kg-boundary",
+        reason=(
+            "KG service still reaches an inbound API route helper for compatibility "
+            "during the KG route/use-case split."
+        ),
+        removal_criterion=(
+            "Move the shared helper behind an application/KG port or DTO module so "
+            "outbound KG code no longer imports inbound API modules."
+        ),
+        spec_or_wave="AF20-R1 non-relational import-boundary ledger",
+        risk="high: outbound KG code depends on inbound API shape.",
+    ),
+}
 
 
 def _default_source_root() -> Path:
@@ -103,6 +160,11 @@ class ImportViolation:
     owner: str | None
     promotion_criteria: str | None
     remediation_hint: str
+    baseline_key: str | None = None
+    baseline_reason: str | None = None
+    removal_criterion: str | None = None
+    spec_or_wave: str | None = None
+    risk: str | None = None
 
 
 @dataclass(frozen=True)
@@ -254,6 +316,43 @@ class ImportBoundaryGate:
         """
         if v.status != "blocking" or v.layer in _PURE_LAYERS:
             return v
+        key = ImportBoundaryGate._baseline_key(v)
+        category = ImportBoundaryGate._violation_category(v)
+        if category in _RELATIONAL_BASELINE_CATEGORIES:
+            return ImportViolation(
+                file=v.file,
+                line=v.line,
+                layer=v.layer,
+                imported=v.imported,
+                rule=v.rule,
+                status="baseline",
+                owner=v.owner or "okto-pulse-core/architecture",
+                promotion_criteria=v.promotion_criteria or _BOOTSTRAP_PROMOTION,
+                remediation_hint=v.remediation_hint,
+                baseline_key=key,
+                baseline_reason="relational ratchet baseline preserved by R01B/R01C",
+                removal_criterion=v.promotion_criteria or _BOOTSTRAP_PROMOTION,
+                spec_or_wave="R01B/R01C relational ratchet",
+                risk="tracked relational coupling debt",
+            )
+        entry = IMPORT_BOUNDARY_BASELINE_LEDGER.get(key)
+        if entry is None:
+            return ImportViolation(
+                file=v.file,
+                line=v.line,
+                layer=v.layer,
+                imported=v.imported,
+                rule=v.rule,
+                status="blocking",
+                owner=None,
+                promotion_criteria=None,
+                remediation_hint=(
+                    f"Missing non-relational import-boundary ledger entry for {key}. "
+                    "Add owner, reason, removal criterion, source spec/wave and risk "
+                    "before accepting this baseline."
+                ),
+                baseline_key=key,
+            )
         return ImportViolation(
             file=v.file,
             line=v.line,
@@ -261,9 +360,14 @@ class ImportBoundaryGate:
             imported=v.imported,
             rule=v.rule,
             status="baseline",
-            owner=v.owner or "okto-pulse-core/architecture",
-            promotion_criteria=v.promotion_criteria or _BOOTSTRAP_PROMOTION,
+            owner=entry.owner,
+            promotion_criteria=entry.removal_criterion,
             remediation_hint=v.remediation_hint,
+            baseline_key=key,
+            baseline_reason=entry.reason,
+            removal_criterion=entry.removal_criterion,
+            spec_or_wave=entry.spec_or_wave,
+            risk=entry.risk,
         )
 
     @staticmethod
@@ -297,8 +401,19 @@ class ImportBoundaryGate:
             "status": v.status,
             "owner": v.owner,
             "promotion_criteria": v.promotion_criteria,
+            "baseline_key": v.baseline_key or ImportBoundaryGate._baseline_key(v),
+            "baseline_reason": v.baseline_reason,
+            "removal_criterion": v.removal_criterion,
+            "retirement_criterion": v.removal_criterion,
+            "source_spec": v.spec_or_wave,
+            "spec_or_wave": v.spec_or_wave,
+            "risk": v.risk,
             "remediation_hint": v.remediation_hint,
         }
+
+    @staticmethod
+    def _baseline_key(v: ImportViolation) -> str:
+        return f"{v.file}|{v.imported}|{v.rule}"
 
     @staticmethod
     def _violation_category(v: ImportViolation) -> str:
