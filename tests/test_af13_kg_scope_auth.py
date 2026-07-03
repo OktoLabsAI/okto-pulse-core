@@ -21,6 +21,31 @@ def _source(relative: str) -> str:
     return (CORE_ROOT / relative).read_text(encoding="utf-8")
 
 
+def _kg_tool_policy_violations(source: str) -> list[str]:
+    tree = ast.parse(source)
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):
+            continue
+        if not node.name.startswith("okto_pulse_kg_"):
+            continue
+        body = ast.get_source_segment(source, node) or ""
+        if "board_id" not in {arg.arg for arg in node.args.args}:
+            continue
+        has_auth = "_get_user_boards(" in body or "ActorScope.from_context" in body
+        has_scope = (
+            "svc.check_board_access(" in body
+            or "target_boards" in body
+            or "allowed_board_ids=" in body
+        )
+        has_admin_gate = "kg.admin.historical_consolidation" in body
+        if not has_auth:
+            violations.append(f"{node.name}:missing_auth")
+        if not (has_scope or has_admin_gate):
+            violations.append(f"{node.name}:missing_scope_or_capability")
+    return violations
+
+
 def test_core_kg_surfaces_do_not_hardcode_local_user() -> None:
     for relative in (
         "api/kg_routes.py",
@@ -124,6 +149,127 @@ async def test_global_search_passes_only_actor_visible_boards(monkeypatch) -> No
     assert forbidden_board not in captured["user_boards"]
 
 
+@pytest.mark.asyncio
+async def test_global_search_with_zero_visible_boards_never_falls_back_to_all(
+    monkeypatch,
+) -> None:
+    from okto_pulse.core.application.use_cases.kg_routes_crud import (
+        GlobalSearchCommand,
+        GlobalSearchUseCase,
+    )
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.models.db import Board
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
+    from okto_pulse.core.services import application_kg
+
+    actor_id = f"user-af13-empty-{uuid.uuid4().hex[:8]}"
+    forbidden_board = f"board-af13-hidden-{uuid.uuid4().hex[:8]}"
+    captured: dict[str, list[str]] = {}
+
+    def _fake_query_global(_query: str, *, user_boards: list[str], **_kwargs):
+        captured["user_boards"] = user_boards
+        return [
+            {"board_id": board_id, "id": f"node-{board_id}", "title": board_id}
+            for board_id in user_boards
+        ]
+
+    monkeypatch.setattr(application_kg, "query_global", _fake_query_global)
+
+    async with get_session_factory()() as db:
+        db.add(Board(id=forbidden_board, name="hidden", owner_id="other-user"))
+        await db.commit()
+
+    actor = ActorContext(actor_id, "rest")
+    async with get_session_factory()() as db:
+        result = await GlobalSearchUseCase().execute(
+            GlobalSearchCommand(
+                q="auth scope",
+                limit=20,
+                min_similarity=0.3,
+                graph_layer="canonical",
+            ),
+            actor=actor,
+            uow=SQLAlchemyUnitOfWork(db),
+        )
+
+    assert captured["user_boards"] == []
+    assert result.results == []
+    assert forbidden_board not in captured["user_boards"]
+
+
+@pytest.mark.asyncio
+async def test_kg_boost_audit_uses_non_default_actor(monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from okto_pulse.core.application.use_cases.kg_routes_crud import (
+        BoostNodeCommand,
+        BoostNodeUseCase,
+    )
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.models.db import Board, ConsolidationAudit
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from okto_pulse.core.services import application_kg
+
+    actor_id = f"agent-af13-real-{uuid.uuid4().hex[:8]}"
+    board_id = f"board-af13-audit-{uuid.uuid4().hex[:8]}"
+    node_id = f"node-af13-audit-{uuid.uuid4().hex[:8]}"
+
+    async def _fake_boost_node(db, board_id: str, node_id: str, *, actor_id: str):
+        now = datetime.now(timezone.utc)
+        db.add(
+            ConsolidationAudit(
+                session_id=f"boost-{uuid.uuid4().hex[:30]}",
+                board_id=board_id,
+                artifact_id=node_id,
+                artifact_type="boost",
+                agent_id=actor_id,
+                started_at=now,
+                committed_at=now,
+                nodes_added=0,
+                edges_added=0,
+            )
+        )
+        return {
+            "node_id": node_id,
+            "node_type": "Entity",
+            "score_before": 0.4,
+            "score_after": 0.7,
+            "boosted_at": now.isoformat(),
+            "boosted_by": actor_id,
+        }
+
+    monkeypatch.setattr(application_kg, "boost_node", _fake_boost_node)
+
+    async with get_session_factory()() as db:
+        db.add(Board(id=board_id, name="AF13 audit", owner_id=actor_id))
+        await db.commit()
+
+    actor = ActorContext(actor_id, "mcp")
+    async with SQLAlchemyUnitOfWorkFactory(get_session_factory())(actor=actor) as uow:
+        result = await BoostNodeUseCase().execute(
+            BoostNodeCommand(board_id, node_id),
+            actor=actor,
+            uow=uow,
+        )
+
+    assert result.payload["boosted_by"] == actor_id
+
+    async with get_session_factory()() as db:
+        row = (
+            await db.execute(
+                select(ConsolidationAudit).where(
+                    ConsolidationAudit.board_id == board_id,
+                    ConsolidationAudit.artifact_id == node_id,
+                    ConsolidationAudit.artifact_type == "boost",
+                )
+            )
+        ).scalar_one()
+
+    assert row.agent_id == actor_id
+
+
 def test_mcp_kg_inventory_uses_scope_and_admin_gates() -> None:
     server_source = _source("mcp/server.py")
     query_tools_source = _source("mcp/kg_query_tools.py")
@@ -135,6 +281,19 @@ def test_mcp_kg_inventory_uses_scope_and_admin_gates() -> None:
     assert "kg.admin.historical_consolidation" in migrate_fn
     assert "allowed_board_ids=" in migrate_fn
     assert "svc.check_board_access(boards, board_id)" in query_global_fn
+    assert _kg_tool_policy_violations(query_tools_source) == []
+
+
+def test_kg_tool_inventory_guard_bites_missing_scope_policy() -> None:
+    bad_source = """
+async def okto_pulse_kg_query_new(board_id: str) -> str:
+    return "{}"
+"""
+
+    assert _kg_tool_policy_violations(bad_source) == [
+        "okto_pulse_kg_query_new:missing_auth",
+        "okto_pulse_kg_query_new:missing_scope_or_capability",
+    ]
 
 
 @pytest.mark.asyncio

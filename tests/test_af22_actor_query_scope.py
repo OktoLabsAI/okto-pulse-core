@@ -22,6 +22,67 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
 
 
+def _attr_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Attribute):
+        parent = _attr_name(node.value)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    if isinstance(node, ast.Name):
+        return node.id
+    return None
+
+
+def _find_async_function(source: str, name: str) -> ast.AsyncFunctionDef | None:
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == name:
+            return node
+    return None
+
+
+def _board_scope_guard_violations(
+    service_source: str,
+    use_case_sources: dict[str, str],
+) -> list[str]:
+    violations: list[str] = []
+    tree = ast.parse(service_source)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        names = {_attr_name(node.left)}
+        names.update(_attr_name(comparator) for comparator in node.comparators)
+        if {"user_id", "Board.owner_id"} <= names or {"user_id", "board.owner_id"} <= names:
+            violations.append("raw_owner_user_compare")
+
+    expected_service_methods = (
+        "get_board",
+        "list_boards",
+        "update_board",
+        "create_card",
+        "create_spec",
+        "create_ideation",
+        "create_refinement",
+        "create_sprint",
+        "convert_stories",
+        "derive_spec",
+    )
+    for method_name in expected_service_methods:
+        method = _find_async_function(service_source, method_name)
+        if method is None:
+            violations.append(f"{method_name}:missing")
+            continue
+        arg_names = {arg.arg for arg in method.args.args}
+        arg_names.update(arg.arg for arg in method.args.kwonlyargs)
+        if "query_scope" not in arg_names:
+            violations.append(f"{method_name}:missing_query_scope")
+
+    for relative_path, source in use_case_sources.items():
+        if "ActorScope.from_context(actor).query_scope" not in source:
+            violations.append(f"{relative_path}:missing_actor_query_scope")
+
+    return violations
+
+
 def test_scope_contract_is_transport_and_persistence_free() -> None:
     source = (CORE_ROOT / "application" / "scope.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -148,39 +209,45 @@ async def test_board_service_query_scope_filters_allowed_boards_and_realm() -> N
 
 def test_board_seed_inventory_uses_query_scope_helpers() -> None:
     service_source = (CORE_ROOT / "services" / "main.py").read_text(encoding="utf-8")
-    for forbidden in (
-        "Board.owner_id == user_id",
-        "board.owner_id == user_id",
-        "board.owner_id != user_id",
-        "query = query.where(Board.owner_id",
-    ):
-        assert forbidden not in service_source
+    use_case_sources = {
+        relative_path: (CORE_ROOT / relative_path).read_text(encoding="utf-8")
+        for relative_path in (
+            "application/use_cases/boards_crud.py",
+            "application/use_cases/ideations_crud.py",
+            "application/use_cases/refinements_crud.py",
+            "application/use_cases/spec_crud.py",
+            "application/use_cases/sprints_crud.py",
+            "application/use_cases/stories_crud.py",
+        )
+    }
 
-    expected_service_signatures = (
-        "async def get_board(",
-        "async def list_boards(",
-        "async def update_board(",
-        "async def create_card(",
-        "async def create_spec(",
-        "async def create_ideation(",
-        "async def create_refinement(",
-        "async def create_sprint(",
-        "async def convert_stories(",
-        "async def derive_spec(",
+    assert _board_scope_guard_violations(service_source, use_case_sources) == []
+
+
+def test_board_seed_scope_guard_bites_raw_board_query() -> None:
+    bad_service_source = """
+async def get_board(board_id, user_id):
+    return Board.owner_id == user_id
+
+async def list_boards(user_id, query_scope=None): pass
+async def update_board(user_id, query_scope=None): pass
+async def create_card(user_id, query_scope=None): pass
+async def create_spec(user_id, query_scope=None): pass
+async def create_ideation(user_id, query_scope=None): pass
+async def create_refinement(user_id, query_scope=None): pass
+async def create_sprint(user_id, query_scope=None): pass
+async def convert_stories(user_id, query_scope=None): pass
+async def derive_spec(user_id, query_scope=None): pass
+"""
+    bad_use_cases = {
+        "application/use_cases/boards_crud.py": "async def execute(actor): pass",
+    }
+
+    violations = _board_scope_guard_violations(bad_service_source, bad_use_cases)
+
+    assert "raw_owner_user_compare" in violations
+    assert "get_board:missing_query_scope" in violations
+    assert (
+        "application/use_cases/boards_crud.py:missing_actor_query_scope"
+        in violations
     )
-    for signature in expected_service_signatures:
-        start = service_source.find(signature)
-        assert start != -1, signature
-        end = service_source.find(") ->", start)
-        assert "query_scope" in service_source[start:end], signature
-
-    for relative_path in (
-        "application/use_cases/boards_crud.py",
-        "application/use_cases/ideations_crud.py",
-        "application/use_cases/refinements_crud.py",
-        "application/use_cases/spec_crud.py",
-        "application/use_cases/sprints_crud.py",
-        "application/use_cases/stories_crud.py",
-    ):
-        source = (CORE_ROOT / relative_path).read_text(encoding="utf-8")
-        assert "ActorScope.from_context(actor).query_scope" in source, relative_path
