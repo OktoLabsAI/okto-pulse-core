@@ -1,8 +1,7 @@
 """SemanticGraphStore Protocol — abstract graph operations for the KG layer.
 
-The tier primario (9 query tools) consumes this interface. KuzuGraphStore
-is the embedded default; future implementations include Neo4jGraphStore.
-cypher_templates.py lives inside KuzuGraphStore as an implementation detail.
+The primary query tools consume this interface. Concrete graph stores and
+query-template details live behind edition adapters.
 """
 
 from __future__ import annotations

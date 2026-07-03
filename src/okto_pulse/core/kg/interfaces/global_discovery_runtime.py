@@ -1,21 +1,20 @@
 """Port for the edition-owned Global Discovery runtime.
 
-Core keeps the query semantics and schema definitions. The concrete LadybugDB
-path, handle lifecycle and quarantine behavior are owned by the edition adapter.
+Core keeps the query semantics and schema definitions. Concrete storage,
+handle lifecycle and quarantine behavior are owned by the edition adapter.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Protocol
 
 
 class GlobalDiscoveryRuntime(Protocol):
     """Edition-owned runtime for the cross-board discovery graph."""
 
-    def global_graph_path(self) -> Path: ...
+    def global_graph_path(self) -> Any: ...
 
-    def bootstrap(self) -> Path: ...
+    def bootstrap(self) -> Any: ...
 
     def ensure_layer_schema(self) -> list[str]: ...
 

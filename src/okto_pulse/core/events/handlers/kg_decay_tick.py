@@ -203,7 +203,7 @@ def _process_board_sync(
     ``boards_failed``.
     """
     registry = get_kg_registry()
-    if not registry.graph_path_resolver.exists(board_id):
+    if not registry.graph_runtime_store.exists(board_id):
         return (0, 0)
 
     async def _run() -> tuple[int, int]:

@@ -25,6 +25,7 @@ _GRAPH_PROVIDER_KEYS = {
     "graph_schema_manager",
     "graph_lifecycle",
     "graph_path_resolver",
+    "graph_runtime_store",
     "safe_write_step_adapter",
     "board_graph_runtime",
     "global_discovery_runtime",

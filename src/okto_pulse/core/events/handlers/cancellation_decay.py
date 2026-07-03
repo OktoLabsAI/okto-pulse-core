@@ -49,7 +49,7 @@ async def _apply_decay(board_id: str, card_id: str) -> int:
     keeps handler latency negligible for that common case.
     """
     registry = get_kg_registry()
-    if not registry.graph_path_resolver.exists(board_id):
+    if not registry.graph_runtime_store.exists(board_id):
         return 0
 
     ref = f"card:{card_id}"
@@ -98,7 +98,7 @@ async def _revert_decay(board_id: str, card_id: str) -> int:
     no Kùzu graph yet.
     """
     registry = get_kg_registry()
-    if not registry.graph_path_resolver.exists(board_id):
+    if not registry.graph_runtime_store.exists(board_id):
         return 0
 
     ref = f"card:{card_id}"

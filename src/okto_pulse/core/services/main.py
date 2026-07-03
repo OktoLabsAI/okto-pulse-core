@@ -9442,31 +9442,82 @@ class GuidelineService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_guideline(self, owner_id: str, data: GuidelineCreate) -> Guideline:
+    async def _board_visible(
+        self,
+        board_id: str,
+        owner_id: str | None,
+        query_scope: QueryScope | None,
+    ) -> bool:
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        query = _board_scope_select(
+            board_id=board_id,
+            user_id=scoped_owner_id,
+            query_scope=query_scope,
+            require_ownership=True,
+        )
+        if query is None:
+            return False
+        result = await self.db.execute(query.with_only_columns(Board.id))
+        return result.scalar_one_or_none() is not None
+
+    async def create_guideline(
+        self,
+        owner_id: str,
+        data: GuidelineCreate,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> Guideline:
         """Create a new guideline."""
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
         guideline = Guideline(
             title=data.title,
             content=data.content,
             tags=data.tags,
             scope=data.scope,
             board_id=data.board_id,
-            owner_id=owner_id,
+            owner_id=scoped_owner_id,
         )
         self.db.add(guideline)
         await self.db.flush()
         return guideline
 
-    async def get_guideline(self, guideline_id: str) -> Guideline | None:
-        """Get a guideline by ID."""
-        return await self.db.get(Guideline, guideline_id)
+    async def get_guideline(
+        self,
+        guideline_id: str,
+        *,
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> Guideline | None:
+        """Get a guideline by ID, optionally constrained to the scoped actor owner.
+
+        Calls with both ``owner_id`` and ``query_scope`` omitted are trusted
+        internal lookups only; inbound adapters must pass an explicit scope.
+        """
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope)
+        if scoped_owner_id is None:
+            return await self.db.get(Guideline, guideline_id)
+        result = await self.db.execute(
+            select(Guideline).where(
+                Guideline.id == guideline_id,
+                Guideline.owner_id == scoped_owner_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def list_guidelines(
-        self, owner_id: str, offset: int = 0, limit: int = 50, tag: str | None = None,
+        self,
+        owner_id: str,
+        offset: int = 0,
+        limit: int = 50,
+        tag: str | None = None,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> list[Guideline]:
         """List global guidelines for an owner, optionally filtered by tag."""
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
         query = (
             select(Guideline)
-            .where(Guideline.owner_id == owner_id, Guideline.scope == "global")
+            .where(Guideline.owner_id == scoped_owner_id, Guideline.scope == "global")
             .order_by(Guideline.created_at.desc())
         )
         if tag:
@@ -9476,11 +9527,21 @@ class GuidelineService:
         return list(result.scalars().all())
 
     async def update_guideline(
-        self, guideline_id: str, owner_id: str, data: GuidelineUpdate,
+        self,
+        guideline_id: str,
+        owner_id: str,
+        data: GuidelineUpdate,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> Guideline | None:
         """Update a guideline."""
-        guideline = await self.get_guideline(guideline_id)
-        if not guideline or guideline.owner_id != owner_id:
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        guideline = await self.get_guideline(
+            guideline_id,
+            owner_id=scoped_owner_id,
+            query_scope=query_scope,
+        )
+        if not guideline:
             return None
         changed = False
         if data.title is not None and data.title != guideline.title:
@@ -9498,16 +9559,40 @@ class GuidelineService:
         await self.db.flush()
         return guideline
 
-    async def delete_guideline(self, guideline_id: str, owner_id: str) -> bool:
+    async def delete_guideline(
+        self,
+        guideline_id: str,
+        owner_id: str,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> bool:
         """Delete a guideline."""
-        guideline = await self.get_guideline(guideline_id)
-        if not guideline or guideline.owner_id != owner_id:
+        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
+        guideline = await self.get_guideline(
+            guideline_id,
+            owner_id=scoped_owner_id,
+            query_scope=query_scope,
+        )
+        if not guideline:
             return False
         await self.db.delete(guideline)
         return True
 
-    async def get_board_guidelines(self, board_id: str, *, surface: str = "service") -> list[dict]:
+    async def get_board_guidelines(
+        self,
+        board_id: str,
+        *,
+        surface: str = "service",
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> list[dict]:
         """Get all guidelines for a board — linked globals + inline, sorted by priority."""
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            return []
         # Linked global guidelines
         linked_query = (
             select(Guideline, BoardGuideline.priority)
@@ -9574,9 +9659,21 @@ class GuidelineService:
         return items
 
     async def link_guideline_to_board(
-        self, board_id: str, guideline_id: str, priority: int = 0,
-    ) -> BoardGuideline:
+        self,
+        board_id: str,
+        guideline_id: str,
+        priority: int = 0,
+        *,
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> BoardGuideline | None:
         """Link a global guideline to a board."""
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            return None
         link = BoardGuideline(
             board_id=board_id,
             guideline_id=guideline_id,
@@ -9586,8 +9683,21 @@ class GuidelineService:
         await self.db.flush()
         return link
 
-    async def unlink_guideline_from_board(self, board_id: str, guideline_id: str) -> bool:
+    async def unlink_guideline_from_board(
+        self,
+        board_id: str,
+        guideline_id: str,
+        *,
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> bool:
         """Unlink a guideline from a board."""
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            return False
         query = select(BoardGuideline).where(
             BoardGuideline.board_id == board_id,
             BoardGuideline.guideline_id == guideline_id,
@@ -9599,8 +9709,22 @@ class GuidelineService:
         await self.db.delete(link)
         return True
 
-    async def update_priority(self, board_id: str, guideline_id: str, priority: int) -> bool:
+    async def update_priority(
+        self,
+        board_id: str,
+        guideline_id: str,
+        priority: int,
+        *,
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> bool:
         """Update the priority of a linked guideline."""
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            return False
         query = select(BoardGuideline).where(
             BoardGuideline.board_id == board_id,
             BoardGuideline.guideline_id == guideline_id,
@@ -9621,6 +9745,8 @@ class GuidelineService:
         template_id: str,
         template_version: int,
         actor: str = "system",
+        owner_id: str | None = None,
+        query_scope: QueryScope | None = None,
     ) -> list[BoardGuideline]:
         """Materialize a new board's default guideline links from the active default
         template's resolved refs (spec 8a2fad91 / card 2803c136 / FR3). Each created
@@ -9633,6 +9759,12 @@ class GuidelineService:
         priority/provenance is deterministic and never duplicated (TR4). The umbrella
         owns resolution + fail-closed validation; this is purely the writer (it is the
         single materialization point and the ts_a48e70ee failure-injection target)."""
+        if query_scope is not None and not await self._board_visible(
+            board_id,
+            owner_id,
+            query_scope,
+        ):
+            return []
         existing = await self.db.execute(
             select(BoardGuideline.guideline_id).where(BoardGuideline.board_id == board_id)
         )

@@ -2,16 +2,15 @@
 
 Owns open/close/rebuild/purge of a board's graph (including lock/quarantine
 handling) WITHOUT exposing ``kg.schema.close_all_connections`` to consumers.
-Async: the contract is the boundary; the embedded adapter runs the underlying
-synchronous Kùzu/Ladybug calls. open/rebuild/purge return structured reports
-(status / evidence / reason) so consumers never inspect raw paths or handles.
+Async: the contract is the boundary; edition adapters run the underlying
+runtime calls. open/rebuild/purge return structured reports (status / evidence
+/ reason) so consumers never inspect raw locators or handles.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -19,7 +18,7 @@ class GraphHandle:
     """Result of opening a board graph (expresses lock/quarantine state)."""
 
     board_id: str
-    path: Path
+    path: Any
     opened: bool
     backend: str
     locked: bool

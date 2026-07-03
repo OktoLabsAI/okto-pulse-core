@@ -735,7 +735,7 @@ async def get_kg_metrics(
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.schema_contract import MULTI_REL_TYPES, REL_TYPES
 
-    if not get_kg_registry().graph_path_resolver.exists(board_id):
+    if not get_kg_registry().graph_runtime_store.exists(board_id):
         return {
             "board_id": board_id,
             "kg_bootstrapped": False,
@@ -1043,7 +1043,7 @@ async def get_settings(
 
     registry = get_kg_registry()
     config = registry.config
-    kg_exists = registry.graph_path_resolver.exists(board_id)
+    kg_exists = registry.graph_runtime_store.exists(board_id)
 
     # Check historical consolidation status (the only relational read in this
     # handler; the registry/embedding introspection below is not DB-bound).

@@ -29,6 +29,12 @@ from okto_pulse.core.kg.interfaces.graph_path_resolver import (
     GraphPathResolver,
     GraphStorageState,
 )
+from okto_pulse.core.kg.interfaces.graph_runtime_store import (
+    GraphPurgeResult,
+    GraphRuntimeState,
+    GraphRuntimeStore,
+    GraphStorageFootprint,
+)
 from okto_pulse.core.kg.interfaces.graph_schema_manager import (
     GraphSchemaManager,
     SchemaValidationResult,
@@ -74,8 +80,12 @@ __all__ = [
     "GraphHandle",
     "GraphLifecycle",
     "GraphPathResolver",
+    "GraphPurgeResult",
+    "GraphRuntimeState",
+    "GraphRuntimeStore",
     "GraphSchemaManager",
     "GraphStorageState",
+    "GraphStorageFootprint",
     "GraphTransaction",
     "GraphTransactionScope",
     "GlobalDiscoveryRuntime",

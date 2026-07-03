@@ -40,7 +40,7 @@ def _recompute_sync(
     bootstrap). The concrete adapter owns the underlying connection lifecycle.
     """
     registry = get_kg_registry()
-    if not registry.graph_path_resolver.exists(board_id):
+    if not registry.graph_runtime_store.exists(board_id):
         return None
 
     async def _run() -> float | None:

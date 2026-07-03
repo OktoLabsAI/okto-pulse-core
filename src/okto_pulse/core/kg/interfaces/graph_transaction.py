@@ -5,13 +5,10 @@ Abstracts staged graph writes for a board WITHOUT exposing
 yields a :class:`GraphTransactionScope` — the staged-write context — with
 ``execute`` / ``commit`` / ``rollback``.
 
-Embedded-adapter note: the live Kùzu/Ladybug write path auto-commits each
-statement (there is no manual BEGIN/COMMIT anywhere in the codebase). So the
-KuzuGraphTransaction adapter's ``commit()`` finalizes by closing the connection
-and ``rollback()`` is best-effort — it closes the connection but cannot undo
-statements already auto-committed. This is the documented embedded limitation
-and is behavior-identical to the current direct ``open_board_connection`` usage;
-a transactional backend can implement true rollback behind this same port.
+Adapter note: an edition may wrap a graph driver that auto-commits each
+statement. In that case ``commit()`` finalizes by closing the scope and
+``rollback()`` is best-effort. A transactional backend can implement true
+rollback behind this same port.
 """
 
 from __future__ import annotations

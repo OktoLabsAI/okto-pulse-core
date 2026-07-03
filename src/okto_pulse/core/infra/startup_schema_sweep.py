@@ -30,7 +30,7 @@ async def run_startup_schema_sweep(
     kg_registry = get_kg_registry()
     await sweep_board_schemas(
         board_ids,
-        graph_path_resolver=kg_registry.graph_path_resolver,
+        graph_runtime_store=kg_registry.graph_runtime_store,
         graph_schema_manager=kg_registry.graph_schema_manager,
         logger=logger,
     )

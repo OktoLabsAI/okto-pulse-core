@@ -69,6 +69,10 @@ from .global_discovery_consumer_gate import (
     GlobalDiscoveryConsumerFinding,
     GlobalDiscoveryConsumerGate,
 )
+from .graph_runtime_surface_gate import (
+    GraphRuntimeSurfaceGate,
+    GraphRuntimeSurfaceGateInput,
+)
 from .source_read_consumer_gate import (
     SOURCE_READ_PATH_FUNCTIONS,
     TARGET_SUFFIXES,
@@ -407,6 +411,8 @@ __all__ = [
     "RuntimeWorkerBoundaryGate",
     "GlobalDiscoveryConsumerFinding",
     "GlobalDiscoveryConsumerGate",
+    "GraphRuntimeSurfaceGate",
+    "GraphRuntimeSurfaceGateInput",
     "NamedLifecycleHook",
     "OWNED_PROVIDER_KEYS",
     "REQUIRED_LIFECYCLE_EVENTS",

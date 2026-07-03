@@ -30,6 +30,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.core.models.db import (
     BoardGuideline,
     DefaultBoardConfiguration,
@@ -72,6 +73,21 @@ _DEFAULT_SCOPE = "global"
 _ALLOWED_STATUSES = ("draft", "active", "inactive")
 
 logger = logging.getLogger(__name__)
+
+
+def _scoped_guideline_owner_id(
+    actor: str | None,
+    query_scope: QueryScope | None,
+) -> str | None:
+    """Return the effective catalog owner only when a transport supplied scope.
+
+    ``query_scope=None`` intentionally preserves the legacy administrative behavior
+    of default-board-config operations. REST/MCP pass a scope so SaaS-ready
+    surfaces only see guideline defaults owned by the authorized actor.
+    """
+    if query_scope is not None:
+        return query_scope.actor_id
+    return None
 
 
 @dataclass  # NOT frozen: an Exception must stay mutable (Python sets __traceback__ on
@@ -410,10 +426,16 @@ class DefaultBoardConfigurationService:
         guideline_default_refs: list[Any] | None = None,
         design_system_default_ref: dict[str, Any] | None = None,
         activate: bool = False,
+        query_scope: QueryScope | None = None,
     ) -> DefaultBoardConfiguration:
         """Create a new draft template version (validated as BoardSettings, TR1).
         ``activate=True`` immediately activates it (single-active enforced)."""
         validated_payload = self._validate_settings(settings_payload)
+        await self._validate_guideline_default_refs(
+            guideline_default_refs,
+            actor=actor,
+            query_scope=query_scope,
+        )
         active = await self.resolve_active(scope)
         if isinstance(settings_payload, dict) and active is not None:
             active_payload = active.settings_payload or {}
@@ -440,16 +462,30 @@ class DefaultBoardConfigurationService:
         await self.db.flush()
         self._audit(template, EVENT_CREATED, actor)
         if activate:
-            template = await self.activate_version(template.id, actor)
+            template = await self.activate_version(
+                template.id,
+                actor,
+                query_scope=query_scope,
+            )
         return template
 
-    async def activate_version(self, template_id: str, actor: str) -> DefaultBoardConfiguration:
+    async def activate_version(
+        self,
+        template_id: str,
+        actor: str,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> DefaultBoardConfiguration:
         """Activate a template; deactivate every other active template in the same
         scope IN THE SAME TRANSACTION so there is never more than one active."""
         template = await self._require(template_id)
         # FR5/TR6: a template whose guideline defaults are inline / non-global /
         # missing MUST NOT activate (fail-closed before it can reach any board).
-        await self._validate_guideline_default_refs(template.guideline_default_refs)
+        await self._validate_guideline_default_refs(
+            template.guideline_default_refs,
+            actor=actor,
+            query_scope=query_scope,
+        )
         # FR6: the Design System default ref (if any) must satisfy the minimal contract.
         await self._validate_design_system_default_ref(template.design_system_default_ref)
         result = await self.db.execute(
@@ -492,7 +528,12 @@ class DefaultBoardConfigurationService:
     # -- guideline-default administration (spec 8a2fad91) ------------------
 
     async def update_guideline_default_refs(
-        self, template_id: str, refs: list[Any] | None, actor: str
+        self,
+        template_id: str,
+        refs: list[Any] | None,
+        actor: str,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> DefaultBoardConfiguration:
         """Admin mutation of a template's guideline_default_refs (FR1; single owner
         TR1 — never a ``Guideline.is_default`` flag). Rejects inline/missing/non-global
@@ -507,7 +548,11 @@ class DefaultBoardConfigurationService:
         # caller's transaction, so it is recorded as a structured log, not a doomed
         # audit row; the structured error is the API-level rejection signal.
         try:
-            await self._validate_guideline_default_refs(refs)
+            await self._validate_guideline_default_refs(
+                refs,
+                actor=actor,
+                query_scope=query_scope,
+            )
         except DefaultBoardConfigurationError as exc:
             logger.warning(
                 "default_guideline_rejected template_id=%s reason=%s actor=%s",
@@ -529,6 +574,7 @@ class DefaultBoardConfigurationService:
                 guideline_default_refs=normalized,
                 design_system_default_ref=template.design_system_default_ref,
                 activate=True,
+                query_scope=query_scope,
             )
             self._audit_guideline_diff(
                 new_template, actor, diff, {"source_version": template.version}
@@ -542,7 +588,12 @@ class DefaultBoardConfigurationService:
         return template
 
     async def list_default_candidates(
-        self, *, scope: str = _DEFAULT_SCOPE, template_id: str | None = None
+        self,
+        *,
+        scope: str = _DEFAULT_SCOPE,
+        template_id: str | None = None,
+        actor: str | None = None,
+        query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
         """List GLOBAL catalog guidelines with derived eligibility + current default
         status (FR1/AC7/BR br_8f801aa4 — state is resolved FROM the umbrella template,
@@ -554,11 +605,14 @@ class DefaultBoardConfigurationService:
             template = await self.resolve_active(scope)
         refs = (template.guideline_default_refs or []) if template else []
         ref_by_id = {_ref_id(r): r for r in refs if _ref_id(r)}
-        result = await self.db.execute(
-            select(Guideline)
-            .where(Guideline.scope == _DEFAULT_SCOPE, Guideline.board_id.is_(None))
-            .order_by(Guideline.title)
+        owner_id = _scoped_guideline_owner_id(actor, query_scope)
+        query = select(Guideline).where(
+            Guideline.scope == _DEFAULT_SCOPE,
+            Guideline.board_id.is_(None),
         )
+        if owner_id is not None:
+            query = query.where(Guideline.owner_id == owner_id)
+        result = await self.db.execute(query.order_by(Guideline.title))
         candidates: list[dict[str, Any]] = []
         for g in result.scalars():
             ref = ref_by_id.get(g.id)
@@ -704,7 +758,13 @@ class DefaultBoardConfigurationService:
                 {"errors": exc.errors(include_url=False)},
             ) from exc
 
-    async def _validate_guideline_default_refs(self, refs: list[Any] | None) -> None:
+    async def _validate_guideline_default_refs(
+        self,
+        refs: list[Any] | None,
+        *,
+        actor: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> None:
         """FR5/TR6/BR br_512d374b: every guideline default MUST reference an EXISTING
         GLOBAL catalog guideline. Inline (no guideline_id), missing, or
         board-scoped/non-global refs are rejected fail-closed BEFORE activate/apply."""
@@ -719,10 +779,13 @@ class DefaultBoardConfigurationService:
                     {"ref": ref},
                 )
             guideline = await self.db.get(Guideline, guideline_id)
-            if guideline is None:
+            owner_id = _scoped_guideline_owner_id(actor, query_scope)
+            if guideline is None or (
+                owner_id is not None and guideline.owner_id != owner_id
+            ):
                 raise DefaultBoardConfigurationError(
                     "default_guideline_not_found",
-                    f"Guideline '{guideline_id}' was not found.",
+                    f"Guideline '{guideline_id}' was not found or is not accessible.",
                     422,
                     {"guideline_id": guideline_id},
                 )

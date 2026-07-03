@@ -622,146 +622,67 @@ def _telemetry_wal_or_open_error(graph_type: str) -> GraphTelemetry:
 
 
 def _compute_board_graph_high_water_mark_pct(board_id: str) -> float | None:
-    """Compute the real high-water-mark percentage for the board's LadybugDB files.
-
-    Sums the on-disk sizes of graph.lbug and all its siblings (e.g.
-    graph.lbug.wal, graph.lbug.shm) using the same glob pattern as
-    ``_fsync_board_graph_files`` in schema.py (lines 567-571), then
-    divides by ``kg_kuzu_max_db_size_gb * 1024**3`` and clamps to [0, 100].
-
-    Returns ``None`` (not 0.0) when:
-    - graph.lbug does not exist (AC4: absent graph, not even 0.0).
-    - any ``OSError`` is raised during ``Path.stat()`` (AC5: IO errors must
-      not propagate to the health endpoint — TR2).
-
-    This is the proxy for FR2 (spec R2c): real on-disk usage drives the
-    HighWaterMarkSample fed to the correlator, so the correlator sees real
-    pressure rather than the synthetic 0.0 placeholder that was previously
-    hardcoded in ``_telemetry_ok``.
-    """
+    """Return high-water mark from the logical graph runtime footprint."""
     try:
-        path = get_kg_registry().graph_path_resolver.board_graph_path(board_id)
+        footprint = get_kg_registry().graph_runtime_store.footprint(board_id)
     except Exception as exc:
         logger.debug(
-            "kg.health.hwm.path_resolution_failed board=%s err=%s",
+            "kg.health.hwm.footprint_failed board=%s err=%s",
             board_id, exc,
         )
         return None
 
-    # AC4: absent graph.lbug → None, not 0.0
-    if not path.exists():
-        return None
-
-    try:
-        total_bytes = path.stat().st_size
-    except OSError as exc:
-        logger.debug(
-            "kg.health.hwm.stat_failed board=%s path=%s err=%s",
-            board_id, path, exc,
-        )
-        return None
-
-    # Include siblings (e.g. .wal, .shm) — same glob as _fsync_board_graph_files
-    for sibling in sorted(path.parent.glob(path.name + ".*")):
-        try:
-            total_bytes += sibling.stat().st_size
-        except OSError as exc:
-            logger.debug(
-                "kg.health.hwm.sibling_stat_failed board=%s sibling=%s err=%s",
-                board_id, sibling, exc,
-            )
-            # Partial read: still return None to avoid misleading partial sums
-            return None
-
-    try:
-        settings = get_settings()
-        max_bytes = settings.kg_kuzu_max_db_size_gb * 1024 ** 3
-    except Exception as exc:
-        logger.debug(
-            "kg.health.hwm.config_failed board=%s err=%s",
-            board_id, exc,
-        )
-        return None
-
-    if max_bytes <= 0:
-        return None
-
-    pct = (total_bytes / max_bytes) * 100.0
-    # Clamp to [0, 100]
-    return max(0.0, min(100.0, pct))
+    return footprint.percentage if footprint.status == "available" else None
 
 
 def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
-    """Build an explanatory file-size proxy payload for REST/MCP/UI.
-
-    The underlying high-water calculation remains the existing on-disk size
-    proxy. This object makes that explicit and intentionally does not expose
-    filesystem paths.
-    """
+    """Build an explanatory storage footprint payload for REST/MCP/UI."""
 
     base: dict[str, Any] = {
-        "source": "file_size_proxy",
+        "source": "runtime_capability",
         "status": "unavailable",
         "percentage": None,
         "high_water_mark_pct": None,
         "graph_lbug_bytes": None,
+        "primary_bytes": None,
         "sidecar_bytes": None,
         "total_bytes": None,
         "configured_max_db_size_bytes": None,
         "configured_max_db_size_gb": None,
         "is_direct_memory_telemetry": False,
         "description": (
-            "On-disk storage footprint proxy derived from graph.lbug file sizes."
+            "Storage footprint projection derived from the graph runtime adapter."
         ),
         "tooltip": (
-            "This is not live Ladybug memory telemetry. It is a file-size proxy "
-            "used as an early warning signal."
+            "This is not live graph memory telemetry. It is an adapter-provided "
+            "early warning signal."
         ),
         "unavailable_reason": None,
     }
 
     try:
-        settings = get_settings()
-        max_bytes = int(settings.kg_kuzu_max_db_size_gb * 1024 ** 3)
-        base["configured_max_db_size_gb"] = int(settings.kg_kuzu_max_db_size_gb)
-        base["configured_max_db_size_bytes"] = max_bytes
+        footprint = get_kg_registry().graph_runtime_store.footprint(board_id)
     except Exception:
-        base["unavailable_reason"] = "settings_unavailable"
+        base["unavailable_reason"] = "footprint_unavailable"
         return base
 
-    if max_bytes <= 0:
-        base["unavailable_reason"] = "invalid_max_db_size"
-        return base
-
-    try:
-        path = get_kg_registry().graph_path_resolver.board_graph_path(board_id)
-    except Exception:
-        base["unavailable_reason"] = "path_resolution_failed"
-        return base
-
-    if not path.exists():
-        base["unavailable_reason"] = "graph_lbug_absent"
-        return base
-
-    try:
-        graph_bytes = int(path.stat().st_size)
-        sidecar_bytes = 0
-        for sibling in sorted(path.parent.glob(path.name + ".*")):
-            sidecar_bytes += int(sibling.stat().st_size)
-    except OSError:
-        base["unavailable_reason"] = "stat_failed"
-        return base
-
-    total_bytes = graph_bytes + sidecar_bytes
-    pct = max(0.0, min(100.0, (total_bytes / max_bytes) * 100.0))
+    configured_max_gb = None
+    if footprint.configured_max_bytes is not None:
+        configured_max_gb = int(footprint.configured_max_bytes / (1024 ** 3))
     base.update({
-        "status": "available",
-        "percentage": pct,
-        "high_water_mark_pct": pct,
-        "graph_lbug_bytes": graph_bytes,
-        "sidecar_bytes": sidecar_bytes,
-        "total_bytes": total_bytes,
-        "unavailable_reason": None,
+        "source": footprint.source,
+        "status": footprint.status,
+        "percentage": footprint.percentage,
+        "high_water_mark_pct": footprint.percentage,
+        # Deprecated compatibility key: mirrors primary_bytes without naming it
+        # in the runtime contract.
+        "graph_lbug_bytes": footprint.primary_bytes,
+        "primary_bytes": footprint.primary_bytes,
+        "sidecar_bytes": footprint.sidecar_bytes,
+        "total_bytes": footprint.total_bytes,
+        "configured_max_db_size_bytes": footprint.configured_max_bytes,
+        "configured_max_db_size_gb": configured_max_gb,
+        "unavailable_reason": footprint.unavailable_reason,
     })
     return base
 
@@ -803,7 +724,7 @@ def _probe_board_graph_telemetry(
             recent_commit_errors=0,
         )
     try:
-        if get_kg_registry().graph_path_resolver.exists(board_id):
+        if get_kg_registry().graph_runtime_store.exists(board_id):
             return _telemetry_wal_or_open_error("board")
     except Exception:
         return _telemetry_unavailable("board")

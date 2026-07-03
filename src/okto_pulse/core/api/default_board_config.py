@@ -14,6 +14,8 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from okto_pulse.core.application.scope import ActorScope, QueryScope
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.services.amendment_revision_api import AmendmentRevisionApiError
@@ -69,6 +71,10 @@ def _invalid_request(exc: ValidationError) -> HTTPException:
     )
 
 
+def _query_scope_for_actor(actor: str) -> QueryScope:
+    return ActorScope.from_context(RESTAdapterContract.actor(actor)).query_scope()
+
+
 @router.get("/default-board-config/active")
 async def get_active_default_board_config(
     scope: str = "global",
@@ -107,8 +113,11 @@ async def create_default_board_config_version(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
+        query_scope = _query_scope_for_actor(actor)
         result = await DefaultBoardConfigApiService(db).create_version(
-            actor=actor, **req.model_dump()
+            actor=actor,
+            query_scope=query_scope,
+            **req.model_dump(),
         )
         await db.commit()
         return result
@@ -123,8 +132,11 @@ async def activate_default_board_config_version(
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
+        query_scope = _query_scope_for_actor(actor)
         result = await DefaultBoardConfigApiService(db).activate_version(
-            template_id=template_id, actor=actor
+            template_id=template_id,
+            actor=actor,
+            query_scope=query_scope,
         )
         await db.commit()
         return result
@@ -173,8 +185,12 @@ async def list_default_guideline_candidates(
     """Global catalog guidelines with derived eligibility + current default status
     from the umbrella template (api_019810c9)."""
     try:
+        query_scope = _query_scope_for_actor(actor)
         return await DefaultBoardConfigApiService(db).list_default_candidates(
-            scope=scope, template_id=template_id
+            scope=scope,
+            template_id=template_id,
+            actor=actor,
+            query_scope=query_scope,
         )
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
@@ -197,10 +213,12 @@ async def update_default_guideline_refs(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
+        query_scope = _query_scope_for_actor(actor)
         result = await DefaultBoardConfigApiService(db).update_template_guidelines(
             template_id=template_id,
             guideline_default_refs=req.guideline_default_refs,
             actor=actor,
+            query_scope=query_scope,
         )
         await db.commit()
         return result

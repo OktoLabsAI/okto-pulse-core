@@ -16,6 +16,11 @@ from okto_pulse.core.kg.interfaces.graph_lifecycle import (
     RebuildReport,
 )
 from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphStorageState
+from okto_pulse.core.kg.interfaces.graph_runtime_store import (
+    GraphPurgeResult,
+    GraphRuntimeState,
+    GraphStorageFootprint,
+)
 from okto_pulse.core.kg.interfaces.graph_schema_manager import SchemaValidationResult
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 from okto_pulse.core.kg.safe_write_lifecycle import LifecycleStepResult
@@ -380,6 +385,66 @@ class InMemoryGraphPathResolver:
             locked=False,
             quarantined=False,
             sidecars=(),
+        )
+
+
+class InMemoryGraphRuntimeStore:
+    """Logical graph runtime fake for core tests."""
+
+    def __init__(
+        self,
+        store: InMemoryGraphStore | None = None,
+        resolver: InMemoryGraphPathResolver | None = None,
+        schema_manager: "InMemoryGraphSchemaManager | None" = None,
+    ) -> None:
+        self.store = store or InMemoryGraphStore()
+        self.resolver = resolver or InMemoryGraphPathResolver()
+        self.schema_manager = schema_manager or InMemoryGraphSchemaManager(self.store)
+
+    def graph_state(self, board_id: str) -> GraphRuntimeState:
+        bootstrapped = board_id in self.store._bootstrapped
+        return GraphRuntimeState(
+            board_id=board_id,
+            exists=bootstrapped,
+            status="healthy" if bootstrapped else "absent",
+            backend="logical_memory",
+            schema_version=SCHEMA_VERSION if bootstrapped else None,
+            locked=False,
+            quarantined=False,
+            unavailable_reason=None if bootstrapped else "graph_absent",
+            details={"source": "in_memory_runtime"},
+        )
+
+    def exists(self, board_id: str) -> bool:
+        return self.graph_state(board_id).exists
+
+    def purge_board_graph(self, board_id: str, *, reason: str) -> GraphPurgeResult:
+        existed = self.exists(board_id)
+        self.store._nodes.pop(board_id, None)
+        self.store._edges.pop(board_id, None)
+        self.store._bootstrapped.discard(board_id)
+        return GraphPurgeResult(
+            board_id=board_id,
+            removed=existed,
+            not_found=not existed,
+            status="purged" if existed else "not_found",
+            reason=reason,
+            backend="logical_memory",
+            error_code=None,
+        )
+
+    def footprint(self, board_id: str) -> GraphStorageFootprint:
+        exists = self.exists(board_id)
+        return GraphStorageFootprint(
+            board_id=board_id,
+            status="unavailable",
+            source="runtime_capability",
+            total_bytes=None,
+            primary_bytes=None,
+            sidecar_bytes=None,
+            configured_max_bytes=None,
+            percentage=None,
+            unavailable_reason=None if exists else "graph_absent",
         )
 
 

@@ -201,7 +201,7 @@ def board_delete_cascade(board_id: str) -> dict:
 
     # 1. Wipe per-board Kùzu graph (skip BoardMeta singleton).
     try:
-        if get_kg_registry().graph_path_resolver.exists(board_id):
+        if get_kg_registry().graph_runtime_store.exists(board_id):
             for node_type in NODE_TYPES:
                 if node_type == "BoardMeta":
                     continue

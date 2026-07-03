@@ -26,6 +26,7 @@ from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.event_bus import EventBus
 from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycle
 from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphPathResolver
+from okto_pulse.core.kg.interfaces.graph_runtime_store import GraphRuntimeStore
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
 from okto_pulse.core.kg.interfaces.graph_transaction import GraphTransaction
@@ -62,11 +63,12 @@ class KGProviderRegistry:
     event_bus: EventBus | None = None
 
     # Onda 4 — KG storage ports (spec #06): close kg.schema as a port before
-    # Kùzu/Ladybug can move out of core.
+    # concrete graph runtimes can move out of core.
     graph_transaction: GraphTransaction | None = None
     graph_schema_manager: GraphSchemaManager | None = None
     graph_lifecycle: GraphLifecycle | None = None
     graph_path_resolver: GraphPathResolver | None = None
+    graph_runtime_store: GraphRuntimeStore | None = None
     safe_write_step_adapter: Any | None = None
     board_graph_runtime: BoardGraphRuntime | None = None
     global_discovery_runtime: GlobalDiscoveryRuntime | None = None
@@ -140,6 +142,7 @@ def _build_defaults() -> KGProviderRegistry:
         InMemoryBoardGraphRuntime,
         InMemoryGraphLifecycle,
         InMemoryGraphPathResolver,
+        InMemoryGraphRuntimeStore,
         InMemoryGraphSchemaManager,
         InMemoryGraphStore,
         InMemoryGraphTransaction,
@@ -183,6 +186,11 @@ def _build_defaults() -> KGProviderRegistry:
             schema_manager=graph_schema_manager,
         ),
         graph_path_resolver=graph_path_resolver,
+        graph_runtime_store=InMemoryGraphRuntimeStore(
+            store=graph_store,
+            resolver=graph_path_resolver,
+            schema_manager=graph_schema_manager,
+        ),
         safe_write_step_adapter=in_memory_safe_write_step_adapter,
         board_graph_runtime=InMemoryBoardGraphRuntime(
             store=graph_store,
@@ -262,7 +270,7 @@ def configure_kg_registry(
                 "rate_limiter / session_store / config)."
             )
 
-        # R-P2-05: core no longer mounts Kùzu/Ladybug graph providers. A real
+        # R-P2-05: core no longer mounts concrete graph providers. A real
         # composition root must supply graph slots explicitly; tests use
         # _build_defaults fakes.
         if composed:
@@ -301,6 +309,7 @@ def configure_kg_registry(
                 "graph_schema_manager",
                 "graph_lifecycle",
                 "graph_path_resolver",
+                "graph_runtime_store",
                 "safe_write_step_adapter",
                 "global_discovery_runtime",
                 "board_source_reader",
@@ -314,7 +323,7 @@ def configure_kg_registry(
                 "(KGConfig), event_bus (EventBus), audit_repo (AuditRepository), "
                 "and graph providers explicitly — the core no longer auto-wires "
                 "relational fallbacks (R-P2-02), implicit SettingsKGConfig "
-                "(R-P2-03D), or Kuzu/Ladybug graph defaults/step adapters "
+                "(R-P2-03D), or concrete graph defaults/step adapters "
                 "(R-P2-05), or BoardSourceReader source access (R10A). The "
                 "Community edition supplies them via community.adapters.composition; "
                 "tests use a defaults_factory / explicit fakes."

@@ -1,13 +1,13 @@
-"""Startup per-board KG schema sweep over the spec #06 ports (R16-D, tr_7ea5e6d8).
+"""Startup per-board KG schema sweep over logical graph ports (R16-D).
 
 Extracted from ``core/app.py`` so the loop / skip-missing / off-loop /
 soft-fail-per-board / count / log behaviour is unit-testable WITHOUT booting
 FastAPI.
 
-This module consumes the #06 ports (``GraphPathResolver`` +
-``GraphSchemaManager``) and NEVER imports ``kg.schema`` directly:
+This module consumes logical graph runtime capabilities plus
+``GraphSchemaManager`` and NEVER imports ``kg.schema`` directly:
 
-  * ``graph_path_resolver.exists(board_id)`` decides skip-missing (replaces
+  * ``graph_runtime_store.exists(board_id)`` decides skip-missing (replaces
     ``kg.schema.board_kuzu_path(bid).exists()``).
   * ``graph_schema_manager.ensure_bootstrapped(board_id)`` performs the
     idempotent per-board migration (equivalent to the old
@@ -46,7 +46,8 @@ async def _run_off_loop(coro_factory: CoroFactory) -> Any:
 async def sweep_board_schemas(
     board_ids: Iterable[str],
     *,
-    graph_path_resolver: Any,
+    graph_runtime_store: Any | None = None,
+    graph_path_resolver: Any | None = None,
     graph_schema_manager: Any,
     logger: logging.Logger,
     run_blocking: RunBlocking | None = None,
@@ -56,7 +57,7 @@ async def sweep_board_schemas(
     Semantics preserved bit-for-bit from the old ``core/app.py`` sweep:
 
       * skip a board whose graph file does not exist
-        (``graph_path_resolver.exists`` — a resolver error is NOT caught here so
+        (``graph_runtime_store.exists`` — a runtime error is NOT caught here so
         it propagates to the caller's outer guard -> ``kg.schema.migration_skipped``,
         exactly like the old ``board_kuzu_path(bid).exists()`` did);
       * ``graph_schema_manager.ensure_bootstrapped`` per existing board, run off
@@ -71,7 +72,10 @@ async def sweep_board_schemas(
         # the caller's outer try (-> kg.schema.migration_skipped), matching the
         # old behaviour where board_kuzu_path(bid).exists() raising aborted the
         # whole sweep rather than soft-failing one board.
-        if not graph_path_resolver.exists(board_id):
+        runtime = graph_runtime_store or graph_path_resolver
+        if runtime is None:
+            raise RuntimeError("graph_runtime_store is required for schema sweep")
+        if not runtime.exists(board_id):
             continue
         try:
             await run(

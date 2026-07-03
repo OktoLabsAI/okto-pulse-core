@@ -18,9 +18,9 @@ Behavioral fidelity to the legacy endpoints:
   permission resolution is introduced.
 * A missing-or-not-owned global guideline on update/delete is
   ``EntityNotFoundError("guideline_owned")`` → the legacy
-  ``"Guideline not found or not owned by user"`` 404; a missing guideline on
-  ``get`` / on the link branch is ``EntityNotFoundError("guideline")`` →
-  ``"Guideline not found"``; a missing board↔guideline link on unlink / priority
+  ``"Guideline not found or not owned by user"`` 404; a missing-or-not-owned
+  guideline on ``get`` / on the link branch is ``EntityNotFoundError("guideline")``
+  → ``"Guideline not found"``; a missing board↔guideline link on unlink / priority
   is ``EntityNotFoundError("link")`` → ``"Link not found"``.
 * The inline-create branch's "must supply guideline_id OR title+content"
   validation raises ``CommandValidationError`` carrying the EXACT legacy 422
@@ -40,6 +40,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.application_schemas import GuidelineCreate
 from okto_pulse.core.services import BoardService, GuidelineService
 
@@ -50,10 +51,24 @@ _INLINE_CREATE_VALIDATION_DETAIL = (
 )
 
 
-async def _ensure_board(session: Any, board_id: str, user_id: str) -> None:
+def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
+
+
+async def _ensure_board(
+    session: Any,
+    board_id: str,
+    user_id: str,
+    *,
+    query_scope: QueryScope | None = None,
+) -> None:
     """Reproduce the legacy board guard: raise ``EntityNotFoundError("board")``
     (adapter → 404 "Board not found") when the board is missing / not owned."""
-    board = await BoardService(session).get_board(board_id, user_id)
+    board = await BoardService(session).get_board(
+        board_id,
+        user_id,
+        query_scope=query_scope,
+    )
     if not board:
         raise EntityNotFoundError("board", board_id)
 
@@ -91,8 +106,13 @@ class ListGuidelinesUseCase:
         self, command: ListGuidelinesCommand, *, actor: ActorContext, uow: Any
     ) -> ListGuidelinesResult:
         session = session_of(uow)
+        query_scope = _query_scope_for_actor(actor)
         guidelines = await GuidelineService(session).list_guidelines(
-            actor.actor_id, offset=command.offset, limit=command.limit, tag=command.tag
+            actor.actor_id,
+            offset=command.offset,
+            limit=command.limit,
+            tag=command.tag,
+            query_scope=query_scope,
         )
         return ListGuidelinesResult(guidelines)
 
@@ -123,8 +143,14 @@ class CreateGuidelineUseCase:
         self, command: CreateGuidelineCommand, *, actor: ActorContext, uow: Any
     ) -> CreateGuidelineResult:
         session = session_of(uow)
+        board_id = getattr(command.data, "board_id", None)
+        query_scope = _query_scope_for_actor(actor, board_id=board_id)
+        if board_id:
+            await _ensure_board(session, board_id, actor.actor_id, query_scope=query_scope)
         guideline = await GuidelineService(session).create_guideline(
-            actor.actor_id, command.data
+            actor.actor_id,
+            command.data,
+            query_scope=query_scope,
         )
         await commit(uow)
         return CreateGuidelineResult(guideline)
@@ -148,15 +174,19 @@ class GetGuidelineResult:
 
 
 class GetGuidelineUseCase:
-    """Get a guideline by id (read, no commit). A missing guideline is
-    ``EntityNotFoundError("guideline")`` (→ 404 "Guideline not found"). No
-    ownership check — mirrors the legacy endpoint exactly."""
+    """Get a guideline by id (read, no commit). A missing or not-owned guideline
+    is ``EntityNotFoundError("guideline")`` (→ 404 "Guideline not found")."""
 
     async def execute(
         self, command: GetGuidelineCommand, *, actor: ActorContext, uow: Any
     ) -> GetGuidelineResult:
         session = session_of(uow)
-        guideline = await GuidelineService(session).get_guideline(command.guideline_id)
+        query_scope = _query_scope_for_actor(actor)
+        guideline = await GuidelineService(session).get_guideline(
+            command.guideline_id,
+            owner_id=actor.actor_id,
+            query_scope=query_scope,
+        )
         if not guideline:
             raise EntityNotFoundError("guideline", command.guideline_id)
         return GetGuidelineResult(guideline)
@@ -189,8 +219,12 @@ class UpdateGuidelineUseCase:
         self, command: UpdateGuidelineCommand, *, actor: ActorContext, uow: Any
     ) -> UpdateGuidelineResult:
         session = session_of(uow)
+        query_scope = _query_scope_for_actor(actor)
         guideline = await GuidelineService(session).update_guideline(
-            command.guideline_id, actor.actor_id, command.data
+            command.guideline_id,
+            actor.actor_id,
+            command.data,
+            query_scope=query_scope,
         )
         if not guideline:
             raise EntityNotFoundError("guideline_owned", command.guideline_id)
@@ -226,8 +260,11 @@ class DeleteGuidelineUseCase:
         self, command: DeleteGuidelineCommand, *, actor: ActorContext, uow: Any
     ) -> DeleteGuidelineResult:
         session = session_of(uow)
+        query_scope = _query_scope_for_actor(actor)
         deleted = await GuidelineService(session).delete_guideline(
-            command.guideline_id, actor.actor_id
+            command.guideline_id,
+            actor.actor_id,
+            query_scope=query_scope,
         )
         if not deleted:
             raise EntityNotFoundError("guideline_owned", command.guideline_id)
@@ -266,9 +303,17 @@ class GetBoardGuidelinesUseCase:
         self, command: GetBoardGuidelinesCommand, *, actor: ActorContext, uow: Any
     ) -> GetBoardGuidelinesResult:
         session = session_of(uow)
-        await _ensure_board(session, command.board_id, actor.actor_id)
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
+        await _ensure_board(
+            session,
+            command.board_id,
+            actor.actor_id,
+            query_scope=query_scope,
+        )
         items = await GuidelineService(session).get_board_guidelines(
-            command.board_id, surface="menu_board"
+            command.board_id,
+            surface="menu_board",
+            query_scope=query_scope,
         )
         return GetBoardGuidelinesResult(items)
 
@@ -305,17 +350,32 @@ class LinkOrCreateBoardGuidelineUseCase:
         self, command: LinkOrCreateBoardGuidelineCommand, *, actor: ActorContext, uow: Any
     ) -> LinkOrCreateBoardGuidelineResult:
         session = session_of(uow)
-        await _ensure_board(session, command.board_id, actor.actor_id)
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
+        await _ensure_board(
+            session,
+            command.board_id,
+            actor.actor_id,
+            query_scope=query_scope,
+        )
         service = GuidelineService(session)
         data = command.data
 
         if data.guideline_id:
-            guideline = await service.get_guideline(data.guideline_id)
+            guideline = await service.get_guideline(
+                data.guideline_id,
+                owner_id=actor.actor_id,
+                query_scope=query_scope,
+            )
             if not guideline:
                 raise EntityNotFoundError("guideline", data.guideline_id)
             link = await service.link_guideline_to_board(
-                command.board_id, data.guideline_id, data.priority
+                command.board_id,
+                data.guideline_id,
+                data.priority,
+                query_scope=query_scope,
             )
+            if not link:
+                raise EntityNotFoundError("board", command.board_id)
             await commit(uow)
             return LinkOrCreateBoardGuidelineResult(
                 {
@@ -338,6 +398,7 @@ class LinkOrCreateBoardGuidelineUseCase:
                 scope="inline",
                 board_id=command.board_id,
             ),
+            query_scope=query_scope,
         )
         await commit(uow)
         return LinkOrCreateBoardGuidelineResult(
@@ -369,15 +430,23 @@ class UnlinkBoardGuidelineResult:
 class UnlinkBoardGuidelineUseCase:
     """Unlink a guideline from a board (write, 204). A missing link is
     ``EntityNotFoundError("link")`` (→ 404 "Link not found"); commits on success.
-    Mirrors the legacy endpoint (no board ownership pre-check, exactly as
-    legacy)."""
+    Board access is checked first so cross-scope unlink attempts fail closed."""
 
     async def execute(
         self, command: UnlinkBoardGuidelineCommand, *, actor: ActorContext, uow: Any
     ) -> UnlinkBoardGuidelineResult:
         session = session_of(uow)
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
+        await _ensure_board(
+            session,
+            command.board_id,
+            actor.actor_id,
+            query_scope=query_scope,
+        )
         unlinked = await GuidelineService(session).unlink_guideline_from_board(
-            command.board_id, command.guideline_id
+            command.board_id,
+            command.guideline_id,
+            query_scope=query_scope,
         )
         if not unlinked:
             raise EntityNotFoundError("link", command.guideline_id)
@@ -404,9 +473,9 @@ class UpdateBoardGuidelinePriorityResult:
 class UpdateBoardGuidelinePriorityUseCase:
     """Update the priority of a linked guideline on a board (write). A missing link
     is ``EntityNotFoundError("link")`` (→ 404 "Link not found"); commits on
-    success. The adapter shapes the legacy ``{board_id, guideline_id, priority}``
-    response from its own path params + the requested priority, exactly as
-    legacy."""
+    success. Board access is checked first so cross-scope priority updates fail
+    closed. The adapter shapes the ``{board_id, guideline_id, priority}``
+    response from its own path params + the requested priority."""
 
     async def execute(
         self,
@@ -416,8 +485,18 @@ class UpdateBoardGuidelinePriorityUseCase:
         uow: Any,
     ) -> UpdateBoardGuidelinePriorityResult:
         session = session_of(uow)
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
+        await _ensure_board(
+            session,
+            command.board_id,
+            actor.actor_id,
+            query_scope=query_scope,
+        )
         updated = await GuidelineService(session).update_priority(
-            command.board_id, command.guideline_id, command.priority
+            command.board_id,
+            command.guideline_id,
+            command.priority,
+            query_scope=query_scope,
         )
         if not updated:
             raise EntityNotFoundError("link", command.guideline_id)

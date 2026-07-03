@@ -92,6 +92,7 @@ class StorageFootprintProxy(BaseModel):
     percentage: float | None = None
     high_water_mark_pct: float | None = None
     graph_lbug_bytes: int | None = None
+    primary_bytes: int | None = None
     sidecar_bytes: int | None = None
     total_bytes: int | None = None
     configured_max_db_size_bytes: int | None = None

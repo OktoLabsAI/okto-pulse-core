@@ -22,11 +22,16 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
+from okto_pulse.core.application.scope import ActorScope, QueryScope
 
 
 _MCP_HUMAN_ONLY_DEFAULT_BOARD_CONFIG_FIELDS = (
     "skip_task_requirement_link_gate_global",
 )
+
+
+def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
 
 
 # --- get_board (multi-service aggregation read) -----------------------------
@@ -246,6 +251,7 @@ class McpCreateDefaultBoardConfigVersionUseCase:
         uow: Any,
     ) -> _DataResult:
         service = _config_service(session_of(uow))
+        query_scope = _query_scope_for_actor(actor)
         settings_payload = await _preserve_mcp_human_only_default_settings(
             service, command.settings_payload, command.scope
         )
@@ -256,6 +262,7 @@ class McpCreateDefaultBoardConfigVersionUseCase:
             guideline_default_refs=command.guideline_default_refs,
             design_system_default_ref=command.design_system_default_ref,
             activate=command.activate,
+            query_scope=query_scope,
         )
         await commit(uow)
         return _DataResult(data)
@@ -300,8 +307,11 @@ class McpActivateDefaultBoardConfigVersionUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> _DataResult:
+        query_scope = _query_scope_for_actor(actor)
         data = await _config_service(session_of(uow)).activate_version(
-            template_id=command.template_id, actor=actor.actor_id
+            template_id=command.template_id,
+            actor=actor.actor_id,
+            query_scope=query_scope,
         )
         await commit(uow)
         return _DataResult(data)
@@ -349,8 +359,12 @@ class McpGetBoardGuidelinesUseCase:
     ) -> _DataResult:
         from okto_pulse.core.services import GuidelineService
 
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
         items = await GuidelineService(session_of(uow)).get_board_guidelines(
-            command.board_id, surface="mcp"
+            command.board_id,
+            surface="mcp",
+            owner_id=actor.actor_id,
+            query_scope=query_scope,
         )
         return _DataResult(items)
 
@@ -376,12 +390,23 @@ class McpLinkGuidelineToBoardUseCase:
 
         session = session_of(uow)
         service = GuidelineService(session)
-        guideline = await service.get_guideline(command.guideline_id)
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
+        guideline = await service.get_guideline(
+            command.guideline_id,
+            owner_id=actor.actor_id,
+            query_scope=query_scope,
+        )
         if not guideline:
             raise EntityNotFoundError("guideline", command.guideline_id)
         link = await service.link_guideline_to_board(
-            command.board_id, command.guideline_id, command.priority
+            command.board_id,
+            command.guideline_id,
+            command.priority,
+            owner_id=actor.actor_id,
+            query_scope=query_scope,
         )
+        if not link:
+            raise EntityNotFoundError("board", command.board_id)
         await commit(uow)
         return _DataResult(link)
 
@@ -403,8 +428,12 @@ class McpUnlinkGuidelineFromBoardUseCase:
     ) -> _DataResult:
         from okto_pulse.core.services import GuidelineService
 
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
         unlinked = await GuidelineService(session_of(uow)).unlink_guideline_from_board(
-            command.board_id, command.guideline_id
+            command.board_id,
+            command.guideline_id,
+            owner_id=actor.actor_id,
+            query_scope=query_scope,
         )
         if not unlinked:
             raise EntityNotFoundError("guideline_link", command.guideline_id)

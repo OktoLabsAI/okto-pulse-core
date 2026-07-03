@@ -123,13 +123,13 @@ def check_kuzu(board_id: str) -> LayerHealth:
     to advise running ``okto-pulse init`` / waiting for the first
     consolidation before the check is meaningful.
     """
-    path = get_kg_registry().graph_path_resolver.board_graph_path(board_id)
-    if not path.exists():
+    state = get_kg_registry().graph_runtime_store.graph_state(board_id)
+    if not state.exists:
         return LayerHealth(
             layer="kuzu",
             healthy=False,
             counts={"total": 0},
-            details=f"graph not bootstrapped at {path}",
+            details=f"graph not bootstrapped ({state.status})",
         )
 
     counts: dict[str, int] = {node_type: 0 for node_type in NODE_TYPES}

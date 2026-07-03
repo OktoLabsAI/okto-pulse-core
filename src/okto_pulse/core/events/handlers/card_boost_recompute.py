@@ -209,7 +209,7 @@ async def _recompute_boost(
     the board has no Kùzu graph yet (event arrived before bootstrap).
     """
     registry = get_kg_registry()
-    if not registry.graph_path_resolver.exists(board_id):
+    if not registry.graph_runtime_store.exists(board_id):
         return (0.0, 0.0)
 
     new_boost = _resolve_priority_boost(new_priority_value)

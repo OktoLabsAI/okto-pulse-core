@@ -7,7 +7,6 @@ must not import the embedded graph runtime or any Community adapter.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.kg.cognitive_policy import (
@@ -23,7 +22,7 @@ class BoardGraphHandle:
     """Compatibility DTO returned by board graph bootstrap implementations."""
 
     board_id: str
-    path: Path
+    path: Any
     schema_version: str
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).

@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services.amendment_revision_api import reject_bypass_fields
 from okto_pulse.core.services.default_board_configuration import (
@@ -79,6 +80,7 @@ class DefaultBoardConfigApiService:
         guideline_default_refs: list[Any] | None = None,
         design_system_default_ref: dict[str, Any] | None = None,
         activate: bool = False,
+        query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
         template = await self._svc.create_version(
             settings_payload=settings_payload,
@@ -87,12 +89,23 @@ class DefaultBoardConfigApiService:
             guideline_default_refs=guideline_default_refs,
             design_system_default_ref=design_system_default_ref,
             activate=activate,
+            query_scope=query_scope,
         )
         await self._db.refresh(template)  # load server_default created_at/updated_at (no MissingGreenlet)
         return self._serialize(template)
 
-    async def activate_version(self, *, template_id: str, actor: str) -> dict[str, Any]:
-        template = await self._svc.activate_version(template_id, actor)
+    async def activate_version(
+        self,
+        *,
+        template_id: str,
+        actor: str,
+        query_scope: QueryScope | None = None,
+    ) -> dict[str, Any]:
+        template = await self._svc.activate_version(
+            template_id,
+            actor,
+            query_scope=query_scope,
+        )
         await self._db.refresh(template)  # load onupdate updated_at (no MissingGreenlet)
         return self._serialize(template)
 
@@ -109,20 +122,34 @@ class DefaultBoardConfigApiService:
         template_id: str,
         guideline_default_refs: list[Any] | None,
         actor: str,
+        query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
         """Update a template's guideline_default_refs. Returns the EFFECTIVE template
         (a new version for an active template — Q1=B copy-on-write — or the mutated
         draft). Errors surface as structured DefaultBoardConfigurationError (TR6)."""
         template = await self._svc.update_guideline_default_refs(
-            template_id, guideline_default_refs, actor
+            template_id,
+            guideline_default_refs,
+            actor,
+            query_scope=query_scope,
         )
         await self._db.refresh(template)
         return self._serialize(template)
 
     async def list_default_candidates(
-        self, *, scope: str = "global", template_id: str | None = None
+        self,
+        *,
+        scope: str = "global",
+        template_id: str | None = None,
+        actor: str | None = None,
+        query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
-        return await self._svc.list_default_candidates(scope=scope, template_id=template_id)
+        return await self._svc.list_default_candidates(
+            scope=scope,
+            template_id=template_id,
+            actor=actor,
+            query_scope=query_scope,
+        )
 
     # -- design system default (spec 3a006f65) -----------------------------
 

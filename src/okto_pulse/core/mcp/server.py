@@ -11700,38 +11700,41 @@ async def okto_pulse_list_guidelines(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        # Use the board owner as the owner_id for listing
-        board = await db.get(Board, board_id)
-        if not board:
-            return json.dumps({"error": "Board not found"})
+    from okto_pulse.core.application.use_cases import (
+        ListGuidelinesCommand,
+        ListGuidelinesUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        service = GuidelineService(db)
-        guidelines = await service.list_guidelines(
-            owner_id=board.owner_id,
-            offset=int(offset),
-            limit=int(limit),
-            tag=tag or None,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await ListGuidelinesUseCase().execute(
+            ListGuidelinesCommand(
+                offset=int(offset),
+                limit=int(limit),
+                tag=tag or None,
+            ),
+            actor=actor,
+            uow=uow,
         )
-        await db.commit()
-
-        return json.dumps(
-            {
-                "count": len(guidelines),
-                "guidelines": [
-                    {
-                        "id": g.id,
-                        "title": g.title,
-                        "content": g.content,
-                        "tags": g.tags,
-                        "scope": g.scope,
-                        "created_at": g.created_at.isoformat() if g.created_at else None,
-                    }
-                    for g in guidelines
-                ],
-            },
-            default=str,
-        )
+        guidelines = result.guidelines
+    return json.dumps(
+        {
+            "count": len(guidelines),
+            "guidelines": [
+                {
+                    "id": g.id,
+                    "title": g.title,
+                    "content": g.content,
+                    "tags": g.tags,
+                    "scope": g.scope,
+                    "created_at": g.created_at.isoformat() if g.created_at else None,
+                }
+                for g in guidelines
+            ],
+        },
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -11754,35 +11757,44 @@ async def okto_pulse_create_guideline(
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
-    async with get_db_for_mcp() as db:
-        board = await db.get(Board, board_id)
-        if not board:
-            return json.dumps({"error": "Board not found"})
+    from okto_pulse.core.application.use_cases import (
+        CreateGuidelineCommand,
+        CreateGuidelineUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.schemas import GuidelineCreate
 
-        from okto_pulse.core.models.schemas import GuidelineCreate
-        data = GuidelineCreate(
-            title=title,
-            content=content,
-            tags=tag_list,
-            scope=scope,
-            board_id=board_id if scope == "inline" else None,
-        )
+    data = GuidelineCreate(
+        title=title,
+        content=content,
+        tags=tag_list,
+        scope=scope,
+        board_id=board_id if scope == "inline" else None,
+    )
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await CreateGuidelineUseCase().execute(
+                CreateGuidelineCommand(data),
+                actor=actor,
+                uow=uow,
+            )
+            guideline = result.guideline
+    except EntityNotFoundError:
+        return json.dumps({"error": "Board not found"})
 
-        service = GuidelineService(db)
-        guideline = await service.create_guideline(owner_id=board.owner_id, data=data)
-        await db.commit()
-
-        return json.dumps(
-            {
-                "id": guideline.id,
-                "title": guideline.title,
-                "content": guideline.content,
-                "tags": guideline.tags,
-                "scope": guideline.scope,
-                "board_id": guideline.board_id,
-            },
-            default=str,
-        )
+    return json.dumps(
+        {
+            "id": guideline.id,
+            "title": guideline.title,
+            "content": guideline.content,
+            "tags": guideline.tags,
+            "scope": guideline.scope,
+            "board_id": guideline.board_id,
+        },
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -11807,34 +11819,41 @@ async def okto_pulse_update_guideline(
     else:
         tags_list = None
 
-    async with get_db_for_mcp() as db:
-        board = await db.get(Board, board_id)
-        if not board:
-            return json.dumps({"error": "Board not found"})
+    from okto_pulse.core.application.use_cases import (
+        UpdateGuidelineCommand,
+        UpdateGuidelineUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.schemas import GuidelineUpdate
 
-        from okto_pulse.core.models.schemas import GuidelineUpdate
-        data = GuidelineUpdate(
-            title=title or None,
-            content=content or None,
-            tags=tags_list,
-        )
+    data = GuidelineUpdate(
+        title=title or None,
+        content=content or None,
+        tags=tags_list,
+    )
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await UpdateGuidelineUseCase().execute(
+                UpdateGuidelineCommand(guideline_id, data),
+                actor=actor,
+                uow=uow,
+            )
+            guideline = result.guideline
+    except EntityNotFoundError:
+        return json.dumps({"error": "Guideline not found or not owned by actor"})
 
-        service = GuidelineService(db)
-        guideline = await service.update_guideline(guideline_id, board.owner_id, data)
-        if not guideline:
-            return json.dumps({"error": "Guideline not found or not owned by board owner"})
-        await db.commit()
-
-        return json.dumps(
-            {
-                "id": guideline.id,
-                "title": guideline.title,
-                "content": guideline.content,
-                "tags": guideline.tags,
-                "scope": guideline.scope,
-            },
-            default=str,
-        )
+    return json.dumps(
+        {
+            "id": guideline.id,
+            "title": guideline.title,
+            "content": guideline.content,
+            "tags": guideline.tags,
+            "scope": guideline.scope,
+        },
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -11849,18 +11868,25 @@ async def okto_pulse_delete_guideline(board_id: str, guideline_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        board = await db.get(Board, board_id)
-        if not board:
-            return json.dumps({"error": "Board not found"})
+    from okto_pulse.core.application.use_cases import (
+        DeleteGuidelineCommand,
+        DeleteGuidelineUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        service = GuidelineService(db)
-        deleted = await service.delete_guideline(guideline_id, board.owner_id)
-        if not deleted:
-            return json.dumps({"error": "Guideline not found or not owned by board owner"})
-        await db.commit()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            await DeleteGuidelineUseCase().execute(
+                DeleteGuidelineCommand(guideline_id),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError:
+        return json.dumps({"error": "Guideline not found or not owned by actor"})
 
-        return json.dumps({"success": True})
+    return json.dumps({"success": True})
 
 
 @mcp.tool()
@@ -11938,6 +11964,56 @@ async def okto_pulse_unlink_guideline_from_board(board_id: str, guideline_id: st
     except EntityNotFoundError:
         return json.dumps({"error": "Link not found"})
     return json.dumps({"success": True})
+
+
+@mcp.tool()
+async def okto_pulse_update_board_guideline_priority(
+    board_id: str, guideline_id: str, priority: str,
+) -> str:
+    """
+    Update the priority of a guideline linked to a board."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE if hasattr(Permissions, 'BOARD_UPDATE') else Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.application.use_cases import (
+        UpdateBoardGuidelinePriorityCommand,
+        UpdateBoardGuidelinePriorityUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    try:
+        priority_value = int(priority)
+    except (TypeError, ValueError):
+        return json.dumps({"error": "invalid_priority", "detail": "priority must be an integer"})
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            await UpdateBoardGuidelinePriorityUseCase().execute(
+                UpdateBoardGuidelinePriorityCommand(
+                    board_id,
+                    guideline_id,
+                    priority_value,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError:
+        return json.dumps({"error": "Link not found"})
+    return json.dumps(
+        {
+            "success": True,
+            "board_id": board_id,
+            "guideline_id": guideline_id,
+            "priority": priority_value,
+        }
+    )
 
 
 @mcp.tool()
@@ -14289,10 +14365,19 @@ async def okto_pulse_list_default_guideline_candidates(
     if perm_err:
         return _perm_error(perm_err)
     Svc, Err = _default_board_config_imports()
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    query_scope = ActorScope.from_context(actor).query_scope(target_board_id=board_id)
     async with get_db_for_mcp() as db:
         try:
             return json.dumps(
-                await Svc(db).list_default_candidates(scope=scope, template_id=template_id),
+                await Svc(db).list_default_candidates(
+                    scope=scope,
+                    template_id=template_id,
+                    actor=actor.actor_id,
+                    query_scope=query_scope,
+                ),
                 default=str,
             )
         except Err as e:
@@ -14316,12 +14401,17 @@ async def okto_pulse_update_default_guideline_refs(
     if perm_err:
         return _perm_error(perm_err)
     Svc, Err = _default_board_config_imports()
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    query_scope = ActorScope.from_context(actor).query_scope(target_board_id=board_id)
     async with get_db_for_mcp() as db:
         try:
             result = await Svc(db).update_template_guidelines(
                 template_id=template_id,
                 guideline_default_refs=guideline_default_refs,
-                actor=ctx.agent_id,
+                actor=actor.actor_id,
+                query_scope=query_scope,
             )
             await db.commit()
             return json.dumps(result, default=str)

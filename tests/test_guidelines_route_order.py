@@ -14,36 +14,33 @@ Reproduce:
 from __future__ import annotations
 
 from fastapi import FastAPI
-from starlette.routing import Match
 
 from okto_pulse.core.api.router import api_router
 
 
-def _first_matching_route(method: str, path: str):
-    """Return the first route (in registration order) that FULLY matches, i.e. the one
-    FastAPI/Starlette would actually dispatch to."""
+def _openapi_paths():
     app = FastAPI()
     app.include_router(api_router)
-    scope = {"type": "http", "method": method, "path": path, "headers": []}
-    for route in app.router.routes:
-        match, _child = route.matches(scope)
-        if match == Match.FULL:
-            return route
-    return None
+    return app.openapi()["paths"]
 
 
 def test_default_candidates_route_is_not_shadowed():
-    route = _first_matching_route("GET", "/api/v1/guidelines/default-candidates")
-    assert route is not None, "no route matched /guidelines/default-candidates"
-    assert route.endpoint.__name__ == "list_default_guideline_candidates", (
-        f"/guidelines/default-candidates resolved to {route.endpoint.__name__!r} — the "
-        "literal route is being shadowed by the parametric /guidelines/{guideline_id}. "
-        "Keep default_board_config_router registered BEFORE guidelines_router."
+    paths = _openapi_paths()
+    literal = "/api/v1/guidelines/default-candidates"
+    parametric = "/api/v1/guidelines/{guideline_id}"
+
+    assert literal in paths, "no route registered for /guidelines/default-candidates"
+    assert paths[literal]["get"]["operationId"].startswith(
+        "list_default_guideline_candidates"
+    )
+    assert list(paths).index(literal) < list(paths).index(parametric), (
+        "The literal /guidelines/default-candidates route must be registered before "
+        "the parametric /guidelines/{guideline_id} route."
     )
 
 
 def test_guideline_by_id_route_still_resolves():
     # The parametric route must keep working for a real id (no regression from the order).
-    route = _first_matching_route("GET", "/api/v1/guidelines/11111111-2222-3333-4444-555555555555")
-    assert route is not None
-    assert route.endpoint.__name__ == "get_guideline"
+    paths = _openapi_paths()
+    operation = paths["/api/v1/guidelines/{guideline_id}"]["get"]
+    assert operation["operationId"].startswith("get_guideline")
