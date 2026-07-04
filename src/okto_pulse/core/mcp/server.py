@@ -7915,62 +7915,42 @@ async def _link_task_to_scenario_internal(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        spec_service = SpecService(db)
-        spec = await spec_service.get_spec(spec_id)
-        if not spec:
+    from okto_pulse.core.application.use_cases import (
+        LinkTaskToScenarioCommand,
+        LinkTaskToScenarioUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await LinkTaskToScenarioUseCase().execute(
+                LinkTaskToScenarioCommand(spec_id, scenario_id, card_id),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as e:
+        if e.entity_type == "spec":
             return json.dumps({"error": "Spec not found"})
+        if e.entity_type == "card":
+            return json.dumps({
+                "error": f"Card '{card_id}' not found — cannot link a non-existent card."
+            })
+        if e.entity_type == "scenario":
+            return json.dumps({"error": f"Scenario '{scenario_id}' not found in spec."})
+        return MCPAdapterContract.error(e)
+    except CardOperationError as e:
+        return json.dumps({"error": e.code, **e.to_dict(), **e.facts})
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
 
-        # Update scenario's linked_task_ids
-        scenarios = list(spec.test_scenarios or [])
-        found = False
-        for s in scenarios:
-            if s.get("id") == scenario_id:
-                task_ids = list(s.get("linked_task_ids") or [])
-                if card_id not in task_ids:
-                    task_ids.append(card_id)
-                s["linked_task_ids"] = task_ids
-                found = True
-                break
-
-        if not found:
-            return json.dumps({"error": f"Scenario '{scenario_id}' not found"})
-
-        # Verify card exists BEFORE writing — prevents orphan task references.
-        card_service = CardService(db)
-        card = await card_service.get_card(card_id)
-        if not card:
-            return json.dumps({"error": f"Card '{card_id}' not found — cannot link a non-existent card."})
-
-        from sqlalchemy.orm.attributes import flag_modified
-
-        from okto_pulse.core.models.schemas import CardUpdate
-
-        spec.test_scenarios = scenarios
-        flag_modified(spec, "test_scenarios")
-        await db.flush()
-
-        # Update card's test_scenario_ids. CardService owns the board cap and
-        # spec membership validation so REST/MCP keep the same contract.
-        if card:
-            existing_ids = list(card.test_scenario_ids or [])
-            if scenario_id not in existing_ids:
-                existing_ids.append(scenario_id)
-            try:
-                await card_service.update_card(
-                    card_id,
-                    ctx.agent_id,
-                    CardUpdate(test_scenario_ids=existing_ids),
-                )
-            except CardOperationError as e:
-                return json.dumps({"error": e.code, **e.to_dict(), **e.facts})
-            except ValueError as e:
-                return json.dumps({"error": str(e)})
-
-        await db.commit()
-
-        cov = _spec_coverage(spec, scenarios=scenarios)
-        return json.dumps({"success": True, "scenario_id": scenario_id, "card_id": card_id, **_saturation_or_coverage(cov)})
+    return json.dumps({
+        "success": True,
+        "scenario_id": result.scenario_id,
+        "card_id": result.card_id,
+        **_saturation_or_coverage(result.coverage),
+    })
 
 
 async def _link_task_to_rule_internal(

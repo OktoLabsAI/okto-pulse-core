@@ -594,12 +594,20 @@ class LinkTaskToScenarioCommand:
 
 
 class LinkTaskToScenarioResult:
-    __slots__ = ("spec_id", "scenario_id", "card_id")
+    __slots__ = ("spec_id", "scenario_id", "card_id", "coverage")
 
-    def __init__(self, spec_id: str, scenario_id: str, card_id: str) -> None:
+    def __init__(
+        self,
+        spec_id: str,
+        scenario_id: str,
+        card_id: str,
+        *,
+        coverage: dict | None = None,
+    ) -> None:
         self.spec_id = spec_id
         self.scenario_id = scenario_id
         self.card_id = card_id
+        self.coverage = coverage or {}
 
 
 class LinkTaskToScenarioUseCase:
@@ -627,6 +635,10 @@ class LinkTaskToScenarioUseCase:
         card = await card_service.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
+        if getattr(card, "board_id", None) != getattr(spec, "board_id", None):
+            raise ValueError(
+                f"Card '{command.card_id}' belongs to a different board than spec '{command.spec_id}'."
+            )
 
         scenarios = list(spec.test_scenarios or [])
         found = False
@@ -652,9 +664,15 @@ class LinkTaskToScenarioUseCase:
             command.card_id, actor.actor_id, CardUpdate(test_scenario_ids=existing)
         )
 
+        from okto_pulse.core.services.analytics_service import spec_coverage_summary
+
+        coverage = spec_coverage_summary(spec, scenarios=scenarios)
         await commit(uow)
         return LinkTaskToScenarioResult(
-            command.spec_id, command.scenario_id, command.card_id
+            command.spec_id,
+            command.scenario_id,
+            command.card_id,
+            coverage=coverage,
         )
 
 
