@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.kg.rebuild_audit import _is_raw_token_shape
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 
 
 logger = logging.getLogger("okto_pulse.kg.candidate_decision_store")
@@ -160,7 +161,7 @@ _MAX_EVIDENCE_ENTRY_BYTES = 200
 
 
 _CANDIDATE_LABELS = ("board_id_hash", "action", "outcome", "reason_code")
-_candidate_samples: list[dict[str, Any]] = []
+_candidate_samples = BoundedCounterSampleBuffer(_CANDIDATE_LABELS)
 _candidate_samples_lock = threading.Lock()
 
 
@@ -190,7 +191,7 @@ def get_candidate_counter_labels() -> tuple[str, ...]:
 
 def get_candidate_samples() -> list[dict[str, Any]]:
     with _candidate_samples_lock:
-        return [dict(sample) for sample in _candidate_samples]
+        return _candidate_samples.snapshot()
 
 
 def get_candidate_event_count(
@@ -202,13 +203,11 @@ def get_candidate_event_count(
 ) -> int:
     expected_hash = _board_id_hash(board_id) if board_id else None
     with _candidate_samples_lock:
-        return sum(
-            1
-            for sample in _candidate_samples
-            if (expected_hash is None or sample["board_id_hash"] == expected_hash)
-            and (action is None or sample["action"] == action)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason_code is None or sample["reason_code"] == reason_code)
+        return _candidate_samples.count(
+            board_id_hash=expected_hash,
+            action=action,
+            outcome=outcome,
+            reason_code=reason_code,
         )
 
 

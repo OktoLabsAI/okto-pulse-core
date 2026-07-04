@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Iterable, Literal, Mapping, Protocol
 
+from okto_pulse.core.observability.sample_buffer import BoundedSampleBuffer
+
 EntityType = Literal["ideation", "refinement", "spec", "card"]
 ResourceType = Literal["architecture", "mockup", "knowledge_base"]
 ResourceState = Literal["provided", "not_applicable", "missing"]
@@ -63,7 +65,7 @@ class ResourceLineageMetricSample:
         }
 
 
-_RESOURCE_LINEAGE_METRIC_SAMPLES: list[ResourceLineageMetricSample] = []
+_RESOURCE_LINEAGE_METRIC_SAMPLES = BoundedSampleBuffer()
 
 
 def reset_resource_lineage_observability_for_tests() -> None:
@@ -71,7 +73,7 @@ def reset_resource_lineage_observability_for_tests() -> None:
 
 
 def get_resource_lineage_metric_samples() -> list[dict[str, Any]]:
-    return [sample.to_dict() for sample in _RESOURCE_LINEAGE_METRIC_SAMPLES]
+    return [sample.to_dict() for sample in _RESOURCE_LINEAGE_METRIC_SAMPLES.snapshot()]
 
 
 def observe_resource_lineage_coverage_uncovered(

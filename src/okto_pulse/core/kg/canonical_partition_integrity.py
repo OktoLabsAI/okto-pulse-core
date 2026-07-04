@@ -60,6 +60,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     default_rebuild_base_dir,
     normalize_cognitive_artifact_id,
 )
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
@@ -215,7 +216,9 @@ _OPERATOR_ACTION = (
 # model is the single place that enumerates the partition); clean boards emit no
 # blocking samples. Mirrors the project's in-memory emit/get/reset metric shape.
 _PARTITION_INTEGRITY_METRIC_LABELS = ("reason_code", "graph_layer", "status", "board_id")
-_partition_integrity_samples: list[dict[str, Any]] = []
+_partition_integrity_samples = BoundedCounterSampleBuffer(
+    _PARTITION_INTEGRITY_METRIC_LABELS
+)
 _partition_integrity_lock = threading.Lock()
 
 
@@ -240,13 +243,11 @@ def get_canonical_partition_integrity_count(
     board_id: str | None = None,
 ) -> int:
     with _partition_integrity_lock:
-        return sum(
-            1
-            for s in _partition_integrity_samples
-            if (reason_code is None or s["reason_code"] == reason_code)
-            and (graph_layer is None or s["graph_layer"] == graph_layer)
-            and (status is None or s["status"] == status)
-            and (board_id is None or s["board_id"] == board_id)
+        return _partition_integrity_samples.count(
+            reason_code=reason_code,
+            graph_layer=graph_layer,
+            status=status,
+            board_id=board_id,
         )
 
 

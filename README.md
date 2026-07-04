@@ -24,6 +24,7 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 - **App factory** — `create_app()` with dependency injection for auth and storage providers
 - **Hexagonal backend ports** — runtime, telemetry, repository/UoW and KG provider seams, plus the adapter readiness ledger, documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - **Knowledge Graph contracts and orchestration** — graph schema vocabulary, query/consolidation semantics, deterministic + cognitive workers, 11 node types and **13 relationship types**. Source: `len(KGEdgeType)` in `core/kg/schemas.py`; the concrete LadybugDB/Kuzu board and global graph runtimes are supplied by the active edition
+- **Bounded operational metric samples** — governance, architecture, bug-regression, resource-lineage and global-discovery observability keep capped diagnostic samples. Global-discovery count APIs remain monotonic totals and do not derive totals from the retained sample ring.
 
 ## Governance Gate Surface
 

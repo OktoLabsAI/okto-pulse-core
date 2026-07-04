@@ -22,6 +22,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
     CognitiveConsolidationItemStore,
 )
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 
 
 ELIGIBLE_CLOSEOUT_ENTITY_TYPES: frozenset[str] = frozenset(
@@ -140,7 +141,7 @@ _CLOSEOUT_LABELS = (
     "skip_enabled",
     "blocking_count_bucket",
 )
-_closeout_samples: list[dict[str, Any]] = []
+_closeout_samples = BoundedCounterSampleBuffer(_CLOSEOUT_LABELS)
 _closeout_samples_lock = threading.Lock()
 
 
@@ -200,7 +201,7 @@ def get_closeout_gate_counter_labels() -> tuple[str, ...]:
 
 def get_closeout_gate_samples() -> list[dict[str, Any]]:
     with _closeout_samples_lock:
-        return [dict(sample) for sample in _closeout_samples]
+        return _closeout_samples.snapshot()
 
 
 def get_closeout_gate_event_count(
@@ -211,13 +212,11 @@ def get_closeout_gate_event_count(
     skip_enabled: str | None = None,
 ) -> int:
     with _closeout_samples_lock:
-        return sum(
-            1
-            for sample in _closeout_samples
-            if (entity_type is None or sample["entity_type"] == entity_type)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason is None or sample["reason"] == reason)
-            and (skip_enabled is None or sample["skip_enabled"] == skip_enabled)
+        return _closeout_samples.count(
+            entity_type=entity_type,
+            outcome=outcome,
+            reason=reason,
+            skip_enabled=skip_enabled,
         )
 
 

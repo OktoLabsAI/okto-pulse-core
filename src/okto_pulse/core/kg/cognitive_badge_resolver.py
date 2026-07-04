@@ -47,6 +47,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
 )
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +174,7 @@ _BADGE_RESOLVE_LABELS = (
     "reason",
 )
 
-_RESOLVE_SAMPLES: list[dict[str, Any]] = []
+_RESOLVE_SAMPLES = BoundedCounterSampleBuffer(_BADGE_RESOLVE_LABELS)
 _RESOLVE_SAMPLES_LOCK = threading.Lock()
 
 
@@ -225,7 +226,7 @@ def get_badge_resolve_counter_labels() -> tuple[str, ...]:
 
 def get_badge_resolve_samples() -> list[dict[str, Any]]:
     with _RESOLVE_SAMPLES_LOCK:
-        return [dict(sample) for sample in _RESOLVE_SAMPLES]
+        return _RESOLVE_SAMPLES.snapshot()
 
 
 def get_badge_resolve_event_count(
@@ -237,20 +238,12 @@ def get_badge_resolve_event_count(
     reason: str | None = None,
 ) -> int:
     with _RESOLVE_SAMPLES_LOCK:
-        return sum(
-            1
-            for sample in _RESOLVE_SAMPLES
-            if (board_id_hash is None or sample["board_id_hash"] == board_id_hash)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (
-                requested_count_bucket is None
-                or sample["requested_count_bucket"] == requested_count_bucket
-            )
-            and (
-                eligible_entity_type is None
-                or sample["eligible_entity_type"] == eligible_entity_type
-            )
-            and (reason is None or sample["reason"] == reason)
+        return _RESOLVE_SAMPLES.count(
+            board_id_hash=board_id_hash,
+            outcome=outcome,
+            requested_count_bucket=requested_count_bucket,
+            eligible_entity_type=eligible_entity_type,
+            reason=reason,
         )
 
 

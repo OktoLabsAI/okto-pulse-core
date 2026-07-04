@@ -7,6 +7,8 @@ import logging
 import threading
 from typing import Any, Mapping
 
+from okto_pulse.core.observability.sample_buffer import BoundedSampleBuffer
+
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +65,7 @@ _FORBIDDEN_LABEL_FRAGMENTS = (
 )
 _MAX_LABEL_VALUE_CHARS = 128
 _METRIC_SAMPLES_LOCK = threading.Lock()
-_METRIC_SAMPLES: list[dict[str, Any]] = []
+_METRIC_SAMPLES = BoundedSampleBuffer()
 
 
 @dataclass(frozen=True)
@@ -315,7 +317,7 @@ def get_architecture_metric_samples() -> list[dict[str, Any]]:
                 "value": sample["value"],
                 "labels": dict(sample["labels"]),
             }
-            for sample in _METRIC_SAMPLES
+            for sample in _METRIC_SAMPLES.snapshot()
         ]
 
 

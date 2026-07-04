@@ -4,9 +4,11 @@ This file gives Claude (and humans) what they need to operate this repo.
 Project overview lives in `README.md`; this file is for procedures.
 
 This repo is the internal engine for `okto-pulse`: SQLAlchemy models,
-FastAPI routes, MCP server, embedded knowledge graph (Ladybug). The
-deployable Docker artifact lives in the sibling `okto-pulse` repo, NOT
-here. This package is consumed as a build-time dependency.
+FastAPI routes, MCP server, governance rules and Knowledge Graph contracts.
+Concrete graph runtimes such as the Community Ladybug/Kuzu adapter are supplied
+by the active edition. The deployable Docker artifact lives in the sibling
+`okto-pulse` repo, NOT here. This package is consumed as a build-time
+dependency.
 
 ---
 
@@ -90,10 +92,11 @@ This repo has **no Dockerfile** of its own. It ships as a wheel built into the
 
 The Docker container runs `okto-pulse serve`, which spins up two
 `uvicorn.Server` instances inside one Python process via `asyncio.gather`.
-Why one process: the embedded LadybugDB is single-writer and module-level
-state (the registered SQLAlchemy session factory, the `_global_db` cache,
-the `_active_api_key` `ContextVar`) must be shared between the API listener
-and the MCP listener. Two ports because the SPA fetches go to one
+Why one process in the Community local runtime: the active Ladybug/Kuzu adapter
+is single-writer and module-level state (the registered SQLAlchemy session
+factory, the `_global_db` cache, the `_active_api_key` `ContextVar`) must be
+shared between the API listener and the MCP listener. Two ports because the SPA
+fetches go to one
 (`http://localhost:8100`) and the AI tool's MCP HTTP transport hits the other
 (`http://localhost:8101/mcp`).
 
@@ -117,7 +120,7 @@ with backports.
 
 ### Persistence
 
-The container writes to `/data`:
+The Community container writes to `/data`:
 - `/data/data/pulse.db` — SQLite (boards, agents, specs, sprints, cards, …)
 - `/data/boards/<board-id>/graph.lbug` — per-board LadybugDB graph
 - `/data/uploads/` — attachments

@@ -48,6 +48,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
 )
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +119,7 @@ class RefinementGuardError(Exception):
 
 
 _GUARD_LABELS = ("board_id_hash", "outcome", "reason")
-_guard_samples: list[dict[str, Any]] = []
+_guard_samples = BoundedCounterSampleBuffer(_GUARD_LABELS)
 _guard_samples_lock = threading.Lock()
 
 
@@ -148,18 +149,16 @@ def get_guard_event_count(
     reason: str | None = None,
 ) -> int:
     with _guard_samples_lock:
-        return sum(
-            1
-            for sample in _guard_samples
-            if (board_id_hash is None or sample["board_id_hash"] == board_id_hash)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason is None or sample["reason"] == reason)
+        return _guard_samples.count(
+            board_id_hash=board_id_hash,
+            outcome=outcome,
+            reason=reason,
         )
 
 
 def get_guard_samples() -> list[dict[str, Any]]:
     with _guard_samples_lock:
-        return [dict(sample) for sample in _guard_samples]
+        return _guard_samples.snapshot()
 
 
 def reset_guard_counter() -> None:
@@ -182,7 +181,7 @@ class TerminalWriteBlockOutcome(str, Enum):
 
 
 _TERMINAL_BLOCK_LABELS = ("board_id_hash", "attempted_status", "outcome")
-_terminal_block_samples: list[dict[str, Any]] = []
+_terminal_block_samples = BoundedCounterSampleBuffer(_TERMINAL_BLOCK_LABELS)
 _terminal_block_lock = threading.Lock()
 
 _TERMINAL_ITEM_STATUSES: frozenset[str] = frozenset({
@@ -215,21 +214,16 @@ def get_terminal_block_event_count(
     outcome: str | None = None,
 ) -> int:
     with _terminal_block_lock:
-        return sum(
-            1
-            for sample in _terminal_block_samples
-            if (board_id_hash is None or sample["board_id_hash"] == board_id_hash)
-            and (
-                attempted_status is None
-                or sample["attempted_status"] == attempted_status
-            )
-            and (outcome is None or sample["outcome"] == outcome)
+        return _terminal_block_samples.count(
+            board_id_hash=board_id_hash,
+            attempted_status=attempted_status,
+            outcome=outcome,
         )
 
 
 def get_terminal_block_samples() -> list[dict[str, Any]]:
     with _terminal_block_lock:
-        return [dict(sample) for sample in _terminal_block_samples]
+        return _terminal_block_samples.snapshot()
 
 
 def reset_terminal_block_counter() -> None:

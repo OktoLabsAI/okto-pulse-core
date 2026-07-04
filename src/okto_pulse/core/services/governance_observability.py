@@ -8,6 +8,8 @@ import re
 import threading
 from typing import Any, Mapping
 
+from okto_pulse.core.observability.sample_buffer import BoundedSampleBuffer
+
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +130,7 @@ _FORBIDDEN_VALUE_FRAGMENTS = (
 )
 
 _METRIC_SAMPLES_LOCK = threading.Lock()
-_METRIC_SAMPLES: list[dict[str, Any]] = []
+_METRIC_SAMPLES = BoundedSampleBuffer()
 _TOKEN_RE = re.compile(r"[^A-Za-z0-9_.:/-]+")
 
 
@@ -185,7 +187,7 @@ def get_governance_metric_samples() -> list[dict[str, Any]]:
                 "value": item["value"],
                 "labels": dict(item["labels"]),
             }
-            for item in _METRIC_SAMPLES
+            for item in _METRIC_SAMPLES.snapshot()
         ]
 
 

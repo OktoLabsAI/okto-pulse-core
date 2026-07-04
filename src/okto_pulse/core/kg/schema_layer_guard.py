@@ -36,6 +36,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+
 logger = logging.getLogger(__name__)
 
 # The two maturity columns a legacy graph may be missing.
@@ -296,7 +298,7 @@ def ensure_graph_layer_schema(
 # of outcome=migration_failed must be 0 once the board has been migrated.
 
 _SCHEMA_LAYER_LABELS = ("board_id", "outcome")
-_schema_layer_samples: list[dict[str, Any]] = []
+_schema_layer_samples = BoundedCounterSampleBuffer(_SCHEMA_LAYER_LABELS)
 _schema_layer_lock = threading.Lock()
 
 
@@ -312,12 +314,7 @@ def get_schema_layer_migration_event_count(
     outcome: str | None = None,
 ) -> int:
     with _schema_layer_lock:
-        return sum(
-            1
-            for sample in _schema_layer_samples
-            if (board_id is None or sample["board_id"] == board_id)
-            and (outcome is None or sample["outcome"] == outcome)
-        )
+        return _schema_layer_samples.count(board_id=board_id, outcome=outcome)
 
 
 def get_schema_layer_migration_counter_labels() -> tuple[str, ...]:
@@ -326,7 +323,7 @@ def get_schema_layer_migration_counter_labels() -> tuple[str, ...]:
 
 def get_schema_layer_migration_samples() -> list[dict[str, Any]]:
     with _schema_layer_lock:
-        return [dict(sample) for sample in _schema_layer_samples]
+        return _schema_layer_samples.snapshot()
 
 
 def reset_schema_layer_migration_counter() -> None:

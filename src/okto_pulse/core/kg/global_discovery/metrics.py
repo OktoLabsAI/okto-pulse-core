@@ -23,12 +23,14 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+
 # ---------------------------------------------------------------------------
 # or_a921cc64 — kg_global_discovery_missing_embedding_skipped_total
 # ---------------------------------------------------------------------------
 
 _MISSING_EMBEDDING_LABELS = ("board_id", "node_type")
-_missing_embedding_samples: list[dict[str, Any]] = []
+_missing_embedding_samples = BoundedCounterSampleBuffer(_MISSING_EMBEDDING_LABELS)
 _missing_embedding_lock = threading.Lock()
 
 
@@ -46,12 +48,7 @@ def get_missing_embedding_skipped_count(
     node_type: str | None = None,
 ) -> int:
     with _missing_embedding_lock:
-        return sum(
-            1
-            for s in _missing_embedding_samples
-            if (board_id is None or s["board_id"] == board_id)
-            and (node_type is None or s["node_type"] == node_type)
-        )
+        return _missing_embedding_samples.count(board_id=board_id, node_type=node_type)
 
 
 def get_missing_embedding_skipped_labels() -> tuple[str, ...]:
@@ -60,7 +57,7 @@ def get_missing_embedding_skipped_labels() -> tuple[str, ...]:
 
 def get_missing_embedding_skipped_samples() -> list[dict[str, Any]]:
     with _missing_embedding_lock:
-        return [dict(s) for s in _missing_embedding_samples]
+        return _missing_embedding_samples.snapshot()
 
 
 def reset_missing_embedding_skipped_counter() -> None:
@@ -76,7 +73,7 @@ DIGEST_UPSERT_CREATED = "created"
 DIGEST_UPSERT_UPDATED = "updated"
 
 _DIGEST_UPSERT_LABELS = ("board_id", "node_type", "outcome")
-_digest_upsert_samples: list[dict[str, Any]] = []
+_digest_upsert_samples = BoundedCounterSampleBuffer(_DIGEST_UPSERT_LABELS)
 _digest_upsert_lock = threading.Lock()
 
 
@@ -95,12 +92,10 @@ def get_digest_upsert_count(
     outcome: str | None = None,
 ) -> int:
     with _digest_upsert_lock:
-        return sum(
-            1
-            for s in _digest_upsert_samples
-            if (board_id is None or s["board_id"] == board_id)
-            and (node_type is None or s["node_type"] == node_type)
-            and (outcome is None or s["outcome"] == outcome)
+        return _digest_upsert_samples.count(
+            board_id=board_id,
+            node_type=node_type,
+            outcome=outcome,
         )
 
 
@@ -110,7 +105,7 @@ def get_digest_upsert_labels() -> tuple[str, ...]:
 
 def get_digest_upsert_samples() -> list[dict[str, Any]]:
     with _digest_upsert_lock:
-        return [dict(s) for s in _digest_upsert_samples]
+        return _digest_upsert_samples.snapshot()
 
 
 def reset_digest_upsert_counter() -> None:
@@ -129,7 +124,9 @@ def reset_digest_upsert_counter() -> None:
 # above) + reason_code (closed R7 vocab). A clean board emits nothing.
 
 _CANONICAL_INCOMPLETE_EXCLUDED_LABELS = ("board_id", "reason_code")
-_canonical_incomplete_excluded_samples: list[dict[str, Any]] = []
+_canonical_incomplete_excluded_samples = BoundedCounterSampleBuffer(
+    _CANONICAL_INCOMPLETE_EXCLUDED_LABELS
+)
 _canonical_incomplete_excluded_lock = threading.Lock()
 
 
@@ -148,11 +145,9 @@ def get_canonical_incomplete_excluded_count(
     reason_code: str | None = None,
 ) -> int:
     with _canonical_incomplete_excluded_lock:
-        return sum(
-            1
-            for s in _canonical_incomplete_excluded_samples
-            if (board_id is None or s["board_id"] == board_id)
-            and (reason_code is None or s["reason_code"] == reason_code)
+        return _canonical_incomplete_excluded_samples.count(
+            board_id=board_id,
+            reason_code=reason_code,
         )
 
 
@@ -162,7 +157,7 @@ def get_canonical_incomplete_excluded_labels() -> tuple[str, ...]:
 
 def get_canonical_incomplete_excluded_samples() -> list[dict[str, Any]]:
     with _canonical_incomplete_excluded_lock:
-        return [dict(s) for s in _canonical_incomplete_excluded_samples]
+        return _canonical_incomplete_excluded_samples.snapshot()
 
 
 def reset_canonical_incomplete_excluded_counter() -> None:
@@ -181,7 +176,9 @@ def reset_canonical_incomplete_excluded_counter() -> None:
 # (closed layer vocab canonical|working|legacy_unknown|none); no node ids.
 
 _DIGEST_LAYER_MISMATCH_LABELS = ("board_id", "expected_layer", "actual_layer")
-_digest_layer_mismatch_samples: list[dict[str, Any]] = []
+_digest_layer_mismatch_samples = BoundedCounterSampleBuffer(
+    _DIGEST_LAYER_MISMATCH_LABELS
+)
 _digest_layer_mismatch_lock = threading.Lock()
 
 
@@ -204,12 +201,10 @@ def get_digest_layer_mismatch_count(
     actual_layer: str | None = None,
 ) -> int:
     with _digest_layer_mismatch_lock:
-        return sum(
-            1
-            for s in _digest_layer_mismatch_samples
-            if (board_id is None or s["board_id"] == board_id)
-            and (expected_layer is None or s["expected_layer"] == expected_layer)
-            and (actual_layer is None or s["actual_layer"] == actual_layer)
+        return _digest_layer_mismatch_samples.count(
+            board_id=board_id,
+            expected_layer=expected_layer,
+            actual_layer=actual_layer,
         )
 
 
@@ -219,7 +214,7 @@ def get_digest_layer_mismatch_labels() -> tuple[str, ...]:
 
 def get_digest_layer_mismatch_samples() -> list[dict[str, Any]]:
     with _digest_layer_mismatch_lock:
-        return [dict(s) for s in _digest_layer_mismatch_samples]
+        return _digest_layer_mismatch_samples.snapshot()
 
 
 def reset_digest_layer_mismatch_counter() -> None:

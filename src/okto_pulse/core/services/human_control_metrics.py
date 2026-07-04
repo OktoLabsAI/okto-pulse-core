@@ -18,8 +18,10 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+
 _HUMAN_CONTROL_LABELS = ("board_id", "blocked_tool", "blocked_action")
-_human_control_samples: list[dict[str, Any]] = []
+_human_control_samples = BoundedCounterSampleBuffer(_HUMAN_CONTROL_LABELS)
 _human_control_lock = threading.Lock()
 
 
@@ -42,12 +44,10 @@ def get_human_control_required_count(
     blocked_action: str | None = None,
 ) -> int:
     with _human_control_lock:
-        return sum(
-            1
-            for s in _human_control_samples
-            if (board_id is None or s["board_id"] == board_id)
-            and (blocked_tool is None or s["blocked_tool"] == blocked_tool)
-            and (blocked_action is None or s["blocked_action"] == blocked_action)
+        return _human_control_samples.count(
+            board_id=board_id,
+            blocked_tool=blocked_tool,
+            blocked_action=blocked_action,
         )
 
 
@@ -57,7 +57,7 @@ def get_human_control_required_labels() -> tuple[str, ...]:
 
 def get_human_control_required_samples() -> list[dict[str, Any]]:
     with _human_control_lock:
-        return [dict(s) for s in _human_control_samples]
+        return _human_control_samples.snapshot()
 
 
 def reset_human_control_required_counter() -> None:

@@ -49,6 +49,7 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
 )
+from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 
 
 def confirmation_fingerprint(confirmation_id: str) -> str:
@@ -537,7 +538,10 @@ class CognitiveMaterializeOutcome(str, Enum):
     FAILED = "failed"
 
 
-_materialized_samples: list[dict[str, Any]] = []
+_materialized_samples = BoundedCounterSampleBuffer(
+    _MATERIALIZED_LABELS,
+    sum_fields=("item_count",),
+)
 _materialized_samples_lock = threading.Lock()
 
 
@@ -565,14 +569,11 @@ def get_materialized_count(
     This is the metric value an exporter would publish."""
 
     with _materialized_samples_lock:
-        total = 0
-        for sample in _materialized_samples:
-            if sample["board_id"] != board_id:
-                continue
-            if outcome is not None and sample["outcome"] != outcome:
-                continue
-            total += int(sample["item_count"])
-        return total
+        return _materialized_samples.sum(
+            "item_count",
+            board_id=board_id,
+            outcome=outcome,
+        )
 
 
 def get_materialized_event_count(
@@ -584,12 +585,7 @@ def get_materialized_event_count(
     -per-marker invariant required by or_3b71e3c1."""
 
     with _materialized_samples_lock:
-        return sum(
-            1
-            for sample in _materialized_samples
-            if sample["board_id"] == board_id
-            and (outcome is None or sample["outcome"] == outcome)
-        )
+        return _materialized_samples.count(board_id=board_id, outcome=outcome)
 
 
 def get_materialized_counter_labels() -> tuple[str, ...]:
@@ -601,7 +597,7 @@ def get_materialized_samples() -> list[dict[str, Any]]:
     only the contract-mandated keys: board_id, outcome, item_count."""
 
     with _materialized_samples_lock:
-        return [dict(sample) for sample in _materialized_samples]
+        return _materialized_samples.snapshot()
 
 
 def reset_materialized_counter() -> None:
@@ -657,7 +653,7 @@ _LIST_LABELS = (
     "status_filter_present",
     "reason_code",
 )
-_list_samples: list[dict[str, Any]] = []
+_list_samples = BoundedCounterSampleBuffer(_LIST_LABELS)
 _list_samples_lock = threading.Lock()
 
 
@@ -697,13 +693,11 @@ def get_list_event_count(
     reason_code: str | None = None,
 ) -> int:
     with _list_samples_lock:
-        return sum(
-            1
-            for sample in _list_samples
-            if (board_id is None or sample["board_id"] == board_id)
-            and (surface is None or sample["surface"] == surface)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason_code is None or sample["reason_code"] == reason_code)
+        return _list_samples.count(
+            board_id=board_id,
+            surface=surface,
+            outcome=outcome,
+            reason_code=reason_code,
         )
 
 
@@ -713,7 +707,7 @@ def get_list_counter_labels() -> tuple[str, ...]:
 
 def get_list_samples() -> list[dict[str, Any]]:
     with _list_samples_lock:
-        return [dict(sample) for sample in _list_samples]
+        return _list_samples.snapshot()
 
 
 def reset_list_counter() -> None:
@@ -736,7 +730,9 @@ OPERATIONAL_INSPECTION_SIGNALS: frozenset[str] = frozenset({
     "canonical_debt",
 })
 _OPERATIONAL_INSPECTION_LABELS = ("signal", "surface", "outcome", "board_id")
-_operational_inspection_samples: list[dict[str, Any]] = []
+_operational_inspection_samples = BoundedCounterSampleBuffer(
+    _OPERATIONAL_INSPECTION_LABELS
+)
 _operational_inspection_lock = threading.Lock()
 
 
@@ -774,13 +770,11 @@ def get_operational_inspection_event_count(
     board_id: str | None = None,
 ) -> int:
     with _operational_inspection_lock:
-        return sum(
-            1
-            for sample in _operational_inspection_samples
-            if (signal is None or sample["signal"] == signal)
-            and (surface is None or sample["surface"] == surface)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (board_id is None or sample["board_id"] == board_id)
+        return _operational_inspection_samples.count(
+            signal=signal,
+            surface=surface,
+            outcome=outcome,
+            board_id=board_id,
         )
 
 
@@ -790,7 +784,7 @@ def get_operational_inspection_counter_labels() -> tuple[str, ...]:
 
 def get_operational_inspection_samples() -> list[dict[str, Any]]:
     with _operational_inspection_lock:
-        return [dict(sample) for sample in _operational_inspection_samples]
+        return _operational_inspection_samples.snapshot()
 
 
 def reset_operational_inspection_counter() -> None:
@@ -815,7 +809,9 @@ COGNITIVE_TECHNICAL_SIGNALS: frozenset[str] = frozenset({
 })
 _COGNITIVE_TECHNICAL_SIGNAL_LABELS = (
     "signal", "surface", "blocking", "would_block_done", "board_id")
-_cognitive_technical_signal_samples: list[dict[str, Any]] = []
+_cognitive_technical_signal_samples = BoundedCounterSampleBuffer(
+    _COGNITIVE_TECHNICAL_SIGNAL_LABELS
+)
 _cognitive_technical_signal_lock = threading.Lock()
 
 
@@ -852,14 +848,12 @@ def get_cognitive_technical_signal_event_count(
     board_id: str | None = None,
 ) -> int:
     with _cognitive_technical_signal_lock:
-        return sum(
-            1
-            for s in _cognitive_technical_signal_samples
-            if (signal is None or s["signal"] == signal)
-            and (surface is None or s["surface"] == surface)
-            and (blocking is None or s["blocking"] == blocking)
-            and (would_block_done is None or s["would_block_done"] == would_block_done)
-            and (board_id is None or s["board_id"] == board_id)
+        return _cognitive_technical_signal_samples.count(
+            signal=signal,
+            surface=surface,
+            blocking=blocking,
+            would_block_done=would_block_done,
+            board_id=board_id,
         )
 
 
@@ -869,7 +863,7 @@ def get_cognitive_technical_signal_counter_labels() -> tuple[str, ...]:
 
 def get_cognitive_technical_signal_samples() -> list[dict[str, Any]]:
     with _cognitive_technical_signal_lock:
-        return [dict(s) for s in _cognitive_technical_signal_samples]
+        return _cognitive_technical_signal_samples.snapshot()
 
 
 def reset_cognitive_technical_signal_counter() -> None:
@@ -924,7 +918,7 @@ _INVALID_TARGET_STATUS = "invalid"
 
 
 _UPDATE_LABELS = ("board_id", "target_status", "outcome", "reason_code")
-_update_samples: list[dict[str, Any]] = []
+_update_samples = BoundedCounterSampleBuffer(_UPDATE_LABELS)
 _update_samples_lock = threading.Lock()
 
 
@@ -954,13 +948,11 @@ def get_update_event_count(
     reason_code: str | None = None,
 ) -> int:
     with _update_samples_lock:
-        return sum(
-            1
-            for sample in _update_samples
-            if (board_id is None or sample["board_id"] == board_id)
-            and (target_status is None or sample["target_status"] == target_status)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason_code is None or sample["reason_code"] == reason_code)
+        return _update_samples.count(
+            board_id=board_id,
+            target_status=target_status,
+            outcome=outcome,
+            reason_code=reason_code,
         )
 
 
@@ -970,7 +962,7 @@ def get_update_counter_labels() -> tuple[str, ...]:
 
 def get_update_samples() -> list[dict[str, Any]]:
     with _update_samples_lock:
-        return [dict(sample) for sample in _update_samples]
+        return _update_samples.snapshot()
 
 
 def reset_update_counter() -> None:
@@ -999,7 +991,7 @@ class CognitivePendingReopenReasonCode(str, Enum):
 
 
 _REOPEN_LABELS = ("entity_type", "outcome", "reason_code")
-_reopen_samples: list[dict[str, Any]] = []
+_reopen_samples = BoundedCounterSampleBuffer(_REOPEN_LABELS)
 _reopen_samples_lock = threading.Lock()
 
 
@@ -1035,12 +1027,10 @@ def get_reopen_event_count(
     reason_code: str | None = None,
 ) -> int:
     with _reopen_samples_lock:
-        return sum(
-            1
-            for sample in _reopen_samples
-            if (entity_type is None or sample["entity_type"] == entity_type)
-            and (outcome is None or sample["outcome"] == outcome)
-            and (reason_code is None or sample["reason_code"] == reason_code)
+        return _reopen_samples.count(
+            entity_type=entity_type,
+            outcome=outcome,
+            reason_code=reason_code,
         )
 
 
@@ -1050,7 +1040,7 @@ def get_reopen_counter_labels() -> tuple[str, ...]:
 
 def get_reopen_samples() -> list[dict[str, Any]]:
     with _reopen_samples_lock:
-        return [dict(sample) for sample in _reopen_samples]
+        return _reopen_samples.snapshot()
 
 
 def reset_reopen_counter() -> None:
@@ -1088,7 +1078,7 @@ class CognitiveUnsafePayloadReason(str, Enum):
 
 
 _UNSAFE_LABELS = ("surface", "board_id", "reason")
-_unsafe_samples: list[dict[str, Any]] = []
+_unsafe_samples = BoundedCounterSampleBuffer(_UNSAFE_LABELS)
 _unsafe_samples_lock = threading.Lock()
 
 
@@ -1112,12 +1102,10 @@ def get_unsafe_payload_event_count(
     reason: str | None = None,
 ) -> int:
     with _unsafe_samples_lock:
-        return sum(
-            1
-            for sample in _unsafe_samples
-            if (board_id is None or sample["board_id"] == board_id)
-            and (surface is None or sample["surface"] == surface)
-            and (reason is None or sample["reason"] == reason)
+        return _unsafe_samples.count(
+            board_id=board_id,
+            surface=surface,
+            reason=reason,
         )
 
 
@@ -1127,7 +1115,7 @@ def get_unsafe_payload_counter_labels() -> tuple[str, ...]:
 
 def get_unsafe_payload_samples() -> list[dict[str, Any]]:
     with _unsafe_samples_lock:
-        return [dict(sample) for sample in _unsafe_samples]
+        return _unsafe_samples.snapshot()
 
 
 def reset_unsafe_payload_counter() -> None:
