@@ -1049,32 +1049,42 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
                 "recommended_action"
             ]
 
-    # bug b4c6920c follow-up: wire `current_kg_generation_id` to the
-    # KG-02.4 `KGGenerationRepository` file-backed pointer. Previously
-    # this was hard-None, so the UI Recovery panel showed "no generation
-    # yet" even after a successful rebuild promoted a UUID v4 generation
-    # (the run audit had the id but the health endpoint didn't read it
-    # back). Defensive: any IO/import failure degrades silently to None
-    # so the health endpoint stays available (br_2a8cdfdc forbids 500s
-    # on telemetry failure).
+    # AF16: current generation is read through the injected
+    # RebuildAuditArtifactStore-backed repository. Store failures are exposed
+    # as structured health issues instead of being masked as "no generation".
     current_kg_generation_id: str | None = None
     try:
-        from pathlib import Path
-        import tempfile
+        from okto_pulse.core.kg.interfaces import get_kg_registry
         from okto_pulse.core.kg.rebuild_generation import (
-            KGGenerationRepository,
+            RebuildAuditKGGenerationRepository,
         )
 
-        # Same base_dir as the REST endpoint wires (kg_rebuild.py).
-        rebuild_base = Path(tempfile.gettempdir()) / "okto_pulse_kg_rebuild"
-        current_kg_generation_id = KGGenerationRepository(
-            base_dir=rebuild_base
+        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
+        current_kg_generation_id = RebuildAuditKGGenerationRepository(
+            artifact_store=artifact_store
         ).get_current(board_id)
-    except Exception as exc:  # pragma: no cover — defensive
+    except Exception as exc:
+        rest_metric_status = "unavailable"
         logger.warning(
             "kg.health.current_generation_lookup_failed board=%s err=%s",
             board_id, exc,
         )
+        health_diagnostics["health_issues"].append({
+            "code": "rebuild_audit_artifact_store_unavailable",
+            "component": "kg_generation_store",
+            "severity": "warning",
+            "reason": "current_generation_store_unavailable",
+            "description": (
+                "Current KG generation could not be read from the injected "
+                "RebuildAuditArtifactStore."
+            ),
+            "operator_action": "inspect_runtime_provider",
+        })
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = (
+                "current_generation_store_unavailable"
+            )
+            health_diagnostics["operator_action"] = "inspect_runtime_provider"
 
     # FR4 (spec R2c): populate recent_events with the FailureEvent that the
     # correlator used when memory_pressure is confirmed_primary_cause.  The

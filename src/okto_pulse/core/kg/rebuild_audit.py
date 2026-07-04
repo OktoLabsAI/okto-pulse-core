@@ -2245,8 +2245,10 @@ def record_cognitive_working_only_hold(
 
     Generation resolution follows the read-side fallback chain and never
     promotes the ``current`` pointer because of a live hold:
-    ``KGGenerationRepository.get_current`` -> ``store.latest_generation``
-    -> ``generate_kg_generation_id`` (first live ledger).
+    ``RebuildAuditKGGenerationRepository.get_current`` ->
+    ``store.latest_generation`` -> ``generate_kg_generation_id`` (first live
+    ledger). A legacy ``KGGenerationRepository`` fallback remains only when the
+    runtime registry is unavailable in tests/legacy callsites.
 
     Returns ``{generation_id, item_id, artifact_type}`` on success, or None
     when the payload is unusable / the artifact_type is not consolidable (the
@@ -2271,12 +2273,24 @@ def record_cognitive_working_only_hold(
     base = base_dir or default_rebuild_base_dir()
     from okto_pulse.core.kg.rebuild_generation import (
         KGGenerationRepository,
+        RebuildAuditKGGenerationRepository,
         generate_kg_generation_id,
     )
 
     store = CognitiveConsolidationItemStore(base_dir=base)
+    current_generation_id: str | None = None
+    try:
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        current_generation_id = RebuildAuditKGGenerationRepository(
+            artifact_store=(
+                get_kg_registry().require_rebuild_audit_artifact_store()
+            )
+        ).get_current(board_id)
+    except Exception:
+        current_generation_id = KGGenerationRepository(base).get_current(board_id)
     generation_id = (
-        KGGenerationRepository(base).get_current(board_id)
+        current_generation_id
         or store.latest_generation(board_id)
         or generate_kg_generation_id()
     )

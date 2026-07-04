@@ -36,6 +36,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+
 logger = logging.getLogger("okto_pulse.kg.rebuild_generation")
 
 
@@ -43,6 +48,8 @@ REBUILD_DIRNAME = "rebuild"
 GENERATIONS_DIRNAME = "generations"
 HISTORY_DIRNAME = "history"
 CURRENT_FILENAME = "current.json"
+GENERATION_CURRENT_NAMESPACE = "generation_current"
+GENERATION_HISTORY_NAMESPACE = "generation_history"
 
 
 # Promotion is restricted to terminal states that produced a real
@@ -442,6 +449,265 @@ class KGGenerationRepository:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class RebuildAuditKGGenerationRepository:
+    """Generation pointer repository backed by ``RebuildAuditArtifactStore``.
+
+    This is the storage-agnostic counterpart of ``KGGenerationRepository``.
+    It keeps the same public repository contract while moving durable current
+    generation state behind the rebuild/audit artifact-store port.
+    """
+
+    artifact_store: RebuildAuditArtifactStore
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
+
+    @staticmethod
+    def _current_key(board_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace=GENERATION_CURRENT_NAMESPACE,
+            board_id=board_id,
+            artifact_id="current",
+        )
+
+    @staticmethod
+    def _history_key(board_id: str, generation_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace=GENERATION_HISTORY_NAMESPACE,
+            board_id=board_id,
+            kg_generation_id=generation_id,
+        )
+
+    def get_current(self, board_id: str) -> str | None:
+        """Return the current ``kg_generation_id`` for the board.
+
+        Store exceptions deliberately propagate so callers can distinguish
+        "no generation exists" from "generation store unavailable".
+        """
+
+        payload = self.artifact_store.read_json(self._current_key(board_id))
+        if payload is None:
+            return None
+        value = payload.get("kg_generation_id")
+        if not isinstance(value, str) or not is_valid_kg_generation_id(value):
+            return None
+        return value
+
+    def get_history_ref(
+        self, board_id: str, generation_id: str
+    ) -> str | None:
+        key = self._history_key(board_id, generation_id)
+        return key.to_ref() if self.artifact_store.exists(key) else None
+
+    def load_history(
+        self, board_id: str, generation_id: str
+    ) -> dict[str, Any] | None:
+        return self.artifact_store.read_json(
+            self._history_key(board_id, generation_id)
+        )
+
+    def promote_current(
+        self,
+        *,
+        board_id: str,
+        previous_kg_generation_id: str | None,
+        kg_generation_id: str,
+        report_ref: str | None,
+        status: str,
+        structural_hash: str,
+        source_hash: str,
+        promoted_by: str,
+        run_id: str | None = None,
+        operator_override_ref: str | None = None,
+    ) -> PromotionResult:
+        """Advance the board pointer through the injected artifact store."""
+
+        if status not in PROMOTABLE_TERMINAL_STATUSES:
+            _bump_promotion(
+                board_id=board_id,
+                status=status,
+                outcome=PromotionOutcome.INVALID_STATUS.value,
+            )
+            return PromotionResult(
+                outcome=PromotionOutcome.INVALID_STATUS.value,
+                board_id=board_id,
+                previous_kg_generation_id=previous_kg_generation_id,
+                current_kg_generation_id=None,
+                report_ref=report_ref,
+                promoted_at=None,
+                history_ref=None,
+                detail=(
+                    f"status={status!r} not in "
+                    f"{sorted(PROMOTABLE_TERMINAL_STATUSES)}"
+                ),
+            )
+
+        if not is_valid_kg_generation_id(kg_generation_id):
+            _bump_promotion(
+                board_id=board_id,
+                status=status,
+                outcome=PromotionOutcome.INVALID_KG_GENERATION_ID.value,
+            )
+            return PromotionResult(
+                outcome=PromotionOutcome.INVALID_KG_GENERATION_ID.value,
+                board_id=board_id,
+                previous_kg_generation_id=previous_kg_generation_id,
+                current_kg_generation_id=None,
+                report_ref=report_ref,
+                promoted_at=None,
+                history_ref=None,
+                detail="kg_generation_id is not a canonical UUID v4 string",
+            )
+
+        if previous_kg_generation_id is not None and not is_valid_kg_generation_id(
+            previous_kg_generation_id
+        ):
+            _bump_promotion(
+                board_id=board_id,
+                status=status,
+                outcome=PromotionOutcome.INVALID_PREVIOUS_KG_GENERATION_ID.value,
+            )
+            return PromotionResult(
+                outcome=PromotionOutcome.INVALID_PREVIOUS_KG_GENERATION_ID.value,
+                board_id=board_id,
+                previous_kg_generation_id=previous_kg_generation_id,
+                current_kg_generation_id=None,
+                report_ref=report_ref,
+                promoted_at=None,
+                history_ref=None,
+                detail="previous_kg_generation_id is not a canonical UUID v4 string",
+            )
+
+        if not isinstance(report_ref, str) or not report_ref.strip():
+            _bump_promotion(
+                board_id=board_id,
+                status=status,
+                outcome=PromotionOutcome.REPORT_REF_REQUIRED.value,
+            )
+            return PromotionResult(
+                outcome=PromotionOutcome.REPORT_REF_REQUIRED.value,
+                board_id=board_id,
+                previous_kg_generation_id=previous_kg_generation_id,
+                current_kg_generation_id=None,
+                report_ref=None,
+                promoted_at=None,
+                history_ref=None,
+                detail="report_ref required for promotion (ir_6d092147)",
+            )
+
+        with self._lock:
+            try:
+                stored_previous = self.get_current(board_id)
+            except Exception as exc:
+                logger.error(
+                    "kg.generation.artifact_current_read_failed board=%s err=%s",
+                    board_id, exc,
+                )
+                _bump_promotion(
+                    board_id=board_id,
+                    status=status,
+                    outcome=PromotionOutcome.PERSIST_FAILED.value,
+                )
+                return PromotionResult(
+                    outcome=PromotionOutcome.PERSIST_FAILED.value,
+                    board_id=board_id,
+                    previous_kg_generation_id=previous_kg_generation_id,
+                    current_kg_generation_id=None,
+                    report_ref=report_ref,
+                    promoted_at=None,
+                    history_ref=None,
+                    detail=f"current_read_exception={type(exc).__name__}",
+                )
+            if stored_previous != previous_kg_generation_id:
+                _bump_promotion(
+                    board_id=board_id,
+                    status=status,
+                    outcome=PromotionOutcome.GENERATION_CONFLICT.value,
+                )
+                return PromotionResult(
+                    outcome=PromotionOutcome.GENERATION_CONFLICT.value,
+                    board_id=board_id,
+                    previous_kg_generation_id=previous_kg_generation_id,
+                    current_kg_generation_id=None,
+                    report_ref=report_ref,
+                    promoted_at=None,
+                    history_ref=None,
+                    detail=(
+                        f"expected_previous={previous_kg_generation_id!r} "
+                        f"stored_previous={stored_previous!r}"
+                    ),
+                )
+
+            promoted_at = datetime.now(timezone.utc).isoformat()
+            history_payload = {
+                "board_id": board_id,
+                "kg_generation_id": kg_generation_id,
+                "previous_kg_generation_id": previous_kg_generation_id,
+                "report_ref": report_ref,
+                "status": status,
+                "structural_hash": structural_hash,
+                "source_hash": source_hash,
+                "promoted_by": promoted_by,
+                "promoted_at": promoted_at,
+                "run_id": run_id,
+                "operator_override_ref": operator_override_ref,
+            }
+            pointer_payload = {
+                "board_id": board_id,
+                "kg_generation_id": kg_generation_id,
+                "previous_kg_generation_id": previous_kg_generation_id,
+                "report_ref": report_ref,
+                "status": status,
+                "promoted_at": promoted_at,
+            }
+            history_key = self._history_key(board_id, kg_generation_id)
+            try:
+                self.artifact_store.write_json_atomic(
+                    history_key, history_payload
+                )
+                self.artifact_store.write_json_atomic(
+                    self._current_key(board_id), pointer_payload
+                )
+            except Exception as exc:
+                logger.error(
+                    "kg.generation.artifact_promote_persist_failed "
+                    "board=%s gen=%s err=%s",
+                    board_id, kg_generation_id, exc,
+                )
+                _bump_promotion(
+                    board_id=board_id,
+                    status=status,
+                    outcome=PromotionOutcome.PERSIST_FAILED.value,
+                )
+                return PromotionResult(
+                    outcome=PromotionOutcome.PERSIST_FAILED.value,
+                    board_id=board_id,
+                    previous_kg_generation_id=previous_kg_generation_id,
+                    current_kg_generation_id=None,
+                    report_ref=report_ref,
+                    promoted_at=None,
+                    history_ref=None,
+                    detail=f"persist_exception={type(exc).__name__}",
+                )
+
+            _bump_promotion(
+                board_id=board_id,
+                status=status,
+                outcome=PromotionOutcome.PROMOTED.value,
+            )
+            return PromotionResult(
+                outcome=PromotionOutcome.PROMOTED.value,
+                board_id=board_id,
+                previous_kg_generation_id=previous_kg_generation_id,
+                current_kg_generation_id=kg_generation_id,
+                report_ref=report_ref,
+                promoted_at=promoted_at,
+                history_ref=history_key.to_ref(),
+                detail=None,
+            )
+
+
 # --- Promotion guard ---------------------------------------------------------
 
 
@@ -511,6 +777,8 @@ class KGGenerationPromotionGuard:
 
 __all__ = [
     "CURRENT_FILENAME",
+    "GENERATION_CURRENT_NAMESPACE",
+    "GENERATION_HISTORY_NAMESPACE",
     "GENERATIONS_DIRNAME",
     "HISTORY_DIRNAME",
     "KGGenerationPromotionGuard",
@@ -520,6 +788,7 @@ __all__ = [
     "PromotionOutcome",
     "PromotionResult",
     "REBUILD_DIRNAME",
+    "RebuildAuditKGGenerationRepository",
     "generate_kg_generation_id",
     "get_promotion_count",
     "get_promotion_counter_labels",

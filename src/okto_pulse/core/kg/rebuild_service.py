@@ -106,6 +106,7 @@ class RebuildBlockReason(str, Enum):
     REPORT_PERSIST_STORE_FAILED = "report_persist_store_failed"
     REPORT_PERSIST_SENSITIVE_REJECTED = "report_persist_sensitive_rejected"
     GENERATION_PROMOTION_BLOCKED = "generation_promotion_blocked"
+    GENERATION_STORE_UNAVAILABLE = "generation_store_unavailable"
     ORPHAN_VALIDATION_FAILED = "orphan_validation_failed"
     # SPEC4 card 619e58e1 (G1): the rebuild consumed sources but materialized an
     # empty graph — partition materialization failed, refuse to promote.
@@ -565,6 +566,26 @@ class KGRebuildService:
                 logger.error(
                     "kg.rebuild.previous_generation_read_failed board=%s err=%s",
                     board_id, exc,
+                )
+                return self._finalise_with_release(
+                    run_id=run_id,
+                    outcome=RebuildOutcome.REBUILD_FAILED,
+                    reason=RebuildBlockReason.GENERATION_STORE_UNAVAILABLE,
+                    board_id=board_id,
+                    actor_id=actor_id,
+                    operation=operation,
+                    confirmation_id=confirmation_id,
+                    manifest_ref=manifest_ref,
+                    user_reason=reason,
+                    started_at=started_at,
+                    owner_token=owner_token,
+                    affected_files=(),
+                    previous_kg_generation_id=None,
+                    current_kg_generation_id=None,
+                    detail=f"generation_store_exception={type(exc).__name__}",
+                    triggered_by=actor_id,
+                    step_result=None,
+                    candidate_kg_generation_id=None,
                 )
             candidate_generation_id = generate_kg_generation_id()
 

@@ -16736,7 +16736,7 @@ async def okto_pulse_kg_rebuild_run(
     from okto_pulse.core.kg.rebuild_confirmation import RebuildConfirmationStore
     from okto_pulse.core.kg.rebuild_generation import (
         KGGenerationPromotionGuard,
-        KGGenerationRepository,
+        RebuildAuditKGGenerationRepository,
     )
     from okto_pulse.core.kg.rebuild_report import (
         RebuildReportStore,
@@ -16780,7 +16780,14 @@ async def okto_pulse_kg_rebuild_run(
             return json.dumps(_provider_missing_payload(exc))
         raise
 
-    artifact_store = get_kg_registry().rebuild_audit_artifact_store
+    try:
+        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
+    except Exception as exc:
+        from okto_pulse.core.composition import RuntimeProviderMissing
+
+        if isinstance(exc, RuntimeProviderMissing):
+            return json.dumps(_provider_missing_payload(exc))
+        raise
     audit_recorder = ConfirmationConsumptionAuditRecorder(
         base_dir=_REBUILD_BASE_DIR,
         artifact_store=artifact_store,
@@ -16819,7 +16826,9 @@ async def okto_pulse_kg_rebuild_run(
         manifest_store=manifest_store_obj,
         source_enumerator=enumerator,
         rebuild_step_adapter=_step_adapter_with_sources,
-        generation_repository=KGGenerationRepository(base_dir=_REBUILD_BASE_DIR),
+        generation_repository=RebuildAuditKGGenerationRepository(
+            artifact_store=artifact_store
+        ),
         promotion_guard=KGGenerationPromotionGuard,
         report_store=RebuildReportStore(base_dir=_REBUILD_BASE_DIR),
         terminal_state_guard=RebuildReportTerminalStateGuard,

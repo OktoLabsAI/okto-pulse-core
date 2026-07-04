@@ -524,7 +524,7 @@ async def post_rebuild_run(
     )
     from okto_pulse.core.kg.rebuild_generation import (
         KGGenerationPromotionGuard,
-        KGGenerationRepository,
+        RebuildAuditKGGenerationRepository,
     )
     from okto_pulse.core.kg.rebuild_report import (
         RebuildReportStore,
@@ -588,7 +588,17 @@ async def post_rebuild_run(
     # bug b4c6920c fix: real event_emitter composing publisher + marker
     # so kg.rebuilt is published AND cognitive pending is marked for the
     # new generation (KG-02.7 wiring that was missing).
-    artifact_store = get_kg_registry().rebuild_audit_artifact_store
+    try:
+        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
+    except Exception as exc:
+        from okto_pulse.core.composition import RuntimeProviderMissing
+
+        if isinstance(exc, RuntimeProviderMissing):
+            raise HTTPException(
+                status_code=503,
+                detail=_provider_missing_payload(exc),
+            ) from exc
+        raise
     audit_recorder = ConfirmationConsumptionAuditRecorder(
         base_dir=_REBUILD_BASE_DIR,
         artifact_store=artifact_store,
@@ -629,7 +639,9 @@ async def post_rebuild_run(
         # bug b4c6920c: real step adapter (was _default_step_adapter stub).
         rebuild_step_adapter=_step_adapter_with_sources,
         # KG-02.4 — report-first terminal gate + generation promotion.
-        generation_repository=KGGenerationRepository(base_dir=_REBUILD_BASE_DIR),
+        generation_repository=RebuildAuditKGGenerationRepository(
+            artifact_store=artifact_store
+        ),
         promotion_guard=KGGenerationPromotionGuard,
         report_store=RebuildReportStore(base_dir=_REBUILD_BASE_DIR),
         terminal_state_guard=RebuildReportTerminalStateGuard,

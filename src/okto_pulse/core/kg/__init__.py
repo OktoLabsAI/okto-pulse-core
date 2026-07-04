@@ -139,6 +139,8 @@ from okto_pulse.core.kg.rebuild_service import (
 )
 from okto_pulse.core.kg.rebuild_generation import (
     CURRENT_FILENAME,
+    GENERATION_CURRENT_NAMESPACE,
+    GENERATION_HISTORY_NAMESPACE,
     GENERATIONS_DIRNAME,
     HISTORY_DIRNAME,
     KGGenerationPromotionGuard,
@@ -147,6 +149,7 @@ from okto_pulse.core.kg.rebuild_generation import (
     PromotionEvaluation,
     PromotionOutcome,
     PromotionResult,
+    RebuildAuditKGGenerationRepository,
     generate_kg_generation_id,
     get_promotion_count,
     get_promotion_counter_labels,
@@ -503,6 +506,8 @@ __all__ = [
     "reset_rebuild_run_counter",
     # KG-02.4 — Generation repository + promotion guard + report-first
     "CURRENT_FILENAME",
+    "GENERATION_CURRENT_NAMESPACE",
+    "GENERATION_HISTORY_NAMESPACE",
     "GENERATIONS_DIRNAME",
     "HISTORY_DIRNAME",
     "KGGenerationPromotionGuard",
@@ -511,6 +516,7 @@ __all__ = [
     "PromotionEvaluation",
     "PromotionOutcome",
     "PromotionResult",
+    "RebuildAuditKGGenerationRepository",
     "generate_kg_generation_id",
     "get_promotion_count",
     "get_promotion_counter_labels",

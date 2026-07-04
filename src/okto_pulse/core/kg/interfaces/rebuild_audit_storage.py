@@ -16,6 +16,8 @@ RebuildAuditNamespace = Literal[
     "cognitive_pending",
     "confirmation_audit",
     "run_audit",
+    "generation_current",
+    "generation_history",
 ]
 
 
@@ -24,7 +26,8 @@ class RebuildAuditKey:
     """Logical key for rebuild/audit JSON artifacts.
 
     ``artifact_id`` identifies event/confirmation/run artifacts.
-    ``kg_generation_id`` identifies cognitive pending ledgers.
+    ``kg_generation_id`` identifies cognitive pending ledgers and
+    generation-history entries.
     """
 
     namespace: RebuildAuditNamespace
