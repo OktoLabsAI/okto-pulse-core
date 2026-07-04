@@ -153,9 +153,7 @@ class KGChaosExecutor:
         without overwriting evidence."""
         from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
 
-        per_iter_dir = self.base_dir / f"sigkill-{iteration}"
         lock = KGSingleWriterLock(
-            base_dir=per_iter_dir,
             write_lock_port=self._write_lock_port,
         )
         # Iteration-1 of the scenario: acquire and "die" (no release).
@@ -294,9 +292,7 @@ class KGChaosExecutor:
         primary lock state is corrupted."""
         from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
 
-        per_iter_dir = self.base_dir / f"contention-{iteration}"
         lock = KGSingleWriterLock(
-            base_dir=per_iter_dir,
             write_lock_port=self._write_lock_port,
         )
         winner = lock.acquire(
