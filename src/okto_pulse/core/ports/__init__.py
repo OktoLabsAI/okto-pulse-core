@@ -98,6 +98,12 @@ from .runtime_settings import (
     build_reschedule_failed_signal,
     sanitize_message,
 )
+from .runtime_workers import (
+    RuntimeWorkerRegistry,
+    RuntimeWorkerSpec,
+    RuntimeWorkerStartFailure,
+    RuntimeWorkerStopFailure,
+)
 from .scheduler import (
     KG_DAILY_TICK_JOB_ID,
     SchedulerControl,
@@ -197,6 +203,10 @@ __all__ = [
     "RuntimeEffectResult",
     "RuntimeEvent",
     "RuntimeEventBusPort",
+    "RuntimeWorkerRegistry",
+    "RuntimeWorkerSpec",
+    "RuntimeWorkerStartFailure",
+    "RuntimeWorkerStopFailure",
     "RuntimeSettingsPort",
     "RuntimeSettingsProvider",
     "RuntimeSettingsSnapshot",

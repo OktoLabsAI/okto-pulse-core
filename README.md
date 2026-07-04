@@ -121,6 +121,18 @@ explicit non-runtime exemptions. Adapter-specific debt belongs in Community when
 the concrete dependency is local-first; core keeps the rule, gate and transition
 logic that future SaaS editions must share.
 
+AF-21 defines the public surface that Community adapters may consume while the
+remaining reach-ins are retired. Public entry points include
+`okto_pulse.core.services.application_kg` for KG/governance orchestration,
+`okto_pulse.core.services.application_agents` for agent credential primitives,
+`okto_pulse.core.mcp.build_mcp_asgi_app` and the other `okto_pulse.core.mcp`
+composition hooks for MCP mounting/session binding, and
+`okto_pulse.core.ports.runtime_workers` for edition-owned worker composition.
+These facades intentionally expose adapter-neutral values and `Any`-typed
+handles where the current implementation still delegates to ORM, KG worker or
+MCP internals; they must not require a future SaaS adapter to emulate
+SQLAlchemy sessions, concrete worker classes or private MCP server symbols.
+
 `build_mcp_asgi_app(trace_sink=None)` and `mount_mcp(app, trace_sink=None)` are the two helpers exposed from `okto_pulse.core.mcp`. Pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app. The optional `trace_sink` is a core port; core never resolves environment variables or writes local JSONL traces by itself.
 
 ## Docker

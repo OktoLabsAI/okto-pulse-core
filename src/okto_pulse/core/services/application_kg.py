@@ -11,6 +11,28 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
+def create_provider_registry(**providers: Any) -> Any:
+    from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
+
+    return KGProviderRegistry(**providers)
+
+
+def configure_provider_registry(
+    *,
+    base_registry: Any | None = None,
+    **kwargs: Any,
+) -> None:
+    from okto_pulse.core.kg.interfaces.registry import configure_kg_registry
+
+    configure_kg_registry(base_registry=base_registry, **kwargs)
+
+
+def get_current_provider_registry() -> Any:
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    return get_kg_registry()
+
+
 def build_cognitive_readiness_service() -> Any:
     from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
     from okto_pulse.core.kg.rebuild_audit import (
@@ -111,6 +133,26 @@ async def start_historical_consolidation(*args: Any, **kwargs: Any) -> Any:
     )
 
     return await _start(*args, **kwargs)
+
+
+def create_deterministic_worker(*args: Any, **kwargs: Any) -> Any:
+    from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+
+    return DeterministicWorker(*args, **kwargs)
+
+
+def create_consolidation_worker(*args: Any, **kwargs: Any) -> Any:
+    from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
+
+    return ConsolidationWorker(*args, **kwargs)
+
+
+def signal_consolidation_worker() -> None:
+    from okto_pulse.core.kg.workers.consolidation import (
+        signal_consolidation_worker as _signal,
+    )
+
+    _signal()
 
 
 async def cancel_historical(*args: Any, **kwargs: Any) -> Any:
