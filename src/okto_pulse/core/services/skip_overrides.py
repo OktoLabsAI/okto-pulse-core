@@ -148,11 +148,13 @@ def _cognitive_skip_overrides(board_id: str, relevant_ids: set[str]) -> list[Ski
     from okto_pulse.core.kg.rebuild_audit import (
         CognitiveConsolidationItemStore,
         CognitiveItemStatus,
-        default_rebuild_base_dir,
+        require_rebuild_audit_artifact_store,
     )
 
     try:
-        store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        store = CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
         gen = store.latest_generation(board_id)
         if gen is None:
             return []

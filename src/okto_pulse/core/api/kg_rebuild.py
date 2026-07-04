@@ -38,7 +38,7 @@ from starlette.concurrency import run_in_threadpool
 from okto_pulse.core.api.deps import scheduler_control_from_request
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.kg.rebuild_audit import default_rebuild_base_dir
+from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
@@ -149,13 +149,6 @@ async def _refuse_rebuild_if_quarantined(
             ),
         }
     return None
-
-
-# Shared storage root for rebuild manifests + confirmations.
-# Resolved through ``default_rebuild_base_dir()`` so the REST layer and
-# the MCP layer agree on the on-disk location of the cognitive pending
-# ledger (KG-03.2). Overridable via ``OKTO_PULSE_REBUILD_BASE_DIR``.
-_REBUILD_BASE_DIR = default_rebuild_base_dir()
 
 
 def _build_source_store():
@@ -337,7 +330,8 @@ async def post_rebuild_preflight(
     result = service.run(board_id=board_id)
 
     # 3. Persist the immutable manifest bound to this preflight_hash.
-    manifest_store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+    artifact_store = require_rebuild_audit_artifact_store()
+    manifest_store = KGRebuildSourceManifest(artifact_store=artifact_store)
     manifest = manifest_store.build(
         source_set=source_set,
         preflight_hash=result.preflight_hash,
@@ -441,7 +435,8 @@ async def post_rebuild_confirm(
         )
 
     # val_d0da4a75 #1: LOAD the existing manifest. NO re-enumeration.
-    manifest_store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+    artifact_store = require_rebuild_audit_artifact_store()
+    manifest_store = KGRebuildSourceManifest(artifact_store=artifact_store)
     manifest = manifest_store.load(body.manifest_ref)
     if manifest is None:
         raise HTTPException(
@@ -470,7 +465,7 @@ async def post_rebuild_confirm(
             },
         )
 
-    confirmation_store = RebuildConfirmationStore(base_dir=_REBUILD_BASE_DIR)
+    confirmation_store = RebuildConfirmationStore(artifact_store=artifact_store)
     token = confirmation_store.issue(
         board_id=body.board_id,
         actor_id=user_id,
@@ -570,7 +565,7 @@ async def post_rebuild_run(
     )
 
     # Build KG-01 primitives.
-    lock = KGSingleWriterLock(base_dir=_REBUILD_BASE_DIR / "locks")
+    lock = KGSingleWriterLock()
 
     def _always_owner(board_id: str, owner_token: str) -> bool:
         manifest = lock.inspect(board_id=board_id)
@@ -587,7 +582,19 @@ async def post_rebuild_run(
     # bug b4c6920c fix: real source store (was empty stub).
     source_store_fetch = _build_source_store()
     enumerator = RebuildSourceEnumerator(source_store=source_store_fetch)
-    manifest_store_obj = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+    try:
+        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
+    except Exception as exc:
+        from okto_pulse.core.composition import RuntimeProviderMissing
+
+        if isinstance(exc, RuntimeProviderMissing):
+            raise HTTPException(
+                status_code=503,
+                detail=_provider_missing_payload(exc),
+            ) from exc
+        raise
+
+    manifest_store_obj = KGRebuildSourceManifest(artifact_store=artifact_store)
 
     try:
         _step_adapter_with_sources = _build_rebuild_step_adapter(
@@ -606,27 +613,13 @@ async def post_rebuild_run(
     # bug b4c6920c fix: real event_emitter composing publisher + marker
     # so kg.rebuilt is published AND cognitive pending is marked for the
     # new generation (KG-02.7 wiring that was missing).
-    try:
-        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
-    except Exception as exc:
-        from okto_pulse.core.composition import RuntimeProviderMissing
-
-        if isinstance(exc, RuntimeProviderMissing):
-            raise HTTPException(
-                status_code=503,
-                detail=_provider_missing_payload(exc),
-            ) from exc
-        raise
     audit_recorder = ConfirmationConsumptionAuditRecorder(
-        base_dir=_REBUILD_BASE_DIR,
         artifact_store=artifact_store,
     )
     event_publisher = KGRebuiltEventPublisher(
-        base_dir=_REBUILD_BASE_DIR,
         artifact_store=artifact_store,
     )
     cognitive_marker = CognitivePendingMarker(
-        base_dir=_REBUILD_BASE_DIR,
         artifact_store=artifact_store,
     )
 
@@ -645,12 +638,13 @@ async def post_rebuild_run(
     orphan_scanner = OrphanNodeScanner()
 
     service = KGRebuildService(
-        base_dir=_REBUILD_BASE_DIR,
+        base_dir=None,
         single_writer_lock=lock,
         safe_write_lifecycle=safe_lifecycle,
         quarantine_service=None,  # wired by KG-02.4 reset path
         confirmation_store=RebuildConfirmationStore(
-            base_dir=_REBUILD_BASE_DIR, audit_recorder=audit_recorder,
+            audit_recorder=audit_recorder,
+            artifact_store=artifact_store,
         ),
         manifest_store=manifest_store_obj,
         source_enumerator=enumerator,
@@ -661,7 +655,7 @@ async def post_rebuild_run(
             artifact_store=artifact_store
         ),
         promotion_guard=KGGenerationPromotionGuard,
-        report_store=RebuildReportStore(base_dir=_REBUILD_BASE_DIR),
+        report_store=RebuildReportStore(artifact_store=artifact_store),
         terminal_state_guard=RebuildReportTerminalStateGuard,
         # bug b4c6920c: real event handler (was no-op default).
         event_emitter=event_handler,

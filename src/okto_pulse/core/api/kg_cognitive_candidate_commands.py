@@ -63,7 +63,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveItemStatus,
     CognitivePendingOutcomeType,
     _is_raw_token_shape,
-    default_rebuild_base_dir,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.models.schemas import SpecUpdate
 from okto_pulse.core.services.main import SpecService
@@ -344,8 +344,9 @@ def _propagate_pending_item_outcome(
         return
 
     try:
+        artifact_store = require_rebuild_audit_artifact_store()
         store = CognitiveConsolidationItemStore(
-            base_dir=default_rebuild_base_dir()
+            artifact_store=artifact_store
         )
     except Exception:
         return
@@ -528,7 +529,9 @@ async def submit_candidate_decision_command(
     emits exactly one bounded counter sample.
     """
 
-    store = CandidateDecisionStore(base_dir=default_rebuild_base_dir())
+    store = CandidateDecisionStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
 
     candidate = store.get(body.board_id, candidate_id)
     if candidate is None:

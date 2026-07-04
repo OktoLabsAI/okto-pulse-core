@@ -41,6 +41,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     CognitivePendingMarker,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
 
@@ -88,15 +89,17 @@ def _row(artifact_type: str, id_: str) -> dict:
 
 
 def _seed(base_dir: Path, sources: list[dict]) -> tuple[str, list]:
+    del base_dir
     gen = generate_kg_generation_id()
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    artifact_store = require_rebuild_audit_artifact_store()
+    marker = CognitivePendingMarker(artifact_store=artifact_store)
     marker.mark_for_generation(
         board_id=BOARD,
         kg_generation_id=gen,
         source_set=sources,
         event_ref="evt_kg03_6",
     )
-    store = CognitiveConsolidationItemStore(base_dir=base_dir)
+    store = CognitiveConsolidationItemStore(artifact_store=artifact_store)
     return gen, store.list_items(BOARD, gen)
 
 
@@ -135,7 +138,9 @@ def test_eligible_consolidable_entity_shows_badge_for_active_pending_item(
     pending item gets show_badge=true with reason=active_cognitive_item."""
 
     _, _ = _seed(isolated_base_dir, [_row(entity_type, "s1")])
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     badges, eligible = resolve_entity_badges(
         board_id=BOARD,
         source_refs=[f"{entity_type}:s1"],
@@ -161,7 +166,9 @@ def test_eligible_without_ledger_row_resolves_to_not_found(
     """task/test/bug are ELIGIBLE. If no generation materialized an item
     for the source_ref yet, the resolver returns not_found."""
 
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     badges, eligible = resolve_entity_badges(
         board_id=BOARD,
         source_refs=[f"{entity_type}:t1"],
@@ -190,7 +197,9 @@ def test_severity_order_failed_beats_in_progress_beats_pending(
     # Seed three generations, each with the same source_ref but different
     # status (mutated post-materialize so we can drive the picker).
     gen_a, items_a = _seed(isolated_base_dir, [_row("spec", "s1")])
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     store.update_item(
         board_id=BOARD,
         kg_generation_id=gen_a,
@@ -240,7 +249,9 @@ def test_terminal_status_hides_badge(
     Reason=terminal_status, show_badge=false."""
 
     gen, items = _seed(isolated_base_dir, [_row("spec", "s1")])
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     store.update_item(
         board_id=BOARD,
         kg_generation_id=gen,
@@ -283,7 +294,9 @@ def test_ineligible_entity_types_never_show_badge(
     # is driven by the entity type, not by the item state.
     _, _ = _seed(isolated_base_dir, [_row("spec", "x1")])
     # Pretend the same source_ref maps to an ineligible card type.
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     badges, _ = resolve_entity_badges(
         board_id=BOARD,
         source_refs=["spec:x1"],
@@ -304,7 +317,9 @@ def test_refinement_is_NOT_ineligible_per_or_90fa2709(
     apply to ideation/other — NEVER refinement or decision."""
 
     _, _ = _seed(isolated_base_dir, [_row("refinement", "r1")])
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     badges, _ = resolve_entity_badges(
         board_id=BOARD,
         source_refs=["refinement:r1"],
@@ -332,7 +347,9 @@ def test_refinement_is_NOT_ineligible_per_or_90fa2709(
 def test_source_ref_with_no_items_returns_not_found(
     isolated_base_dir: Path,
 ) -> None:
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     badges, _ = resolve_entity_badges(
         board_id=BOARD,
         source_refs=["spec:never-existed"],
@@ -353,7 +370,9 @@ def test_counter_label_set_is_bounded(
     isolated_base_dir: Path,
 ) -> None:
     _, _ = _seed(isolated_base_dir, [_row("spec", "s1")])
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     resolve_entity_badges(
         board_id=BOARD,
         source_refs=["spec:s1"],
@@ -392,7 +411,9 @@ def test_counter_label_set_is_bounded(
 def test_counter_requested_count_bucket_is_bounded(
     isolated_base_dir: Path,
 ) -> None:
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     # 1 ref → bucket 1-10.
     resolve_entity_badges(
         board_id=BOARD,

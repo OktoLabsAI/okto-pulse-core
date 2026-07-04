@@ -33,6 +33,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    REBUILD_AUDIT_GLOBAL_BOARD_ID,
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+
 logger = logging.getLogger("okto_pulse.kg.rebuild_confirmation")
 
 
@@ -205,12 +211,13 @@ class RebuildConfirmationStore:
     rows by token without exposing the secret.
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
     ttl_seconds: int = DEFAULT_CONFIRMATION_TTL_SECONDS
     # Optional KG-02.7 ``ConfirmationConsumptionAuditRecorder``. Kept
     # optional so existing callers (KG-02.2 endpoint, KG-02.3 service)
     # keep working without wiring; production sets it.
     audit_recorder: Any | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
 
     def __post_init__(self) -> None:
         if self.ttl_seconds < 30:
@@ -331,12 +338,12 @@ class RebuildConfirmationStore:
         """Atomically consume a token if it matches every expected
         scope field. Returns ``ConfirmationResult`` — caller MUST
         refuse to mutate unless ``outcome == 'consumed'``."""
-        path = self._path(confirmation_id)
         actor_type = _classify_actor(expected_actor_id)
         # Read first to evaluate scope. Then attempt atomic unlink.
         try:
-            with path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
+            data = self._read(confirmation_id)
+            if data is None:
+                raise FileNotFoundError
         except FileNotFoundError:
             _bump_conf(
                 board_id=expected_board_id,
@@ -440,10 +447,7 @@ class RebuildConfirmationStore:
         except ValueError:
             expires = datetime.now(timezone.utc) - timedelta(seconds=1)
         if expires <= datetime.now(timezone.utc):
-            try:
-                path.unlink()
-            except FileNotFoundError:
-                pass
+            self._delete(confirmation_id)
             _bump_conf(
                 board_id=expected_board_id,
                 operation=expected_operation,
@@ -469,9 +473,7 @@ class RebuildConfirmationStore:
         # Atomic consume: unlink before returning. Second attempt on
         # the same id sees FileNotFoundError and lands in MISSING /
         # replayed.
-        try:
-            path.unlink()
-        except FileNotFoundError:
+        if not self._delete(confirmation_id):
             _bump_conf(
                 board_id=expected_board_id,
                 operation=expected_operation,
@@ -527,12 +529,46 @@ class RebuildConfirmationStore:
         # we still reject `/` and `..` defensively.
         if "/" in confirmation_id or ".." in confirmation_id:
             raise ValueError("invalid confirmation_id")
+        if self.base_dir is None:
+            raise RuntimeError(
+                "base_dir is required when RebuildAuditArtifactStore is not supplied"
+            )
         return (
             self.base_dir / REBUILD_DIRNAME / CONFIRMATION_DIRNAME
             / f"{confirmation_id}.json"
         )
 
+    @staticmethod
+    def _key(confirmation_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="confirmation_token",
+            board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+            artifact_id=confirmation_id,
+        )
+
+    def _read(self, confirmation_id: str) -> dict[str, Any] | None:
+        if self.artifact_store is not None:
+            return self.artifact_store.read_json(self._key(confirmation_id))
+        path = self._path(confirmation_id)
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+
+    def _delete(self, confirmation_id: str) -> bool:
+        if self.artifact_store is not None:
+            return self.artifact_store.delete_json(self._key(confirmation_id))
+        try:
+            self._path(confirmation_id).unlink()
+            return True
+        except FileNotFoundError:
+            return False
+
     def _write(self, token: ConfirmationToken) -> None:
+        if self.artifact_store is not None:
+            self.artifact_store.write_json_atomic(
+                self._key(token.confirmation_id), token.to_dict()
+            )
+            return
         path = self._path(token.confirmation_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as fh:

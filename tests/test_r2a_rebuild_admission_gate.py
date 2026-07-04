@@ -517,10 +517,43 @@ async def test_ts_30de5f98_twin_auth_none_returns_auth_error_no_side_effects(
 
     import okto_pulse.core.mcp.server as srv_mod
 
-    # Redirect _REBUILD_BASE_DIR to tmp_path so any accidental write is
-    # captured without polluting the real rebuild store.
-    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
-    monkeypatch.setattr(kg_rebuild_mod, "_REBUILD_BASE_DIR", tmp_path)
+    from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+        REBUILD_AUDIT_GLOBAL_BOARD_ID,
+        RebuildAuditKey,
+    )
+    from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
+
+    artifact_store = require_rebuild_audit_artifact_store()
+
+    def _artifact_snapshot() -> dict[str, list[dict]]:
+        return {
+            "source_manifest": list(
+                artifact_store.list_json(
+                    RebuildAuditKey(
+                        namespace="source_manifest",
+                        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+                    )
+                )
+            ),
+            "confirmation_token": list(
+                artifact_store.list_json(
+                    RebuildAuditKey(
+                        namespace="confirmation_token",
+                        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+                    )
+                )
+            ),
+            "rebuild_report": list(
+                artifact_store.list_json(
+                    RebuildAuditKey(
+                        namespace="rebuild_report",
+                        board_id="b-auth-test",
+                    )
+                )
+            ),
+        }
+
+    before_artifacts = _artifact_snapshot()
 
     # Patch _get_agent_ctx in the server module to return None —
     # simulates unauthenticated / board-access-denied.
@@ -541,7 +574,9 @@ async def test_ts_30de5f98_twin_auth_none_returns_auth_error_no_side_effects(
         f"Expected auth error JSON, got: {body}"
     )
 
-    # (b) Zero files written anywhere under tmp_path.
+    # (b) Zero artifacts written to the rebuild audit store, and no legacy
+    # filesystem write under tmp_path.
+    assert _artifact_snapshot() == before_artifacts
     all_files = list(tmp_path.rglob("*"))
     written_files = [f for f in all_files if f.is_file()]
     assert written_files == [], (

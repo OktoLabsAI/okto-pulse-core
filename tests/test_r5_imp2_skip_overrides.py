@@ -9,7 +9,6 @@ proven NOT to mask a separate open CanonicalDebt.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import tempfile
@@ -26,6 +25,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     compute_cognitive_item_id,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.models.db import Board, Ideation
 from okto_pulse.core.services.main import IdeationService
@@ -50,9 +50,10 @@ def _seed_skipped(base_dir, board, gen, *, source_ref, reason_code="trivial_fix"
                   justification="reviewed", evidence_refs=("ev:1",), revisit_at=None,
                   actor="agent:reviewer"):
     """Write a generation record with one SKIPPED cognitive ledger item."""
-    store = CognitiveConsolidationItemStore(base_dir=base_dir)
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    del base_dir
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     iid = compute_cognitive_item_id(board, gen, source_ref)
     item = {
         "item_id": iid, "board_id": board, "kg_generation_id": gen,
@@ -65,9 +66,10 @@ def _seed_skipped(base_dir, board, gen, *, source_ref, reason_code="trivial_fix"
     }
     if revisit_at is not None:
         item["revisit_at"] = revisit_at
-    record = {"pending_count": 0, "pending_refs": [], "status": "complete",
+    record = {"board_id": board, "kg_generation_id": gen,
+              "pending_count": 0, "pending_refs": [], "status": "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(store._record_key(board, gen), record)
     return store
 
 
@@ -135,8 +137,8 @@ async def test_spec_skip_filters_to_spec_cards(db_factory, _tmp_rebuild_dir):
     other_card = f"card-{uuid.uuid4().hex[:10]}"
     store = _seed_skipped(_tmp_rebuild_dir, board_id, "gen-1", source_ref=f"card:{own_card}")
     # A second skipped item for a card NOT on this spec must be excluded.
-    path = store._record_path(board_id, "gen-1")
-    rec = json.loads(path.read_text(encoding="utf-8"))
+    rec = store.artifact_store.read_json(store._record_key(board_id, "gen-1"))
+    assert rec is not None
     rec["items"].append({
         "item_id": compute_cognitive_item_id(board_id, "gen-1", f"card:{other_card}"),
         "board_id": board_id, "kg_generation_id": "gen-1",
@@ -144,7 +146,7 @@ async def test_spec_skip_filters_to_spec_cards(db_factory, _tmp_rebuild_dir):
         "status": CognitiveItemStatus.SKIPPED.value,
         "recorded_at": "2026-06-17T00:00:00+00:00", "reason_code": "trivial_fix",
     })
-    path.write_text(json.dumps(rec), encoding="utf-8")
+    store.artifact_store.write_json_atomic(store._record_key(board_id, "gen-1"), rec)
 
     spec = SimpleNamespace(id=spec_id, cards=[SimpleNamespace(id=own_card)])
     async with db_factory() as db:

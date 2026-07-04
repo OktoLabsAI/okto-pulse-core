@@ -57,8 +57,8 @@ from okto_pulse.core.kg.connectivity_guard import (
 from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
-    default_rebuild_base_dir,
     normalize_cognitive_artifact_id,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 from okto_pulse.core.kg.source_maturity import (
@@ -261,7 +261,9 @@ def reset_canonical_partition_integrity_counter() -> None:
 
 
 def _store() -> CognitiveConsolidationItemStore:
-    return CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    return CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
 
 
 # ---------------------------------------------------------------------------

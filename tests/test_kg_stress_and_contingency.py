@@ -15,24 +15,20 @@ from pathlib import Path
 import pytest
 
 from okto_pulse.core.kg.contingency import (
-    CONTINGENCY_DIRNAME,
     CONTINGENCY_MANIFEST_FILENAME,
     ContingencyError,
     ContingencyErrorCode,
     KGStorageBackendContingency,
-    get_contingency_count,
     get_contingency_counter_labels,
     get_contingency_samples,
     reset_contingency_counter,
 )
 from okto_pulse.core.kg.stress_runner import (
     CI_DESTRUCTIVE_ITERATIONS_FLOOR,
-    CANONICAL_CHAOS_MODES,
     ChaosMode,
     ChaosOutcome,
     EVIDENCE_FILENAME,
     KGStressProfileRunner,
-    STRESS_DIRNAME,
     StressError,
     StressErrorCode,
     StressProfile,
@@ -41,8 +37,11 @@ from okto_pulse.core.kg.stress_runner import (
     get_stress_corruption_samples,
     get_stress_evidence_count,
     get_stress_evidence_labels,
-    get_stress_evidence_samples,
     reset_stress_counters,
+)
+from coordination_fakes import (
+    FakeRebuildAuditArtifactStore,
+    FakeWriteLockPort,
 )
 
 
@@ -539,7 +538,13 @@ def test_real_chaos_executor_runs_clean_against_primitives(tmp_path: Path):
     across all 5 canonical modes."""
     from okto_pulse.core.kg.stress_chaos_executor import KGChaosExecutor
 
-    executor = KGChaosExecutor(base_dir=tmp_path / "chaos-scratch")
+    executor = KGChaosExecutor(
+        base_dir=tmp_path / "chaos-scratch",
+        write_lock_port=FakeWriteLockPort(),
+        artifact_store=FakeRebuildAuditArtifactStore(
+            tmp_path / "chaos-artifacts"
+        ),
+    )
     runner = KGStressProfileRunner(
         base_dir=tmp_path / "evidence", executor=executor,
     )
@@ -588,19 +593,6 @@ def test_contingency_module_does_not_import_alternate_backend():
     imports of alternative backends in this spec."""
     import okto_pulse.core.kg.contingency as module
 
-    # Whitelisted imports — only what KG-01.6 legitimately needs.
-    allowed_top_level = {
-        "json",
-        "logging",
-        "secrets",
-        "threading",
-        "dataclasses",
-        "datetime",
-        "enum",
-        "pathlib",
-        "typing",
-        "__future__",
-    }
     import inspect
     src = inspect.getsource(module)
     # No known competitor backend imports.

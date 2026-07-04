@@ -48,6 +48,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     get_update_counter_labels,
     get_update_event_count,
     get_update_samples,
+    require_rebuild_audit_artifact_store,
     reset_update_counter,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
@@ -150,15 +151,17 @@ def _row(artifact_type: str, id_: str) -> dict:
 
 
 def _seed(base_dir: Path, sources: list[dict]) -> tuple[str, list]:
+    del base_dir
     gen = generate_kg_generation_id()
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    artifact_store = require_rebuild_audit_artifact_store()
+    marker = CognitivePendingMarker(artifact_store=artifact_store)
     marker.mark_for_generation(
         board_id=BOARD,
         kg_generation_id=gen,
         source_set=sources,
         event_ref="evt_kg03_3",
     )
-    store = CognitiveConsolidationItemStore(base_dir=base_dir)
+    store = CognitiveConsolidationItemStore(artifact_store=artifact_store)
     items = store.list_items(BOARD, gen)
     return gen, items
 
@@ -281,7 +284,9 @@ def test_ac4_consolidated_without_session_id_is_rejected(
         == CognitiveItemUpdateReasonCode.CONSOLIDATION_SESSION_REQUIRED.value
     )
     # Persisted item still pending.
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     assert persisted[0].status == CognitiveItemStatus.PENDING.value
 
@@ -320,7 +325,9 @@ def test_ac5_skipped_or_failed_without_reason_is_rejected(
         response["error"]["reason_code"]
         == CognitiveItemUpdateReasonCode.REASON_REQUIRED.value
     )
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     assert persisted[0].status == CognitiveItemStatus.PENDING.value
 
@@ -351,7 +358,9 @@ def test_ac6_single_item_update_preserves_others(
     )
     assert response["updated"] is True
     # Item 1 (index) flipped; others stay pending.
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = {i.item_id: i for i in store.list_items(BOARD, gen)}
     assert persisted[items[0].item_id].status == "pending"
     assert persisted[items[1].item_id].status == "consolidated"
@@ -495,7 +504,9 @@ def test_unsafe_payload_long_reason_is_rejected(
         == CognitiveItemUpdateReasonCode.UNSAFE_PAYLOAD.value
     )
     # Persisted unchanged.
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     assert persisted[0].status == CognitiveItemStatus.PENDING.value
 
@@ -540,7 +551,9 @@ def test_unauthorized_short_circuits_before_storage_write(
     # No counter sample fires on auth failure.
     assert get_update_event_count() == 0
     # Persisted unchanged.
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     persisted = store.list_items(BOARD, gen)
     assert persisted[0].status == CognitiveItemStatus.PENDING.value
 

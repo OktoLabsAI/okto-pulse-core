@@ -33,7 +33,6 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_r4t3_"))
 
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
-    default_rebuild_base_dir,
 )
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.models.db import (
@@ -206,12 +205,14 @@ async def test_ts_2828f2d6_enforced_policy_clean_card_does_not_block(db_factory,
 
 
 @pytest.mark.asyncio
-async def test_ts_6b3a8048_context_calls_no_pending_no_status_change(db_factory):
+async def test_ts_6b3a8048_context_calls_no_pending_no_status_change(
+    db_factory, _tmp_rebuild_dir
+):
     board_id, spec_id, card_id = await _seed(
         db_factory, spec_status=SpecStatus.APPROVED, with_open_debt=True,
     )
     # Same base_dir the readiness service uses (resolves OKTO_PULSE_REBUILD_BASE_DIR).
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     # No consolidation has run -> no ledger generation for this board.
     assert store.latest_generation(board_id) is None
 

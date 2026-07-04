@@ -39,6 +39,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+
 logger = logging.getLogger("okto_pulse.kg.rebuild_report")
 
 
@@ -397,16 +402,29 @@ class RebuildReportStore:
     sensitive-payload check first, then writes the JSON atomically.
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
     def _reports_dir(self) -> Path:
+        if self.base_dir is None:
+            raise RuntimeError(
+                "base_dir is required when RebuildAuditArtifactStore is not supplied"
+            )
         return self.base_dir / REBUILD_DIRNAME / REPORTS_DIRNAME
 
     def _report_path(self, report_id: str) -> Path:
         return self._reports_dir() / f"{report_id}.json"
+
+    @staticmethod
+    def _report_key(board_id: str, report_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="rebuild_report",
+            board_id=board_id,
+            artifact_id=report_id,
+        )
 
     def _new_report_id(self) -> str:
         return f"{REPORT_REF_PREFIX}{uuid.uuid4().hex}"
@@ -476,20 +494,26 @@ class RebuildReportStore:
 
         with self._lock:
             try:
-                reports_dir = self._reports_dir()
-                reports_dir.mkdir(parents=True, exist_ok=True)
                 report_id = self._new_report_id()
-                path = self._report_path(report_id)
                 persisted_at = datetime.now(timezone.utc).isoformat()
                 record = {
                     "report_id": report_id,
                     "persisted_at": persisted_at,
                     **persistable,
                 }
-                tmp = path.with_suffix(".json.tmp")
-                with tmp.open("w", encoding="utf-8") as fh:
-                    json.dump(record, fh, indent=2)
-                tmp.replace(path)
+                if self.artifact_store is not None:
+                    report_key = self._report_key(board_id, report_id)
+                    self.artifact_store.write_json_atomic(report_key, record)
+                    report_ref = report_key.to_ref()
+                else:
+                    reports_dir = self._reports_dir()
+                    reports_dir.mkdir(parents=True, exist_ok=True)
+                    path = self._report_path(report_id)
+                    tmp = path.with_suffix(".json.tmp")
+                    with tmp.open("w", encoding="utf-8") as fh:
+                        json.dump(record, fh, indent=2)
+                    tmp.replace(path)
+                    report_ref = str(path)
             except Exception as exc:
                 logger.error(
                     "kg.rebuild.report.persist_failed board=%s run=%s err=%s",
@@ -527,7 +551,7 @@ class RebuildReportStore:
         )
         return ReportPersistResult(
             outcome=ReportPersistOutcome.STORED.value,
-            report_ref=str(path),
+            report_ref=report_ref,
             report_id=report_id,
             board_id=board_id,
             run_id=run_id,
@@ -539,18 +563,35 @@ class RebuildReportStore:
         """Open a persisted report. Bumps the ``opened`` counter so
         operators can see drilldown traffic (br_752614b4)."""
 
-        path = Path(report_ref)
-        if not path.exists():
-            return None
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                record = json.load(fh)
-        except Exception as exc:
-            logger.error(
-                "kg.rebuild.report.load_failed ref=%s err=%s",
-                report_ref, exc,
-            )
-            return None
+        if self.artifact_store is not None:
+            try:
+                parts = report_ref.split("/")
+                report_id = parts[-1]
+                board_id = parts[-3]
+                record = self.artifact_store.read_json(
+                    self._report_key(board_id, report_id)
+                )
+                if record is None:
+                    return None
+            except Exception as exc:
+                logger.error(
+                    "kg.rebuild.report.load_failed ref=%s err=%s",
+                    report_ref, exc,
+                )
+                return None
+        else:
+            path = Path(report_ref)
+            if not path.exists():
+                return None
+            try:
+                with path.open("r", encoding="utf-8") as fh:
+                    record = json.load(fh)
+            except Exception as exc:
+                logger.error(
+                    "kg.rebuild.report.load_failed ref=%s err=%s",
+                    report_ref, exc,
+                )
+                return None
         summary = record.get("summary", {})
         board_id = summary.get("board_id", "unknown")
         status = summary.get("status", "unknown")

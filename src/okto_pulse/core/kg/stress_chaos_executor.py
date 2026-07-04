@@ -63,9 +63,17 @@ class KGChaosExecutor:
     # release-qualified executors set this on the class or instance.
     release_evidence_executor: bool = True
 
-    def __init__(self, base_dir: Path) -> None:
+    def __init__(
+        self,
+        base_dir: Path,
+        *,
+        write_lock_port: Any | None = None,
+        artifact_store: Any | None = None,
+    ) -> None:
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self._write_lock_port = write_lock_port
+        self._artifact_store = artifact_store
         # Per-mode handler registry — adding a future chaos mode is a
         # one-line entry here.
         self._handlers = {
@@ -146,7 +154,10 @@ class KGChaosExecutor:
         from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
 
         per_iter_dir = self.base_dir / f"sigkill-{iteration}"
-        lock = KGSingleWriterLock(base_dir=per_iter_dir)
+        lock = KGSingleWriterLock(
+            base_dir=per_iter_dir,
+            write_lock_port=self._write_lock_port,
+        )
         # Iteration-1 of the scenario: acquire and "die" (no release).
         # Subsequent iterations of the same simulated worker would
         # find the stale lock and recover. Here we run both halves
@@ -250,6 +261,7 @@ class KGChaosExecutor:
         service = KGQuarantineService(
             base_dir=self.base_dir,
             scope_roots=[per_iter_dir],
+            artifact_store=self._artifact_store,
         )
         response = service.create(
             board_id="b_chaos",
@@ -283,7 +295,10 @@ class KGChaosExecutor:
         from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
 
         per_iter_dir = self.base_dir / f"contention-{iteration}"
-        lock = KGSingleWriterLock(base_dir=per_iter_dir)
+        lock = KGSingleWriterLock(
+            base_dir=per_iter_dir,
+            write_lock_port=self._write_lock_port,
+        )
         winner = lock.acquire(
             board_id="b_chaos", operation="consolidate",
             owner_id="tick-worker", ttl_seconds=60,

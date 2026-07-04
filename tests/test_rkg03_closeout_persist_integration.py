@@ -366,8 +366,16 @@ async def test_cognitive_closeout_worker_real_loader_and_ledger_scan(
 # ---------------------------------------------------------------------------
 
 
-def _pending_spec_refs(tmp_path, board_id: str) -> list[str]:
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+def _registry_ledger_store() -> CognitiveConsolidationItemStore:
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    return CognitiveConsolidationItemStore(
+        artifact_store=get_kg_registry().require_rebuild_audit_artifact_store()
+    )
+
+
+def _pending_spec_refs(board_id: str) -> list[str]:
+    store = _registry_ledger_store()
     gen = store.latest_generation(board_id)
     if not gen:
         return []
@@ -375,41 +383,33 @@ def _pending_spec_refs(tmp_path, board_id: str) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_spec_moved_done_opens_pending_without_card(
-    board_id, board_handle, tmp_path, monkeypatch
-):
+async def test_spec_moved_done_opens_pending_without_card(board_id, board_handle):
     from okto_pulse.core.events.handlers.cognitive_extraction import (
         CognitiveExtractionHandler,
     )
     from okto_pulse.core.events.types import SpecMoved
 
-    monkeypatch.setattr(
-        "okto_pulse.core.kg.cognitive_closeout_production.default_rebuild_base_dir",
-        lambda: tmp_path)
     spec_id = str(uuid.uuid4())
     handler = CognitiveExtractionHandler()
     # No card involved — the spec itself reaches done.
     event = SpecMoved(board_id=board_id, spec_id=spec_id, from_status="review", to_status="done")
     await handler.handle(event, None)
 
-    assert f"spec:{spec_id}" in _pending_spec_refs(tmp_path, board_id)
+    assert f"spec:{spec_id}" in _pending_spec_refs(board_id)
     # Ledger-only: nothing written to the graph inside the drain.
     assert ccp._count_nodes_by_source_ref(board_id, "Alternative", f"spec:{spec_id}") == 0
 
 
 @pytest.mark.asyncio
-async def test_spec_moved_non_done_opens_nothing(board_id, board_handle, tmp_path, monkeypatch):
+async def test_spec_moved_non_done_opens_nothing(board_id, board_handle):
     from okto_pulse.core.events.handlers.cognitive_extraction import (
         CognitiveExtractionHandler,
     )
     from okto_pulse.core.events.types import SpecMoved
 
-    monkeypatch.setattr(
-        "okto_pulse.core.kg.cognitive_closeout_production.default_rebuild_base_dir",
-        lambda: tmp_path)
     spec_id = str(uuid.uuid4())
     handler = CognitiveExtractionHandler()
     event = SpecMoved(board_id=board_id, spec_id=spec_id, from_status="draft", to_status="review")
     await handler.handle(event, None)
 
-    assert f"spec:{spec_id}" not in _pending_spec_refs(tmp_path, board_id)
+    assert f"spec:{spec_id}" not in _pending_spec_refs(board_id)

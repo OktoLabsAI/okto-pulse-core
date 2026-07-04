@@ -344,7 +344,7 @@ class KGRebuildService:
     real KG-01.1-5 primitives.
     """
 
-    base_dir: Path
+    base_dir: Path | None
     single_writer_lock: Any  # KGSingleWriterLock
     safe_write_lifecycle: Any  # KGSafeWriteLifecycle
     quarantine_service: Any  # KGQuarantineService | None
@@ -1231,6 +1231,10 @@ class KGRebuildService:
                 self.artifact_store.write_json_atomic(audit_key, audit_payload)
                 audit_ref = audit_key.to_ref()
             else:
+                if self.base_dir is None:
+                    raise RuntimeError(
+                        "base_dir is required when RebuildAuditArtifactStore is not supplied"
+                    )
                 audit_dir = self.base_dir / REBUILD_DIRNAME / AUDIT_DIRNAME
                 audit_dir.mkdir(parents=True, exist_ok=True)
                 audit_path = audit_dir / f"{run_id}.json"

@@ -599,10 +599,12 @@ class CognitiveCloseoutGate:
 
 
 def build_default_cognitive_closeout_gate() -> CognitiveCloseoutGate:
-    from okto_pulse.core.kg.rebuild_audit import default_rebuild_base_dir
+    from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 
     return CognitiveCloseoutGate(
-        store=CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        store=CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
     )
 
 

@@ -26,7 +26,7 @@ from okto_pulse.core.kg.cognitive_readiness import (
 )
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
-    default_rebuild_base_dir,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.models.db import Card
 
@@ -46,7 +46,9 @@ class BugCognitiveClosureEvaluateRequest(BaseModel):
 
 def build_default_readiness_service() -> CognitiveReadinessService:
     return CognitiveReadinessService(
-        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
     )
 
 

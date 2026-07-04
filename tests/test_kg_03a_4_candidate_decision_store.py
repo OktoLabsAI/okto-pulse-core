@@ -48,6 +48,7 @@ from okto_pulse.core.kg.candidate_decision_store import (
     get_candidate_samples,
     reset_candidate_counter,
 )
+from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 
 
 BOARD = "board-kg03a-4"
@@ -705,7 +706,9 @@ def test_rest_returns_empty_when_no_candidates(
 def test_rest_returns_contract_shape(
     isolated_base_dir: Path, client: TestClient
 ) -> None:
-    store = CandidateDecisionStore(base_dir=isolated_base_dir)
+    store = CandidateDecisionStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     record = _record(
         store,
         source_ref="spec:abc",
@@ -736,7 +739,9 @@ def test_rest_returns_contract_shape(
 def test_rest_counts_distinguish_all_five_statuses(
     isolated_base_dir: Path, client: TestClient
 ) -> None:
-    store = CandidateDecisionStore(base_dir=isolated_base_dir)
+    store = CandidateDecisionStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     proposed = _record(store, source_ref="spec:a")
     promoted = _record(store, source_ref="spec:b")
     linked = _record(store, source_ref="spec:c")
@@ -802,7 +807,9 @@ def test_rest_rejects_invalid_status(
 def test_rest_filters_by_status_and_source_ref(
     isolated_base_dir: Path, client: TestClient
 ) -> None:
-    store = CandidateDecisionStore(base_dir=isolated_base_dir)
+    store = CandidateDecisionStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     r1 = _record(store, source_ref="spec:a")
     r2 = _record(store, source_ref="spec:b")
     store.promote(
@@ -834,7 +841,9 @@ def test_rest_filters_by_status_and_source_ref(
 def test_rest_pagination_limits_and_offsets(
     isolated_base_dir: Path, client: TestClient
 ) -> None:
-    store = CandidateDecisionStore(base_dir=isolated_base_dir)
+    store = CandidateDecisionStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     for i in range(4):
         _record(store, source_ref=f"spec:abc#{i}")
     resp = client.get(

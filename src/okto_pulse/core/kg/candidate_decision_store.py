@@ -33,6 +33,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
 from okto_pulse.core.kg.rebuild_audit import _is_raw_token_shape
 from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 
@@ -422,16 +426,44 @@ class CandidateDecisionStore:
     Writes are atomic via temp+replace.
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
     def _board_dir(self, board_id: str) -> Path:
+        if self.base_dir is None:
+            raise RuntimeError(
+                "base_dir is required when RebuildAuditArtifactStore is not supplied"
+            )
         return self.base_dir / CANDIDATE_DECISIONS_DIRNAME / board_id
 
     def _record_path(self, board_id: str, candidate_id: str) -> Path:
         return self._board_dir(board_id) / f"{candidate_id}.json"
+
+    @staticmethod
+    def _record_key(board_id: str, candidate_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="candidate_decision",
+            board_id=board_id,
+            artifact_id=candidate_id,
+        )
+
+    def _write_record(self, record: CandidateDecisionRecord) -> None:
+        payload = record.to_dict()
+        if self.artifact_store is not None:
+            self.artifact_store.write_json_atomic(
+                self._record_key(record.board_id, record.candidate_id),
+                payload,
+            )
+            return
+        self._board_dir(record.board_id).mkdir(parents=True, exist_ok=True)
+        path = self._record_path(record.board_id, record.candidate_id)
+        tmp = path.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+        tmp.replace(path)
 
     def record(
         self,
@@ -515,12 +547,7 @@ class CandidateDecisionStore:
 
         with self._lock:
             try:
-                self._board_dir(board_id).mkdir(parents=True, exist_ok=True)
-                path = self._record_path(board_id, record.candidate_id)
-                tmp = path.with_suffix(".json.tmp")
-                with tmp.open("w", encoding="utf-8") as fh:
-                    json.dump(record.to_dict(), fh, indent=2)
-                tmp.replace(path)
+                self._write_record(record)
             except Exception as exc:
                 logger.error(
                     "kg.candidate_decision_store.write_failed board=%s err=%s",
@@ -549,12 +576,19 @@ class CandidateDecisionStore:
     def get(
         self, board_id: str, candidate_id: str
     ) -> CandidateDecisionRecord | None:
-        path = self._record_path(board_id, candidate_id)
-        if not path.exists():
-            return None
         try:
-            with path.open("r", encoding="utf-8") as fh:
-                payload = json.load(fh)
+            if self.artifact_store is not None:
+                payload = self.artifact_store.read_json(
+                    self._record_key(board_id, candidate_id)
+                )
+                if payload is None:
+                    return None
+            else:
+                path = self._record_path(board_id, candidate_id)
+                if not path.exists():
+                    return None
+                with path.open("r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
         except Exception as exc:
             logger.error(
                 "kg.candidate_decision_store.read_failed board=%s cand=%s err=%s",
@@ -575,16 +609,23 @@ class CandidateDecisionStore:
         """List candidates for a board. Stable ordering by created_at,
         then candidate_id."""
 
-        board_dir = self._board_dir(board_id)
-        if not board_dir.exists():
-            return []
         records: list[CandidateDecisionRecord] = []
-        for path in sorted(board_dir.glob("*.json")):
-            try:
-                with path.open("r", encoding="utf-8") as fh:
-                    payload = json.load(fh)
-            except Exception:
-                continue
+        if self.artifact_store is not None:
+            payloads = self.artifact_store.list_json(
+                RebuildAuditKey(namespace="candidate_decision", board_id=board_id)
+            )
+        else:
+            board_dir = self._board_dir(board_id)
+            if not board_dir.exists():
+                return []
+            payloads = []
+            for path in sorted(board_dir.glob("*.json")):
+                try:
+                    with path.open("r", encoding="utf-8") as fh:
+                        payloads.append(json.load(fh))
+                except Exception:
+                    continue
+        for payload in payloads:
             record = CandidateDecisionRecord.from_dict(payload)
             if status_filter is not None and record.status != status_filter:
                 continue
@@ -667,11 +708,7 @@ class CandidateDecisionStore:
                 updated_payload["audit_ref"] = audit_ref
 
             try:
-                path = self._record_path(board_id, candidate_id)
-                tmp = path.with_suffix(".json.tmp")
-                with tmp.open("w", encoding="utf-8") as fh:
-                    json.dump(updated_payload, fh, indent=2)
-                tmp.replace(path)
+                self._write_record(CandidateDecisionRecord.from_dict(updated_payload))
             except Exception as exc:
                 logger.error(
                     "kg.candidate_decision_store.transition_failed "

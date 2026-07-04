@@ -25,7 +25,6 @@ Invariants tested:
 
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
 
@@ -45,6 +44,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     get_list_counter_labels,
     get_list_event_count,
     get_list_samples,
+    require_rebuild_audit_artifact_store,
     reset_list_counter,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
@@ -93,8 +93,10 @@ def _row(artifact_type: str, id_: str) -> dict:
 
 
 def _seed(base_dir: Path, sources: list[dict]) -> str:
+    del base_dir
     gen = generate_kg_generation_id()
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    artifact_store = require_rebuild_audit_artifact_store()
+    marker = CognitivePendingMarker(artifact_store=artifact_store)
     marker.mark_for_generation(
         board_id=BOARD,
         kg_generation_id=gen,
@@ -261,11 +263,8 @@ def test_legacy_mode_true_for_aggregate_only_record(
     isolated_base_dir: Path,
     client: TestClient,
 ) -> None:
+    del isolated_base_dir
     gen = generate_kg_generation_id()
-    record_dir = (
-        isolated_base_dir / "rebuild" / "audit" / "cognitive_pending" / BOARD
-    )
-    record_dir.mkdir(parents=True, exist_ok=True)
     legacy = {
         "board_id": BOARD,
         "kg_generation_id": gen,
@@ -275,7 +274,10 @@ def test_legacy_mode_true_for_aggregate_only_record(
         "status": "pending_marked",
         "recorded_at": "2026-05-25T00:00:00+00:00",
     }
-    (record_dir / f"{gen}.json").write_text(json.dumps(legacy), encoding="utf-8")
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
+    store.artifact_store.write_json_atomic(store._record_key(BOARD, gen), legacy)
 
     body = client.get(
         "/api/v1/kg/cognitive-pending",
@@ -331,7 +333,9 @@ def test_status_filter_applies_to_response(
         _row("spec", "s2"),
         _row("refinement", "r1"),
     ])
-    store = CognitiveConsolidationItemStore(base_dir=isolated_base_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     items = store.list_items(BOARD, gen)
     store.update_item(
         board_id=BOARD,

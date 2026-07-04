@@ -13,6 +13,7 @@ from sqlalchemy import select
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.kg.rebuild_audit import CognitivePendingMarker
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
+from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
 from okto_pulse.core.models.db import (
     Board,
@@ -54,7 +55,10 @@ def isolated_closeout_kg_dir(
 
 
 def _seed_pending_item(base_dir: Path, board_id: str, source_ref: str) -> None:
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    del base_dir
+    marker = CognitivePendingMarker(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     marker.mark_for_generation(
         board_id=board_id,
         kg_generation_id=generate_kg_generation_id(),
@@ -360,7 +364,9 @@ async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_
     card = await _card_row(card_id)
     assert card.status == CardStatus.DONE
 
-    store = CognitiveConsolidationItemStore(base_dir=isolated_closeout_kg_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     latest = store.latest_generation(board_id)
     assert latest is not None
     items = store.list_items(board_id, latest)

@@ -280,6 +280,24 @@ def _kg_registry_test_fakes():
     reset_registry_for_tests()
 
 
+@pytest.fixture(autouse=True)
+def _reset_rebuild_audit_artifact_store_state(_kg_registry_test_fakes):
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    def _reset_store() -> None:
+        try:
+            store = get_kg_registry().require_rebuild_audit_artifact_store()
+        except Exception:
+            return
+        reset = getattr(store, "reset_for_tests", None)
+        if callable(reset):
+            reset()
+
+    _reset_store()
+    yield
+    _reset_store()
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _kg_registry_module_bootstrap_seed():
     """Seed the registry for legacy module-scoped KG fixtures.

@@ -81,7 +81,7 @@ def test_af16_rebuild_audit_storage_gate_blocks_new_base_dir_path_consumer(
     assert violations[0].path == "kg/new_durable_store.py"
 
 
-def test_af16_rebuild_audit_storage_gate_allows_named_legacy_seam(
+def test_af16_rebuild_audit_storage_gate_blocks_retired_legacy_seam(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "core"
@@ -97,4 +97,11 @@ def test_af16_rebuild_audit_storage_gate_allows_named_legacy_seam(
         encoding="utf-8",
     )
 
-    assert run_rebuild_audit_storage_gate(root) == ()
+    violations = run_rebuild_audit_storage_gate(root)
+
+    assert {violation.rule for violation in violations} == {
+        "durable_path_env_in_core",
+        "durable_tempdir_in_core",
+        "legacy_rebuild_base_dir_helper",
+    }
+    assert {violation.path for violation in violations} == {"kg/rebuild_audit.py"}

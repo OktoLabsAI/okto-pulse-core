@@ -18,7 +18,14 @@ RebuildAuditNamespace = Literal[
     "run_audit",
     "generation_current",
     "generation_history",
+    "source_manifest",
+    "confirmation_token",
+    "rebuild_report",
+    "candidate_decision",
+    "rebaseline_audit",
 ]
+
+REBUILD_AUDIT_GLOBAL_BOARD_ID = "_global"
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +71,9 @@ class RebuildAuditArtifactStore(Protocol):
     def exists(self, key: RebuildAuditKey) -> bool:
         ...
 
+    def delete_json(self, key: RebuildAuditKey) -> bool:
+        ...
+
     def list_json(self, prefix: RebuildAuditKey) -> Sequence[dict[str, Any]]:
         ...
 
@@ -74,9 +84,42 @@ class RebuildAuditArtifactStore(Protocol):
     ) -> dict[str, Any]:
         ...
 
+    def quarantine_paths(
+        self,
+        *,
+        board_id: str,
+        graph_type: str,
+        affected_paths: Sequence[str],
+        reason: str,
+        reason_bucket: str,
+        correlation_ids: Sequence[str],
+        kg_generation_id: str | None,
+        retention_days: int,
+        scope_roots: Sequence[str],
+        base_dir_hint: str | None = None,
+    ) -> Mapping[str, Any]:
+        ...
+
+    def list_quarantine_manifests(
+        self,
+        *,
+        active_after_iso: str | None = None,
+        base_dir_hint: str | None = None,
+    ) -> Sequence[Mapping[str, Any]]:
+        ...
+
+    def read_quarantine_manifest(
+        self,
+        *,
+        quarantine_id: str,
+        base_dir_hint: str | None = None,
+    ) -> Mapping[str, Any] | None:
+        ...
+
 
 __all__ = [
     "RebuildAuditArtifactStore",
+    "REBUILD_AUDIT_GLOBAL_BOARD_ID",
     "RebuildAuditKey",
     "RebuildAuditNamespace",
 ]

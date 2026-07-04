@@ -41,13 +41,15 @@ def _uowf():
 
 def _service():
     from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
-    from okto_pulse.core.kg.rebuild_audit import (
-        CognitiveConsolidationItemStore,
-        default_rebuild_base_dir,
+    from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+        InMemoryRebuildAuditArtifactStore,
     )
+    from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
 
     return CognitiveReadinessService(
-        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        CognitiveConsolidationItemStore(
+            artifact_store=InMemoryRebuildAuditArtifactStore()
+        )
     )
 
 

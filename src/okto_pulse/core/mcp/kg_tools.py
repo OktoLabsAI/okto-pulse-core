@@ -42,13 +42,13 @@ from okto_pulse.core.kg.rebuild_audit import (
     _emit_unsafe_payload_sample,
     _emit_update_sample,
     compute_status_counts,
-    default_rebuild_base_dir,
     detect_unsafe_update_payload,
     emit_operational_inspection_sample,
     empty_status_counts,
     project_item_for_api,
     project_item_for_update_api,
     record_cognitive_working_only_hold,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.kg.cognitive_readiness import R7_HOLD_REASON_CODES
 
@@ -486,7 +486,7 @@ offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
             )
 
         store = CognitiveConsolidationItemStore(
-            base_dir=default_rebuild_base_dir()
+            artifact_store=require_rebuild_audit_artifact_store()
         )
 
         explicit_generation = bool(kg_generation_id)
@@ -757,7 +757,7 @@ labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg.""
             )
 
         store = CognitiveConsolidationItemStore(
-            base_dir=default_rebuild_base_dir()
+            artifact_store=require_rebuild_audit_artifact_store()
         )
 
         # AC9 / IR3 — this MCP tool is AGENT-facing (get_agent). An R7 canonical

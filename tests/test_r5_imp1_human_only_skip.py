@@ -31,7 +31,6 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     compute_cognitive_item_id,
-    default_rebuild_base_dir,
 )
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.models.db import Board, Ideation
@@ -69,9 +68,9 @@ async def _call(name: str, **kwargs) -> dict:
     return json.loads(raw)
 
 
-def _seed_item(board, gen, *, source_ref, status):
+def _seed_item(base_dir, board, gen, *, source_ref, status):
     """Write a generation record with one cognitive ledger item at ``status``."""
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(base_dir=base_dir)
     path = store._record_path(board, gen)
     path.parent.mkdir(parents=True, exist_ok=True)
     item = {
@@ -83,7 +82,8 @@ def _seed_item(board, gen, *, source_ref, status):
     if status == CognitiveItemStatus.SKIPPED.value:
         item["reason_code"] = "trivial_fix"
         item["outcome_type"] = "no_action_required"
-    record = {"pending_count": 0, "pending_refs": [], "status": "complete",
+    record = {"board_id": board, "kg_generation_id": gen,
+              "pending_count": 0, "pending_refs": [], "status": "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
     path.write_text(json.dumps(record), encoding="utf-8")
     return store
@@ -144,7 +144,7 @@ async def test_record_cognitive_skip_mcp_is_human_only(db_factory, _tmp_rebuild_
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 imp1", owner_id=USER_ID))
         await db.commit()
-    store = _seed_item(board_id, gen, source_ref=source_ref,
+    store = _seed_item(_tmp_rebuild_dir, board_id, gen, source_ref=source_ref,
                        status=CognitiveItemStatus.PENDING.value)
 
     out = await _call("okto_pulse_kg_record_cognitive_skip",
@@ -170,7 +170,7 @@ async def test_clear_cognitive_skip_mcp_is_human_only(db_factory, _tmp_rebuild_d
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 imp1", owner_id=USER_ID))
         await db.commit()
-    store = _seed_item(board_id, gen, source_ref=source_ref,
+    store = _seed_item(_tmp_rebuild_dir, board_id, gen, source_ref=source_ref,
                        status=CognitiveItemStatus.SKIPPED.value)
 
     out = await _call("okto_pulse_kg_clear_cognitive_skip",
@@ -206,7 +206,7 @@ async def test_evaluate_bug_skip_actions_are_human_only(db_factory, _tmp_rebuild
     assert out["details"]["target_ref"] == f"bug:{bug_id}"
 
     # TEETH: no cognitive generation/ledger was created by the refused mutation.
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     assert store.latest_generation(board_id) is None
 
 
@@ -230,7 +230,7 @@ async def test_evaluate_bug_evaluate_branch_stays_agent_facing(db_factory, _tmp_
     # Not refused — a pure classification response (no skip persisted).
     assert out.get("code") != "human_control_required"
     assert out["status"] == "evaluated"
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     assert store.latest_generation(board_id) is None
 
 
@@ -249,5 +249,5 @@ async def test_evaluate_bug_create_learning_branch_stays_agent_facing(db_factory
     # Not refused — create_learning never persists a skip/no_action.
     assert out.get("code") != "human_control_required"
     assert "status" in out
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     assert store.latest_generation(board_id) is None

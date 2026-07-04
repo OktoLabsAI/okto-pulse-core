@@ -55,6 +55,11 @@ from okto_pulse.core.kg.source_maturity import (
     REBUILD_ARTIFACT_TYPES,
     classify_source_for_kg,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    REBUILD_AUDIT_GLOBAL_BOARD_ID,
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_sources")
 
@@ -667,6 +672,7 @@ def reset_spec_manifest_rebaseline_counter() -> None:
 # dir. Each record carries from/to manifest schema version, the spec hash
 # fields considered, and the rebaselined source_refs.
 REBASELINE_AUDIT_DIRNAME = "rebaseline_audit"
+REBASELINE_AUDIT_ARTIFACT_ID = "records"
 
 
 def _rebaseline_audit_path(base_dir: Path, board_id: str) -> Path:
@@ -676,31 +682,78 @@ def _rebaseline_audit_path(base_dir: Path, board_id: str) -> Path:
     return base_dir / REBUILD_DIRNAME / REBASELINE_AUDIT_DIRNAME / f"{safe}.jsonl"
 
 
+def _rebaseline_audit_key(board_id: str) -> RebuildAuditKey:
+    return RebuildAuditKey(
+        namespace="rebaseline_audit",
+        board_id=board_id,
+        artifact_id=REBASELINE_AUDIT_ARTIFACT_ID,
+    )
+
+
 def _append_spec_manifest_rebaseline_audit(
-    base_dir: Path,
+    base_dir: Path | None,
     *,
     board_id: str,
     manifest_ref: str,
     result: "RevalidationResult",
     recorded_at: str,
+    artifact_store: RebuildAuditArtifactStore | None = None,
 ) -> None:
-    path = _rebaseline_audit_path(base_dir, board_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "board_id": board_id,
         "manifest_ref": manifest_ref,
         "recorded_at": recorded_at,
         **result.to_dict(),
     }
+    if artifact_store is not None:
+        key = _rebaseline_audit_key(board_id)
+
+        def _append(current: dict[str, Any] | None) -> dict[str, Any]:
+            records = []
+            if current and isinstance(current.get("records"), list):
+                records = list(current["records"])
+            records.append(record)
+            return {
+                "board_id": board_id,
+                "artifact_id": REBASELINE_AUDIT_ARTIFACT_ID,
+                "updated_at": recorded_at,
+                "records": records,
+            }
+
+        artifact_store.replace_json(key, _append)
+        return
+
+    if base_dir is None:
+        raise RuntimeError(
+            "base_dir is required when RebuildAuditArtifactStore is not supplied"
+        )
+    path = _rebaseline_audit_path(base_dir, board_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, sort_keys=True) + "\n")
 
 
 def read_spec_manifest_rebaseline_audit(
-    base_dir: Path, board_id: str,
+    base_dir: Path | None,
+    board_id: str,
+    *,
+    artifact_store: RebuildAuditArtifactStore | None = None,
 ) -> list[dict[str, Any]]:
     """Read back the persisted spec-manifest rebaseline records for a board
     (FR7 audit evidence — queryable from the rebuild artifacts)."""
+    if artifact_store is not None:
+        payload = artifact_store.read_json(_rebaseline_audit_key(board_id))
+        if not payload:
+            return []
+        records = payload.get("records")
+        if not isinstance(records, list):
+            return []
+        return [dict(record) for record in records if isinstance(record, dict)]
+
+    if base_dir is None:
+        raise RuntimeError(
+            "base_dir is required when RebuildAuditArtifactStore is not supplied"
+        )
     path = _rebaseline_audit_path(base_dir, board_id)
     if not path.exists():
         return []
@@ -729,7 +782,23 @@ class KGRebuildSourceManifest:
     rebuild artifacts live under ``<base>/rebuild/manifests/``.
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
+
+    @staticmethod
+    def _manifest_key(manifest_ref: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="source_manifest",
+            board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+            artifact_id=manifest_ref,
+        )
+
+    def _base_dir(self) -> Path:
+        if self.base_dir is None:
+            raise RuntimeError(
+                "base_dir is required when RebuildAuditArtifactStore is not supplied"
+            )
+        return self.base_dir
 
     def build(
         self,
@@ -764,11 +833,17 @@ class KGRebuildSourceManifest:
             legacy_unknown=source_set.legacy_unknown,
         )
 
-        target_dir = self.base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME
-        target_dir.mkdir(parents=True, exist_ok=True)
-        path = target_dir / f"{manifest_ref}.json"
-        with path.open("w", encoding="utf-8") as fh:
-            json.dump(manifest.to_dict(), fh, indent=2)
+        if self.artifact_store is not None:
+            self.artifact_store.write_json_atomic(
+                self._manifest_key(manifest_ref), manifest.to_dict()
+            )
+        else:
+            base_dir = self._base_dir()
+            target_dir = base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME
+            target_dir.mkdir(parents=True, exist_ok=True)
+            path = target_dir / f"{manifest_ref}.json"
+            with path.open("w", encoding="utf-8") as fh:
+                json.dump(manifest.to_dict(), fh, indent=2)
         logger.info(
             "kg.rebuild_sources.manifest_built ref=%s board=%s "
             "source_set_hash=%s preflight_hash=%s eligible=%d",
@@ -784,21 +859,27 @@ class KGRebuildSourceManifest:
             validate_manifest_ref(manifest_ref)
         except ValueError:
             return None
-        path = self.base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME / f"{manifest_ref}.json"
-        # Defence in depth: even with a validated ref, ensure the
-        # resolved path stays under the manifests dir. Path.resolve()
-        # collapses any residual ``..`` symbolic-link tricks.
-        try:
-            resolved = path.resolve(strict=False)
-            allowed_root = (self.base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME).resolve(strict=False)
-            resolved.relative_to(allowed_root)
-        except (OSError, ValueError):
-            return None
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (FileNotFoundError, OSError, ValueError):
-            return None
+        if self.artifact_store is not None:
+            data = self.artifact_store.read_json(self._manifest_key(manifest_ref))
+            if data is None:
+                return None
+        else:
+            base_dir = self._base_dir()
+            path = base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME / f"{manifest_ref}.json"
+            # Defence in depth: even with a validated ref, ensure the
+            # resolved path stays under the manifests dir. Path.resolve()
+            # collapses any residual ``..`` symbolic-link tricks.
+            try:
+                resolved = path.resolve(strict=False)
+                allowed_root = (base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME).resolve(strict=False)
+                resolved.relative_to(allowed_root)
+            except (OSError, ValueError):
+                return None
+            try:
+                with path.open("r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except (FileNotFoundError, OSError, ValueError):
+                return None
         try:
             def _rows(key: str) -> tuple[RebuildSourceRow, ...]:
                 return tuple(
@@ -939,6 +1020,7 @@ class KGRebuildSourceManifest:
                     manifest_ref=manifest.manifest_ref,
                     result=result,
                     recorded_at=datetime.now(timezone.utc).isoformat(),
+                    artifact_store=self.artifact_store,
                 )
                 logger.info(
                     "kg.rebuild_sources.spec_manifest_rebaseline board=%s "

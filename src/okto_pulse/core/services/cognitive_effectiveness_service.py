@@ -478,8 +478,10 @@ async def build_cognitive_effectiveness_inventory(
         original_by_ref.setdefault(ref, raw)
         type_by_ref.setdefault(ref, "spec")
 
-    from okto_pulse.core.kg.rebuild_audit import default_rebuild_base_dir
-    item_store = store or CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
+    item_store = store or CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     items_by_ref: dict[str, list[CognitiveConsolidationItem]] = {}
     try:
         gen = item_store.latest_generation(board_id)

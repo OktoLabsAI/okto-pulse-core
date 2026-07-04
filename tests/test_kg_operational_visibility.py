@@ -22,7 +22,10 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from okto_pulse.core.kg.rebuild_audit import CognitivePendingMarker
+from okto_pulse.core.kg.rebuild_audit import (
+    CognitivePendingMarker,
+    require_rebuild_audit_artifact_store,
+)
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
 from okto_pulse.core.mcp.kg_tools import register_kg_tools
 from okto_pulse.core.models.db import (
@@ -59,8 +62,11 @@ def _row(artifact_type: str, id_: str) -> dict:
 
 
 def _seed_pending(base_dir, board_id: str, sources: list[dict]) -> str:
+    del base_dir
     gen = generate_kg_generation_id()
-    CognitivePendingMarker(base_dir=base_dir).mark_for_generation(
+    CognitivePendingMarker(
+        artifact_store=require_rebuild_audit_artifact_store()
+    ).mark_for_generation(
         board_id=board_id,
         kg_generation_id=gen,
         source_set=sources,

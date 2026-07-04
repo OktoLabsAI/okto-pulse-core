@@ -41,7 +41,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     CognitivePendingOutcomeType,
-    default_rebuild_base_dir,
+    require_rebuild_audit_artifact_store,
 )
 
 # Stable generation id used to open cognitive-closeout pending work when a board
@@ -55,9 +55,10 @@ COGNITIVE_CLOSEOUT_COMMIT_OPERATION = "cognitive_closeout_commit"
 
 
 def _default_store() -> CognitiveConsolidationItemStore:
-    """The production-default ledger store (#2: base_dir is REQUIRED — never a
-    no-arg constructor)."""
-    return CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    """The production-default ledger store from the edition adapter."""
+    return CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
 
 
 def _resolve_generation(store: CognitiveConsolidationItemStore, board_id: str,

@@ -1185,10 +1185,12 @@ async def get_kg_health(
         from okto_pulse.core.kg.rebuild_audit import (
             CognitiveConsolidationItemStore,
             compute_status_counts,
-            default_rebuild_base_dir,
+            require_rebuild_audit_artifact_store,
         )
 
-        store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        store = CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
         gen = store.latest_generation(_board_id)
         if not gen:
             return 0
@@ -1242,10 +1244,12 @@ async def get_kg_health(
         from okto_pulse.core.kg.cognitive_readiness import R7_HOLD_REASON_CODES
         from okto_pulse.core.kg.rebuild_audit import (
             CognitiveConsolidationItemStore,
-            default_rebuild_base_dir,
+            require_rebuild_audit_artifact_store,
         )
 
-        store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        store = CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
         gen = store.latest_generation(_board_id)
         if not gen:
             return 0

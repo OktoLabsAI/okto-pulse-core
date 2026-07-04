@@ -60,6 +60,13 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
         with self._lock:
             return self._identity(key) in self._records
 
+    def delete_json(self, key: RebuildAuditKey) -> bool:
+        with self._lock:
+            identity = self._identity(key)
+            existed = identity in self._records
+            self._records.pop(identity, None)
+            return existed
+
     def list_json(self, prefix: RebuildAuditKey) -> Sequence[dict[str, Any]]:
         with self._lock:
             rows: list[dict[str, Any]] = []
@@ -87,6 +94,10 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             )
             self._records[identity] = copy.deepcopy(dict(next_payload))
             return copy.deepcopy(next_payload)
+
+    def reset_for_tests(self) -> None:
+        with self._lock:
+            self._records.clear()
 
 
 class InMemoryCognitivePendingWorkProvider(CognitivePendingWorkProvider):

@@ -86,26 +86,12 @@ def _require_base_dir(base_dir: Path | None) -> Path:
     return base_dir
 
 
-def default_rebuild_base_dir() -> Path:
-    """Single source of truth for the rebuild/audit storage root.
+def require_rebuild_audit_artifact_store() -> RebuildAuditArtifactStore:
+    """Return the edition-composed rebuild audit artifact store."""
 
-    Both the REST layer (api/kg_rebuild.py) and the MCP layer
-    (mcp/kg_tools.py) MUST resolve to the same directory or they observe
-    divergent state. Default is ``<tempdir>/okto_pulse_kg_rebuild``,
-    overridable via the ``OKTO_PULSE_REBUILD_BASE_DIR`` environment
-    variable for production deployments.
-    """
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
-    import os
-    import tempfile
-    override = os.environ.get("OKTO_PULSE_REBUILD_BASE_DIR")
-    base = (
-        Path(override)
-        if override
-        else Path(tempfile.gettempdir()) / "okto_pulse_kg_rebuild"
-    )
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    return get_kg_registry().require_rebuild_audit_artifact_store()
 
 
 # ---------------------------------------------------------------------------
@@ -2221,6 +2207,7 @@ def record_cognitive_working_only_hold(
     hold_payload: Mapping[str, Any],
     actor_id: str,
     base_dir: Path | None = None,
+    artifact_store: RebuildAuditArtifactStore | None = None,
 ) -> dict[str, str] | None:
     """Persist an R7 working-only canonical Learning go-forward HOLD as a
     cognitive pending item (NEVER CanonicalDebt / DLQ / a parallel store).
@@ -2258,25 +2245,27 @@ def record_cognitive_working_only_hold(
         )
         return None
 
-    base = base_dir or default_rebuild_base_dir()
     from okto_pulse.core.kg.rebuild_generation import (
         KGGenerationRepository,
         RebuildAuditKGGenerationRepository,
         generate_kg_generation_id,
     )
 
-    store = CognitiveConsolidationItemStore(base_dir=base)
-    current_generation_id: str | None = None
-    try:
-        from okto_pulse.core.kg.interfaces import get_kg_registry
+    resolved_store = artifact_store
+    if resolved_store is None and base_dir is None:
+        resolved_store = require_rebuild_audit_artifact_store()
 
+    store = CognitiveConsolidationItemStore(
+        base_dir=base_dir,
+        artifact_store=resolved_store,
+    )
+    current_generation_id: str | None = None
+    if resolved_store is not None:
         current_generation_id = RebuildAuditKGGenerationRepository(
-            artifact_store=(
-                get_kg_registry().require_rebuild_audit_artifact_store()
-            )
+            artifact_store=resolved_store
         ).get_current(board_id)
-    except Exception:
-        current_generation_id = KGGenerationRepository(base).get_current(board_id)
+    elif base_dir is not None:
+        current_generation_id = KGGenerationRepository(base_dir).get_current(board_id)
     generation_id = (
         current_generation_id
         or store.latest_generation(board_id)
@@ -3031,7 +3020,6 @@ __all__ = [
     "compute_cognitive_item_id",
     "compute_status_counts",
     "confirmation_fingerprint",
-    "default_rebuild_base_dir",
     "detect_unsafe_update_payload",
     "empty_status_counts",
     "record_cognitive_working_only_hold",
@@ -3070,5 +3058,6 @@ __all__ = [
     "get_reopen_event_count",
     "get_reopen_samples",
     "reset_reopen_counter",
+    "require_rebuild_audit_artifact_store",
     "validate_kg_rebuilt_event",
 ]

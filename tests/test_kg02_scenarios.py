@@ -27,12 +27,20 @@ Scenario map:
 from __future__ import annotations
 
 import json
+import secrets
 import shutil
+import time
 from dataclasses import replace as dc_replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from okto_pulse.core.ports.coordination import (
+    WriteLockHandle,
+    register_coordination_providers,
+    reset_coordination_providers_for_tests,
+)
 from okto_pulse.core.kg.global_discovery_reindex import (
     GlobalDiscoveryReindexStatusStore,
     GlobalDiscoveryReindexer,
@@ -110,6 +118,134 @@ from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
 BOARD = "b1"
 
 
+class _InMemorySingleWriterPort:
+    def __init__(self) -> None:
+        self._locks: dict[tuple[str, str, str], dict[str, object]] = {}
+
+    @staticmethod
+    def _scope(base_dir_hint: str | None) -> str:
+        return base_dir_hint or "default"
+
+    def _key(
+        self, board_id: str, artifact_id: str, base_dir_hint: str | None
+    ) -> tuple[str, str, str]:
+        return (self._scope(base_dir_hint), board_id, artifact_id)
+
+    @staticmethod
+    def _iso(epoch: float) -> str:
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+
+    def acquire_single_writer_sync(
+        self,
+        *,
+        board_id: str,
+        artifact_id: str,
+        operation: str,
+        owner_id: str,
+        ttl_seconds: int,
+        admin_lane: bool = False,
+        base_dir_hint: str | None = None,
+        board_dir_resolver=None,
+    ) -> dict[str, object]:
+        del board_dir_resolver
+        key = self._key(board_id, artifact_id, base_dir_hint)
+        now = time.time()
+        current = self._locks.get(key)
+        stale_recovered = False
+        if current is not None and float(current["expires_at_epoch"]) > now:
+            return {
+                "acquired": False,
+                "owner_token": None,
+                "expires_at": current["expires_at"],
+                "current_owner": current["owner_id"],
+                "admin_lane": current["admin_lane"],
+                "stale_recovered": False,
+            }
+        if current is not None:
+            stale_recovered = True
+
+        owner_token = secrets.token_urlsafe(18)
+        expires_at_epoch = now + ttl_seconds
+        manifest = {
+            "owner_token": owner_token,
+            "owner_id": owner_id,
+            "operation": operation,
+            "acquired_at_epoch": now,
+            "expires_at_epoch": expires_at_epoch,
+            "acquired_at": self._iso(now),
+            "expires_at": self._iso(expires_at_epoch),
+            "admin_lane": admin_lane,
+        }
+        self._locks[key] = manifest
+        return {
+            "acquired": True,
+            "owner_token": owner_token,
+            "expires_at": manifest["expires_at"],
+            "current_owner": owner_id,
+            "admin_lane": admin_lane,
+            "stale_recovered": stale_recovered,
+        }
+
+    def release_single_writer_sync(
+        self,
+        *,
+        board_id: str,
+        artifact_id: str,
+        owner_token: str,
+        base_dir_hint: str | None = None,
+        board_dir_resolver=None,
+    ) -> bool:
+        del board_dir_resolver
+        key = self._key(board_id, artifact_id, base_dir_hint)
+        current = self._locks.get(key)
+        if current is None or current["owner_token"] != owner_token:
+            return False
+        del self._locks[key]
+        return True
+
+    def inspect_single_writer_sync(
+        self,
+        *,
+        board_id: str,
+        artifact_id: str,
+        base_dir_hint: str | None = None,
+        board_dir_resolver=None,
+    ) -> dict[str, object] | None:
+        del board_dir_resolver
+        current = self._locks.get(self._key(board_id, artifact_id, base_dir_hint))
+        return dict(current) if current is not None else None
+
+    def acquire_sync(
+        self,
+        board_id: str,
+        artifact_id: str,
+        *,
+        owner_token: str | None = None,
+    ) -> WriteLockHandle:
+        token = owner_token or secrets.token_urlsafe(18)
+        return WriteLockHandle(
+            board_id=board_id,
+            artifact_id=artifact_id,
+            owner_token=token,
+            fencing_token=token,
+        )
+
+    def release_sync(self, handle: WriteLockHandle) -> None:
+        self.release_single_writer_sync(
+            board_id=handle.board_id,
+            artifact_id=handle.artifact_id,
+            owner_token=handle.owner_token,
+        )
+
+    def is_locked(self, board_id: str, artifact_id: str) -> bool:
+        return self.inspect_single_writer_sync(
+            board_id=board_id, artifact_id=artifact_id
+        ) is not None
+
+    def reset_for_tests(self) -> None:
+        self._locks.clear()
+
+
 @pytest.fixture
 def base_dir(tmp_path: Path) -> Path:
     target = tmp_path / "kg02-scenarios"
@@ -135,7 +271,10 @@ def _reset_counters() -> None:
     reset_event_counter()
     reset_pending_counter()
     reset_audit_counter()
+    reset_coordination_providers_for_tests()
+    register_coordination_providers(write_lock_port=_InMemorySingleWriterPort())
     yield
+    reset_coordination_providers_for_tests()
 
 
 def _row(id_: str = "s1", artifact_type: str = "spec",
@@ -488,7 +627,6 @@ def test_ts_dff04b2e_structural_hash_excludes_run_state() -> None:
     timestamps."""
 
     sources = [_row()]
-    a = build_structural_inputs(sources=sources)
     b = build_structural_inputs(
         sources=sources,
         nodes=[{

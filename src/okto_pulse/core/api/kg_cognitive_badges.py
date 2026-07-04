@@ -34,8 +34,6 @@ asking the client to send a card-type mapping.
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -51,7 +49,7 @@ from okto_pulse.core.kg.cognitive_badge_resolver import (
 )
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
-    default_rebuild_base_dir,
+    require_rebuild_audit_artifact_store,
 )
 
 
@@ -129,7 +127,7 @@ async def get_cognitive_pending_badges(
 
     try:
         store = CognitiveConsolidationItemStore(
-            base_dir=default_rebuild_base_dir()
+            artifact_store=require_rebuild_audit_artifact_store()
         )
     except Exception as exc:
         emit_unavailable_batch_sample(

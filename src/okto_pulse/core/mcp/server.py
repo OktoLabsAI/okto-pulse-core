@@ -25,7 +25,6 @@ from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, p
 from okto_pulse.core.mcp.trace_middleware import install_trace_sink as _install_trace
 from okto_pulse.core.ports.content_ingestion import ContentIngestionError
 from okto_pulse.core.ports.mcp_trace import McpTraceSink
-from okto_pulse.core.models.db import Board
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
 from okto_pulse.core.services.activity_log import (
     activity_log_summary,
@@ -60,7 +59,6 @@ from okto_pulse.core.services.main import (
     CardOperationError,
     CardService,
     CommentService,
-    GuidelineService,
     IdeationKnowledgeService,
     IdeationQAService,
     IdeationService,
@@ -15431,17 +15429,14 @@ async def okto_pulse_kg_evaluate_bug_cognitive_closure(
 def _build_cognitive_readiness_service():
     """Central readiness service over the shared item store (no own store)."""
     from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
-    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.rebuild_audit import (
         CognitiveConsolidationItemStore,
-        default_rebuild_base_dir,
+        require_rebuild_audit_artifact_store,
     )
 
-    artifact_store = get_kg_registry().rebuild_audit_artifact_store
     return CognitiveReadinessService(
         CognitiveConsolidationItemStore(
-            base_dir=default_rebuild_base_dir(),
-            artifact_store=artifact_store,
+            artifact_store=require_rebuild_audit_artifact_store(),
         )
     )
 
@@ -16492,7 +16487,7 @@ async def okto_pulse_kg_tick_run_now(
 #     (_refuse_rebuild_if_quarantined) — quarantined → refuse, recovery_needed → pass
 #   * delegates 100 % of business logic to the shared REST service objects
 #     (RebuildPreflightService / RebuildConfirmationStore / KGRebuildService)
-#   * resolves base_dir via default_rebuild_base_dir() (same constant as REST)
+#   * resolves rebuild artifacts through the edition-composed artifact store
 #   * serialises all results to JSON strings (MCP transport contract)
 #
 # Pattern: okto_pulse_kg_tick_run_now (lines 12457-12564) — twin structure,
@@ -16528,9 +16523,11 @@ async def okto_pulse_kg_rebuild_preflight(
     from starlette.concurrency import run_in_threadpool
 
     from okto_pulse.core.api.kg_rebuild import (
-        _REBUILD_BASE_DIR,
         _build_source_store,
         _refuse_rebuild_if_quarantined,
+    )
+    from okto_pulse.core.kg.rebuild_audit import (
+        require_rebuild_audit_artifact_store,
     )
 
     # Admission gate + FR9 health probe — MCP-FU5 strangler: the single session
@@ -16610,7 +16607,9 @@ async def okto_pulse_kg_rebuild_preflight(
         return json.dumps({"error": "preflight_service_failed", "detail": str(exc)})
 
     try:
-        manifest_store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+        manifest_store = KGRebuildSourceManifest(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
         manifest = await run_in_threadpool(
             manifest_store.build,
             source_set=source_set,
@@ -16659,7 +16658,9 @@ async def okto_pulse_kg_rebuild_confirm(
 
     from starlette.concurrency import run_in_threadpool
 
-    from okto_pulse.core.api.kg_rebuild import _REBUILD_BASE_DIR
+    from okto_pulse.core.kg.rebuild_audit import (
+        require_rebuild_audit_artifact_store,
+    )
     from okto_pulse.core.kg.rebuild_confirmation import (
         CANONICAL_OPERATIONS,
         RebuildConfirmationStore,
@@ -16691,7 +16692,8 @@ async def okto_pulse_kg_rebuild_confirm(
         return json.dumps({"error": "invalid_preflight_hash", "reason": str(exc)})
 
     def _load_and_issue():
-        manifest_store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+        artifact_store = require_rebuild_audit_artifact_store()
+        manifest_store = KGRebuildSourceManifest(artifact_store=artifact_store)
         manifest = manifest_store.load(manifest_ref)
         if manifest is None:
             return {"error": "manifest_not_found", "reason": "manifest_ref does not exist"}
@@ -16700,7 +16702,7 @@ async def okto_pulse_kg_rebuild_confirm(
         if manifest.preflight_hash != preflight_hash:
             return {"error": "preflight_hash_mismatch", "reason": "preflight_hash does not match manifest binding"}
 
-        store = RebuildConfirmationStore(base_dir=_REBUILD_BASE_DIR)
+        store = RebuildConfirmationStore(artifact_store=artifact_store)
         token = store.issue(
             board_id=board_id,
             actor_id=actor_id,
@@ -16766,7 +16768,6 @@ async def okto_pulse_kg_rebuild_run(
     from starlette.concurrency import run_in_threadpool
 
     from okto_pulse.core.api.kg_rebuild import (
-        _REBUILD_BASE_DIR,
         _build_rebuild_step_adapter,
         _build_source_store,
         _provider_missing_payload,
@@ -16827,7 +16828,7 @@ async def okto_pulse_kg_rebuild_run(
     )
     from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
 
-    lock = KGSingleWriterLock(base_dir=_REBUILD_BASE_DIR / "locks")
+    lock = KGSingleWriterLock()
 
     def _always_owner(bid: str, owner_token: str) -> bool:
         m = lock.inspect(board_id=bid)
@@ -16841,7 +16842,17 @@ async def okto_pulse_kg_rebuild_run(
 
     source_store_fetch = _build_source_store()
     enumerator = RebuildSourceEnumerator(source_store=source_store_fetch)
-    manifest_store_obj = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+    try:
+        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
+    except Exception as exc:
+        from okto_pulse.core.composition import RuntimeProviderMissing
+
+        if isinstance(exc, RuntimeProviderMissing):
+            return json.dumps(_provider_missing_payload(exc))
+        raise
+
+    manifest_store_obj = KGRebuildSourceManifest(artifact_store=artifact_store)
+
     try:
         _step_adapter_with_sources = _build_rebuild_step_adapter(
             manifest_store_obj=manifest_store_obj,
@@ -16852,25 +16863,13 @@ async def okto_pulse_kg_rebuild_run(
         if isinstance(exc, RuntimeProviderMissing):
             return json.dumps(_provider_missing_payload(exc))
         raise
-
-    try:
-        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
-    except Exception as exc:
-        from okto_pulse.core.composition import RuntimeProviderMissing
-
-        if isinstance(exc, RuntimeProviderMissing):
-            return json.dumps(_provider_missing_payload(exc))
-        raise
     audit_recorder = ConfirmationConsumptionAuditRecorder(
-        base_dir=_REBUILD_BASE_DIR,
         artifact_store=artifact_store,
     )
     event_publisher = KGRebuiltEventPublisher(
-        base_dir=_REBUILD_BASE_DIR,
         artifact_store=artifact_store,
     )
     cognitive_marker = CognitivePendingMarker(
-        base_dir=_REBUILD_BASE_DIR,
         artifact_store=artifact_store,
     )
 
@@ -16889,12 +16888,13 @@ async def okto_pulse_kg_rebuild_run(
     orphan_scanner = OrphanNodeScanner()
 
     service = KGRebuildService(
-        base_dir=_REBUILD_BASE_DIR,
+        base_dir=None,
         single_writer_lock=lock,
         safe_write_lifecycle=safe_lifecycle,
         quarantine_service=None,
         confirmation_store=RebuildConfirmationStore(
-            base_dir=_REBUILD_BASE_DIR, audit_recorder=audit_recorder,
+            audit_recorder=audit_recorder,
+            artifact_store=artifact_store,
         ),
         manifest_store=manifest_store_obj,
         source_enumerator=enumerator,
@@ -16903,7 +16903,7 @@ async def okto_pulse_kg_rebuild_run(
             artifact_store=artifact_store
         ),
         promotion_guard=KGGenerationPromotionGuard,
-        report_store=RebuildReportStore(base_dir=_REBUILD_BASE_DIR),
+        report_store=RebuildReportStore(artifact_store=artifact_store),
         terminal_state_guard=RebuildReportTerminalStateGuard,
         event_emitter=event_handler,
         orphan_scan_provider=lambda board_id, generation_id: orphan_scanner.scan(

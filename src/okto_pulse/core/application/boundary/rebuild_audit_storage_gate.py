@@ -1,8 +1,7 @@
 """AF16 conformance gate for rebuild audit storage ownership.
 
 The core may define storage rules and logical ports. Runtime-specific durable
-locations belong to edition adapters, except for the named legacy seam that is
-being retired in a later slice.
+locations belong to edition adapters.
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ _ALLOWLISTED_BASE_DIR_PATH_CONSUMERS = frozenset({
     "stress_runner.py",
 })
 
-_LEGACY_REBUILD_BASE_DIR_SEAM = ("kg/rebuild_audit.py", "default_rebuild_base_dir")
+_FORBIDDEN_REBUILD_ROOT_HELPER = "default_" + "rebuild_base_dir"
 _ALLOWLISTED_TEMPDIR_SEAMS = frozenset({
     # Full-clean-core smoke checks whether the OS temp root is writable before
     # it creates a disposable venv. It is an ephemeral prerequisite probe.
@@ -84,11 +83,6 @@ def _nearest_function_name(stack: tuple[ast.AST, ...]) -> str | None:
         if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
             return parent.name
     return None
-
-
-def _is_legacy_rebuild_base_dir_seam(path: str, stack: tuple[ast.AST, ...]) -> bool:
-    expected_path, expected_function = _LEGACY_REBUILD_BASE_DIR_SEAM
-    return path == expected_path and _nearest_function_name(stack) == expected_function
 
 
 def _is_allowlisted_tempdir_seam(path: str, stack: tuple[ast.AST, ...]) -> bool:
@@ -146,6 +140,23 @@ def run_rebuild_audit_storage_gate(
                     )
                 )
 
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == _FORBIDDEN_REBUILD_ROOT_HELPER
+            ):
+                violations.append(
+                    RebuildAuditStorageGateViolation(
+                        rule="legacy_rebuild_base_dir_helper",
+                        path=rel,
+                        line=line,
+                        symbol=node.name,
+                        detail=(
+                            "Core must not own a rebuild base-dir resolver; "
+                            "local roots belong to the edition adapter."
+                        ),
+                    )
+                )
+
             if isinstance(node, ast.arg) and node.arg == "base_dir":
                 if _annotation_names_path(node.annotation) and path.name not in (
                     _ALLOWLISTED_BASE_DIR_PATH_CONSUMERS
@@ -183,11 +194,26 @@ def run_rebuild_audit_storage_gate(
 
             if isinstance(node, ast.Call):
                 call_name = _call_name(node.func)
-                if call_name in {"tempfile.gettempdir", "gettempdir"}:
-                    if not (
-                        _is_legacy_rebuild_base_dir_seam(rel, stack)
-                        or _is_allowlisted_tempdir_seam(rel, stack)
-                    ):
+                if call_name.rsplit(".", 1)[-1] == _FORBIDDEN_REBUILD_ROOT_HELPER:
+                    violations.append(
+                        RebuildAuditStorageGateViolation(
+                            rule="legacy_rebuild_base_dir_helper",
+                            path=rel,
+                            line=line,
+                            symbol=call_name,
+                            detail=(
+                                "Core must use RebuildAuditArtifactStore from "
+                                "the edition registry, not a rebuild base-dir "
+                                "resolver."
+                            ),
+                        )
+                    )
+                tempdir_symbols = {
+                    "tempfile." + "gettempdir",
+                    "get" + "tempdir",
+                }
+                if call_name in tempdir_symbols:
+                    if not _is_allowlisted_tempdir_seam(rel, stack):
                         violations.append(
                             RebuildAuditStorageGateViolation(
                                 rule="durable_tempdir_in_core",
@@ -203,19 +229,17 @@ def run_rebuild_audit_storage_gate(
 
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 if node.value in _PATH_ENV_KEYS:
-                    if not _is_legacy_rebuild_base_dir_seam(rel, stack):
-                        violations.append(
-                            RebuildAuditStorageGateViolation(
-                                rule="durable_path_env_in_core",
-                                path=rel,
-                                line=line,
-                                symbol=node.value,
-                                detail=(
-                                    "Core must not read filesystem path env vars "
-                                    "for durable rebuild artifacts outside the "
-                                    "named legacy seam."
-                                ),
-                            )
+                    violations.append(
+                        RebuildAuditStorageGateViolation(
+                            rule="durable_path_env_in_core",
+                            path=rel,
+                            line=line,
+                            symbol=node.value,
+                            detail=(
+                                "Core must not read filesystem path env vars "
+                                "for durable rebuild artifacts."
+                            ),
+                        )
                     )
 
     return tuple(violations)

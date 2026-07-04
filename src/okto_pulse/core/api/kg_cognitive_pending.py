@@ -57,9 +57,9 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveItemStatus,
     _emit_list_sample,
     compute_status_counts,
-    default_rebuild_base_dir,
     empty_status_counts,
     project_item_for_api,
+    require_rebuild_audit_artifact_store,
 )
 
 
@@ -151,7 +151,7 @@ async def get_cognitive_pending(
 
     try:
         store = CognitiveConsolidationItemStore(
-            base_dir=default_rebuild_base_dir()
+            artifact_store=require_rebuild_audit_artifact_store()
         )
     except Exception as exc:
         raise HTTPException(

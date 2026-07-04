@@ -37,6 +37,7 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     LockOwnerProbe,
 )
 from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
+from coordination_fakes import FakeWriteLockPort
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     RealBoardGraphLifecycleForTests,
@@ -148,7 +149,10 @@ def _build_service(
 ) -> tuple[KGRebuildService, KGRebuildSourceManifest, RebuildConfirmationStore, KGSingleWriterLock]:
     """Wire a fully-functional rebuild service against tmp storage."""
     rows = source_rows if source_rows is not None else [_row()]
-    lock = KGSingleWriterLock(base_dir=tmp_path / "locks")
+    lock = KGSingleWriterLock(
+        base_dir=tmp_path / "locks",
+        write_lock_port=FakeWriteLockPort(),
+    )
     enumerator = RebuildSourceEnumerator(source_store=lambda _b: list(rows))
     manifest_store = KGRebuildSourceManifest(base_dir=tmp_path)
     confirmation_store = RebuildConfirmationStore(base_dir=tmp_path)

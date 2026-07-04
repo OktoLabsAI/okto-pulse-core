@@ -45,7 +45,7 @@ from okto_pulse.core.kg.candidate_decision_store import (
     CandidateDecisionStatus,
     CandidateDecisionStore,
 )
-from okto_pulse.core.kg.rebuild_audit import default_rebuild_base_dir
+from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 
 
 router = APIRouter()
@@ -165,7 +165,9 @@ async def list_candidate_decisions(
         )
 
     try:
-        store = CandidateDecisionStore(base_dir=default_rebuild_base_dir())
+        store = CandidateDecisionStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=503,

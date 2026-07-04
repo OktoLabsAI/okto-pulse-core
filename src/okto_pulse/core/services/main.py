@@ -771,11 +771,13 @@ def _build_default_cognitive_readiness_service() -> Any:
     from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
     from okto_pulse.core.kg.rebuild_audit import (
         CognitiveConsolidationItemStore,
-        default_rebuild_base_dir,
+        require_rebuild_audit_artifact_store,
     )
 
     return CognitiveReadinessService(
-        CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
     )
 
 

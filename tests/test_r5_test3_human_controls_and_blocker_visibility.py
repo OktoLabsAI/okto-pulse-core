@@ -40,7 +40,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     compute_cognitive_item_id,
-    default_rebuild_base_dir,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.models.db import (
@@ -94,8 +94,6 @@ async def _skip_logs(db, ideation_id):
 
 
 def _seed_item(store, board, source_ref, status):
-    path = store._record_path(board, GEN)
-    path.parent.mkdir(parents=True, exist_ok=True)
     item = {
         "item_id": compute_cognitive_item_id(board, GEN, source_ref),
         "board_id": board, "kg_generation_id": GEN, "source_ref": source_ref,
@@ -105,10 +103,16 @@ def _seed_item(store, board, source_ref, status):
     if status == CognitiveItemStatus.SKIPPED.value:
         item["reason_code"] = "duplicate_bug"
         item["outcome_type"] = "no_action_required"
-    record = {"pending_count": 1 if status == CognitiveItemStatus.PENDING.value else 0,
+    record = {"board_id": board, "kg_generation_id": GEN,
+              "pending_count": 1 if status == CognitiveItemStatus.PENDING.value else 0,
               "pending_refs": [source_ref] if status == CognitiveItemStatus.PENDING.value else [],
               "status": "pending" if status == CognitiveItemStatus.PENDING.value else "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
+    if store.artifact_store is not None:
+        store.artifact_store.write_json_atomic(store._record_key(board, GEN), record)
+        return
+    path = store._record_path(board, GEN)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record), encoding="utf-8")
 
 
@@ -192,7 +196,9 @@ async def test_ts_85e18262_open_debt_visible_and_blocking_with_active_skip(db_fa
             target_status="canonical", canonical_state="blocked")
         await db.commit()
     # An ACTIVE cognitive skip exists for the SAME artifact (read-only context).
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_item(store, board, source_ref, CognitiveItemStatus.SKIPPED.value)
 
     # BLOCKING: the verdict is the technical tier, NOT ready/skip.
@@ -219,7 +225,9 @@ async def test_ts_85e18262_dlq_visible_and_blocking_with_active_skip(db_factory)
             original_queue_id="q1", attempts=3,
             errors=[{"attempt": 1, "error_type": "X", "message": "boom"}]))
         await db.commit()
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_item(store, board, source_ref, CognitiveItemStatus.SKIPPED.value)
 
     verdict = await _mcp("okto_pulse_kg_evaluate_cognitive_readiness",
