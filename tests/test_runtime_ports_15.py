@@ -12,12 +12,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+import pytest
+
 from okto_pulse.core.ports import (
     KG_DAILY_TICK_JOB_ID,
     KG_TICK_RESCHEDULE_FAILED_SIGNAL,
     RESCHEDULE_FAILED_FORBIDDEN_FIELDS,
     RESCHEDULE_FAILED_REQUIRED_FIELDS,
     ActorContextLike,
+    JobSpec,
     RuntimeCompositionLike,
     RuntimeControl,
     RuntimeEvent,
@@ -25,6 +28,7 @@ from okto_pulse.core.ports import (
     RuntimeSettingsPort,
     RuntimeSettingsSnapshot,
     SchedulerControl,
+    SchedulerJobSnapshot,
     SchedulerResult,
     build_reschedule_failed_signal,
     sanitize_message,
@@ -37,6 +41,16 @@ class _Scheduler:
 
     async def reschedule_job(self, job_id: str, trigger: Mapping[str, Any]) -> SchedulerResult:
         return SchedulerResult(job_id=job_id, scheduled=True, audit_status="rescheduled")
+
+    async def register_job(self, job_spec: JobSpec, handler) -> SchedulerResult:
+        return SchedulerResult(
+            job_id=job_spec.job_id,
+            scheduled=True,
+            audit_status="rescheduled",
+        )
+
+    async def get_job_snapshot(self, job_id: str) -> SchedulerJobSnapshot:
+        return SchedulerJobSnapshot(job_id=job_id, exists=True)
 
     async def shutdown(self, wait: bool = False) -> None:
         return None
@@ -100,6 +114,29 @@ def test_real_actor_context_satisfies_actor_context_like() -> None:
 
 def test_scheduler_job_id_is_canonical_kg_daily_tick() -> None:
     assert KG_DAILY_TICK_JOB_ID == "kg_daily_tick"
+
+
+def test_scheduler_job_spec_is_frozen_core_policy_snapshot() -> None:
+    import dataclasses
+
+    spec = JobSpec(
+        job_id=KG_DAILY_TICK_JOB_ID,
+        interval_minutes=45,
+        max_instances=1,
+        coalesce=True,
+        handler_ref="okto_pulse.core.infra.daily_tick.emit_daily_tick",
+    )
+
+    assert dataclasses.is_dataclass(spec)
+    assert spec.job_id == "kg_daily_tick"
+    assert spec.interval_minutes == 45
+    assert spec.max_instances == 1
+    assert spec.coalesce is True
+    assert spec.replace_existing is True
+    assert spec.handler_ref == "okto_pulse.core.infra.daily_tick.emit_daily_tick"
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        spec.interval_minutes = 5
 
 
 def test_runtime_event_bus_port_does_not_shadow_existing_event_buses() -> None:

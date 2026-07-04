@@ -7,6 +7,10 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
+    CognitivePendingRecordRef,
+    CognitivePendingWorkProvider,
+)
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
@@ -85,4 +89,17 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             return copy.deepcopy(next_payload)
 
 
-__all__ = ["InMemoryRebuildAuditArtifactStore"]
+class InMemoryCognitivePendingWorkProvider(CognitivePendingWorkProvider):
+    """Test fake for pending-work discovery; default registry starts empty."""
+
+    def __init__(self, records: Sequence[CognitivePendingRecordRef] = ()) -> None:
+        self._records = tuple(records)
+
+    def list_records(self) -> Sequence[CognitivePendingRecordRef]:
+        return self._records
+
+
+__all__ = [
+    "InMemoryCognitivePendingWorkProvider",
+    "InMemoryRebuildAuditArtifactStore",
+]

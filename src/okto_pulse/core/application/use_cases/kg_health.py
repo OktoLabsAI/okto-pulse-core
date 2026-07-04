@@ -17,15 +17,22 @@ from __future__ import annotations
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+from okto_pulse.core.ports.scheduler import SchedulerControl
 
 
 class GetKgHealthCommand:
     """Input for :class:`GetKgHealthUseCase`."""
 
-    __slots__ = ("board_id",)
+    __slots__ = ("board_id", "scheduler_control")
 
-    def __init__(self, board_id: str) -> None:
+    def __init__(
+        self,
+        board_id: str,
+        *,
+        scheduler_control: SchedulerControl | None = None,
+    ) -> None:
         self.board_id = board_id
+        self.scheduler_control = scheduler_control
 
 
 class GetKgHealthResult:
@@ -45,7 +52,11 @@ class GetKgHealthUseCase:
     ) -> GetKgHealthResult:
         from okto_pulse.core.services.kg_health_service import get_kg_health
 
-        data = await get_kg_health(command.board_id, session_of(uow))
+        data = await get_kg_health(
+            command.board_id,
+            session_of(uow),
+            scheduler_control=command.scheduler_control,
+        )
         return GetKgHealthResult(data=data)
 
 
@@ -56,7 +67,7 @@ class GetKgHealthReadinessCommand:
     non-maskable projection per caller); the adapter supplies its own value.
     """
 
-    __slots__ = ("board_id", "profile", "artifact_ref", "surface")
+    __slots__ = ("board_id", "profile", "artifact_ref", "surface", "scheduler_control")
 
     def __init__(
         self,
@@ -65,11 +76,13 @@ class GetKgHealthReadinessCommand:
         profile: str = "summary",
         artifact_ref: str | None = None,
         surface: str = "mcp",
+        scheduler_control: SchedulerControl | None = None,
     ) -> None:
         self.board_id = board_id
         self.profile = profile
         self.artifact_ref = artifact_ref
         self.surface = surface
+        self.scheduler_control = scheduler_control
 
 
 class GetKgHealthReadinessResult:
@@ -100,5 +113,6 @@ class GetKgHealthReadinessUseCase:
             profile=command.profile,
             surface=command.surface,
             artifact_ref=command.artifact_ref,
+            scheduler_control=command.scheduler_control,
         )
         return GetKgHealthReadinessResult(data=data)

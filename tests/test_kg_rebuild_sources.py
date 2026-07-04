@@ -973,7 +973,7 @@ def _client_with_router(board_id: str = "b-life"):
 
     from okto_pulse.core.infra.auth import require_user
 
-    async def _fake_health(_board_id, _db):
+    async def _fake_health(_board_id, _db, scheduler_control=None):
         return {"graph_state": "healthy", "metric_status": "available",
                 "current_kg_generation_id": None}
 

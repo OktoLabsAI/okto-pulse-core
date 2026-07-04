@@ -263,7 +263,7 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
     from okto_pulse.core.kg.cognitive_closeout_gate import reset_closeout_gate_samples, get_closeout_gate_samples
     from okto_pulse.core.models.db import Board, Spec, SpecStatus
 
-    async def _stub_degraded(board_id, db):
+    async def _stub_degraded(board_id, db, scheduler_control=None):
         return {"graph_state": "recovery_needed"}
 
     monkeypatch.setattr(kg_health_service, "get_kg_health", _stub_degraded)

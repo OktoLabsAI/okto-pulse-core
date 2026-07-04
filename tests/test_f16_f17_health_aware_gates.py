@@ -332,7 +332,7 @@ async def test_ts_3eda0dc9_async_plumbing_blocks_before_mutation(monkeypatch):
     _, card_id = await _seed_validation_card()
     spy = _SpyGate()
 
-    async def _stub_health(board_id, db):
+    async def _stub_health(board_id, db, scheduler_control=None):
         return {"graph_state": "recovery_needed"}
 
     monkeypatch.setattr(kg_health_service, "get_kg_health", _stub_health)
@@ -368,7 +368,7 @@ async def test_ts_3eda0dc9_async_plumbing_blocks_before_mutation(monkeypatch):
 async def test_resolve_graph_state_fail_safe_returns_none(monkeypatch):
     """FR6 fail-safe: a get_kg_health failure resolves to None (never swallowed
     into ALLOWED — the gate's null-generation liveness then governs)."""
-    async def _boom(board_id, db):
+    async def _boom(board_id, db, scheduler_control=None):
         raise kg_health_service.BoardNotFoundError("nope")
 
     monkeypatch.setattr(kg_health_service, "get_kg_health", _boom)
@@ -398,12 +398,27 @@ def _install_tick_health(monkeypatch, graph_state):
     """Stub kg_tick.get_kg_health; return the list that records probe calls."""
     calls: list[str] = []
 
-    async def _stub(board_id, db):
+    async def _stub(board_id, db, scheduler_control=None):
         calls.append(board_id)
         return {"graph_state": graph_state}
 
     monkeypatch.setattr(kg_tick, "get_kg_health", _stub)
     return calls
+
+
+def _request_without_scheduler():
+    from starlette.requests import Request
+
+    app = SimpleNamespace(state=SimpleNamespace(runtime_composition=None))
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/kg/tick/run-now",
+            "headers": [],
+            "app": app,
+        }
+    )
 
 
 def _spy_publish(monkeypatch):
@@ -448,7 +463,7 @@ async def test_ts_de1c347a_degraded_board_refused_409(monkeypatch):
     payload = TickRunNowRequest(board_id="board-degraded", force_full_rebuild=False)
 
     with pytest.raises(HTTPException) as exc_info:
-        await run_tick_now(payload, user="op", db=db)
+        await run_tick_now(payload, _request_without_scheduler(), user="op", db=db)
 
     assert exc_info.value.status_code == 409
     detail = exc_info.value.detail
@@ -466,7 +481,7 @@ async def test_ts_23ae75b2_healthy_board_proceeds_202(monkeypatch):
     db = _FakeSession()
     payload = TickRunNowRequest(board_id="board-healthy", force_full_rebuild=False)
 
-    resp = await run_tick_now(payload, user="op", db=db)
+    resp = await run_tick_now(payload, _request_without_scheduler(), user="op", db=db)
 
     assert isinstance(resp, TickRunNowResponse)
     assert resp.status == "running"
@@ -495,7 +510,12 @@ async def test_ts_58aac88a_lock_contention_wins_over_health(monkeypatch):
     assert lease is not None
     try:
         with pytest.raises(HTTPException) as exc_info:
-            await run_tick_now(payload, user="op", db=_FakeSession())
+            await run_tick_now(
+                payload,
+                _request_without_scheduler(),
+                user="op",
+                db=_FakeSession(),
+            )
     finally:
         await lease_provider.release(lease)
 
@@ -511,7 +531,7 @@ async def test_ts_21f124dd_global_tick_not_health_refused(monkeypatch):
     db = _FakeSession()
     payload = TickRunNowRequest(board_id=None, force_full_rebuild=False)
 
-    resp = await run_tick_now(payload, user="op", db=db)
+    resp = await run_tick_now(payload, _request_without_scheduler(), user="op", db=db)
 
     assert resp.status == "running"
     assert len(published) == 1

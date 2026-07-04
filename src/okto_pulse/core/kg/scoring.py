@@ -47,7 +47,7 @@ on-read decay cost:
        a real transition. Audit Decision nodes are emitted in the KG when
        ``|delta_boost| > 0.05`` (dec_cb956457).
     3. Daily decay tick via ``kg.tick.daily`` at 03:00 UTC
-       (KGDailyTickHandler) — APScheduler in-process emits the event;
+       (KGDailyTickHandler) — the SchedulerControl runtime emits the event;
        handler iterates active boards and recomputes nodes whose
        ``last_recomputed_at`` is older than KG_DECAY_TICK_STALENESS_DAYS.
 
@@ -175,6 +175,17 @@ def _apply_decay_reorder(
 
     enriched.sort(key=lambda r: r["decayed_relevance"], reverse=True)
     return enriched[:top_k]
+
+
+def apply_decay_reorder(
+    rows: list[dict[str, Any]],
+    top_k: int,
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Public facade for recency/query-hit decay ordering policy."""
+
+    return _apply_decay_reorder(rows, top_k, now=now)
 
 
 BATCH_UPDATE_THRESHOLD = 50  # endpoints above this use the UNWIND path

@@ -1,9 +1,9 @@
 """KGDailyTickHandler — daily decay tick for the KG (Ideação #4, IMPL-D).
 
-Reacts to ``kg.tick.daily`` (emitted by the APScheduler
-``IntervalTrigger(minutes=kg_decay_tick_interval_minutes)``, configured in
-``app.py`` / ``config.py``) by walking every active board and recomputing
-the relevance_score of nodes that haven't been recomputed in
+Reacts to ``kg.tick.daily`` (emitted by the active scheduler adapter using the
+``kg_decay_tick_interval_minutes`` policy configured in ``config.py``) by
+walking every active board and recomputing the relevance_score of nodes that
+haven't been recomputed in
 ``KG_DECAY_TICK_STALENESS_DAYS`` days.
 
 Cursor scan keeps memory bounded: results stream in batches of

@@ -40,9 +40,18 @@ _CARD_SOURCE_ARTIFACT_TYPES: frozenset[str] = frozenset(
     }
 )
 
+DETERMINISTIC_SOURCE_ARTIFACT_TYPES = _DETERMINISTIC_SOURCE_ARTIFACT_TYPES
+CARD_SOURCE_ARTIFACT_TYPES = _CARD_SOURCE_ARTIFACT_TYPES
+
 
 def _queue_artifact_type(source_artifact_type: str) -> str:
     return "card" if source_artifact_type in _CARD_SOURCE_ARTIFACT_TYPES else source_artifact_type
+
+
+def queue_artifact_type(source_artifact_type: str) -> str:
+    """Public facade for rebuild queue artifact-type mapping."""
+
+    return _queue_artifact_type(source_artifact_type)
 
 
 def _expected_layers_from_sources(
@@ -58,7 +67,19 @@ def _expected_layers_from_sources(
     return out
 
 
+def expected_layers_from_sources(
+    sources: Sequence[Mapping[str, Any]] | None,
+) -> dict[str, int]:
+    """Public facade for expected graph-layer partition counts."""
+
+    return _expected_layers_from_sources(sources)
+
+
 __all__ = [
+    "CARD_SOURCE_ARTIFACT_TYPES",
+    "DETERMINISTIC_SOURCE_ARTIFACT_TYPES",
+    "expected_layers_from_sources",
+    "queue_artifact_type",
     "_CARD_SOURCE_ARTIFACT_TYPES",
     "_DETERMINISTIC_SOURCE_ARTIFACT_TYPES",
     "_expected_layers_from_sources",

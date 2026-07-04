@@ -159,7 +159,7 @@ class CoreSettings(BaseSettings):
     kg_queue_dlq_auto_drain_max_requeue_attempts: int = Field(3, ge=1, le=20)
 
     # Spec 54399628 (NC-Wave2 — KG decay tick controllability) — 3 settings
-    # persistidos com hot-reload via APScheduler.reschedule_job. Defaults
+    # persistidos com hot-reload via SchedulerControl.reschedule_job. Defaults
     # preservam comportamento atual (cron 24h staleness 7d, no max-age cap).
     # Ranges: 5min-7d para interval (impede DoS auto-infligido + impede
     # esquecer); 1-365d para staleness; 0=no-cap, >0 força recompute em

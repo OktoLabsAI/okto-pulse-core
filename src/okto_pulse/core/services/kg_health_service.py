@@ -60,6 +60,7 @@ from okto_pulse.core.models.db import (
     KGTickRun,
     KuzuNodeRef,
 )
+from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
 
 # KG-01 contract api_3ed9037f: REST surface restricts metric_status to
 # `available|unavailable`. The internal classifier may produce `partial`
@@ -101,13 +102,6 @@ _SENSITIVE_ERROR_RE = re.compile(
     r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.lbug|\.py\b)",
     re.IGNORECASE,
 )
-_KG_DAILY_TICK_JOB_ID = "kg_daily_tick"
-
-_SENSITIVE_ERROR_RE = re.compile(
-    r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.lbug|\.py\b)",
-    re.IGNORECASE,
-)
-_KG_DAILY_TICK_JOB_ID = "kg_daily_tick"
 
 
 class BoardNotFoundError(Exception):
@@ -159,17 +153,18 @@ def _read_decay_settings() -> tuple[int | None, str | None]:
         return None, "settings_unavailable"
 
 
-def _read_next_scheduled_at() -> tuple[str | None, str | None]:
+async def _read_next_scheduled_at(
+    scheduler_control: SchedulerControl | None,
+) -> tuple[str | None, str | None]:
+    if scheduler_control is None:
+        return None, "scheduler_unavailable"
+    if not scheduler_control.is_available():
+        return None, "scheduler_unavailable"
     try:
-        from okto_pulse.core.kg.scheduler_singleton import get_scheduler
-
-        scheduler = get_scheduler()
-        if scheduler is None:
-            return None, "scheduler_unavailable"
-        job = scheduler.get_job(_KG_DAILY_TICK_JOB_ID)
-        if job is None:
-            return None, "scheduler_job_unavailable"
-        return _iso(getattr(job, "next_run_time", None)), None
+        snapshot = await scheduler_control.get_job_snapshot(KG_DAILY_TICK_JOB_ID)
+        if not snapshot.exists:
+            return None, snapshot.message or "scheduler_job_unavailable"
+        return _iso(snapshot.next_run_time), None
     except Exception as exc:
         logger.info(
             "kg.health.scheduler_next_run_unavailable reason=%s",
@@ -245,14 +240,17 @@ async def _load_tick_evidence(db: AsyncSession) -> dict[str, Any]:
     }
 
 
-def _build_decay_scheduler_diagnostics(
+async def _build_decay_scheduler_diagnostics(
     *,
     tick_evidence: dict[str, Any],
     tick_in_progress: bool,
     now: datetime,
+    scheduler_control: SchedulerControl | None = None,
 ) -> dict[str, Any]:
     tolerance_seconds, settings_reason = _read_decay_settings()
-    next_scheduled_at, next_reason = _read_next_scheduled_at()
+    next_scheduled_at, next_reason = await _read_next_scheduled_at(
+        scheduler_control,
+    )
     latest_success = tick_evidence.get("latest_success")
     latest_failure = tick_evidence.get("latest_failure")
     running_row = tick_evidence.get("running_row")
@@ -808,7 +806,12 @@ def _probe_global_discovery_telemetry() -> GraphTelemetry:
         return _telemetry_wal_or_open_error("discovery")
 
 
-async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
+async def get_kg_health(
+    board_id: str,
+    db: AsyncSession,
+    *,
+    scheduler_control: SchedulerControl | None = None,
+) -> dict[str, Any]:
     """Compose the /api/v1/kg/health payload for ``board_id``.
 
     Raises ``BoardNotFoundError`` when the board is not found in the
@@ -927,10 +930,11 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         tick_in_progress = False
     if tick_in_progress or tick_evidence.get("running_row") is not None:
         last_tick_status = "running"
-    decay_scheduler_diagnostics = _build_decay_scheduler_diagnostics(
+    decay_scheduler_diagnostics = await _build_decay_scheduler_diagnostics(
         tick_evidence=tick_evidence,
         tick_in_progress=tick_in_progress,
         now=now,
+        scheduler_control=scheduler_control,
     )
 
     # KG-01 FR1+FR2+FR3 (contract api_3ed9037f): per-graph classification

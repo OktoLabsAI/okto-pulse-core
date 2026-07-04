@@ -63,7 +63,7 @@ async def _seed_dlq(db_factory, board_id, *, error=CONNECTIVITY_GUARD_SIGNATURE)
 def _force_not_quarantined(monkeypatch):
     import okto_pulse.core.services.kg_health_service as health_mod
 
-    async def _healthy(_board_id, _db):
+    async def _healthy(_board_id, _db, scheduler_control=None):
         return {"overall_state": "healthy"}
 
     monkeypatch.setattr(health_mod, "get_kg_health", _healthy)

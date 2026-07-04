@@ -103,7 +103,7 @@ def test_get_orphan_integrity_report_returns_bounded_safe_payload(monkeypatch) -
 def test_post_orphan_backfill_refuses_recovery_needed_health(monkeypatch) -> None:
     import okto_pulse.core.api.kg_orphan_integrity as orphan_api
 
-    async def _recovery_needed(board_id, db):
+    async def _recovery_needed(board_id, db, scheduler_control=None):
         return {
             "overall_state": "recovery_needed",
             "graph_state": "recovery_needed",
@@ -130,7 +130,7 @@ def test_post_orphan_backfill_refuses_recovery_needed_health(monkeypatch) -> Non
 def test_post_orphan_backfill_returns_explicit_dry_run_summary(monkeypatch) -> None:
     import okto_pulse.core.api.kg_orphan_integrity as orphan_api
 
-    async def _healthy(board_id, db):
+    async def _healthy(board_id, db, scheduler_control=None):
         return {"overall_state": "at_risk", "graph_state": "at_risk"}
 
     class _FakeReconciler:

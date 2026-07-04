@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.rebuild_audit import emit_cognitive_technical_signal_sample
+from okto_pulse.core.ports.scheduler import SchedulerControl
 
 _DLQ_TOOL = "okto_pulse_kg_dead_letter_list"
 _DEBT_TOOL = "okto_pulse_kg_canonical_debt_list"
@@ -148,6 +149,7 @@ async def build_health_readiness(
     profile: str = "summary",
     surface: str = "rest",
     artifact_ref: str | None = None,
+    scheduler_control: SchedulerControl | None = None,
 ) -> dict[str, Any]:
     """api_1feb6875: the canonical health/readiness projection.
 
@@ -161,7 +163,11 @@ async def build_health_readiness(
 
     from okto_pulse.core.services.kg_health_service import get_kg_health
 
-    health = await get_kg_health(board_id, db)
+    health = await get_kg_health(
+        board_id,
+        db,
+        scheduler_control=scheduler_control,
+    )
     counters = build_technical_signal_counters(health)
     items = await _non_maskable_items(db, board_id, health, artifact_ref=artifact_ref)
 

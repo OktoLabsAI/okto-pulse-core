@@ -18,16 +18,33 @@ from __future__ import annotations
 import ast
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.ports.scheduler import SchedulerJobSnapshot
 
 HEALTH_TOOL = "okto_pulse_kg_health"
 READINESS_TOOL = "okto_pulse_kg_health_readiness"
 MIGRATED_TOOLS = (HEALTH_TOOL, READINESS_TOOL)
+
+
+class _HealthSchedulerControl:
+    def __init__(self, next_run_time: datetime) -> None:
+        self.next_run_time = next_run_time
+
+    def is_available(self) -> bool:
+        return True
+
+    async def get_job_snapshot(self, job_id: str) -> SchedulerJobSnapshot:
+        return SchedulerJobSnapshot(
+            job_id=job_id,
+            exists=True,
+            next_run_time=self.next_run_time,
+        )
 
 
 def _stub_ctx():
@@ -38,10 +55,13 @@ def _stub_ctx():
     )()
 
 
-async def _call(tool_name: str, **kwargs) -> str:
+async def _call(tool_name: str, *, scheduler_control=None, **kwargs) -> str:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    mcp_server.register_session_factory(
+        get_session_factory(),
+        scheduler_control=scheduler_control,
+    )
     tool = await mcp_server.mcp.get_tool(tool_name)
     return await tool.fn(**kwargs)
 
@@ -107,6 +127,43 @@ def _key_shape(obj):
     if isinstance(obj, list):
         return "list"
     return "scalar"
+
+
+@pytest.mark.asyncio
+async def test_kg_health_uses_mcp_registered_scheduler_control() -> None:
+    """Request-less MCP health uses the edition-owned scheduler adapter."""
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.models.db import KGTickRun
+
+    board_id = f"fu4-scheduler-{uuid.uuid4().hex[:8]}"
+    await _seed_board(board_id)
+    now = datetime.now(timezone.utc)
+    next_run = now + timedelta(minutes=30)
+    async with get_session_factory()() as db:
+        db.add(
+            KGTickRun(
+                tick_id=f"fu4-scheduler-{uuid.uuid4().hex}",
+                started_at=now - timedelta(minutes=5),
+                completed_at=now,
+                nodes_recomputed=3,
+                boards_processed=1,
+                boards_failed=0,
+            )
+        )
+        await db.commit()
+
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())):
+        raw = await _call(
+            HEALTH_TOOL,
+            board_id=board_id,
+            profile="summary",
+            scheduler_control=_HealthSchedulerControl(next_run),
+        )
+    diag = json.loads(raw)["decay_scheduler_diagnostics"]
+
+    assert diag["status"] == "ok"
+    assert diag["reason"] == "ok"
+    assert diag["next_scheduled_at"] == next_run.isoformat()
 
 
 @pytest.mark.asyncio

@@ -30,6 +30,9 @@ class InMemoryGlobalDiscoveryRuntime:
             "connection; configure the Community adapter for integration tests."
         )
 
+    def flush_after_write_batch(self) -> None:
+        self.close()
+
     def close(self) -> None:
         self.closed = True
 

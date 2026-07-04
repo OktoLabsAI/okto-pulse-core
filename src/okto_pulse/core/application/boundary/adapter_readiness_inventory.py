@@ -471,7 +471,7 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         # --- runtime / scheduler (#03) ---
         _entry(
             adapter_key="singleton_scheduler_control",
-            owner="okto-pulse-core/runtime",
+            owner="okto-pulse-community/runtime",
             current_module="okto_pulse/community/adapters/scheduler.py",
             port_ref="SchedulerControl",
             wave="R05-RUNTIME",
@@ -480,10 +480,12 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             packages=("APScheduler",),
             oracles_required=("scheduler_reschedule_signal",),
             removal_criterion=(
-                "Community owns the SchedulerControl provider; remove the remaining "
-                "scheduler singleton bridge once lifecycle boot is composition-owned."
+                "AF31-S1R done: Community owns the SchedulerControl provider, "
+                "APScheduler lifecycle and JobSpec mapping; Core owns only the "
+                "scheduler port and KG daily tick policy."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "AF31-S1R"),),
         ),
         # --- telemetry (#10 — ledger item, NOT a functional impl) ---
         _entry(

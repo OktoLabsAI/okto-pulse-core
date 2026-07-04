@@ -1,11 +1,8 @@
-"""Global discovery meta-graph schema definitions.
+"""Public Global Discovery runtime wrappers and backend-neutral policy helpers.
 
-4 node tables: Board, Topic, Entity, DecisionDigest
-7 rel tables: HAS_TOPIC, MENTIONS_ENTITY, CONTAINS_DECISION,
-             TOPIC_RELATES_TO, ENTITY_RELATES_TO, DECISION_MENTIONS_ENTITY,
-             DECISION_DERIVES_FROM
-4 HNSW vector indexes: Board.summary_embedding, Topic.centroid_embedding,
-                       Entity.embedding, DecisionDigest.embedding (cosine 384-dim)
+Concrete Ladybug/Kuzu DDL and vector-index definitions are owned by the active
+edition adapter. Core keeps fail-closed open semantics and DecisionDigest layer
+backfill policy behind public functions.
 """
 
 from __future__ import annotations
@@ -15,48 +12,8 @@ from pathlib import Path
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.schema")
 
-GLOBAL_SCHEMA_VERSION = "0.1.1"
 DECISION_DIGEST_GRAPH_LAYER_COLUMN = ("graph_layer", "STRING")
-
-NODE_DDL = [
-    """CREATE NODE TABLE IF NOT EXISTS Board (
-        board_id STRING PRIMARY KEY,
-        name STRING,
-        summary STRING,
-        summary_embedding DOUBLE[384],
-        topic_count INT64,
-        entity_count INT64,
-        decision_count INT64,
-        last_sync_at TIMESTAMP
-    )""",
-    """CREATE NODE TABLE IF NOT EXISTS Topic (
-        id STRING PRIMARY KEY,
-        name STRING,
-        centroid_embedding DOUBLE[384],
-        member_count INT64,
-        created_at TIMESTAMP,
-        updated_at TIMESTAMP
-    )""",
-    """CREATE NODE TABLE IF NOT EXISTS Entity (
-        id STRING PRIMARY KEY,
-        canonical_name STRING,
-        aliases STRING,
-        embedding DOUBLE[384],
-        mention_count INT64,
-        last_seen TIMESTAMP
-    )""",
-    """CREATE NODE TABLE IF NOT EXISTS DecisionDigest (
-        id STRING PRIMARY KEY,
-        board_id STRING,
-        original_node_id STRING,
-        title STRING,
-        one_line_summary STRING,
-        node_type STRING,
-        graph_layer STRING,
-        embedding DOUBLE[384],
-        created_at TIMESTAMP
-    )""",
-]
+GLOBAL_SCHEMA_VERSION = "0.1.1"
 
 
 def _is_duplicate_column_error(exc: BaseException) -> bool:
@@ -125,22 +82,11 @@ def _ensure_decision_digest_layer_column(conn) -> list[str]:
         )
     return added
 
-REL_DDL = [
-    "CREATE REL TABLE IF NOT EXISTS HAS_TOPIC (FROM Board TO Topic)",
-    "CREATE REL TABLE IF NOT EXISTS MENTIONS_ENTITY (FROM Board TO Entity)",
-    "CREATE REL TABLE IF NOT EXISTS CONTAINS_DECISION (FROM Board TO DecisionDigest)",
-    "CREATE REL TABLE IF NOT EXISTS TOPIC_RELATES_TO (FROM Topic TO Topic, weight DOUBLE)",
-    "CREATE REL TABLE IF NOT EXISTS ENTITY_RELATES_TO (FROM Entity TO Entity, weight DOUBLE)",
-    "CREATE REL TABLE IF NOT EXISTS DECISION_MENTIONS_ENTITY (FROM DecisionDigest TO Entity)",
-    "CREATE REL TABLE IF NOT EXISTS DECISION_DERIVES_FROM (FROM DecisionDigest TO DecisionDigest)",
-]
 
-VECTOR_INDEXES = [
-    ("Board", "board_summary_idx", "summary_embedding"),
-    ("Topic", "topic_centroid_idx", "centroid_embedding"),
-    ("Entity", "entity_embedding_idx", "embedding"),
-    ("DecisionDigest", "digest_embedding_idx", "embedding"),
-]
+def ensure_decision_digest_layer_column(conn) -> list[str]:
+    """Public facade for DecisionDigest.graph_layer schema compatibility."""
+
+    return _ensure_decision_digest_layer_column(conn)
 
 
 def _global_runtime():
@@ -193,6 +139,21 @@ def _raise_existing_global_graph_open_failed(
         "Use the explicit KG Health recovery flow after reviewing the "
         "rebuild/quarantine report; the current files were preserved."
     ) from exc
+
+
+def raise_existing_global_graph_open_failed(
+    *,
+    path: Path,
+    operation: str,
+    exc: BaseException,
+) -> None:
+    """Public facade for fail-closed existing-global-graph open failures."""
+
+    _raise_existing_global_graph_open_failed(
+        path=path,
+        operation=operation,
+        exc=exc,
+    )
 
 
 def purge_global_discovery_storage(*, reason: str = "manual") -> list[str]:

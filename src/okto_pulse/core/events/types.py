@@ -348,18 +348,18 @@ class BugRegressionScenarioReuseDecision(DomainEvent):
 
 
 class KGDailyTick(DomainEvent):
-    """Fired by the APScheduler ``IntervalTrigger`` to drive global decay.
+    """Fired by the active scheduler adapter to drive global decay.
 
     The trigger interval is ``kg_decay_tick_interval_minutes`` (configured in
-    ``config.py``; wired in ``app.py``). Uses ``board_id="*"`` as a global
-    sentinel because the handler iterates every active board. Only the leader
-    replica emits the event (advisory lock); other replicas log a skip — see
-    dec_bc0eaeec.
+    ``config.py``; registered through the SchedulerControl port). Uses
+    ``board_id="*"`` as a global sentinel because the handler iterates every
+    active board. Only the leader replica emits the event (advisory lock);
+    other replicas log a skip — see dec_bc0eaeec.
     """
 
     event_type: ClassVar[str] = "kg.tick.daily"
     tick_id: str  # uuid4 per tick run, propagates into kg_tick_runs row
-    scheduled_at: str  # ISO datetime when APScheduler fired the trigger
+    scheduled_at: str  # ISO datetime when the scheduler fired the trigger
 
 
 # Ordered list of all event_type strings known to the MVP. The dispatcher

@@ -51,7 +51,7 @@ def _install_rebuild_health(monkeypatch, graph_state: str):
     """Stub kg_rebuild_mod.get_kg_health to return the given graph_state."""
     calls: list[str] = []
 
-    async def _stub(board_id, db):
+    async def _stub(board_id, db, scheduler_control=None):
         calls.append(board_id)
         return {"graph_state": graph_state, "metric_status": "available"}
 

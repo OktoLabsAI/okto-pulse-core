@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -576,57 +574,15 @@ class OutboxWorker:
             )
         return len(stale_digest_ids)
 
-    @staticmethod
-    def _fsync_if_file(path: Path) -> None:
-        if not path.is_file():
-            return
-        # Windows rejects os.fsync on a read-only descriptor. r+b does not
-        # truncate and gives a real durability boundary for file contents.
-        with path.open("r+b") as fh:
-            os.fsync(fh.fileno())
-
     def _flush_global_discovery_storage_after_batch(self) -> None:
-        """Close, fsync and reopen-probe discovery.lbug after a write batch.
+        """Ask the edition runtime to flush/probe the global discovery store.
 
         The global discovery graph is a rebuildable cache, but it still must
         not leave a large unprobed WAL after marking outbox events processed.
         If the probe fails, process_once keeps those events retryable so the
         next run can re-apply idempotently after operator recovery.
         """
-
-        from okto_pulse.core.kg.global_discovery.schema import (
-            close_global_connection,
-            global_discovery_graph_path,
-            open_global_connection,
-        )
-
-        path = global_discovery_graph_path()
-        close_global_connection()
-        if not path.exists():
-            raise RuntimeError(f"global discovery file missing at {path}")
-
-        self._fsync_if_file(path)
-        for sibling in sorted(path.parent.glob(path.name + ".*")):
-            self._fsync_if_file(sibling)
-
-        _db, conn = open_global_connection()
-        try:
-            res = conn.execute("CALL SHOW_TABLES() RETURN name")
-            try:
-                if res.has_next():
-                    res.get_next()
-            finally:
-                if hasattr(res, "close"):
-                    res.close()
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            close_global_connection()
-        self._fsync_if_file(path)
-        for sibling in sorted(path.parent.glob(path.name + ".*")):
-            self._fsync_if_file(sibling)
+        get_kg_registry().require_global_discovery_runtime().flush_after_write_batch()
 
     @staticmethod
     def _read_board_nodes_for_refs(

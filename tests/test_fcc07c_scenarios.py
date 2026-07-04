@@ -155,6 +155,7 @@ def _community_pyproject(
 
 _FULL_COMMUNITY_DEPS = [
     "okto-pulse-core>=0.3.0",
+    "apscheduler>=3.10",
     "ladybug>=0.16",
     "sentence-transformers>=2.5",
 ]
@@ -298,8 +299,8 @@ def test_ts_abce12bb_community_manifest_missing_adapter_dep_blocks(tmp_path):
 
 # =========================================================================== #
 # ts_a77cf454 (integration, AC4 + AC5 + AC7)
-# GIVEN core packaging declares `requests` and `apscheduler`, one a VALID ledgered
-#   temporary exception (requests) and one WITHOUT an owner (apscheduler removed
+# GIVEN core packaging declares `requests` and `chardet`, one a VALID ledgered
+#   temporary exception (requests) and one WITHOUT an owner (chardet removed
 #   from the ledger).
 # WHEN the gate classifies them.
 # THEN the valid exception stays VISIBLE as `temporary_exception` (never silently
@@ -308,16 +309,16 @@ def test_ts_abce12bb_community_manifest_missing_adapter_dep_blocks(tmp_path):
 #   projected dependency_audit_passed becomes True for the affected adapter_key
 #   ONLY after the blocking row is gone (AC7).
 # =========================================================================== #
-def test_ts_a77cf454_requests_apscheduler_require_visible_ownership(tmp_path):
-    # --- Phase 1: apscheduler is unledgered ("no owner"), requests stays valid ---
+def test_ts_a77cf454_requests_chardet_require_visible_ownership(tmp_path):
+    # --- Phase 1: chardet is unledgered ("no owner"), requests stays valid ---
     base = tmp_path / "mixed"
     pyproject, src = _core_repo(
-        base, dependencies=["requests>=2.0", "apscheduler>=3.0"]
+        base, dependencies=["requests>=2.0", "chardet>=5.0"]
     )
-    # Drop ONLY apscheduler from the ledger -> it loses its owner; requests keeps
+    # Drop ONLY chardet from the ledger -> it loses its owner; requests keeps
     # its valid ledgered temporary exception.
     stripped_ledger = tuple(
-        e for e in build_dependency_ledger() if e.token != "apscheduler"
+        e for e in build_dependency_ledger() if e.token != "chardet"
     )
     blocking_report = audit_dependency_conformance(
         repo_root=base,
@@ -339,38 +340,38 @@ def test_ts_a77cf454_requests_apscheduler_require_visible_ownership(tmp_path):
     assert "requests" in {r.symbol for r in report.rows}
     assert "requests" not in {r.symbol for r in report.blocking}
 
-    # AC5 — the no-owner apscheduler BLOCKS via the MatrixClassification while the
+    # AC5 — the no-owner chardet BLOCKS via the MatrixClassification while the
     # original dependency_conformance finding is preserved on the row.
     by_symbol = {r.symbol: r for r in report.blocking}
-    assert "apscheduler" in by_symbol
-    assert by_symbol["apscheduler"].classification in ("unknown", "violation")
-    assert by_symbol["apscheduler"].diagnostic_code == "unledgered_dependency"
+    assert "chardet" in by_symbol
+    assert by_symbol["chardet"].classification in ("unknown", "violation")
+    assert by_symbol["chardet"].diagnostic_code == "unledgered_dependency"
     # reuse (not re-derivation): still linked to the residual adapter.
-    assert by_symbol["apscheduler"].adapter_key == "singleton_scheduler_control"
+    assert by_symbol["chardet"].adapter_key == "local_telemetry_store"
     assert report.ok is False
 
     # --- AC7: dependency_audit_passed flips True only after the blocking is gone -
     community = _community_pyproject(tmp_path, dependencies=_FULL_COMMUNITY_DEPS)
     community_audit = audit_community_manifest(community)
 
-    # while apscheduler still BLOCKS, the affected adapter's projected
+    # while chardet still BLOCKS, the affected adapter's projected
     # dependency_audit_passed is False (a blocking finding is present).
     blocked_projection = project_dependency_audit_evidence(
         ownership_report=report, community_audit=community_audit
     )
-    assert blocked_projection.passed("singleton_scheduler_control") is False
+    assert blocked_projection.passed("local_telemetry_store") is False
 
-    # restore the full ledger -> apscheduler is a valid temporary_exception, no
+    # restore the full ledger -> chardet is a valid temporary_exception, no
     # blocking remains, and the projection is now consumable by FCC-07B (True).
     clean_report = _run_gate(base, pyproject, src)
     assert clean_report.blocking == ()
-    assert {"requests", "apscheduler"} <= {
+    assert {"requests", "chardet"} <= {
         r.symbol for r in clean_report.temporary_exceptions
     }
     clean_projection = project_dependency_audit_evidence(
         ownership_report=clean_report, community_audit=community_audit
     )
-    assert clean_projection.passed("singleton_scheduler_control") is True
+    assert clean_projection.passed("local_telemetry_store") is True
 
 
 # =========================================================================== #

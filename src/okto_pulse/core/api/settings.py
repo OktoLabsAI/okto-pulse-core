@@ -46,7 +46,7 @@ class RuntimeSettingsResponse(BaseModel):
     kg_queue_claim_timeout_s: int
     kg_queue_max_attempts: int
     kg_queue_alert_threshold: int
-    # Decay Tick tab (spec 54399628) — hot-reload via APScheduler.reschedule_job.
+    # Decay Tick tab (spec 54399628) — hot-reload via SchedulerControl.
     kg_decay_tick_interval_minutes: int
     kg_decay_tick_staleness_days: int
     kg_decay_tick_max_age_days: int

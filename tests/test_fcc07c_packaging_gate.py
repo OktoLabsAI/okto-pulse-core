@@ -150,11 +150,11 @@ def test_ac2_removed_asyncpg_blocks_on_manifest_source_and_wheel(tmp_path):
 
 
 # ===========================================================================
-# AC4 — requests/apscheduler with a VALID ledgered temporary exception are
+# AC4 — requests/chardet with a VALID ledgered temporary exception are
 # reported as temporary_exception (visible), never silently passed.
 # ===========================================================================
 def test_ac4_valid_temporary_exception_reported_not_silently_passed(tmp_path):
-    pyproject, src = _repo(tmp_path, dependencies=["requests>=2.0", "apscheduler>=3.0"])
+    pyproject, src = _repo(tmp_path, dependencies=["requests>=2.0", "chardet>=5.0"])
 
     report = _run(tmp_path, pyproject, src)
 
@@ -162,25 +162,25 @@ def test_ac4_valid_temporary_exception_reported_not_silently_passed(tmp_path):
     assert report.status == "baseline"
     assert report.blocking == ()
     te = {r.symbol: r for r in report.temporary_exceptions}
-    assert "requests" in te and "apscheduler" in te
+    assert "requests" in te and "chardet" in te
     assert te["requests"].classification == "temporary_exception"
     assert te["requests"].action == "temporary_exception"
-    assert te["apscheduler"].classification == "temporary_exception"
+    assert te["chardet"].classification == "temporary_exception"
     # surfaced (not silently passed): the symbols are present in the verdict rows.
     surfaced = {r.symbol for r in report.rows}
-    assert {"requests", "apscheduler"} <= surfaced
+    assert {"requests", "chardet"} <= surfaced
 
 
 # ===========================================================================
-# AC5 — requests/apscheduler WITHOUT a ledger exception block via the matrix
+# AC5 — requests/chardet WITHOUT a ledger exception block via the matrix
 # (`unknown`), keeping the original dependency_conformance finding as diagnostic.
 # ===========================================================================
 def test_ac5_unledgered_requests_scheduler_block_via_matrix(tmp_path):
-    pyproject, src = _repo(tmp_path, dependencies=["requests>=2.0", "apscheduler>=3.0"])
+    pyproject, src = _repo(tmp_path, dependencies=["requests>=2.0", "chardet>=5.0"])
     stripped_ledger = tuple(
         entry
         for entry in build_dependency_ledger()
-        if entry.token not in {"requests", "apscheduler"}
+        if entry.token not in {"requests", "chardet"}
     )
     dependency_report = audit_dependency_conformance(
         repo_root=tmp_path,
@@ -197,13 +197,13 @@ def test_ac5_unledgered_requests_scheduler_block_via_matrix(tmp_path):
     assert report.status == "blocking"
     by_symbol = {r.symbol: r for r in report.blocking}
     assert by_symbol["requests"].classification == "unknown"
-    assert by_symbol["apscheduler"].classification == "unknown"
+    assert by_symbol["chardet"].classification == "unknown"
     # the original dependency_conformance diagnostic is preserved on the row.
     assert by_symbol["requests"].diagnostic_code == "unledgered_dependency"
-    assert by_symbol["apscheduler"].diagnostic_code == "unledgered_dependency"
+    assert by_symbol["chardet"].diagnostic_code == "unledgered_dependency"
     # reuse, not re-derivation: the matrix still links them to residual adapters.
     assert by_symbol["requests"].adapter_key == "local_telemetry_store"
-    assert by_symbol["apscheduler"].adapter_key == "singleton_scheduler_control"
+    assert by_symbol["chardet"].adapter_key == "local_telemetry_store"
 
 
 # ===========================================================================

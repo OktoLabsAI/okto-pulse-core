@@ -66,8 +66,8 @@ EVENT_QUEUE_KEYS: tuple[str, ...] = (
     "kg_queue_alert_threshold",
 )
 
-# Decay Tick keys (spec 54399628 — Wave 2 NC f9732afc). Hot-reload via
-# scheduler.reschedule_job — see _maybe_reschedule_tick below. Mudanças
+# Decay Tick keys (spec 54399628 — Wave 2 NC f9732afc). Hot-reload via the
+# SchedulerControl port — see _maybe_reschedule_tick below. Mudanças
 # em qualquer destes NÃO marcam restart_required.
 DECAY_TICK_KEYS: tuple[str, ...] = (
     "kg_decay_tick_interval_minutes",
@@ -373,8 +373,8 @@ async def apply_tick_runtime_effects(
     """Apply the runtime EFFECT of a tick-interval change via the port.
 
     Behaviour-preserving split of ``_maybe_reschedule_tick`` (spec #15
-    fr_2ae7de62): the APScheduler reschedule now flows through the injected
-    ``SchedulerControl`` port — there is NO direct ``scheduler_singleton``
+    fr_2ae7de62): the scheduler reschedule flows through the injected
+    ``SchedulerControl`` port — there is NO direct legacy scheduler state
     access here. Soft-fails (never raises) so it cannot break the PUT
     response, exactly as before:
 
@@ -540,7 +540,7 @@ async def put_runtime_settings(
     deterministic.
 
     Spec 54399628 (Wave 2 NC f9732afc) — when `kg_decay_tick_interval_minutes`
-    changes, also hot-reloads the APScheduler trigger so the new interval
+    changes, also hot-reloads the active scheduler adapter so the new interval
     takes effect immediately (no restart_required for tick keys).
     """
     # Local imports to avoid cycles + keep KG-01.5 dependency optional

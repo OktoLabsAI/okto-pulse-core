@@ -17,6 +17,10 @@ from okto_pulse.core.kg.interfaces.board_source_reader import (
 )
 from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
+from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
+    CognitivePendingRecordRef,
+    CognitivePendingWorkProvider,
+)
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_lifecycle import (
@@ -74,6 +78,8 @@ __all__ = [
     "BoardSourceReader",
     "BoardSourceRow",
     "CacheBackend",
+    "CognitivePendingRecordRef",
+    "CognitivePendingWorkProvider",
     "CypherExecutor",
     "EmbeddingProvider",
     "EventBus",

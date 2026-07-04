@@ -14,7 +14,7 @@ Maps to NC-9 test evidence for the following acceptance criteria:
     AC4  — boards_failed present in _run_daily_tick return dict AND in the
              kg.relevance.tick.completed structured log extra.
     AC7  — module docstrings in kg_decay_tick.py and events/types.py no
-             longer contain "cron at 03:00 UTC"; both cite IntervalTrigger.
+             longer contain "cron at 03:00 UTC"; both cite scheduler adapter.
     AC8  — _refuse_tick_if_degraded(None, db) returns None without querying
              board health (tick global is not health-gated, FR9).
 """
@@ -389,13 +389,13 @@ async def test_ac4_boards_failed_in_dict_and_log(caplog, db_session):
 
 
 # ---------------------------------------------------------------------------
-# AC7 — docstrings updated: no "03:00 UTC", cite IntervalTrigger
+# AC7 — docstrings updated: no "03:00 UTC", cite scheduler adapter
 # ---------------------------------------------------------------------------
 
 
 def test_ac7_module_docstring_no_cron_utc():
     """AC7a: kg_decay_tick.py module docstring must NOT contain '03:00 UTC'
-    and MUST mention 'IntervalTrigger'.
+    and MUST mention the scheduler adapter boundary.
     """
     source = _KG_DECAY_TICK_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -403,17 +403,17 @@ def test_ac7_module_docstring_no_cron_utc():
 
     assert "03:00 UTC" not in module_docstring, (
         "kg_decay_tick.py module docstring still contains stale '03:00 UTC'. "
-        "Update it to reflect the IntervalTrigger mechanism."
+        "Update it to reflect the scheduler adapter mechanism."
     )
-    assert "IntervalTrigger" in module_docstring, (
-        "kg_decay_tick.py module docstring must mention 'IntervalTrigger' "
-        "to reflect the actual scheduling mechanism."
+    assert "scheduler adapter" in module_docstring, (
+        "kg_decay_tick.py module docstring must mention the scheduler adapter "
+        "to reflect the boundary mechanism."
     )
 
 
 def test_ac7_events_types_docstring_no_cron_utc():
     """AC7b: KGDailyTick docstring in events/types.py must NOT contain
-    '03:00 UTC' and MUST mention 'IntervalTrigger'.
+    '03:00 UTC' and MUST mention the scheduler adapter boundary.
     """
     source = _EVENTS_TYPES_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -430,10 +430,10 @@ def test_ac7_events_types_docstring_no_cron_utc():
     )
     assert "03:00 UTC" not in kg_daily_tick_docstring, (
         "KGDailyTick docstring in events/types.py still contains '03:00 UTC'. "
-        "Update to reflect the IntervalTrigger mechanism."
+        "Update to reflect the scheduler adapter mechanism."
     )
-    assert "IntervalTrigger" in kg_daily_tick_docstring, (
-        "KGDailyTick docstring in events/types.py must mention 'IntervalTrigger'."
+    assert "scheduler adapter" in kg_daily_tick_docstring, (
+        "KGDailyTick docstring in events/types.py must mention the scheduler adapter."
     )
 
 
@@ -529,7 +529,7 @@ async def test_tick_fanout_scoped_to_single_board(db_session):
 
 
 def test_tick_next_run_catch_up_semantics():
-    """IntervalTrigger de 24h nunca dispara num processo que reinicia —
+    """Scheduler interval de 24h nunca dispara num processo que reinicia —
     o next_run_time explícito honra o último tick persistido."""
     from datetime import timedelta
 

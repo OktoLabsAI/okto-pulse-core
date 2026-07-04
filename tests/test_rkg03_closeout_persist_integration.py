@@ -14,7 +14,13 @@ import uuid
 import pytest
 
 from okto_pulse.core.kg import cognitive_closeout_production as ccp
+from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
+    CognitivePendingRecordRef,
+)
 from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+    InMemoryCognitivePendingWorkProvider,
+)
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
 from okto_pulse.core.kg.workers.cognitive_closeout import CognitiveCloseoutWorker
 from okto_pulse.core.models.db import Board, Spec
@@ -334,9 +340,19 @@ async def test_cognitive_closeout_worker_real_loader_and_ledger_scan(
     ccp.open_cognitive_closeout_pending(
         board_id=board_id, source_ref=spec_ref, artifact_type="spec", store=store)
 
-    worker = CognitiveCloseoutWorker(db_factory, store=store)
-    # drain_once scans the LEDGER directory (not SQL) and uses the REAL loader,
-    # which loads Spec.context from SQL + resolves the related Decision.
+    gen = store.latest_generation(board_id)
+    assert gen is not None
+    pending_provider = InMemoryCognitivePendingWorkProvider(
+        [CognitivePendingRecordRef(board_id=board_id, kg_generation_id=gen)]
+    )
+    worker = CognitiveCloseoutWorker(
+        db_factory,
+        store=store,
+        pending_work_provider=pending_provider,
+    )
+    # drain_once consumes ledger refs from the provider (not SQL or directory
+    # scanning) and uses the REAL loader, which loads Spec.context from SQL +
+    # resolves the related Decision.
     processed = await worker.drain_once()
 
     assert processed >= 1

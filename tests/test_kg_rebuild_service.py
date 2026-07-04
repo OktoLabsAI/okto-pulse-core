@@ -619,7 +619,7 @@ def test_confirm_endpoint_rejects_non_rebuild_operations(
 
     from okto_pulse.core.infra.auth import require_user
 
-    async def _fake_health(board_id, db):
+    async def _fake_health(board_id, db, scheduler_control=None):
         return {"graph_state": "healthy", "metric_status": "available",
                 "current_kg_generation_id": None}
 
@@ -667,7 +667,7 @@ def test_post_rebuild_run_endpoint_is_registered_and_callable(tmp_path: Path, mo
     paths = {route.path for route in api_router.routes}
     assert "/api/v1/kg/rebuild/run" in paths
 
-    async def _fake_health(board_id, db):
+    async def _fake_health(board_id, db, scheduler_control=None):
         return {"graph_state": "healthy", "metric_status": "available",
                 "current_kg_generation_id": None}
 

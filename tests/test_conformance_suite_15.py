@@ -31,7 +31,12 @@ from okto_pulse.core.application.boundary.singleton_gate import (
     AntiSingletonGateInput,
 )
 from okto_pulse.core.infra.config import configure_settings, get_settings
-from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerResult
+from okto_pulse.core.ports.scheduler import (
+    KG_DAILY_TICK_JOB_ID,
+    JobSpec,
+    SchedulerJobSnapshot,
+    SchedulerResult,
+)
 from okto_pulse.core.services.settings_service import (
     _apply_live_tick_settings,
     apply_tick_runtime_effects,
@@ -57,6 +62,16 @@ class _FakeSchedulerControl:
         if self._raises is not None:
             raise self._raises
         return SchedulerResult(job_id=job_id, scheduled=True, audit_status="rescheduled")
+
+    async def register_job(self, job_spec: JobSpec, handler) -> SchedulerResult:
+        return SchedulerResult(
+            job_id=job_spec.job_id,
+            scheduled=True,
+            audit_status="rescheduled",
+        )
+
+    async def get_job_snapshot(self, job_id: str) -> SchedulerJobSnapshot:
+        return SchedulerJobSnapshot(job_id=job_id, exists=True)
 
     async def shutdown(self, wait: bool = False) -> None:  # pragma: no cover - trivial
         return None
@@ -148,7 +163,6 @@ def test_anti_singleton_ledger_carries_register_before_remove_metadata() -> None
         assert meta["expected_adapter"], name
         assert meta["retirement_criterion"], name
     required_legacy_singletons = {
-        "_scheduler",
         "_mcp_session_factory",
         "_permission_cache",
     }
@@ -263,7 +277,13 @@ def test_port_conformance_detects_nonconformant_class() -> None:
             return True
 
     assert not isinstance(_Broken(), SC)
-    assert _protocol_members(SC) == {"is_available", "reschedule_job", "shutdown"}
+    assert _protocol_members(SC) == {
+        "get_job_snapshot",
+        "is_available",
+        "register_job",
+        "reschedule_job",
+        "shutdown",
+    }
 
 
 # --------------------------------------------------------------------------- #

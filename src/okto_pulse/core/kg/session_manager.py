@@ -31,6 +31,12 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def now_utc() -> datetime:
+    """Public facade for consolidation-session UTC timestamps."""
+
+    return _now()
+
+
 def compute_content_hash(raw_content: str, artifact_id: str, board_id: str) -> str:
     """Deterministic SHA256 over (board_id, artifact_id, raw_content)."""
     h = hashlib.sha256()

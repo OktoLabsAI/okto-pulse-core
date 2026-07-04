@@ -30,14 +30,16 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from okto_pulse.core.api.deps import scheduler_control_from_request
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.kg.rebuild_audit import default_rebuild_base_dir
+from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 logger = logging.getLogger("okto_pulse.api.kg_rebuild")
@@ -116,6 +118,8 @@ _REBUILD_REJECT_STATES: frozenset[str] = frozenset({"quarantined"})
 async def _refuse_rebuild_if_quarantined(
     board_id: str,
     db: AsyncSession,
+    *,
+    scheduler_control: SchedulerControl | None = None,
 ) -> dict | None:
     """Rebuild-scoped admission gate (FR8).
 
@@ -127,7 +131,11 @@ async def _refuse_rebuild_if_quarantined(
     Both the REST lane and the MCP twin MUST call this gate.  Duplication
     of the admission logic outside this function is forbidden.
     """
-    health = await get_kg_health(board_id, db)
+    health = await get_kg_health(
+        board_id,
+        db,
+        scheduler_control=scheduler_control,
+    )
     graph_state = health.get("graph_state")
     if graph_state in _REBUILD_REJECT_STATES:
         return {
@@ -230,6 +238,7 @@ class RebuildPreflightResponse(BaseModel):
 
 @router.post("/kg/rebuild/preflight", response_model=RebuildPreflightResponse)
 async def post_rebuild_preflight(
+    request: Request,
     board_id: str = Query(..., description="Board ID (uuid)"),
     user_id: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
@@ -265,7 +274,12 @@ async def post_rebuild_preflight(
     await _require_board_access(board_id, user_id, db)
 
     # FR8 — rebuild-scoped admission gate: quarantined → 409, recovery_needed → pass.
-    refusal = await _refuse_rebuild_if_quarantined(board_id, db)
+    scheduler_control = scheduler_control_from_request(request)
+    refusal = await _refuse_rebuild_if_quarantined(
+        board_id,
+        db,
+        scheduler_control=scheduler_control,
+    )
     if refusal is not None:
         raise HTTPException(
             status_code=409,
@@ -278,7 +292,11 @@ async def post_rebuild_preflight(
     # result would require threading health through two layers.  Instead
     # we make a second call so the preflight service gets a consistent view
     # independent of the gate's internal copy.
-    _raw_health = await get_kg_health(board_id, db)
+    _raw_health = await get_kg_health(
+        board_id,
+        db,
+        scheduler_control=scheduler_control,
+    )
 
     def health_probe(_board_id: str) -> RebuildHealthSummary:
         return RebuildHealthSummary(

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.api.deps import scheduler_control_from_request
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.services.canonical_debt_service import (
@@ -69,6 +70,7 @@ async def get_canonical_debt(
 
 @router.post("/{debt_id}/retry", response_model=CanonicalDebtRetryResponse)
 async def retry_canonical_debt(
+    request: Request,
     debt_id: str = Path(..., min_length=1),
     board_id: str = Query(..., min_length=1),
     user_id: str = Depends(require_user),
@@ -77,7 +79,11 @@ async def retry_canonical_debt(
     from okto_pulse.core.api.kg_rebuild import _require_board_access
 
     await _require_board_access(board_id, user_id, db)
-    health = await get_kg_health(board_id, db)
+    health = await get_kg_health(
+        board_id,
+        db,
+        scheduler_control=scheduler_control_from_request(request),
+    )
     result = await schedule_canonical_debt_retry(
         db,
         board_id=board_id,

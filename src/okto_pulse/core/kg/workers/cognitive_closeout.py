@@ -18,13 +18,13 @@ import logging
 from okto_pulse.core.kg.cognitive_closeout_production import (
     drain_cognitive_closeout_pending,
 )
+from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
+    CognitivePendingWorkProvider,
+)
 from okto_pulse.core.kg.rebuild_audit import (
-    AUDIT_DIRNAME,
-    COGNITIVE_PENDING_DIRNAME,
-    REBUILD_DIRNAME,
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
-    default_rebuild_base_dir,
 )
 
 # Statuses a drain should (re)process: fresh pending + items left in_progress by
@@ -36,6 +36,16 @@ logger = logging.getLogger("okto_pulse.core.kg.workers.cognitive_closeout")
 
 AGENT_ID = "cognitive_closeout_worker"
 _DEFAULT_INTERVAL_S = 30.0
+
+
+def _default_item_store() -> CognitiveConsolidationItemStore:
+    return CognitiveConsolidationItemStore(
+        artifact_store=get_kg_registry().require_rebuild_audit_artifact_store()
+    )
+
+
+def _default_pending_work_provider() -> CognitivePendingWorkProvider:
+    return get_kg_registry().require_cognitive_pending_work_provider()
 
 
 def _lookup_spec_decision_node(board_id: str, spec_id: str) -> str | None:
@@ -143,13 +153,17 @@ class CognitiveCloseoutWorker:
     """Periodic worker draining cognitive-closeout pending per board."""
 
     def __init__(self, session_factory, *, interval_s: float = _DEFAULT_INTERVAL_S,
-                 store: CognitiveConsolidationItemStore | None = None) -> None:
+                 store: CognitiveConsolidationItemStore | None = None,
+                 pending_work_provider: CognitivePendingWorkProvider | None = None) -> None:
         self._session_factory = session_factory
         self._interval_s = interval_s
         self._running = False
         self._task: asyncio.Task | None = None
         self._loader = build_closeout_input_loader(session_factory)
-        self._store = store or CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        self._store = store or _default_item_store()
+        self._pending_work_provider = (
+            pending_work_provider or _default_pending_work_provider()
+        )
 
     async def start(self) -> None:
         if self._running:
@@ -168,27 +182,26 @@ class CognitiveCloseoutWorker:
             self._task = None
 
     def _scan_ledger_records(self) -> list[tuple[str, str]]:
-        """Bounded scan of the cognitive_pending ledger directory for (board,
+        """Bounded discovery of cognitive_pending ledger records for (board,
         generation) records that still hold drainable items. The LEDGER is the
         canonical work source (codex: NO full SQL board scan — SQL is only used
-        to load an item's payload once a real pending item is found)."""
-        root = (self._store.base_dir / REBUILD_DIRNAME / AUDIT_DIRNAME
-                / COGNITIVE_PENDING_DIRNAME)
+        to load an item's payload once a real pending item is found). Runtime
+        editions own the durable-storage enumeration mechanics."""
         records: list[tuple[str, str]] = []
-        if not root.is_dir():
-            return records
-        for board_dir in sorted(root.iterdir()):
-            if not board_dir.is_dir():
+        seen: set[tuple[str, str]] = set()
+        for ref in self._pending_work_provider.list_records():
+            board_id = str(ref.board_id)
+            gen = str(ref.kg_generation_id)
+            key = (board_id, gen)
+            if not board_id or not gen or key in seen:
                 continue
-            board_id = board_dir.name
-            for gen_file in sorted(board_dir.glob("*.json")):
-                gen = gen_file.stem
-                try:
-                    items = self._store.list_items(board_id, gen)
-                except Exception:
-                    continue
-                if any(i.status in _DRAINABLE_STATUSES for i in items):
-                    records.append((board_id, gen))
+            seen.add(key)
+            try:
+                items = self._store.list_items(board_id, gen)
+            except Exception:
+                continue
+            if any(i.status in _DRAINABLE_STATUSES for i in items):
+                records.append(key)
         return records
 
     async def drain_once(self) -> int:

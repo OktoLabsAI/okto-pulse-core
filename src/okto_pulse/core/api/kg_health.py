@@ -15,10 +15,11 @@ unavailable is not zero").
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.api.deps import scheduler_control_from_request
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.services.cognitive_effectiveness_service import (
@@ -85,9 +86,9 @@ class DecaySchedulerDiagnostics(BaseModel):
 
 
 class StorageFootprintProxy(BaseModel):
-    """On-disk file-size proxy; not direct memory/buffer telemetry."""
+    """Adapter-provided storage footprint; not direct memory/buffer telemetry."""
 
-    source: str = "file_size_proxy"
+    source: str = "runtime_capability"
     status: str = "unavailable"
     percentage: float | None = None
     high_water_mark_pct: float | None = None
@@ -245,6 +246,7 @@ class KGHealthResponse(BaseModel):
 
 @router.get("/kg/health", response_model=KGHealthResponse)
 async def get_kg_health_endpoint(
+    request: Request,
     board_id: str = Query(..., description="Board ID (uuid)"),
     _: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
@@ -259,8 +261,13 @@ async def get_kg_health_endpoint(
     Per contract api_3ed9037f the endpoint MUST NOT mutate graph or
     discovery storage. It is read-only.
     """
+    scheduler_control = scheduler_control_from_request(request)
     try:
-        data = await get_kg_health(board_id, db)
+        data = await get_kg_health(
+            board_id,
+            db,
+            scheduler_control=scheduler_control,
+        )
     except BoardNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return KGHealthResponse(**data)
@@ -268,6 +275,7 @@ async def get_kg_health_endpoint(
 
 @router.get("/kg/health-readiness")
 async def get_kg_health_readiness_endpoint(
+    request: Request,
     board_id: str = Query(..., description="Board ID (uuid)"),
     profile: str = Query("summary", description="summary | full"),
     artifact_ref: str | None = Query(
@@ -292,7 +300,13 @@ async def get_kg_health_readiness_endpoint(
 
     try:
         return await build_health_readiness(
-            board_id, db, profile=profile, surface="rest", artifact_ref=artifact_ref)
+            board_id,
+            db,
+            profile=profile,
+            surface="rest",
+            artifact_ref=artifact_ref,
+            scheduler_control=scheduler_control_from_request(request),
+        )
     except InvalidProfileError as exc:
         raise HTTPException(status_code=400, detail="invalid_profile") from exc
     except BoardNotFoundError as exc:
@@ -301,6 +315,7 @@ async def get_kg_health_readiness_endpoint(
 
 @router.get("/kg/cognitive-effectiveness/inventory")
 async def get_cognitive_effectiveness_inventory_endpoint(
+    request: Request,
     board_id: str = Query(..., description="Board ID (uuid)"),
     artifact_id: str | None = Query(None, description="Optional artifact_ref filter"),
     include_candidate_logs: bool = Query(False),
@@ -316,7 +331,11 @@ async def get_cognitive_effectiveness_inventory_endpoint(
     creates nodes or mutates readiness.
     """
     try:
-        health = await get_kg_health(board_id, db)
+        health = await get_kg_health(
+            board_id,
+            db,
+            scheduler_control=scheduler_control_from_request(request),
+        )
     except BoardNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     try:

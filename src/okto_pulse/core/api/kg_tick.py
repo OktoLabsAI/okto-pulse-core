@@ -21,17 +21,19 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import AsyncContextManager
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.api.deps import scheduler_control_from_request
 from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.ports.coordination import (
     CoordinationProviderMissing,
     get_lease_provider,
 )
+from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 logger = logging.getLogger("okto_pulse.api.kg_tick")
@@ -52,7 +54,10 @@ class TickRunNowResponse(BaseModel):
 
 
 async def _refuse_tick_if_degraded(
-    board_id: str | None, db: AsyncSession
+    board_id: str | None,
+    db: AsyncSession,
+    *,
+    scheduler_control: SchedulerControl | None = None,
 ) -> dict | None:
     """Shared tick-admission gate (F17). Returns a structured refusal payload
     when a CONCRETE board's KG is degraded (``graph_state`` in the shared
@@ -66,7 +71,11 @@ async def _refuse_tick_if_degraded(
     """
     if board_id is None:
         return None
-    health = await get_kg_health(board_id, db)
+    health = await get_kg_health(
+        board_id,
+        db,
+        scheduler_control=scheduler_control,
+    )
     graph_state = health.get("graph_state")
     if graph_state in _RISK_STATE_HARD_REJECT:
         return {
@@ -89,6 +98,7 @@ async def _refuse_tick_if_degraded(
 )
 async def run_tick_now(
     payload: TickRunNowRequest,
+    request: Request,
     user: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ) -> TickRunNowResponse:
@@ -134,7 +144,11 @@ async def run_tick_now(
     # a structured 409 — AFTER the lease check (so tick_already_running keeps
     # priority, TR7) and BEFORE any tick_id is allocated (no doomed tick). The
     # global tick (board_id is None) is not health-gated (FR9).
-    refusal = await _refuse_tick_if_degraded(payload.board_id, db)
+    refusal = await _refuse_tick_if_degraded(
+        payload.board_id,
+        db,
+        scheduler_control=scheduler_control_from_request(request),
+    )
     if refusal is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

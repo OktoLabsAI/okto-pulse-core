@@ -202,7 +202,7 @@ def _full_health_payload() -> dict:
             "reason": "latest_success_too_old",
         },
         "storage_footprint_proxy": {
-            "source": "file_size_proxy",
+            "source": "runtime_capability",
             "status": "ok",
             "percentage": 12.5,
             "high_water_mark_pct": 12.5,
@@ -234,7 +234,7 @@ def test_health_slim_keeps_stop_fields_and_drops_verbose():
     assert out["decay_scheduler_diagnostics"]["status"] == "stale"
     assert out["decay_scheduler_diagnostics"]["operational_debt"] is True
     assert out["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
-    assert out["storage_footprint_proxy"]["source"] == "file_size_proxy"
+    assert out["storage_footprint_proxy"]["source"] == "runtime_capability"
     assert out["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
     # Verbose diagnostics, aliases and dups are omitted until full is requested.
     for field in (

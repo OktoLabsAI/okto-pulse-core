@@ -19,7 +19,11 @@ from okto_pulse.core.application.boundary.conformance_suite import (
     settings_split_conformance,
 )
 from okto_pulse.core.composition import ALL_PROVIDER_KEYS
-from okto_pulse.core.ports.scheduler import SchedulerResult
+from okto_pulse.core.ports.scheduler import (
+    JobSpec,
+    SchedulerJobSnapshot,
+    SchedulerResult,
+)
 from okto_pulse.core.services.settings_service import (
     GRAPH_DB_KEYS,
     RUNTIME_KEYS,
@@ -41,6 +45,16 @@ class _FakeScheduler:
     async def reschedule_job(self, job_id: str, trigger) -> SchedulerResult:
         self.calls.append((job_id, dict(trigger)))
         return SchedulerResult(job_id=job_id, scheduled=True, audit_status="rescheduled")
+
+    async def register_job(self, job_spec: JobSpec, handler) -> SchedulerResult:
+        return SchedulerResult(
+            job_id=job_spec.job_id,
+            scheduled=True,
+            audit_status="rescheduled",
+        )
+
+    async def get_job_snapshot(self, job_id: str) -> SchedulerJobSnapshot:
+        return SchedulerJobSnapshot(job_id=job_id, exists=True)
 
     async def shutdown(self, wait: bool = False) -> None:  # pragma: no cover - unused
         ...

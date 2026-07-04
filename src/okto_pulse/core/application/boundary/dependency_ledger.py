@@ -110,13 +110,12 @@ class LedgerEntry:
 
 #: The temporary-exception tokens that R05-E MUST keep ledgered while they remain
 #: in the core (ac_69911a08 / TS-R05E-03). ``requests`` + ``chardet`` are the
-#: "requests/chardet" telemetry pair — six logical exceptions, seven tokens.
+#: "requests/chardet" telemetry pair.
 CANONICAL_TEMPORARY_EXCEPTION_TOKENS: tuple[str, ...] = (
     "aiosqlite",
     "numpy",
     "requests",
     "chardet",
-    "apscheduler",
 )
 
 
@@ -316,23 +315,25 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
         ),
         LedgerEntry(
             token="apscheduler",
-            classification="temporary_exception",
+            classification="community_owned",
             kind="dependency_and_import",
-            owner_wave="#03_lifecycle_composition (RuntimeComposition)",
-            current_owner="okto-pulse-core/runtime",
+            owner_wave="AF31-S1R (#03_lifecycle_composition)",
+            current_owner="okto-pulse-community/adapters",
             reason=(
-                "Local scheduler for the KG decay tick. Still imported in "
-                "core/app.py until the lifecycle cleanup moves scheduler boot "
-                "ownership out of Core."
+                "Local scheduler for the KG decay tick. Core owns the JobSpec "
+                "policy through SchedulerControl; Community owns APScheduler "
+                "startup, IntervalTrigger mapping and shutdown."
             ),
             removal_criterion=(
-                "Remove once the SchedulerControl provider is composition-owned "
-                "(#03 runtime ports) and the singleton scheduler bridge is gone; "
-                "see adapter_readiness_inventory singleton_scheduler_control."
+                "Already transferred by AF31-S1R: apscheduler must be absent "
+                "from the core default manifest/lock and from runtime imports "
+                "under src/okto_pulse/core. Community declares the dependency "
+                "and maps JobSpec through its scheduler adapter."
             ),
             validation_oracle=(
-                "dependency_conformance accepts apscheduler while its import roots "
-                "are ledgered; #03 RuntimeComposition governs the removal."
+                "dependency_conformance reports apscheduler as community_owned "
+                "and blocks manifest, lock, wheel or source reintroduction in "
+                "the core; Community adapter tests verify JobSpec mapping."
             ),
             direct_dep_no_import=False,
             transitive_consumer=None,

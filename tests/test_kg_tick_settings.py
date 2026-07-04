@@ -13,6 +13,8 @@ Test scenarios mapeados:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from coordination_fakes import FakeLeaseProvider, FakeWriteLockPort
@@ -35,6 +37,21 @@ def _coordination_ports():
     )
     yield
     reset_coordination_providers_for_tests()
+
+
+def _request_without_scheduler():
+    from starlette.requests import Request
+
+    app = SimpleNamespace(state=SimpleNamespace(runtime_composition=None))
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/kg/tick/run-now",
+            "headers": [],
+            "app": app,
+        }
+    )
 
 
 async def test_ts1_get_settings_returns_three_new_defaults():
@@ -344,14 +361,19 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     # it healthy so this 202 path proceeds (a concrete board that is NOT degraded
     # is admitted); the advisory-lock 409 path below short-circuits before the
     # probe is reached.
-    async def _healthy_health(board_id, db):
+    async def _healthy_health(board_id, db, scheduler_control=None):
         return {"graph_state": "healthy"}
 
     monkeypatch.setattr(kg_tick, "get_kg_health", _healthy_health)
     fake_db = _FakeSession()
 
     # First call: 202 success.
-    response = await run_tick_now(payload, user="test-user", db=fake_db)
+    response = await run_tick_now(
+        payload,
+        _request_without_scheduler(),
+        user="test-user",
+        db=fake_db,
+    )
     assert isinstance(response, TickRunNowResponse)
     assert response.status == "running"
     assert response.tick_id  # non-empty uuid
@@ -366,7 +388,12 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     assert lease is not None
     try:
         with pytest.raises(HTTPException) as exc_info:
-            await run_tick_now(payload, user="test-user-2", db=_FakeSession())
+            await run_tick_now(
+                payload,
+                _request_without_scheduler(),
+                user="test-user-2",
+                db=_FakeSession(),
+            )
         assert exc_info.value.status_code == 409
         detail = exc_info.value.detail
         assert isinstance(detail, dict)

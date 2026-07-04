@@ -120,7 +120,7 @@ version: "1.0"
 
 Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment the counter — there's no row-level node id to attribute to. That's intentional: aggregations are diagnostic, not consumption.
 
-**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, and `decay_scheduler_diagnostics`, populated from the daily APScheduler tick ledger (03:00 UTC). When the diagnostics report `operational_debt=true` but `graph_recovery_required=false`, treat it as scheduler/operations debt, not as a rebuild trigger. Score freshness is still bounded by the on-read `_apply_decay_reorder` until the scheduled tick lands.
+**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, and `decay_scheduler_diagnostics`, populated from the daily scheduler tick ledger (03:00 UTC). When the diagnostics report `operational_debt=true` but `graph_recovery_required=false`, treat it as scheduler/operations debt, not as a rebuild trigger. Score freshness is still bounded by the on-read `_apply_decay_reorder` until the scheduled tick lands.
 
 ## When and How to Consolidate — Mandatory Triggers
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+from okto_pulse.core.ports.scheduler import SchedulerControl
 
 
 class ListCanonicalDebtCommand:
@@ -249,14 +250,20 @@ class RebuildAdmissionGateCommand:
     exactly as the legacy preflight tool did (no extra round-trip).
     """
 
-    __slots__ = ("board_id", "refuse_fn", "include_health")
+    __slots__ = ("board_id", "refuse_fn", "include_health", "scheduler_control")
 
     def __init__(
-        self, board_id: str, *, refuse_fn: Any, include_health: bool = False
+        self,
+        board_id: str,
+        *,
+        refuse_fn: Any,
+        include_health: bool = False,
+        scheduler_control: SchedulerControl | None = None,
     ) -> None:
         self.board_id = board_id
         self.refuse_fn = refuse_fn
         self.include_health = include_health
+        self.scheduler_control = scheduler_control
 
 
 class RebuildAdmissionGateResult:
@@ -287,12 +294,23 @@ class RebuildAdmissionGateUseCase:
         uow: Any,
     ) -> RebuildAdmissionGateResult:
         session = session_of(uow)
-        refusal = await command.refuse_fn(command.board_id, session)
+        if command.scheduler_control is None:
+            refusal = await command.refuse_fn(command.board_id, session)
+        else:
+            refusal = await command.refuse_fn(
+                command.board_id,
+                session,
+                scheduler_control=command.scheduler_control,
+            )
         if refusal is not None:
             return RebuildAdmissionGateResult(refusal=refusal)
         raw_health: Any | None = None
         if command.include_health:
             from okto_pulse.core.services.kg_health_service import get_kg_health
 
-            raw_health = await get_kg_health(command.board_id, session)
+            raw_health = await get_kg_health(
+                command.board_id,
+                session,
+                scheduler_control=command.scheduler_control,
+            )
         return RebuildAdmissionGateResult(raw_health=raw_health)

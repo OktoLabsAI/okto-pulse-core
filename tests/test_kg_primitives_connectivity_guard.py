@@ -447,7 +447,7 @@ async def test_degraded_graph_returns_contextual_error_without_opening_kuzu(
         candidate_id="learning_degraded",
     )
 
-    async def fake_get_kg_health(_board_id, _db):
+    async def fake_get_kg_health(_board_id, _db, scheduler_control=None):
         return {"graph_state": "recovery_needed", "overall_state": "recovery_needed"}
 
     def forbidden_open(_board_id):

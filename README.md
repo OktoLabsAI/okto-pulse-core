@@ -73,13 +73,13 @@ metadata and runtime imports. The remaining SQLAlchemy/PostgreSQL code path in
 `asyncpg` dependency may return to the core package.
 
 Current boundary status is intentionally mixed. The adapter readiness inventory
-currently reports 21 seams: 11 `ready`, 7 `blocked` and 3 `deferred`. The moved
+currently reports 21 seams: 12 `ready`, 6 `blocked` and 3 `deferred`. The moved
 Community-owned surfaces include sentence-transformers embeddings, cross-encoder
 rerank, Ladybug/Kuzu board graph adapters, global discovery runtime, board source
-reads and rebuild ingestion. Remaining extraction debt includes broad
-SQLAlchemy/`AsyncSession` usage, local defaults in `CoreSettings`, the default
-core lifespan/scheduler path and a small set of ledgered direct dependencies
-(`requests`, `chardet`, `apscheduler`, `aiosqlite`, `numpy`).
+reads, rebuild ingestion and APScheduler scheduler runtime. Remaining extraction
+debt includes broad SQLAlchemy/`AsyncSession` usage, local defaults in
+`CoreSettings` and a small set of ledgered direct dependencies
+(`requests`, `chardet`, `aiosqlite`, `numpy`).
 
 AF-05 dependency owner matrix. The source of truth is
 `dependency_ledger.py`, `CANONICAL_TEMPORARY_EXCEPTION_TOKENS` and
@@ -91,7 +91,7 @@ around.
 | `aiofiles` | `removed` | AF-05 removed the orphaned core runtime dependency. It must stay absent from the core manifest, lock, wheel metadata and runtime imports; `dependency_conformance` fails closed if it reappears and `conformance_matrix` emits `removed_dependency_absent`. | Not Community-owned and not moved to Community without a direct adapter consumer. A stale Community lock can still show the published core dependency until the isolated artifact smoke resolves against the local core build. |
 | `requests` | `temporary_exception` | Ledgered under `#10_telemetry` and `tr_03abf5ab`; core source must not import it, but the manifest remains governed until the telemetry oracle is green. | The Community telemetry sender imports `requests`, but AF-05 does not reassign ownership or declare it here just because it is currently reached through core packaging. |
 | `chardet` | `temporary_exception` | Ledgered as the requests/telemetry charset companion under `#10_telemetry`; it stays in `CANONICAL_TEMPORARY_EXCEPTION_TOKENS`. | Kept with `requests`; do not remove, move or omit it from reports before the same telemetry oracle is green. |
-| `apscheduler` | `temporary_exception` | Ledgered under `#03_lifecycle_composition`; `core/app.py` still imports APScheduler in the default lifespan/scheduler path. | Community has local scheduler wiring, but the core declaration remains a lifecycle-composition exception until `SchedulerControl` ownership is fully moved. |
+| `apscheduler` | `community_owned` | AF31-S1R moved the concrete scheduler runtime out of core. Core keeps only `JobSpec`/`SchedulerControl` and the KG daily tick policy; `dependency_conformance` now blocks manifest, lock, wheel or runtime-import reintroduction. | Declared by Community and mapped in `community/adapters/scheduler.py` from core `JobSpec` to APScheduler/`IntervalTrigger`. |
 
 The AF-11 import-boundary pass is application-first. Its done criterion is
 `ImportBoundaryGate(mode="bootstrap").observed_value == 0` for blocking
@@ -121,17 +121,31 @@ explicit non-runtime exemptions. Adapter-specific debt belongs in Community when
 the concrete dependency is local-first; core keeps the rule, gate and transition
 logic that future SaaS editions must share.
 
-AF-21 defines the public surface that Community adapters may consume while the
-remaining reach-ins are retired. Public entry points include
+AF-21 and AF-28 define the public surface that Community adapters may consume
+while the remaining reach-ins are retired. Public entry points include
 `okto_pulse.core.services.application_kg` for KG/governance orchestration,
 `okto_pulse.core.services.application_agents` for agent credential primitives,
 `okto_pulse.core.mcp.build_mcp_asgi_app` and the other `okto_pulse.core.mcp`
-composition hooks for MCP mounting/session binding, and
-`okto_pulse.core.ports.runtime_workers` for edition-owned worker composition.
-These facades intentionally expose adapter-neutral values and `Any`-typed
-handles where the current implementation still delegates to ORM, KG worker or
-MCP internals; they must not require a future SaaS adapter to emulate
-SQLAlchemy sessions, concrete worker classes or private MCP server symbols.
+composition hooks for MCP mounting/session binding,
+`okto_pulse.core.ports.runtime_workers` for edition-owned worker composition,
+and adapter-neutral KG facades in `core.kg.board_source_store`,
+`core.kg.board_rebuild_adapter`, `core.kg.tier_power`, `core.kg.scoring`,
+`core.kg.session_manager` and `core.kg.global_discovery.schema`.
+These facades intentionally expose rules, policy helpers and normalized values,
+not concrete database, graph, scheduler, file or telemetry implementations. They
+must not require a future SaaS adapter to emulate SQLAlchemy sessions, LadybugDB
+DDL/vector-index layout, filesystem reopen/fsync behavior, concrete worker
+classes or private MCP server symbols.
+
+AF-28 also makes global-discovery DDL ownership explicit. Core keeps the
+adapter-neutral schema contract and compatibility helpers such as
+`ensure_decision_digest_layer_column`; concrete node/relationship DDL and
+vector-index definitions are edition-owned and live in the active graph runtime
+adapter. AF-29 follows the same rule for durability mechanics: core owns the
+outbox, cognitive closeout and drain policy, while edition adapters own durable
+artifact flush/probe behavior and pending-work enumeration through
+`GlobalDiscoveryRuntime.flush_after_write_batch` and
+`CognitivePendingWorkProvider`.
 
 `build_mcp_asgi_app(trace_sink=None)` and `mount_mcp(app, trace_sink=None)` are the two helpers exposed from `okto_pulse.core.mcp`. Pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app. The optional `trace_sink` is a core port; core never resolves environment variables or writes local JSONL traces by itself.
 

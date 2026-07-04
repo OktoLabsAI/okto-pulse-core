@@ -544,10 +544,30 @@ def active_api_key_credential():
 _mcp_session_factory = None
 
 
-def register_session_factory(factory):
-    """Register the database session factory for MCP operations."""
+class _McpSessionFactoryRuntime:
+    """Callable MCP session factory plus edition runtime ports.
+
+    The legacy MCP surface has one process-level composition hook,
+    ``_mcp_session_factory``. Keep that single hook callable for all existing
+    tools/tests while allowing request-less MCP tools to use edition-owned ports
+    that REST resolves from ``app.state.runtime_composition``.
+    """
+
+    def __init__(self, session_factory, *, scheduler_control=None):
+        self.session_factory = session_factory
+        self.scheduler_control = scheduler_control
+
+    def __call__(self, *args, **kwargs):
+        return self.session_factory(*args, **kwargs)
+
+
+def register_session_factory(factory, *, scheduler_control=None):
+    """Register the MCP session factory and optional edition runtime ports."""
     global _mcp_session_factory
-    _mcp_session_factory = factory
+    _mcp_session_factory = _McpSessionFactoryRuntime(
+        factory,
+        scheduler_control=scheduler_control,
+    )
 
 
 def get_db_for_mcp():
@@ -555,6 +575,13 @@ def get_db_for_mcp():
     if _mcp_session_factory is None:
         raise RuntimeError("Session factory not registered. Call register_session_factory() first.")
     return _mcp_session_factory()
+
+
+def get_scheduler_control_for_mcp():
+    """Return the edition-owned scheduler port for request-less MCP tools."""
+    if _mcp_session_factory is None:
+        return None
+    return getattr(_mcp_session_factory, "scheduler_control", None)
 
 
 def get_unit_of_work_factory_for_mcp():
@@ -14947,7 +14974,12 @@ okto-pulse://reference/tool-docs/kg."""
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await GetKgHealthUseCase().execute(
-                GetKgHealthCommand(board_id), actor=actor, uow=uow,
+                GetKgHealthCommand(
+                    board_id,
+                    scheduler_control=get_scheduler_control_for_mcp(),
+                ),
+                actor=actor,
+                uow=uow,
             )
     except BoardNotFoundError as exc:
         return json.dumps({"error": str(exc)})
@@ -14996,8 +15028,10 @@ artifact_ref scopes items. Full guide: okto-pulse://reference/tool-docs/kg."""
                 GetKgHealthReadinessCommand(
                     board_id, profile=profile, surface="mcp",
                     artifact_ref=(artifact_ref or None),
+                    scheduler_control=get_scheduler_control_for_mcp(),
                 ),
-                actor=actor, uow=uow,
+                actor=actor,
+                uow=uow,
             )
     except InvalidProfileError:
         return json.dumps({"error": "invalid_profile"})
@@ -15758,7 +15792,11 @@ async def _kg_orphan_backfill_health_refusal(board_id: str) -> dict[str, Any] | 
     from okto_pulse.core.services.kg_health_service import get_kg_health
 
     async with get_db_for_mcp() as db:
-        health = await get_kg_health(board_id, db)
+        health = await get_kg_health(
+            board_id,
+            db,
+            scheduler_control=get_scheduler_control_for_mcp(),
+        )
     state = str(health.get("overall_state") or health.get("graph_state") or "")
     if state in {"recovery_needed", "quarantined"}:
         return {
@@ -16376,7 +16414,11 @@ async def okto_pulse_kg_tick_run_now(
         from okto_pulse.core.api.kg_tick import _refuse_tick_if_degraded
 
         async with get_db_for_mcp() as _health_session:
-            refusal = await _refuse_tick_if_degraded(board_id, _health_session)
+            refusal = await _refuse_tick_if_degraded(
+                board_id,
+                _health_session,
+                scheduler_control=get_scheduler_control_for_mcp(),
+            )
         if refusal is not None:
             return json.dumps(refusal)
 
@@ -16518,6 +16560,7 @@ async def okto_pulse_kg_rebuild_preflight(
                 board_id,
                 refuse_fn=_refuse_rebuild_if_quarantined,
                 include_health=True,
+                scheduler_control=get_scheduler_control_for_mcp(),
             ),
             actor=actor,
             uow=uow,
@@ -16745,7 +16788,9 @@ async def okto_pulse_kg_rebuild_run(
         refusal = (
             await RebuildAdmissionGateUseCase().execute(
                 RebuildAdmissionGateCommand(
-                    board_id, refuse_fn=_refuse_rebuild_if_quarantined
+                    board_id,
+                    refuse_fn=_refuse_rebuild_if_quarantined,
+                    scheduler_control=get_scheduler_control_for_mcp(),
                 ),
                 actor=_gate_actor,
                 uow=_gate_uow,

@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, AsyncGenerator, Callable, Optional
 
 from fastapi import FastAPI
@@ -30,6 +30,12 @@ from okto_pulse.core.composition import (
 from okto_pulse.core.api import api_router
 from okto_pulse.core.telemetry.http_policy import safe_route_template, should_count_http
 from okto_pulse.core.telemetry.telemetry_port_registry import get_telemetry_port
+from okto_pulse.core.ports.scheduler import (
+    JobSpec,
+    KG_DAILY_TICK_JOB_ID,
+    SchedulerControl,
+    SchedulerResult,
+)
 
 if TYPE_CHECKING:
     from okto_pulse.core.ports.runtime_workers import RuntimeWorkerRegistry
@@ -136,6 +142,99 @@ async def shutdown_kg_then_db(
             },
         )
     await close_db()
+
+
+def build_kg_daily_tick_job_spec(
+    interval_minutes: int,
+    *,
+    next_run_time: datetime | None = None,
+) -> JobSpec:
+    """Build the core-owned policy for the KG decay scheduler job."""
+
+    return JobSpec(
+        job_id=KG_DAILY_TICK_JOB_ID,
+        interval_minutes=int(interval_minutes),
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
+        next_run_time=next_run_time,
+        handler_ref="okto_pulse.core.infra.daily_tick.emit_daily_tick",
+    )
+
+
+async def register_kg_daily_tick_job(
+    scheduler_control: SchedulerControl | None,
+    *,
+    logger: logging.Logger = logger,
+) -> SchedulerResult | None:
+    """Register the KG daily tick through the scheduler port.
+
+    Core owns the JobSpec policy and the catch-up calculation. Edition adapters
+    own how that specification is mapped to their concrete scheduler runtime.
+    """
+
+    if os.getenv("KG_DAILY_TICK_DISABLED") == "1":
+        return None
+
+    from okto_pulse.core.infra.config import get_settings as _get_settings
+
+    interval_minutes = _get_settings().kg_decay_tick_interval_minutes
+    next_run_time = None
+    try:
+        next_run_time = await _compute_tick_catch_up_next_run(interval_minutes)
+    except Exception as exc:
+        logger.warning(
+            "kg.tick.catch_up_compute_failed err=%s",
+            exc,
+            extra={"event": "kg.tick.catch_up_compute_failed"},
+        )
+
+    job_spec = build_kg_daily_tick_job_spec(
+        interval_minutes,
+        next_run_time=next_run_time,
+    )
+    if scheduler_control is None:
+        logger.info(
+            "kg.tick.scheduler_skipped reason=no_provider interval_minutes=%d",
+            interval_minutes,
+            extra={
+                "event": "kg.tick.scheduler_skipped",
+                "reason": "no_provider",
+                "interval_minutes": interval_minutes,
+            },
+        )
+        return SchedulerResult(
+            job_id=job_spec.job_id,
+            scheduled=False,
+            message="no_provider",
+            audit_status="skipped",
+        )
+
+    try:
+        result = await scheduler_control.register_job(job_spec, _emit_daily_tick)
+    except Exception as exc:
+        logger.warning(
+            "kg.tick.scheduler_failed err=%s",
+            exc,
+            extra={"event": "kg.tick.scheduler_failed"},
+        )
+        return SchedulerResult(
+            job_id=job_spec.job_id,
+            scheduled=False,
+            message=str(exc),
+            audit_status="failed",
+        )
+
+    if result.scheduled:
+        logger.info(
+            "kg.tick.scheduler_started interval_minutes=%d",
+            interval_minutes,
+            extra={
+                "event": "kg.tick.scheduler_started",
+                "interval_minutes": interval_minutes,
+            },
+        )
+    return result
 
 
 def create_app(
@@ -334,83 +433,25 @@ def create_app(
                 "kg.schema.migration_skipped err=%s", _exc,
                 extra={"event": "kg.schema.migration_skipped"},
             )
-        # spec 28583299 (Ideação #4, IMPL-D, dec_bc0eaeec): start the daily
-        # decay tick scheduler. APScheduler in-process is the chosen
-        # vehicle — fits FastAPI lifespan, no external broker. Multi-replica
-        # safety relies on the in-process advisory lock pattern (single
-        # process today; documented as needing pg_try_advisory_lock for a
-        # real multi-replica deploy — see open_for_spec_phase D-1).
-        scheduler = None
-        if os.getenv("KG_DAILY_TICK_DISABLED") != "1":
-            try:
-                from apscheduler.schedulers.asyncio import AsyncIOScheduler
-                from apscheduler.triggers.interval import IntervalTrigger
-
-                from okto_pulse.core.infra.config import get_settings as _get_settings
-                from okto_pulse.core.kg.scheduler_singleton import set_scheduler
-
-                _interval_minutes = _get_settings().kg_decay_tick_interval_minutes
-                scheduler = AsyncIOScheduler(timezone=timezone.utc)
-                # Catch-up no boot (campo 2026-06-10): IntervalTrigger só
-                # dispara o PRIMEIRO tick um intervalo COMPLETO após o
-                # start — com interval de 24h e um processo que reinicia
-                # (deploys/crashes), o tick nunca rodava. O next_run_time
-                # explícito honra o último tick persistido: vencido →
-                # dispara em ~2min; senão → no vencimento real.
-                _job_kwargs: dict = {}
-                try:
-                    _next_run = await _compute_tick_catch_up_next_run(
-                        _interval_minutes
-                    )
-                    if _next_run is not None:
-                        _job_kwargs["next_run_time"] = _next_run
-                except Exception as _exc:
-                    logger.warning(
-                        "kg.tick.catch_up_compute_failed err=%s", _exc,
-                        extra={"event": "kg.tick.catch_up_compute_failed"},
-                    )
-                scheduler.add_job(
-                    _emit_daily_tick,
-                    # Spec 54399628 (Wave 2 NC f9732afc): IntervalTrigger
-                    # com `kg_decay_tick_interval_minutes` permite operador
-                    # ajustar via PUT /api/v1/settings/runtime sem rebuild.
-                    # Hot-reload via scheduler.reschedule_job (settings_service).
-                    trigger=IntervalTrigger(
-                        minutes=_interval_minutes,
-                        timezone=timezone.utc,
-                    ),
-                    id="kg_daily_tick",
-                    replace_existing=True,
-                    max_instances=1,
-                    coalesce=True,
-                    **_job_kwargs,
-                )
-                scheduler.start()
-                set_scheduler(scheduler)  # expose for hot-reload
-                logger.info(
-                    "kg.tick.scheduler_started interval_minutes=%d",
-                    _interval_minutes,
-                    extra={
-                        "event": "kg.tick.scheduler_started",
-                        "interval_minutes": _interval_minutes,
-                    },
-                )
-            except Exception as exc:
-                # APScheduler not installed (e.g. minimal test env) or
-                # event loop oddities — log and continue without the tick.
-                logger.warning(
-                    "kg.tick.scheduler_failed err=%s", exc,
-                    extra={"event": "kg.tick.scheduler_failed"},
-                )
-                scheduler = None
+        # Core owns the KG decay job policy through JobSpec; editions own the
+        # concrete scheduler runtime and inject it as SchedulerControl.
+        scheduler_control = (
+            getattr(composition, "scheduler_control", None)
+            if composition is not None
+            else None
+        )
+        await register_kg_daily_tick_job(
+            scheduler_control,
+            logger=logger,
+        )
         try:
             yield
         finally:
             # Reverse order: stop dispatcher first so in-flight handlers
             # finish before the downstream workers they depend on exit.
-            if scheduler is not None:
+            if scheduler_control is not None:
                 try:
-                    scheduler.shutdown(wait=False)
+                    await scheduler_control.shutdown(wait=False)
                 except Exception:
                     pass
             # Para os pollers SSE antes do DB fechar — eles abrem sessões

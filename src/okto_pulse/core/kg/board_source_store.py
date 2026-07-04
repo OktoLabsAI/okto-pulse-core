@@ -162,6 +162,12 @@ def _canonical_content_hash(row: Any, columns: tuple[str, ...]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def canonical_content_hash(row: Any, columns: tuple[str, ...]) -> str:
+    """Public facade for deterministic source material content hashing."""
+
+    return _canonical_content_hash(row, columns)
+
+
 def _canonical_payload_hash(payload: dict[str, Any]) -> str:
     canonical = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
@@ -177,6 +183,12 @@ def _to_iso(value: Any) -> str:
     return str(value)
 
 
+def to_iso(value: Any) -> str:
+    """Public facade for source timestamp normalization."""
+
+    return _to_iso(value)
+
+
 def _card_artifact_type(row: Any) -> str:
     raw = str(_row_value(row, "card_type", "normal") or "normal").lower()
     if raw == "test":
@@ -186,14 +198,32 @@ def _card_artifact_type(row: Any) -> str:
     return "task"
 
 
+def card_artifact_type(row: Any) -> str:
+    """Public facade for card artifact-type classification."""
+
+    return _card_artifact_type(row)
+
+
 def _row_status(row: Any, status_col: str = "status") -> str:
     if bool(_row_value(row, "archived", 0)):
         return "archived"
     return str(_row_value(row, status_col, "") or "")
 
 
+def row_status(row: Any, status_col: str = "status") -> str:
+    """Public facade for source row status normalization."""
+
+    return _row_status(row, status_col)
+
+
 def _updated_at(row: Any) -> str:
     return _to_iso(_row_value(row, "updated_at", _row_value(row, "created_at")))
+
+
+def updated_at(row: Any) -> str:
+    """Public facade for source updated-at extraction."""
+
+    return _updated_at(row)
 
 
 def _load_json_array(value: Any) -> list[Any]:
@@ -218,6 +248,12 @@ def _bug_has_minimal_evidence(row: Any) -> bool:
     linked_tests = _load_json_array(_row_value(row, "linked_test_task_ids"))
     conclusions = _load_json_array(_row_value(row, "conclusions"))
     return has_text and (bool(linked_tests) or bool(conclusions))
+
+
+def bug_has_minimal_evidence(row: Any) -> bool:
+    """Public facade for bug evidence readiness classification."""
+
+    return _bug_has_minimal_evidence(row)
 
 
 def _decision_id(decision: dict[str, Any], index: int) -> str:
@@ -269,6 +305,12 @@ def _decision_sources_from_spec(row: Any) -> list[dict[str, Any]]:
     return out
 
 
+def decision_sources_from_spec(row: Any) -> list[dict[str, Any]]:
+    """Public facade for deriving decision source records from a spec row."""
+
+    return _decision_sources_from_spec(row)
+
+
 __all__ = [
     "AMENDMENT_CONTENT_COLUMNS",
     "CARD_CONTENT_COLUMNS",
@@ -279,6 +321,13 @@ __all__ = [
     "SPEC_SOURCE_MANIFEST_VERSION",
     "SPRINT_CONTENT_COLUMNS",
     "STORY_CONTENT_COLUMNS",
+    "bug_has_minimal_evidence",
+    "canonical_content_hash",
+    "card_artifact_type",
+    "decision_sources_from_spec",
+    "row_status",
+    "to_iso",
+    "updated_at",
     "_bug_has_minimal_evidence",
     "_canonical_content_hash",
     "_canonical_payload_hash",

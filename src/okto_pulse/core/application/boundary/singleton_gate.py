@@ -3,8 +3,8 @@
 fr_95d98ef5: no new module-global singleton may be introduced in the core; a new
 one detected blocks. fr_531b74f3: the existing singletons live in a
 register-before-remove ledger with owner, target provider, expected adapter and
-a retirement criterion — headlined by ``_scheduler``, ``_mcp_session_factory``
-and ``_permission_cache``.
+a retirement criterion — headlined by ``_mcp_session_factory`` and
+``_permission_cache``.
 
 Detection is deterministic and NARROW (AST, no import): a module-global is a
 singleton when it is reassigned via a ``global`` statement (mutated process
@@ -28,16 +28,6 @@ from .report import GateReport
 
 #: register-before-remove ledger of the HEADLINE core singletons (fr_531b74f3).
 SINGLETON_LEDGER: dict[str, dict[str, str]] = {
-    "_scheduler": {
-        "file": "okto_pulse/core/kg/scheduler_singleton.py",
-        "owner": "okto-pulse-core/runtime",
-        "target_provider": "scheduler_control",
-        "expected_adapter": "Community scheduler adapter -> composition SchedulerControl",
-        "retirement_criterion": (
-            "Composition root owns the SchedulerControl provider; remove the global "
-            "once settings/lifespan resolve the port from composition."
-        ),
-    },
     "_mcp_session_factory": {
         "file": "okto_pulse/core/mcp/server.py",
         "owner": "okto-pulse-core/inbound-mcp",
@@ -502,7 +492,6 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/kg/interfaces/registry.py::_configured",
         "okto_pulse/core/kg/kg_service.py::_default_service",
         "okto_pulse/core/kg/primitives.py::_kuzu_executor",
-        "okto_pulse/core/kg/scheduler_singleton.py::_scheduler",
         "okto_pulse/core/kg/session_manager.py::_singleton",
         "okto_pulse/core/kg/workers/cleanup.py::_singleton",
         "okto_pulse/core/kg/workers/consolidation.py::_singleton",

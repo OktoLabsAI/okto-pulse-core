@@ -77,6 +77,12 @@ def _normalize_unicode(cypher: str) -> str:
     return unicodedata.normalize("NFKC", cypher)
 
 
+def normalize_cypher_unicode(cypher: str) -> str:
+    """Public facade for Cypher unicode normalization."""
+
+    return _normalize_unicode(cypher)
+
+
 def _strip_string_literals(cypher: str) -> str:
     """Replace string literals with placeholders so keyword check doesn't
     trigger on words inside strings."""
@@ -174,6 +180,12 @@ def _auto_inject_limit(cypher: str, max_rows: int) -> str:
     if not re.search(r"\bLIMIT\b", searchable):
         cypher = cypher.rstrip().rstrip(";") + f"\nLIMIT {max_rows}"
     return cypher
+
+
+def auto_inject_limit(cypher: str, max_rows: int) -> str:
+    """Public facade for Tier Power LIMIT injection policy."""
+
+    return _auto_inject_limit(cypher, max_rows)
 
 
 def _bound_relationship_segment(segment: str, max_depth: int) -> str:
@@ -294,6 +306,12 @@ def _auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
         return cypher
     parts.append(cypher[start:])
     return "".join(parts)
+
+
+def auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
+    """Public facade for Tier Power variable-length path bounding."""
+
+    return _auto_bound_var_length_path(cypher, max_depth)
 
 
 # ---------------------------------------------------------------------------

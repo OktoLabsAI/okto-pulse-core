@@ -60,7 +60,7 @@ def _real_graph_registry_for_rematerialization():
 
 
 def _fake_health(state: str, total_nodes: int | None):
-    async def _fake(_board_id, _db):
+    async def _fake(_board_id, _db, scheduler_control=None):
         payload = {"graph_state": state, "overall_state": state}
         if total_nodes is not None:
             payload["total_nodes"] = total_nodes
@@ -199,7 +199,7 @@ async def test_commit_health_state_is_cached_within_ttl(
 ):
     calls = {"n": 0}
 
-    async def _counting(_board_id, _db):
+    async def _counting(_board_id, _db, scheduler_control=None):
         calls["n"] += 1
         return {"overall_state": "healthy", "total_nodes": 7}
 

@@ -1,13 +1,13 @@
 """SchedulerControl runtime port (spec #15, tr_816873bf / api_69859f5e).
 
-Decouples runtime settings from the concrete APScheduler singleton
-(``kg.scheduler_singleton._scheduler``). The canonical KG tick job id is
-``kg_daily_tick`` (NOT ``kg_tick``). Pure: Protocol + frozen DTO, no concrete
-scheduler import.
+Decouples runtime settings and job registration from concrete scheduler
+frameworks. The canonical KG tick job id is ``kg_daily_tick`` (NOT
+``kg_tick``). Pure: Protocol + frozen DTOs, no concrete scheduler import.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
@@ -16,6 +16,20 @@ from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 KG_DAILY_TICK_JOB_ID = "kg_daily_tick"
 
 SchedulerAuditStatus = Literal["rescheduled", "skipped", "failed"]
+SchedulerJobHandler = Callable[[], Any]
+
+
+@dataclass(frozen=True)
+class JobSpec:
+    """Core-owned scheduler job policy independent from adapter mechanics."""
+
+    job_id: str
+    interval_minutes: int
+    max_instances: int = 1
+    coalesce: bool = True
+    replace_existing: bool = True
+    next_run_time: datetime | None = None
+    handler_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -27,6 +41,16 @@ class SchedulerResult:
     next_run_time: datetime | None = None
     message: str | None = None
     audit_status: SchedulerAuditStatus = "rescheduled"
+
+
+@dataclass(frozen=True)
+class SchedulerJobSnapshot:
+    """Read-only scheduler job state exposed by edition adapters."""
+
+    job_id: str
+    exists: bool
+    next_run_time: datetime | None = None
+    message: str | None = None
 
 
 @runtime_checkable
@@ -41,6 +65,18 @@ class SchedulerControl(Protocol):
         self, job_id: str, trigger: Mapping[str, Any]
     ) -> SchedulerResult:
         """Reschedule ``job_id`` with ``trigger``; keep rescheduled/skipped auditable."""
+        ...
+
+    async def register_job(
+        self,
+        job_spec: JobSpec,
+        handler: SchedulerJobHandler,
+    ) -> SchedulerResult:
+        """Register a scheduler job described by a core-owned ``JobSpec``."""
+        ...
+
+    async def get_job_snapshot(self, job_id: str) -> SchedulerJobSnapshot:
+        """Return read-only status for a registered job, without concrete runtime."""
         ...
 
     async def shutdown(self, wait: bool = False) -> None:

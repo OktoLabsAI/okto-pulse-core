@@ -307,7 +307,7 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
     # FR9 gate: healthy response so the admission gate passes.
     import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
 
-    async def _fake_health(board_id, db):
+    async def _fake_health(board_id, db, scheduler_control=None):
         return {"graph_state": "healthy", "metric_status": "available",
                 "current_kg_generation_id": None}
 

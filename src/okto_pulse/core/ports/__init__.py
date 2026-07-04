@@ -105,8 +105,11 @@ from .runtime_workers import (
     RuntimeWorkerStopFailure,
 )
 from .scheduler import (
+    JobSpec,
     KG_DAILY_TICK_JOB_ID,
     SchedulerControl,
+    SchedulerJobHandler,
+    SchedulerJobSnapshot,
     SchedulerResult,
 )
 from .telemetry import (
@@ -175,6 +178,7 @@ __all__ = [
     "DataBootstrapStep",
     "DataBootstrapStepResult",
     "DataBootstrapper",
+    "JobSpec",
     "KG_DAILY_TICK_JOB_ID",
     "MCP_AUTH_FAILURE_REASONS",
     "MCP_CREDENTIAL_SOURCES",
@@ -211,6 +215,8 @@ __all__ = [
     "RuntimeSettingsProvider",
     "RuntimeSettingsSnapshot",
     "SchedulerControl",
+    "SchedulerJobHandler",
+    "SchedulerJobSnapshot",
     "SchedulerResult",
     "SchemaMigrationError",
     "StepStatus",

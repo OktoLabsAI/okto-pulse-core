@@ -329,10 +329,9 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
     assert ladybug.classification == "community_owned"
     assert ladybug.expected_source_import_roots == ("ladybug",)
 
-    # apscheduler is the remaining import-driven temporary exception.
-    for token in ("apscheduler",):
-        entry = index[normalize_token(token)]
-        assert entry.expected_source_import_roots, f"{token} must declare its import root"
+    apscheduler = index[normalize_token("apscheduler")]
+    assert apscheduler.classification == "community_owned"
+    assert apscheduler.expected_source_import_roots == ("apscheduler",)
 
     sentence_transformers = index[normalize_token("sentence-transformers")]
     assert sentence_transformers.classification == "community_owned"
@@ -470,9 +469,11 @@ def test_report_is_actionable_and_serialisable():
     assert "aiofiles" in text
     assert "temporary_exceptions" in text
     # every accepted exception surfaces its owner_wave + removal_criterion + oracle.
-    for token in ("aiosqlite", "numpy", "requests", "apscheduler"):
+    for token in ("aiosqlite", "numpy", "requests", "chardet"):
         assert token in text
-    assert "community_owned : ladybug" in text
+    assert "community_owned :" in text
+    assert "apscheduler" in text
+    assert "ladybug" in text
     assert "removal_criterion" in text
     assert "validation_oracle" in text
 
@@ -500,7 +501,7 @@ def test_af05_readmes_document_dependency_owner_matrix():
             ("aiofiles", "removed"),
             ("requests", "temporary_exception"),
             ("chardet", "temporary_exception"),
-            ("apscheduler", "temporary_exception"),
+            ("apscheduler", "community_owned"),
         ):
             assert f"| `{token}` | `{status}` |" in text
 

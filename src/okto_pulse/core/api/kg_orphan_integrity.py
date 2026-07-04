@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from okto_pulse.core.api.deps import scheduler_control_from_request
 from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.kg.orphan_integrity import (
@@ -16,6 +17,7 @@ from okto_pulse.core.kg.orphan_integrity import (
     OrphanBackfillReconciler,
     OrphanNodeScanner,
 )
+from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 router = APIRouter()
@@ -29,8 +31,17 @@ class OrphanBackfillRequest(BaseModel):
     limit: int = Field(default=DEFAULT_ORPHAN_SAMPLE_LIMIT, ge=0)
 
 
-async def _ensure_backfill_allowed(board_id: str, db: AsyncSession) -> None:
-    health = await get_kg_health(board_id, db)
+async def _ensure_backfill_allowed(
+    board_id: str,
+    db: AsyncSession,
+    *,
+    scheduler_control: SchedulerControl | None = None,
+) -> None:
+    health = await get_kg_health(
+        board_id,
+        db,
+        scheduler_control=scheduler_control,
+    )
     state = str(health.get("overall_state") or health.get("graph_state") or "")
     if state in {"recovery_needed", "quarantined"}:
         raise HTTPException(
@@ -109,12 +120,17 @@ async def get_kg_orphan_integrity_report(
 @router.post("/kg/orphan-integrity/backfill")
 async def post_kg_orphan_integrity_backfill(
     body: OrphanBackfillRequest,
+    request: Request,
     _: str = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Run explicit orphan backfill. Defaults to dry-run for safe review."""
 
-    await _ensure_backfill_allowed(body.board_id, db)
+    await _ensure_backfill_allowed(
+        body.board_id,
+        db,
+        scheduler_control=scheduler_control_from_request(request),
+    )
     limit = max(0, min(int(body.limit), MAX_ORPHAN_SAMPLE_LIMIT))
     try:
         result = OrphanBackfillReconciler().run(

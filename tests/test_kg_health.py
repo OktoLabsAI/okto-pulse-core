@@ -32,6 +32,7 @@ from okto_pulse.core.models.db import (
     KGTickRun,
     KuzuNodeRef,
 )
+from okto_pulse.core.ports.scheduler import SchedulerJobSnapshot
 import okto_pulse.core.services.kg_health_service as kg_health_service
 from okto_pulse.core.services.kg_health_service import (
     BoardNotFoundError,
@@ -45,6 +46,35 @@ from okto_pulse.core.services.kg_health_service import (
 
 KG_HEALTH_BOARD_ID = "board-kg-health-test"
 KG_HEALTH_USER_ID = "user-kg-health-test"
+
+
+class _HealthSchedulerControl:
+    def __init__(
+        self,
+        *,
+        available: bool = True,
+        exists: bool = True,
+        next_run_time: datetime | None = None,
+        message: str | None = None,
+    ) -> None:
+        self._available = available
+        self._snapshot = SchedulerJobSnapshot(
+            job_id="kg_daily_tick",
+            exists=exists,
+            next_run_time=next_run_time,
+            message=message,
+        )
+
+    def is_available(self) -> bool:
+        return self._available
+
+    async def get_job_snapshot(self, job_id: str) -> SchedulerJobSnapshot:
+        return SchedulerJobSnapshot(
+            job_id=job_id,
+            exists=self._snapshot.exists,
+            next_run_time=self._snapshot.next_run_time,
+            message=self._snapshot.message,
+        )
 
 
 @pytest_asyncio.fixture
@@ -235,7 +265,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert isinstance(result["canonical_debt"], dict)
     assert isinstance(result["rebuild_diagnostics"], dict)
     assert result["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
-    assert result["storage_footprint_proxy"]["source"] == "file_size_proxy"
+    assert result["storage_footprint_proxy"]["source"] == "runtime_capability"
     assert result["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
 
 
@@ -677,6 +707,7 @@ async def test_recent_completed_tick_produces_ok_scheduler_diagnostics(
 ):
     """KG-HS.1 AC1/AC7 — recent success is explicit and legacy fields stay."""
     now = datetime.now(timezone.utc)
+    next_run = now + timedelta(minutes=30)
     async with db_factory() as session:
         session.add(
             KGTickRun(
@@ -691,12 +722,18 @@ async def test_recent_completed_tick_produces_ok_scheduler_diagnostics(
         await session.commit()
 
     async with db_factory() as session:
-        result = await get_kg_health(kg_health_board, session)
+        result = await get_kg_health(
+            kg_health_board,
+            session,
+            scheduler_control=_HealthSchedulerControl(next_run_time=next_run),
+        )
 
     diag = result["decay_scheduler_diagnostics"]
     assert diag["status"] == "ok"
     assert diag["severity"] == "info"
     assert diag["last_success_at"] is not None
+    assert diag["next_scheduled_at"] == next_run.isoformat()
+    assert diag["reason"] == "ok"
     assert diag["operational_debt"] is False
     assert diag["graph_recovery_required"] is False
     assert result["last_decay_tick_at"] == diag["last_success_at"]
@@ -706,15 +743,10 @@ async def test_recent_completed_tick_produces_ok_scheduler_diagnostics(
 
 @pytest.mark.asyncio
 async def test_next_scheduled_at_unavailable_preserves_tick_evidence(
-    db_factory, kg_health_board, monkeypatch
+    db_factory, kg_health_board
 ):
     """KG-HS.1 AC6 — scheduler metadata loss is not graph recovery."""
     now = datetime.now(timezone.utc)
-    monkeypatch.setattr(
-        kg_health_service,
-        "_read_next_scheduled_at",
-        lambda: (None, "scheduler_next_run_unavailable"),
-    )
     async with db_factory() as session:
         session.add(
             KGTickRun(
@@ -729,7 +761,14 @@ async def test_next_scheduled_at_unavailable_preserves_tick_evidence(
         await session.commit()
 
     async with db_factory() as session:
-        result = await get_kg_health(kg_health_board, session)
+        result = await get_kg_health(
+            kg_health_board,
+            session,
+            scheduler_control=_HealthSchedulerControl(
+                exists=False,
+                message="scheduler_next_run_unavailable",
+            ),
+        )
 
     diag = result["decay_scheduler_diagnostics"]
     assert diag["status"] == "ok"
@@ -939,16 +978,16 @@ async def test_tick_evidence_query_failure_degrades_to_unknown_without_recovery(
 async def test_storage_footprint_proxy_payload_is_not_direct_memory_telemetry(
     db_factory, kg_health_board
 ):
-    """KG-HS.1 AC10 — proxy payload explicitly labels file-size semantics."""
+    """KG-HS.1 AC10 — footprint is adapter-provided, not direct memory telemetry."""
     async with db_factory() as session:
         result = await get_kg_health(kg_health_board, session)
 
     proxy = result["storage_footprint_proxy"]
-    assert proxy["source"] == "file_size_proxy"
+    assert proxy["source"] == "runtime_capability"
     assert proxy["is_direct_memory_telemetry"] is False
     copy = f"{proxy['description']} {proxy['tooltip']}".lower()
-    assert "storage footprint" in copy or "file-size proxy" in copy
-    assert "not live ladybug memory telemetry" in copy
+    assert "storage footprint" in copy
+    assert "not live graph memory telemetry" in copy
     assert "buffer-pool telemetry" not in copy
     assert "direct memory pressure" not in copy
     assert "raw buffer pressure" not in copy

@@ -22,6 +22,9 @@ from okto_pulse.core.kg.interfaces.board_graph_runtime import BoardGraphRuntime
 from okto_pulse.core.kg.interfaces.board_source_reader import BoardSourceReader
 from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
+from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
+    CognitivePendingWorkProvider,
+)
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.event_bus import EventBus
 from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycle
@@ -75,6 +78,7 @@ class KGProviderRegistry:
     board_source_reader: BoardSourceReader | None = None
     rebuild_ingestion_port: RebuildIngestionPort | None = None
     rebuild_audit_artifact_store: RebuildAuditArtifactStore | None = None
+    cognitive_pending_work_provider: CognitivePendingWorkProvider | None = None
 
     # ------------------------------------------------------------------ R03 IMP1
     # AC3 (base fail-closed): cache_backend, rate_limiter and session_store are
@@ -119,6 +123,9 @@ class KGProviderRegistry:
     def require_rebuild_audit_artifact_store(self) -> RebuildAuditArtifactStore:
         return self._require_provider("rebuild_audit_artifact_store")
 
+    def require_cognitive_pending_work_provider(self) -> CognitivePendingWorkProvider:
+        return self._require_provider("cognitive_pending_work_provider")
+
 
 _registry: KGProviderRegistry | None = None
 _lock = threading.Lock()
@@ -155,6 +162,7 @@ def _build_defaults() -> KGProviderRegistry:
         InMemoryBoardSourceReader,
     )
     from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+        InMemoryCognitivePendingWorkProvider,
         InMemoryRebuildAuditArtifactStore,
     )
     from okto_pulse.core.kg.providers.testing.embedding import (
@@ -200,6 +208,7 @@ def _build_defaults() -> KGProviderRegistry:
         global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
         board_source_reader=InMemoryBoardSourceReader(),
         rebuild_audit_artifact_store=InMemoryRebuildAuditArtifactStore(),
+        cognitive_pending_work_provider=InMemoryCognitivePendingWorkProvider(),
         # event_bus, audit_repo, auth_context_factory supplied by composition
     )
 

@@ -19,7 +19,15 @@ from .report import GateReport
 PORT_CONTRACTS: dict[str, dict[str, object]] = {
     "SchedulerControl": {
         "module": "okto_pulse.core.ports.scheduler",
-        "members": frozenset({"is_available", "reschedule_job", "shutdown"}),
+        "members": frozenset(
+            {
+                "get_job_snapshot",
+                "is_available",
+                "register_job",
+                "reschedule_job",
+                "shutdown",
+            }
+        ),
     },
     "RuntimeSettingsPort": {
         "module": "okto_pulse.core.ports.runtime_settings",

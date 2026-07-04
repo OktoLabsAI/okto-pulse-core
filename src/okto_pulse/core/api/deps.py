@@ -18,8 +18,19 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
+
+
+def scheduler_control_from_request(request: Request) -> SchedulerControl | None:
+    """Return the edition-owned scheduler port from the request composition."""
+    composition = getattr(request.app.state, "runtime_composition", None)
+    return (
+        getattr(composition, "scheduler_control", None)
+        if composition is not None
+        else None
+    )
 
 
 async def get_unit_of_work(
