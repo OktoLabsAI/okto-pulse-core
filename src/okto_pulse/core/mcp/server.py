@@ -2049,6 +2049,54 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
 
 
 @mcp.tool()
+async def okto_pulse_get_allowed_transitions(
+    board_id: str,
+    entity_type: str,
+    entity_id: str = "",
+    current_status: str = "",
+) -> str:
+    """
+    Return allowed lifecycle transitions for ideation, refinement, or spec from
+    the backend transition authority used by move tools/endpoints.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    from okto_pulse.core.application.use_cases import (
+        CommandValidationError,
+        EntityNotFoundError,
+        ListAllowedTransitionsCommand,
+        ListAllowedTransitionsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ListAllowedTransitionsUseCase().execute(
+                ListAllowedTransitionsCommand(
+                    board_id,
+                    entity_type,
+                    entity_id=entity_id or None,
+                    current_status=current_status or None,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+            return json.dumps(result.read_model.to_dict(), default=str)
+    except EntityNotFoundError as exc:
+        detail = "Board not found" if exc.entity_type == "board" else f"{exc.entity_type.title()} not found"
+        return json.dumps({"error": detail})
+    except CommandValidationError as exc:
+        return json.dumps({"error": str(exc)})
+
+
+@mcp.tool()
 async def okto_pulse_list_agents(board_id: str) -> str:
     """
     List all agents registered on the board."""

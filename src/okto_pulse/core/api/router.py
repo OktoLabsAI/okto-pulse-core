@@ -14,6 +14,9 @@ from okto_pulse.core.api.guidelines import router as guidelines_router
 from okto_pulse.core.api.specs import router as specs_router
 from okto_pulse.core.api.stories import router as stories_router
 from okto_pulse.core.api.analytics import router as analytics_router
+from okto_pulse.core.api.allowed_transitions import (
+    router as allowed_transitions_router,
+)
 from okto_pulse.core.api.architecture import router as architecture_router
 from okto_pulse.core.api.presets import router as presets_router
 from okto_pulse.core.api.sprints import router as sprints_router
@@ -79,6 +82,7 @@ api_router.include_router(ideations_router, tags=["ideations"])
 api_router.include_router(stories_router, tags=["stories"])
 api_router.include_router(refinements_router, tags=["refinements"])
 api_router.include_router(specs_router, tags=["specs"])
+api_router.include_router(allowed_transitions_router, tags=["allowed-transitions"])
 # `default_board_config_router` MUST be registered before `guidelines_router`: it owns
 # the literal GET /guidelines/default-candidates, which would otherwise be shadowed by
 # the parametric GET /guidelines/{guideline_id} in guidelines_router (FastAPI/Starlette
